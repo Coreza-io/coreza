@@ -134,17 +134,25 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       value={fieldState[f.key]}
                       placeholder={f.placeholder}
                       onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => {
+                        console.log("dragOver triggered");
+                        e.preventDefault();
+                      }}
+                      onDragEnter={(e) => {
+                        console.log("dragEnter triggered");
+                        e.preventDefault();
+                      }}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) =>
+                      onDrop={(e) => {
+                        console.log("DROP TRIGGERED!", e);
                         handleDrop(
                           f.key,
                           (val) => handleChange(f.key, val),
                           e,
                           fieldState[f.key] ?? ""
-                        )
-                      }
+                        );
+                      }}
                       className="nodrag"
                     />
                     {fieldState[f.key]?.includes("{{") && (
@@ -163,17 +171,25 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       value={fieldState[f.key]}
                       placeholder={f.placeholder}
                       onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => {
+                        console.log("textarea dragOver triggered");
+                        e.preventDefault();
+                      }}
+                      onDragEnter={(e) => {
+                        console.log("textarea dragEnter triggered");
+                        e.preventDefault();
+                      }}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) =>
+                      onDrop={(e) => {
+                        console.log("TEXTAREA DROP TRIGGERED!", e);
                         handleDrop(
                           f.key,
                           (val) => handleChange(f.key, val),
                           e,
                           fieldState[f.key]
-                        )
-                      }
+                        );
+                      }}
                     />
                     {fieldState[f.key]?.includes("{{") && (
                       <div className="text-xs text-gray-500 mt-1">

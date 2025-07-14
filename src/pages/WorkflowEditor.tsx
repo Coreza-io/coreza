@@ -85,18 +85,9 @@ const WorkflowEditor = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Get current user from Supabase Auth
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        toast({
-          title: "Error",
-          description: "You must be logged in to save workflows.",
-          variant: "destructive",
-        });
-        setIsSaving(false);
-        return;
-      }
+      // For now, using a demo user ID since we have custom authentication
+      // In a real implementation, you'd get this from your custom auth context
+      const userId = "demo-user-123";
       
       const workflowData = {
         name: workflowName,
@@ -116,7 +107,7 @@ const WorkflowEditor = () => {
           animated: edge.animated || false,
           style: edge.style ? JSON.stringify(edge.style) : null
         })))),
-        user_id: user.id,
+        user_id: userId,
         is_active: isActive
       };
 

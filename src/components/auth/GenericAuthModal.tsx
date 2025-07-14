@@ -128,7 +128,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md select-none pointer-events-auto" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
         <DialogHeader>
           <DialogTitle className="text-foreground">Connect {definition.name} Account</DialogTitle>
         </DialogHeader>

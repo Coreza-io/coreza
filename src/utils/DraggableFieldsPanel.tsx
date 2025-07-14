@@ -55,6 +55,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
           draggable
           onDragStart={(e) => {
             e.stopPropagation();
+            e.dataTransfer.setData("application/reactflow", JSON.stringify({ keyPath }));
             onDragStart(e, keyPath, String(obj));
           }}
           onMouseDown={(e) => e.stopPropagation()}
@@ -121,6 +122,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
+                      e.dataTransfer.setData("application/reactflow", JSON.stringify({ keyPath: key }));
                       onDragStart(e, key, String(key));
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -174,7 +176,9 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
-                      onDragStart(e, keyPath ? `${keyPath}.${key}` : key, String(key));
+                      const fullKeyPath = keyPath ? `${keyPath}.${key}` : key;
+                      e.dataTransfer.setData("application/reactflow", JSON.stringify({ keyPath: fullKeyPath }));
+                      onDragStart(e, fullKeyPath, String(key));
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}

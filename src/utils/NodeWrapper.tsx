@@ -132,12 +132,15 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Fullscreen Modal */}
       <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
         <DialogContent 
-          className="max-w-none w-screen h-screen m-0 rounded-none p-6 overflow-auto"
+          className="max-w-none w-screen h-screen m-0 rounded-none p-6 overflow-auto backdrop-blur-sm"
           style={{
             userSelect: 'auto',
             WebkitUserSelect: 'auto',
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)'
           }}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <div className="w-full h-full flex">
             {/* Input Panel in fullscreen */}

@@ -1,0 +1,86 @@
+import React from "react";
+import BaseNode from "./BaseNode";
+import NodeWrapper from "@/utils/NodeWrapper";
+import BasicNodeLayout from "./layouts/BasicNodeLayout";
+import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
+import { useNodeId, useNodes, useEdges } from "@xyflow/react";
+
+interface NodeRouterProps {
+  data: any;
+  selected: boolean;
+}
+
+const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
+  const nodeId = useNodeId();
+  const nodes = useNodes();
+  const edges = useEdges();
+  
+  const definition = data.definition || data.config;
+
+  if (!definition) {
+    return (
+      <div className="min-w-[180px] shadow-node border-node bg-card rounded-lg p-3">
+        <span className="text-sm text-muted-foreground">No definition found</span>
+      </div>
+    );
+  }
+
+  // Determine layout type based on node characteristics
+  const getLayoutType = (definition: any) => {
+    // Check if node has repeater fields (conditional logic)
+    const hasRepeaterFields = definition.fields?.some((f: any) => f.type === "repeater");
+    if (hasRepeaterFields) return "conditional";
+    
+    // Check for specific conditional node types
+    const conditionalNodeTypes = ["If", "Switch", "Filter"];
+    if (conditionalNodeTypes.includes(definition.name)) return "conditional";
+    
+    // Default to basic layout
+    return "basic";
+  };
+
+  const layoutType = getLayoutType(definition);
+
+  return (
+    <BaseNode data={data} selected={selected}>
+      {(renderProps) => (
+        <NodeWrapper
+          nodeId={nodeId}
+          nodes={nodes}
+          edges={edges}
+          selected={selected}
+          inputPanelProps={{
+            handleDragStart: renderProps.handleDragStart,
+            selectedPrevNodeId: renderProps.selectedPrevNodeId,
+            setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
+          }}
+          outputPanelProps={{
+            data: renderProps.displayedData,
+            position: "right",
+            pinned: renderProps.isPinned,
+            onSave: renderProps.handlePanelSave,
+            onPinToggle: renderProps.handlePanelPinToggle,
+          }}
+          icon={
+            definition.icon ? (
+              <img src={definition.icon} className="w-10 h-10" alt="node icon" />
+            ) : undefined
+          }
+          label={renderProps.displayName}
+          minWidth={definition.size?.width || 340}
+          minHeight={definition.size?.height || 340}
+          handles={definition.handles || []}
+          nodeType={definition.node_type}
+        >
+          {layoutType === "conditional" ? (
+            <ConditionalNodeLayout {...renderProps} />
+          ) : (
+            <BasicNodeLayout {...renderProps} />
+          )}
+        </NodeWrapper>
+      )}
+    </BaseNode>
+  );
+};
+
+export default NodeRouter;

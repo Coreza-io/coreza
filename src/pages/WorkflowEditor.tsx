@@ -26,14 +26,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 // Import node types
-import GenericNode from "@/components/nodes/GenericNode";
+import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Create node types dynamically from manifest
-const nodeTypes = nodeManifest.reduce((acc, node) => {
-  acc[node.type] = GenericNode;
-  return acc;
-}, {} as Record<string, any>);
+// Dynamically create nodeTypes from nodeManifest
+const nodeTypes = Object.fromEntries(
+  Object.keys(nodeManifest).map((nodeType) => [nodeType, NodeRouter])
+);
 
 const edgeTypes = {
   removable: RemovableEdge,
@@ -47,7 +46,7 @@ const initialNodes: Node[] = [
     position: { x: 100, y: 100 },
     data: { 
       label: 'Welcome to Coreza!',
-      config: nodeManifest.find(n => n.config.node_type === 'finnhub')?.config
+      definition: nodeManifest.FinnHub
     },
   },
 ];
@@ -217,15 +216,15 @@ const WorkflowEditor = () => {
         y: event.clientY - reactFlowBounds.top,
       };
 
-      const nodeConfig = nodeManifest.find(n => n.type === type);
+      const nodeDefinition = nodeManifest[type];
       
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: { 
-          label: nodeConfig?.config.name || `${type} node`,
-          config: nodeConfig?.config
+          label: nodeDefinition?.name || `${type} node`,
+          definition: nodeDefinition
         },
       };
       

@@ -318,70 +318,23 @@ export interface NodeConfig {
   }[];
 }
 
-export const nodeManifest = [
-  { type: AlpacaDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: AlpacaDef },
-    
-  { type: EmailDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: EmailDef },
-  
-  { type: OpenAiDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: OpenAiDef },
+export const nodeManifest = {
+  [AlpacaDef.name]: AlpacaDef,
+  [EmailDef.name]: EmailDef,
+  [OpenAiDef.name]: OpenAiDef,
+  [AgentDef.name]: AgentDef,
+  [ChatInputDef.name]: ChatInputDef,
+  [FinnHubDef.name]: FinnHubDef,
+  [YahooFinanceDef.name]: YahooFinanceDef,
+  [MovingAverageCrossDef.name]: MovingAverageCrossDef,
+  [RSIDef.name]: RSIDef,
+  [EMADef.name]: EMADef,
+  [IfDef.name]: IfDef,
+  [VisualizeDef.name]: VisualizeDef,
+  [SchedulerDef.name]: SchedulerDef,
+  [AlpacaDataDef.name]: AlpacaDataDef,
+  [AlpacaTradeDef.name]: AlpacaTradeDef,
+  [IndicatorDef.name]: IndicatorDef
+} as const;
 
-  { type: AgentDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: AgentDef },
-
-  { type: ChatInputDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: ChatInputDef },
-
-  { type: FinnHubDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: FinnHubDef },
-  
-  { type: YahooFinanceDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: YahooFinanceDef },
-
-  { type: MovingAverageCrossDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: MovingAverageCrossDef },
-
-  { type: RSIDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: RSIDef },
-  
-  { type: EMADef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: EMADef },
-  
-  { type: IfDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: IfDef },
-  
-  { type: VisualizeDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: VisualizeDef },
-
-  { type: SchedulerDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: SchedulerDef },
-
-  { type: AlpacaDataDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: AlpacaDataDef },
-  
-  { type: AlpacaTradeDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: AlpacaTradeDef },
-  
-  { type: IndicatorDef.name, 
-    loader: () => import('@/components/nodes/GenericNode'), 
-    config: IndicatorDef }
-] as const;
-
-export type ManifestEntry = typeof nodeManifest[number];
+export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

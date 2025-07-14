@@ -5,7 +5,6 @@ import { Handle, Position } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -52,18 +51,17 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   nodeType,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
-  const [isFullscreen, setIsFullscreen] = useState(false); // Fullscreen modal state
 
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
     nodeId,
     nodes,
     edges,
-    isExpanded: isFullscreen, // Use fullscreen state for panels
+    isExpanded,
     ...inputPanelProps,
   };
   const mergedOutputPanelProps = {
-    isExpanded: isFullscreen, // Use fullscreen state for panels
+    isExpanded,
     ...outputPanelProps,
   };
 
@@ -75,46 +73,52 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const nodeShapeClass = shapeStyles[nodeType ?? "default"];
 
   return (
-    <>
-      <div className="relative">
-        {/* Input Data Panel */}
-        <InputPanel {...mergedInputPanelProps} />
+    <div className="relative">
+      {/* Input Data Panel */}
+      <InputPanel {...mergedInputPanelProps} />
 
-        {/* Main Node Card - Always collapsed when not in fullscreen */}
-        <Card
-          className={`
-            relative shadow-card overflow-hidden transition-all duration-300 ease-in-out 
-            bg-card border-2 hover:shadow-elevated w-[150px] h-[100px] cursor-pointer group
-            ${nodeShapeClass}
-            ${selected ? "border-primary shadow-glow" : "border-border"}
-          `}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsFullscreen(true);
-          }}
-        >
-          {/* Handles (configured in manifest) */}
-          {(["top", "bottom", "left", "right"] as const).map((pos) => {
-            const group = handles.filter((h) => h.position === pos);
-            const isHorizontal = pos === "top" || pos === "bottom";
-            return group.map((h, idx) => {
-              const pct = ((idx + 1) / (group.length + 1)) * 100;
-              const style = isHorizontal ? { left: `${pct}%` } : { top: `${pct}%` };
-              return (
-                <Handle
-                  key={h.id}
-                  id={h.id}
-                  type={h.type}
-                  position={POSITION_MAP[h.position]}
-                  style={style}
-                  className="w-3 h-3 border-2 border-border bg-background hover:border-primary transition-colors"
-                />
-              );
-            });
-          })}
+      {/* Main Node Card */}
+      <Card
+        className={`
+          relative shadow-card overflow-hidden transition-all duration-300 ease-in-out 
+          bg-card border-2 hover:shadow-elevated
+          ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
+          ${nodeShapeClass}
+          ${selected ? "border-primary shadow-glow" : "border-border"}
+        `}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsExpanded(true);
+        }}
+        style={{
+          width: isExpanded ? minWidth : 150,
+          minHeight: isExpanded ? minHeight : 100,
+          height: isExpanded ? "auto" : 100,
+        }}
+      >
+        {/* Handles (configured in manifest) */}
+        {(["top", "bottom", "left", "right"] as const).map((pos) => {
+          const group = handles.filter((h) => h.position === pos);
+          const isHorizontal = pos === "top" || pos === "bottom";
+          return group.map((h, idx) => {
+            const pct = ((idx + 1) / (group.length + 1)) * 100;
+            const style = isHorizontal ? { left: `${pct}%` } : { top: `${pct}%` };
+            return (
+              <Handle
+                key={h.id}
+                id={h.id}
+                type={h.type}
+                position={POSITION_MAP[h.position]}
+                style={style}
+                className="w-3 h-3 border-2 border-border bg-background hover:border-primary transition-colors"
+              />
+            );
+          });
+        })}
 
-          {/* Always show collapsed view */}
+        {/* Collapsed View */}
+        {!isExpanded && (
           <div className="flex flex-col items-center justify-center h-full p-4 select-none">
             <div className="text-muted-foreground mb-2">
               {icon}
@@ -123,61 +127,31 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               {label}
             </div>
           </div>
-        </Card>
+        )}
 
-        {/* Output Data Panel */}
-        <OutputPanel {...mergedOutputPanelProps} />
-      </div>
+        {/* Expanded View */}
+        {isExpanded && (
+          <CardContent className="space-y-3 p-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(false);
+              }}
+              title="Collapse"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-2 right-2 z-10 h-6 w-6 p-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            {children}
+          </CardContent>
+        )}
+      </Card>
 
-      {/* Fullscreen Modal */}
-      <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
-        <DialogContent 
-          className="max-w-none w-screen h-screen m-0 rounded-none p-6 overflow-auto backdrop-blur-sm"
-          style={{
-            userSelect: 'auto',
-            WebkitUserSelect: 'auto',
-            pointerEvents: 'auto',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)'
-          }}
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
-        >
-          <div className="w-full h-full flex">
-            {/* Input Panel in fullscreen */}
-            <div className="w-80 mr-4">
-              <InputPanel {...mergedInputPanelProps} />
-            </div>
-            
-            {/* Main Content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  {icon}
-                  {label}
-                </h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsFullscreen(false)}
-                  title="Close"
-                  className="text-muted-foreground hover:text-foreground hover:bg-muted h-8 w-8 p-0"
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-              <div className="h-full">
-                {children}
-              </div>
-            </div>
-
-            {/* Output Panel in fullscreen */}
-            <div className="w-80 ml-4">
-              <OutputPanel {...mergedOutputPanelProps} />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+      {/* Output Data Panel */}
+      <OutputPanel {...mergedOutputPanelProps} />
+    </div>
   );
 };
 

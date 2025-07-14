@@ -9,10 +9,8 @@ const BACKEND_URL = "http://localhost:8000";
 
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
-  const baseName = node.data?.definition?.name || node.data?.config?.name || 'Node';
-  const sameType = allNodes.filter((n) => 
-    n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName
-  );
+  const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
+  const sameType = allNodes.filter((n) => (n.data.definition?.name || n.data.config?.name) === baseName);
   const idx = sameType.findIndex((n) => n.id === node.id);
   return idx > 0 ? `${baseName}${idx}` : baseName;
 };

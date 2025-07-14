@@ -107,8 +107,13 @@ export function NodePalette() {
                         <div className="flex items-start gap-3">
                           <div className={`p-2 rounded-lg bg-muted/50 ${node.config.color} group-hover:shadow-glow transition-all`}>
                             {(() => {
-                              const IconComponent = getIconComponent(node.config.icon);
-                              return <IconComponent className="h-4 w-4" />;
+                              // Handle SVG icons or Lucide icons
+                              if (node.config.icon?.startsWith('/assets/')) {
+                                return <img src={node.config.icon} alt={node.config.name} className="h-4 w-4" />;
+                              } else {
+                                const IconComponent = getIconComponent(node.config.icon);
+                                return <IconComponent className="h-4 w-4" />;
+                              }
                             })()}
                           </div>
                           <div className="flex-1 min-w-0">

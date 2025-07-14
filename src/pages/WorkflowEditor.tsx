@@ -31,7 +31,7 @@ import { nodeManifest } from "@/nodes/manifest";
 
 // Create node types dynamically from manifest
 const nodeTypes = nodeManifest.reduce((acc, node) => {
-  acc[node.config.node_type] = GenericNode;
+  acc[node.type] = GenericNode;
   return acc;
 }, {} as Record<string, any>);
 
@@ -218,6 +218,9 @@ const WorkflowEditor = () => {
       };
 
       const nodeConfig = nodeManifest.find(n => n.type === type);
+      console.log('Creating node with type:', type);
+      console.log('Found nodeConfig:', nodeConfig);
+      
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
@@ -227,7 +230,8 @@ const WorkflowEditor = () => {
           config: nodeConfig?.config
         },
       };
-
+      
+      console.log('Created newNode:', newNode);
       setNodes((nds) => nds.concat(newNode));
     },
     [setNodes],

@@ -122,7 +122,104 @@ const VisualizeDef = { name: "Visualize", def: "Visualize node definition", node
 const IfDef = { name: "If Condition", def: "If Condition node definition", node_type: "if", icon: "GitBranch", category: "Logic", description: "Conditional logic for trading decisions", color: "text-yellow-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "true" }, { type: "source", position: "right", id: "false" }], fields: [] };
 const SchedulerDef = { name: "Scheduler", def: "Scheduler node definition", node_type: "scheduler", icon: "Calendar", category: "Triggers", description: "Time-based workflow triggers", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
 const AlpacaDataDef = { name: "Alpaca Data", def: "Alpaca Data node definition", node_type: "alpacaData", icon: "Database", category: "Data", description: "Get market data from Alpaca Markets", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
-const AlpacaTradeDef = { name: "Alpaca Trade", def: "Alpaca Trade node definition", node_type: "alpacaTrade", icon: "ShoppingCart", category: "Trading", description: "Execute trades through Alpaca Markets", color: "text-red-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }], fields: [] };
+const AlpacaTradeDef = {
+  "name": "AlpacaTrade",
+  "def": "Alpaca Trade",
+  "node_type": "main",
+  "icon": "/assets/icons/alpaca.svg",
+  "category": "Trading",
+  "description": "Execute trades through Alpaca Markets",
+  "color": "text-red-500",
+  "size": { "width": 340, "height": 360 },
+  "parentNode":"Alpaca",
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Alpaca"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "Your Alpaca API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "placeholder": "Your Alpaca Secret Key"
+    }
+  ],
+  "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
+
+  "action": { "url": "/alpaca/order", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Ticker Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        { "id": "buy", "name": "Buy" },
+        { "id": "sell", "name": "Sell" }
+      ],
+      "default": "buy",
+      "required": true
+    },
+    {
+      "key": "qty",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 1",
+      "required": true
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        { "id": "market", "name": "Market" },
+        { "id": "limit", "name": "Limit" }
+      ],
+      "default": "market",
+      "required": true
+    },
+    {
+      "key": "time_in_force",
+      "label": "Time In Force",
+      "type": "select",
+      "options": [
+        { "id": "day", "name": "Day" },
+        { "id": "gtc", "name": "Good Till Cancelled" },
+        { "id": "fok", "name": "Fill Or Kill" },
+        { "id": "ioc", "name": "Immediate Or Cancel" }
+      ],
+      "default": "day",
+      "required": true
+    }
+  ]
+};
 const IndicatorDef = { name: "Indicator", def: "Indicator node definition", node_type: "indicator", icon: "Target", category: "Indicators", description: "Custom technical indicator analysis", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 
 // Node configuration interface

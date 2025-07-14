@@ -45,6 +45,11 @@ const Login = () => {
       }
 
       console.log("Login successful:", { id: users.id, email: users.email });
+      
+      // Store user data in localStorage for the workflow editor
+      localStorage.setItem('userId', users.id);
+      localStorage.setItem('userEmail', users.email);
+      
       navigate("/dashboard");
     } catch (err) {
       console.error('Login error:', err);

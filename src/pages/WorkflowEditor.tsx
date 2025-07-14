@@ -65,9 +65,9 @@ const WorkflowEditor = () => {
     isNewWorkflow ? "My workflow 1" : "Existing Workflow"
   );
   const [isActive, setIsActive] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -82,121 +82,108 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  const handleSave = async () => {
-    console.log("handleSave function called");
-    setIsSaving(true);
-    try {
-      // For now, using a demo user ID in proper UUID format since we have custom authentication
-      // In a real implementation, you'd get this from your custom auth context
-      const userId = "550e8400-e29b-41d4-a716-446655440000"; // Valid UUID format for demo
-      console.log("Using userId:", userId);
-      
-      const workflowData = {
-        name: workflowName,
-        nodes: JSON.parse(JSON.stringify(nodes.map(node => ({
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: node.data
-        })))),
-        edges: JSON.parse(JSON.stringify(edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          sourceHandle: edge.sourceHandle || null,
-          targetHandle: edge.targetHandle || null,
-          type: edge.type || null,
-          animated: edge.animated || false,
-          style: edge.style ? JSON.stringify(edge.style) : null
-        })))),
-        user_id: userId,
-        is_active: isActive
-      };
+  // Save workflow to Supabase
+  const handleSaveWorkflow = async () => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Please log in to save workflows",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setLoading(true);
 
-      let result;
-      if (workflowId) {
-        // Update existing workflow
-        result = await supabase
-          .from('workflows')
-          .update(workflowData)
-          .eq('id', workflowId)
-          .select()
-          .single();
+    // 1) Turn each node into a "minimal" version without its definition
+    const minimalNodes = nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      sourcePosition: n.sourcePosition,
+      targetPosition: n.targetPosition,
+      // ONLY keep the user's inputs + last output (or whatever you actually need)
+      values: n.data.values
+    }));
+
+    const payload = {
+      user_id: user.id,
+      name: workflowName,
+      nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
+      edges: JSON.parse(JSON.stringify(edges)) as any,
+      updated_at: new Date().toISOString(),
+    };
+    console.log("payload", payload);
+
+    if (workflowId) {
+      const { error } = await supabase
+        .from("workflows")
+        .update(payload)
+        .eq("id", workflowId);
+      setLoading(false);
+      if (!error) {
+        toast({
+          title: "Success",
+          description: "Workflow updated!",
+        });
       } else {
-        // Create new workflow
-        result = await supabase
-          .from('workflows')
-          .insert([workflowData])
-          .select()
-          .single();
-      }
-
-      if (result.error) {
-        console.error('Supabase error details:', JSON.stringify(result.error, null, 2));
-        console.error('Error code:', result.error.code);
-        console.error('Error message:', result.error.message);
-        console.error('Error details:', result.error.details);
         toast({
           title: "Error",
-          description: `Database error: ${result.error.message || 'Failed to save workflow. Please try again.'}`,
+          description: "Error saving workflow: " + error.message,
+          variant: "destructive",
+        });
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("workflows")
+        .insert([payload])
+        .select()
+        .single();
+      setLoading(false);
+      if (data) {
+        setWorkflowId(data.id);
+        toast({
+          title: "Success",
+          description: "Workflow saved!",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Error saving: " + error.message,
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!user || !workflowId) return;
+    
+    try {
+      setIsActive(!isActive);
+      
+      // If workflow is saved, update the active status in database
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_active: !isActive })
+        .eq('id', workflowId);
+
+      if (error) {
+        console.error('Failed to update workflow status:', error);
+        // Revert the local state change
+        setIsActive(isActive);
+        toast({
+          title: "Error",
+          description: "Failed to update workflow status.",
           variant: "destructive",
         });
         return;
       }
 
-      // Update local state with the saved workflow ID
-      if (!workflowId && result.data) {
-        setWorkflowId(result.data.id);
-        // Update URL without page reload
-        window.history.replaceState(null, '', `/workflow-editor/${result.data.id}`);
-      }
-
       toast({
         title: "Success",
-        description: "Workflow saved successfully!",
+        description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
       });
-
-      console.log("Workflow saved successfully:", result.data);
-    } catch (error) {
-      console.error("Failed to save workflow:", error);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred while saving.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleActivate = async () => {
-    try {
-      setIsActive(!isActive);
-      
-      // If workflow is saved, update the active status in database
-      if (workflowId) {
-        const { error } = await supabase
-          .from('workflows')
-          .update({ is_active: !isActive })
-          .eq('id', workflowId);
-
-        if (error) {
-          console.error('Failed to update workflow status:', error);
-          // Revert the local state change
-          setIsActive(isActive);
-          toast({
-            title: "Error",
-            description: "Failed to update workflow status.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        toast({
-          title: "Success",
-          description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
-        });
-      }
 
       console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
     } catch (error) {
@@ -246,6 +233,24 @@ const WorkflowEditor = () => {
     [setNodes],
   );
 
+  // Check for user authentication on component mount
+  useEffect(() => {
+    // Check if user is logged in from localStorage
+    const checkUser = async () => {
+      const userEmail = localStorage.getItem('userEmail');
+      const userId = localStorage.getItem('userId');
+      
+      if (userEmail && userId) {
+        setUser({ id: userId, email: userEmail });
+      } else {
+        // Redirect to login if no user found
+        navigate('/login');
+      }
+    };
+    
+    checkUser();
+  }, [navigate]);
+
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -279,12 +284,12 @@ const WorkflowEditor = () => {
           
           <div className="flex items-center gap-3">
             <Button
-              onClick={handleSave}
-              disabled={isSaving}
+              onClick={handleSaveWorkflow}
+              disabled={loading}
               variant="outline"
             >
               <Save className="h-4 w-4 mr-2" />
-              {isSaving ? "Saving..." : "Save"}
+              {loading ? "Saving..." : "Save"}
             </Button>
             <Button
               onClick={handleActivate}

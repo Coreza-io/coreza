@@ -134,16 +134,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       value={fieldState[f.key]}
                       placeholder={f.placeholder}
                       onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => {
-                        console.log("dragOver triggered");
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "copy";
-                      }}
-                      onDragEnter={(e) => {
-                        console.log("dragEnter triggered");
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "copy";
-                      }}
+                      onDragOver={(e) => e.preventDefault()}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
                       onDrop={(e) =>
@@ -176,16 +167,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       value={fieldState[f.key]}
                       placeholder={f.placeholder}
                       onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => {
-                        console.log("textarea dragOver triggered");
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "copy";
-                      }}
-                      onDragEnter={(e) => {
-                        console.log("textarea dragEnter triggered");
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "copy";
-                      }}
+                      onDragOver={(e) => e.preventDefault()}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
                       onDrop={(e) =>

@@ -734,7 +734,7 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                       <React.Fragment key={index}>
                         {/* Show AND/OR dropdown between conditions (except before first condition) */}
                         {index > 0 && (
-                          <div className="flex justify-center py-2">
+                          <div className="flex justify-start py-2 pl-2">
                             <Select
                               value={item.logicalOp || "AND"}
                               onValueChange={(val) => {

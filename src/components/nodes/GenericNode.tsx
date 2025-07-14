@@ -17,56 +17,12 @@ import {
 } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { Loader2 } from "lucide-react";
-
-// TODO: These utilities need to be created - keeping placeholder implementations for now
-const NodeWrapper = ({ children, nodeId, selected, label, minWidth, minHeight, handles, nodeType, icon, inputPanelProps, outputPanelProps }: any) => {
-  return (
-    <div className="min-w-[180px] shadow-node border-node bg-card rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
-        {icon && <div className="p-1.5 rounded-md bg-muted/50">{icon}</div>}
-        <span className="text-sm font-medium truncate">{label}</span>
-      </div>
-      {children}
-    </div>
-  );
-};
-
-const getAllUpstreamNodes = (nodeId: string, edges: any[], nodes: any[]) => {
-  const upstreamEdges = edges.filter(e => e.target === nodeId);
-  return upstreamEdges.map(e => nodes.find(n => n.id === e.source)).filter(Boolean);
-};
-
-const resolveReferences = (expr: string, data: any) => {
-  // Simple reference resolution - can be enhanced
-  return expr.replace(/\{\{\s*\$\('(.+?)'\)\.json\.(.+?)\s*\}\}/g, (match, nodeName, path) => {
-    try {
-      const value = path.split('.').reduce((obj, key) => obj?.[key], data);
-      return value || match;
-    } catch {
-      return match;
-    }
-  });
-};
-
-const summarizePreview = (value: any) => {
-  if (typeof value === 'string') return value.slice(0, 50) + (value.length > 50 ? '...' : '');
-  return JSON.stringify(value).slice(0, 50) + '...';
-};
-
-const GenericAuthModal = ({ definition, onClose }: any) => (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-card p-6 rounded-lg">
-      <h3>Auth Modal for {definition.name}</h3>
-      <Button onClick={onClose}>Close</Button>
-    </div>
-  </div>
-);
-
-const VisualizeCandlesSignals = ({ candles, indicator }: any) => (
-  <div className="w-full h-48 bg-muted/20 rounded flex items-center justify-center">
-    <span className="text-muted-foreground">Chart Visualization</span>
-  </div>
-);
+import NodeWrapper from "@/utils/NodeWrapper";
+import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
+import { resolveReferences } from "@/utils/resolveReferences";
+import { summarizePreview } from "@/utils/summarizePreview";
+import GenericAuthModal from "@/components/auth/GenericAuthModal";
+import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -479,8 +435,8 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
 
 
   const referenceStyle = {
-    backgroundColor: "#f0f9ff",
-    borderBottom: "1px dashed #60a5fa",
+    backgroundColor: "hsl(var(--muted))",
+    borderBottom: "1px dashed hsl(var(--primary))",
   };
 
   // ======== VISUALIZE NODE SUPPORT =========
@@ -562,10 +518,14 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
       handles={definition.handles || []}
       nodeType={definition.node_type}
     >
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          {definition.icon && <img src={definition.icon} alt="icon" className="w-6 h-6" />}
-          <h2 className="font-semibold text-lg flex-1">{definition.def || definition.name}</h2>
+      <div className="mb-4">
+        <div className="flex items-center gap-2">
+          {definition?.icon && (
+            <img src={definition.icon} alt="icon" className="w-6 h-6" />
+          )}
+          <h2 className="font-semibold text-base text-foreground flex-1">
+            {definition?.def || definition?.name || 'Node'}
+          </h2>
         </div>
       </div>
 
@@ -760,13 +720,17 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
             );
           })}
 
-          {/* --------- Error Message --------- */}
-          {error && <div className="text-red-500 text-sm">{error}</div>}
+                {/* --------- Error Message --------- */}
+          {error && (
+            <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
+              {error}
+            </div>
+          )}
 
           {/* --------- Submit Button --------- */}
           <Button
             type="submit"
-            className="w-full bg-green-600 text-white"
+            className="w-full bg-success hover:bg-success/90 text-success-foreground"
             disabled={isSending}
           >
             {isSending ? (

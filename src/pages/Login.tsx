@@ -47,6 +47,17 @@ const Login = () => {
       console.log("Login successful:", { id: users.id, email: users.email });
       
       // Store user data in localStorage for the workflow editor
+      const userData = {
+        id: users.id,
+        user_id: users.id,
+        email: users.email,
+        first_name: users.first_name,
+        last_name: users.last_name,
+        name: `${users.first_name} ${users.last_name}`
+      };
+      
+      localStorage.setItem('loggedInUser', JSON.stringify(userData));
+      // Keep backward compatibility
       localStorage.setItem('userId', users.id);
       localStorage.setItem('userEmail', users.email);
       localStorage.setItem('userName', `${users.first_name} ${users.last_name}`);

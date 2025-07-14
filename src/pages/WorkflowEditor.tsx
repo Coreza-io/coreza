@@ -242,42 +242,26 @@ const WorkflowEditor = () => {
         </div>
       </div>
 
-      {/* Toggle Arrow - appears when palette is hidden */}
-      {!isPaletteVisible && (
-        <motion.button
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 20 }}
-          transition={{ duration: 0.2 }}
-          onClick={() => setIsPaletteVisible(true)}
-          className="absolute top-1/2 right-4 -translate-y-1/2 z-10 bg-card border border-border rounded-md p-2 shadow-lg hover:bg-muted transition-colors"
-        >
-          <ChevronLeft className="h-5 w-5 text-muted-foreground" />
-        </motion.button>
-      )}
-
       {/* Right Sidebar - Node Palette */}
-      <AnimatePresence mode="wait">
-        {isPaletteVisible && (
-          <motion.div
-            key="node-palette"
-            initial={{ x: 300, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 300, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="w-80 border-l border-border bg-sidebar relative"
-          >
-            {/* Close arrow inside palette */}
-            <button
-              onClick={() => setIsPaletteVisible(false)}
-              className="absolute top-4 right-4 z-10 bg-card border border-border rounded-md p-1 shadow-sm hover:bg-muted transition-colors"
-            >
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <NodePalette />
-          </motion.div>
+      {isPaletteVisible && (
+        <div className="w-80 border-l border-border bg-sidebar">
+          <NodePalette />
+        </div>
+      )}
+      
+      {/* Toggle Arrow */}
+      <button
+        onClick={() => setIsPaletteVisible(!isPaletteVisible)}
+        className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 ${
+          isPaletteVisible ? 'right-80' : 'right-0'
+        }`}
+      >
+        {isPaletteVisible ? (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
         )}
-      </AnimatePresence>
+      </button>
     </div>
   );
 };

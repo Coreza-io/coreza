@@ -50,10 +50,6 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
   const { setNodes } = useReactFlow();
 
   const definition = data.definition || data.config;
-  console.log('GenericNode - nodeId:', nodeId);
-  console.log('GenericNode - data:', data);
-  console.log('GenericNode - definition:', definition);
-  
   // Compute this node's own displayName (for the label)
   const displayName = useMemo(
     () => getDisplayName({ id: nodeId!, data } as Node<any>, nodes),

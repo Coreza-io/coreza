@@ -93,7 +93,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         }}
         style={{
           width: isExpanded ? minWidth : 150,
-          height: isExpanded ? minHeight : 100,
+          minHeight: isExpanded ? minHeight : 100,
+          height: isExpanded ? "auto" : 100,
         }}
       >
         {/* Handles (configured in manifest) */}

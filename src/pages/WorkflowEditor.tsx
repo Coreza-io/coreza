@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   ReactFlow,
   addEdge,
@@ -22,6 +22,8 @@ import { Save, Play, Pause, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 // Import node types
 import GenericNode from "@/components/nodes/GenericNode";
@@ -54,14 +56,18 @@ const initialEdges: Edge[] = [];
 
 const WorkflowEditor = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const isNewWorkflow = id === 'new' || !id;
   
+  const [workflowId, setWorkflowId] = useState<string | null>(isNewWorkflow ? null : id || null);
   const [workflowName, setWorkflowName] = useState(
     isNewWorkflow ? "My workflow 1" : "Existing Workflow"
   );
   const [isActive, setIsActive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -79,29 +85,80 @@ const WorkflowEditor = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // TODO: Save to Supabase
+      // For demo purposes, using a hardcoded user ID
+      // In a real app, you'd get this from authentication context
+      const userId = "demo-user-123";
+      
       const workflowData = {
         name: workflowName,
-        nodes: nodes.map(node => ({
+        nodes: JSON.parse(JSON.stringify(nodes.map(node => ({
           id: node.id,
           type: node.type,
           position: node.position,
           data: node.data
-        })),
-        edges: edges.map(edge => ({
+        })))),
+        edges: JSON.parse(JSON.stringify(edges.map(edge => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
-          sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle
-        }))
+          sourceHandle: edge.sourceHandle || null,
+          targetHandle: edge.targetHandle || null,
+          type: edge.type || null,
+          animated: edge.animated || false,
+          style: edge.style ? JSON.stringify(edge.style) : null
+        })))),
+        user_id: userId,
+        is_active: isActive
       };
-      console.log("Saving workflow:", workflowData);
-      
-      // Simulate save delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      let result;
+      if (workflowId) {
+        // Update existing workflow
+        result = await supabase
+          .from('workflows')
+          .update(workflowData)
+          .eq('id', workflowId)
+          .select()
+          .single();
+      } else {
+        // Create new workflow
+        result = await supabase
+          .from('workflows')
+          .insert([workflowData])
+          .select()
+          .single();
+      }
+
+      if (result.error) {
+        console.error('Supabase error:', result.error);
+        toast({
+          title: "Error",
+          description: "Failed to save workflow. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Update local state with the saved workflow ID
+      if (!workflowId && result.data) {
+        setWorkflowId(result.data.id);
+        // Update URL without page reload
+        window.history.replaceState(null, '', `/workflow-editor/${result.data.id}`);
+      }
+
+      toast({
+        title: "Success",
+        description: "Workflow saved successfully!",
+      });
+
+      console.log("Workflow saved successfully:", result.data);
     } catch (error) {
       console.error("Failed to save workflow:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while saving.",
+        variant: "destructive",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -109,11 +166,43 @@ const WorkflowEditor = () => {
 
   const handleActivate = async () => {
     try {
-      // TODO: Activate workflow via API
-      console.log("Activating workflow:", workflowName);
       setIsActive(!isActive);
+      
+      // If workflow is saved, update the active status in database
+      if (workflowId) {
+        const { error } = await supabase
+          .from('workflows')
+          .update({ is_active: !isActive })
+          .eq('id', workflowId);
+
+        if (error) {
+          console.error('Failed to update workflow status:', error);
+          // Revert the local state change
+          setIsActive(isActive);
+          toast({
+            title: "Error",
+            description: "Failed to update workflow status.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        toast({
+          title: "Success",
+          description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
+        });
+      }
+
+      console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
     } catch (error) {
-      console.error("Failed to activate workflow:", error);
+      console.error("Failed to change workflow status:", error);
+      // Revert the local state change
+      setIsActive(isActive);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      });
     }
   };
 

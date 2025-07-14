@@ -101,7 +101,7 @@ export function NodePalette() {
                     <Card
                       className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
                       draggable
-                      onDragStart={(e) => onDragStart(e, node.config.node_type)}
+                      onDragStart={(e) => onDragStart(e, node.type)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">

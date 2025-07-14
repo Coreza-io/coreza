@@ -217,7 +217,7 @@ const WorkflowEditor = () => {
         y: event.clientY - reactFlowBounds.top,
       };
 
-      const nodeConfig = nodeManifest.find(n => n.config.node_type === type);
+      const nodeConfig = nodeManifest.find(n => n.type === type);
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,

@@ -94,8 +94,24 @@ const Workflows = () => {
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
       if (!currentStatus) {
-        // Activating workflow - send to backend API
-        const API_URL = "http://localhost:8000"; // Backend API URL
+        // Activating workflow - first check if backend is available
+        const API_URL = "http://localhost:8000";
+        
+        // Check backend health first
+        try {
+          const healthCheck = await fetch(`${API_URL}/health`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          });
+          
+          if (!healthCheck.ok) {
+            throw new Error("Backend server is not responding");
+          }
+        } catch (healthError) {
+          throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
+        }
+
+        // Backend is available, proceed with activation
         const res = await fetch(`${API_URL}/workflows/${workflowId}/activate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -105,6 +121,16 @@ const Workflows = () => {
         if (!res.ok) {
           const errorText = await res.text();
           throw new Error(errorText);
+        }
+
+        // Update database to reflect activation
+        const { error } = await supabase
+          .from('workflows')
+          .update({ is_active: true })
+          .eq('id', workflowId);
+
+        if (error) {
+          throw error;
         }
       } else {
         // Pausing workflow - update database directly

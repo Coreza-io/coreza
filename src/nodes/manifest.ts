@@ -1,6 +1,115 @@
 // JSON imports for node definitions
 // Note: For now using placeholder objects until actual JSON files are created
 const EmailDef = { name: "Email", def: "Email node definition", node_type: "email", icon: "Mail", category: "Communication", description: "Send email notifications with trading signals", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }], fields: [] };
+
+// Complete Alpaca node definition based on provided JSON
+const AlpacaDef = {
+  name: "Alpaca",
+  def: "Alpaca",
+  node_type: "main",
+  icon: "/assets/icons/alpaca.svg",
+  category: "Trading",
+  description: "Execute trades and get market data from Alpaca Markets",
+  color: "text-green-600",
+  size: { width: 340, height: 360 },
+  handles: [
+    { type: "target", position: "left", id: "input" },
+    { type: "source", position: "right", id: "output" }
+  ],
+  auth: "GenericAuthModal",
+  authFields: [
+    {
+      key: "credential_name",
+      label: "Credential Label",
+      type: "text",
+      default: "My Alpaca"
+    },
+    {
+      key: "api_key",
+      label: "API Key",
+      type: "password",
+      placeholder: "Your Alpaca API Key"
+    },
+    {
+      key: "secret_key",
+      label: "Secret Key",
+      type: "password",
+      placeholder: "Your Alpaca Secret Key"
+    }
+  ],
+  authAction: { url: "/alpaca/auth-url", method: "POST" },
+  action: {
+    url: "/alpaca/{{operation}}",
+    method: "{{method}}"
+  },
+  fields: [
+    {
+      key: "credential_id",
+      label: "Credential",
+      type: "select",
+      optionsSource: "credentialsApi",
+      placeholder: "Select credential",
+      required: true
+    },
+    {
+      key: "operation",
+      label: "Operation",
+      type: "select",
+      options: [
+        { id: "get_account", name: "Get Account", method: "GET" },
+        { id: "get_positions", name: "Get Positions", method: "GET" },
+        { id: "get_orders", name: "Get Orders", method: "GET" },
+        { id: "cancel_order", name: "Cancel Orders", method: "POST" },
+        { id: "get_candle", name: "Get Historical Bars", method: "POST" }
+      ],
+      placeholder: "Select operation",
+      required: true
+    },
+    {
+      key: "symbol",
+      label: "Ticker Symbol",
+      type: "text",
+      placeholder: "e.g. AAPL",
+      required: true,
+      displayOptions: {
+        show: {
+          operation: ["positions", "orders", "get_candle"]
+        }
+      }
+    },
+    {
+      key: "interval",
+      label: "Interval",
+      type: "select",
+      options: [
+        { id: "1Min", name: "1 min" },
+        { id: "5Min", name: "5 min" },
+        { id: "15Min", name: "15 min" },
+        { id: "1Hour", name: "1 hour" },
+        { id: "1Day", name: "1 day" }
+      ],
+      placeholder: "Select interval",
+      required: true,
+      displayOptions: {
+        show: {
+          operation: ["get_candle"]
+        }
+      }
+    },
+    {
+      key: "lookback",
+      label: "Bars to Fetch",
+      type: "text",
+      placeholder: "e.g. 100",
+      required: true,
+      displayOptions: {
+        show: {
+          operation: ["get_candle"]
+        }
+      }
+    }
+  ]
+};
 const OpenAiDef = { name: "OpenAI", def: "OpenAI node definition", node_type: "openai", icon: "Brain", category: "AI", description: "AI-powered market analysis and predictions", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const AgentDef = { name: "Agent", def: "Agent node definition", node_type: "agent", icon: "Bot", category: "AI", description: "Intelligent trading agent", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const ChatInputDef = { name: "Chat Input", def: "Chat Input node definition", node_type: "chatInput", icon: "MessageSquare", category: "Input", description: "Interactive chat interface for trading commands", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
@@ -21,6 +130,9 @@ export interface NodeConfig {
   name: string;
   def: string;
   node_type: string;
+  category?: string;
+  description?: string;
+  color?: string;
   parentNode?: string;
   handles: { type: string; position: string; id: string }[];
   auth?: string;
@@ -49,13 +161,27 @@ export interface NodeConfig {
       }[];
       placeholder?: string;
     }[];
+    options?: {
+      id: string;
+      name: string;
+      method?: string;
+    }[];
     optionsSource?: string;
-    required: boolean;
+    required?: boolean;
     placeholder?: string;
+    displayOptions?: {
+      show?: {
+        [key: string]: string[];
+      };
+    };
   }[];
 }
 
 export const nodeManifest = [
+  { type: AlpacaDef.name, 
+    loader: () => import('@/components/nodes/GenericNode'), 
+    config: AlpacaDef },
+    
   { type: EmailDef.name, 
     loader: () => import('@/components/nodes/GenericNode'), 
     config: EmailDef },

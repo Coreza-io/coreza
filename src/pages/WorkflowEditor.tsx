@@ -129,9 +129,11 @@ const WorkflowEditor = () => {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
 
+      // Get the ReactFlow wrapper element to calculate relative position
+      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
       const position = {
-        x: event.clientX - 250, // Adjust for sidebar width
-        y: event.clientY - 100,  // Adjust for header height
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
       };
 
       const nodeConfig = nodeManifest.find(n => n.config.node_type === type);

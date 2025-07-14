@@ -11,11 +11,11 @@ interface Condition {
   left: string;
   operator: string;
   right: string;
+  logicalOp?: string; // AND/OR for this condition (not applicable to first condition)
 }
 
 interface IfNodeData {
   conditions: Condition[];
-  logicalOp: string;
   expanded?: boolean;
 }
 
@@ -27,7 +27,6 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
   const [conditions, setConditions] = useState<Condition[]>(
     data.conditions || [{ left: "", operator: "===", right: "" }]
   );
-  const [logicalOp, setLogicalOp] = useState(data.logicalOp || "AND");
 
   const operators = [
     { label: "equals", value: "===" },
@@ -50,26 +49,25 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
               data: {
                 ...n.data,
                 conditions,
-                logicalOp,
                 expanded: isExpanded,
               },
             }
           : n
       )
     );
-  }, [nodeId, conditions, logicalOp, isExpanded, setNodes]);
+  }, [nodeId, conditions, isExpanded, setNodes]);
 
   const addCondition = () => {
-    const newConditions = [...conditions, { left: "", operator: "===", right: "" }];
+    const newConditions = [...conditions, { left: "", operator: "===", right: "", logicalOp: "AND" }];
     setConditions(newConditions);
-    updateNodeData();
+    setTimeout(updateNodeData, 0);
   };
 
   const removeCondition = (index: number) => {
     if (conditions.length > 1) {
       const newConditions = conditions.filter((_, i) => i !== index);
       setConditions(newConditions);
-      updateNodeData();
+      setTimeout(updateNodeData, 0);
     }
   };
 
@@ -77,17 +75,17 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
     const newConditions = [...conditions];
     newConditions[index] = { ...newConditions[index], [field]: value };
     setConditions(newConditions);
-    updateNodeData();
+    setTimeout(updateNodeData, 0);
   };
 
   const handleExpand = () => {
     setIsExpanded(true);
-    updateNodeData();
+    setTimeout(updateNodeData, 0);
   };
 
   const handleCollapse = () => {
     setIsExpanded(false);
-    updateNodeData();
+    setTimeout(updateNodeData, 0);
   };
 
   return (
@@ -146,8 +144,7 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-2">
-                <img src="/assets/icons/if.svg" className="w-6 h-6" alt="if icon" />
-                If Condition
+                Conditions
               </CardTitle>
               <Button
                 variant="ghost"
@@ -160,91 +157,83 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
             </div>
           </CardHeader>
           
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
               {conditions.map((condition, index) => (
-                <div key={index} className="border rounded p-3 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium">Condition {index + 1}</span>
-                    {conditions.length > 1 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeCondition(index)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div>
-                      <Label className="text-xs">Left Value</Label>
-                      <Input
-                        value={condition.left}
-                        placeholder="{{ $json.value }}"
-                        onChange={(e) => updateCondition(index, 'left', e.target.value)}
-                        className="text-sm"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label className="text-xs">Operator</Label>
+                <React.Fragment key={index}>
+                  {/* Show AND/OR dropdown above condition (except for first condition) */}
+                  {index > 0 && (
+                    <div className="flex justify-center py-1">
                       <Select
-                        value={condition.operator}
-                        onValueChange={(val) => updateCondition(index, 'operator', val)}
+                        value={condition.logicalOp || "AND"}
+                        onValueChange={(val) => updateCondition(index, 'logicalOp', val)}
                       >
-                        <SelectTrigger className="text-sm">
+                        <SelectTrigger className="w-20 h-8 text-xs bg-background border border-border z-50">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          {operators.map((op) => (
-                            <SelectItem key={op.value} value={op.value}>
+                        <SelectContent className="bg-background border border-border shadow-lg z-50">
+                          {logicalOperators.map((op) => (
+                            <SelectItem key={op.value} value={op.value} className="text-xs">
                               {op.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
+                  )}
+                  
+                  {/* Condition Row */}
+                  <div className="flex items-center gap-2 p-2 border rounded">
+                    <Input
+                      value={condition.left}
+                      placeholder="{{ $json.value }}"
+                      onChange={(e) => updateCondition(index, 'left', e.target.value)}
+                      className="flex-1 text-xs h-8"
+                    />
                     
-                    <div>
-                      <Label className="text-xs">Right Value</Label>
-                      <Input
-                        value={condition.right}
-                        placeholder="100"
-                        onChange={(e) => updateCondition(index, 'right', e.target.value)}
-                        className="text-sm"
-                      />
-                    </div>
+                    <Select
+                      value={condition.operator}
+                      onValueChange={(val) => updateCondition(index, 'operator', val)}
+                    >
+                      <SelectTrigger className="w-24 h-8 text-xs bg-background border border-border z-50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50">
+                        {operators.map((op) => (
+                          <SelectItem key={op.value} value={op.value} className="text-xs">
+                            {op.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    <Input
+                      value={condition.right}
+                      placeholder="100"
+                      onChange={(e) => updateCondition(index, 'right', e.target.value)}
+                      className="flex-1 text-xs h-8"
+                    />
+                    
+                    {conditions.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeCondition(index)}
+                        className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
-                </div>
+                </React.Fragment>
               ))}
             </div>
-
-            {conditions.length > 1 && (
-              <div>
-                <Label className="text-xs">Logical Operator</Label>
-                <Select value={logicalOp} onValueChange={setLogicalOp}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {logicalOperators.map((op) => (
-                      <SelectItem key={op.value} value={op.value}>
-                        {op.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <Button
               size="sm"
               variant="outline"
               onClick={addCondition}
-              className="w-full"
+              className="w-full text-xs h-8"
             >
               <Plus className="h-3 w-3 mr-1" />
               Add Condition
@@ -252,9 +241,9 @@ const IfNode: React.FC<{ data: IfNodeData; selected?: boolean }> = ({ data, sele
 
             <Button
               type="submit"
-              className="w-full bg-success hover:bg-success/90 text-success-foreground"
+              className="w-full bg-foreground text-background hover:bg-foreground/90 text-xs h-9"
             >
-              Run
+              Execute
             </Button>
           </CardContent>
         </>

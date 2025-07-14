@@ -132,10 +132,13 @@ const WorkflowEditor = () => {
       }
 
       if (result.error) {
-        console.error('Supabase error:', result.error);
+        console.error('Supabase error details:', JSON.stringify(result.error, null, 2));
+        console.error('Error code:', result.error.code);
+        console.error('Error message:', result.error.message);
+        console.error('Error details:', result.error.details);
         toast({
           title: "Error",
-          description: "Failed to save workflow. Please try again.",
+          description: `Database error: ${result.error.message || 'Failed to save workflow. Please try again.'}`,
           variant: "destructive",
         });
         return;

@@ -107,7 +107,8 @@ const Workflows = () => {
           if (!healthCheck.ok) {
             throw new Error("Backend server is not responding");
           }
-        } catch (healthError) {
+        } catch (healthError: any) {
+          console.error("Backend health check failed:", healthError);
           throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
         }
 

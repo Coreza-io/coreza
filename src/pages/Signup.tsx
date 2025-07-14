@@ -76,6 +76,14 @@ const Signup = () => {
       }
 
       console.log("User created successfully:", data);
+      
+      // Store user data in localStorage
+      if (data && data[0]) {
+        localStorage.setItem('userId', data[0].id);
+        localStorage.setItem('userEmail', data[0].email);
+        localStorage.setItem('userName', `${data[0].first_name} ${data[0].last_name}`);
+      }
+      
       navigate("/dashboard");
     } catch (err) {
       console.error('Signup error:', err);

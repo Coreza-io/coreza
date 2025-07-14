@@ -49,6 +49,7 @@ const Login = () => {
       // Store user data in localStorage for the workflow editor
       localStorage.setItem('userId', users.id);
       localStorage.setItem('userEmail', users.email);
+      localStorage.setItem('userName', `${users.first_name} ${users.last_name}`);
       
       navigate("/dashboard");
     } catch (err) {

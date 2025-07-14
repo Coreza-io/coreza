@@ -67,7 +67,7 @@ const WorkflowEditor = () => {
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
-  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -233,23 +233,95 @@ const WorkflowEditor = () => {
     [setNodes],
   );
 
-  // Check for user authentication on component mount
+  // Check for user authentication and load latest workflow
   useEffect(() => {
-    // Check if user is logged in from localStorage
-    const checkUser = async () => {
+    const checkUserAndLoadWorkflow = async () => {
       const userEmail = localStorage.getItem('userEmail');
       const userId = localStorage.getItem('userId');
+      const userName = localStorage.getItem('userName');
       
-      if (userEmail && userId) {
-        setUser({ id: userId, email: userEmail });
+      if (userEmail && userId && userName) {
+        const userObj = { id: userId, email: userEmail, name: userName };
+        setUser(userObj);
+        
+        // Auto-load latest workflow if this is a new workflow
+        if (isNewWorkflow) {
+          setLoading(true);
+          try {
+            const { data, error } = await supabase
+              .from("workflows")
+              .select("*")
+              .eq("user_id", userId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (data && !error) {
+              setWorkflowId(data.id);
+              setWorkflowName(data.name || "Untitled Workflow");
+              setIsActive(!!data.is_active);
+              
+              // Load nodes and edges
+              if (data.nodes && Array.isArray(data.nodes)) {
+                setNodes(data.nodes as unknown as Node[]);
+              }
+              if (data.edges && Array.isArray(data.edges)) {
+                setEdges(data.edges as unknown as Edge[]);
+              }
+              
+              // Update URL without page reload
+              window.history.replaceState(null, '', `/workflow/${data.id}`);
+            }
+          } catch (error) {
+            console.error("Error loading latest workflow:", error);
+          }
+          setLoading(false);
+        }
       } else {
         // Redirect to login if no user found
         navigate('/login');
       }
     };
     
-    checkUser();
-  }, [navigate]);
+    checkUserAndLoadWorkflow();
+  }, [navigate, isNewWorkflow, setNodes, setEdges]);
+
+  // Persist workflow state to localStorage
+  useEffect(() => {
+    if (workflowId && nodes.length > 0) {
+      const workflowState = {
+        id: workflowId,
+        name: workflowName,
+        nodes,
+        edges,
+        isActive,
+        lastSaved: new Date().toISOString()
+      };
+      localStorage.setItem(`workflow_${workflowId}`, JSON.stringify(workflowState));
+    }
+  }, [workflowId, workflowName, nodes, edges, isActive]);
+
+  // Load persisted workflow state on page refresh
+  useEffect(() => {
+    if (workflowId && !isNewWorkflow) {
+      const persistedState = localStorage.getItem(`workflow_${workflowId}`);
+      if (persistedState) {
+        try {
+          const state = JSON.parse(persistedState);
+          setWorkflowName(state.name || "Untitled Workflow");
+          setIsActive(!!state.isActive);
+          if (state.nodes && state.nodes.length > 0) {
+            setNodes(state.nodes);
+          }
+          if (state.edges) {
+            setEdges(state.edges);
+          }
+        } catch (error) {
+          console.error("Error loading persisted workflow state:", error);
+        }
+      }
+    }
+  }, [workflowId, isNewWorkflow, setNodes, setEdges]);
 
   // Handle delete key to remove selected nodes
   useEffect(() => {

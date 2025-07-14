@@ -140,11 +140,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       onDrop={(e) =>
                         handleDrop(
                           f.key,
-                          (val) =>
-                            setFieldState((fs) => ({
-                              ...fs,
-                              [f.key]: val,
-                            })),
+                          (val: string) => handleChange(f.key, val),
                           e,
                           fieldState[f.key] ?? ""
                         )
@@ -173,11 +169,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       onDrop={(e) =>
                         handleDrop(
                           f.key,
-                          (val) =>
-                            setFieldState((fs) => ({
-                              ...fs,
-                              [f.key]: val,
-                            })),
+                          (val: string) => handleChange(f.key, val),
                           e,
                           fieldState[f.key] ?? ""
                         )

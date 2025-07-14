@@ -93,13 +93,29 @@ const Workflows = () => {
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
-        .from('workflows')
-        .update({ is_active: !currentStatus })
-        .eq('id', workflowId);
+      if (!currentStatus) {
+        // Activating workflow - send to backend API
+        const API_URL = "http://localhost:8000"; // Backend API URL
+        const res = await fetch(`${API_URL}/workflows/${workflowId}/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ownerId: user!.id }),
+        });
 
-      if (error) {
-        throw error;
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText);
+        }
+      } else {
+        // Pausing workflow - update database directly
+        const { error } = await supabase
+          .from('workflows')
+          .update({ is_active: false })
+          .eq('id', workflowId);
+
+        if (error) {
+          throw error;
+        }
       }
 
       // Update local state

@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Save, Play, Pause, Settings, Search } from "lucide-react";
+import { Save, Play, Pause, Settings, Search, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { motion } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
@@ -61,6 +61,7 @@ const WorkflowEditor = () => {
   );
   const [isActive, setIsActive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -182,6 +183,17 @@ const WorkflowEditor = () => {
           
           <div className="flex items-center gap-3">
             <Button
+              onClick={() => setIsPaletteVisible(!isPaletteVisible)}
+              variant="outline"
+              size="sm"
+            >
+              {isPaletteVisible ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <PanelRightOpen className="h-4 w-4" />
+              )}
+            </Button>
+            <Button
               onClick={handleSave}
               disabled={isSaving}
               variant="outline"
@@ -242,14 +254,17 @@ const WorkflowEditor = () => {
       </div>
 
       {/* Right Sidebar - Node Palette */}
-      <motion.div
-        initial={{ x: 300, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.3 }}
-        className="w-80 border-l border-border bg-sidebar"
-      >
-        <NodePalette />
-      </motion.div>
+      {isPaletteVisible && (
+        <motion.div
+          initial={{ x: 300, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 300, opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="w-80 border-l border-border bg-sidebar"
+        >
+          <NodePalette />
+        </motion.div>
+      )}
     </div>
   );
 };

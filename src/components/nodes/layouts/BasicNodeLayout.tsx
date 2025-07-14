@@ -146,15 +146,15 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       }}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) => {
-                        console.log("DROP TRIGGERED!", e);
+                      onDrop={(e) =>
                         handleDrop(
                           f.key,
-                          (val) => handleChange(f.key, val),
+                          (val) =>
+                            handleChange(f.key, val),
                           e,
                           fieldState[f.key] ?? ""
-                        );
-                      }}
+                        )
+                      }
                       className="nodrag"
                     />
                     {fieldState[f.key]?.includes("{{") && (
@@ -185,15 +185,15 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       }}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) => {
-                        console.log("TEXTAREA DROP TRIGGERED!", e);
+                      onDrop={(e) =>
                         handleDrop(
                           f.key,
-                          (val) => handleChange(f.key, val),
+                          (val) =>
+                            handleChange(f.key, val),
                           e,
-                          fieldState[f.key]
-                        );
-                      }}
+                          fieldState[f.key] ?? ""
+                        )
+                      }
                     />
                     {fieldState[f.key]?.includes("{{") && (
                       <div className="text-xs text-gray-500 mt-1">

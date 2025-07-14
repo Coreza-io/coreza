@@ -11,72 +11,53 @@ import {
   Bell,
   BarChart3,
   Zap,
-  DollarSign
+  DollarSign,
+  Mail,
+  Brain,
+  MessageSquare,
+  Calendar,
+  Activity,
+  Bot,
+  Target,
+  Play
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { nodeManifest } from "@/nodes/manifest";
 
-interface NodeType {
-  id: string;
-  name: string;
-  description: string;
-  icon: any;
-  category: string;
-  color: string;
-}
-
-const nodeTypes: NodeType[] = [
-  {
-    id: "marketData",
-    name: "Market Data",
-    description: "Connect to market data feeds (REST/WebSocket)",
-    icon: Database,
-    category: "Data",
-    color: "text-blue-500"
-  },
-  {
-    id: "indicator",
-    name: "Technical Indicator", 
-    description: "SMA, RSI, MACD, Bollinger Bands",
-    icon: TrendingUp,
-    category: "Analysis",
-    color: "text-green-500"
-  },
-  {
-    id: "condition",
-    name: "Condition",
-    description: "Greater than, less than, crossover logic",
-    icon: GitBranch,
-    category: "Logic",
-    color: "text-purple-500"
-  },
-  {
-    id: "order",
-    name: "Order",
-    description: "Market, limit, stop-loss orders",
-    icon: ShoppingCart,
-    category: "Trading",
-    color: "text-orange-500"
-  },
-  {
-    id: "notification",
-    name: "Notification",
-    description: "Email, webhook, SMS alerts",
-    icon: Bell,
-    category: "Alerts",
-    color: "text-yellow-500"
-  }
-];
+// Helper function to get icon component from string
+const getIconComponent = (iconName: string) => {
+  const icons = {
+    Database,
+    TrendingUp,
+    GitBranch,
+    ShoppingCart,
+    Bell,
+    BarChart3,
+    Zap,
+    DollarSign,
+    Mail,
+    Brain,
+    MessageSquare,
+    Calendar,
+    Activity,
+    Bot,
+    Target,
+    Play,
+    Search
+  };
+  return icons[iconName as keyof typeof icons] || Database;
+};
 
 export function NodePalette() {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredNodes = nodeTypes.filter(node =>
+  const filteredNodes = nodeManifest.filter(node =>
     node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     node.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
     node.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const categories = Array.from(new Set(nodeTypes.map(node => node.category)));
+  const categories = Array.from(new Set(nodeManifest.map(node => node.category)));
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -112,7 +93,7 @@ export function NodePalette() {
               <div className="space-y-2">
                 {categoryNodes.map((node, index) => (
                   <motion.div
-                    key={node.id}
+                    key={node.node_type}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
@@ -120,12 +101,15 @@ export function NodePalette() {
                     <Card
                       className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
                       draggable
-                      onDragStart={(e) => onDragStart(e, node.id)}
+                      onDragStart={(e) => onDragStart(e, node.node_type)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
                           <div className={`p-2 rounded-lg bg-muted/50 ${node.color} group-hover:shadow-glow transition-all`}>
-                            <node.icon className="h-4 w-4" />
+                            {(() => {
+                              const IconComponent = getIconComponent(node.icon);
+                              return <IconComponent className="h-4 w-4" />;
+                            })()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <h5 className="font-medium text-sm mb-1">{node.name}</h5>

@@ -24,19 +24,14 @@ import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 
 // Import node types
-import { MarketDataNode } from "@/components/nodes/MarketDataNode";
-import { IndicatorNode } from "@/components/nodes/IndicatorNode";
-import { ConditionNode } from "@/components/nodes/ConditionNode";
-import { OrderNode } from "@/components/nodes/OrderNode";
-import { NotificationNode } from "@/components/nodes/NotificationNode";
+import GenericNode from "@/components/nodes/GenericNode";
+import { nodeManifest } from "@/nodes/manifest";
 
-const nodeTypes = {
-  marketData: MarketDataNode,
-  indicator: IndicatorNode,
-  condition: ConditionNode,
-  order: OrderNode,
-  notification: NotificationNode,
-};
+// Create node types dynamically from manifest
+const nodeTypes = nodeManifest.reduce((acc, node) => {
+  acc[node.node_type] = GenericNode;
+  return acc;
+}, {} as Record<string, any>);
 
 const edgeTypes = {
   removable: RemovableEdge,
@@ -46,12 +41,11 @@ const edgeTypes = {
 const initialNodes: Node[] = [
   {
     id: 'hello-node',
-    type: 'marketData',
+    type: 'finnhub',
     position: { x: 100, y: 100 },
     data: { 
-      label: 'Hello, Coreza!',
-      symbol: 'BTC/USDT',
-      exchange: 'binance'
+      label: 'Welcome to Coreza!',
+      config: nodeManifest.find(n => n.node_type === 'finnhub')
     },
   },
 ];
@@ -139,11 +133,15 @@ const WorkflowEditor = () => {
         y: event.clientY - 100,  // Adjust for header height
       };
 
+      const nodeConfig = nodeManifest.find(n => n.node_type === type);
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
         position,
-        data: { label: `${type} node` },
+        data: { 
+          label: nodeConfig?.name || `${type} node`,
+          config: nodeConfig
+        },
       };
 
       setNodes((nds) => nds.concat(newNode));

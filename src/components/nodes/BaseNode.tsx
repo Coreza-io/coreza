@@ -209,6 +209,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   const userId = getUserId();
+  console.log("userId", userId)
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));

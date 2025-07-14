@@ -214,10 +214,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
       const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
-      const res = await fetch(`${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`);
+      const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
+      console.log('Fetching credentials from:', url);
+      console.log('API name:', apiName, 'User ID:', userId);
+      
+      const res = await fetch(url);
+      console.log('Response status:', res.status);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const json = await res.json();
+      console.log('Credentials response:', json);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: json.credentials || [] }));
-    } catch {
+    } catch (error) {
+      console.error('Error fetching credentials:', error);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
     } finally {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));

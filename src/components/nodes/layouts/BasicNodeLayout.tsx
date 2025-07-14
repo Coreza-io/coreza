@@ -134,6 +134,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                       value={fieldState[f.key]}
                       placeholder={f.placeholder}
                       onChange={(e) => handleChange(f.key, e.target.value)}
+                      draggable={true}
                       onDragOver={(e) => e.preventDefault()}
                       onFocus={(e) => e.target.select()}
                       style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}

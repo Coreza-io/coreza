@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Save, Play, Pause, Settings, Search, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 
@@ -254,17 +254,20 @@ const WorkflowEditor = () => {
       </div>
 
       {/* Right Sidebar - Node Palette */}
-      {isPaletteVisible && (
-        <motion.div
-          initial={{ x: 300, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 300, opacity: 0 }}
-          transition={{ duration: 0.3 }}
-          className="w-80 border-l border-border bg-sidebar"
-        >
-          <NodePalette />
-        </motion.div>
-      )}
+      <AnimatePresence mode="wait">
+        {isPaletteVisible && (
+          <motion.div
+            key="node-palette"
+            initial={{ x: 300, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 300, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="w-80 border-l border-border bg-sidebar"
+          >
+            <NodePalette />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

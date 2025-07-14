@@ -370,7 +370,7 @@ export const nodeManifest = [
     config: EMADef },
   
   { type: IfDef.name, 
-    loader: () => import('@/components/nodes/IfNode'), 
+    loader: () => import('@/components/nodes/GenericNode'), 
     config: IfDef },
   
   { type: VisualizeDef.name, 

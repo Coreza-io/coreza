@@ -16,7 +16,7 @@ import {
   useReactFlow
 } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import NodeWrapper from "@/utils/NodeWrapper";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
@@ -729,11 +729,81 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
 
                 {/* --------- Repeater Field --------- */}
                 {f.type === "repeater" && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {(fieldState[f.key] || [f.default || {}]).map((item: any, index: number) => (
-                      <div key={index} className="border rounded p-2 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-medium">Condition {index + 1}</span>
+                      <React.Fragment key={index}>
+                        {/* Show AND/OR dropdown between conditions (except before first condition) */}
+                        {index > 0 && (
+                          <div className="flex justify-center py-1">
+                            <Select
+                              value={item.logicalOp || "AND"}
+                              onValueChange={(val) => {
+                                const newItems = [...(fieldState[f.key] || [])];
+                                newItems[index] = { ...newItems[index], logicalOp: val };
+                                handleChange(f.key, newItems);
+                              }}
+                            >
+                              <SelectTrigger className="w-20 h-8 text-xs bg-background border border-border z-50">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-background border border-border shadow-lg z-50">
+                                <SelectItem value="AND" className="text-xs">AND</SelectItem>
+                                <SelectItem value="OR" className="text-xs">OR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        
+                        {/* Condition Row */}
+                        <div className="flex items-center gap-2 p-2 border rounded">
+                          {f.subFields?.map((subField: any, subIndex: number) => (
+                            <React.Fragment key={subField.key}>
+                              {subField.options ? (
+                                <Select
+                                  value={item[subField.key] || ""}
+                                  onValueChange={(val) => {
+                                    const newItems = [...(fieldState[f.key] || [])];
+                                    newItems[index] = { ...newItems[index], [subField.key]: val };
+                                    handleChange(f.key, newItems);
+                                  }}
+                                >
+                                  <SelectTrigger className="flex-1 h-8 text-xs bg-background border border-border z-40">
+                                    <SelectValue placeholder="Select..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-background border border-border shadow-lg z-40">
+                                    {subField.options.map((opt: any) => (
+                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  className="flex-1 border rounded px-2 py-1 text-xs h-8 nodrag bg-background border-border"
+                                  placeholder={subField.placeholder}
+                                  value={item[subField.key] || ""}
+                                  onChange={(e) => {
+                                    const newItems = [...(fieldState[f.key] || [])];
+                                    newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
+                                    handleChange(f.key, newItems);
+                                  }}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const reference = e.dataTransfer.getData("text/plain");
+                                    if (reference) {
+                                      const newItems = [...(fieldState[f.key] || [])];
+                                      newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                      handleChange(f.key, newItems);
+                                    }
+                                  }}
+                                />
+                              )}
+                            </React.Fragment>
+                          ))}
+                          
                           {index > 0 && (
                             <Button
                               size="sm"
@@ -743,73 +813,25 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                                 newItems.splice(index, 1);
                                 handleChange(f.key, newItems);
                               }}
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                             >
-                              Remove
+                              <X className="h-3 w-3" />
                             </Button>
                           )}
                         </div>
-                        
-                        {f.subFields?.map((subField: any) => (
-                          <div key={subField.key} className="flex gap-2 items-center">
-                            <label className="text-xs min-w-12">{subField.key}:</label>
-                            
-                            {subField.options ? (
-                              <Select
-                                value={item[subField.key] || ""}
-                                onValueChange={(val) => {
-                                  const newItems = [...(fieldState[f.key] || [])];
-                                  newItems[index] = { ...newItems[index], [subField.key]: val };
-                                  handleChange(f.key, newItems);
-                                }}
-                              >
-                                <SelectTrigger className="flex-1">
-                                  <SelectValue placeholder="Select..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {subField.options.map((opt: any) => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <input
-                                type="text"
-                                className="flex-1 border rounded px-2 py-1 text-sm nodrag"
-                                placeholder={subField.placeholder}
-                                value={item[subField.key] || ""}
-                                onChange={(e) => {
-                                  const newItems = [...(fieldState[f.key] || [])];
-                                  newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
-                                  handleChange(f.key, newItems);
-                                }}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const reference = e.dataTransfer.getData("text/plain");
-                                  if (reference) {
-                                    const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: reference };
-                                    handleChange(f.key, newItems);
-                                  }
-                                }}
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      </React.Fragment>
                     ))}
                     
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        const newItems = [...(fieldState[f.key] || []), f.default || {}];
+                        const newItems = [...(fieldState[f.key] || []), { ...f.default, logicalOp: "AND" }];
                         handleChange(f.key, newItems);
                       }}
+                      className="w-full text-xs h-8"
                     >
-                      Add Condition
+                      + Add Condition
                     </Button>
                   </div>
                 )}

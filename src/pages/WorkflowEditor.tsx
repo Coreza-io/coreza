@@ -27,22 +27,13 @@ import { useToast } from "@/hooks/use-toast";
 
 // Import node types
 import GenericNode from "@/components/nodes/GenericNode";
-import IfNode from "@/components/nodes/IfNode";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Create node types mapping with specific components
-const nodeTypes: Record<string, any> = {
-  // Specific components for special nodes
-  "If": IfNode,
-  
-  // Default to GenericNode for all others
-  ...nodeManifest.reduce((acc, node) => {
-    if (!acc[node.type]) {
-      acc[node.type] = GenericNode;
-    }
-    return acc;
-  }, {} as Record<string, any>)
-};
+// Create node types dynamically from manifest
+const nodeTypes = nodeManifest.reduce((acc, node) => {
+  acc[node.type] = GenericNode;
+  return acc;
+}, {} as Record<string, any>);
 
 const edgeTypes = {
   removable: RemovableEdge,

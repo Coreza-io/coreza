@@ -105,6 +105,41 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
       const entries = Object.entries(obj);
       const isExpanded = expandedKeys.has(keyPath);
       
+      // For root level objects (depth 0), show direct properties instead of expandable object
+      if (depth === 0) {
+        return (
+          <div className="space-y-1">
+            {entries.slice(0, 15).map(([key, value]) => (
+              <div key={key} className="flex items-start gap-2">
+                <span
+                  className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, key, String(key))}
+                  title={`Drag ${key} field`}
+                >
+                  {key}
+                </span>
+                <div className="min-w-0 text-xs text-muted-foreground">
+                  {Array.isArray(value) 
+                    ? `Array (${value.length} items)`
+                    : typeof value === 'object' && value !== null
+                    ? `Object (${Object.keys(value).length} properties)`
+                    : typeof value === 'string' && value.length > 20
+                    ? `${value.slice(0, 20)}...`
+                    : String(value)
+                  }
+                </div>
+              </div>
+            ))}
+            {entries.length > 15 && (
+              <div className="text-muted-foreground text-xs italic">
+                ... and {entries.length - 15} more properties
+              </div>
+            )}
+          </div>
+        );
+      }
+      
       return (
         <div className="text-xs">
           <div
@@ -124,8 +159,13 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
             <div className="ml-4 space-y-1 border-l border-border/30 pl-2">
               {entries.slice(0, 15).map(([key, value]) => (
                 <div key={key} className="flex items-start gap-2">
-                  <span className="text-muted-foreground shrink-0 text-xs font-medium">
-                    {key}:
+                  <span
+                    className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
+                    draggable
+                    onDragStart={(e) => onDragStart(e, keyPath ? `${keyPath}.${key}` : key, String(key))}
+                    title={`Drag ${key} field`}
+                  >
+                    {key}
                   </span>
                   <div className="min-w-0">
                     {renderValue(

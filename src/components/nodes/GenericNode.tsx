@@ -75,20 +75,30 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
   const selectedInputData =
     selectedPrevNode?.data?.output || selectedPrevNode?.data || {};
 
-  const [fieldState, setFieldState] = useState<Record<string, string>>(() =>
+  const [fieldState, setFieldState] = useState<Record<string, any>>(() =>
     definition && definition.fields
       ? Object.fromEntries(
-          definition.fields.map((f: any) => [f.key, data.values?.[f.key] || ""])
+          definition.fields.map((f: any) => [
+            f.key, 
+            f.type === "repeater" 
+              ? data.values?.[f.key] || [f.default || {}]
+              : data.values?.[f.key] || ""
+          ])
         )
       : {}
   );
 
- // whenever we get a fresh definition or values (i.e. on reload), re-hydrate
+  // whenever we get a fresh definition or values (i.e. on reload), re-hydrate
   useEffect(() => {
     if (!definition?.fields) return;
     setFieldState(
       Object.fromEntries(
-        definition.fields.map((f: any) => [f.key, data.values?.[f.key] || ""])
+        definition.fields.map((f: any) => [
+          f.key, 
+          f.type === "repeater" 
+            ? data.values?.[f.key] || [f.default || {}]
+            : data.values?.[f.key] || ""
+        ])
       )
     );
   }, [definition?.fields, data.values]);
@@ -143,7 +153,7 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
     document.body.classList.add("cursor-grabbing", "select-none");
   };
 
-  const handleChange = (key: string, value: string) => {
+  const handleChange = (key: string, value: any) => {
     setFieldState((fs) => ({ ...fs, [key]: value }));
     setNodes((nds) =>
       nds.map((n) =>
@@ -715,6 +725,93 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                       ))}
                     </SelectContent>
                   </Select>
+                )}
+
+                {/* --------- Repeater Field --------- */}
+                {f.type === "repeater" && (
+                  <div className="space-y-2">
+                    {(fieldState[f.key] || [f.default || {}]).map((item: any, index: number) => (
+                      <div key={index} className="border rounded p-2 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium">Condition {index + 1}</span>
+                          {index > 0 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const newItems = [...(fieldState[f.key] || [])];
+                                newItems.splice(index, 1);
+                                handleChange(f.key, newItems);
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                        
+                        {f.subFields?.map((subField: any) => (
+                          <div key={subField.key} className="flex gap-2 items-center">
+                            <label className="text-xs min-w-12">{subField.key}:</label>
+                            
+                            {subField.options ? (
+                              <Select
+                                value={item[subField.key] || ""}
+                                onValueChange={(val) => {
+                                  const newItems = [...(fieldState[f.key] || [])];
+                                  newItems[index] = { ...newItems[index], [subField.key]: val };
+                                  handleChange(f.key, newItems);
+                                }}
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Select..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {subField.options.map((opt: any) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <input
+                                type="text"
+                                className="flex-1 border rounded px-2 py-1 text-sm nodrag"
+                                placeholder={subField.placeholder}
+                                value={item[subField.key] || ""}
+                                onChange={(e) => {
+                                  const newItems = [...(fieldState[f.key] || [])];
+                                  newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
+                                  handleChange(f.key, newItems);
+                                }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const reference = e.dataTransfer.getData("text/plain");
+                                  if (reference) {
+                                    const newItems = [...(fieldState[f.key] || [])];
+                                    newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                    handleChange(f.key, newItems);
+                                  }
+                                }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const newItems = [...(fieldState[f.key] || []), f.default || {}];
+                        handleChange(f.key, newItems);
+                      }}
+                    >
+                      Add Condition
+                    </Button>
+                  </div>
                 )}
               </div>
             );

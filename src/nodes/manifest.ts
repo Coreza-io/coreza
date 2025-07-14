@@ -119,7 +119,58 @@ const MovingAverageCrossDef = { name: "Moving Average Cross", def: "Moving Avera
 const EMADef = { name: "EMA", def: "EMA node definition", node_type: "ema", icon: "TrendingUp", category: "Indicators", description: "Exponential Moving Average indicator", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const RSIDef = { name: "RSI", def: "RSI node definition", node_type: "rsi", icon: "BarChart3", category: "Indicators", description: "Relative Strength Index technical indicator", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const VisualizeDef = { name: "Visualize", def: "Visualize node definition", node_type: "visualize", icon: "BarChart3", category: "Visualization", description: "Chart and visualize trading data", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }], fields: [] };
-const IfDef = { name: "If Condition", def: "If Condition node definition", node_type: "if", icon: "GitBranch", category: "Logic", description: "Conditional logic for trading decisions", color: "text-yellow-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "true" }, { type: "source", position: "right", id: "false" }], fields: [] };
+const IfDef = {
+  name: "If",
+  label: "If",
+  def: "Evaluate one or more conditions and branch on true/false",
+  node_type: "main",
+  icon: "/assets/icons/if.svg",
+  category: "Logic",
+  description: "Conditional logic for trading decisions",
+  color: "text-yellow-500",
+  size: { width: 340, height: 340 },
+  handles: [
+    { type: "target", position: "left", id: "input" },
+    { type: "source", position: "right", id: "true" },
+    { type: "source", position: "right", id: "false" }
+  ],
+  action: {
+    url: "/execute/if",
+    method: "POST"
+  },
+  fields: [
+    {
+      key: "conditions",
+      label: "conditions",
+      type: "repeater",
+      subFields: [
+        { key: "left", type: "string", placeholder: "{{ $json.value }}" },
+        { 
+          key: "operator", 
+          type: "string", 
+          options: [
+            { label: "equals", value: "===" },
+            { label: "not equals", value: "!==" },
+            { label: "greater than", value: ">=" },
+            { label: "less than", value: "=<" }
+          ]
+        },
+        { key: "right", type: "string", placeholder: "100" }
+      ],
+      default: { left: "", operator: "===", right: "" }
+    },
+    {
+      key: "logicalOp",
+      label: "logicalOp",
+      type: "repeater",
+      options: [
+        { label: "AND", value: "AND" },
+        { label: "OR", value: "OR" }
+      ],
+      default: "AND"
+    }
+  ]
+};
 const SchedulerDef = { name: "Scheduler", def: "Scheduler node definition", node_type: "scheduler", icon: "Calendar", category: "Triggers", description: "Time-based workflow triggers", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
 const AlpacaDataDef = { name: "Alpaca Data", def: "Alpaca Data node definition", node_type: "alpacaData", icon: "Database", category: "Data", description: "Get market data from Alpaca Markets", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
 const AlpacaTradeDef = {
@@ -259,13 +310,16 @@ export interface NodeConfig {
       placeholder?: string;
     }[];
     options?: {
-      id: string;
-      name: string;
+      id?: string;
+      name?: string;
       method?: string;
+      label?: string;
+      value?: string;
     }[];
     optionsSource?: string;
     required?: boolean;
     placeholder?: string;
+    default?: any;
     displayOptions?: {
       show?: {
         [key: string]: string[];

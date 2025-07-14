@@ -59,11 +59,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     nodeId,
     nodes,
     edges,
-    isExpanded,
+    isExpanded: isFullscreen, // Use fullscreen state for panels
     ...inputPanelProps,
   };
   const mergedOutputPanelProps = {
-    isExpanded,
+    isExpanded: isFullscreen, // Use fullscreen state for panels
     ...outputPanelProps,
   };
 
@@ -139,24 +139,37 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             pointerEvents: 'auto'
           }}
         >
-          <div className="w-full h-full">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                {icon}
-                {label}
-              </h2>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsFullscreen(false)}
-                title="Close"
-                className="text-muted-foreground hover:text-foreground hover:bg-muted h-8 w-8 p-0"
-              >
-                <X className="h-5 w-5" />
-              </Button>
+          <div className="w-full h-full flex">
+            {/* Input Panel in fullscreen */}
+            <div className="w-80 mr-4">
+              <InputPanel {...mergedInputPanelProps} />
             </div>
-            <div className="h-full">
-              {children}
+            
+            {/* Main Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  {icon}
+                  {label}
+                </h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsFullscreen(false)}
+                  title="Close"
+                  className="text-muted-foreground hover:text-foreground hover:bg-muted h-8 w-8 p-0"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <div className="h-full">
+                {children}
+              </div>
+            </div>
+
+            {/* Output Panel in fullscreen */}
+            <div className="w-80 ml-4">
+              <OutputPanel {...mergedOutputPanelProps} />
             </div>
           </div>
         </DialogContent>

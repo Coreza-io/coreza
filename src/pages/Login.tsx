@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
+import bcrypt from "bcryptjs";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -20,16 +22,34 @@ const Login = () => {
     setError("");
 
     try {
-      // TODO: Implement Supabase authentication
-      console.log("Login attempt:", { email, password });
-      
-      // Simulate login for now
-      setTimeout(() => {
-        navigate("/dashboard");
+      // Find user by email
+      const { data: users, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (fetchError || !users) {
+        setError("Invalid credentials. Please try again.");
         setLoading(false);
-      }, 1000);
+        return;
+      }
+
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(password, users.password_hash);
+      
+      if (!isPasswordValid) {
+        setError("Invalid credentials. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      console.log("Login successful:", { id: users.id, email: users.email });
+      navigate("/dashboard");
     } catch (err) {
+      console.error('Login error:', err);
       setError("Invalid credentials. Please try again.");
+    } finally {
       setLoading(false);
     }
   };

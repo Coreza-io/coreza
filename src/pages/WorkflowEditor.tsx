@@ -83,11 +83,13 @@ const WorkflowEditor = () => {
   );
 
   const handleSave = async () => {
+    console.log("handleSave function called");
     setIsSaving(true);
     try {
       // For now, using a demo user ID since we have custom authentication
       // In a real implementation, you'd get this from your custom auth context
       const userId = "demo-user-123";
+      console.log("Using userId:", userId);
       
       const workflowData = {
         name: workflowName,

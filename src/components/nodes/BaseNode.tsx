@@ -214,6 +214,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
       const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
+      
+      // Check if userId exists and is valid
+      if (!userId || userId.trim() === "") {
+        console.log('No user ID available, skipping credentials fetch');
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+        return;
+      }
+      
       const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
       console.log('Fetching credentials from:', url);
       console.log('API name:', apiName, 'User ID:', userId);

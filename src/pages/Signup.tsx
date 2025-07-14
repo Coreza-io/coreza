@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle, TrendingUp, Check } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
+import bcrypt from "bcryptjs";
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -45,16 +47,40 @@ const Signup = () => {
     }
 
     try {
-      // TODO: Implement Supabase user creation with bcryptjs hashing
-      console.log("Signup attempt:", formData);
-      
-      // Simulate signup for now
-      setTimeout(() => {
-        navigate("/dashboard");
+      // Hash the password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(formData.password, saltRounds);
+
+      // Create user in Supabase users table
+      const { data, error } = await supabase
+        .from('users')
+        .insert([
+          {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            email: formData.email,
+            password_hash: hashedPassword,
+          }
+        ])
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        if (error.code === '23505') {
+          setError("An account with this email already exists");
+        } else {
+          setError("Failed to create account. Please try again.");
+        }
         setLoading(false);
-      }, 1000);
+        return;
+      }
+
+      console.log("User created successfully:", data);
+      navigate("/dashboard");
     } catch (err) {
+      console.error('Signup error:', err);
       setError("Failed to create account. Please try again.");
+    } finally {
       setLoading(false);
     }
   };

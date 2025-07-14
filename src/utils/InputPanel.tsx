@@ -1,129 +1,127 @@
-import React from "react";
-import { Card } from "@/components/ui/card";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import React, { useEffect, useMemo } from "react";
+import type { Node } from "@xyflow/react";
+import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
+import DraggableFieldsPanel from "./DraggableFieldsPanel";
+import { useReactFlow } from "@xyflow/react";
 
-interface InputPanelProps {
+// ▶️ Helper to generate de-duplicated display names ("Alpaca", "Alpaca1", ...)
+const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
+  const baseName = node.data?.definition?.name || node.data?.config?.name || 'Node';
+  const sameType = allNodes.filter(
+    (n) => (n.data?.definition?.name || n.data?.config?.name) === baseName
+  );
+  const idx = sameType.findIndex((n) => n.id === node.id);
+  return idx > 0 ? `${baseName}${idx}` : baseName;
+};
+
+type InputPanelProps = {
   nodeId?: string;
-  nodes?: any[];
-  edges?: any[];
-  isExpanded?: boolean;
-  handleDragStart?: (e: React.DragEvent, keyPath: string, value: string) => void;
+  nodes: Node<any>[];
+  edges: any[];
+  isExpanded: boolean;
+  handleDragStart?: (
+    e: React.DragEvent,
+    keyPath: string,
+    value: string
+  ) => void;
+  position?: "left" | "right";
   selectedPrevNodeId?: string;
   setSelectedPrevNodeId?: (id: string) => void;
-}
+};
 
 const InputPanel: React.FC<InputPanelProps> = ({
   nodeId,
-  nodes = [],
-  edges = [],
-  isExpanded = true,
+  nodes: initialNodes,
+  edges: initialEdges,
+  isExpanded,
   handleDragStart,
+  position = "left",
   selectedPrevNodeId,
   setSelectedPrevNodeId,
 }) => {
-  // Get upstream nodes
-  const upstreamNodes = edges
-    .filter(e => e.target === nodeId)
-    .map(e => nodes.find(n => n.id === e.source))
-    .filter(Boolean);
+  const { getNodes, getEdges } = useReactFlow();
 
-  if (!isExpanded || upstreamNodes.length === 0) {
-    return null;
-  }
+  // Get fresh node/edge data on every render
+  const nodes = getNodes();
+  const edges = getEdges();
 
-  const selectedNode = upstreamNodes.find(n => n.id === selectedPrevNodeId) || upstreamNodes[0];
-  const data = selectedNode?.data?.output || selectedNode?.data || {};
+  // Upstream nodes with fresh data
+  const previousNodes = useMemo(() => {
+    if (!nodeId || !nodes || !edges) return [];
+    return getAllUpstreamNodes(nodeId, edges, nodes);
+  }, [nodeId, nodes, edges]);
 
-  const renderDataTree = (obj: any, path = ''): React.ReactNode => {
-    if (obj === null || obj === undefined) {
-      return <span className="text-muted-foreground">null</span>;
+  // Set first as selected by default if possible and setter present
+  useEffect(() => {
+    if (
+      previousNodes.length > 0 &&
+      !selectedPrevNodeId &&
+      typeof setSelectedPrevNodeId === "function"
+    ) {
+      setSelectedPrevNodeId(previousNodes[0].id);
     }
+  }, [previousNodes, selectedPrevNodeId, setSelectedPrevNodeId]);
 
-    if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
-      return (
-        <span
-          className="cursor-grab text-primary hover:text-primary-glow"
-          draggable={handleDragStart ? true : false}
-          onDragStart={handleDragStart ? (e) => handleDragStart(e, path, String(obj)) : undefined}
-        >
-          {String(obj)}
-        </span>
-      );
-    }
+  // Get outputData directly from current node state
+  const outputData = useMemo(() => {
+    if (!selectedPrevNodeId) return {};
+    const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
+    return prevNode?.data?.output || prevNode?.data?.input || {};
+  }, [selectedPrevNodeId, nodes]);
 
-    if (Array.isArray(obj)) {
-      return (
-        <div className="space-y-1">
-          {obj.slice(0, 5).map((item, idx) => (
-            <div key={idx} className="ml-4">
-              <span className="text-muted-foreground">[{idx}]:</span>{' '}
-              {renderDataTree(item, `${path}[${idx}]`)}
-            </div>
-          ))}
-          {obj.length > 5 && (
-            <div className="ml-4 text-muted-foreground text-xs">
-              ... and {obj.length - 5} more items
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (typeof obj === 'object') {
-      const entries = Object.entries(obj).slice(0, 10);
-      return (
-        <div className="space-y-1">
-          {entries.map(([key, value]) => (
-            <div key={key} className="ml-4">
-              <span className="text-muted-foreground">{key}:</span>{' '}
-              {renderDataTree(value, path ? `${path}.${key}` : key)}
-            </div>
-          ))}
-          {Object.keys(obj).length > 10 && (
-            <div className="ml-4 text-muted-foreground text-xs">
-              ... and {Object.keys(obj).length - 10} more properties
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return <span className="text-muted-foreground">{String(obj)}</span>;
-  };
+  if (!isExpanded) return null;
 
   return (
-    <Card className="absolute left-[-320px] top-0 w-80 bg-card border border-border shadow-card z-10">
-      <div className="p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">Input Data</span>
+    <div
+      className={`absolute ${
+        position === "left" ? "right-full top-0 mr-2" : "left-full top-0 ml-2"
+      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden`}
+    >
+      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+        <div className="font-semibold text-foreground text-sm tracking-tight">
+          Input Data
         </div>
-        
-        {upstreamNodes.length > 1 && (
-          <select
-            value={selectedPrevNodeId || upstreamNodes[0]?.id || ''}
-            onChange={(e) => setSelectedPrevNodeId?.(e.target.value)}
-            className="w-full p-2 mb-3 text-sm bg-background border border-border rounded"
-          >
-            {upstreamNodes.map(node => (
-              <option key={node.id} value={node.id}>
-                {node.data?.definition?.name || node.type || `Node ${node.id}`}
-              </option>
-            ))}
-          </select>
-        )}
-
-        <div className="max-h-64 overflow-auto text-xs">
-          {Object.keys(data).length > 0 ? (
-            renderDataTree(data)
-          ) : (
-            <div className="text-muted-foreground text-center py-4">
-              No data available
-            </div>
-          )}
+        <div className="text-xs text-muted-foreground">
+          {new Date().toLocaleTimeString()}
         </div>
       </div>
-    </Card>
+      <div className="p-3 h-[calc(100%-42px)] overflow-auto">
+        {previousNodes.length > 0 ? (
+          <>
+            {setSelectedPrevNodeId &&
+            typeof setSelectedPrevNodeId === "function" ? (
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-2 text-muted-foreground">
+                  Previous Node:
+                </label>
+                <select
+                  className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  value={selectedPrevNodeId || ""}
+                  onChange={(e) => setSelectedPrevNodeId(e.target.value)}
+                >
+                  <option value="">Select node...</option>
+                  {previousNodes.map((node: Node<any>) => (
+                    <option key={node.id} value={node.id}>
+                      {getDisplayName(node, nodes)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="mb-2">
+              <DraggableFieldsPanel
+                data={outputData}
+                onDragStart={handleDragStart ?? (() => {})}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="text-sm text-muted-foreground italic text-center py-8">
+            No previous node connected.
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 

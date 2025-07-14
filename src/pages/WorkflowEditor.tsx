@@ -29,7 +29,7 @@ import { nodeManifest } from "@/nodes/manifest";
 
 // Create node types dynamically from manifest
 const nodeTypes = nodeManifest.reduce((acc, node) => {
-  acc[node.node_type] = GenericNode;
+  acc[node.config.node_type] = GenericNode;
   return acc;
 }, {} as Record<string, any>);
 
@@ -45,7 +45,7 @@ const initialNodes: Node[] = [
     position: { x: 100, y: 100 },
     data: { 
       label: 'Welcome to Coreza!',
-      config: nodeManifest.find(n => n.node_type === 'finnhub')
+      config: nodeManifest.find(n => n.config.node_type === 'finnhub')?.config
     },
   },
 ];
@@ -133,14 +133,14 @@ const WorkflowEditor = () => {
         y: event.clientY - 100,  // Adjust for header height
       };
 
-      const nodeConfig = nodeManifest.find(n => n.node_type === type);
+      const nodeConfig = nodeManifest.find(n => n.config.node_type === type);
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: { 
-          label: nodeConfig?.name || `${type} node`,
-          config: nodeConfig
+          label: nodeConfig?.config.name || `${type} node`,
+          config: nodeConfig?.config
         },
       };
 

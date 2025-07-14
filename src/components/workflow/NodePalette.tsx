@@ -52,12 +52,12 @@ export function NodePalette() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredNodes = nodeManifest.filter(node =>
-    node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    node.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    node.category.toLowerCase().includes(searchQuery.toLowerCase())
+    node.config.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    node.config.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    node.config.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const categories = Array.from(new Set(nodeManifest.map(node => node.category)));
+  const categories = Array.from(new Set(nodeManifest.map(node => node.config.category)));
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -81,7 +81,7 @@ export function NodePalette() {
 
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {categories.map(category => {
-          const categoryNodes = filteredNodes.filter(node => node.category === category);
+          const categoryNodes = filteredNodes.filter(node => node.config.category === category);
           if (categoryNodes.length === 0) return null;
 
           return (
@@ -93,7 +93,7 @@ export function NodePalette() {
               <div className="space-y-2">
                 {categoryNodes.map((node, index) => (
                   <motion.div
-                    key={node.node_type}
+                    key={node.config.node_type}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
@@ -101,20 +101,20 @@ export function NodePalette() {
                     <Card
                       className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
                       draggable
-                      onDragStart={(e) => onDragStart(e, node.node_type)}
+                      onDragStart={(e) => onDragStart(e, node.config.node_type)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg bg-muted/50 ${node.color} group-hover:shadow-glow transition-all`}>
+                          <div className={`p-2 rounded-lg bg-muted/50 ${node.config.color} group-hover:shadow-glow transition-all`}>
                             {(() => {
-                              const IconComponent = getIconComponent(node.icon);
+                              const IconComponent = getIconComponent(node.config.icon);
                               return <IconComponent className="h-4 w-4" />;
                             })()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h5 className="font-medium text-sm mb-1">{node.name}</h5>
+                            <h5 className="font-medium text-sm mb-1">{node.config.name}</h5>
                             <p className="text-xs text-muted-foreground line-clamp-2">
-                              {node.description}
+                              {node.config.description}
                             </p>
                           </div>
                         </div>

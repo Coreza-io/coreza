@@ -1,69 +1,152 @@
-import React from 'react';
-import { Handle, Position } from '@xyflow/react';
+import React, { useState } from "react";
+import InputPanel from "@/utils/InputPanel";
+import OutputPanel from "@/utils/OutputPanel";
+import { Handle, Position } from "@xyflow/react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
+
+const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
+  left: Position.Left,
+  right: Position.Right,
+  top: Position.Top,
+  bottom: Position.Bottom,
+};
+
+interface HandleConfig {
+  id: string;
+  type: "source" | "target";
+  position: "left" | "right" | "top" | "bottom";
+}
 
 interface NodeWrapperProps {
-  children: React.ReactNode;
-  nodeId?: string;
+  nodeId: string | undefined;
+  nodes: any[];
+  edges: any[];
   selected?: boolean;
-  label: string;
+  inputPanelProps?: any;   // props for InputPanel
+  outputPanelProps?: any;  // props for OutputPanel
+  icon?: React.ReactNode;
+  label?: string;
+  children: React.ReactNode;
   minWidth?: number;
   minHeight?: number;
-  handles?: Array<{ type: string; position: string; id: string }>;
+  handles?: HandleConfig[];
   nodeType?: string;
-  icon?: React.ReactNode;
-  inputPanelProps?: any;
-  outputPanelProps?: any;
-  nodes?: any[];
-  edges?: any[];
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
-  children,
+  nodeId,
+  nodes,
+  edges,
   selected,
+  inputPanelProps = {},
+  outputPanelProps = {},
+  icon,
   label,
+  children,
   minWidth = 340,
   minHeight = 340,
   handles = [],
-  icon,
+  nodeType,
 }) => {
-  const positionMap: Record<string, Position> = {
-    top: Position.Top,
-    bottom: Position.Bottom,
-    left: Position.Left,
-    right: Position.Right,
+  const [isExpanded, setIsExpanded] = useState(true); // Start expanded by default
+
+  // Merge in exactly what was passed, plus our own flags
+  const mergedInputPanelProps = {
+    nodeId,
+    nodes,
+    edges,
+    isExpanded,
+    ...inputPanelProps,
+  };
+  const mergedOutputPanelProps = {
+    isExpanded,
+    ...outputPanelProps,
   };
 
+  const shapeStyles: Record<string, string> = {
+    support: "rounded-full",
+    agent: "rounded-lg", 
+    default: "rounded-lg",
+  };
+  const nodeShapeClass = shapeStyles[nodeType ?? "default"];
+
   return (
-    <div 
-      className={`
-        bg-card border-2 rounded-lg p-4 shadow-card
-        transition-all duration-200
-        ${selected ? 'border-primary shadow-glow' : 'border-border'}
-        hover:border-muted-foreground
-      `}
-      style={{ minWidth, minHeight }}
-    >
-      <div className="flex items-center gap-2 mb-3">
-        {icon && (
-          <div className="p-1.5 rounded-md bg-muted/50 flex items-center justify-center">
-            {icon}
+    <div className="relative">
+      {/* Input Data Panel */}
+      <InputPanel {...mergedInputPanelProps} />
+
+      {/* Main Node Card */}
+      <Card
+        className={`
+          relative shadow-card overflow-hidden transition-all duration-300 ease-in-out 
+          bg-card border-2 hover:shadow-elevated
+          ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
+          ${nodeShapeClass}
+          ${selected ? "border-primary shadow-glow" : "border-border"}
+        `}
+        onDoubleClick={() => setIsExpanded(true)}
+        style={{
+          minWidth: isExpanded ? minWidth : 150,
+          minHeight: isExpanded ? minHeight : 72,
+          height: isExpanded ? "auto" : 100,
+        }}
+      >
+        {/* Handles (configured in manifest) */}
+        {(["top", "bottom", "left", "right"] as const).map((pos) => {
+          const group = handles.filter((h) => h.position === pos);
+          const isHorizontal = pos === "top" || pos === "bottom";
+          return group.map((h, idx) => {
+            const pct = ((idx + 1) / (group.length + 1)) * 100;
+            const style = isHorizontal ? { left: `${pct}%` } : { top: `${pct}%` };
+            return (
+              <Handle
+                key={h.id}
+                id={h.id}
+                type={h.type}
+                position={POSITION_MAP[h.position]}
+                style={style}
+                className="w-3 h-3 border-2 border-border bg-background hover:border-primary transition-colors"
+              />
+            );
+          });
+        })}
+
+        {/* Collapsed View */}
+        {!isExpanded && (
+          <div className="flex flex-col items-center justify-center h-full p-4 select-none">
+            <div className="text-muted-foreground mb-2">
+              {icon}
+            </div>
+            <div className="font-semibold text-sm text-foreground text-center leading-tight">
+              {label}
+            </div>
           </div>
         )}
-        <span className="text-sm font-medium text-foreground truncate">{label}</span>
-      </div>
-      
-      {children}
-      
-      {/* Render handles */}
-      {handles.map((handle, index) => (
-        <Handle
-          key={handle.id || index}
-          type={handle.type as 'source' | 'target'}
-          position={positionMap[handle.position] || Position.Left}
-          id={handle.id}
-          className="w-3 h-3 border-2 border-border bg-background hover:border-primary transition-colors"
-        />
-      ))}
+
+        {/* Expanded View */}
+        {isExpanded && (
+          <CardContent className="space-y-3 p-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(false);
+              }}
+              title="Collapse"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-2 right-2 z-10 h-6 w-6 p-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            {children}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Output Data Panel */}
+      <OutputPanel {...mergedOutputPanelProps} />
     </div>
   );
 };

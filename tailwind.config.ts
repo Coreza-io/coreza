@@ -75,6 +75,10 @@ export default {
 					grid: 'hsl(var(--trading-grid))',
 					node: 'hsl(var(--trading-node))',
 					edge: 'hsl(var(--trading-edge))'
+				},
+				node: {
+					DEFAULT: 'hsl(var(--trading-node))',
+					border: 'hsl(var(--border))'
 				}
 			},
 			backgroundImage: {

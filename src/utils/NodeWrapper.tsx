@@ -50,7 +50,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   handles = [],
   nodeType,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true); // Start expanded by default
+  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
 
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
@@ -86,7 +86,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${nodeShapeClass}
           ${selected ? "border-primary shadow-glow" : "border-border"}
         `}
-        onDoubleClick={() => setIsExpanded(true)}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsExpanded(true);
+        }}
         style={{
           minWidth: isExpanded ? minWidth : 150,
           minHeight: isExpanded ? minHeight : 72,

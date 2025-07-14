@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -150,6 +150,19 @@ const WorkflowEditor = () => {
     },
     [setNodes],
   );
+
+  // Handle delete key to remove selected nodes
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        setNodes((nds) => nds.filter((node) => !node.selected));
+        setEdges((eds) => eds.filter((edge) => !edge.selected));
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [setNodes, setEdges]);
 
   return (
     <div className="flex h-[calc(100vh-6rem)] w-full">

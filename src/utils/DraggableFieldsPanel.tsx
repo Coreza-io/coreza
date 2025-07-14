@@ -206,13 +206,19 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
     );
   }
 
+  // If root data is an array with a single object, unwrap it for cleaner display
+  let displayData = data;
+  if (Array.isArray(data) && data.length === 1 && typeof data[0] === 'object' && data[0] !== null) {
+    displayData = data[0];
+  }
+
   return (
     <div className="space-y-2">
       <div className="text-xs font-medium text-muted-foreground mb-2">
         Drag fields to input boxes:
       </div>
       <div className="max-h-64 overflow-auto">
-        {renderValue(data, "", 0)}
+        {renderValue(displayData, "", 0)}
       </div>
     </div>
   );

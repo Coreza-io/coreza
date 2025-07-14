@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Save, Play, Pause, Settings, Search, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Save, Play, Pause, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
@@ -183,17 +183,6 @@ const WorkflowEditor = () => {
           
           <div className="flex items-center gap-3">
             <Button
-              onClick={() => setIsPaletteVisible(!isPaletteVisible)}
-              variant="outline"
-              size="sm"
-            >
-              {isPaletteVisible ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
               onClick={handleSave}
               disabled={isSaving}
               variant="outline"
@@ -253,6 +242,20 @@ const WorkflowEditor = () => {
         </div>
       </div>
 
+      {/* Toggle Arrow - appears when palette is hidden */}
+      {!isPaletteVisible && (
+        <motion.button
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
+          transition={{ duration: 0.2 }}
+          onClick={() => setIsPaletteVisible(true)}
+          className="absolute top-1/2 right-4 -translate-y-1/2 z-10 bg-card border border-border rounded-md p-2 shadow-lg hover:bg-muted transition-colors"
+        >
+          <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+        </motion.button>
+      )}
+
       {/* Right Sidebar - Node Palette */}
       <AnimatePresence mode="wait">
         {isPaletteVisible && (
@@ -262,8 +265,15 @@ const WorkflowEditor = () => {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 300, opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="w-80 border-l border-border bg-sidebar"
+            className="w-80 border-l border-border bg-sidebar relative"
           >
+            {/* Close arrow inside palette */}
+            <button
+              onClick={() => setIsPaletteVisible(false)}
+              className="absolute top-4 right-4 z-10 bg-card border border-border rounded-md p-1 shadow-sm hover:bg-muted transition-colors"
+            >
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </button>
             <NodePalette />
           </motion.div>
         )}

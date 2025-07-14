@@ -53,7 +53,12 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
         <span
           className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10"
           draggable
-          onDragStart={(e) => onDragStart(e, keyPath, String(obj))}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            onDragStart(e, keyPath, String(obj));
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           title={String(obj)}
         >
           {displayValue}
@@ -111,14 +116,19 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
           <div className="space-y-1">
             {entries.slice(0, 15).map(([key, value]) => (
               <div key={key} className="flex items-start gap-2">
-                <span
-                  className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
-                  draggable
-                  onDragStart={(e) => onDragStart(e, key, String(key))}
-                  title={`Drag ${key} field`}
-                >
-                  {key}
-                </span>
+                  <span
+                    className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      onDragStart(e, key, String(key));
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    title={`Drag ${key} field`}
+                  >
+                    {key}
+                  </span>
                 <div className="min-w-0 text-xs text-muted-foreground">
                   {Array.isArray(value) 
                     ? `Array (${value.length} items)`
@@ -162,7 +172,12 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   <span
                     className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
                     draggable
-                    onDragStart={(e) => onDragStart(e, keyPath ? `${keyPath}.${key}` : key, String(key))}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      onDragStart(e, keyPath ? `${keyPath}.${key}` : key, String(key));
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                     title={`Drag ${key} field`}
                   >
                     {key}

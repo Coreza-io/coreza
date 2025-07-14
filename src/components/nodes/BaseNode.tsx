@@ -186,7 +186,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     try {
       const raw = e.dataTransfer.getData("application/reactflow");
       if (!raw) return;
-      const { keyPath } = JSON.parse(raw);
+      const data = JSON.parse(raw);
+      const keyPath = data.keyPath || data;
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode
         ? getDisplayName(sourceNode, nodes)

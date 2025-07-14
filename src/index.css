@@ -6,15 +6,15 @@
 
 @layer base {
   :root {
-    /* Dark trading platform theme */
-    --background: 224 12% 8%;
-    --foreground: 210 20% 85%;
+    /* Light cream trading platform theme */
+    --background: 45 95% 97%;
+    --foreground: 224 12% 15%;
 
-    --card: 224 12% 10%;
-    --card-foreground: 210 20% 85%;
+    --card: 45 90% 95%;
+    --card-foreground: 224 12% 15%;
 
-    --popover: 224 12% 10%;
-    --popover-foreground: 210 20% 85%;
+    --popover: 45 90% 95%;
+    --popover-foreground: 224 12% 15%;
 
     /* Professional blue primary */
     --primary: 217 91% 60%;

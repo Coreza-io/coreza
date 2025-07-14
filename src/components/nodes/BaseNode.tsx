@@ -185,6 +185,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     e.stopPropagation();
     try {
       const raw = e.dataTransfer.getData("application/reactflow");
+      console.log("raw",raw)
       if (!raw) return;
       const data = JSON.parse(raw);
       const keyPath = data.keyPath || data;

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,92 +20,149 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Workflow {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  nodes: any;
+  edges: any;
+}
 
 const Workflows = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
-  // Mock data for demonstration
-  const workflows = [
-    {
-      id: 1,
-      name: "BTC Mean Reversion",
-      description: "Buy low, sell high strategy for Bitcoin with RSI signals",
-      status: "active",
-      project: "Mean Reversion Bots",
-      createdAt: "2024-01-15",
-      lastRun: "2024-01-20",
-      pnl: 234.56,
-      trades: 45
-    },
-    {
-      id: 2,
-      name: "ETH Grid Strategy",
-      description: "Grid trading system for Ethereum with 1% intervals",
-      status: "paused",
-      project: "Grid Trading Strategies",
-      createdAt: "2024-01-12",
-      lastRun: "2024-01-19",
-      pnl: -45.23,
-      trades: 23
-    },
-    {
-      id: 3,
-      name: "SOL Scalping Bot",
-      description: "High-frequency scalping for Solana with volume analysis",
-      status: "active",
-      project: "Scalping Algorithms",
-      createdAt: "2024-01-10",
-      lastRun: "2024-01-20",
-      pnl: 567.89,
-      trades: 127
-    },
-    {
-      id: 4,
-      name: "USDC-DAI Arbitrage",
-      description: "Cross-exchange arbitrage for stable coin pairs",
-      status: "draft",
-      project: "DeFi Yield Farming",
-      createdAt: "2024-01-08",
-      lastRun: null,
-      pnl: 0,
-      trades: 0
-    },
-    {
-      id: 5,
-      name: "ADA Momentum Bot",
-      description: "Momentum-based trading strategy for Cardano",
-      status: "error",
-      project: "Mean Reversion Bots",
-      createdAt: "2024-01-05",
-      lastRun: "2024-01-18",
-      pnl: -123.45,
-      trades: 12
+  // Check for user authentication
+  useEffect(() => {
+    const userEmail = localStorage.getItem('userEmail');
+    const userId = localStorage.getItem('userId');
+    const userName = localStorage.getItem('userName');
+    
+    if (userEmail && userId && userName) {
+      setUser({ id: userId, email: userEmail, name: userName });
+    } else {
+      navigate('/login');
     }
-  ];
+  }, [navigate]);
 
-  const filteredWorkflows = workflows.filter(workflow =>
-    workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    workflow.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    workflow.project.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Load workflows from database
+  useEffect(() => {
+    if (!user) return;
+    
+    const loadWorkflows = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('workflows')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-success text-success-foreground';
-      case 'paused': return 'bg-warning text-warning-foreground';
-      case 'error': return 'bg-destructive text-destructive-foreground';
-      case 'draft': return 'bg-muted text-muted-foreground';
-      default: return 'bg-muted text-muted-foreground';
+        if (error) {
+          console.error('Error loading workflows:', error);
+          toast({
+            title: "Error",
+            description: "Failed to load workflows",
+            variant: "destructive",
+          });
+        } else {
+          setWorkflows(data || []);
+        }
+      } catch (error) {
+        console.error('Error loading workflows:', error);
+        toast({
+          title: "Error", 
+          description: "Failed to load workflows",
+          variant: "destructive",
+        });
+      }
+      setLoading(false);
+    };
+
+    loadWorkflows();
+  }, [user, toast]);
+
+  const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_active: !currentStatus })
+        .eq('id', workflowId);
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
+      setWorkflows(workflows.map(w => 
+        w.id === workflowId ? { ...w, is_active: !currentStatus } : w
+      ));
+
+      toast({
+        title: "Success",
+        description: `Workflow ${!currentStatus ? 'activated' : 'paused'} successfully`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Failed to ${!currentStatus ? 'activate' : 'pause'} workflow: ${error.message}`,
+        variant: "destructive",
+      });
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return <Play className="h-3 w-3" />;
-      case 'paused': return <Pause className="h-3 w-3" />;
-      case 'error': return <TrendingDown className="h-3 w-3" />;
-      default: return <Activity className="h-3 w-3" />;
+  const handleDeleteWorkflow = async (workflowId: string) => {
+    if (!confirm('Are you sure you want to delete this workflow?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('workflows')
+        .delete()
+        .eq('id', workflowId);
+
+      if (error) {
+        throw error;
+      }
+
+      setWorkflows(workflows.filter(w => w.id !== workflowId));
+      toast({
+        title: "Success",
+        description: "Workflow deleted successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Failed to delete workflow: ${error.message}`,
+        variant: "destructive",
+      });
     }
+  };
+
+  const filteredWorkflows = workflows.filter(workflow =>
+    workflow.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusColor = (isActive: boolean) => {
+    return isActive 
+      ? 'bg-success text-success-foreground' 
+      : 'bg-warning text-warning-foreground';
+  };
+
+  const getStatusIcon = (isActive: boolean) => {
+    return isActive ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />;
+  };
+
+  const getStatusText = (isActive: boolean) => {
+    return isActive ? 'active' : 'paused';
   };
 
   const container = {
@@ -122,6 +179,14 @@ const Workflows = () => {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0 }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-lg text-muted-foreground">Loading workflows...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -166,16 +231,16 @@ const Workflows = () => {
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <CardTitle className="text-xl">{workflow.name}</CardTitle>
-                      <Badge className={`${getStatusColor(workflow.status)} flex items-center gap-1`}>
-                        {getStatusIcon(workflow.status)}
-                        {workflow.status}
+                      <Badge className={`${getStatusColor(workflow.is_active)} flex items-center gap-1`}>
+                        {getStatusIcon(workflow.is_active)}
+                        {getStatusText(workflow.is_active)}
                       </Badge>
                     </div>
                     <CardDescription className="max-w-2xl">
-                      {workflow.description}
+                      Trading automation workflow
                     </CardDescription>
                     <p className="text-sm text-muted-foreground">
-                      Project: {workflow.project}
+                      Nodes: {Array.isArray(workflow.nodes) ? workflow.nodes.length : 0}
                     </p>
                   </div>
                   <DropdownMenu>
@@ -189,12 +254,14 @@ const Workflows = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-popover border-border">
-                      <DropdownMenuItem>
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit
+                      <DropdownMenuItem asChild>
+                        <Link to={`/workflow/${workflow.id}`}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        {workflow.status === 'active' ? (
+                      <DropdownMenuItem onClick={() => handleToggleActive(workflow.id, workflow.is_active)}>
+                        {workflow.is_active ? (
                           <>
                             <Pause className="h-4 w-4 mr-2" />
                             Pause
@@ -206,7 +273,10 @@ const Workflows = () => {
                           </>
                         )}
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
+                      <DropdownMenuItem 
+                        className="text-destructive"
+                        onClick={() => handleDeleteWorkflow(workflow.id)}
+                      >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
                       </DropdownMenuItem>
@@ -215,24 +285,13 @@ const Workflows = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                      <DollarSign className="h-3 w-3" />
-                      P&L
-                    </p>
-                    <p className={`font-medium ${
-                      workflow.pnl >= 0 ? 'text-success' : 'text-destructive'
-                    }`}>
-                      {workflow.pnl >= 0 ? '+' : ''}${workflow.pnl.toFixed(2)}
-                    </p>
-                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground flex items-center gap-1">
                       <Activity className="h-3 w-3" />
-                      Trades
+                      Nodes
                     </p>
-                    <p className="font-medium">{workflow.trades}</p>
+                    <p className="font-medium">{Array.isArray(workflow.nodes) ? workflow.nodes.length : 0}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground flex items-center gap-1">
@@ -240,13 +299,13 @@ const Workflows = () => {
                       Created
                     </p>
                     <p className="font-medium text-sm">
-                      {new Date(workflow.createdAt).toLocaleDateString()}
+                      {new Date(workflow.created_at).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Last Run</p>
+                    <p className="text-sm text-muted-foreground">Last Updated</p>
                     <p className="font-medium text-sm">
-                      {workflow.lastRun ? new Date(workflow.lastRun).toLocaleDateString() : 'Never'}
+                      {new Date(workflow.updated_at).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
@@ -261,9 +320,10 @@ const Workflows = () => {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    className={workflow.status === 'active' ? 'text-warning' : 'text-success'}
+                    className={workflow.is_active ? 'text-warning' : 'text-success'}
+                    onClick={() => handleToggleActive(workflow.id, workflow.is_active)}
                   >
-                    {workflow.status === 'active' ? (
+                    {workflow.is_active ? (
                       <>
                         <Pause className="h-4 w-4 mr-2" />
                         Pause

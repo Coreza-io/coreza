@@ -51,7 +51,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
       
       return (
         <span
-          className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10"
+          className="text-primary cursor-grab active:cursor-grabbing hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10"
           draggable
           onDragStart={(e) => {
             e.stopPropagation();
@@ -118,7 +118,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
             {entries.slice(0, 15).map(([key, value]) => (
               <div key={key} className="flex items-start gap-2">
                   <span
-                    className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
+                    className="text-primary cursor-grab active:cursor-grabbing hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
@@ -172,7 +172,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
               {entries.slice(0, 15).map(([key, value]) => (
                 <div key={key} className="flex items-start gap-2">
                   <span
-                    className="text-primary cursor-grab hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
+                    className="text-primary cursor-grab active:cursor-grabbing hover:text-primary-glow transition-colors text-xs px-1 py-0.5 rounded bg-primary/5 hover:bg-primary/10 font-medium"
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();

@@ -195,6 +195,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         : definition?.name || 'Node';
       const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
       const newValue = currentValue + insert;
+      console.log("newValue", newValue )
       setter(newValue);
       handleChange(fieldKey, newValue);
       setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));

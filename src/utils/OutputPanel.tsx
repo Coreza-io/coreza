@@ -1,177 +1,194 @@
-import React, { useState } from "react";
-import { Card } from "@/components/ui/card";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Pin, PinOff, Edit, Save } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X } from "lucide-react";
 
-interface OutputPanelProps {
-  isExpanded?: boolean;
-  data?: any;
+// Props strongly typed, mirroring InputPanel
+export type OutputPanelProps = {
+  data: any;
+  isExpanded: boolean;
   position?: "left" | "right";
+  /** Whether the output is currently pinned */
   pinned?: boolean;
+  /** Callback when the user saves edited data */
   onSave?: (data: any) => void;
+  /** Callback when the pin/unpin button is toggled */
   onPinToggle?: () => void;
-}
+};
+
+// Recursively render output data, modern UI with design system
+const renderData = (data: any, parentKey = ""): React.ReactNode => {
+  console.log("Payload:", data)
+  if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
+    return (
+      <div className="text-sm text-muted-foreground italic text-center py-6">
+        No output yet.
+      </div>
+    );
+  }
+  
+  if (typeof data === "object" && data !== null) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Object.entries(data).map(([key, value]) => {
+          const fullKey = parentKey ? `${parentKey}.${key}` : key;
+          return (
+            <div
+              key={fullKey}
+              className="flex flex-col px-3 py-2 rounded-md bg-background hover:bg-muted/50 transition-colors border border-border/30"
+            >
+              <span className="text-xs font-semibold text-primary">{key}</span>
+              <span className="text-xs text-foreground pl-2 mt-1">
+                {value === undefined ? (
+                  <span className="text-muted-foreground">undefined</span>
+                ) : value === null ? (
+                  <span className="text-muted-foreground">null</span>
+                ) : typeof value === "object" ? (
+                  <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs">
+                    {JSON.stringify(value, null, 2)}
+                  </span>
+                ) : (
+                  <span className="break-words">{String(value)}</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex items-center gap-2 p-3 bg-background rounded-md border border-border/30">
+      <span className="text-xs font-semibold text-primary">value:</span>
+      <span className="text-xs text-foreground break-words">{String(data)}</span>
+    </div>
+  );
+};
 
 const OutputPanel: React.FC<OutputPanelProps> = ({
-  isExpanded = true,
   data = {},
+  isExpanded,
   position = "right",
   pinned = false,
-  onSave,
-  onPinToggle,
+  onSave = () => {},
+  onPinToggle = () => {},
 }) => {
+  const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedData, setEditedData] = useState("");
+  const [editText, setEditText] = useState("");
 
-  if (!isExpanded) {
-    return null;
-  }
+  // Sync internal state when upstream data changes, unless pinned
+  useEffect(() => {
+    if (!pinned) {
+      setInternalData(data);
+      setIsEditing(false);
+    }
+  }, [data, pinned]);
 
+  if (!isExpanded) return null;
+
+  // Handlers
   const handleEdit = () => {
-    setEditedData(JSON.stringify(data, null, 2));
+    setEditText(JSON.stringify(internalData, null, 2));
     setIsEditing(true);
   };
 
   const handleSave = () => {
     try {
-      const parsed = JSON.parse(editedData);
-      onSave?.(parsed);
+      const parsed = JSON.parse(editText);
+      setInternalData(parsed);
+      if (typeof onSave === "function") {
+        onSave(parsed);
+      }
       setIsEditing(false);
     } catch (error) {
-      // Handle JSON parse error
       console.error("Invalid JSON:", error);
+      // Could add toast notification here
     }
   };
 
-  const renderDataTree = (obj: any, path = '', depth = 0): React.ReactNode => {
-    if (depth > 3) {
-      return <span className="text-muted-foreground">...</span>;
-    }
-
-    if (obj === null || obj === undefined) {
-      return <span className="text-muted-foreground">null</span>;
-    }
-
-    if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
-      return <span className="text-foreground">{String(obj)}</span>;
-    }
-
-    if (Array.isArray(obj)) {
-      return (
-        <div className="space-y-1">
-          {obj.slice(0, 5).map((item, idx) => (
-            <div key={idx} className="ml-4">
-              <span className="text-muted-foreground">[{idx}]:</span>{' '}
-              {renderDataTree(item, `${path}[${idx}]`, depth + 1)}
-            </div>
-          ))}
-          {obj.length > 5 && (
-            <div className="ml-4 text-muted-foreground text-xs">
-              ... and {obj.length - 5} more items
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (typeof obj === 'object') {
-      const entries = Object.entries(obj).slice(0, 10);
-      return (
-        <div className="space-y-1">
-          {entries.map(([key, value]) => (
-            <div key={key} className="ml-4">
-              <span className="text-muted-foreground">{key}:</span>{' '}
-              {renderDataTree(value, path ? `${path}.${key}` : key, depth + 1)}
-            </div>
-          ))}
-          {Object.keys(obj).length > 10 && (
-            <div className="ml-4 text-muted-foreground text-xs">
-              ... and {Object.keys(obj).length - 10} more properties
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return <span className="text-muted-foreground">{String(obj)}</span>;
+  const handleCancel = () => {
+    setEditText("");
+    setIsEditing(false);
   };
-
-  const positionClass = position === "left" ? "right-[-320px]" : "left-[-320px]";
 
   return (
-    <Card className={`absolute ${positionClass} top-0 w-80 bg-card border border-border shadow-card z-10`}>
-      <div className="p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">Output Data</span>
-          </div>
-          
-          <div className="flex items-center gap-1">
-            {onPinToggle && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onPinToggle}
-                className="h-6 w-6 p-0"
-                title={pinned ? "Unpin data" : "Pin data"}
-              >
-                {pinned ? (
-                  <PinOff className="h-3 w-3" />
-                ) : (
-                  <Pin className="h-3 w-3" />
-                )}
-              </Button>
-            )}
-            
-            {onSave && !isEditing && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleEdit}
-                className="h-6 w-6 p-0"
-                title="Edit data"
-              >
-                <Edit className="h-3 w-3" />
-              </Button>
-            )}
-            
-            {isEditing && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSave}
-                className="h-6 w-6 p-0"
-                title="Save changes"
-              >
-                <Save className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
+    <div
+      className={`absolute ${
+        position === "right"
+          ? "left-full top-0 ml-2"
+          : "right-full top-0 mr-2"
+      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden`}
+    >
+      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+        <div className="font-semibold text-foreground text-sm tracking-tight">
+          Output Data
         </div>
-
-        <div className="max-h-64 overflow-auto text-xs">
-          {isEditing ? (
-            <textarea
-              value={editedData}
-              onChange={(e) => setEditedData(e.target.value)}
-              className="w-full h-48 p-2 text-xs font-mono bg-background border border-border rounded resize-none"
-              placeholder="Enter JSON data..."
-            />
-          ) : (
-            <>
-              {Object.keys(data).length > 0 || Array.isArray(data) ? (
-                renderDataTree(data)
-              ) : (
-                <div className="text-muted-foreground text-center py-4">
-                  No output data
-                </div>
-              )}
-            </>
+        <div className="flex items-center space-x-1">
+          {!isEditing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted h-7 w-7 p-0"
+              onClick={handleEdit}
+              title="Edit Output"
+            >
+              <Edit2 className="w-3 h-3" />
+            </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`hover:bg-muted h-7 w-7 p-0 transition-colors ${
+              pinned 
+                ? "text-primary hover:text-primary-glow" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={onPinToggle}
+            title={pinned ? "Unpin Output" : "Pin Output"}
+          >
+            {pinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
+          </Button>
         </div>
       </div>
-    </Card>
+      
+      <div className="p-3 h-[calc(100%-42px)] overflow-auto">
+        {isEditing ? (
+          <div className="space-y-3">
+            <textarea
+              className="w-full p-3 border border-border rounded-md font-mono text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
+              rows={12}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              placeholder="Enter JSON data..."
+            />
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleCancel}
+                className="h-7 px-3 text-xs"
+              >
+                <X className="w-3 h-3 mr-1" />
+                Cancel
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={handleSave}
+                className="h-7 px-3 text-xs bg-success hover:bg-success/90 text-success-foreground"
+              >
+                <Save className="w-3 h-3 mr-1" />
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {renderData(internalData)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 

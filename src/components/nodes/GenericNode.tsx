@@ -729,12 +729,12 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
 
                 {/* --------- Repeater Field --------- */}
                 {f.type === "repeater" && (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {(fieldState[f.key] || [f.default || {}]).map((item: any, index: number) => (
                       <React.Fragment key={index}>
                         {/* Show AND/OR dropdown between conditions (except before first condition) */}
                         {index > 0 && (
-                          <div className="flex justify-center py-1">
+                          <div className="flex justify-center py-2">
                             <Select
                               value={item.logicalOp || "AND"}
                               onValueChange={(val) => {
@@ -755,51 +755,55 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                         )}
                         
                         {/* Condition Row */}
-                        <div className="flex items-center gap-2 p-2 border rounded">
+                        <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
                           {f.subFields?.map((subField: any, subIndex: number) => (
                             <React.Fragment key={subField.key}>
                               {subField.options ? (
-                                <Select
-                                  value={item[subField.key] || ""}
-                                  onValueChange={(val) => {
-                                    const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: val };
-                                    handleChange(f.key, newItems);
-                                  }}
-                                >
-                                  <SelectTrigger className="flex-1 h-8 text-xs bg-background border border-border z-40">
-                                    <SelectValue placeholder="Select..." />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-background border border-border shadow-lg z-40">
-                                    {subField.options.map((opt: any) => (
-                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                        {opt.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <input
-                                  type="text"
-                                  className="flex-1 border rounded px-2 py-1 text-xs h-8 nodrag bg-background border-border"
-                                  placeholder={subField.placeholder}
-                                  value={item[subField.key] || ""}
-                                  onChange={(e) => {
-                                    const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
-                                    handleChange(f.key, newItems);
-                                  }}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    const reference = e.dataTransfer.getData("text/plain");
-                                    if (reference) {
+                                <div className="flex-1">
+                                  <Select
+                                    value={item[subField.key] || ""}
+                                    onValueChange={(val) => {
                                       const newItems = [...(fieldState[f.key] || [])];
-                                      newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                      newItems[index] = { ...newItems[index], [subField.key]: val };
                                       handleChange(f.key, newItems);
-                                    }
-                                  }}
-                                />
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs bg-background border border-border z-40">
+                                      <SelectValue placeholder="Select..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-background border border-border shadow-lg z-40">
+                                      {subField.options.map((opt: any) => (
+                                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                          {opt.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ) : (
+                                <div className="flex-1">
+                                  <input
+                                    type="text"
+                                    className="w-full border rounded px-3 py-1 text-xs h-8 nodrag bg-background border-border focus:border-primary focus:outline-none"
+                                    placeholder={subField.placeholder}
+                                    value={item[subField.key] || ""}
+                                    onChange={(e) => {
+                                      const newItems = [...(fieldState[f.key] || [])];
+                                      newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
+                                      handleChange(f.key, newItems);
+                                    }}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      const reference = e.dataTransfer.getData("text/plain");
+                                      if (reference) {
+                                        const newItems = [...(fieldState[f.key] || [])];
+                                        newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                        handleChange(f.key, newItems);
+                                      }
+                                    }}
+                                  />
+                                </div>
                               )}
                             </React.Fragment>
                           ))}
@@ -813,7 +817,7 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                                 newItems.splice(index, 1);
                                 handleChange(f.key, newItems);
                               }}
-                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
                             >
                               <X className="h-3 w-3" />
                             </Button>
@@ -829,7 +833,7 @@ const GenericNode: React.FC<any> = ({ data, selected }) => {
                         const newItems = [...(fieldState[f.key] || []), { ...f.default, logicalOp: "AND" }];
                         handleChange(f.key, newItems);
                       }}
-                      className="w-full text-xs h-8"
+                      className="w-full text-xs h-8 mt-3"
                     >
                       + Add Condition
                     </Button>

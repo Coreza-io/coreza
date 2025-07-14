@@ -158,16 +158,6 @@ const IfDef = {
         { key: "right", type: "string", placeholder: "100" }
       ],
       default: { left: "", operator: "===", right: "" }
-    },
-    {
-      key: "logicalOp",
-      label: "logicalOp",
-      type: "repeater",
-      options: [
-        { label: "AND", value: "AND" },
-        { label: "OR", value: "OR" }
-      ],
-      default: "AND"
     }
   ]
 };

@@ -433,7 +433,7 @@ const WorkflowEditor = () => {
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col">
         {/* Workflow Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm">
           <div className="flex items-center gap-4">
             <div className="flex flex-col gap-1">
               <Input

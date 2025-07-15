@@ -66,7 +66,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const outputData = useMemo(() => {
     if (!selectedPrevNodeId) return {};
     const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
-    return prevNode?.data?.output || prevNode?.data?.input || {};
+    const result = prevNode?.data?.output || prevNode?.data?.input || {};
+    console.log("InputPanel outputData:", result);
+    console.log("InputPanel selectedPrevNodeId:", selectedPrevNodeId);
+    console.log("InputPanel prevNode:", prevNode);
+    return result;
   }, [selectedPrevNodeId, nodes]);
 
   if (!isExpanded) return null;

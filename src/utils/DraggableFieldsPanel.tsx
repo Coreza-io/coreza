@@ -11,15 +11,23 @@ const DraggableFieldsPanel = ({
 }) => {
   if (!data || typeof data !== "object") return null;
 
+  console.log("DraggableFieldsPanel data:", data);
+  console.log("DraggableFieldsPanel data type:", typeof data);
+  console.log("DraggableFieldsPanel is array:", Array.isArray(data));
+
   // Filter out numeric array indices only when we're dealing with arrays
   // but keep meaningful object properties
   const filteredEntries = Object.entries(data).filter(([key, value]) => {
+    console.log("Checking key:", key, "Array.isArray(data):", Array.isArray(data), "is numeric:", /^\d+$/.test(key));
     // Only skip numeric keys if the parent is an array AND it's a pure numeric index
     if (Array.isArray(data) && /^\d+$/.test(key)) {
       return false;
     }
     return true;
   });
+
+  console.log("Original entries:", Object.entries(data));
+  console.log("Filtered entries:", filteredEntries);
 
   return (
     <div className="flex flex-col gap-2 mb-2">

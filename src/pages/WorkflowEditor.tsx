@@ -433,17 +433,27 @@ const WorkflowEditor = () => {
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col">
         {/* Workflow Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border bg-card">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50 backdrop-blur-sm">
           <div className="flex items-center gap-4">
-            <Input
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              className="text-lg font-semibold bg-transparent border-none p-0 h-auto focus-visible:ring-0"
-              placeholder="Workflow name"
-            />
-            <Badge variant={isActive ? "default" : "secondary"}>
-              {isActive ? "Active" : "Draft"}
-            </Badge>
+            <div className="flex flex-col gap-1">
+              <Input
+                value={workflowName}
+                onChange={(e) => setWorkflowName(e.target.value)}
+                className="text-xl font-bold bg-transparent border-none p-0 h-auto focus-visible:ring-0 hover:bg-muted/30 rounded px-2 py-1 transition-colors"
+                placeholder="Workflow name"
+              />
+              <div className="flex items-center gap-2 px-2">
+                <Badge 
+                  variant={isActive ? "default" : "secondary"}
+                  className="text-xs font-medium"
+                >
+                  {isActive ? "Active" : "Draft"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {isNewWorkflow ? "Unsaved" : "Auto-saved"}
+                </span>
+              </div>
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
@@ -451,13 +461,18 @@ const WorkflowEditor = () => {
               onClick={handleSaveWorkflow}
               disabled={loading}
               variant="outline"
+              className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
             >
               <Save className="h-4 w-4 mr-2" />
               {loading ? "Saving..." : "Save"}
             </Button>
             <Button
               onClick={handleActivate}
-              className={isActive ? "bg-warning hover:bg-warning/90" : "bg-success hover:bg-success/90"}
+              className={`h-10 px-6 font-medium shadow-sm transition-all duration-200 ${
+                isActive 
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white" 
+                  : "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+              }`}
             >
               {isActive ? (
                 <>

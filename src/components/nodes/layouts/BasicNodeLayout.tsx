@@ -270,21 +270,15 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
           {(definition.fields || []).map((f: any) => {
-            debugger; // This will pause execution here
-            console.log('Processing field:', f.key, f);
-            
             // Check if field should be shown
             if (f.displayOptions?.show) {
-              debugger; // Pause when checking display options
               const shouldShow = Object.entries(f.displayOptions.show).every(
                 ([depKey, allowedValues]) => {
                   const currentValue = fieldState[depKey];
-                  console.log(`Checking ${depKey}: current=${currentValue}, allowed=${allowedValues}`);
                   if (!currentValue) return false;
                   return (allowedValues as string[]).includes(currentValue);
                 }
               );
-              console.log(`Field ${f.key} shouldShow:`, shouldShow);
               if (!shouldShow) return null;
             }
 

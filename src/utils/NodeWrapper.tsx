@@ -111,7 +111,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 type={h.type}
                 position={POSITION_MAP[h.position]}
                 style={style}
-                className="w-3 h-3 border-2 border-border bg-background hover:border-primary transition-colors"
+                className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
               />
             );
           });

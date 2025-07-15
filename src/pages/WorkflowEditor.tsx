@@ -75,8 +75,7 @@ const WorkflowEditor = () => {
     (params: Connection) => setEdges((eds) => addEdge({
       ...params,
       type: 'removable',
-      animated: true,
-      style: { stroke: 'hsl(217 91% 60%)' }
+      animated: false, // Only animate during execution
     }, eds)),
     [setEdges],
   );

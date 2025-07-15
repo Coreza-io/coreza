@@ -55,7 +55,6 @@ export function RemovableEdge({
         style={{
           stroke: 'hsl(var(--trading-edge))',
           strokeWidth: 2,
-          ...style
         }}
         className={animated ? 'animate-pulse' : ''}
       />

@@ -97,8 +97,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           height: isExpanded ? "auto" : 100,
         }}
       >
-        {/* Handles (configured in manifest) */}
-        {(["top", "bottom", "left", "right"] as const).map((pos) => {
+        {/* Handles (configured in manifest) - Only show when collapsed */}
+        {!isExpanded && (["top", "bottom", "left", "right"] as const).map((pos) => {
           const group = handles.filter((h) => h.position === pos);
           const isHorizontal = pos === "top" || pos === "bottom";
           return group.map((h, idx) => {

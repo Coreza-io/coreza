@@ -95,17 +95,13 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         e.dataTransfer.dropEffect = "copy";
       },
       onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const data = e.dataTransfer.getData("text/plain");
-        if (data) {
-          handleDrop(
-            f.key,
-            (val: string) => handleChange(f.key, val),
-            e,
-            fieldState[f.key] || ""
-          );
-        }
+        // Just call the handleDrop function directly - no additional logic needed
+        handleDrop(
+          f.key,
+          (val: string) => handleChange(f.key, val),
+          e,
+          fieldState[f.key] || ""
+        );
       },
       onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         e.target.select();

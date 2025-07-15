@@ -188,6 +188,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       console.log("raw",raw)
       if (!raw) return;
       const data = JSON.parse(raw);
+      // Handle both old format (direct keyPath) and new format (object with keyPath property)
       const keyPath = data.keyPath || data;
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode

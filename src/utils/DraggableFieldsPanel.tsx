@@ -11,9 +11,18 @@ const DraggableFieldsPanel = ({
 }) => {
   if (!data || typeof data !== "object") return null;
 
+  // Filter out numeric array indices to only show meaningful field names
+  const filteredEntries = Object.entries(data).filter(([key, value]) => {
+    // Skip numeric array indices (like "0", "1", "2")
+    if (Array.isArray(data) && !isNaN(Number(key))) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <div className="flex flex-col gap-2 mb-2">
-      {Object.entries(data).map(([key, value]) => {
+      {filteredEntries.map(([key, value]) => {
         const fullKey = parentKey ? `${parentKey}.${key}` : key;
         const isObject = typeof value === "object" && value !== null;
 

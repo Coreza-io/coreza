@@ -15,23 +15,35 @@ const DraggableFieldsPanel = ({
   console.log("DraggableFieldsPanel data type:", typeof data);
   console.log("DraggableFieldsPanel is array:", Array.isArray(data));
 
-  // Filter out numeric array indices only when we're dealing with arrays
-  // but keep meaningful object properties
-  const filteredEntries = Object.entries(data).filter(([key, value]) => {
-    console.log("Checking key:", key, "Array.isArray(data):", Array.isArray(data), "is numeric:", /^\d+$/.test(key));
-    // Only skip numeric keys if the parent is an array AND it's a pure numeric index
-    if (Array.isArray(data) && /^\d+$/.test(key)) {
-      return false;
-    }
-    return true;
-  });
+  // Handle arrays by flattening their meaningful properties
+  let entriesToShow;
+  if (Array.isArray(data)) {
+    // For arrays, collect all unique keys from all objects in the array
+    const allKeys = new Set();
+    const flattenedData = {};
+    
+    data.forEach((item, index) => {
+      if (item && typeof item === "object") {
+        Object.keys(item).forEach(key => {
+          allKeys.add(key);
+          // Use the last occurrence of each key (or combine them somehow)
+          flattenedData[key] = item[key];
+        });
+      }
+    });
+    
+    entriesToShow = Object.entries(flattenedData);
+    console.log("Array flattened to:", flattenedData);
+  } else {
+    // For objects, use them directly
+    entriesToShow = Object.entries(data);
+  }
 
-  console.log("Original entries:", Object.entries(data));
-  console.log("Filtered entries:", filteredEntries);
+  console.log("Final entries to show:", entriesToShow);
 
   return (
     <div className="flex flex-col gap-2 mb-2">
-      {filteredEntries.map(([key, value]) => {
+      {entriesToShow.map(([key, value]) => {
         const fullKey = parentKey ? `${parentKey}.${key}` : key;
         const isObject = typeof value === "object" && value !== null;
 

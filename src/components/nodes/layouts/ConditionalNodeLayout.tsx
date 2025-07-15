@@ -19,6 +19,8 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   showAuth,
   handleChange,
   handleSubmit,
+  handleDrop,
+  getFieldPreview,
   setShowAuth,
   fetchCredentials,
   referenceStyle,
@@ -66,9 +68,21 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                     onDragOver={(e) => e.preventDefault()}
                     onFocus={(e) => e.target.select()}
                     style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
+                    onDrop={(e) =>
+                      handleDrop(
+                        f.key,
+                        (val) => handleChange(f.key, val),
+                        e,
+                        fieldState[f.key] ?? ""
+                      )
+                    }
                     className="nodrag"
                   />
-                  {/* Preview removed - ConditionalNodeLayout doesn't handle drag/drop yet */}
+                  {fieldState[f.key]?.includes("{{") && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Preview: {getFieldPreview(f.key)}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -83,8 +97,20 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                     onDragOver={(e) => e.preventDefault()}
                     onFocus={(e) => e.target.select()}
                     style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
+                    onDrop={(e) =>
+                      handleDrop(
+                        f.key,
+                        (val) => handleChange(f.key, val),
+                        e,
+                        fieldState[f.key]
+                      )
+                    }
                   />
-                  {/* Preview removed - ConditionalNodeLayout doesn't handle drag/drop yet */}
+                  {fieldState[f.key]?.includes("{{") && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Preview: {getFieldPreview(f.key)}
+                    </div>
+                  )}
                 </>
               )}
 

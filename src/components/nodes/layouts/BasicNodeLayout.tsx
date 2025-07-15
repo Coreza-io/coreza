@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo, useState } from "react";
+import React, { Suspense, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,19 +7,8 @@ import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import type { BaseNodeRenderProps } from "../BaseNode";
-import { useNodes } from "@xyflow/react";
-import { resolveReferences } from "@/utils/resolveReferences";
-import { summarizePreview } from "@/utils/summarizePreview";
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
-
-// Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
-const getDisplayName = (node: any, allNodes: any[]) => {
-  const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
-  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
-  const idx = sameType.findIndex((n) => n.id === node.id);
-  return idx > 0 ? `${baseName}${idx}` : baseName;
-};
 
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
@@ -30,64 +19,14 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
-  previousNodes,
-  selectedPrevNodeId,
   handleChange,
   handleSubmit,
+  handleDrop,
+  getFieldPreview,
   setShowAuth,
   fetchCredentials,
   referenceStyle,
 }) => {
-  const nodes = useNodes();
-  const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
-
-  // Local drag and drop logic
-  const handleDrop = (
-    fieldKey: string,
-    e: React.DragEvent,
-    currentValue: string
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const raw = e.dataTransfer.getData("application/reactflow");
-      console.log("raw", raw);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      const keyPath = data.keyPath || data;
-      
-      // Find source node and generate display name
-      const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode
-        ? getDisplayName(sourceNode, nodes)
-        : definition?.name || 'Node';
-      
-      const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
-      const newValue = currentValue + insert;
-      console.log("newValue", newValue);
-      
-      handleChange(fieldKey, newValue);
-      setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
-    } catch (err) {
-      console.error("Drop error:", err);
-    }
-    document.body.classList.remove("cursor-grabbing", "select-none");
-  };
-
-  // Enhanced field preview that uses local sourceMap
-  const getEnhancedFieldPreview = (fieldKey: string) => {
-    const expr = fieldState[fieldKey] || "";
-    if (!expr.includes("{{")) return null;
-    const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
-    const srcNode = previousNodes.find((n) => n.id === srcId) || previousNodes[0];
-    const srcData = srcNode?.data?.output || srcNode?.data || {};
-    try {
-      const resolved = resolveReferences(expr, srcData);
-      return summarizePreview(resolved);
-    } catch {
-      return "";
-    }
-  };
   const isVisualize = definition?.name === "Visualize";
   
   // Memoized visualization data processing
@@ -156,9 +95,10 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         e.dataTransfer.dropEffect = "copy";
       },
       onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        // Call our local handleDrop function with the new signature
+        // Just call the handleDrop function directly - no additional logic needed
         handleDrop(
           f.key,
+          (val: string) => handleChange(f.key, val),
           e,
           fieldState[f.key] || ""
         );
@@ -177,7 +117,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             />
             {fieldState[f.key]?.includes("{{") && (
               <div className="text-xs text-gray-500 mt-1">
-                Preview: {getEnhancedFieldPreview(f.key)}
+                Preview: {getFieldPreview(f.key)}
               </div>
             )}
           </div>
@@ -192,7 +132,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             />
             {fieldState[f.key]?.includes("{{") && (
               <div className="text-xs text-gray-500 mt-1">
-                Preview: {getEnhancedFieldPreview(f.key)}
+                Preview: {getFieldPreview(f.key)}
               </div>
             )}
           </div>

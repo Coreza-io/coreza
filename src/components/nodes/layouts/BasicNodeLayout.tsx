@@ -269,12 +269,26 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       {/* Form for non-Visualize nodes */}
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {(definition.fields || []).map((f: any) => (
-            <div key={f.key}>
-              <Label>{f.label}</Label>
-              {renderField(f)}
-            </div>
-          ))}
+          {(definition.fields || []).map((f: any) => {
+            // Check if field should be shown
+            if (f.displayOptions?.show) {
+              const shouldShow = Object.entries(f.displayOptions.show).every(
+                ([depKey, allowedValues]) => {
+                  const currentValue = fieldState[depKey];
+                  if (!currentValue) return false;
+                  return (allowedValues as string[]).includes(currentValue);
+                }
+              );
+              if (!shouldShow) return null;
+            }
+
+            return (
+              <div key={f.key}>
+                <Label>{f.label}</Label>
+                {renderField(f)}
+              </div>
+            );
+          })}
 
           {error && (
             <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">

@@ -67,6 +67,7 @@ const WorkflowEditor = () => {
   const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [executingNode, setExecutingNode] = useState<string | null>(null);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -79,6 +80,42 @@ const WorkflowEditor = () => {
     }, eds)),
     [setEdges],
   );
+
+  // Execute a node and animate outgoing edges
+  const executeNode = useCallback((nodeId: string) => {
+    setExecutingNode(nodeId);
+    
+    // Find all edges coming out of this node
+    const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+    
+    // Animate the outgoing edges
+    setEdges(currentEdges => 
+      currentEdges.map(edge => 
+        outgoingEdges.some(outEdge => outEdge.id === edge.id)
+          ? { ...edge, animated: true, className: 'animated' }
+          : edge
+      )
+    );
+    
+    // Simulate execution time
+    setTimeout(() => {
+      setExecutingNode(null);
+      // Stop animation
+      setEdges(currentEdges => 
+        currentEdges.map(edge => 
+          outgoingEdges.some(outEdge => outEdge.id === edge.id)
+            ? { ...edge, animated: false, className: '' }
+            : edge
+        )
+      );
+    }, 2000);
+  }, [edges, setEdges]);
+
+  // Handle node double click to execute
+  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault();
+    executeNode(node.id);
+  }, [executeNode]);
 
   // Save workflow to Supabase
   const handleSaveWorkflow = async () => {
@@ -447,6 +484,7 @@ const WorkflowEditor = () => {
             onConnect={onConnect}
             onDrop={onDrop}
             onDragOver={onDragOver}
+            onNodeDoubleClick={onNodeDoubleClick}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView

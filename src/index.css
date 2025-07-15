@@ -143,4 +143,20 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* React Flow Edge Overrides */
+  .react-flow__edge-path {
+    stroke: hsl(var(--trading-edge)) !important;
+  }
+  
+  .react-flow__edge.animated .react-flow__edge-path {
+    stroke-dasharray: 5;
+    animation: dashdraw 0.5s linear infinite;
+  }
+  
+  @keyframes dashdraw {
+    to {
+      stroke-dashoffset: -10;
+    }
+  }
 }

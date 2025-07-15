@@ -76,15 +76,27 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const renderField = (f: any) => {
     // Conditional field display logic
     if (f.displayOptions?.show) {
+      console.log(`Field ${f.key} displayOptions:`, f.displayOptions);
+      console.log(`Current fieldState:`, fieldState);
       const shouldShow = Object.entries(f.displayOptions.show).every(
         ([depKey, allowedValues]) => {
           const currentValue = fieldState[depKey];
+          console.log(`Checking field ${f.key}: dependency ${depKey} = "${currentValue}", allowed values:`, allowedValues);
           // If the dependency field is empty/undefined, don't show this field
-          if (!currentValue) return false;
-          return (allowedValues as string[]).includes(currentValue);
+          if (!currentValue) {
+            console.log(`Field ${f.key} hidden: dependency ${depKey} is empty`);
+            return false;
+          }
+          const isAllowed = (allowedValues as string[]).includes(currentValue);
+          console.log(`Field ${f.key}: ${currentValue} is allowed = ${isAllowed}`);
+          return isAllowed;
         }
       );
-      if (!shouldShow) return null;
+      if (!shouldShow) {
+        console.log(`Field ${f.key} will be hidden`);
+        return null;
+      }
+      console.log(`Field ${f.key} will be shown`);
     }
 
     const commonInputProps = {

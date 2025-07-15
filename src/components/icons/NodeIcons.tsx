@@ -29,10 +29,35 @@ export const EMAIcon: React.FC<{ className?: string }> = ({ className = "w-10 h-
   </svg>
 );
 
+// If SVG as React component for instant rendering
+export const IfIcon: React.FC<{ className?: string }> = ({ className = "w-10 h-10" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+    {/* Background circle */}
+    <circle cx="16" cy="16" r="15" fill="#F8FAFC" stroke="#8B5CF6" strokeWidth="2"/>
+    
+    {/* Diamond shape for decision */}
+    <path d="M16 6L24 16L16 26L8 16Z" fill="#8B5CF6" stroke="#7C3AED" strokeWidth="1"/>
+    
+    {/* Question mark */}
+    <path d="M13 12C13 10.3431 14.3431 9 16 9C17.6569 9 19 10.3431 19 12C19 13.1046 18.1046 14 17 14H16V16" 
+          stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" fill="none"/>
+    <circle cx="16" cy="19" r="1" fill="#FFFFFF"/>
+    
+    {/* Branching arrows */}
+    <path d="M24 16L28 12M24 16L28 20" stroke="#8B5CF6" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M8 16L4 12M8 16L4 20" stroke="#8B5CF6" strokeWidth="2" strokeLinecap="round"/>
+    
+    {/* Labels */}
+    <text x="30" y="10" textAnchor="middle" fill="#8B5CF6" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">Y</text>
+    <text x="30" y="23" textAnchor="middle" fill="#8B5CF6" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">N</text>
+  </svg>
+);
+
 // Icon registry for easy access
 export const IconRegistry = {
   'Alpaca': AlpacaIcon,
   'EMA': EMAIcon,
+  'If': IfIcon,
 } as const;
 
 export type IconName = keyof typeof IconRegistry;

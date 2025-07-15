@@ -69,10 +69,10 @@ export function RemovableEdge({
           <Button
             onClick={onEdgeClick}
             size="sm"
-            variant="ghost"
-            className="w-6 h-6 p-0 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-full opacity-0 hover:opacity-100 transition-opacity"
+            variant="destructive"
+            className="w-7 h-7 p-0 rounded-full opacity-80 hover:opacity-100 transition-opacity shadow-md border-2 border-white"
           >
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </EdgeLabelRenderer>

@@ -10,17 +10,25 @@ const BACKEND_URL = "http://localhost:8000";
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
-  const sameType = allNodes.filter((n) => (n.data.definition?.name || n.data.config?.name) === baseName);
+  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
   const idx = sameType.findIndex((n) => n.id === node.id);
   return idx > 0 ? `${baseName}${idx}` : baseName;
 };
 
 function getUserId(): string {
   try {
+    // First try the new format
     const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    return user.id || user.user_id || "";
+    if (user.id || user.user_id) {
+      return user.id || user.user_id;
+    }
+    
+    // Fallback to old format
+    const userId = localStorage.getItem("userId");
+    return userId || "";
   } catch {
-    return "";
+    // Fallback to old format on JSON parse error
+    return localStorage.getItem("userId") || "";
   }
 }
 
@@ -47,9 +55,7 @@ export interface BaseNodeRenderProps {
   // Event handlers
   handleChange: (key: string, value: any) => void;
   handleSubmit: (e: React.FormEvent) => void;
-  handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
   handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
-  getFieldPreview: (fieldKey: string) => string | null;
   setShowAuth: (show: boolean) => void;
   setSelectedPrevNodeId: (id: string) => void;
   handlePanelSave: (newData: any) => void;
@@ -167,57 +173,39 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     );
   };
 
-  const handleDrop = (
-    fieldKey: string,
-    setter: React.Dispatch<React.SetStateAction<string>>,
-    e: React.DragEvent,
-    currentValue: string
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const raw = e.dataTransfer.getData("application/reactflow");
-      if (!raw) return;
-      const { keyPath } = JSON.parse(raw);
-      const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode
-        ? getDisplayName(sourceNode, nodes)
-        : definition?.name || 'Node';
-      const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
-      const newValue = currentValue + insert;
-      setter(newValue);
-      handleChange(fieldKey, newValue);
-      setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
-    } catch (err) {
-      console.error("Drop error:", err);
-    }
-    document.body.classList.remove("cursor-grabbing", "select-none");
-  };
 
-  const getFieldPreview = (fieldKey: string) => {
-    const expr = fieldState[fieldKey] || "";
-    if (!expr.includes("{{")) return null;
-    const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
-    const srcNode = previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
-    const srcData = srcNode?.data?.output || srcNode?.data || {};
-    try {
-      const resolved = resolveReferences(expr, srcData);
-      return summarizePreview(resolved);
-    } catch {
-      return "";
-    }
-  };
 
   const userId = getUserId();
+  console.log("userId", userId)
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
       const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
-      const res = await fetch(`${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`);
+      
+      // Check if userId exists and is valid
+      if (!userId || userId.trim() === "") {
+        console.log('No user ID available, skipping credentials fetch');
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+        return;
+      }
+      
+      const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
+      console.log('Fetching credentials from:', url);
+      console.log('API name:', apiName, 'User ID:', userId);
+      
+      const res = await fetch(url);
+      console.log('Response status:', res.status);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const json = await res.json();
+      console.log('Credentials response:', json);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: json.credentials || [] }));
-    } catch {
+    } catch (error) {
+      console.error('Error fetching credentials:', error);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
     } finally {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
@@ -405,9 +393,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     isPinned,
     handleChange,
     handleSubmit,
-    handleDrop,
     handleDragStart,
-    getFieldPreview,
     setShowAuth,
     setSelectedPrevNodeId,
     handlePanelSave,

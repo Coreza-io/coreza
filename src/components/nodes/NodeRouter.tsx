@@ -15,9 +15,20 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodes = useNodes();
   const edges = useEdges();
   
+  // Add safety check for data
+  if (!data) {
+    console.error("NodeRouter: data prop is undefined for node", nodeId);
+    return (
+      <div className="min-w-[180px] shadow-node border-node bg-card rounded-lg p-3">
+        <span className="text-sm text-muted-foreground">No data provided</span>
+      </div>
+    );
+  }
+  
   const definition = data.definition || data.config;
 
   if (!definition) {
+    console.error("NodeRouter: no definition found for node", nodeId, data);
     return (
       <div className="min-w-[180px] shadow-node border-node bg-card rounded-lg p-3">
         <span className="text-sm text-muted-foreground">No definition found</span>

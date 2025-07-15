@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,8 +7,19 @@ import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import type { BaseNodeRenderProps } from "../BaseNode";
+import { useNodes } from "@xyflow/react";
+import { resolveReferences } from "@/utils/resolveReferences";
+import { summarizePreview } from "@/utils/summarizePreview";
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
+
+// Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
+const getDisplayName = (node: any, allNodes: any[]) => {
+  const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
+  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
+  const idx = sameType.findIndex((n) => n.id === node.id);
+  return idx > 0 ? `${baseName}${idx}` : baseName;
+};
 
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
@@ -19,35 +30,90 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
+  previousNodes,
+  selectedPrevNodeId,
   handleChange,
   handleSubmit,
-  handleDrop,
-  getFieldPreview,
   setShowAuth,
   fetchCredentials,
   referenceStyle,
 }) => {
-  // ======== VISUALIZE NODE SUPPORT =========
-  const isVisualize = definition?.name === "Visualize";
-  let vizCandles = null;
-  let vizIndicator = null;
+  const nodes = useNodes();
+  const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
-  function toDictOfArrays(candlesArray: any) {
-    if (!Array.isArray(candlesArray)) return candlesArray;
-    const result = { t: [], o: [], h: [], l: [], c: [], v: [] } as any;
-    for (const c of candlesArray) {
-      result.t.push(c.t ? c.t.slice(0, 10) : undefined);
-      result.o.push(c.o);
-      result.h.push(c.h);
-      result.l.push(c.l);
-      result.c.push(c.c);
-      result.v.push(c.v);
+  // Local drag and drop logic
+  const handleDrop = (
+    fieldKey: string,
+    e: React.DragEvent,
+    currentValue: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const raw = e.dataTransfer.getData("application/reactflow");
+      console.log("raw", raw);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const keyPath = data.keyPath || data;
+      
+      // Find source node and generate display name
+      const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
+      const sourceDisplayName = sourceNode
+        ? getDisplayName(sourceNode, nodes)
+        : definition?.name || 'Node';
+      
+      const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+      const newValue = currentValue + insert;
+      console.log("newValue", newValue);
+      
+      handleChange(fieldKey, newValue);
+      setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
+    } catch (err) {
+      console.error("Drop error:", err);
     }
-    return result;
-  }
+    document.body.classList.remove("cursor-grabbing", "select-none");
+  };
 
-  if (isVisualize && selectedInputData) {
-    let firstInput = Array.isArray(selectedInputData) ? selectedInputData[0] : selectedInputData;
+  // Enhanced field preview that uses local sourceMap
+  const getEnhancedFieldPreview = (fieldKey: string) => {
+    const expr = fieldState[fieldKey] || "";
+    if (!expr.includes("{{")) return null;
+    const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
+    const srcNode = previousNodes.find((n) => n.id === srcId) || previousNodes[0];
+    const srcData = srcNode?.data?.output || srcNode?.data || {};
+    try {
+      const resolved = resolveReferences(expr, srcData);
+      return summarizePreview(resolved);
+    } catch {
+      return "";
+    }
+  };
+  const isVisualize = definition?.name === "Visualize";
+  
+  // Memoized visualization data processing
+  const { vizCandles, filteredIndicator } = useMemo(() => {
+    if (!isVisualize || !selectedInputData) return { vizCandles: null, filteredIndicator: [] };
+
+    const toDictOfArrays = (candlesArray: any) => {
+      if (!Array.isArray(candlesArray)) return candlesArray;
+      return candlesArray.reduce((acc, c) => {
+        acc.t.push(c.t ? c.t.slice(0, 10) : undefined);
+        acc.o.push(c.o);
+        acc.h.push(c.h);
+        acc.l.push(c.l);
+        acc.c.push(c.c);
+        acc.v.push(c.v);
+        return acc;
+      }, { t: [], o: [], h: [], l: [], c: [], v: [] });
+    };
+
+    const firstInput = Array.isArray(selectedInputData) 
+      ? selectedInputData[0] 
+      : selectedInputData;
+
+    let vizCandles = null;
+    let vizIndicator = null;
+
     if (Array.isArray(firstInput?.candles)) {
       vizCandles = toDictOfArrays(firstInput.candles);
     } else if (firstInput?.candles && typeof firstInput.candles === 'object') {
@@ -55,21 +121,158 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     } else if (Array.isArray(firstInput)) {
       vizCandles = toDictOfArrays(firstInput);
     }
+    
     if (firstInput?.indicator) {
       vizIndicator = firstInput.indicator;
     }
-  }
 
-  const filteredIndicator = Array.isArray(vizIndicator)
-    ? vizIndicator.filter((d: any) => d && d.value !== null && !isNaN(d.value))
-    : [];
+    const filteredIndicator = Array.isArray(vizIndicator)
+      ? vizIndicator.filter((d: any) => d && d.value !== null && !isNaN(d.value))
+      : [];
+
+    return { vizCandles, filteredIndicator };
+  }, [isVisualize, selectedInputData]);
+
+  // Field rendering helper
+  const renderField = (f: any) => {
+    // Conditional field display logic
+    if (f.displayOptions?.show) {
+      const shouldShow = Object.entries(f.displayOptions.show).every(
+        ([depKey, allowedValues]) => 
+          (allowedValues as string[]).includes(fieldState[depKey])
+      );
+      if (!shouldShow) return null;
+    }
+
+    const commonInputProps = {
+      value: fieldState[f.key] || "",
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => 
+        handleChange(f.key, e.target.value),
+      placeholder: f.placeholder,
+      className: "nodrag",
+      style: fieldState[f.key]?.includes("{{") ? referenceStyle : undefined,
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      },
+      onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        // Call our local handleDrop function with the new signature
+        handleDrop(
+          f.key,
+          e,
+          fieldState[f.key] || ""
+        );
+      },
+      onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        e.target.select();
+      }
+    };
+
+    switch (f.type) {
+      case "text":
+        return (
+          <div>
+            <Input 
+              {...commonInputProps} 
+            />
+            {fieldState[f.key]?.includes("{{") && (
+              <div className="text-xs text-gray-500 mt-1">
+                Preview: {getEnhancedFieldPreview(f.key)}
+              </div>
+            )}
+          </div>
+        );
+      
+      case "textarea":
+        return (
+          <div>
+            <textarea
+              {...commonInputProps}
+              className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
+            />
+            {fieldState[f.key]?.includes("{{") && (
+              <div className="text-xs text-gray-500 mt-1">
+                Preview: {getEnhancedFieldPreview(f.key)}
+              </div>
+            )}
+          </div>
+        );
+      
+      case "select":
+        if (f.optionsSource === "credentialsApi") {
+          return (
+            <div className="flex gap-2 items-center">
+              <Select
+                value={fieldState[f.key]}
+                onValueChange={(val) => handleChange(f.key, val)}
+                disabled={loadingSelect[f.key]}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={loadingSelect[f.key] ? "Loading..." : "Select credential"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(selectOptions[f.key] || []).length > 0 ? (
+                    selectOptions[f.key].map((c: any) => (
+                      <SelectItem key={c.name} value={c.name}>
+                        {c.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-creds" disabled>
+                      No credentials found
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                onClick={() => setShowAuth(true)}
+              >
+                Add
+              </Button>
+            </div>
+          );
+        }
+        return (
+          <Select
+            value={fieldState[f.key]}
+            onValueChange={(val) => handleChange(f.key, val)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={f.placeholder || "Select option"} />
+            </SelectTrigger>
+            <SelectContent>
+              {(selectOptions[f.key] || []).map((opt: any) => (
+                <SelectItem
+                  key={opt.id || opt.value}
+                  value={opt.id || opt.value}
+                >
+                  {opt.name || opt.label || opt.id || opt.value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      
+      default:
+        return null;
+    }
+  };
 
   return (
     <>
       <div className="mb-4">
         <div className="flex items-center gap-2">
           {definition?.icon && (
-            <img src={definition.icon} alt="icon" className="w-6 h-6" />
+            <img 
+              src={definition.icon} 
+              alt="Node icon" 
+              className="w-6 h-6" 
+            />
           )}
           <h2 className="font-semibold text-base text-foreground flex-1">
             {definition?.def || definition?.name || 'Node'}
@@ -77,10 +280,10 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         </div>
       </div>
 
-      {/* ====== Visualization Chart for Visualize node ====== */}
+      {/* Visualization for Visualize node */}
       {isVisualize && (
         <div className="py-2">
-          {vizCandles && vizCandles.t && vizCandles.t.length > 0 ? (
+          {vizCandles?.t?.length ? (
             <VisualizeCandlesSignals
               candles={vizCandles}
               indicator={{
@@ -90,7 +293,9 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               }}
             />
           ) : (
-            <div className="text-gray-500 text-sm py-8 text-center">No candle data to visualize</div>
+            <div className="text-gray-500 text-sm py-8 text-center">
+              No candle data to visualize
+            </div>
           )}
           <div className="text-xs mt-2 flex gap-4">
             <span>
@@ -104,160 +309,23 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           </div>
         </div>
       )}
-      {/* ====== End Visualization Chart ====== */}
 
+      {/* Form for non-Visualize nodes */}
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {(definition.fields || []).map((f: any) => {
-            // --------- CONDITIONAL FIELD DISPLAY ---------
-            let shouldShow = true;
-            if (f.displayOptions && f.displayOptions.show) {
-              for (const [depKey, allowedValuesRaw] of Object.entries(f.displayOptions.show)) {
-                const allowedValues = allowedValuesRaw as string[];
-                if (!allowedValues.includes(fieldState[depKey])) {
-                  shouldShow = false;
-                  break;
-                }
-              }
-            }
-            if (!shouldShow) return null;
-            // ---------------------------------------------
+          {(definition.fields || []).map((f: any) => (
+            <div key={f.key}>
+              <Label>{f.label}</Label>
+              {renderField(f)}
+            </div>
+          ))}
 
-            return (
-              <div key={f.key}>
-                <Label>{f.label}</Label>
-
-                {/* --------- Text Field --------- */}
-                {f.type === "text" && (
-                  <>
-                    <Input
-                      value={fieldState[f.key]}
-                      placeholder={f.placeholder}
-                      onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onFocus={(e) => e.target.select()}
-                      style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) =>
-                        handleDrop(
-                          f.key,
-                          (val) => handleChange(f.key, val),
-                          e,
-                          fieldState[f.key] ?? ""
-                        )
-                      }
-                      className="nodrag"
-                    />
-                    {fieldState[f.key]?.includes("{{") && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Preview: {getFieldPreview(f.key)}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* --------- Textarea Field --------- */}
-                {f.type === "textarea" && (
-                  <>
-                    <textarea
-                      className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
-                      value={fieldState[f.key]}
-                      placeholder={f.placeholder}
-                      onChange={(e) => handleChange(f.key, e.target.value)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onFocus={(e) => e.target.select()}
-                      style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                      onDrop={(e) =>
-                        handleDrop(
-                          f.key,
-                          (val) => handleChange(f.key, val),
-                          e,
-                          fieldState[f.key]
-                        )
-                      }
-                    />
-                    {fieldState[f.key]?.includes("{{") && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Preview: {getFieldPreview(f.key)}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* --------- Select (Credential) Field --------- */}
-                {f.type === "select" && f.optionsSource === "credentialsApi" ? (
-                  <div className="flex gap-2 items-center">
-                    <Select
-                      value={fieldState[f.key]}
-                      onValueChange={(val) => handleChange(f.key, val)}
-                      disabled={loadingSelect[f.key]}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={
-                            loadingSelect[f.key]
-                              ? "Loading..."
-                              : "Select credential"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(selectOptions[f.key] || []).length > 0 ? (
-                          selectOptions[f.key].map((c: any) => (
-                            <SelectItem key={c.name} value={c.name}>
-                              {c.name || c.name}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="no-creds" disabled>
-                            No credentials found
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      type="button"
-                      onClick={() => setShowAuth(true)}
-                    >
-                      Add
-                    </Button>
-                  </div>
-                ) : null}
-
-                {/* --------- Regular Select Field --------- */}
-                {f.type === "select" && f.optionsSource !== "credentialsApi" && (
-                  <Select
-                    value={fieldState[f.key]}
-                    onValueChange={(val) => handleChange(f.key, val)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={f.placeholder || "Select option"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectOptions[f.key] || []).map((opt: any) => (
-                        <SelectItem
-                          key={opt.id || opt.value}
-                          value={opt.id || opt.value}
-                        >
-                          {opt.name || opt.label || opt.id || opt.value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            );
-          })}
-
-          {/* --------- Error Message --------- */}
           {error && (
             <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
               {error}
             </div>
           )}
 
-          {/* --------- Submit Button --------- */}
           <Button
             type="submit"
             className="w-full bg-success hover:bg-success/90 text-success-foreground"

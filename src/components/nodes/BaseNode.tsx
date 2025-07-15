@@ -10,25 +10,17 @@ const BACKEND_URL = "http://localhost:8000";
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
-  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
+  const sameType = allNodes.filter((n) => (n.data.definition?.name || n.data.config?.name) === baseName);
   const idx = sameType.findIndex((n) => n.id === node.id);
   return idx > 0 ? `${baseName}${idx}` : baseName;
 };
 
 function getUserId(): string {
   try {
-    // First try the new format
     const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    if (user.id || user.user_id) {
-      return user.id || user.user_id;
-    }
-    
-    // Fallback to old format
-    const userId = localStorage.getItem("userId");
-    return userId || "";
+    return user.id || user.user_id || "";
   } catch {
-    // Fallback to old format on JSON parse error
-    return localStorage.getItem("userId") || "";
+    return "";
   }
 }
 
@@ -185,18 +177,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     e.stopPropagation();
     try {
       const raw = e.dataTransfer.getData("application/reactflow");
-      console.log("raw",raw)
       if (!raw) return;
-      const data = JSON.parse(raw);
-      // Handle both old format (direct keyPath) and new format (object with keyPath property)
-      const keyPath = data.keyPath || data;
+      const { keyPath } = JSON.parse(raw);
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode
         ? getDisplayName(sourceNode, nodes)
         : definition?.name || 'Node';
       const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
       const newValue = currentValue + insert;
-      console.log("newValue", newValue )
       setter(newValue);
       handleChange(fieldKey, newValue);
       setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
@@ -221,36 +209,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   const userId = getUserId();
-  console.log("userId", userId)
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
       const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
-      
-      // Check if userId exists and is valid
-      if (!userId || userId.trim() === "") {
-        console.log('No user ID available, skipping credentials fetch');
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-        return;
-      }
-      
-      const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
-      console.log('Fetching credentials from:', url);
-      console.log('API name:', apiName, 'User ID:', userId);
-      
-      const res = await fetch(url);
-      console.log('Response status:', res.status);
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
+      const res = await fetch(`${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`);
       const json = await res.json();
-      console.log('Credentials response:', json);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: json.credentials || [] }));
-    } catch (error) {
-      console.error('Error fetching credentials:', error);
+    } catch {
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
     } finally {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));

@@ -15,18 +15,10 @@ interface GenericAuthModalProps {
 
 function getUserId() {
   try {
-    // First try the new format
     const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    if (user.id || user.user_id) {
-      return user.id || user.user_id;
-    }
-    
-    // Fallback to old format
-    const userId = localStorage.getItem("userId");
-    return userId || "";
+    return user.id || user.user_id || "";
   } catch {
-    // Fallback to old format on JSON parse error
-    return localStorage.getItem("userId") || "";
+    return "";
   }
 }
 

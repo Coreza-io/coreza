@@ -244,9 +244,8 @@ const WorkflowEditor = () => {
         const userObj = { id: userId, email: userEmail, name: userName };
         setUser(userObj);
         
-        // Load workflow - either latest for new workflow or specific existing workflow
+        // Auto-load latest workflow if this is a new workflow
         if (isNewWorkflow) {
-          // Auto-load latest workflow if this is a new workflow
           setLoading(true);
           try {
             const { data, error } = await supabase
@@ -264,15 +263,7 @@ const WorkflowEditor = () => {
               
               // Load nodes and edges
               if (data.nodes && Array.isArray(data.nodes)) {
-                // Restore node definitions from manifest when loading from database
-                const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-                  }
-                }));
-                setNodes(restoredNodes);
+                setNodes(data.nodes as unknown as Node[]);
               }
               if (data.edges && Array.isArray(data.edges)) {
                 setEdges(data.edges as unknown as Edge[]);
@@ -285,45 +276,6 @@ const WorkflowEditor = () => {
             console.error("Error loading latest workflow:", error);
           }
           setLoading(false);
-        } else if (workflowId) {
-          // Load specific existing workflow
-          setLoading(true);
-          try {
-            const { data, error } = await supabase
-              .from("workflows")
-              .select("*")
-              .eq("id", workflowId)
-              .eq("user_id", userId)
-              .single();
-
-            if (data && !error) {
-              setWorkflowName(data.name || "Untitled Workflow");
-              setIsActive(!!data.is_active);
-              
-              // Load nodes and edges
-              if (data.nodes && Array.isArray(data.nodes)) {
-                // Restore node definitions from manifest when loading from database
-                const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-                  }
-                }));
-                setNodes(restoredNodes);
-              }
-              if (data.edges && Array.isArray(data.edges)) {
-                setEdges(data.edges as unknown as Edge[]);
-              }
-            } else {
-              console.error("Workflow not found or access denied");
-              navigate('/workflows');
-            }
-          } catch (error) {
-            console.error("Error loading workflow:", error);
-            navigate('/workflows');
-          }
-          setLoading(false);
         }
       } else {
         // Redirect to login if no user found
@@ -332,7 +284,7 @@ const WorkflowEditor = () => {
     };
     
     checkUserAndLoadWorkflow();
-  }, [navigate, isNewWorkflow, workflowId, setNodes, setEdges]);
+  }, [navigate, isNewWorkflow, setNodes, setEdges]);
 
   // Persist workflow state to localStorage
   useEffect(() => {
@@ -359,15 +311,7 @@ const WorkflowEditor = () => {
           setWorkflowName(state.name || "Untitled Workflow");
           setIsActive(!!state.isActive);
           if (state.nodes && state.nodes.length > 0) {
-            // Restore node definitions from manifest when loading from localStorage
-            const restoredNodes = state.nodes.map((node: any) => ({
-              ...node,
-              data: {
-                ...node.data,
-                definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-              }
-            }));
-            setNodes(restoredNodes);
+            setNodes(state.nodes);
           }
           if (state.edges) {
             setEdges(state.edges);

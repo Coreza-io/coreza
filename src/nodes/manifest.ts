@@ -116,40 +116,7 @@ const ChatInputDef = { name: "Chat Input", def: "Chat Input node definition", no
 const FinnHubDef = { name: "FinnHub", def: "FinnHub node definition", node_type: "finnhub", icon: "Database", category: "Data", description: "Real-time financial market data from FinnHub", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
 const YahooFinanceDef = { name: "Yahoo Finance", def: "Yahoo Finance node definition", node_type: "yahooFinance", icon: "TrendingUp", category: "Data", description: "Market data and historical prices from Yahoo Finance", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "source", position: "right", id: "output" }], fields: [] };
 const MovingAverageCrossDef = { name: "Moving Average Cross", def: "Moving Average Cross node definition", node_type: "movingAverageCross", icon: "Activity", category: "Indicators", description: "Moving average crossover strategy indicator", color: "text-orange-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
-const EMADef = {
-  "name": "EMA",
-  "def": "Exponential Moving Average",
-  "node_type": "main",
-  "icon": "/assets/icons/ema.svg",
-  "category": "Indicators",
-  "description": "Exponential Moving Average indicator",
-  "color": "text-blue-500",
-  "size": { "width": 300, "height": 220 },
-  "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
-  ],
-  "action": {
-    "url": "/execute/ema",
-    "method": "POST"
-  },
-  "fields": [
-    {
-      "key": "candle_data",
-      "label": "Candle Data",
-      "type": "text",
-      "required": true
-    },
-    {
-      "key": "window",
-      "label": "EMA Window",
-      "type": "text",
-      "placeholder": "e.g. 20",
-      "default": "20",
-      "required": true
-    }
-  ]
-};
+const EMADef = { name: "EMA", def: "EMA node definition", node_type: "ema", icon: "TrendingUp", category: "Indicators", description: "Exponential Moving Average indicator", color: "text-blue-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const RSIDef = { name: "RSI", def: "RSI node definition", node_type: "rsi", icon: "BarChart3", category: "Indicators", description: "Relative Strength Index technical indicator", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 const VisualizeDef = { name: "Visualize", def: "Visualize node definition", node_type: "visualize", icon: "BarChart3", category: "Visualization", description: "Chart and visualize trading data", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }], fields: [] };
 const IfDef = {

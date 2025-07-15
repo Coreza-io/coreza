@@ -77,8 +77,12 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     // Conditional field display logic
     if (f.displayOptions?.show) {
       const shouldShow = Object.entries(f.displayOptions.show).every(
-        ([depKey, allowedValues]) => 
-          (allowedValues as string[]).includes(fieldState[depKey])
+        ([depKey, allowedValues]) => {
+          const currentValue = fieldState[depKey];
+          // If the dependency field is empty/undefined, don't show this field
+          if (!currentValue) return false;
+          return (allowedValues as string[]).includes(currentValue);
+        }
       );
       if (!shouldShow) return null;
     }

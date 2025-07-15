@@ -228,6 +228,8 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               src={definition.icon} 
               alt="Node icon" 
               className="w-6 h-6" 
+              loading="eager"
+              style={{ imageRendering: 'auto' }}
             />
           )}
           <h2 className="font-semibold text-base text-foreground flex-1">

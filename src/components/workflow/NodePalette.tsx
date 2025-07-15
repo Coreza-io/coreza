@@ -109,7 +109,15 @@ export function NodePalette() {
                             {(() => {
                               // Handle SVG icons or Lucide icons
                               if (node.icon?.startsWith('/assets/')) {
-                                return <img src={node.icon} alt={node.name} className="h-4 w-4" />;
+                                return (
+                                  <img 
+                                    src={node.icon} 
+                                    alt={node.name} 
+                                    className="h-4 w-4" 
+                                    loading="eager"
+                                    style={{ imageRendering: 'auto' }}
+                                  />
+                                );
                               } else {
                                 const IconComponent = getIconComponent(node.icon);
                                 return <IconComponent className="h-4 w-4" />;

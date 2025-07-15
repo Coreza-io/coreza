@@ -121,7 +121,18 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {!isExpanded && (
           <div className="flex flex-col items-center justify-center h-full p-4 select-none">
             <div className="text-muted-foreground mb-2">
-              {icon}
+              {/* Render icon with immediate loading */}
+              {typeof icon === 'string' && icon.startsWith('/assets/') ? (
+                <img 
+                  src={icon} 
+                  alt="Node icon" 
+                  className="w-6 h-6" 
+                  loading="eager"
+                  style={{ imageRendering: 'auto' }}
+                />
+              ) : (
+                icon
+              )}
             </div>
             <div className="font-semibold text-sm text-foreground text-center leading-tight">
               {label}

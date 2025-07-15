@@ -61,7 +61,7 @@ export function RemovableEdge({
       />
       <EdgeLabelRenderer>
         <div
-          className="absolute pointer-events-auto"
+          className="absolute pointer-events-auto group"
           style={{
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
           }}
@@ -74,7 +74,7 @@ export function RemovableEdge({
             }}
             size="sm"
             variant="destructive"
-            className="w-7 h-7 p-0 rounded-full opacity-80 hover:opacity-100 transition-opacity shadow-md border-2 border-white pointer-events-auto"
+            className="w-7 h-7 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md border-2 border-white pointer-events-auto"
           >
             <X className="h-4 w-4" />
           </Button>

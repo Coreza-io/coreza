@@ -73,7 +73,7 @@ const AlpacaDef = {
       required: true,
       displayOptions: {
         show: {
-          operation: ["positions", "orders", "get_candle"]
+          operation: ["get_candle"]
         }
       }
     },

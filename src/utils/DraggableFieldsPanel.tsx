@@ -11,10 +11,11 @@ const DraggableFieldsPanel = ({
 }) => {
   if (!data || typeof data !== "object") return null;
 
-  // Filter out numeric array indices to only show meaningful field names
+  // Filter out numeric array indices only when we're dealing with arrays
+  // but keep meaningful object properties
   const filteredEntries = Object.entries(data).filter(([key, value]) => {
-    // Skip numeric array indices (like "0", "1", "2")
-    if (Array.isArray(data) && !isNaN(Number(key))) {
+    // Only skip numeric keys if the parent is an array AND it's a pure numeric index
+    if (Array.isArray(data) && /^\d+$/.test(key)) {
       return false;
     }
     return true;

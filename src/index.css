@@ -48,7 +48,7 @@
     /* Trading platform specific colors - Light */
     --trading-grid: 210 10% 96%;
     --trading-node: 0 0% 100%;
-    --trading-edge: 217 91% 60%;
+    --trading-edge: 156 163 175;
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 224 12% 8%;
     --sidebar-primary: 217 91% 60%;
@@ -113,7 +113,7 @@
     /* Trading platform specific colors - Dark */
     --trading-grid: 224 12% 12%;
     --trading-node: 224 12% 15%;
-    --trading-edge: 217 91% 60%;
+    --trading-edge: 107 114 128;
     --sidebar-background: 224 12% 6%;
     --sidebar-foreground: 210 20% 85%;
     --sidebar-primary: 217 91% 60%;

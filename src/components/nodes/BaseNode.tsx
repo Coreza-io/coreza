@@ -55,9 +55,7 @@ export interface BaseNodeRenderProps {
   // Event handlers
   handleChange: (key: string, value: any) => void;
   handleSubmit: (e: React.FormEvent) => void;
-  handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
   handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
-  getFieldPreview: (fieldKey: string) => string | null;
   setShowAuth: (show: boolean) => void;
   setSelectedPrevNodeId: (id: string) => void;
   handlePanelSave: (newData: any) => void;
@@ -175,49 +173,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     );
   };
 
-  const handleDrop = (
-    fieldKey: string,
-    setter: React.Dispatch<React.SetStateAction<string>>,
-    e: React.DragEvent,
-    currentValue: string
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const raw = e.dataTransfer.getData("application/reactflow");
-      console.log("raw",raw)
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      const keyPath = data.keyPath || data;
-      const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode
-        ? getDisplayName(sourceNode, nodes)
-        : definition?.name || 'Node';
-      const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
-      const newValue = currentValue + insert;
-      console.log("newValue", newValue )
-      setter(newValue);
-      handleChange(fieldKey, newValue);
-      setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
-    } catch (err) {
-      console.error("Drop error:", err);
-    }
-    document.body.classList.remove("cursor-grabbing", "select-none");
-  };
 
-  const getFieldPreview = (fieldKey: string) => {
-    const expr = fieldState[fieldKey] || "";
-    if (!expr.includes("{{")) return null;
-    const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
-    const srcNode = previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
-    const srcData = srcNode?.data?.output || srcNode?.data || {};
-    try {
-      const resolved = resolveReferences(expr, srcData);
-      return summarizePreview(resolved);
-    } catch {
-      return "";
-    }
-  };
 
   const userId = getUserId();
   console.log("userId", userId)
@@ -437,9 +393,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     isPinned,
     handleChange,
     handleSubmit,
-    handleDrop,
     handleDragStart,
-    getFieldPreview,
     setShowAuth,
     setSelectedPrevNodeId,
     handlePanelSave,

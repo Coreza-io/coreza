@@ -1,4 +1,3 @@
-// src/utils/DraggableFieldsPanel.tsx
 import React from "react";
 
 const DraggableFieldsPanel = ({
@@ -22,7 +21,7 @@ const DraggableFieldsPanel = ({
           <div key={fullKey} className="flex flex-col ml-2">
             <div className="flex items-center gap-2">
               <div
-                className="nodrag px-2 py-1 bg-blue-100 rounded text-xs cursor-pointer font-semibold w-fit"
+                className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors"
                 draggable
                 onDragStart={e =>
                   onDragStart(
@@ -36,11 +35,11 @@ const DraggableFieldsPanel = ({
               >
                 {key}
               </div>
-              <span className="text-xs text-gray-700">
+              <span className="text-xs text-muted-foreground">
                 {value === undefined ? (
-                  <span className="text-gray-400">undefined</span>
+                  <span className="text-muted-foreground/60">undefined</span>
                 ) : isObject ? (
-                  <span className="font-mono text-gray-400">{Array.isArray(value) ? "[...]" : "{...}"}</span>
+                  <span className="font-mono text-muted-foreground/60">{Array.isArray(value) ? "[...]" : "{...}"}</span>
                 ) : (
                   String(value)
                 )}

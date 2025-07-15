@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo } from "react";
+import React, { Suspense, useMemo, memo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
+import { IconRegistry } from "@/components/icons/NodeIcons";
+import CachedIcon from "@/components/common/CachedIcon";
 import type { BaseNodeRenderProps } from "../BaseNode";
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
@@ -223,15 +225,27 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     <>
       <div className="mb-4">
         <div className="flex items-center gap-2">
-          {definition?.icon && (
-            <img 
-              src={definition.icon} 
-              alt="Node icon" 
-              className="w-6 h-6" 
-              loading="eager"
-              style={{ imageRendering: 'auto' }}
-            />
-          )}
+          {definition?.icon && (() => {
+            // Use inline SVG components for instant rendering
+            const IconComponent = IconRegistry[definition.name as keyof typeof IconRegistry];
+            if (IconComponent) {
+              return <IconComponent className="w-6 h-6" />;
+            }
+
+            // Fallback to cached image for other icons
+            return (
+              <CachedIcon
+                src={definition.icon}
+                alt="Node icon"
+                className="w-6 h-6"
+                fallback={
+                  <div className="w-6 h-6 bg-muted rounded flex items-center justify-center">
+                    <span className="text-xs">{definition.name?.[0] || '?'}</span>
+                  </div>
+                }
+              />
+            );
+          })()}
           <h2 className="font-semibold text-base text-foreground flex-1">
             {definition?.def || definition?.name || 'Node'}
           </h2>
@@ -334,4 +348,4 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   );
 };
 
-export default BasicNodeLayout;
+export default memo(BasicNodeLayout);

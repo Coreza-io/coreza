@@ -1,9 +1,11 @@
-import React from "react";
+import React, { memo } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layouts/BasicNodeLayout";
 import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
+import { IconRegistry } from "@/components/icons/NodeIcons";
+import CachedIcon from "@/components/common/CachedIcon";
 
 interface NodeRouterProps {
   data: any;
@@ -72,35 +74,35 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             onSave: renderProps.handlePanelSave,
             onPinToggle: renderProps.handlePanelPinToggle,
           }}
-          icon={
-            definition.icon ? (
-              definition.icon.startsWith('/assets/') ? (
-                <img 
-                  src={definition.icon} 
-                  className="w-10 h-10" 
-                  alt="node icon"
-                  loading="eager"
-                  style={{ imageRendering: 'auto' }}
-                  onError={(e) => {
-                    console.warn(`Failed to load icon: ${definition.icon}`);
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <img 
-                  src={definition.icon} 
-                  className="w-10 h-10" 
-                  alt="node icon"
-                  loading="eager"
-                />
-              )
-            ) : (
-              // Fallback icon if no icon is defined
-              <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
-                <span className="text-xs">?</span>
-              </div>
-            )
-          }
+          icon={(() => {
+            if (!definition.icon) {
+              return (
+                <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                  <span className="text-xs">?</span>
+                </div>
+              );
+            }
+
+            // Use inline SVG components for instant rendering
+            const IconComponent = IconRegistry[definition.name as keyof typeof IconRegistry];
+            if (IconComponent) {
+              return <IconComponent className="w-10 h-10" />;
+            }
+
+            // Fallback to cached image for other icons
+            return (
+              <CachedIcon
+                src={definition.icon}
+                alt="node icon"
+                className="w-10 h-10"
+                fallback={
+                  <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                    <span className="text-xs">{definition.name?.[0] || '?'}</span>
+                  </div>
+                }
+              />
+            );
+          })()}
           label={renderProps.displayName}
           minWidth={definition.size?.width || 340}
           minHeight={definition.size?.height || 340}
@@ -118,4 +120,5 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   );
 };
 
-export default NodeRouter;
+// Memoize the entire component to prevent unnecessary re-renders
+export default memo(NodeRouter);

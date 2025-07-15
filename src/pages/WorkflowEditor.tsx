@@ -493,9 +493,9 @@ const WorkflowEditor = () => {
           >
             <Background 
               variant={BackgroundVariant.Dots} 
-              gap={20} 
-              size={1}
-              color="hsl(var(--border))"
+              gap={16} 
+              size={0.8}
+              color="hsl(var(--muted-foreground) / 0.15)"
             />
             <MiniMap 
               className="!bg-card !border-border"

@@ -46,7 +46,7 @@
     --radius: 0.75rem;
 
     /* Trading platform specific colors - Light */
-    --trading-grid: 220 14% 98%;
+    --trading-grid: 220 14% 95%;
     --trading-node: 0 0% 100%;
     --trading-edge: 156 163 175;
     --sidebar-background: 0 0% 100%;
@@ -111,7 +111,7 @@
     --ring: 217 91% 60%;
 
     /* Trading platform specific colors - Dark */
-    --trading-grid: 220 13% 7%;
+    --trading-grid: 220 13% 10%;
     --trading-node: 224 12% 15%;
     --trading-edge: 107 114 128;
     --sidebar-background: 224 12% 6%;

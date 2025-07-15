@@ -74,8 +74,32 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           }}
           icon={
             definition.icon ? (
-              <img src={definition.icon} className="w-10 h-10" alt="node icon" />
-            ) : undefined
+              definition.icon.startsWith('/assets/') ? (
+                <img 
+                  src={definition.icon} 
+                  className="w-10 h-10" 
+                  alt="node icon"
+                  loading="eager"
+                  style={{ imageRendering: 'auto' }}
+                  onError={(e) => {
+                    console.warn(`Failed to load icon: ${definition.icon}`);
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <img 
+                  src={definition.icon} 
+                  className="w-10 h-10" 
+                  alt="node icon"
+                  loading="eager"
+                />
+              )
+            ) : (
+              // Fallback icon if no icon is defined
+              <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                <span className="text-xs">?</span>
+              </div>
+            )
           }
           label={renderProps.displayName}
           minWidth={definition.size?.width || 340}

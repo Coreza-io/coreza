@@ -95,6 +95,24 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     setLogicalOps((lo) => lo.map((v, i) => (i === idx ? op : v)));
   }, []);
 
+  function resolveDeep(val, selectedInputData, allNodeData) {
+    if (typeof val === "string") {
+      return resolveReferences(val, selectedInputData, allNodeData);
+    }
+    if (Array.isArray(val)) {
+      return val.map(v => resolveDeep(v, selectedInputData, allNodeData));
+    }
+    if (typeof val === "object" && val !== null) {
+      return Object.fromEntries(
+        Object.entries(val).map(([k, v]) =>
+          [k, resolveDeep(v, selectedInputData, allNodeData)]
+        )
+      );
+    }
+    return val;
+  }
+
+
   // Drag helper for repeater
   const handleRepeaterDrop = useCallback(
     (
@@ -106,6 +124,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       e.preventDefault();
       e.stopPropagation();
       console.log("Drop fired!", { idx, field, e, currentValue });
+
       const raw = e.dataTransfer.getData("application/reactflow");
       if (!raw) {
         document.body.classList.remove("cursor-grabbing", "select-none");
@@ -113,20 +132,23 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       }
       try {
         const { keyPath } = JSON.parse(raw);
-        // ▶️ INJECT SOURCE NODE'S UNIQUE DISPLAY NAME FOR DRAG-AND-DROP
-        // locate the node where the drag originated
+        // INJECT SOURCE NODE'S UNIQUE DISPLAY NAME FOR DRAG-AND-DROP
         const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
         const sourceDisplayName = sourceNode
           ? getDisplayName(sourceNode, previousNodes)
           : 'Node';
         const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+
         updateCondition(idx, field, currentValue + insert);
-        setSourceMap((sm) => {
-          const arr = Array.isArray(sm) ? sm : [];
-          const copy = [...arr];
-          copy[idx] = { ...(copy[idx] ?? {}), [field]: selectedPrevNodeId };
-          return copy;
-        });
+
+        // 👇 NEW: robust object-based sourceMap logic
+        setSourceMap((sm) => ({
+          ...sm,
+          [idx]: {
+            ...(sm?.[idx] || {}),
+            [field]: selectedPrevNodeId,
+          },
+        }));
       } catch (error) {
         console.error("Drop error:", error);
       }
@@ -135,52 +157,46 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     [selectedPrevNodeId, updateCondition, previousNodes]
   );
 
+
   const getPreviewFor = useCallback(
-    (idx: number, field: "left" | "right", expr: string) => {
-      if (typeof expr !== "string" || !expr.includes("{{")) return null;
-      
-      // Get fresh node data from React Flow
+    (idx: number, field: "left" | "right", expr: any) => {
+      if (typeof expr !== "string" && typeof expr !== "object") return null;
+      if (typeof expr === "string" && !expr.includes("{{")) return null;
+
       const allNodes = getNodes();
       const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
       const srcNode = allNodes.find((n) => n.id === srcId);
-      
+
       if (!srcNode) {
         console.log("🔍 Preview Debug - No source node found:", { srcId, allNodes: allNodes.length });
         return "";
       }
-      
-      // Use output data if available, otherwise use input data, otherwise use node values
+
       let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
-      
-      // If srcData is an array with one element, use that element (common case for API responses)
       if (Array.isArray(srcData) && srcData.length === 1) {
         srcData = srcData[0];
       }
-      
-      console.log("🔍 Preview Debug:", {
-        idx,
-        field,
-        expr,
-        srcId,
-        srcNode: srcNode.data,
-        srcData,
-        originalData: srcNode.data?.output || srcNode.data?.input || srcNode.data?.values,
-        sourceMap: sourceMap[idx],
-        hasOutput: !!srcNode.data?.output,
-        hasInput: !!srcNode.data?.input,
-        hasValues: !!srcNode.data?.values
+
+      // 👇 Build allNodeData as you do in your payload
+      const allNodeData = {};
+      previousNodes.forEach(prevNode => {
+        const displayName = getDisplayName(prevNode, allNodes);
+        let nodeData = prevNode.data?.output || prevNode.data || {};
+        if (Array.isArray(nodeData) && nodeData.length > 0) {
+          nodeData = nodeData[0] || {};
+        }
+        allNodeData[displayName] = nodeData;
       });
-      
+
       try {
-        const resolved = resolveReferences(expr, srcData);
-        console.log("✅ Resolved preview:", { expr, srcData, resolved });
+        const resolved = resolveDeep(expr, srcData, allNodeData);
         return summarizePreview(resolved);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";
       }
     },
-    [selectedPrevNodeId, sourceMap, getNodes]
+    [selectedPrevNodeId, sourceMap, getNodes, previousNodes]
   );
 
   return (

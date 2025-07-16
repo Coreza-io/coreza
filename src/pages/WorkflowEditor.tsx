@@ -101,35 +101,132 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
+  // Evaluate local logic for Logic category nodes
+  const evaluateLogicNode = useCallback((node: Node) => {
+    const nodeConfig = Object.values(nodeManifest).find(config => 
+      config.name === node.type || config.node_type === node.type
+    );
+    
+    if (nodeConfig?.category === "Logic" && nodeConfig.name === "If") {
+      const conditions = Array.isArray(node.data?.conditions) ? node.data.conditions : [];
+      
+      if (conditions.length === 0) {
+        console.log("No conditions to evaluate, defaulting to false");
+        return false;
+      }
+      
+      // Evaluate all conditions (AND logic)
+      const allConditionsTrue = conditions.every((condition: any) => {
+        let { left, operator, right } = condition;
+        
+        // For now, just handle basic values - JSON reference resolution would need upstream data
+        // TODO: Resolve JSON references like {{ $json.value }} when we have workflow execution context
+        if (typeof left === 'string' && left.includes('{{')) {
+          console.log("JSON reference detected in left value:", left);
+          left = "0"; // Default value for demo
+        }
+        if (typeof right === 'string' && right.includes('{{')) {
+          console.log("JSON reference detected in right value:", right);
+          right = "0"; // Default value for demo
+        }
+        
+        // Parse values (convert strings to numbers if they're numeric)
+        const leftVal = isNaN(Number(left)) ? left : Number(left);
+        const rightVal = isNaN(Number(right)) ? right : Number(right);
+        
+        console.log(`Evaluating condition: ${leftVal} ${operator} ${rightVal}`);
+        
+        switch (operator) {
+          case "===": return leftVal === rightVal;
+          case "!==": return leftVal !== rightVal;
+          case ">=": return Number(leftVal) >= Number(rightVal);
+          case "=<": return Number(leftVal) <= Number(rightVal);
+          default: 
+            console.log("Unknown operator:", operator);
+            return false;
+        }
+      });
+      
+      return allConditionsTrue;
+    }
+    
+    return null; // Not a logic node or unsupported
+  }, []);
+
   // Execute a node and animate outgoing edges
   const executeNode = useCallback((nodeId: string) => {
     setExecutingNode(nodeId);
     
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
     // Find all edges coming out of this node
     const outgoingEdges = edges.filter(edge => edge.source === nodeId);
     
-    // Animate the outgoing edges
-    setEdges(currentEdges => 
-      currentEdges.map(edge => 
-        outgoingEdges.some(outEdge => outEdge.id === edge.id)
-          ? { ...edge, animated: true, className: 'animated' }
-          : edge
-      )
+    // Check if this is a Logic category node
+    const nodeConfig = Object.values(nodeManifest).find(config => 
+      config.name === node.type || config.node_type === node.type
     );
     
-    // Simulate execution time
-    setTimeout(() => {
-      setExecutingNode(null);
-      // Stop animation
+    if (nodeConfig?.category === "Logic") {
+      // Evaluate logic locally
+      const result = evaluateLogicNode(node);
+      
+      // Animate only the relevant edge based on the result
+      const relevantEdges = outgoingEdges.filter(edge => {
+        if (nodeConfig.name === "If") {
+          return edge.sourceHandle === (result ? "true" : "false");
+        }
+        return true;
+      });
+      
+      // Animate the relevant edges
       setEdges(currentEdges => 
         currentEdges.map(edge => 
-          outgoingEdges.some(outEdge => outEdge.id === edge.id)
-            ? { ...edge, animated: false, className: '' }
+          relevantEdges.some(relevantEdge => relevantEdge.id === edge.id)
+            ? { ...edge, animated: true, className: 'animated' }
             : edge
         )
       );
-    }, 2000);
-  }, [edges, setEdges]);
+      
+      // Show result in console
+      console.log(`Logic node ${nodeId} evaluated to:`, result);
+      
+      // Stop animation after delay
+      setTimeout(() => {
+        setExecutingNode(null);
+        setEdges(currentEdges => 
+          currentEdges.map(edge => 
+            relevantEdges.some(relevantEdge => relevantEdge.id === edge.id)
+              ? { ...edge, animated: false, className: '' }
+              : edge
+          )
+        );
+      }, 2000);
+    } else {
+      // Regular node execution - animate all outgoing edges
+      setEdges(currentEdges => 
+        currentEdges.map(edge => 
+          outgoingEdges.some(outEdge => outEdge.id === edge.id)
+            ? { ...edge, animated: true, className: 'animated' }
+            : edge
+        )
+      );
+      
+      // Simulate execution time
+      setTimeout(() => {
+        setExecutingNode(null);
+        // Stop animation
+        setEdges(currentEdges => 
+          currentEdges.map(edge => 
+            outgoingEdges.some(outEdge => outEdge.id === edge.id)
+              ? { ...edge, animated: false, className: '' }
+              : edge
+          )
+        );
+      }, 2000);
+    }
+  }, [edges, setEdges, nodes, evaluateLogicNode]);
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {

@@ -150,7 +150,12 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       }
       
       // Use output data if available, otherwise use input data, otherwise use node values
-      const srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
+      let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
+      
+      // If srcData is an array with one element, use that element (common case for API responses)
+      if (Array.isArray(srcData) && srcData.length === 1) {
+        srcData = srcData[0];
+      }
       
       console.log("🔍 Preview Debug:", {
         idx,
@@ -159,6 +164,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
         srcId,
         srcNode: srcNode.data,
         srcData,
+        originalData: srcNode.data?.output || srcNode.data?.input || srcNode.data?.values,
         sourceMap: sourceMap[idx],
         hasOutput: !!srcNode.data?.output,
         hasInput: !!srcNode.data?.input,

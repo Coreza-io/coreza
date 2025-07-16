@@ -320,8 +320,17 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                   
                                   const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
                                   if (reference) {
+                                    let displayValue = reference;
+                                    try {
+                                      const data = JSON.parse(reference);
+                                      if (data.type === "jsonReference") {
+                                        displayValue = data.keyPath || data.value;
+                                      }
+                                    } catch {
+                                      // If not JSON, use as is
+                                    }
                                     const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                    newItems[index] = { ...newItems[index], [subField.key]: displayValue };
                                     handleChange(f.key, newItems);
                                   }
                                 }}
@@ -352,8 +361,17 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                     
                                     const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
                                     if (reference) {
+                                      let displayValue = reference;
+                                      try {
+                                        const data = JSON.parse(reference);
+                                        if (data.type === "jsonReference") {
+                                          displayValue = data.keyPath || data.value;
+                                        }
+                                      } catch {
+                                        // If not JSON, use as is
+                                      }
                                       const newItems = [...(fieldState[f.key] || [])];
-                                      newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                      newItems[index] = { ...newItems[index], [subField.key]: displayValue };
                                       handleChange(f.key, newItems);
                                     }
                                   }}

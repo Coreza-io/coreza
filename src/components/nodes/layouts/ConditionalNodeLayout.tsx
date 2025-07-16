@@ -334,33 +334,31 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                   }
                                 }}
                               >
-                                <input
-                                  type="text"
-                                  className="w-full border rounded px-3 py-1 text-xs h-8 nodrag bg-background border-border focus:border-primary focus:outline-none"
-                                  placeholder={subField.placeholder}
-                                  value={item[subField.key] || ""}
-                                  onChange={(e) => {
-                                    const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
-                                    handleChange(f.key, newItems);
-                                  }}
-                                  onDragOver={(e) => {
-                                    console.log("🔄 DRAG OVER repeater input field:", subField.key, "index:", index);
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    e.dataTransfer.dropEffect = "copy";
-                                  }}
-                                  onDrop={(e) => {
-                                    console.log("💧 DROP EVENT on repeater input field:", subField.key, "index:", index);
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    
-                                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
-                                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
-                                    
-                                    const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
-                                    if (reference) {
-                                      // Call the handleDrop function to maintain JSON format and create proper references  
+                                {(() => {
+                                  const commonInputProps = {
+                                    value: item[subField.key] || "",
+                                    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      const newItems = [...(fieldState[f.key] || [])];
+                                      newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
+                                      handleChange(f.key, newItems);
+                                    },
+                                    placeholder: subField.placeholder,
+                                    className: "nodrag",
+                                    style: item[subField.key]?.includes("{{") ? referenceStyle : undefined,
+                                    onDragOver: (e: React.DragEvent) => {
+                                      console.log("🔄 DRAG OVER repeater input field:", subField.key, "index:", index);
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      e.dataTransfer.dropEffect = "copy";
+                                    },
+                                    onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      console.log("💧 DROP EVENT on repeater input field:", subField.key, "index:", index);
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      
+                                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                                      
                                       handleDrop(
                                         `${f.key}[${index}].${subField.key}`,
                                         (val: string) => {
@@ -371,10 +369,20 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                         e,
                                         item[subField.key] || ""
                                       );
+                                    },
+                                    onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      e.target.select();
                                     }
-                                  }}
-                                  onFocus={(e) => e.target.select()}
-                                />
+                                  };
+
+                                  return (
+                                    <input
+                                      {...commonInputProps}
+                                      type="text"
+                                      className="w-full border rounded px-3 py-1 text-xs h-8 nodrag bg-background border-border focus:border-primary focus:outline-none"
+                                    />
+                                  );
+                                })()}
                                 {item[subField.key]?.includes("{{") && (
                                   <div className="text-xs text-gray-500 mt-1">
                                     Preview: {getFieldPreview(`${f.key}[${index}].${subField.key}`)}

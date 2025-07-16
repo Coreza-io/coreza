@@ -353,16 +353,8 @@ const WorkflowEditor = () => {
       isNewWorkflow,
       workflowId,
       currentId: id,
-      currentUrl: window.location.pathname,
-      documentHidden: document.hidden,
-      documentVisibilityState: document.visibilityState
+      currentUrl: window.location.pathname
     });
-    
-    // PREVENT RELOAD ON TAB SWITCH - only load if document is visible
-    if (document.hidden) {
-      console.log("🚫 Skipping workflow load - document is hidden (tab switch)");
-      return;
-    }
     
     if (authLoading) return; // Wait for auth to finish loading
     
@@ -458,7 +450,7 @@ const WorkflowEditor = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, projectId]); // Use workflowId instead of id to prevent reloads on tab switch
+  }, [authUser, authLoading, navigate, isNewWorkflow, id, projectId]); // Removed setNodes, setEdges to prevent constant reloads
 
 
   // Auto-hide palette when clicking outside or on editor

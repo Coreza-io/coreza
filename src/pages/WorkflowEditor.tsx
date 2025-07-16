@@ -231,7 +231,7 @@ const WorkflowEditor = () => {
               edge.source === nodeId || edge.target === nodeId
             );
             
-            // Highlight the executing node and animate connected edges in red
+            // Highlight the executing node and animate connected edges in green
             setEdges(currentEdges => 
               currentEdges.map(edge => 
                 connectedEdges.some(connectedEdge => connectedEdge.id === edge.id)
@@ -241,7 +241,7 @@ const WorkflowEditor = () => {
                       className: 'executing-edge',
                       style: { 
                         ...edge.style, 
-                        stroke: '#ef4444', 
+                        stroke: '#22c55e', 
                         strokeWidth: 3 
                       }
                     }
@@ -249,7 +249,7 @@ const WorkflowEditor = () => {
               )
             );
             
-            // Also highlight the executing node
+            // Highlight the executing node in green
             setNodes(currentNodes =>
               currentNodes.map(node =>
                 node.id === nodeId
@@ -258,9 +258,9 @@ const WorkflowEditor = () => {
                       className: 'executing-node',
                       style: {
                         ...node.style,
-                        border: '3px solid #ef4444',
-                        backgroundColor: '#fef2f2',
-                        boxShadow: '0 0 20px rgba(239, 68, 68, 0.4)'
+                        border: '3px solid #22c55e',
+                        backgroundColor: '#f0fdf4',
+                        boxShadow: '0 0 20px rgba(34, 197, 94, 0.4)'
                       }
                     }
                   : node
@@ -268,38 +268,83 @@ const WorkflowEditor = () => {
             );
             
             // Trigger actual node execution by dispatching a custom event
-            // This will be caught by the BaseNode component to execute the actual logic
             const nodeExecuteEvent = new CustomEvent('auto-execute-node', {
-              detail: { nodeId }
+              detail: { 
+                nodeId,
+                onSuccess: () => {
+                  console.log(`✅ Node ${nodeId} executed successfully`);
+                  // Node stays green during success - will be reset after timeout
+                },
+                onError: (error: any) => {
+                  console.error(`❌ Node ${nodeId} execution failed:`, error);
+                  // Highlight node in red for errors
+                  setNodes(currentNodes =>
+                    currentNodes.map(node =>
+                      node.id === nodeId
+                        ? {
+                            ...node,
+                            className: 'error-node',
+                            style: {
+                              ...node.style,
+                              border: '3px solid #ef4444',
+                              backgroundColor: '#fef2f2',
+                              boxShadow: '0 0 20px rgba(239, 68, 68, 0.4)'
+                            }
+                          }
+                        : node
+                    )
+                  );
+                  
+                  // Highlight connected edges in red for errors
+                  setEdges(currentEdges => 
+                    currentEdges.map(edge => 
+                      connectedEdges.some(connectedEdge => connectedEdge.id === edge.id)
+                        ? { 
+                            ...edge, 
+                            animated: false, 
+                            className: 'error-edge',
+                            style: { 
+                              ...edge.style, 
+                              stroke: '#ef4444', 
+                              strokeWidth: 3 
+                            }
+                          }
+                        : edge
+                    )
+                  );
+                }
+              }
             });
             window.dispatchEvent(nodeExecuteEvent);
             
             // Simulate execution time (3 seconds per node to allow for API calls)
             setTimeout(() => {
-              // Reset node and edge styling after execution
+              // Reset node and edge styling after execution (only if not in error state)
               setNodes(currentNodes =>
-                currentNodes.map(node =>
-                  node.id === nodeId
-                    ? {
-                        ...node,
-                        className: undefined,
-                        style: undefined
-                      }
-                    : node
-                )
+                currentNodes.map(node => {
+                  if (node.id === nodeId && node.className !== 'error-node') {
+                    return {
+                      ...node,
+                      className: undefined,
+                      style: undefined
+                    };
+                  }
+                  return node;
+                })
               );
               
               setEdges(currentEdges => 
-                currentEdges.map(edge => 
-                  connectedEdges.some(connectedEdge => connectedEdge.id === edge.id)
-                    ? { 
-                        ...edge, 
-                        animated: false, 
-                        className: '',
-                        style: undefined
-                      }
-                    : edge
-                )
+                currentEdges.map(edge => {
+                  if (connectedEdges.some(connectedEdge => connectedEdge.id === edge.id) && edge.className !== 'error-edge') {
+                    return { 
+                      ...edge, 
+                      animated: false, 
+                      className: '',
+                      style: undefined
+                    };
+                  }
+                  return edge;
+                })
               );
               resolve();
             }, 3000);

@@ -496,10 +496,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   // Listen for auto-execution events
   useEffect(() => {
-    const handleAutoExecute = (event: CustomEvent) => {
+    const handleAutoExecute = async (event: CustomEvent) => {
       if (event.detail?.nodeId === nodeId) {
         console.log(`🚀 Auto-executing node: ${nodeId}`);
-        handleSubmit(); // Execute the actual node logic
+        try {
+          await handleSubmit(); // Execute the actual node logic
+          // Call success callback if provided
+          if (event.detail.onSuccess) {
+            event.detail.onSuccess();
+          }
+        } catch (error) {
+          console.error(`❌ Node ${nodeId} execution failed:`, error);
+          // Call error callback if provided
+          if (event.detail.onError) {
+            event.detail.onError(error);
+          }
+        }
       }
     };
 

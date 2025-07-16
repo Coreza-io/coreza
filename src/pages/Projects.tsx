@@ -43,9 +43,9 @@ const Projects = () => {
     try {
       setIsLoading(true);
       
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      // Get the current user from localStorage
+      const userData = localStorage.getItem('loggedInUser');
+      if (!userData) {
         toast({
           title: "Authentication Required",
           description: "Please log in to view your projects.",
@@ -53,6 +53,8 @@ const Projects = () => {
         });
         return;
       }
+
+      const user = JSON.parse(userData);
 
       // Fetch projects with workflow counts
       const { data: projectsData, error: projectsError } = await supabase
@@ -114,9 +116,9 @@ const Projects = () => {
     try {
       setIsCreating(true);
       
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      // Get the current user from localStorage
+      const userData = localStorage.getItem('loggedInUser');
+      if (!userData) {
         toast({
           title: "Authentication Required",
           description: "Please log in to create a project.",
@@ -124,6 +126,8 @@ const Projects = () => {
         });
         return;
       }
+
+      const user = JSON.parse(userData);
 
       const { data, error } = await supabase
         .from("projects")

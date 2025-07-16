@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,65 +13,164 @@ import {
   Trash2, 
   Folder,
   Calendar,
-  Activity
+  Activity,
+  Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Tables } from "@/integrations/supabase/types";
+
+type ProjectWithWorkflowCount = Tables<"projects"> & {
+  workflow_count: number;
+};
 
 const Projects = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [projects, setProjects] = useState<ProjectWithWorkflowCount[]>([]);
   const [newProject, setNewProject] = useState({
     name: "",
     description: ""
   });
+  const { toast } = useToast();
 
-  // Mock data for demonstration
-  const projects = [
-    {
-      id: 1,
-      name: "Mean Reversion Bots",
-      description: "Collection of mean reversion trading strategies for crypto markets",
-      createdAt: "2024-01-15",
-      workflowCount: 5,
-      status: "active"
-    },
-    {
-      id: 2,
-      name: "Grid Trading Strategies",
-      description: "Automated grid trading systems for stable coins and major pairs",
-      createdAt: "2024-01-10",
-      workflowCount: 3,
-      status: "active"
-    },
-    {
-      id: 3,
-      name: "Scalping Algorithms",
-      description: "High-frequency scalping bots for liquid markets",
-      createdAt: "2024-01-05",
-      workflowCount: 7,
-      status: "paused"
-    },
-    {
-      id: 4,
-      name: "DeFi Yield Farming",
-      description: "Automated yield farming and liquidity provision strategies",
-      createdAt: "2024-01-01",
-      workflowCount: 2,
-      status: "active"
+  // Fetch projects from Supabase
+  const fetchProjects = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to view your projects.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Fetch projects with workflow counts
+      const { data: projectsData, error: projectsError } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (projectsError) {
+        console.error("Error fetching projects:", projectsError);
+        toast({
+          title: "Error",
+          description: "Failed to load projects. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Fetch workflow counts for each project
+      const projectsWithCounts = await Promise.all(
+        (projectsData || []).map(async (project) => {
+          const { count } = await supabase
+            .from("workflows")
+            .select("*", { count: "exact", head: true })
+            .eq("project_id", project.id);
+          
+          return {
+            ...project,
+            workflow_count: count || 0
+          };
+        })
+      );
+
+      setProjects(projectsWithCounts);
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   const filteredProjects = projects.filter(project =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    project.description.toLowerCase().includes(searchQuery.toLowerCase())
+    (project.description?.toLowerCase() || "").includes(searchQuery.toLowerCase())
   );
 
-  const handleCreateProject = () => {
-    // TODO: Implement project creation with Supabase
-    console.log("Creating project:", newProject);
-    setIsCreateDialogOpen(false);
-    setNewProject({ name: "", description: "" });
+  const handleCreateProject = async () => {
+    if (!newProject.name.trim()) return;
+
+    try {
+      setIsCreating(true);
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to create a project.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("projects")
+        .insert([
+          {
+            name: newProject.name.trim(),
+            description: newProject.description.trim() || null,
+            user_id: user.id,
+            status: "active"
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating project:", error);
+        toast({
+          title: "Error",
+          description: "Failed to create project. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Success",
+        description: `Project "${newProject.name}" created successfully!`,
+      });
+
+      // Add the new project to the list with workflow count 0
+      setProjects(prev => [{
+        ...data,
+        workflow_count: 0
+      }, ...prev]);
+
+      setIsCreateDialogOpen(false);
+      setNewProject({ name: "", description: "" });
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const container = {
@@ -142,9 +241,10 @@ const Projects = () => {
                 <Button
                   onClick={handleCreateProject}
                   className="bg-gradient-primary"
-                  disabled={!newProject.name.trim()}
+                  disabled={!newProject.name.trim() || isCreating}
                 >
-                  Create Project
+                  {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {isCreating ? "Creating..." : "Create Project"}
                 </Button>
               </div>
             </div>
@@ -164,13 +264,19 @@ const Projects = () => {
         </div>
       </div>
 
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-      >
-        {filteredProjects.map((project) => (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <span className="ml-2 text-muted-foreground">Loading projects...</span>
+        </div>
+      ) : (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        >
+          {filteredProjects.map((project) => (
           <motion.div key={project.id} variants={item}>
             <Card className="bg-gradient-card border-border hover:shadow-card transition-all group">
               <CardHeader className="pb-3">
@@ -223,7 +329,7 @@ const Projects = () => {
                       <Activity className="h-3 w-3" />
                       Workflows
                     </span>
-                    <span className="font-medium">{project.workflowCount}</span>
+                    <span className="font-medium">{project.workflow_count}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground flex items-center gap-1">
@@ -231,7 +337,7 @@ const Projects = () => {
                       Created
                     </span>
                     <span className="font-medium">
-                      {new Date(project.createdAt).toLocaleDateString()}
+                      {new Date(project.created_at || "").toLocaleDateString()}
                     </span>
                   </div>
                 </div>
@@ -243,9 +349,10 @@ const Projects = () => {
             </Card>
           </motion.div>
         ))}
-      </motion.div>
+        </motion.div>
+      )}
 
-      {filteredProjects.length === 0 && (
+      {filteredProjects.length === 0 && !isLoading && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

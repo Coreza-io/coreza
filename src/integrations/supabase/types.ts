@@ -58,6 +58,36 @@ export type Database = {
           },
         ]
       }
+      projects: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_credentials: {
         Row: {
           client_json: Json | null
@@ -188,6 +218,7 @@ export type Database = {
           is_active: boolean | null
           name: string
           nodes: Json
+          project_id: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -198,6 +229,7 @@ export type Database = {
           is_active?: boolean | null
           name: string
           nodes: Json
+          project_id?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -208,6 +240,7 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           nodes?: Json
+          project_id?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -217,6 +250,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflows_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]

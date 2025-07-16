@@ -237,10 +237,23 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
     const srcNode = previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
     const srcData = srcNode?.data?.output || srcNode?.data || {};
+    
+    console.log("🔍 Preview Debug:", {
+      fieldKey,
+      expr,
+      srcId,
+      srcNode: srcNode?.data,
+      srcData,
+      selectedPrevNodeId,
+      previousNodes: previousNodes.map(n => ({ id: n.id, data: n.data }))
+    });
+    
     try {
       const resolved = resolveReferences(expr, srcData);
+      console.log("✅ Resolved:", { expr, srcData, resolved });
       return summarizePreview(resolved);
-    } catch {
+    } catch (error) {
+      console.error("❌ Resolution error:", error);
       return "";
     }
   };

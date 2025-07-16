@@ -4,6 +4,7 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -25,22 +26,6 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   return result;
 };
 
-function getUserId(): string {
-  try {
-    // First try the new format
-    const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    if (user.id || user.user_id) {
-      return user.id || user.user_id;
-    }
-    
-    // Fallback to old format
-    const userId = localStorage.getItem("userId");
-    return userId || "";
-  } catch {
-    // Fallback to old format on JSON parse error
-    return localStorage.getItem("userId") || "";
-  }
-}
 
 interface BaseNodeProps {
   data: any;
@@ -82,6 +67,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodes = useNodes();
   const edges = useEdges();
   const { setNodes } = useReactFlow();
+  const { user } = useAuth();
 
   const definition = data.definition || data.config;
   const displayName = useMemo(
@@ -308,8 +294,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   };
 
-  const userId = getUserId();
-  console.log("userId", userId)
+  const userId = user?.id;
+  console.log("userId from auth context:", userId);
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
@@ -317,8 +303,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
       
       // Check if userId exists and is valid
-      if (!userId || userId.trim() === "") {
-        console.log('No user ID available, skipping credentials fetch');
+      if (!userId) {
+        console.log('No authenticated user, skipping credentials fetch');
         setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
         return;
       }
@@ -478,6 +464,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     setIsSending(true);
 
     try {
+      if (!userId) {
+        throw new Error("No authenticated user found");
+      }
+      
       const { supportData } = collectNodeData();
       const payload = buildPayload(fieldState, supportData, selectedInputData, userId);
       payload.user_id = userId;

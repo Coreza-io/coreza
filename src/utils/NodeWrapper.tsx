@@ -87,9 +87,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${selected ? "border-primary shadow-glow" : "border-border"}
         `}
         onDoubleClick={(e) => {
-          console.log('NodeWrapper: Double click detected, expanding node');
+          e.preventDefault();
+          e.stopPropagation();
           setIsExpanded(true);
-          // Don't stopPropagation so ReactFlow can also handle the event
         }}
         style={{
           width: isExpanded ? minWidth : 150,

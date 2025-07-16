@@ -6,21 +6,13 @@ import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { Trash2 } from 'lucide-react';
 
 interface NodeRouterProps {
   data: any;
   selected: boolean;
-  onDeleteNode?: (nodeId: string) => void;
 }
 
-const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, onDeleteNode }) => {
+const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
@@ -62,13 +54,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, onDeleteNode })
 
   const layoutType = getLayoutType(definition);
 
-  const handleDeleteClick = () => {
-    if (onDeleteNode && nodeId) {
-      onDeleteNode(nodeId);
-    }
-  };
-
-  const NodeContent = () => (
+  return (
     <BaseNode data={data} selected={selected}>
       {(renderProps) => (
         <NodeWrapper
@@ -131,66 +117,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, onDeleteNode })
         </NodeWrapper>
       )}
     </BaseNode>
-  );
-
-  // Handle right-click directly without ContextMenu wrapper
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    console.log('NodeRouter: Right click detected on node', nodeId);
-    
-    // Create a simple custom context menu
-    const contextMenu = document.createElement('div');
-    contextMenu.className = 'fixed z-50 bg-card border border-border rounded-md shadow-md p-1';
-    contextMenu.style.left = `${e.clientX}px`;
-    contextMenu.style.top = `${e.clientY}px`;
-    
-    const deleteButton = document.createElement('button');
-    deleteButton.className = 'flex items-center w-full px-3 py-2 text-sm text-destructive hover:bg-muted rounded';
-    deleteButton.innerHTML = `
-      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-      </svg>
-      Delete Node
-    `;
-    
-    deleteButton.onclick = () => {
-      if (onDeleteNode && nodeId) {
-        onDeleteNode(nodeId);
-      }
-      document.body.removeChild(contextMenu);
-    };
-    
-    contextMenu.appendChild(deleteButton);
-    document.body.appendChild(contextMenu);
-    
-    // Remove context menu when clicking elsewhere
-    const removeMenu = (event: MouseEvent) => {
-      if (!contextMenu.contains(event.target as Node)) {
-        if (document.body.contains(contextMenu)) {
-          document.body.removeChild(contextMenu);
-        }
-        document.removeEventListener('click', removeMenu);
-      }
-    };
-    
-    setTimeout(() => {
-      document.addEventListener('click', removeMenu);
-    }, 0);
-  };
-
-  // Add debugging for double-click events
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    console.log('NodeRouter: Double click detected on node', nodeId);
-    // Don't prevent default or stop propagation - let it bubble up to ReactFlow
-  };
-
-  return (
-    <div 
-      onContextMenu={handleContextMenu}
-      onDoubleClick={handleDoubleClick}
-    >
-      <NodeContent />
-    </div>
   );
 };
 

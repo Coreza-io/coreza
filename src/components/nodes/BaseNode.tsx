@@ -94,7 +94,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   }, [previousNodes, selectedPrevNodeId]);
 
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
-  const selectedInputData = selectedPrevNode?.data?.output || selectedPrevNode?.data || {};
+  
+  // Extract selectedInputData with the same logic as preview
+  let selectedInputData = selectedPrevNode?.data?.output || selectedPrevNode?.data || {};
+  // If selectedInputData is an array (from previousNodes), get the first item
+  if (Array.isArray(selectedInputData) && selectedInputData.length > 0) {
+    selectedInputData = selectedInputData[0] || {};
+  }
 
   const [fieldState, setFieldState] = useState<Record<string, any>>(() =>
     definition && definition.fields

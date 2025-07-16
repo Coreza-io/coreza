@@ -30,20 +30,26 @@ import { useAuth } from "@/contexts/AuthContext";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Dynamically create nodeTypes from nodeManifest
-const nodeTypes = Object.fromEntries(
-  Object.keys(nodeManifest).map((nodeType) => [nodeType, NodeRouter])
-);
+// Create nodeTypes mapping both by manifest keys AND by node_type values
+const nodeTypes = Object.fromEntries([
+  // Map by manifest keys (for backward compatibility)
+  ...Object.keys(nodeManifest).map((nodeKey) => [nodeKey, NodeRouter]),
+  // Map by node_type values (for proper type mapping)
+  ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
+]);
+
+console.log("Available nodeTypes:", Object.keys(nodeTypes));
+console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
   removable: RemovableEdge,
 };
 
-// Initial nodes for demonstration
+// Initial nodes for demonstration  
 const initialNodes: Node[] = [
   {
     id: 'hello-node',
-    type: 'finnhub',
+    type: 'FinnHub', // Use the manifest key, not node_type
     position: { x: 100, y: 100 },
     data: { 
       label: 'Welcome to Coreza!',

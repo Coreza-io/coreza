@@ -419,6 +419,28 @@ const WorkflowEditor = () => {
     }
   }, [workflowId, isNewWorkflow, setNodes, setEdges]);
 
+  // Auto-hide palette when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!isPaletteVisible) return;
+      
+      const target = event.target as Element;
+      const palette = document.querySelector('.node-palette-container');
+      const toggleButton = document.querySelector('.palette-toggle-button');
+      
+      if (palette && toggleButton && 
+          !palette.contains(target) && 
+          !toggleButton.contains(target)) {
+        setIsPaletteVisible(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isPaletteVisible]);
+
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -529,7 +551,7 @@ const WorkflowEditor = () => {
 
       {/* Right Sidebar - Node Palette */}
       {isPaletteVisible && (
-        <div className="w-80 border-l border-border bg-sidebar">
+        <div className="w-80 border-l border-border bg-sidebar node-palette-container">
           <NodePalette />
         </div>
       )}
@@ -537,7 +559,7 @@ const WorkflowEditor = () => {
       {/* Toggle Arrow */}
       <button
         onClick={() => setIsPaletteVisible(!isPaletteVisible)}
-        className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 ${
+        className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${
           isPaletteVisible ? 'right-80' : 'right-0'
         }`}
       >

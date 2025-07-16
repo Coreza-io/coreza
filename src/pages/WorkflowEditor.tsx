@@ -72,6 +72,14 @@ const WorkflowEditor = () => {
   const projectId = searchParams.get('project'); // Get project ID from URL parameters
   
   const [workflowId, setWorkflowId] = useState<string | null>(isNewWorkflow ? null : id || null);
+  
+  // CRITICAL FIX: Sync workflowId with URL parameter changes
+  useEffect(() => {
+    if (!isNewWorkflow && id !== workflowId) {
+      console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
+      setWorkflowId(id || null);
+    }
+  }, [id, isNewWorkflow, workflowId]);
   const [workflowName, setWorkflowName] = useState(
     isNewWorkflow ? "My workflow 1" : "Existing Workflow"
   );
@@ -188,14 +196,22 @@ const WorkflowEditor = () => {
         .single();
       setLoading(false);
       if (data) {
+        console.log("🎯 Workflow saved, updating state:", {
+          oldWorkflowId: workflowId,
+          newWorkflowId: data.id,
+          oldIsNewWorkflow: isNewWorkflow,
+          currentUrl: window.location.pathname
+        });
+        
         setWorkflowId(data.id);
         
-        // CRITICAL FIX: Update the URL to reflect the actual workflow ID
-        // This prevents the loading effect from treating it as a new workflow
+        // CRITICAL FIX: Use React Router's navigate instead of window.history
+        // This ensures useParams() updates properly
         const newUrl = projectId 
           ? `/workflow/${data.id}?project=${projectId}`
           : `/workflow/${data.id}`;
-        window.history.replaceState(null, '', newUrl);
+        
+        navigate(newUrl, { replace: true });
         
         toast({
           title: "Success",
@@ -310,6 +326,15 @@ const WorkflowEditor = () => {
 
   // Check for user authentication and load latest workflow
   useEffect(() => {
+    console.log("🔄 Loading effect triggered:", {
+      authLoading,
+      authUser: !!authUser,
+      isNewWorkflow,
+      workflowId,
+      currentId: id,
+      currentUrl: window.location.pathname
+    });
+    
     if (authLoading) return; // Wait for auth to finish loading
     
     if (!authUser) {
@@ -404,7 +429,7 @@ const WorkflowEditor = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, setNodes, setEdges, projectId]);
+  }, [authUser, authLoading, navigate, isNewWorkflow, id, setNodes, setEdges, projectId]); // Use 'id' instead of 'workflowId' to prevent conflicts
 
   // Persist workflow state to localStorage (only when nodes actually change)
   useEffect(() => {

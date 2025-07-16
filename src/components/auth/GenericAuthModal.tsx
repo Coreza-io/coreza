@@ -61,7 +61,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
       const credentialData: Record<string, string> = {};
 
       for (const f of definition.authFields || []) {
-        if (f.type !== "static" && f.key !== "name") {
+        if (f.type !== "static" && f.key !== "credential_name") {
           credentialData[f.key] = fields[f.key];
         }
       }
@@ -71,7 +71,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         body: {
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
-          name: fields.name || `${definition.name} Account`,
+          name: fields.credential_name || `${definition.name} Account`,
           encrypted_data: credentialData
         }
       });

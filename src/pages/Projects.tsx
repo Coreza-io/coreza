@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Tables } from "@/integrations/supabase/types";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 type ProjectWithWorkflowCount = Tables<"projects"> & {
   workflow_count: number;
@@ -49,15 +50,15 @@ const Projects = () => {
   });
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user: authUser, loading: authLoading } = useAuth();
 
   // Fetch projects from Supabase
   const fetchProjects = async () => {
     try {
       setIsLoading(true);
       
-      // Get the current user from localStorage
-      const userData = localStorage.getItem('loggedInUser');
-      if (!userData) {
+      // Check if user is authenticated
+      if (!authUser) {
         toast({
           title: "Authentication Required",
           description: "Please log in to view your projects.",
@@ -66,13 +67,11 @@ const Projects = () => {
         return;
       }
 
-      const user = JSON.parse(userData);
-
       // Fetch projects with workflow counts
       const { data: projectsData, error: projectsError } = await supabase
         .from("projects")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", authUser.id)
         .order("created_at", { ascending: false });
 
       if (projectsError) {
@@ -114,8 +113,10 @@ const Projects = () => {
   };
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    if (!authLoading && authUser) {
+      fetchProjects();
+    }
+  }, [authUser, authLoading]);
 
   const filteredProjects = projects.filter(project =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -128,9 +129,8 @@ const Projects = () => {
     try {
       setIsCreating(true);
       
-      // Get the current user from localStorage
-      const userData = localStorage.getItem('loggedInUser');
-      if (!userData) {
+      // Check if user is authenticated
+      if (!authUser) {
         toast({
           title: "Authentication Required",
           description: "Please log in to create a project.",
@@ -139,15 +139,13 @@ const Projects = () => {
         return;
       }
 
-      const user = JSON.parse(userData);
-
       const { data, error } = await supabase
         .from("projects")
         .insert([
           {
             name: newProject.name.trim(),
             description: newProject.description.trim() || null,
-            user_id: user.id,
+            user_id: authUser.id,
             status: "active"
           }
         ])

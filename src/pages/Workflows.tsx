@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -41,6 +42,9 @@ const Workflows = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [project, setProject] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -209,30 +213,42 @@ const Workflows = () => {
     }
   };
 
-  const handleDeleteWorkflow = async (workflowId: string) => {
-    if (!confirm('Are you sure you want to delete this workflow?')) return;
-    
+  const handleDeleteWorkflow = (workflow: Workflow) => {
+    setSelectedWorkflow(workflow);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteWorkflow = async () => {
+    if (!selectedWorkflow) return;
+
     try {
+      setIsDeleting(true);
+
       const { error } = await supabase
         .from('workflows')
         .delete()
-        .eq('id', workflowId);
+        .eq('id', selectedWorkflow.id);
 
       if (error) {
         throw error;
       }
 
-      setWorkflows(workflows.filter(w => w.id !== workflowId));
+      setWorkflows(workflows.filter(w => w.id !== selectedWorkflow.id));
       toast({
         title: "Success",
         description: "Workflow deleted successfully",
       });
+
+      setIsDeleteDialogOpen(false);
+      setSelectedWorkflow(null);
     } catch (error: any) {
       toast({
         title: "Error",
         description: `Failed to delete workflow: ${error.message}`,
         variant: "destructive",
       });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -389,7 +405,7 @@ const Workflows = () => {
                       </DropdownMenuItem>
                       <DropdownMenuItem 
                         className="text-destructive"
-                        onClick={() => handleDeleteWorkflow(workflow.id)}
+                        onClick={() => handleDeleteWorkflow(workflow)}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
@@ -477,6 +493,36 @@ const Workflows = () => {
           )}
         </motion.div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Workflow</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedWorkflow?.name}"? This action cannot be undone.
+              All workflow data and configurations will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setSelectedWorkflow(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteWorkflow}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete Workflow"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

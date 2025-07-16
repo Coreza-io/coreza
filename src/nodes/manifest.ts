@@ -185,7 +185,7 @@ const IfDef = {
             { label: "equals", value: "===" },
             { label: "not equals", value: "!==" },
             { label: "greater than", value: ">=" },
-            { label: "less than", value: "=<" }
+            { label: "less than", value: "<=" }
           ]
         },
         { key: "right", type: "string", placeholder: "100" }

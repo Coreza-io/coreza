@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { 
@@ -29,10 +30,19 @@ type ProjectWithWorkflowCount = Tables<"projects"> & {
 const Projects = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [projects, setProjects] = useState<ProjectWithWorkflowCount[]>([]);
+  const [selectedProject, setSelectedProject] = useState<ProjectWithWorkflowCount | null>(null);
   const [newProject, setNewProject] = useState({
+    name: "",
+    description: ""
+  });
+  const [editProject, setEditProject] = useState({
     name: "",
     description: ""
   });
@@ -177,6 +187,114 @@ const Projects = () => {
     }
   };
 
+  const handleEditProject = (project: ProjectWithWorkflowCount) => {
+    setSelectedProject(project);
+    setEditProject({
+      name: project.name,
+      description: project.description || ""
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateProject = async () => {
+    if (!editProject.name.trim() || !selectedProject) return;
+
+    try {
+      setIsUpdating(true);
+
+      const { error } = await supabase
+        .from("projects")
+        .update({
+          name: editProject.name.trim(),
+          description: editProject.description.trim() || null,
+        })
+        .eq("id", selectedProject.id);
+
+      if (error) {
+        console.error("Error updating project:", error);
+        toast({
+          title: "Error",
+          description: "Failed to update project. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Success",
+        description: `Project "${editProject.name}" updated successfully!`,
+      });
+
+      // Update the project in the list
+      setProjects(prev => prev.map(project => 
+        project.id === selectedProject.id 
+          ? { ...project, name: editProject.name.trim(), description: editProject.description.trim() || null }
+          : project
+      ));
+
+      setIsEditDialogOpen(false);
+      setSelectedProject(null);
+      setEditProject({ name: "", description: "" });
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteProject = (project: ProjectWithWorkflowCount) => {
+    setSelectedProject(project);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!selectedProject) return;
+
+    try {
+      setIsDeleting(true);
+
+      const { error } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", selectedProject.id);
+
+      if (error) {
+        console.error("Error deleting project:", error);
+        toast({
+          title: "Error",
+          description: "Failed to delete project. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Success",
+        description: `Project "${selectedProject.name}" deleted successfully!`,
+      });
+
+      // Remove the project from the list
+      setProjects(prev => prev.filter(project => project.id !== selectedProject.id));
+
+      setIsDeleteDialogOpen(false);
+      setSelectedProject(null);
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -310,11 +428,14 @@ const Projects = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-popover border-border">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEditProject(project)}>
                         <Edit className="h-4 w-4 mr-2" />
                         Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
+                      <DropdownMenuItem 
+                        className="text-destructive"
+                        onClick={() => handleDeleteProject(project)}
+                      >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
                       </DropdownMenuItem>
@@ -378,6 +499,94 @@ const Projects = () => {
           )}
         </motion.div>
       )}
+
+      {/* Edit Project Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+            <DialogDescription>
+              Update your project details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editProjectName">Project Name</Label>
+              <Input
+                id="editProjectName"
+                value={editProject.name}
+                onChange={(e) => setEditProject({ ...editProject, name: e.target.value })}
+                placeholder="e.g., Mean Reversion Bots"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editProjectDescription">Description</Label>
+              <Textarea
+                id="editProjectDescription"
+                value={editProject.description}
+                onChange={(e) => setEditProject({ ...editProject, description: e.target.value })}
+                placeholder="Describe what this project is about..."
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setSelectedProject(null);
+                  setEditProject({ name: "", description: "" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateProject}
+                className="bg-gradient-primary"
+                disabled={!editProject.name.trim() || isUpdating}
+              >
+                {isUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isUpdating ? "Updating..." : "Update Project"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedProject?.name}"? This action cannot be undone.
+              {selectedProject?.workflow_count && selectedProject.workflow_count > 0 && (
+                <span className="block mt-2 text-warning">
+                  Warning: This project contains {selectedProject.workflow_count} workflow(s).
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setSelectedProject(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeleting}
+            >
+              {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isDeleting ? "Deleting..." : "Delete Project"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

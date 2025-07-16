@@ -242,7 +242,9 @@ const WorkflowEditor = () => {
                       style: { 
                         ...edge.style, 
                         stroke: '#22c55e', 
-                        strokeWidth: 3 
+                        strokeWidth: 3,
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round'
                       }
                     }
                   : edge
@@ -306,7 +308,9 @@ const WorkflowEditor = () => {
                             style: { 
                               ...edge.style, 
                               stroke: '#ef4444', 
-                              strokeWidth: 3 
+                              strokeWidth: 3,
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round'
                             }
                           }
                         : edge

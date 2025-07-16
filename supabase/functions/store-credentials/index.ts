@@ -37,7 +37,7 @@ serve(async (req) => {
         user_id,
         service_type,
         name,
-        token_json: encrypted_data,
+        client_json: encrypted_data,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'

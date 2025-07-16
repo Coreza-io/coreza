@@ -25,8 +25,6 @@ import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
-import { LogicEngine } from "@/utils/logicEngine";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -103,98 +101,35 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-
   // Execute a node and animate outgoing edges
   const executeNode = useCallback((nodeId: string) => {
     setExecutingNode(nodeId);
     
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-    
     // Find all edges coming out of this node
     const outgoingEdges = edges.filter(edge => edge.source === nodeId);
     
-    // Check if this is a Logic category node
-    const nodeConfig = Object.values(nodeManifest).find(config => 
-      config.name === node.type || config.node_type === node.type
+    // Animate the outgoing edges
+    setEdges(currentEdges => 
+      currentEdges.map(edge => 
+        outgoingEdges.some(outEdge => outEdge.id === edge.id)
+          ? { ...edge, animated: true, className: 'animated' }
+          : edge
+      )
     );
     
-    if (nodeConfig?.category === "Logic") {
-      console.log("Evaluating logic node locally:", node);
-      
-      // Get input data from upstream nodes
-      const upstreamNodes = getAllUpstreamNodes(nodeId, edges, nodes);
-      const inputData = upstreamNodes.reduce((acc, node) => {
-        // Use node type as key for easier reference resolution
-        const nodeType = node.type || node.id;
-        if (node.data?.output) {
-          acc[nodeType] = node.data.output;
-        }
-        return acc;
-      }, {} as any);
-      
-      console.log('Prepared input data for logic evaluation:', inputData);
-      
-      // Evaluate the logic node using the logic engine
-      const result = LogicEngine.evaluateLogicNode(node, inputData, outgoingEdges);
-      
-      if (result.success && result.outputEdgeId) {
-        console.log("Logic evaluation successful, animating edge:", result.outputEdgeId);
-        
-        // Animate the selected edge
-        setEdges(currentEdges => 
-          currentEdges.map(edge => 
-            edge.id === result.outputEdgeId 
-              ? { ...edge, animated: true, className: 'animated' }
-              : edge
-          )
-        );
-        
-        // Stop animation after delay
-        setTimeout(() => {
-          setExecutingNode(null);
-          setEdges(currentEdges => 
-            currentEdges.map(edge => 
-              edge.id === result.outputEdgeId 
-                ? { ...edge, animated: false, className: '' }
-                : edge
-            )
-          );
-        }, 2000);
-      } else {
-        console.error("Logic evaluation failed:", result.error);
-        const errorMessage = typeof result.error === 'string' ? result.error : 'Failed to evaluate logic node';
-        toast({
-          title: "Logic Evaluation Error",
-          description: errorMessage,
-          variant: "destructive",
-        });
-        setExecutingNode(null);
-      }
-    } else {
-      // Regular node execution - animate all outgoing edges
+    // Simulate execution time
+    setTimeout(() => {
+      setExecutingNode(null);
+      // Stop animation
       setEdges(currentEdges => 
         currentEdges.map(edge => 
           outgoingEdges.some(outEdge => outEdge.id === edge.id)
-            ? { ...edge, animated: true, className: 'animated' }
+            ? { ...edge, animated: false, className: '' }
             : edge
         )
       );
-      
-      // Simulate execution time
-      setTimeout(() => {
-        setExecutingNode(null);
-        // Stop animation
-        setEdges(currentEdges => 
-          currentEdges.map(edge => 
-            outgoingEdges.some(outEdge => outEdge.id === edge.id)
-              ? { ...edge, animated: false, className: '' }
-              : edge
-          )
-        );
-      }, 2000);
-    }
-   }, [edges, setEdges, nodes, toast]);
+    }, 2000);
+  }, [edges, setEdges]);
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {

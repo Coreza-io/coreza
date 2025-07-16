@@ -84,35 +84,35 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                     );
                   }}
                 >
-                  <Input
-                    value={fieldState[f.key]}
-                    placeholder={f.placeholder}
-                    onChange={(e) => handleChange(f.key, e.target.value)}
-                    onDragOver={(e) => {
-                      console.log("🔄 DRAG OVER input field:", f.key);
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.dataTransfer.dropEffect = "copy";
-                    }}
-                    onDrop={(e) => {
-                      console.log("💧 DROP EVENT on input field:", f.key);
-                      e.preventDefault();
-                      e.stopPropagation();
-                      
-                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
-                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
-                      
-                      handleDrop(
-                        f.key,
-                        (val: string) => handleChange(f.key, val),
-                        e,
-                        fieldState[f.key] || ""
-                      );
-                    }}
-                    onFocus={(e) => e.target.select()}
-                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                    className="nodrag"
-                  />
+                <Input
+                  value={fieldState[f.key] || ""}
+                  onChange={(e) => handleChange(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                  className="nodrag"
+                  style={fieldState[f.key]?.includes("{{") ? referenceStyle : undefined}
+                  onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER input field:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "copy";
+                  }}
+                  onDrop={(e) => {
+                    console.log("💧 DROP EVENT on input field:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
+                    handleDrop(
+                      f.key,
+                      (val: string) => handleChange(f.key, val),
+                      e,
+                      fieldState[f.key] || ""
+                    );
+                  }}
+                  onFocus={(e) => e.target.select()}
+                />
                   {fieldState[f.key]?.includes("{{") && (
                     <div className="text-xs text-gray-500 mt-1">
                       Preview: {getFieldPreview(f.key)}

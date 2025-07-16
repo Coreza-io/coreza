@@ -6,13 +6,21 @@ import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Trash2 } from 'lucide-react';
 
 interface NodeRouterProps {
   data: any;
   selected: boolean;
+  onDeleteNode?: (nodeId: string) => void;
 }
 
-const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
+const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, onDeleteNode }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
@@ -54,7 +62,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   const layoutType = getLayoutType(definition);
 
-  return (
+  const handleDeleteClick = () => {
+    if (onDeleteNode && nodeId) {
+      onDeleteNode(nodeId);
+    }
+  };
+
+  const NodeContent = () => (
     <BaseNode data={data} selected={selected}>
       {(renderProps) => (
         <NodeWrapper
@@ -117,6 +131,25 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
         </NodeWrapper>
       )}
     </BaseNode>
+  );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div>
+          <NodeContent />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem 
+          onClick={handleDeleteClick}
+          className="text-destructive focus:text-destructive-foreground focus:bg-destructive"
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          Delete Node
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 

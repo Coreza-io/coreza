@@ -30,10 +30,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Dynamically create nodeTypes from nodeManifest
-const nodeTypes = Object.fromEntries(
-  Object.keys(nodeManifest).map((nodeType) => [nodeType, NodeRouter])
-);
+// Dynamically create nodeTypes from nodeManifest with delete handler
+const createNodeTypes = (handleDeleteNode: (nodeId: string) => void) => 
+  Object.fromEntries(
+    Object.keys(nodeManifest).map((nodeType) => [
+      nodeType, 
+      (props: any) => <NodeRouter {...props} onDeleteNode={handleDeleteNode} />
+    ])
+  );
 
 const edgeTypes = {
   removable: RemovableEdge,
@@ -464,10 +468,10 @@ const WorkflowEditor = () => {
     }
   }, [isPaletteVisible]);
 
-  // Handle delete key to remove selected nodes
+  // Handle delete key to remove selected nodes (only Delete key, not Backspace)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (event.key === 'Delete') {
         setNodes((nds) => nds.filter((node) => !node.selected));
         setEdges((eds) => eds.filter((edge) => !edge.selected));
       }
@@ -476,6 +480,15 @@ const WorkflowEditor = () => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [setNodes, setEdges]);
+
+  // Handle right-click delete for specific node
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+  }, [setNodes, setEdges]);
+
+  // Create nodeTypes with delete handler
+  const nodeTypes = createNodeTypes(handleDeleteNode);
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] w-full">

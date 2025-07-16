@@ -181,13 +181,31 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     e: React.DragEvent,
     currentValue: string
   ) => {
+    console.log("🎯 HANDLE DROP TRIGGERED!", { fieldKey, currentValue });
+    console.log("📦 Event types:", Array.from(e.dataTransfer.types));
+    console.log("📦 Event effectAllowed:", e.dataTransfer.effectAllowed);
+    console.log("📦 Event dropEffect:", e.dataTransfer.dropEffect);
+    
     e.preventDefault();
     e.stopPropagation();
+    
     try {
       const raw = e.dataTransfer.getData("application/reactflow");
-      console.log("raw",raw)
-      if (!raw) return;
+      console.log("📦 Raw data retrieved:", raw);
+      
+      if (!raw) {
+        console.warn("❌ No data found in dataTransfer!");
+        // Try alternative data types
+        for (const type of e.dataTransfer.types) {
+          const altData = e.dataTransfer.getData(type);
+          console.log(`📦 Alternative data (${type}):`, altData);
+        }
+        return;
+      }
+      
       const data = JSON.parse(raw);
+      console.log("📦 Parsed data:", data);
+      
       const keyPath = data.keyPath || data;
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode
@@ -195,13 +213,21 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         : definition?.name || 'Node';
       const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
       const newValue = currentValue + insert;
-      console.log("newValue", newValue )
+      
+      console.log("✅ Successfully processed drop:", { 
+        keyPath, 
+        sourceDisplayName, 
+        insert, 
+        newValue 
+      });
+      
       setter(newValue);
       handleChange(fieldKey, newValue);
       setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
     } catch (err) {
-      console.error("Drop error:", err);
+      console.error("❌ Drop error:", err);
     }
+    
     document.body.classList.remove("cursor-grabbing", "select-none");
   };
 

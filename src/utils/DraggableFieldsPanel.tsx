@@ -53,13 +53,21 @@ const DraggableFieldsPanel = ({
               <div
                 className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors"
                 draggable
-                onDragStart={e =>
+                onDragStart={e => {
+                  console.log("🎯 DRAG START:", { fullKey, value });
+                  e.dataTransfer.setData("application/reactflow", JSON.stringify({ 
+                    type: "jsonReference", 
+                    keyPath: fullKey, 
+                    value: isObject ? JSON.stringify(value) : String(value ?? "") 
+                  }));
+                  e.dataTransfer.effectAllowed = "copy";
+                  console.log("✅ Data set in drag:", e.dataTransfer.getData("application/reactflow"));
                   onDragStart(
                     e,
                     fullKey,
                     isObject ? JSON.stringify(value) : String(value ?? "")
-                  )
-                }
+                  );
+                }}
                 onMouseDown={e => e.stopPropagation()}
                 title={isObject ? JSON.stringify(value) : String(value ?? "")}
               >

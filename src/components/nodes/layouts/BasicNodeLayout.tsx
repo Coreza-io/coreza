@@ -109,10 +109,19 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       className: "nodrag",
       style: fieldState[f.key]?.includes("{{") ? referenceStyle : undefined,
       onDragOver: (e: React.DragEvent) => {
+        console.log("🔄 DRAG OVER input field:", f.key);
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = "copy";
       },
       onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        console.log("💧 DROP EVENT on input field:", f.key);
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+        console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+        
         // Just call the handleDrop function directly - no additional logic needed
         handleDrop(
           f.key,
@@ -129,7 +138,30 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     switch (f.type) {
       case "text":
         return (
-          <div>
+          <div
+            className="nodrag"
+            onDragOver={(e) => {
+              console.log("🔄 DRAG OVER wrapper div for:", f.key);
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={(e) => {
+              console.log("💧 DROP EVENT on wrapper div for:", f.key);
+              e.preventDefault();
+              e.stopPropagation();
+              
+              console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+              console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+              
+              handleDrop(
+                f.key,
+                (val: string) => handleChange(f.key, val),
+                e,
+                fieldState[f.key] || ""
+              );
+            }}
+          >
             <Input 
               {...commonInputProps} 
             />
@@ -143,7 +175,30 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       
       case "textarea":
         return (
-          <div>
+          <div
+            className="nodrag"
+            onDragOver={(e) => {
+              console.log("🔄 DRAG OVER textarea wrapper for:", f.key);
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={(e) => {
+              console.log("💧 DROP EVENT on textarea wrapper for:", f.key);
+              e.preventDefault();
+              e.stopPropagation();
+              
+              console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+              console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+              
+              handleDrop(
+                f.key,
+                (val: string) => handleChange(f.key, val),
+                e,
+                fieldState[f.key] || ""
+              );
+            }}
+          >
             <textarea
               {...commonInputProps}
               className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"

@@ -452,17 +452,6 @@ const WorkflowEditor = () => {
     loadWorkflow();
   }, [authUser, authLoading, navigate, isNewWorkflow, id, setNodes, setEdges, projectId]); // Use 'id' instead of 'workflowId' to prevent conflicts
 
-  // Autosave functionality - save every 30 seconds when there are changes
-  useEffect(() => {
-    if (!workflowId || isNewWorkflow || loading || nodes.length === 0) return;
-    
-    const autosaveInterval = setInterval(() => {
-      console.log("🔄 Autosaving workflow...");
-      handleSaveWorkflow(true); // Pass true for autosave
-    }, 30000); // Save every 30 seconds
-    
-    return () => clearInterval(autosaveInterval);
-  }, [workflowId, isNewWorkflow, loading, nodes, edges, workflowName, isActive]);
 
   // Auto-hide palette when clicking outside or on editor
   useEffect(() => {

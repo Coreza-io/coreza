@@ -12,7 +12,17 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
   const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
   const idx = sameType.findIndex((n) => n.id === node.id);
-  return idx > 0 ? `${baseName}${idx}` : baseName;
+  const result = idx > 0 ? `${baseName}${idx}` : baseName;
+  
+  console.log(`🏷️ getDisplayName for node ${node.id}:`, {
+    baseName,
+    nodeType: node.data.definition?.name || node.data.config?.name,
+    sameTypeNodes: sameType.map(n => ({ id: n.id, name: n.data.definition?.name || n.data.config?.name })),
+    indexInArray: idx,
+    finalDisplayName: result
+  });
+  
+  return result;
 };
 
 function getUserId(): string {
@@ -358,18 +368,33 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     
     // Create a map of all upstream node data by display name using the most current nodes data
     const allNodeData: Record<string, any> = {};
+    
+    console.log("🔧 DEBUGGING NODE MAPPING:");
+    console.log("🔧 Previous nodes:", previousNodes.map(n => ({ id: n.id, type: n.type, data: n.data })));
+    console.log("🔧 All nodes:", nodes.map(n => ({ id: n.id, type: n.type, data: n.data })));
+    
     previousNodes.forEach(prevNode => {
       const displayName = getDisplayName(prevNode, nodes);
+      console.log(`🔧 Processing node ${prevNode.id} -> display name: "${displayName}"`);
+      
       // Get the most current version of this node from the nodes array
       const currentNode = nodes.find(n => n.id === prevNode.id);
       let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
+      
+      console.log(`🔧 Node data sources for ${displayName}:`, {
+        currentNodeOutput: currentNode?.data?.output,
+        currentNodeData: currentNode?.data,
+        prevNodeOutput: prevNode.data?.output,
+        prevNodeData: prevNode.data,
+        finalNodeData: nodeData
+      });
       
       // If nodeData is an array, get the first item
       if (Array.isArray(nodeData) && nodeData.length > 0) {
         nodeData = nodeData[0] || {};
       }
       allNodeData[displayName] = nodeData;
-      console.log(`🔧 Mapped node '${displayName}' (current: ${!!currentNode}):`, nodeData);
+      console.log(`🔧 Mapped node '${displayName}' -> data:`, nodeData);
     });
     
     console.log("🔧 All node data map:", allNodeData);

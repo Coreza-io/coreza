@@ -18,89 +18,104 @@ import {
   Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const Profile = () => {
-  const [user, setUser] = useState<{ 
+  const { user } = useAuth();
+  const [userProfile, setUserProfile] = useState<{ 
     id: string; 
-    email: string; 
-    name: string;
-    firstName?: string;
-    lastName?: string;
+    first_name: string;
+    last_name: string;
     phone?: string;
     location?: string;
-    joinDate?: string;
+    created_at?: string;
   } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
-    email: "",
     phone: "",
     location: ""
   });
   const { toast } = useToast();
 
   useEffect(() => {
-    // Get user data from localStorage (this will be replaced with Supabase later)
-    const userEmail = localStorage.getItem('userEmail');
-    const userId = localStorage.getItem('userId');
-    const userName = localStorage.getItem('userName');
-    
-    if (userEmail && userId && userName) {
-      const userData = {
-        id: userId,
-        email: userEmail,
-        name: userName,
-        firstName: userName.split(' ')[0] || "",
-        lastName: userName.split(' ')[1] || "",
-        phone: "+1 (555) 123-4567",
-        location: "New York, NY",
-        joinDate: "January 2024"
+    if (user) {
+      // Fetch user profile from users table
+      const fetchProfile = async () => {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (data) {
+          setUserProfile(data);
+          setFormData({
+            firstName: data.first_name || "",
+            lastName: data.last_name || "",
+            phone: data.phone || "+1 (555) 123-4567",
+            location: data.location || "New York, NY"
+          });
+        }
       };
-      setUser(userData);
-      setFormData({
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        email: userData.email,
-        phone: userData.phone || "",
-        location: userData.location || ""
+      
+      fetchProfile();
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user || !userProfile) return;
+    
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          phone: formData.phone,
+          location: formData.location
+        })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setUserProfile(prev => prev ? {
+        ...prev,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        phone: formData.phone,
+        location: formData.location
+      } : null);
+      
+      setIsEditing(false);
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been successfully updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update profile. Please try again.",
+        variant: "destructive",
       });
     }
-  }, []);
-
-  const handleSave = () => {
-    // Here you would save to Supabase
-    setUser(prev => prev ? {
-      ...prev,
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      name: `${formData.firstName} ${formData.lastName}`,
-      email: formData.email,
-      phone: formData.phone,
-      location: formData.location
-    } : null);
-    
-    setIsEditing(false);
-    toast({
-      title: "Profile Updated",
-      description: "Your profile has been successfully updated.",
-    });
   };
 
   const handleCancel = () => {
-    if (user) {
+    if (userProfile) {
       setFormData({
-        firstName: user.firstName || "",
-        lastName: user.lastName || "",
-        email: user.email,
-        phone: user.phone || "",
-        location: user.location || ""
+        firstName: userProfile.first_name || "",
+        lastName: userProfile.last_name || "",
+        phone: userProfile.phone || "",
+        location: userProfile.location || ""
       });
     }
     setIsEditing(false);
   };
 
-  if (!user) {
+  if (!user || !userProfile) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Loading profile...</p>
@@ -151,7 +166,7 @@ const Profile = () => {
             <Avatar className="w-32 h-32">
               <AvatarImage src="/placeholder-avatar.jpg" />
               <AvatarFallback className="text-2xl bg-gradient-primary text-primary-foreground">
-                {user.firstName?.[0]}{user.lastName?.[0]}
+                {userProfile.first_name?.[0]}{userProfile.last_name?.[0]}
               </AvatarFallback>
             </Avatar>
             <Button variant="outline" size="sm">
@@ -182,7 +197,7 @@ const Profile = () => {
                 ) : (
                   <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span>{user.firstName}</span>
+                    <span>{userProfile.first_name}</span>
                   </div>
                 )}
               </div>
@@ -198,7 +213,7 @@ const Profile = () => {
                 ) : (
                   <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span>{user.lastName}</span>
+                    <span>{userProfile.last_name}</span>
                   </div>
                 )}
               </div>
@@ -206,19 +221,10 @@ const Profile = () => {
 
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
-              {isEditing ? (
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                />
-              ) : (
-                <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>{user.email}</span>
-                </div>
-              )}
+              <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <span>{user?.email}</span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -232,7 +238,7 @@ const Profile = () => {
               ) : (
                 <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{user.phone}</span>
+                  <span>{userProfile.phone}</span>
                 </div>
               )}
             </div>
@@ -248,7 +254,7 @@ const Profile = () => {
               ) : (
                 <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>{user.location}</span>
+                  <span>{userProfile.location}</span>
                 </div>
               )}
             </div>
@@ -271,7 +277,7 @@ const Profile = () => {
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">Member since</span>
               </div>
-              <span className="font-medium">{user.joinDate}</span>
+              <span className="font-medium">{userProfile.created_at ? new Date(userProfile.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}</span>
             </div>
             
             <div className="flex items-center justify-between">

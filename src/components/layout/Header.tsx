@@ -24,10 +24,10 @@ export function Header() {
 
   useEffect(() => {
     if (user) {
-      // Fetch user profile from profiles table
+      // Fetch user profile from users table
       const fetchProfile = async () => {
         const { data } = await supabase
-          .from('profiles')
+          .from('users')
           .select('first_name, last_name')
           .eq('user_id', user.id)
           .single();

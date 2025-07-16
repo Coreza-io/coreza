@@ -226,15 +226,44 @@ const WorkflowEditor = () => {
           new Promise<void>((resolve, reject) => {
             setExecutingNode(nodeId);
             
-            // Find all edges coming out of this node
-            const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+            // Find all edges connected to this node (incoming and outgoing)
+            const connectedEdges = edges.filter(edge => 
+              edge.source === nodeId || edge.target === nodeId
+            );
             
-            // Animate the outgoing edges
+            // Highlight the executing node and animate connected edges in red
             setEdges(currentEdges => 
               currentEdges.map(edge => 
-                outgoingEdges.some(outEdge => outEdge.id === edge.id)
-                  ? { ...edge, animated: true, className: 'animated' }
+                connectedEdges.some(connectedEdge => connectedEdge.id === edge.id)
+                  ? { 
+                      ...edge, 
+                      animated: true, 
+                      className: 'executing-edge',
+                      style: { 
+                        ...edge.style, 
+                        stroke: '#ef4444', 
+                        strokeWidth: 3 
+                      }
+                    }
                   : edge
+              )
+            );
+            
+            // Also highlight the executing node
+            setNodes(currentNodes =>
+              currentNodes.map(node =>
+                node.id === nodeId
+                  ? {
+                      ...node,
+                      className: 'executing-node',
+                      style: {
+                        ...node.style,
+                        border: '3px solid #ef4444',
+                        backgroundColor: '#fef2f2',
+                        boxShadow: '0 0 20px rgba(239, 68, 68, 0.4)'
+                      }
+                    }
+                  : node
               )
             );
             
@@ -247,11 +276,28 @@ const WorkflowEditor = () => {
             
             // Simulate execution time (3 seconds per node to allow for API calls)
             setTimeout(() => {
-              // Stop animation for this node
+              // Reset node and edge styling after execution
+              setNodes(currentNodes =>
+                currentNodes.map(node =>
+                  node.id === nodeId
+                    ? {
+                        ...node,
+                        className: undefined,
+                        style: undefined
+                      }
+                    : node
+                )
+              );
+              
               setEdges(currentEdges => 
                 currentEdges.map(edge => 
-                  outgoingEdges.some(outEdge => outEdge.id === edge.id)
-                    ? { ...edge, animated: false, className: '' }
+                  connectedEdges.some(connectedEdge => connectedEdge.id === edge.id)
+                    ? { 
+                        ...edge, 
+                        animated: false, 
+                        className: '',
+                        style: undefined
+                      }
                     : edge
                 )
               );

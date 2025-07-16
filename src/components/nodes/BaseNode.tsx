@@ -273,18 +273,34 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       srcData = srcData[0] || {};
     }
     
+    // Build allNodeData for cross-node references
+    const allNodeData: Record<string, any> = {};
+    previousNodes.forEach(prevNode => {
+      const displayName = getDisplayName(prevNode, nodes);
+      const currentNode = nodes.find(n => n.id === prevNode.id);
+      let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
+      
+      // If nodeData is an array, get the first item
+      if (Array.isArray(nodeData) && nodeData.length > 0) {
+        nodeData = nodeData[0] || {};
+      }
+      
+      allNodeData[displayName] = nodeData;
+    });
+    
     console.log("🔍 Preview Debug:", {
       fieldKey,
       expr,
       srcId,
       srcNode: srcNode?.data,
       srcData,
+      allNodeData,
       selectedPrevNodeId
     });
     
     try {
-      const resolved = resolveReferences(expr, srcData);
-      console.log("✅ Resolved:", { expr, srcData, resolved });
+      const resolved = resolveReferences(expr, srcData, allNodeData);
+      console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
       return summarizePreview(resolved);
     } catch (error) {
       console.error("❌ Resolution error:", error);

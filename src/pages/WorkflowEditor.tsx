@@ -25,6 +25,8 @@ import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
+import { LogicEngine } from "@/utils/logicEngine";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -101,57 +103,6 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  // Evaluate local logic for Logic category nodes
-  const evaluateLogicNode = useCallback((node: Node) => {
-    const nodeConfig = Object.values(nodeManifest).find(config => 
-      config.name === node.type || config.node_type === node.type
-    );
-    
-    if (nodeConfig?.category === "Logic" && nodeConfig.name === "If") {
-      const conditions = Array.isArray(node.data?.conditions) ? node.data.conditions : [];
-      
-      if (conditions.length === 0) {
-        console.log("No conditions to evaluate, defaulting to false");
-        return false;
-      }
-      
-      // Evaluate all conditions (AND logic)
-      const allConditionsTrue = conditions.every((condition: any) => {
-        let { left, operator, right } = condition;
-        
-        // For now, just handle basic values - JSON reference resolution would need upstream data
-        // TODO: Resolve JSON references like {{ $json.value }} when we have workflow execution context
-        if (typeof left === 'string' && left.includes('{{')) {
-          console.log("JSON reference detected in left value:", left);
-          left = "0"; // Default value for demo
-        }
-        if (typeof right === 'string' && right.includes('{{')) {
-          console.log("JSON reference detected in right value:", right);
-          right = "0"; // Default value for demo
-        }
-        
-        // Parse values (convert strings to numbers if they're numeric)
-        const leftVal = isNaN(Number(left)) ? left : Number(left);
-        const rightVal = isNaN(Number(right)) ? right : Number(right);
-        
-        console.log(`Evaluating condition: ${leftVal} ${operator} ${rightVal}`);
-        
-        switch (operator) {
-          case "===": return leftVal === rightVal;
-          case "!==": return leftVal !== rightVal;
-          case ">=": return Number(leftVal) >= Number(rightVal);
-          case "=<": return Number(leftVal) <= Number(rightVal);
-          default: 
-            console.log("Unknown operator:", operator);
-            return false;
-        }
-      });
-      
-      return allConditionsTrue;
-    }
-    
-    return null; // Not a logic node or unsupported
-  }, []);
 
   // Execute a node and animate outgoing edges
   const executeNode = useCallback((nodeId: string) => {
@@ -169,40 +120,52 @@ const WorkflowEditor = () => {
     );
     
     if (nodeConfig?.category === "Logic") {
-      // Evaluate logic locally
-      const result = evaluateLogicNode(node);
+      console.log("Evaluating logic node locally:", node);
       
-      // Animate only the relevant edge based on the result
-      const relevantEdges = outgoingEdges.filter(edge => {
-        if (nodeConfig.name === "If") {
-          return edge.sourceHandle === (result ? "true" : "false");
+      // Get input data from upstream nodes
+      const upstreamNodes = getAllUpstreamNodes(nodeId, edges, nodes);
+      const inputData = upstreamNodes.reduce((acc, node) => {
+        if (node.data?.output) {
+          acc[node.id] = node.data.output;
         }
-        return true;
-      });
+        return acc;
+      }, {} as any);
       
-      // Animate the relevant edges
-      setEdges(currentEdges => 
-        currentEdges.map(edge => 
-          relevantEdges.some(relevantEdge => relevantEdge.id === edge.id)
-            ? { ...edge, animated: true, className: 'animated' }
-            : edge
-        )
-      );
+      // Evaluate the logic node using the logic engine
+      const result = LogicEngine.evaluateLogicNode(node, inputData, outgoingEdges);
       
-      // Show result in console
-      console.log(`Logic node ${nodeId} evaluated to:`, result);
-      
-      // Stop animation after delay
-      setTimeout(() => {
-        setExecutingNode(null);
+      if (result.success && result.outputEdgeId) {
+        console.log("Logic evaluation successful, animating edge:", result.outputEdgeId);
+        
+        // Animate the selected edge
         setEdges(currentEdges => 
           currentEdges.map(edge => 
-            relevantEdges.some(relevantEdge => relevantEdge.id === edge.id)
-              ? { ...edge, animated: false, className: '' }
+            edge.id === result.outputEdgeId 
+              ? { ...edge, animated: true, className: 'animated' }
               : edge
           )
         );
-      }, 2000);
+        
+        // Stop animation after delay
+        setTimeout(() => {
+          setExecutingNode(null);
+          setEdges(currentEdges => 
+            currentEdges.map(edge => 
+              edge.id === result.outputEdgeId 
+                ? { ...edge, animated: false, className: '' }
+                : edge
+            )
+          );
+        }, 2000);
+      } else {
+        console.error("Logic evaluation failed:", result.error);
+        toast({
+          title: "Logic Evaluation Error",
+          description: result.error || "Failed to evaluate logic node",
+          variant: "destructive",
+        });
+        setExecutingNode(null);
+      }
     } else {
       // Regular node execution - animate all outgoing edges
       setEdges(currentEdges => 
@@ -226,7 +189,7 @@ const WorkflowEditor = () => {
         );
       }, 2000);
     }
-  }, [edges, setEdges, nodes, evaluateLogicNode]);
+   }, [edges, setEdges, nodes, toast]);
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {

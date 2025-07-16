@@ -66,6 +66,8 @@ const WorkflowEditor = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useAuth();
+  
+  // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === 'new' || !id;
   const projectId = searchParams.get('project'); // Get project ID from URL parameters
   
@@ -187,6 +189,14 @@ const WorkflowEditor = () => {
       setLoading(false);
       if (data) {
         setWorkflowId(data.id);
+        
+        // CRITICAL FIX: Update the URL to reflect the actual workflow ID
+        // This prevents the loading effect from treating it as a new workflow
+        const newUrl = projectId 
+          ? `/workflow/${data.id}?project=${projectId}`
+          : `/workflow/${data.id}`;
+        window.history.replaceState(null, '', newUrl);
+        
         toast({
           title: "Success",
           description: "Workflow saved!",

@@ -353,8 +353,16 @@ const WorkflowEditor = () => {
       isNewWorkflow,
       workflowId,
       currentId: id,
-      currentUrl: window.location.pathname
+      currentUrl: window.location.pathname,
+      documentHidden: document.hidden,
+      documentVisibilityState: document.visibilityState
     });
+    
+    // PREVENT RELOAD ON TAB SWITCH - only load if document is visible
+    if (document.hidden) {
+      console.log("🚫 Skipping workflow load - document is hidden (tab switch)");
+      return;
+    }
     
     if (authLoading) return; // Wait for auth to finish loading
     

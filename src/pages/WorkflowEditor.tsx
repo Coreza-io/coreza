@@ -450,7 +450,7 @@ const WorkflowEditor = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, id, setNodes, setEdges, projectId]); // Use 'id' instead of 'workflowId' to prevent conflicts
+  }, [authUser, authLoading, navigate, isNewWorkflow, id, projectId]); // Removed setNodes, setEdges to prevent constant reloads
 
 
   // Auto-hide palette when clicking outside or on editor

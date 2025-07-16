@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Save, Play, Pause, ChevronLeft, ChevronRight } from "lucide-react";
+import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
@@ -87,6 +87,7 @@ const WorkflowEditor = () => {
   const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   const [executingNode, setExecutingNode] = useState<string | null>(null);
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -137,17 +138,23 @@ const WorkflowEditor = () => {
   }, [executeNode]);
 
   // Save workflow to Supabase
-  const handleSaveWorkflow = async () => {
+  const handleSaveWorkflow = async (isAutosave = false) => {
     if (!authUser) {
-      toast({
-        title: "Error",
-        description: "Please log in to save workflows",
-        variant: "destructive",
-      });
+      if (!isAutosave) {
+        toast({
+          title: "Error",
+          description: "Please log in to save workflows",
+          variant: "destructive",
+        });
+      }
       return;
     }
     
-    setLoading(true);
+    if (isAutosave) {
+      setAutosaveStatus('saving');
+    } else {
+      setLoading(true);
+    }
 
     // 1) Turn each node into a "minimal" version without its definition
     const minimalNodes = nodes.map((n) => ({
@@ -175,18 +182,25 @@ const WorkflowEditor = () => {
         .from("workflows")
         .update(payload)
         .eq("id", workflowId);
-      setLoading(false);
-      if (!error) {
-        toast({
-          title: "Success",
-          description: "Workflow updated!",
-        });
+      if (isAutosave) {
+        setAutosaveStatus(error ? 'idle' : 'saved');
+        if (!error) {
+          setTimeout(() => setAutosaveStatus('idle'), 2000); // Reset after 2 seconds
+        }
       } else {
-        toast({
-          title: "Error",
-          description: "Error saving workflow: " + error.message,
-          variant: "destructive",
-        });
+        setLoading(false);
+        if (!error) {
+          toast({
+            title: "Success",
+            description: "Workflow updated!",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: "Error saving workflow: " + error.message,
+            variant: "destructive",
+          });
+        }
       }
     } else {
       const { data, error } = await supabase
@@ -194,7 +208,14 @@ const WorkflowEditor = () => {
         .insert([payload])
         .select()
         .single();
-      setLoading(false);
+      if (isAutosave) {
+        setAutosaveStatus(error ? 'idle' : 'saved');
+        if (!error && data) {
+          setTimeout(() => setAutosaveStatus('idle'), 2000); // Reset after 2 seconds
+        }
+      } else {
+        setLoading(false);
+      }
       if (data) {
         console.log("🎯 Workflow saved, updating state:", {
           oldWorkflowId: workflowId,
@@ -437,7 +458,7 @@ const WorkflowEditor = () => {
     
     const autosaveInterval = setInterval(() => {
       console.log("🔄 Autosaving workflow...");
-      handleSaveWorkflow();
+      handleSaveWorkflow(true); // Pass true for autosave
     }, 30000); // Save every 30 seconds
     
     return () => clearInterval(autosaveInterval);
@@ -509,16 +530,36 @@ const WorkflowEditor = () => {
               >
                 {isActive ? "Active" : "Draft"}
               </Badge>
-              <span className="text-xs text-muted-foreground">
-                {isNewWorkflow ? "Unsaved" : "Auto-saved"}
-              </span>
+              {autosaveStatus !== 'idle' && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {autosaveStatus === 'saving' && (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Autosaving...</span>
+                    </>
+                  )}
+                  {autosaveStatus === 'saved' && (
+                    <span className="text-success">Saved</span>
+                  )}
+                </div>
+              )}
+              {autosaveStatus === 'idle' && !isNewWorkflow && (
+                <span className="text-xs text-muted-foreground">
+                  Auto-saved
+                </span>
+              )}
+              {autosaveStatus === 'idle' && isNewWorkflow && (
+                <span className="text-xs text-muted-foreground">
+                  Unsaved
+                </span>
+              )}
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-3">
           <Button
-            onClick={handleSaveWorkflow}
+            onClick={() => handleSaveWorkflow(false)}
             disabled={loading}
             variant="outline"
             className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"

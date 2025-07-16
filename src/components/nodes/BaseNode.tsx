@@ -354,6 +354,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }, {} as Record<string, any>);
     return { supportData };
   }
+  function resolveDeep(val: any, selectedInputData: any, allNodeData: any): any {
+    if (typeof val === "string") {
+      return resolveReferences(val, selectedInputData, allNodeData);
+    }
+    if (Array.isArray(val)) {
+      return val.map(v => resolveDeep(v, selectedInputData, allNodeData));
+    }
+    if (typeof val === "object" && val !== null) {
+      return Object.fromEntries(
+        Object.entries(val).map(([k, v]) => [k, resolveDeep(v, selectedInputData, allNodeData)])
+      );
+    }
+    return val;
+  }
 
   function buildPayload(
     fieldState: Record<string, any>,
@@ -402,19 +416,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     console.log("🔧 All node data map:", allNodeData);
     
     const payload: Record<string, any> = {};
-    for (const [key, value] of Object.entries(fieldState)) {
-      const resolvedValue = typeof value === 'string'
-        ? resolveReferences(value, selectedInputData, allNodeData)
-        : value;
-      
-      console.log(`🔧 Field ${key}:`, {
-        original: value,
-        resolved: resolvedValue,
-        selectedInputData,
-        allNodeData
-      });
-      
-      payload[key] = resolvedValue;
+    for (const [key, value] of Object.entries(fieldState)) { 
+      payload[key] = resolveDeep(value, selectedInputData, allNodeData);
     }
     
     // Special handling for If node to add missing required fields

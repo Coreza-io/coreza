@@ -38,7 +38,7 @@ const Login = () => {
           title: "Login Successful",
           description: "Welcome back!",
         });
-        navigate("/dashboard");
+        navigate("/");
       }
     } catch (err) {
       console.error('Login error:', err);

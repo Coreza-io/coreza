@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Workflow {
   id: string;
@@ -40,7 +41,6 @@ const Workflows = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [project, setProject] = useState<{ id: string; name: string } | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
@@ -48,21 +48,9 @@ const Workflows = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const projectId = searchParams.get('project');
-
-  // Check for user authentication
-  useEffect(() => {
-    const userEmail = localStorage.getItem('userEmail');
-    const userId = localStorage.getItem('userId');
-    const userName = localStorage.getItem('userName');
-    
-    if (userEmail && userId && userName) {
-      setUser({ id: userId, email: userEmail, name: userName });
-    } else {
-      navigate('/login');
-    }
-  }, [navigate]);
 
   // Load project info if projectId is provided
   useEffect(() => {
@@ -166,7 +154,7 @@ const Workflows = () => {
         const res = await fetch(`${API_URL}/workflows/${workflowId}/activate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ownerId: user!.id }),
+          body: JSON.stringify({ ownerId: user?.id }),
         });
 
         if (!res.ok) {

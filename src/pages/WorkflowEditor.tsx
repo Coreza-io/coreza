@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
@@ -88,6 +88,8 @@ const WorkflowEditor = () => {
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   const [executingNode, setExecutingNode] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [isAutoExecuting, setIsAutoExecuting] = useState(false);
+  const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -130,6 +132,127 @@ const WorkflowEditor = () => {
       );
     }, 2000);
   }, [edges, setEdges]);
+
+  // Function to get execution order using topological sort
+  const getExecutionOrder = useCallback(() => {
+    const nodeIds = nodes.map(node => node.id);
+    const inDegree = new Map<string, number>();
+    const adjList = new Map<string, string[]>();
+    
+    // Initialize
+    nodeIds.forEach(id => {
+      inDegree.set(id, 0);
+      adjList.set(id, []);
+    });
+    
+    // Build adjacency list and calculate in-degrees
+    edges.forEach(edge => {
+      const source = edge.source;
+      const target = edge.target;
+      
+      if (adjList.has(source) && inDegree.has(target)) {
+        adjList.get(source)!.push(target);
+        inDegree.set(target, inDegree.get(target)! + 1);
+      }
+    });
+    
+    // Topological sort using Kahn's algorithm
+    const queue: string[] = [];
+    const result: string[] = [];
+    
+    // Find all nodes with no incoming edges
+    inDegree.forEach((degree, nodeId) => {
+      if (degree === 0) {
+        queue.push(nodeId);
+      }
+    });
+    
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      result.push(current);
+      
+      // For each neighbor, reduce in-degree
+      adjList.get(current)!.forEach(neighbor => {
+        const newDegree = inDegree.get(neighbor)! - 1;
+        inDegree.set(neighbor, newDegree);
+        
+        if (newDegree === 0) {
+          queue.push(neighbor);
+        }
+      });
+    }
+    
+    return result;
+  }, [nodes, edges]);
+
+  // Auto-execute all nodes in correct order
+  const executeAllNodes = useCallback(async () => {
+    if (isAutoExecuting) return;
+    
+    const executionOrder = getExecutionOrder();
+    if (executionOrder.length === 0) {
+      toast({
+        title: "No Nodes",
+        description: "No nodes to execute",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsAutoExecuting(true);
+    setExecutionQueue(executionOrder);
+    
+    try {
+      for (let i = 0; i < executionOrder.length; i++) {
+        const nodeId = executionOrder[i];
+        
+        // Execute the node
+        await new Promise<void>((resolve) => {
+          setExecutingNode(nodeId);
+          
+          // Find all edges coming out of this node
+          const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+          
+          // Animate the outgoing edges
+          setEdges(currentEdges => 
+            currentEdges.map(edge => 
+              outgoingEdges.some(outEdge => outEdge.id === edge.id)
+                ? { ...edge, animated: true, className: 'animated' }
+                : edge
+            )
+          );
+          
+          // Simulate execution time (2 seconds per node)
+          setTimeout(() => {
+            setExecutingNode(null);
+            // Stop animation
+            setEdges(currentEdges => 
+              currentEdges.map(edge => 
+                outgoingEdges.some(outEdge => outEdge.id === edge.id)
+                  ? { ...edge, animated: false, className: '' }
+                  : edge
+              )
+            );
+            resolve();
+          }, 2000);
+        });
+      }
+      
+      toast({
+        title: "Execution Complete",
+        description: `Successfully executed ${executionOrder.length} nodes`,
+      });
+    } catch (error) {
+      toast({
+        title: "Execution Failed",
+        description: "An error occurred during auto-execution",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAutoExecuting(false);
+      setExecutionQueue([]);
+    }
+  }, [nodes, edges, isAutoExecuting, getExecutionOrder, setEdges, toast]);
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -568,6 +691,25 @@ const WorkflowEditor = () => {
           >
             <Save className="h-4 w-4 mr-2" />
             {loading ? "Saving..." : "Save"}
+          </Button>
+          
+          <Button
+            onClick={executeAllNodes}
+            disabled={loading || isAutoExecuting || nodes.length === 0}
+            variant="secondary"
+            className="h-10 px-4 font-medium bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 transition-all duration-200"
+          >
+            {isAutoExecuting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Executing...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4 mr-2" />
+                Execute All
+              </>
+            )}
           </Button>
           
           <Button

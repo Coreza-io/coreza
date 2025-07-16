@@ -419,7 +419,7 @@ const WorkflowEditor = () => {
     }
   }, [workflowId, isNewWorkflow, setNodes, setEdges]);
 
-  // Auto-hide palette when clicking outside
+  // Auto-hide palette when clicking outside or on editor
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (!isPaletteVisible) return;
@@ -427,9 +427,7 @@ const WorkflowEditor = () => {
       const target = event.target as Element;
       const palette = document.querySelector('.node-palette-container');
       const toggleButton = document.querySelector('.palette-toggle-button');
-      const reactFlowWrapper = document.querySelector('.react-flow');
       
-      // Hide palette if clicking on ReactFlow editor, outside palette, or not on toggle button
       if (palette && toggleButton && 
           !palette.contains(target) && 
           !toggleButton.contains(target)) {
@@ -441,6 +439,13 @@ const WorkflowEditor = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
+  }, [isPaletteVisible]);
+
+  // Handle ReactFlow clicks specifically
+  const onPaneClick = useCallback(() => {
+    if (isPaletteVisible) {
+      setIsPaletteVisible(false);
+    }
   }, [isPaletteVisible]);
 
   // Handle delete key to remove selected nodes
@@ -528,6 +533,7 @@ const WorkflowEditor = () => {
             onDrop={onDrop}
             onDragOver={onDragOver}
             onNodeDoubleClick={onNodeDoubleClick}
+            onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView

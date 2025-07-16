@@ -390,9 +390,9 @@ const WorkflowEditor = () => {
     loadWorkflow();
   }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, setNodes, setEdges, projectId]);
 
-  // Persist workflow state to localStorage
+  // Persist workflow state to localStorage (only when nodes actually change)
   useEffect(() => {
-    if (workflowId && nodes.length > 0) {
+    if (workflowId && nodes.length > 0 && !loading) {
       const workflowState = {
         id: workflowId,
         name: workflowName,
@@ -403,37 +403,43 @@ const WorkflowEditor = () => {
       };
       localStorage.setItem(`workflow_${workflowId}`, JSON.stringify(workflowState));
     }
-  }, [workflowId, workflowName, nodes, edges, isActive]);
+  }, [workflowId, workflowName, nodes, edges, isActive, loading]);
 
-  // Load persisted workflow state on page refresh
+  // Load persisted workflow state on page refresh (only once and only if not loading from DB)
   useEffect(() => {
-    if (workflowId && !isNewWorkflow) {
+    if (workflowId && !isNewWorkflow && !loading) {
       const persistedState = localStorage.getItem(`workflow_${workflowId}`);
       if (persistedState) {
         try {
           const state = JSON.parse(persistedState);
-          setWorkflowName(state.name || "Untitled Workflow");
-          setIsActive(!!state.isActive);
-          if (state.nodes && state.nodes.length > 0) {
-            // Restore node definitions from manifest when loading from localStorage
-            const restoredNodes = state.nodes.map((node: any) => ({
-              ...node,
-              data: {
-                ...node.data,
-                definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-              }
-            }));
-            setNodes(restoredNodes);
-          }
-          if (state.edges) {
-            setEdges(state.edges);
+          const currentTime = new Date().getTime();
+          const stateTime = new Date(state.lastSaved).getTime();
+          
+          // Only use localStorage if it's recent (within 5 minutes) and we haven't loaded from DB yet
+          if (currentTime - stateTime < 5 * 60 * 1000 && nodes.length === 0) {
+            console.log("Loading from localStorage cache");
+            setWorkflowName(state.name || "Untitled Workflow");
+            setIsActive(!!state.isActive);
+            if (state.nodes && state.nodes.length > 0) {
+              const restoredNodes = state.nodes.map((node: any) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
+                }
+              }));
+              setNodes(restoredNodes);
+            }
+            if (state.edges) {
+              setEdges(state.edges);
+            }
           }
         } catch (error) {
           console.error("Error loading persisted workflow state:", error);
         }
       }
     }
-  }, [workflowId, isNewWorkflow, setNodes, setEdges]);
+  }, [workflowId, isNewWorkflow, loading]); // Removed setNodes, setEdges dependencies to prevent loops
 
   // Auto-hide palette when clicking outside or on editor
   useEffect(() => {

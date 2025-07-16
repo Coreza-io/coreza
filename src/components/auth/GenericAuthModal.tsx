@@ -57,16 +57,12 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     setLoading(true);
     try {
-      // Separate sensitive and non-sensitive fields
-      const sensitiveData: Record<string, string> = {};
-      const publicData: Record<string, string> = {};
+      // Create a simple JSON object with field names and values
+      const credentialData: Record<string, string> = {};
 
       for (const f of definition.authFields || []) {
-        if (f.type === "password") {
-          // Encrypt password-type fields immediately
-          sensitiveData[f.key] = await EncryptionUtil.encrypt(fields[f.key], user.id);
-        } else if (f.type !== "static") {
-          publicData[f.key] = fields[f.key];
+        if (f.type !== "static" && f.key !== "name") {
+          credentialData[f.key] = fields[f.key];
         }
       }
 
@@ -75,11 +71,8 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         body: {
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
-          name: publicData.name || `${definition.name} Account`,
-          encrypted_data: {
-            sensitive: sensitiveData,
-            public: publicData
-          }
+          name: fields.name || `${definition.name} Account`,
+          encrypted_data: credentialData
         }
       });
 

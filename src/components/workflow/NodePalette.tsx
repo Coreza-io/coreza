@@ -48,7 +48,11 @@ const getIconComponent = (iconName: string) => {
   return icons[iconName as keyof typeof icons] || Database;
 };
 
-export function NodePalette() {
+interface NodePaletteProps {
+  onNodeClick?: (nodeType: string) => void;
+}
+
+export function NodePalette({ onNodeClick }: NodePaletteProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredNodes = Object.entries(nodeManifest).filter(([nodeType, node]) =>
@@ -102,6 +106,7 @@ export function NodePalette() {
                       className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
                       draggable
                       onDragStart={(e) => onDragStart(e, nodeType)}
+                      onClick={() => onNodeClick?.(nodeType)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
@@ -156,7 +161,7 @@ export function NodePalette() {
             Quick Tip
           </h4>
           <p className="text-xs text-muted-foreground">
-            Drag and drop nodes onto the canvas to build your trading workflow. 
+            Drag and drop nodes onto the canvas or click to add at center. 
             Connect them by dragging from output to input handles.
           </p>
         </div>

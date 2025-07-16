@@ -241,6 +241,23 @@ const WorkflowEditor = () => {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  // Function to create a new node
+  const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
+    const nodeDefinition = nodeManifest[nodeType];
+    
+    const newNode: Node = {
+      id: `${nodeType}-${Date.now()}`,
+      type: nodeType,
+      position,
+      data: { 
+        label: nodeDefinition?.name || `${nodeType} node`,
+        definition: nodeDefinition
+      },
+    };
+    
+    setNodes((nds) => nds.concat(newNode));
+  }, [setNodes]);
+
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
@@ -255,22 +272,24 @@ const WorkflowEditor = () => {
         y: event.clientY - reactFlowBounds.top,
       };
 
-      const nodeDefinition = nodeManifest[type];
-      
-      const newNode: Node = {
-        id: `${type}-${Date.now()}`,
-        type,
-        position,
-        data: { 
-          label: nodeDefinition?.name || `${type} node`,
-          definition: nodeDefinition
-        },
-      };
-      
-      setNodes((nds) => nds.concat(newNode));
+      createNode(type, position);
     },
-    [setNodes],
+    [createNode],
   );
+
+  // Handle node click from palette
+  const handleNodeClick = useCallback((nodeType: string) => {
+    // Position new node at center of viewport
+    const position = {
+      x: 250,
+      y: 250,
+    };
+    
+    createNode(nodeType, position);
+    
+    // Optionally hide palette after adding node
+    setIsPaletteVisible(false);
+  }, [createNode]);
 
   // Check for user authentication and load latest workflow
   useEffect(() => {
@@ -560,7 +579,7 @@ const WorkflowEditor = () => {
       {/* Right Sidebar - Node Palette */}
       {isPaletteVisible && (
         <div className="w-80 border-l border-border bg-sidebar node-palette-container">
-          <NodePalette />
+          <NodePalette onNodeClick={handleNodeClick} />
         </div>
       )}
       

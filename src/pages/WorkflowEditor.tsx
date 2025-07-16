@@ -283,57 +283,15 @@ const WorkflowEditor = () => {
         const userObj = { id: userId, email: userEmail, name: userName };
         setUser(userObj);
         
-        // Load workflow - either latest for new workflow or specific existing workflow
+        // Load workflow - either start fresh for new workflow or load specific existing workflow
         if (isNewWorkflow) {
-          // For truly new workflows (especially when coming from a project),
-          // don't auto-load existing workflows - start fresh
-          if (projectId) {
-            // When creating from a project context, start completely fresh
-            setWorkflowName("New Project Workflow");
-            setNodes(initialNodes);
-            setEdges(initialEdges);
-            setIsActive(false);
-          } else {
-            // Only auto-load latest workflow if this is a general new workflow (not from project)
-            setLoading(true);
-            try {
-              const { data, error } = await supabase
-                .from("workflows")
-                .select("*")
-                .eq("user_id", userId)
-                .order("created_at", { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-              if (data && !error) {
-                setWorkflowId(data.id);
-                setWorkflowName(data.name || "Untitled Workflow");
-                setIsActive(!!data.is_active);
-                
-                // Load nodes and edges
-                if (data.nodes && Array.isArray(data.nodes)) {
-                  // Restore node definitions from manifest when loading from database
-                  const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                    ...node,
-                    data: {
-                      ...node.data,
-                      definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-                    }
-                  }));
-                  setNodes(restoredNodes);
-                }
-                if (data.edges && Array.isArray(data.edges)) {
-                  setEdges(data.edges as unknown as Edge[]);
-                }
-                
-                // Update URL without page reload
-                window.history.replaceState(null, '', `/workflow/${data.id}`);
-              }
-            } catch (error) {
-              console.error("Error loading latest workflow:", error);
-            }
-            setLoading(false);
-          }
+          // For ALL new workflows, start completely fresh
+          // No more auto-loading of existing workflows
+          setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
+          setNodes(initialNodes);
+          setEdges(initialEdges);
+          setIsActive(false);
+          setLoading(false);
         } else if (workflowId) {
           // Load specific existing workflow
           setLoading(true);

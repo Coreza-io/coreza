@@ -414,6 +414,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       
       payload[key] = resolvedValue;
     }
+    
+    // Special handling for If node to add missing required fields
+    if (definition?.name === "If") {
+      // Map logicalOps to logicalOp (backend expects singular)
+      if (fieldState.logicalOps) {
+        payload.logicalOp = fieldState.logicalOps;
+      }
+      
+      // Add inputData as the current available data
+      payload.inputData = allNodeData;
+      
+      console.log("🔧 If node special payload:", payload);
+    }
     return {
       ...payload,
       ...(Array.isArray(supportData) ? supportData[0] || {} : supportData),

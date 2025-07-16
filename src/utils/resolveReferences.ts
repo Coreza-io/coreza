@@ -26,9 +26,9 @@ function parsePath(path: string): Array<string|number> {
 
 /**
  * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
- * Now with support for negative array indexes.
+ * Now with support for negative array indexes and multi-node data lookup.
  */
-export function resolveReferences(expr: string, inputData: any): string {
+export function resolveReferences(expr: string, inputData: any, allNodeData?: Record<string, any>): string {
   if (!inputData || typeof expr !== 'string') {
     return expr;
   }
@@ -37,24 +37,34 @@ export function resolveReferences(expr: string, inputData: any): string {
   const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
 
   return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
-    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData });
+    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData });
     
-    // If nodeName is specified, we would validate it here (but for now, just use inputData)
-    // In a more complete implementation, you'd look up the actual node data by name
+    let targetData = inputData;
+    
+    // If nodeName is specified and we have allNodeData, look up the specific node's data
+    if (nodeName && allNodeData) {
+      if (allNodeData[nodeName]) {
+        targetData = allNodeData[nodeName];
+        console.log(`🔍 Found data for node '${nodeName}':`, targetData);
+      } else {
+        console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
+        return fullMatch; // Return original if node not found
+      }
+    }
     
     const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
     
     // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
     if (!cleanPath) {
-      return (typeof inputData === 'object' && inputData !== null)
-        ? JSON.stringify(inputData)
-        : String(inputData);
+      return (typeof targetData === 'object' && targetData !== null)
+        ? JSON.stringify(targetData)
+        : String(targetData);
     }
     
     const keys = parsePath(cleanPath);
     console.log("🔍 Parsed keys:", keys);
 
-    let result: any = inputData;
+    let result: any = targetData;
     for (const key of keys) {
       console.log("🔍 Accessing key:", key, "in:", result);
       if (result == null) { 

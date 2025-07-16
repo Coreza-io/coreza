@@ -356,16 +356,32 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       userId
     });
     
+    // Create a map of all upstream node data by display name
+    const allNodeData: Record<string, any> = {};
+    previousNodes.forEach(node => {
+      const displayName = getDisplayName(node, nodes);
+      let nodeData = node.data?.output || node.data || {};
+      // If nodeData is an array, get the first item
+      if (Array.isArray(nodeData) && nodeData.length > 0) {
+        nodeData = nodeData[0] || {};
+      }
+      allNodeData[displayName] = nodeData;
+      console.log(`🔧 Mapped node '${displayName}':`, nodeData);
+    });
+    
+    console.log("🔧 All node data map:", allNodeData);
+    
     const payload: Record<string, any> = {};
     for (const [key, value] of Object.entries(fieldState)) {
       const resolvedValue = typeof value === 'string'
-        ? resolveReferences(value, selectedInputData)
+        ? resolveReferences(value, selectedInputData, allNodeData)
         : value;
       
       console.log(`🔧 Field ${key}:`, {
         original: value,
         resolved: resolvedValue,
-        selectedInputData
+        selectedInputData,
+        allNodeData
       });
       
       payload[key] = resolvedValue;

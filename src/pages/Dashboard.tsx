@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -7,48 +8,124 @@ import {
   DollarSign, 
   PlayCircle, 
   Plus,
-  BarChart3
+  BarChart3,
+  Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const Dashboard = () => {
-  // Mock data for demonstration
+  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState({
+    activeWorkflows: 0,
+    totalWorkflows: 0,
+    recentWorkflows: [] as any[],
+    performanceData: [] as any[]
+  });
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  // Check for user authentication
+  useEffect(() => {
+    const userEmail = localStorage.getItem('userEmail');
+    const userId = localStorage.getItem('userId');
+    const userName = localStorage.getItem('userName');
+    
+    if (userEmail && userId && userName) {
+      setUser({ id: userId, email: userEmail, name: userName });
+    } else {
+      navigate('/login');
+    }
+  }, [navigate]);
+
+  // Fetch dashboard data
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // Fetch workflows
+        const { data: workflows, error: workflowsError } = await supabase
+          .from('workflows')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (workflowsError) {
+          console.error('Error fetching workflows:', workflowsError);
+          toast({
+            title: "Error",
+            description: "Failed to load dashboard data",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const activeWorkflows = workflows?.filter(w => w.is_active) || [];
+        
+        // Generate mock performance data for now (you can replace this with real data later)
+        const performanceData = Array.from({ length: 30 }, (_, i) => ({
+          date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          value: Math.floor(Math.random() * 1000) + 500
+        }));
+
+        setDashboardData({
+          activeWorkflows: activeWorkflows.length,
+          totalWorkflows: workflows?.length || 0,
+          recentWorkflows: workflows?.slice(0, 3) || [],
+          performanceData
+        });
+
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load dashboard data",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [user, toast]);
+
+  // Calculate dynamic stats based on real data
   const stats = [
     {
       title: "Active Workflows",
-      value: "12",
-      change: "+2 this week",
+      value: loading ? "..." : dashboardData.activeWorkflows.toString(),
+      change: `${dashboardData.totalWorkflows} total`,
       icon: Activity,
-      trend: "up"
+      trend: "neutral" as const
     },
     {
-      title: "Total P&L",
-      value: "$4,234.56",
-      change: "+12.3% this month",
+      title: "Total Workflows",
+      value: loading ? "..." : dashboardData.totalWorkflows.toString(),
+      change: `${dashboardData.activeWorkflows} active`,
       icon: DollarSign,
-      trend: "up"
+      trend: "neutral" as const
     },
     {
       title: "Success Rate",
-      value: "87.4%",
-      change: "+3.2% vs last month",
+      value: "N/A",
+      change: "Coming soon",
       icon: TrendingUp,
-      trend: "up"
+      trend: "neutral" as const
     },
     {
-      title: "Active Trades",
-      value: "8",
-      change: "2 pending orders",
+      title: "Performance",
+      value: "N/A",
+      change: "Coming soon",
       icon: PlayCircle,
-      trend: "neutral"
+      trend: "neutral" as const
     }
-  ];
-
-  const recentWorkflows = [
-    { name: "BTC Mean Reversion", status: "active", pnl: "+$234.56" },
-    { name: "ETH Grid Strategy", status: "paused", pnl: "-$45.23" },
-    { name: "SOL Scalping Bot", status: "active", pnl: "+$567.89" },
   ];
 
   const container = {
@@ -65,6 +142,15 @@ const Dashboard = () => {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0 }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading dashboard...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -102,9 +188,7 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  {stat.trend === "up" && <TrendingUp className="h-3 w-3 text-success" />}
-                  {stat.trend === "down" && <TrendingDown className="h-3 w-3 text-destructive" />}
+                <p className="text-xs text-muted-foreground">
                   {stat.change}
                 </p>
               </CardContent>
@@ -131,23 +215,35 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentWorkflows.map((workflow, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <div>
-                      <p className="font-medium">{workflow.name}</p>
-                      <p className="text-sm text-muted-foreground capitalize">
-                        Status: {workflow.status}
-                      </p>
+                {dashboardData.recentWorkflows.length > 0 ? (
+                  dashboardData.recentWorkflows.map((workflow, index) => (
+                    <div key={workflow.id || index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div>
+                        <p className="font-medium">{workflow.name}</p>
+                        <p className="text-sm text-muted-foreground capitalize">
+                          Status: {workflow.is_active ? 'Active' : 'Paused'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Created: {new Date(workflow.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`w-2 h-2 rounded-full ${
+                          workflow.is_active ? 'bg-success' : 'bg-warning'
+                        }`} />
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`font-medium ${
-                        workflow.pnl.startsWith('+') ? 'text-success' : 'text-destructive'
-                      }`}>
-                        {workflow.pnl}
-                      </p>
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <p>No workflows found</p>
+                    <Link to="/workflow/new">
+                      <Button variant="outline" size="sm" className="mt-2">
+                        Create Your First Workflow
+                      </Button>
+                    </Link>
                   </div>
-                ))}
+                )}
               </div>
               <div className="mt-4">
                 <Link to="/workflows">
@@ -176,10 +272,38 @@ const Dashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[200px] flex items-center justify-center bg-muted/20 rounded-lg">
-                <p className="text-muted-foreground">
-                  Chart visualization will be implemented with Recharts
-                </p>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dashboardData.performanceData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis 
+                      dataKey="date" 
+                      className="text-xs fill-muted-foreground"
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis 
+                      className="text-xs fill-muted-foreground"
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke="hsl(var(--primary))" 
+                      strokeWidth={2}
+                      dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>

@@ -133,8 +133,8 @@ const WorkflowEditor = () => {
     }, 2000);
   }, [edges, setEdges]);
 
-  // Function to get execution order using topological sort
-  const getExecutionOrder = useCallback(() => {
+  // Function to get execution levels for parallel execution
+  const getExecutionLevels = useCallback(() => {
     const nodeIds = nodes.map(node => node.id);
     const inDegree = new Map<string, number>();
     const adjList = new Map<string, string[]>();
@@ -156,41 +156,51 @@ const WorkflowEditor = () => {
       }
     });
     
-    // Topological sort using Kahn's algorithm
-    const queue: string[] = [];
-    const result: string[] = [];
+    // Group nodes by execution levels
+    const levels: string[][] = [];
+    const currentInDegree = new Map(inDegree);
     
-    // Find all nodes with no incoming edges
-    inDegree.forEach((degree, nodeId) => {
-      if (degree === 0) {
-        queue.push(nodeId);
-      }
-    });
-    
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      result.push(current);
+    while (currentInDegree.size > 0) {
+      // Find all nodes with no remaining dependencies (in-degree = 0)
+      const currentLevel: string[] = [];
       
-      // For each neighbor, reduce in-degree
-      adjList.get(current)!.forEach(neighbor => {
-        const newDegree = inDegree.get(neighbor)! - 1;
-        inDegree.set(neighbor, newDegree);
-        
-        if (newDegree === 0) {
-          queue.push(neighbor);
+      currentInDegree.forEach((degree, nodeId) => {
+        if (degree === 0) {
+          currentLevel.push(nodeId);
         }
+      });
+      
+      if (currentLevel.length === 0) {
+        // Circular dependency detected
+        console.warn("Circular dependency detected in workflow");
+        break;
+      }
+      
+      levels.push(currentLevel);
+      
+      // Remove current level nodes and update in-degrees
+      currentLevel.forEach(nodeId => {
+        currentInDegree.delete(nodeId);
+        
+        // Reduce in-degree for all neighbors
+        adjList.get(nodeId)!.forEach(neighbor => {
+          if (currentInDegree.has(neighbor)) {
+            const newDegree = currentInDegree.get(neighbor)! - 1;
+            currentInDegree.set(neighbor, newDegree);
+          }
+        });
       });
     }
     
-    return result;
+    return levels;
   }, [nodes, edges]);
 
-  // Auto-execute all nodes in correct order
+  // Auto-execute all nodes in parallel levels
   const executeAllNodes = useCallback(async () => {
     if (isAutoExecuting) return;
     
-    const executionOrder = getExecutionOrder();
-    if (executionOrder.length === 0) {
+    const executionLevels = getExecutionLevels();
+    if (executionLevels.length === 0 || executionLevels.every(level => level.length === 0)) {
       toast({
         title: "No Nodes",
         description: "No nodes to execute",
@@ -200,47 +210,63 @@ const WorkflowEditor = () => {
     }
     
     setIsAutoExecuting(true);
-    setExecutionQueue(executionOrder);
+    const totalNodes = executionLevels.flat().length;
+    setExecutionQueue(executionLevels.flat());
     
     try {
-      for (let i = 0; i < executionOrder.length; i++) {
-        const nodeId = executionOrder[i];
+      for (let levelIndex = 0; levelIndex < executionLevels.length; levelIndex++) {
+        const currentLevel = executionLevels[levelIndex];
         
-        // Execute the node
-        await new Promise<void>((resolve) => {
-          setExecutingNode(nodeId);
-          
-          // Find all edges coming out of this node
-          const outgoingEdges = edges.filter(edge => edge.source === nodeId);
-          
-          // Animate the outgoing edges
-          setEdges(currentEdges => 
-            currentEdges.map(edge => 
-              outgoingEdges.some(outEdge => outEdge.id === edge.id)
-                ? { ...edge, animated: true, className: 'animated' }
-                : edge
-            )
-          );
-          
-          // Simulate execution time (2 seconds per node)
-          setTimeout(() => {
-            setExecutingNode(null);
-            // Stop animation
+        if (currentLevel.length === 0) continue;
+        
+        console.log(`🔥 Executing Level ${levelIndex + 1}: [${currentLevel.join(', ')}] - ${currentLevel.length} nodes in parallel`);
+        
+        // Execute all nodes in this level in parallel
+        await Promise.all(currentLevel.map(nodeId => 
+          new Promise<void>((resolve) => {
+            setExecutingNode(nodeId);
+            
+            // Find all edges coming out of this node
+            const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+            
+            // Animate the outgoing edges
             setEdges(currentEdges => 
               currentEdges.map(edge => 
                 outgoingEdges.some(outEdge => outEdge.id === edge.id)
-                  ? { ...edge, animated: false, className: '' }
+                  ? { ...edge, animated: true, className: 'animated' }
                   : edge
               )
             );
-            resolve();
-          }, 2000);
-        });
+            
+            // Simulate execution time (2 seconds per node)
+            setTimeout(() => {
+              // Stop animation for this node
+              setEdges(currentEdges => 
+                currentEdges.map(edge => 
+                  outgoingEdges.some(outEdge => outEdge.id === edge.id)
+                    ? { ...edge, animated: false, className: '' }
+                    : edge
+                )
+              );
+              resolve();
+            }, 2000);
+          })
+        ));
+        
+        console.log(`✅ Level ${levelIndex + 1} completed`);
+        
+        // Clear executing node after each level
+        setExecutingNode(null);
+        
+        // Small delay between levels to show progression
+        if (levelIndex < executionLevels.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
       
       toast({
         title: "Execution Complete",
-        description: `Successfully executed ${executionOrder.length} nodes`,
+        description: `Successfully executed ${totalNodes} nodes across ${executionLevels.length} levels`,
       });
     } catch (error) {
       toast({
@@ -251,8 +277,9 @@ const WorkflowEditor = () => {
     } finally {
       setIsAutoExecuting(false);
       setExecutionQueue([]);
+      setExecutingNode(null);
     }
-  }, [nodes, edges, isAutoExecuting, getExecutionOrder, setEdges, toast]);
+  }, [nodes, edges, isAutoExecuting, getExecutionLevels, setEdges, toast]);
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {

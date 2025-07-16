@@ -125,11 +125,15 @@ const WorkflowEditor = () => {
       // Get input data from upstream nodes
       const upstreamNodes = getAllUpstreamNodes(nodeId, edges, nodes);
       const inputData = upstreamNodes.reduce((acc, node) => {
+        // Use node type as key for easier reference resolution
+        const nodeType = node.type || node.id;
         if (node.data?.output) {
-          acc[node.id] = node.data.output;
+          acc[nodeType] = node.data.output;
         }
         return acc;
       }, {} as any);
+      
+      console.log('Prepared input data for logic evaluation:', inputData);
       
       // Evaluate the logic node using the logic engine
       const result = LogicEngine.evaluateLogicNode(node, inputData, outgoingEdges);
@@ -159,9 +163,10 @@ const WorkflowEditor = () => {
         }, 2000);
       } else {
         console.error("Logic evaluation failed:", result.error);
+        const errorMessage = typeof result.error === 'string' ? result.error : 'Failed to evaluate logic node';
         toast({
           title: "Logic Evaluation Error",
-          description: result.error || "Failed to evaluate logic node",
+          description: errorMessage,
           variant: "destructive",
         });
         setExecutingNode(null);

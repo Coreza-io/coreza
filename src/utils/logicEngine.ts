@@ -8,11 +8,60 @@ import { resolveReferences } from './resolveReferences';
 export class LogicEngine {
   
   /**
+   * Resolve a value that might contain node references
+   */
+  static resolveValue(value: string, inputData: any): any {
+    if (typeof value !== 'string' || !value.includes('{{')) {
+      return value;
+    }
+
+    // Handle node references like {{ $('NodeName').json.field }}
+    const nodeRefMatch = value.match(/\{\{\s*\$\('([^']+)'\)\.json\.(.+?)\s*\}\}/);
+    if (nodeRefMatch) {
+      const [, nodeName, fieldPath] = nodeRefMatch;
+      console.log(`Resolving node reference: ${nodeName}.${fieldPath}`);
+      console.log('Available input data:', inputData);
+      
+      // Find the node data by looking for nodes with matching type or name
+      const nodeData = inputData[nodeName] || Object.values(inputData).find((data: any) => 
+        data && typeof data === 'object' && data.type === nodeName
+      );
+      
+      if (!nodeData) {
+        console.warn(`Node ${nodeName} not found in input data`);
+        return value; // Return original if not found
+      }
+
+      // Navigate the field path
+      const fieldParts = fieldPath.split('.');
+      let result = nodeData;
+      
+      for (const part of fieldParts) {
+        if (result && typeof result === 'object' && part in result) {
+          result = result[part];
+        } else {
+          console.warn(`Field ${fieldPath} not found in node ${nodeName} data`);
+          return value; // Return original if field not found
+        }
+      }
+      
+      console.log(`Resolved ${nodeName}.${fieldPath} to:`, result);
+      return result;
+    }
+
+    // Fallback to original resolveReferences for other formats
+    return resolveReferences(value, inputData);
+  }
+
+  /**
    * Evaluate a single condition
    */
   static evaluateCondition(condition: Condition, inputData: any): boolean {
-    const leftValue = resolveReferences(condition.left, inputData);
-    const rightValue = resolveReferences(condition.right, inputData);
+    // Handle node reference resolution properly
+    const leftValue = this.resolveValue(condition.left, inputData);
+    const rightValue = this.resolveValue(condition.right, inputData);
+    
+    console.log(`Evaluating condition: ${leftValue} ${condition.operator} ${rightValue}`);
     
     return this.compareValues(leftValue, rightValue, condition.operator);
   }
@@ -129,15 +178,18 @@ export class LogicEngine {
 
       const targetEdge = conditionResult ? trueEdge : falseEdge;
 
+      console.log(`If node evaluation result: ${conditionResult}, targeting edge: ${targetEdge?.id}`);
+
       return {
         success: true,
         outputEdgeId: targetEdge?.id
       };
 
     } catch (error) {
+      console.error("Error in evaluateIfNode:", error);
       return {
         success: false,
-        error: `Error evaluating If node: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Error evaluating If node: ${error instanceof Error ? error.message : String(error)}`
       };
     }
   }

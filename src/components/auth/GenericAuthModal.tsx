@@ -4,34 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import EncryptionUtil from "@/utils/encryption";
 import type { NodeConfig } from "@/nodes/manifest";
-
-const BACKEND_URL = "http://localhost:8000";
 
 interface GenericAuthModalProps {
   definition: NodeConfig;
   onClose: () => void;
 }
 
-function getUserId() {
-  try {
-    // First try the new format
-    const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    if (user.id || user.user_id) {
-      return user.id || user.user_id;
-    }
-    
-    // Fallback to old format
-    const userId = localStorage.getItem("userId");
-    return userId || "";
-  } catch {
-    // Fallback to old format on JSON parse error
-    return localStorage.getItem("userId") || "";
-  }
-}
-
 const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose }) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [fields, setFields] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       (definition.authFields || []).map(f =>
@@ -42,10 +27,19 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
   const [status, setStatus] = useState<null | { type: 'success' | 'error'; message: string }>(null);
   const [loading, setLoading] = useState(false);
 
-  const userId = getUserId();
-
   const handleConnect = async () => {
     setStatus(null);
+
+    if (!user?.id) {
+      const errorMessage = "User not authenticated";
+      setStatus({ type: "error", message: errorMessage });
+      toast({
+        title: "Authentication Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Validate required fields except static
     for (const f of definition.authFields || []) {
@@ -61,64 +55,67 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
       }
     }
 
-    // Check for authAction (URL/method)
-    const { url, method } = definition.authAction || {};
-    if (!url) {
-      const errorMessage = "Missing authAction.url in node definition!";
-      setStatus({ type: "error", message: errorMessage });
-      toast({
-        title: "Configuration Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-      return;
-    }
-
     setLoading(true);
     try {
-      // Prepare payload
-      const payload: Record<string, string> = { user_id: userId };
+      // Separate sensitive and non-sensitive fields
+      const sensitiveData: Record<string, string> = {};
+      const publicData: Record<string, string> = {};
+
       for (const f of definition.authFields || []) {
-        payload[f.key] = fields[f.key];
+        if (f.type === "password") {
+          // Encrypt password-type fields immediately
+          sensitiveData[f.key] = await EncryptionUtil.encrypt(fields[f.key], user.id);
+        } else if (f.type !== "static") {
+          publicData[f.key] = fields[f.key];
+        }
       }
 
-      const res = await fetch(`${BACKEND_URL}${url}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      // Store credentials directly in Supabase
+      const { error } = await supabase.functions.invoke('store-credentials', {
+        body: {
+          user_id: user.id,
+          service_type: definition.name.toLowerCase(),
+          name: publicData.name || `${definition.name} Account`,
+          encrypted_data: {
+            sensitive: sensitiveData,
+            public: publicData
+          }
+        }
       });
-      
-      const json = await res.json();
-      
-      if (json.url) {
-        window.open(json.url, "_blank");
-        const successMessage = "Success! Please complete the sign-in in the new tab.";
-        setStatus({ type: "success", message: successMessage });
-        toast({
-          title: "Authentication Started",
-          description: successMessage,
-        });
-      } else if (res.ok) {
-        const successMessage = "Credential added successfully!";
-        setStatus({ type: "success", message: successMessage });
-        toast({
-          title: "Success",
-          description: successMessage,
-        });
-      } else {
-        const errorMessage = json.error || "Unknown error occurred.";
+
+      if (error) {
+        console.error('Error storing credentials:', error);
+        const errorMessage = "Failed to store credentials securely";
         setStatus({ type: "error", message: errorMessage });
         toast({
-          title: "Connection Failed",
+          title: "Storage Error",
           description: errorMessage,
           variant: "destructive",
         });
+        return;
       }
+
+      const successMessage = "Credentials stored securely!";
+      setStatus({ type: "success", message: successMessage });
+      toast({
+        title: "Success",
+        description: successMessage,
+      });
+
+      // Clear sensitive data from memory
+      Object.keys(fields).forEach(key => {
+        const field = definition.authFields?.find(f => f.key === key);
+        if (field?.type === "password") {
+          setFields(current => ({ ...current, [key]: "" }));
+        }
+      });
+
     } catch (e: any) {
-      const errorMessage = e.message || "Network error.";
+      console.error('Connection error:', e);
+      const errorMessage = e.message || "Failed to store credentials";
       setStatus({ type: "error", message: errorMessage });
       toast({
-        title: "Network Error",
+        title: "Error",
         description: errorMessage,
         variant: "destructive",
       });

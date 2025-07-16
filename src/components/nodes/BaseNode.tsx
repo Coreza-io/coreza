@@ -331,11 +331,26 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData: Record<string, any>,
     userId: string
   ): Record<string, any> {
+    console.log("🔧 BuildPayload Debug:", {
+      fieldState,
+      supportData,
+      selectedInputData,
+      userId
+    });
+    
     const payload: Record<string, any> = {};
     for (const [key, value] of Object.entries(fieldState)) {
-      payload[key] = typeof value === 'string'
+      const resolvedValue = typeof value === 'string'
         ? resolveReferences(value, selectedInputData)
         : value;
+      
+      console.log(`🔧 Field ${key}:`, {
+        original: value,
+        resolved: resolvedValue,
+        selectedInputData
+      });
+      
+      payload[key] = resolvedValue;
     }
     return {
       ...payload,

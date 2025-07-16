@@ -356,17 +356,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       userId
     });
     
-    // Create a map of all upstream node data by display name
+    // Create a map of all upstream node data by display name using the most current nodes data
     const allNodeData: Record<string, any> = {};
-    previousNodes.forEach(node => {
-      const displayName = getDisplayName(node, nodes);
-      let nodeData = node.data?.output || node.data || {};
+    previousNodes.forEach(prevNode => {
+      const displayName = getDisplayName(prevNode, nodes);
+      // Get the most current version of this node from the nodes array
+      const currentNode = nodes.find(n => n.id === prevNode.id);
+      let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
+      
       // If nodeData is an array, get the first item
       if (Array.isArray(nodeData) && nodeData.length > 0) {
         nodeData = nodeData[0] || {};
       }
       allNodeData[displayName] = nodeData;
-      console.log(`🔧 Mapped node '${displayName}':`, nodeData);
+      console.log(`🔧 Mapped node '${displayName}' (current: ${!!currentNode}):`, nodeData);
     });
     
     console.log("🔧 All node data map:", allNodeData);

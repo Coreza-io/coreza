@@ -320,18 +320,17 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                   
                                   const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
                                   if (reference) {
-                                    let displayValue = reference;
-                                    try {
-                                      const data = JSON.parse(reference);
-                                      if (data.type === "jsonReference") {
-                                        displayValue = data.keyPath || data.value;
-                                      }
-                                    } catch {
-                                      // If not JSON, use as is
-                                    }
-                                    const newItems = [...(fieldState[f.key] || [])];
-                                    newItems[index] = { ...newItems[index], [subField.key]: displayValue };
-                                    handleChange(f.key, newItems);
+                                    // Call the handleDrop function to maintain JSON format and create proper references
+                                    handleDrop(
+                                      `${f.key}[${index}].${subField.key}`,
+                                      (val: string) => {
+                                        const newItems = [...(fieldState[f.key] || [])];
+                                        newItems[index] = { ...newItems[index], [subField.key]: val };
+                                        handleChange(f.key, newItems);
+                                      },
+                                      e,
+                                      item[subField.key] || ""
+                                    );
                                   }
                                 }}
                               >
@@ -361,22 +360,26 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                     
                                     const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
                                     if (reference) {
-                                      let displayValue = reference;
-                                      try {
-                                        const data = JSON.parse(reference);
-                                        if (data.type === "jsonReference") {
-                                          displayValue = data.keyPath || data.value;
-                                        }
-                                      } catch {
-                                        // If not JSON, use as is
-                                      }
-                                      const newItems = [...(fieldState[f.key] || [])];
-                                      newItems[index] = { ...newItems[index], [subField.key]: displayValue };
-                                      handleChange(f.key, newItems);
+                                      // Call the handleDrop function to maintain JSON format and create proper references  
+                                      handleDrop(
+                                        `${f.key}[${index}].${subField.key}`,
+                                        (val: string) => {
+                                          const newItems = [...(fieldState[f.key] || [])];
+                                          newItems[index] = { ...newItems[index], [subField.key]: val };
+                                          handleChange(f.key, newItems);
+                                        },
+                                        e,
+                                        item[subField.key] || ""
+                                      );
                                     }
                                   }}
                                   onFocus={(e) => e.target.select()}
                                 />
+                                {item[subField.key]?.includes("{{") && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Preview: {getFieldPreview(`${f.key}[${index}].${subField.key}`)}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </React.Fragment>

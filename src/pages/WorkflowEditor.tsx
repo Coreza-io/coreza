@@ -286,8 +286,41 @@ const WorkflowEditor = () => {
         // Load workflow - either start fresh for new workflow or load specific existing workflow
         if (isNewWorkflow) {
           // For ALL new workflows, start completely fresh
-          // No more auto-loading of existing workflows
-          setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
+          // Generate smart workflow name based on existing workflows
+          setLoading(true);
+          try {
+            // Get existing workflow names to determine next number
+            const { data: existingWorkflows, error } = await supabase
+              .from("workflows")
+              .select("name")
+              .eq("user_id", userId);
+
+            let workflowName = "My workflow 1";
+            
+            if (!error && existingWorkflows) {
+              // Find the highest number in existing "My workflow X" names
+              const workflowNumbers = existingWorkflows
+                .map(w => w.name)
+                .filter(name => name.startsWith("My workflow "))
+                .map(name => {
+                  const match = name.match(/My workflow (\d+)/);
+                  return match ? parseInt(match[1]) : 0;
+                })
+                .filter(num => !isNaN(num));
+
+              const maxNumber = workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
+              const nextNumber = maxNumber + 1;
+              
+              workflowName = projectId ? `New Project Workflow ${nextNumber}` : `My workflow ${nextNumber}`;
+            }
+
+            setWorkflowName(workflowName);
+          } catch (error) {
+            console.error("Error generating workflow name:", error);
+            // Fallback to default names
+            setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
+          }
+          
           setNodes(initialNodes);
           setEdges(initialEdges);
           setIsActive(false);

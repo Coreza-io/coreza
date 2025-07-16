@@ -467,9 +467,14 @@ const WorkflowEditor = () => {
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === 'Delete') {
+        console.log("Delete key pressed - removing selected nodes");
         setNodes((nds) => nds.filter((node) => !node.selected));
         setEdges((eds) => eds.filter((edge) => !edge.selected));
+      }
+      if (event.key === 'Backspace') {
+        console.log("Backspace key pressed but should NOT delete nodes");
       }
     };
 

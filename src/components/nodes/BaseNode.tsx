@@ -236,7 +236,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     if (!expr.includes("{{")) return null;
     const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
     const srcNode = previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
-    const srcData = srcNode?.data?.output || srcNode?.data || {};
+    
+    // Extract the actual data from the node structure
+    let srcData = srcNode?.data?.output || srcNode?.data || {};
+    
+    // If srcData is an array (from previousNodes), get the first item's data
+    if (Array.isArray(srcData) && srcData.length > 0) {
+      srcData = srcData[0]?.data || srcData[0] || {};
+    }
     
     console.log("🔍 Preview Debug:", {
       fieldKey,
@@ -244,8 +251,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       srcId,
       srcNode: srcNode?.data,
       srcData,
-      selectedPrevNodeId,
-      previousNodes: previousNodes.map(n => ({ id: n.id, data: n.data }))
+      selectedPrevNodeId
     });
     
     try {

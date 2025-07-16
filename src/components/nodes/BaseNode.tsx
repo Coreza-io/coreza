@@ -4,6 +4,8 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
+import { useAuth } from "@/contexts/AuthContext";
+import CredentialManager from "@/utils/credentialManager";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -15,22 +17,7 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   return idx > 0 ? `${baseName}${idx}` : baseName;
 };
 
-function getUserId(): string {
-  try {
-    // First try the new format
-    const user = JSON.parse(localStorage.getItem("loggedInUser") || "{}");
-    if (user.id || user.user_id) {
-      return user.id || user.user_id;
-    }
-    
-    // Fallback to old format
-    const userId = localStorage.getItem("userId");
-    return userId || "";
-  } catch {
-    // Fallback to old format on JSON parse error
-    return localStorage.getItem("userId") || "";
-  }
-}
+// Removed getUserId function - now using useAuth() hook
 
 interface BaseNodeProps {
   data: any;
@@ -71,6 +58,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
+  const { user: authUser } = useAuth();
   const { setNodes } = useReactFlow();
 
   const definition = data.definition || data.config;
@@ -264,13 +252,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   };
 
-  const userId = getUserId();
+  const userId = authUser?.id;
   console.log("userId", userId)
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
-      const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
+      const serviceType = (definition?.parentNode || definition?.name || "").toLowerCase();
       
       // Check if userId exists and is valid
       if (!userId || userId.trim() === "") {
@@ -279,20 +267,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         return;
       }
       
-      const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
-      console.log('Fetching credentials from:', url);
-      console.log('API name:', apiName, 'User ID:', userId);
+      console.log('Fetching credentials for service:', serviceType, 'User ID:', userId);
       
-      const res = await fetch(url);
-      console.log('Response status:', res.status);
+      // Use CredentialManager to fetch from Supabase
+      const credentials = await CredentialManager.getCredentials(userId, serviceType);
+      console.log('Credentials response:', credentials);
       
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      // Transform credentials for select options
+      const options = credentials.map(cred => ({
+        id: cred.id,
+        name: cred.name,
+        value: cred.id
+      }));
       
-      const json = await res.json();
-      console.log('Credentials response:', json);
-      setSelectOptions((opts) => ({ ...opts, [fieldKey]: json.credentials || [] }));
+      setSelectOptions((opts) => ({ ...opts, [fieldKey]: options }));
     } catch (error) {
       console.error('Error fetching credentials:', error);
       setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
@@ -346,6 +334,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if user is authenticated
+    if (!userId) {
+      setError("User not authenticated");
+      return;
+    }
     
     // Validate required fields *only if visible*
     for (const f of definition?.fields || []) {

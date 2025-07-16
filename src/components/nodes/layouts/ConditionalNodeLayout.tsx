@@ -1,4 +1,4 @@
-import React, { Suspense, useCallback, useState, useEffect, useMemo } from "react";
+import React, { Suspense, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,9 +8,10 @@ import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
-import { useReactFlow } from "@xyflow/react";
 
-interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {}
+interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {
+  sourceMap?: Record<number, { left?: string; right?: string }>;
+}
 
 const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   definition,
@@ -29,92 +30,8 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  sourceMap = {},
 }) => {
-  const { setNodes, setEdges } = useReactFlow();
-
-  // =========== CONDITIONS/REPEATER LOGIC ===========
-  const condField = definition.fields?.find((f: any) => f.key === "conditions");
-  const defaultCond = Array.isArray(condField?.default) && condField.default.length > 0
-    ? condField.default[0]
-    : (condField?.default ?? { left: "", operator: "===", right: "" });
-
-  const initialConds = fieldState.conditions && fieldState.conditions.length > 0
-    ? fieldState.conditions
-    : [defaultCond];
-
-  const initialOps = fieldState.logicalOps && fieldState.logicalOps.length === initialConds.length - 1
-    ? fieldState.logicalOps
-    : Array(initialConds.length - 1).fill("AND");
-
-  const [conditions, setConditions] = useState(initialConds);
-  const [logicalOps, setLogicalOps] = useState<string[]>(initialOps);
-  const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(
-    conditions.map(() => ({}))
-  );
-
-  useEffect(() => {
-    handleChange("conditions", conditions);
-    handleChange("logicalOps", logicalOps);
-  }, [conditions, logicalOps, handleChange]);
-
-  // List-manipulation helpers
-  const addCondition = () => {
-    setConditions((c) => [...c, { ...defaultCond }]);
-    setLogicalOps((lo) => [...lo, "AND"]);
-    setSourceMap((sm) => (Array.isArray(sm) ? [...sm, {}] : [{}]));
-  };
-
-  const removeCondition = (idx: number) => {
-    setConditions((c) => c.filter((_, i) => i !== idx));
-    setLogicalOps((lo) => lo.filter((_, i) => i !== idx - 1));
-    setSourceMap((sm) => sm.filter((_, i) => i !== idx));
-  };
-
-  const updateCondition = useCallback(
-    (idx: number, field: string, value: string) => {
-      setConditions((c) =>
-        c.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
-      );
-    },
-    []
-  );
-
-  const updateLogicalOp = useCallback((idx: number, op: string) => {
-    setLogicalOps((lo) => lo.map((v, i) => (i === idx ? op : v)));
-  }, []);
-
-  // Drag helper for repeater
-  const handleRepeaterDrop = useCallback(
-    (
-      idx: number,
-      field: string,
-      e: React.DragEvent,
-      currentValue: string
-    ) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log("Drop fired!", { idx, field, e, currentValue });
-      const raw = e.dataTransfer.getData("application/reactflow");
-      if (!raw) {
-        document.body.classList.remove("cursor-grabbing", "select-none");
-        return;
-      }
-      try {
-        const { keyPath } = JSON.parse(raw);
-        const insert = `{{ $json.${keyPath} }}`;
-        updateCondition(idx, field, currentValue + insert);
-        setSourceMap((sm) => {
-          const arr = Array.isArray(sm) ? sm : [];
-          const copy = [...arr];
-          copy[idx] = { ...(copy[idx] ?? {}), [field]: selectedPrevNodeId };
-          return copy;
-        });
-      } catch {}
-      document.body.classList.remove("cursor-grabbing", "select-none");
-    },
-    [selectedPrevNodeId, updateCondition]
-  );
-
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: string) => {
       if (typeof expr !== "string" || !expr.includes("{{")) return null;
@@ -130,7 +47,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     },
     [previousNodes, selectedPrevNodeId, sourceMap]
   );
-
   return (
     <>
       <div className="mb-4">
@@ -145,10 +61,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
-        {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
-          if (f.type === "repeater") return null;
-          
           // --------- CONDITIONAL FIELD DISPLAY ---------
           let shouldShow = true;
           if (f.displayOptions && f.displayOptions.show) {
@@ -172,11 +85,19 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                 <div
                   className="nodrag"
                   onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER wrapper div for:", f.key);
                     e.preventDefault();
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = "copy";
                   }}
                   onDrop={(e) => {
+                    console.log("💧 DROP EVENT on wrapper div for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
                     handleDrop(
                       f.key,
                       (val: string) => handleChange(f.key, val),
@@ -191,8 +112,92 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                   placeholder={f.placeholder}
                   className="nodrag"
                   style={fieldState[f.key]?.includes("{{") ? referenceStyle : undefined}
+                  onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER input field:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "copy";
+                  }}
+                  onDrop={(e) => {
+                    console.log("💧 DROP EVENT on input field:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
+                    handleDrop(
+                      f.key,
+                      (val: string) => handleChange(f.key, val),
+                      e,
+                      fieldState[f.key] || ""
+                    );
+                  }}
                   onFocus={(e) => e.target.select()}
                 />
+                  {fieldState[f.key]?.includes("{{") && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Preview: {getFieldPreview(f.key)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* --------- Textarea Field --------- */}
+              {f.type === "textarea" && (
+                <div
+                  className="nodrag"
+                  onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER textarea wrapper for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "copy";
+                  }}
+                  onDrop={(e) => {
+                    console.log("💧 DROP EVENT on textarea wrapper for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
+                    handleDrop(
+                      f.key,
+                      (val: string) => handleChange(f.key, val),
+                      e,
+                      fieldState[f.key] || ""
+                    );
+                  }}
+                >
+                  <textarea
+                    className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
+                    value={fieldState[f.key]}
+                    placeholder={f.placeholder}
+                    onChange={(e) => handleChange(f.key, e.target.value)}
+                    onDragOver={(e) => {
+                      console.log("🔄 DRAG OVER textarea field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      console.log("💧 DROP EVENT on textarea field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                      
+                      handleDrop(
+                        f.key,
+                        (val: string) => handleChange(f.key, val),
+                        e,
+                        fieldState[f.key] || ""
+                      );
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
+                  />
                   {fieldState[f.key]?.includes("{{") && (
                     <div className="text-xs text-gray-500 mt-1">
                       Preview: {getFieldPreview(f.key)}
@@ -264,203 +269,186 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                   </SelectContent>
                 </Select>
               )}
+
+              {/* --------- Repeater Field (Complex Conditional Logic) --------- */}
+              {f.type === "repeater" && (
+                <div className="space-y-2">
+                  {(fieldState[f.key] || [f.default || {}]).map((item: any, index: number) => (
+                    <React.Fragment key={index}>
+                      {/* Show AND/OR dropdown between conditions (except before first condition) */}
+                      {index > 0 && (
+                        <div className="flex justify-start py-2 pl-2">
+                          <Select
+                            value={item.logicalOp || "AND"}
+                            onValueChange={(val) => {
+                              const newItems = [...(fieldState[f.key] || [])];
+                              newItems[index] = { ...newItems[index], logicalOp: val };
+                              handleChange(f.key, newItems);
+                            }}
+                          >
+                            <SelectTrigger className="w-20 h-8 text-xs bg-background border border-border z-50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background border border-border shadow-lg z-50">
+                              <SelectItem value="AND" className="text-xs">AND</SelectItem>
+                              <SelectItem value="OR" className="text-xs">OR</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      
+                      {/* Condition Row */}
+                      <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
+                        {f.subFields?.map((subField: any) => (
+                          <React.Fragment key={subField.key}>
+                            {subField.options ? (
+                              <div className="flex-1">
+                                <Select
+                                  value={item[subField.key] || ""}
+                                  onValueChange={(val) => {
+                                    const newItems = [...(fieldState[f.key] || [])];
+                                    newItems[index] = { ...newItems[index], [subField.key]: val };
+                                    handleChange(f.key, newItems);
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs bg-background border border-border z-40">
+                                    <SelectValue placeholder="Select..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-background border border-border shadow-lg z-40">
+                                    {subField.options.map((opt: any) => (
+                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ) : (
+                              <div 
+                                className="flex-1 nodrag"
+                                onDragOver={(e) => {
+                                  console.log("🔄 DRAG OVER repeater field wrapper for:", subField.key, "index:", index);
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = "copy";
+                                }}
+                                onDrop={(e) => {
+                                  console.log("💧 DROP EVENT on repeater field wrapper for:", subField.key, "index:", index);
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  
+                                  console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                                  console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                                  
+                                  const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
+                                  if (reference) {
+                                    // Call the handleDrop function to maintain JSON format and create proper references
+                                    handleDrop(
+                                      `${f.key}[${index}].${subField.key}`,
+                                      (val: string) => {
+                                        const newItems = [...(fieldState[f.key] || [])];
+                                        newItems[index] = { ...newItems[index], [subField.key]: val };
+                                        handleChange(f.key, newItems);
+                                      },
+                                      e,
+                                      item[subField.key] || ""
+                                    );
+                                  }
+                                }}
+                              >
+                                {(() => {
+                                  const commonInputProps = {
+                                    value: item[subField.key] || "",
+                                    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      const newItems = [...(fieldState[f.key] || [])];
+                                      newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
+                                      handleChange(f.key, newItems);
+                                    },
+                                    placeholder: subField.placeholder,
+                                    className: "nodrag",
+                                    style: item[subField.key]?.includes("{{") ? referenceStyle : undefined,
+                                    onDragOver: (e: React.DragEvent) => {
+                                      console.log("🔄 DRAG OVER repeater input field:", subField.key, "index:", index);
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      e.dataTransfer.dropEffect = "copy";
+                                    },
+                                    onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      console.log("💧 DROP EVENT on repeater input field:", subField.key, "index:", index);
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      
+                                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                                      
+                                      handleDrop(
+                                        `${f.key}[${index}].${subField.key}`,
+                                        (val: string) => {
+                                          const newItems = [...(fieldState[f.key] || [])];
+                                          newItems[index] = { ...newItems[index], [subField.key]: val };
+                                          handleChange(f.key, newItems);
+                                        },
+                                        e,
+                                        item[subField.key] || ""
+                                      );
+                                    },
+                                    onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                                      e.target.select();
+                                    }
+                                  };
+
+                                  return (
+                                    <input
+                                      {...commonInputProps}
+                                      type="text"
+                                      className="w-full border rounded px-3 py-1 text-xs h-8 nodrag bg-background border-border focus:border-primary focus:outline-none"
+                                    />
+                                  );
+                                })()}
+                                {item[subField.key]?.includes("{{") && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Preview: {getFieldPreview(`${f.key}[${index}].${subField.key}`)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </React.Fragment>
+                        ))}
+                        
+                        {index > 0 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const newItems = [...(fieldState[f.key] || [])];
+                              newItems.splice(index, 1);
+                              handleChange(f.key, newItems);
+                            }}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </React.Fragment>
+                  ))}
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const newItems = [...(fieldState[f.key] || []), { ...f.default, logicalOp: "AND" }];
+                      handleChange(f.key, newItems);
+                    }}
+                    className="w-full text-xs h-8 mt-3"
+                  >
+                    + Add Condition
+                  </Button>
+                </div>
+              )}
             </div>
           );
         })}
-
-        {/* --------- Repeater Field (Conditions) --------- */}
-        {condField && (
-          <div className="space-y-3">
-            <h4 className="font-semibold">Conditions</h4>
-
-            {conditions.map((cond, i) => {
-              // Pull out the three main subFields
-              const leftField = condField.subFields?.find((sf: any) => sf.key === "left");
-              const operatorField = condField.subFields?.find((sf: any) => sf.key === "operator");
-              const rightField = condField.subFields?.find((sf: any) => sf.key === "right");
-              const extraFields = condField.subFields?.filter((sf: any) =>
-                !["left", "operator", "right"].includes(sf.key)
-              ) || [];
-
-              return (
-                <div key={i} className="space-y-2">
-                  {i > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={logicalOps[i - 1]}
-                        onValueChange={(v) => updateLogicalOp(i - 1, v)}
-                      >
-                        <SelectTrigger className="w-20 h-8 text-xs">
-                          <SelectValue placeholder="Logic" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AND">AND</SelectItem>
-                          <SelectItem value="OR">OR</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <hr className="flex-1 border-t" />
-                    </div>
-                  )}
-
-                  {/* Main row: Left, Operator, Right */}
-                  <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
-                    {/* Left */}
-                    {leftField && (leftField.options && leftField.options.length > 0) ? (
-                      <Select
-                        value={cond.left}
-                        onValueChange={(v) => updateCondition(i, "left", v)}
-                      >
-                        <SelectTrigger className="flex-1 h-8 text-xs">
-                          <SelectValue placeholder={leftField.placeholder} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(leftField.options || []).map((opt: any) => (
-                            <SelectItem key={opt.id || opt.value} value={opt.id || opt.value}>
-                              {opt.name || opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        className="flex-1 h-8 text-xs"
-                        placeholder={leftField?.placeholder || "Left value"}
-                        value={cond.left || ""}
-                        onChange={(e) => updateCondition(i, "left", e.target.value)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleRepeaterDrop(i, "left", e, cond.left || "")}
-                        style={cond.left?.includes("{{") ? referenceStyle : undefined}
-                      />
-                    )}
-
-                    {/* Operator */}
-                    {operatorField && (
-                      <Select
-                        value={cond.operator}
-                        onValueChange={(v) => updateCondition(i, "operator", v)}
-                      >
-                        <SelectTrigger className="w-24 h-8 text-xs">
-                          <SelectValue placeholder={operatorField.label} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(operatorField.options || []).map((opt: any) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-
-                    {/* Right */}
-                    {rightField && (
-                      <Input
-                        className="flex-1 h-8 text-xs"
-                        placeholder={rightField.placeholder || "Right value"}
-                        value={cond.right || ""}
-                        onChange={(e) => updateCondition(i, "right", e.target.value)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
-                        style={cond.right?.includes("{{") ? referenceStyle : undefined}
-                      />
-                    )}
-
-                    {conditions.length > 1 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeCondition(i)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Extra conditional fields */}
-                  {extraFields.map((sf: any) => {
-                    let show = true;
-                    if (sf.displayOptions?.show) {
-                      for (const [depKey, allowed] of Object.entries(sf.displayOptions.show)) {
-                        if (!(allowed as string[]).includes(cond[depKey])) {
-                          show = false;
-                          break;
-                        }
-                      }
-                    }
-                    if (!show) return null;
-                    return (
-                      <div key={sf.key} className="space-y-1">
-                        <Label className="text-xs">{sf.label}</Label>
-                        {sf.type === "select" ? (
-                          <Select
-                            value={cond[sf.key]}
-                            onValueChange={(v) => updateCondition(i, sf.key, v)}
-                          >
-                            <SelectTrigger className="w-full h-8 text-xs">
-                              <SelectValue placeholder={sf.placeholder || sf.label} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(sf.options || []).map((opt: any) => (
-                                <SelectItem
-                                  key={opt.id ?? opt.value}
-                                  value={opt.id ?? opt.value}
-                                >
-                                  {opt.name || opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <>
-                            <Input
-                              className="w-full h-8 text-xs"
-                              placeholder={sf.placeholder || sf.label}
-                              value={cond[sf.key] ?? ""}
-                              onChange={(e) => updateCondition(i, sf.key, e.target.value)}
-                              onDragOver={(e) => e.preventDefault()}
-                              onFocus={(e) => e.target.select()}
-                              style={
-                                cond[sf.key]?.includes("{{") ? referenceStyle : {}
-                              }
-                              onDrop={(e) => handleRepeaterDrop(i, sf.key, e, cond[sf.key] ?? "")}
-                            />
-                            {typeof cond[sf.key] === "string" && cond[sf.key]?.includes("{{") && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                Preview: {getPreviewFor(i, sf.key, cond[sf.key])}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Previews for left/right */}
-                  {typeof cond.left === "string" && cond.left.includes("{{") && (
-                    <div className="text-xs text-gray-500">
-                      Left Preview: {getPreviewFor(i, "left", cond.left)}
-                    </div>
-                  )}
-                  {typeof cond.right === "string" && cond.right.includes("{{") && (
-                    <div className="text-xs text-gray-500">
-                      Right Preview: {getPreviewFor(i, "right", cond.right)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={addCondition}
-              className="w-full text-xs h-8 mt-3"
-            >
-              + Add Condition
-            </Button>
-          </div>
-        )}
 
         {/* --------- Error Message --------- */}
         {error && (

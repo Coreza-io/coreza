@@ -66,13 +66,19 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         }
       }
 
-      // Store credentials directly in Supabase
+      // CRITICAL: Encrypt the credential data before sending to backend
+      const encryptedData = await EncryptionUtil.encrypt(
+        JSON.stringify(credentialData), 
+        user.id
+      );
+
+      // Store encrypted credentials in Supabase
       const { error } = await supabase.functions.invoke('store-credentials', {
         body: {
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
           name: fields.credential_name || `${definition.name} Account`,
-          encrypted_data: credentialData
+          encrypted_data: encryptedData
         }
       });
 

@@ -30,14 +30,29 @@ serve(async (req) => {
       )
     }
 
+    console.log(`Storing encrypted credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
+    console.log(`Encrypted data type: ${typeof encrypted_data}, length: ${encrypted_data.length}`)
+    
+    // Validate that encrypted_data is a string (encrypted blob)
+    if (typeof encrypted_data !== 'string') {
+      return new Response(
+        JSON.stringify({ error: 'Encrypted data must be a string' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
     // Store encrypted credentials in the database
+    // encrypted_data is now a string containing the encrypted blob
     const { data, error } = await supabaseClient
       .from('user_credentials')
       .upsert({
         user_id,
         service_type,
         name,
-        client_json: encrypted_data,
+        client_json: { encrypted: encrypted_data }, // Store the encrypted string in a wrapper object
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'
@@ -53,6 +68,8 @@ serve(async (req) => {
         }
       )
     }
+
+    console.log('Credentials stored successfully for user:', user_id)
 
     return new Response(
       JSON.stringify({ success: true, message: 'Credentials stored successfully' }),

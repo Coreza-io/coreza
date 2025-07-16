@@ -223,7 +223,7 @@ const WorkflowEditor = () => {
         
         // Execute all nodes in this level in parallel
         await Promise.all(currentLevel.map(nodeId => 
-          new Promise<void>((resolve) => {
+          new Promise<void>((resolve, reject) => {
             setExecutingNode(nodeId);
             
             // Find all edges coming out of this node
@@ -238,7 +238,14 @@ const WorkflowEditor = () => {
               )
             );
             
-            // Simulate execution time (2 seconds per node)
+            // Trigger actual node execution by dispatching a custom event
+            // This will be caught by the BaseNode component to execute the actual logic
+            const nodeExecuteEvent = new CustomEvent('auto-execute-node', {
+              detail: { nodeId }
+            });
+            window.dispatchEvent(nodeExecuteEvent);
+            
+            // Simulate execution time (3 seconds per node to allow for API calls)
             setTimeout(() => {
               // Stop animation for this node
               setEdges(currentEdges => 
@@ -249,7 +256,7 @@ const WorkflowEditor = () => {
                 )
               );
               resolve();
-            }, 2000);
+            }, 3000);
           })
         ));
         

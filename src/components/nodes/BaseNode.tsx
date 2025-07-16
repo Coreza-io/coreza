@@ -93,6 +93,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   }, [previousNodes, selectedPrevNodeId]);
 
+
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
   
   // Extract selectedInputData with the same logic as preview
@@ -376,8 +377,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     };
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     
     // Validate required fields *only if visible*
     for (const f of definition?.fields || []) {
@@ -492,6 +493,21 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       setIsSending(false);
     }
   };
+
+  // Listen for auto-execution events
+  useEffect(() => {
+    const handleAutoExecute = (event: CustomEvent) => {
+      if (event.detail?.nodeId === nodeId) {
+        console.log(`🚀 Auto-executing node: ${nodeId}`);
+        handleSubmit(); // Execute the actual node logic
+      }
+    };
+
+    window.addEventListener('auto-execute-node', handleAutoExecute as EventListener);
+    return () => {
+      window.removeEventListener('auto-execute-node', handleAutoExecute as EventListener);
+    };
+  }, [nodeId, handleSubmit]);
 
   const referenceStyle = {
     backgroundColor: "hsl(var(--muted))",

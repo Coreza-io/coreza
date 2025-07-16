@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,8 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Loader2, X } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
+import { resolveReferences } from "@/utils/resolveReferences";
+import { summarizePreview } from "@/utils/summarizePreview";
 
-interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {}
+interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {
+  sourceMap?: Record<number, { left?: string; right?: string }>;
+}
 
 const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   definition,
@@ -24,7 +28,25 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   setShowAuth,
   fetchCredentials,
   referenceStyle,
+  previousNodes,
+  selectedPrevNodeId,
+  sourceMap = {},
 }) => {
+  const getPreviewFor = useCallback(
+    (idx: number, field: "left" | "right", expr: string) => {
+      if (typeof expr !== "string" || !expr.includes("{{")) return null;
+      const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
+      const srcNode = previousNodes.find((n) => n.id === srcId) || previousNodes[0];
+      const srcData = srcNode?.data?.output || {};
+      try {
+        const resolved = resolveReferences(expr, srcData);
+        return summarizePreview(resolved);
+      } catch {
+        return "";
+      }
+    },
+    [previousNodes, selectedPrevNodeId, sourceMap]
+  );
   return (
     <>
       <div className="mb-4">

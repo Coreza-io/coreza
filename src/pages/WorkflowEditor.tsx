@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
   addEdge,
@@ -55,9 +55,11 @@ const initialEdges: Edge[] = [];
 
 const WorkflowEditor = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const isNewWorkflow = id === 'new' || !id;
+  const projectId = searchParams.get('project'); // Get project ID from URL parameters
   
   const [workflowId, setWorkflowId] = useState<string | null>(isNewWorkflow ? null : id || null);
   const [workflowName, setWorkflowName] = useState(
@@ -147,6 +149,7 @@ const WorkflowEditor = () => {
       nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
       edges: JSON.parse(JSON.stringify(edges)) as any,
       updated_at: new Date().toISOString(),
+      ...(projectId && { project_id: projectId }), // Include project_id if available
     };
     console.log("payload", payload);
 
@@ -282,45 +285,55 @@ const WorkflowEditor = () => {
         
         // Load workflow - either latest for new workflow or specific existing workflow
         if (isNewWorkflow) {
-          // Auto-load latest workflow if this is a new workflow
-          setLoading(true);
-          try {
-            const { data, error } = await supabase
-              .from("workflows")
-              .select("*")
-              .eq("user_id", userId)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle();
+          // For truly new workflows (especially when coming from a project),
+          // don't auto-load existing workflows - start fresh
+          if (projectId) {
+            // When creating from a project context, start completely fresh
+            setWorkflowName("New Project Workflow");
+            setNodes(initialNodes);
+            setEdges(initialEdges);
+            setIsActive(false);
+          } else {
+            // Only auto-load latest workflow if this is a general new workflow (not from project)
+            setLoading(true);
+            try {
+              const { data, error } = await supabase
+                .from("workflows")
+                .select("*")
+                .eq("user_id", userId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
-            if (data && !error) {
-              setWorkflowId(data.id);
-              setWorkflowName(data.name || "Untitled Workflow");
-              setIsActive(!!data.is_active);
-              
-              // Load nodes and edges
-              if (data.nodes && Array.isArray(data.nodes)) {
-                // Restore node definitions from manifest when loading from database
-                const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-                  }
-                }));
-                setNodes(restoredNodes);
+              if (data && !error) {
+                setWorkflowId(data.id);
+                setWorkflowName(data.name || "Untitled Workflow");
+                setIsActive(!!data.is_active);
+                
+                // Load nodes and edges
+                if (data.nodes && Array.isArray(data.nodes)) {
+                  // Restore node definitions from manifest when loading from database
+                  const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
+                    ...node,
+                    data: {
+                      ...node.data,
+                      definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
+                    }
+                  }));
+                  setNodes(restoredNodes);
+                }
+                if (data.edges && Array.isArray(data.edges)) {
+                  setEdges(data.edges as unknown as Edge[]);
+                }
+                
+                // Update URL without page reload
+                window.history.replaceState(null, '', `/workflow/${data.id}`);
               }
-              if (data.edges && Array.isArray(data.edges)) {
-                setEdges(data.edges as unknown as Edge[]);
-              }
-              
-              // Update URL without page reload
-              window.history.replaceState(null, '', `/workflow/${data.id}`);
+            } catch (error) {
+              console.error("Error loading latest workflow:", error);
             }
-          } catch (error) {
-            console.error("Error loading latest workflow:", error);
+            setLoading(false);
           }
-          setLoading(false);
         } else if (workflowId) {
           // Load specific existing workflow
           setLoading(true);

@@ -520,7 +520,11 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
             <Button
               size="sm"
               variant="outline"
-              onClick={addCondition}
+              onClick={(e) => {
+                e.preventDefault(); // Prevent form submission
+                addCondition();
+              }}
+              type="button" // Explicitly set as button type
               className="w-full text-xs h-8 mt-3"
             >
               + Add Condition

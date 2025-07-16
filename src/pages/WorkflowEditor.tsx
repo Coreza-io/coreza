@@ -120,6 +120,7 @@ const WorkflowEditor = () => {
 
   // Handle node double click to execute
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+    console.log('WorkflowEditor: onNodeDoubleClick called for node', node.id);
     event.preventDefault();
     executeNode(node.id);
   }, [executeNode]);

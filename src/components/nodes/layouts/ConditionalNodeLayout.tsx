@@ -149,7 +149,8 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
         return "";
       }
       
-      const srcData = srcNode.data?.output || srcNode.data?.input || {};
+      // Use output data if available, otherwise use input data, otherwise use node values
+      const srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
       
       console.log("🔍 Preview Debug:", {
         idx,
@@ -158,7 +159,10 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
         srcId,
         srcNode: srcNode.data,
         srcData,
-        sourceMap: sourceMap[idx]
+        sourceMap: sourceMap[idx],
+        hasOutput: !!srcNode.data?.output,
+        hasInput: !!srcNode.data?.input,
+        hasValues: !!srcNode.data?.values
       });
       
       try {

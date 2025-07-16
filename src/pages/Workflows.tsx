@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,9 @@ import {
   Calendar,
   DollarSign,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  ArrowLeft,
+  Folder
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -38,8 +40,12 @@ const Workflows = () => {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [project, setProject] = useState<{ id: string; name: string } | null>(null);
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const projectId = searchParams.get('project');
 
   // Check for user authentication
   useEffect(() => {
@@ -54,6 +60,40 @@ const Workflows = () => {
     }
   }, [navigate]);
 
+  // Load project info if projectId is provided
+  useEffect(() => {
+    if (!projectId) {
+      setProject(null);
+      return;
+    }
+
+    const loadProject = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('id, name')
+          .eq('id', projectId)
+          .single();
+
+        if (error) {
+          console.error('Error loading project:', error);
+          toast({
+            title: "Error",
+            description: "Failed to load project details",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        setProject(data);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      }
+    };
+
+    loadProject();
+  }, [projectId, toast]);
+
   // Load workflows from database
   useEffect(() => {
     if (!user) return;
@@ -61,11 +101,17 @@ const Workflows = () => {
     const loadWorkflows = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('workflows')
           .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+          .eq('user_id', user.id);
+
+        // Filter by project if projectId is provided
+        if (projectId) {
+          query = query.eq('project_id', projectId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
           console.error('Error loading workflows:', error);
@@ -89,7 +135,7 @@ const Workflows = () => {
     };
 
     loadWorkflows();
-  }, [user, toast]);
+  }, [user, projectId, toast]);
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
@@ -233,14 +279,39 @@ const Workflows = () => {
 
   return (
     <div className="space-y-6">
+      {/* Project Context Header */}
+      {project && (
+        <div className="flex items-center gap-3 pb-2 border-b border-border">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigate('/projects')}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Projects
+          </Button>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Folder className="h-4 w-4" />
+            <span className="text-sm">Project:</span>
+            <span className="font-medium text-foreground">{project.name}</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Workflows</h1>
+          <h1 className="text-3xl font-bold">
+            {project ? `${project.name} Workflows` : 'Workflows'}
+          </h1>
           <p className="text-muted-foreground">
-            Manage your trading automation workflows
+            {project 
+              ? `Manage workflows for the ${project.name} project`
+              : 'Manage your trading automation workflows'
+            }
           </p>
         </div>
-        <Link to="/workflow/new">
+        <Link to={projectId ? `/workflow/new?project=${projectId}` : "/workflow/new"}>
           <Button className="bg-gradient-primary hover:shadow-glow">
             <Plus className="h-4 w-4 mr-2" />
             New Workflow
@@ -397,7 +468,7 @@ const Workflows = () => {
             {searchQuery ? "Try adjusting your search query" : "Create your first workflow to start trading"}
           </p>
           {!searchQuery && (
-            <Link to="/workflow/new">
+            <Link to={projectId ? `/workflow/new?project=${projectId}` : "/workflow/new"}>
               <Button className="bg-gradient-primary">
                 <Plus className="h-4 w-4 mr-2" />
                 Create Your First Workflow

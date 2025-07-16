@@ -22,6 +22,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Tables } from "@/integrations/supabase/types";
+import { useNavigate } from "react-router-dom";
 
 type ProjectWithWorkflowCount = Tables<"projects"> & {
   workflow_count: number;
@@ -47,6 +48,7 @@ const Projects = () => {
     description: ""
   });
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Fetch projects from Supabase
   const fetchProjects = async () => {
@@ -295,6 +297,10 @@ const Projects = () => {
     }
   };
 
+  const handleViewWorkflows = (projectId: string) => {
+    navigate(`/workflows?project=${projectId}`);
+  };
+
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -467,7 +473,11 @@ const Projects = () => {
                   </div>
                 </div>
 
-                <Button variant="outline" className="w-full">
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => handleViewWorkflows(project.id)}
+                >
                   View Workflows
                 </Button>
               </CardContent>

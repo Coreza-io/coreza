@@ -33,15 +33,30 @@ export function resolveReferences(expr: string, inputData: any): string {
     return expr;
   }
 
-  // Match either $json or $('Node').json, then capture whatever path follows (dot or bracket).
-  const templateRegex = /\{\{\s*(?:\$\('[^']+'\)\.json|\$json)(?:\.|\s*)([^\}]+?)\s*\}\}/g;
+  // Match $('NodeName').json.path or $json.path patterns
+  const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
 
-  return expr.replace(templateRegex, (_, rawPath) => {
-    const cleanPath = rawPath.trim().replace(/^[.\s]+/, '');
+  return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
+    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData });
+    
+    // If nodeName is specified, we would validate it here (but for now, just use inputData)
+    // In a more complete implementation, you'd look up the actual node data by name
+    
+    const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
+    
+    // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
+    if (!cleanPath) {
+      return (typeof inputData === 'object' && inputData !== null)
+        ? JSON.stringify(inputData)
+        : String(inputData);
+    }
+    
     const keys = parsePath(cleanPath);
+    console.log("🔍 Parsed keys:", keys);
 
     let result: any = inputData;
     for (const key of keys) {
+      console.log("🔍 Accessing key:", key, "in:", result);
       if (result == null) { 
         result = undefined; 
         break; 
@@ -57,9 +72,11 @@ export function resolveReferences(expr: string, inputData: any): string {
       }
     }
 
+    console.log("🔍 Final result:", result);
+
     if (result === undefined) {
       // leave original placeholder if not found
-      return `{{ $json.${cleanPath} }}`;
+      return fullMatch;
     }
 
     return (typeof result === 'object' && result !== null)

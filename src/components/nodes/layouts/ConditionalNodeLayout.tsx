@@ -10,7 +10,19 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
 
-interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {}
+// ▶️ Helper to generate de-duplicated display names ("Alpaca", "Alpaca1", ...)
+const getDisplayName = (node: any, allNodes: any[]) => {
+  const baseName = node.data?.definition?.name || node.data?.config?.name || 'Node';
+  const sameType = allNodes.filter(
+    (n) => (n.data?.definition?.name || n.data?.config?.name) === baseName
+  );
+  const idx = sameType.findIndex((n) => n.id === node.id);
+  return idx > 0 ? `${baseName}${idx}` : baseName;
+};
+
+interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {
+  nodes?: any[];
+}
 
 const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   definition,
@@ -101,7 +113,13 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       }
       try {
         const { keyPath } = JSON.parse(raw);
-        const insert = `{{ $json.${keyPath} }}`;
+        // ▶️ INJECT SOURCE NODE'S UNIQUE DISPLAY NAME FOR DRAG-AND-DROP
+        // locate the node where the drag originated
+        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceDisplayName = sourceNode
+          ? getDisplayName(sourceNode, previousNodes)
+          : 'Node';
+        const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
         updateCondition(idx, field, currentValue + insert);
         setSourceMap((sm) => {
           const arr = Array.isArray(sm) ? sm : [];
@@ -109,10 +127,12 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
           copy[idx] = { ...(copy[idx] ?? {}), [field]: selectedPrevNodeId };
           return copy;
         });
-      } catch {}
+      } catch (error) {
+        console.error("Drop error:", error);
+      }
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
-    [selectedPrevNodeId, updateCondition]
+    [selectedPrevNodeId, updateCondition, previousNodes]
   );
 
   const getPreviewFor = useCallback(
@@ -322,15 +342,20 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                         </SelectContent>
                       </Select>
                     ) : (
-                      <Input
-                        className="flex-1 h-8 text-xs"
-                        placeholder={leftField?.placeholder || "Left value"}
-                        value={cond.left || ""}
-                        onChange={(e) => updateCondition(i, "left", e.target.value)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleRepeaterDrop(i, "left", e, cond.left || "")}
-                        style={cond.left?.includes("{{") ? referenceStyle : undefined}
-                      />
+                       <Input
+                         className="flex-1 h-8 text-xs nodrag"
+                         placeholder={leftField?.placeholder || "Left value"}
+                         value={cond.left || ""}
+                         onChange={(e) => updateCondition(i, "left", e.target.value)}
+                         onDragOver={(e) => {
+                           e.preventDefault();
+                           e.stopPropagation();
+                           e.dataTransfer.dropEffect = "copy";
+                         }}
+                         onDrop={(e) => handleRepeaterDrop(i, "left", e, cond.left || "")}
+                         style={cond.left?.includes("{{") ? referenceStyle : undefined}
+                         onFocus={(e) => e.target.select()}
+                       />
                     )}
 
                     {/* Operator */}
@@ -352,18 +377,23 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                       </Select>
                     )}
 
-                    {/* Right */}
-                    {rightField && (
-                      <Input
-                        className="flex-1 h-8 text-xs"
-                        placeholder={rightField.placeholder || "Right value"}
-                        value={cond.right || ""}
-                        onChange={(e) => updateCondition(i, "right", e.target.value)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
-                        style={cond.right?.includes("{{") ? referenceStyle : undefined}
-                      />
-                    )}
+                     {/* Right */}
+                     {rightField && (
+                       <Input
+                         className="flex-1 h-8 text-xs nodrag"
+                         placeholder={rightField.placeholder || "Right value"}
+                         value={cond.right || ""}
+                         onChange={(e) => updateCondition(i, "right", e.target.value)}
+                         onDragOver={(e) => {
+                           e.preventDefault();
+                           e.stopPropagation();
+                           e.dataTransfer.dropEffect = "copy";
+                         }}
+                         onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
+                         style={cond.right?.includes("{{") ? referenceStyle : undefined}
+                         onFocus={(e) => e.target.select()}
+                       />
+                     )}
 
                     {conditions.length > 1 && (
                       <Button
@@ -413,18 +443,22 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                           </Select>
                         ) : (
                           <>
-                            <Input
-                              className="w-full h-8 text-xs"
-                              placeholder={sf.placeholder || sf.label}
-                              value={cond[sf.key] ?? ""}
-                              onChange={(e) => updateCondition(i, sf.key, e.target.value)}
-                              onDragOver={(e) => e.preventDefault()}
-                              onFocus={(e) => e.target.select()}
-                              style={
-                                cond[sf.key]?.includes("{{") ? referenceStyle : {}
-                              }
-                              onDrop={(e) => handleRepeaterDrop(i, sf.key, e, cond[sf.key] ?? "")}
-                            />
+                             <Input
+                               className="w-full h-8 text-xs nodrag"
+                               placeholder={sf.placeholder || sf.label}
+                               value={cond[sf.key] ?? ""}
+                               onChange={(e) => updateCondition(i, sf.key, e.target.value)}
+                               onDragOver={(e) => {
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 e.dataTransfer.dropEffect = "copy";
+                               }}
+                               onFocus={(e) => e.target.select()}
+                               style={
+                                 cond[sf.key]?.includes("{{") ? referenceStyle : {}
+                               }
+                               onDrop={(e) => handleRepeaterDrop(i, sf.key, e, cond[sf.key] ?? "")}
+                             />
                             {typeof cond[sf.key] === "string" && cond[sf.key]?.includes("{{") && (
                               <div className="text-xs text-gray-500 mt-1">
                                 Preview: {getPreviewFor(i, sf.key, cond[sf.key])}

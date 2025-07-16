@@ -97,8 +97,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           height: isExpanded ? "auto" : 100,
         }}
       >
-        {/* Handles (configured in manifest) - Only show when collapsed */}
-        {!isExpanded && (["top", "bottom", "left", "right"] as const).map((pos) => {
+        {/* Handles (configured in manifest) - Always render for React Flow */}
+        {(["top", "bottom", "left", "right"] as const).map((pos) => {
           const group = handles.filter((h) => h.position === pos);
           const isHorizontal = pos === "top" || pos === "bottom";
           return group.map((h, idx) => {
@@ -110,7 +110,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 id={h.id}
                 type={h.type}
                 position={POSITION_MAP[h.position]}
-                style={style}
+                style={{
+                  ...style,
+                  opacity: isExpanded ? 0.3 : 1, // Make handles less visible when expanded but still functional
+                }}
                 className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
               />
             );

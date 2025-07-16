@@ -481,66 +481,55 @@ const WorkflowEditor = () => {
   }, [setNodes, setEdges]);
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] w-full">
-      {/* Main Canvas Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Workflow Header */}
-        <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm">
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col gap-1">
-              <Input
-                value={workflowName}
-                onChange={(e) => setWorkflowName(e.target.value)}
-                className="text-xl font-bold bg-transparent border-none p-0 h-auto focus-visible:ring-0 hover:bg-muted/30 rounded px-2 py-1 transition-colors"
-                placeholder="Workflow name"
-              />
-              <div className="flex items-center gap-2 px-2">
-                <Badge 
-                  variant={isActive ? "default" : "secondary"}
-                  className="text-xs font-medium"
-                >
-                  {isActive ? "Active" : "Draft"}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {isNewWorkflow ? "Unsaved" : "Auto-saved"}
-                </span>
-              </div>
+    <div className="flex flex-col h-[calc(100vh-6rem)] w-full">
+      {/* Workflow Header - Fixed at top */}
+      <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-1">
+            <Input
+              value={workflowName}
+              onChange={(e) => setWorkflowName(e.target.value)}
+              className="text-xl font-bold bg-transparent border-none p-0 h-auto focus-visible:ring-0 hover:bg-muted/30 rounded px-2 py-1 transition-colors"
+              placeholder="Workflow name"
+            />
+            <div className="flex items-center gap-2 px-2">
+              <Badge 
+                variant={isActive ? "default" : "secondary"}
+                className="text-xs font-medium"
+              >
+                {isActive ? "Active" : "Draft"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {isNewWorkflow ? "Unsaved" : "Auto-saved"}
+              </span>
             </div>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleSaveWorkflow}
-              disabled={loading}
-              variant="outline"
-              className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {loading ? "Saving..." : "Save"}
-            </Button>
-            <Button
-              onClick={handleActivate}
-              className={`h-10 px-6 font-medium shadow-sm transition-all duration-200 ${
-                isActive 
-                  ? "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white" 
-                  : "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
-              }`}
-            >
-              {isActive ? (
-                <>
-                  <Pause className="h-4 w-4 mr-2" />
-                  Pause
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Activate
-                </>
-              )}
-            </Button>
-          </div>
         </div>
+        
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={handleSaveWorkflow}
+            disabled={loading}
+            variant="outline"
+            className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {loading ? "Saving..." : "Save"}
+          </Button>
+          
+          <Button
+            onClick={handleActivate}
+            disabled={loading}
+            className="h-10 px-6 font-medium bg-success hover:bg-success/90 text-success-foreground shadow-sm transition-all duration-200"
+          >
+            <Play className="h-4 w-4 mr-2" />
+            {isActive ? "Deactivate" : "Activate"}
+          </Button>
+        </div>
+      </div>
 
+      {/* Main Content Area - Canvas + Palette */}
+      <div className="flex flex-1 overflow-hidden">
         {/* ReactFlow Canvas */}
         <div className="flex-1 bg-trading-grid">
           <ReactFlow
@@ -574,16 +563,16 @@ const WorkflowEditor = () => {
             />
           </ReactFlow>
         </div>
-      </div>
 
-      {/* Right Sidebar - Node Palette */}
-      {isPaletteVisible && (
-        <div className="w-80 border-l border-border bg-sidebar node-palette-container">
-          <NodePalette onNodeClick={handleNodeClick} />
-        </div>
-      )}
+        {/* Right Sidebar - Node Palette */}
+        {isPaletteVisible && (
+          <div className="w-80 border-l border-border bg-sidebar node-palette-container flex-shrink-0">
+            <NodePalette onNodeClick={handleNodeClick} />
+          </div>
+        )}
+      </div>
       
-      {/* Toggle Arrow */}
+      {/* Toggle Arrow - positioned relative to main content area */}
       <button
         onClick={() => setIsPaletteVisible(!isPaletteVisible)}
         className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertCircle, TrendingUp, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
-import bcrypt from "bcryptjs";
+import { useToast } from "@/hooks/use-toast";
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -20,6 +20,7 @@ const Signup = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -47,44 +48,30 @@ const Signup = () => {
     }
 
     try {
-      // Hash the password
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(formData.password, saltRounds);
-
-      // Create user in Supabase users table
-      const { data, error } = await supabase
-        .from('users')
-        .insert([
-          {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          data: {
             first_name: formData.firstName,
             last_name: formData.lastName,
-            email: formData.email,
-            password_hash: hashedPassword,
           }
-        ])
-        .select();
-
-      if (error) {
-        console.error('Supabase error:', error);
-        if (error.code === '23505') {
-          setError("An account with this email already exists");
-        } else {
-          setError("Failed to create account. Please try again.");
         }
-        setLoading(false);
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
         return;
       }
 
-      console.log("User created successfully:", data);
-      
-      // Store user data in localStorage
-      if (data && data[0]) {
-        localStorage.setItem('userId', data[0].id);
-        localStorage.setItem('userEmail', data[0].email);
-        localStorage.setItem('userName', `${data[0].first_name} ${data[0].last_name}`);
+      if (data.user) {
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to verify your account.",
+        });
+        navigate("/login");
       }
-      
-      navigate("/dashboard");
     } catch (err) {
       console.error('Signup error:', err);
       setError("Failed to create account. Please try again.");

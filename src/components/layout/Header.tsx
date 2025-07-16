@@ -14,30 +14,50 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 export function Header() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const { user, signOut } = useAuth();
+  const [profile, setProfile] = useState<{ first_name?: string; last_name?: string } | null>(null);
 
   useEffect(() => {
-    // Get user data from localStorage
-    const userEmail = localStorage.getItem('userEmail');
-    const userName = localStorage.getItem('userName');
-    
-    if (userEmail && userName) {
-      setUser({ name: userName, email: userEmail });
+    if (user) {
+      // Fetch user profile from profiles table
+      const fetchProfile = async () => {
+        const { data } = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (data) {
+          setProfile(data);
+        }
+      };
+      
+      fetchProfile();
     }
-  }, []);
+  }, [user]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userName');
+  const handleLogout = async () => {
+    await signOut();
     navigate('/login');
   };
 
+  const getDisplayName = () => {
+    if (profile?.first_name && profile?.last_name) {
+      return `${profile.first_name} ${profile.last_name}`;
+    }
+    return user?.email?.split('@')[0] || 'User';
+  };
+
   const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+    if (profile?.first_name && profile?.last_name) {
+      return `${profile.first_name[0]}${profile.last_name[0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
   };
 
   return (
@@ -83,16 +103,16 @@ export function Header() {
             <Button variant="ghost" size="sm" className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-primary rounded-full flex items-center justify-center">
                 <span className="text-xs font-medium text-primary-foreground">
-                  {user ? getInitials(user.name) : 'JD'}
+                  {getInitials(getDisplayName())}
                 </span>
               </div>
-              <span className="hidden md:block">{user?.name || 'John Doe'}</span>
+              <span className="hidden md:block">{getDisplayName()}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-popover border-border">
             <div className="px-2 py-1.5">
-              <p className="text-sm font-medium">{user?.name || 'John Doe'}</p>
-              <p className="text-xs text-muted-foreground">{user?.email || 'john@example.com'}</p>
+              <p className="text-sm font-medium">{getDisplayName()}</p>
+              <p className="text-xs text-muted-foreground">{user?.email || 'user@example.com'}</p>
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">

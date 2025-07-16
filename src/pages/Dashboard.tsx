@@ -12,13 +12,14 @@ import {
   Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useAuth } from "@/contexts/AuthContext";
 
 const Dashboard = () => {
-  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
     activeWorkflows: 0,
@@ -26,21 +27,7 @@ const Dashboard = () => {
     recentWorkflows: [] as any[],
     performanceData: [] as any[]
   });
-  const navigate = useNavigate();
   const { toast } = useToast();
-
-  // Check for user authentication
-  useEffect(() => {
-    const userEmail = localStorage.getItem('userEmail');
-    const userId = localStorage.getItem('userId');
-    const userName = localStorage.getItem('userName');
-    
-    if (userEmail && userId && userName) {
-      setUser({ id: userId, email: userEmail, name: userName });
-    } else {
-      navigate('/login');
-    }
-  }, [navigate]);
 
   // Fetch dashboard data
   useEffect(() => {

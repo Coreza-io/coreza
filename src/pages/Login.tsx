@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertCircle, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
-import bcrypt from "bcryptjs";
+import { useToast } from "@/hooks/use-toast";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -15,6 +15,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,50 +23,26 @@ const Login = () => {
     setError("");
 
     try {
-      // Find user by email
-      const { data: users, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (fetchError || !users) {
-        setError("Invalid credentials. Please try again.");
-        setLoading(false);
+      if (signInError) {
+        setError(signInError.message);
         return;
       }
 
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(password, users.password_hash);
-      
-      if (!isPasswordValid) {
-        setError("Invalid credentials. Please try again.");
-        setLoading(false);
-        return;
+      if (data.user) {
+        toast({
+          title: "Login Successful",
+          description: "Welcome back!",
+        });
+        navigate("/dashboard");
       }
-
-      console.log("Login successful:", { id: users.id, email: users.email });
-      
-      // Store user data in localStorage for the workflow editor
-      const userData = {
-        id: users.id,
-        user_id: users.id,
-        email: users.email,
-        first_name: users.first_name,
-        last_name: users.last_name,
-        name: `${users.first_name} ${users.last_name}`
-      };
-      
-      localStorage.setItem('loggedInUser', JSON.stringify(userData));
-      // Keep backward compatibility
-      localStorage.setItem('userId', users.id);
-      localStorage.setItem('userEmail', users.email);
-      localStorage.setItem('userName', `${users.first_name} ${users.last_name}`);
-      
-      navigate("/dashboard");
     } catch (err) {
       console.error('Login error:', err);
-      setError("Invalid credentials. Please try again.");
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }

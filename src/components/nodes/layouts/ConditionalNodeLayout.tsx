@@ -42,7 +42,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   previousNodes,
   selectedPrevNodeId,
 }) => {
-  const { setNodes, setEdges } = useReactFlow();
+  const { setNodes, setEdges, getNodes } = useReactFlow();
 
   // =========== CONDITIONS/REPEATER LOGIC ===========
   const condField = definition.fields?.find((f: any) => f.key === "conditions");
@@ -138,17 +138,39 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: string) => {
       if (typeof expr !== "string" || !expr.includes("{{")) return null;
+      
+      // Get fresh node data from React Flow
+      const allNodes = getNodes();
       const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
-      const srcNode = previousNodes.find((n) => n.id === srcId) || previousNodes[0];
-      const srcData = srcNode?.data?.output || {};
+      const srcNode = allNodes.find((n) => n.id === srcId);
+      
+      if (!srcNode) {
+        console.log("🔍 Preview Debug - No source node found:", { srcId, allNodes: allNodes.length });
+        return "";
+      }
+      
+      const srcData = srcNode.data?.output || srcNode.data?.input || {};
+      
+      console.log("🔍 Preview Debug:", {
+        idx,
+        field,
+        expr,
+        srcId,
+        srcNode: srcNode.data,
+        srcData,
+        sourceMap: sourceMap[idx]
+      });
+      
       try {
         const resolved = resolveReferences(expr, srcData);
+        console.log("✅ Resolved preview:", { expr, srcData, resolved });
         return summarizePreview(resolved);
-      } catch {
+      } catch (error) {
+        console.error("❌ Preview resolution error:", error);
         return "";
       }
     },
-    [previousNodes, selectedPrevNodeId, sourceMap]
+    [selectedPrevNodeId, sourceMap, getNodes]
   );
 
   return (

@@ -60,22 +60,57 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
 
               {/* --------- Text Field --------- */}
               {f.type === "text" && (
-                <>
+                <div
+                  className="nodrag"
+                  onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER wrapper div for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "copy";
+                  }}
+                  onDrop={(e) => {
+                    console.log("💧 DROP EVENT on wrapper div for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
+                    handleDrop(
+                      f.key,
+                      (val: string) => handleChange(f.key, val),
+                      e,
+                      fieldState[f.key] || ""
+                    );
+                  }}
+                >
                   <Input
                     value={fieldState[f.key]}
                     placeholder={f.placeholder}
                     onChange={(e) => handleChange(f.key, e.target.value)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onFocus={(e) => e.target.select()}
-                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                    onDrop={(e) =>
+                    onDragOver={(e) => {
+                      console.log("🔄 DRAG OVER input field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      console.log("💧 DROP EVENT on input field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                      
                       handleDrop(
                         f.key,
-                        (val) => handleChange(f.key, val),
+                        (val: string) => handleChange(f.key, val),
                         e,
-                        fieldState[f.key] ?? ""
-                      )
-                    }
+                        fieldState[f.key] || ""
+                      );
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
                     className="nodrag"
                   />
                   {fieldState[f.key]?.includes("{{") && (
@@ -83,35 +118,70 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                       Preview: {getFieldPreview(f.key)}
                     </div>
                   )}
-                </>
+                </div>
               )}
 
               {/* --------- Textarea Field --------- */}
               {f.type === "textarea" && (
-                <>
+                <div
+                  className="nodrag"
+                  onDragOver={(e) => {
+                    console.log("🔄 DRAG OVER textarea wrapper for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "copy";
+                  }}
+                  onDrop={(e) => {
+                    console.log("💧 DROP EVENT on textarea wrapper for:", f.key);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                    
+                    handleDrop(
+                      f.key,
+                      (val: string) => handleChange(f.key, val),
+                      e,
+                      fieldState[f.key] || ""
+                    );
+                  }}
+                >
                   <textarea
                     className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
                     value={fieldState[f.key]}
                     placeholder={f.placeholder}
                     onChange={(e) => handleChange(f.key, e.target.value)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onFocus={(e) => e.target.select()}
-                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
-                    onDrop={(e) =>
+                    onDragOver={(e) => {
+                      console.log("🔄 DRAG OVER textarea field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      console.log("💧 DROP EVENT on textarea field:", f.key);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                      console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                      
                       handleDrop(
                         f.key,
-                        (val) => handleChange(f.key, val),
+                        (val: string) => handleChange(f.key, val),
                         e,
-                        fieldState[f.key]
-                      )
-                    }
+                        fieldState[f.key] || ""
+                      );
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    style={fieldState[f.key]?.includes("{{") ? referenceStyle : {}}
                   />
                   {fieldState[f.key]?.includes("{{") && (
                     <div className="text-xs text-gray-500 mt-1">
                       Preview: {getFieldPreview(f.key)}
                     </div>
                   )}
-                </>
+                </div>
               )}
 
               {/* --------- Select (Credential) Field --------- */}
@@ -232,7 +302,30 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                 </Select>
                               </div>
                             ) : (
-                              <div className="flex-1">
+                              <div 
+                                className="flex-1 nodrag"
+                                onDragOver={(e) => {
+                                  console.log("🔄 DRAG OVER repeater field wrapper for:", subField.key, "index:", index);
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = "copy";
+                                }}
+                                onDrop={(e) => {
+                                  console.log("💧 DROP EVENT on repeater field wrapper for:", subField.key, "index:", index);
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  
+                                  console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                                  console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                                  
+                                  const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
+                                  if (reference) {
+                                    const newItems = [...(fieldState[f.key] || [])];
+                                    newItems[index] = { ...newItems[index], [subField.key]: reference };
+                                    handleChange(f.key, newItems);
+                                  }
+                                }}
+                              >
                                 <input
                                   type="text"
                                   className="w-full border rounded px-3 py-1 text-xs h-8 nodrag bg-background border-border focus:border-primary focus:outline-none"
@@ -243,16 +336,28 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                                     newItems[index] = { ...newItems[index], [subField.key]: e.target.value };
                                     handleChange(f.key, newItems);
                                   }}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={(e) => {
+                                  onDragOver={(e) => {
+                                    console.log("🔄 DRAG OVER repeater input field:", subField.key, "index:", index);
                                     e.preventDefault();
-                                    const reference = e.dataTransfer.getData("text/plain");
+                                    e.stopPropagation();
+                                    e.dataTransfer.dropEffect = "copy";
+                                  }}
+                                  onDrop={(e) => {
+                                    console.log("💧 DROP EVENT on repeater input field:", subField.key, "index:", index);
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    
+                                    console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+                                    console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+                                    
+                                    const reference = e.dataTransfer.getData("application/reactflow") || e.dataTransfer.getData("text/plain");
                                     if (reference) {
                                       const newItems = [...(fieldState[f.key] || [])];
                                       newItems[index] = { ...newItems[index], [subField.key]: reference };
                                       handleChange(f.key, newItems);
                                     }
                                   }}
+                                  onFocus={(e) => e.target.select()}
                                 />
                               </div>
                             )}

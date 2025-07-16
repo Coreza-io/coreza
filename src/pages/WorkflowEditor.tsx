@@ -221,6 +221,15 @@ const WorkflowEditor = () => {
         
         console.log(`🔥 Executing Level ${levelIndex + 1}: [${currentLevel.join(', ')}] - ${currentLevel.length} nodes in parallel`);
         
+        // Before executing this level, verify all dependencies from previous levels are complete
+        const executedNodes = new Set<string>();
+        if (levelIndex > 0) {
+          // Add all nodes from previous levels to executedNodes
+          for (let prevLevel = 0; prevLevel < levelIndex; prevLevel++) {
+            executionLevels[prevLevel].forEach(nodeId => executedNodes.add(nodeId));
+          }
+        }
+        
         // Execute all nodes in this level in parallel
         await Promise.all(currentLevel.map(nodeId => 
           new Promise<void>((resolve, reject) => {
@@ -273,6 +282,9 @@ const WorkflowEditor = () => {
             const nodeExecuteEvent = new CustomEvent('auto-execute-node', {
               detail: { 
                 nodeId,
+                executedNodes, // Pass the set of completed nodes from previous levels
+                allNodes: nodes, // Pass all nodes for dependency checking
+                allEdges: edges, // Pass all edges for dependency checking
                 onSuccess: () => {
                   console.log(`✅ Node ${nodeId} executed successfully`);
                   // Node stays green during success - will be reset after timeout

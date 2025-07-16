@@ -499,6 +499,28 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     const handleAutoExecute = async (event: CustomEvent) => {
       if (event.detail?.nodeId === nodeId) {
         console.log(`🚀 Auto-executing node: ${nodeId}`);
+        
+        // Check if all input dependencies have completed
+        if (event.detail.executedNodes && event.detail.allEdges) {
+          const incomingEdges = event.detail.allEdges.filter((edge: any) => edge.target === nodeId);
+          const missingDependencies = incomingEdges.filter((edge: any) => 
+            !event.detail.executedNodes.has(edge.source)
+          );
+          
+          if (missingDependencies.length > 0) {
+            const missingNodes = missingDependencies.map((edge: any) => edge.source);
+            console.log(`⏳ Node ${nodeId} waiting for dependencies: [${missingNodes.join(', ')}]`);
+            
+            // Wait a bit and try again
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('auto-execute-node', event));
+            }, 500);
+            return;
+          }
+        }
+        
+        console.log(`✅ All dependencies ready for node: ${nodeId}, proceeding with execution`);
+        
         try {
           await handleSubmit(); // Execute the actual node logic
           

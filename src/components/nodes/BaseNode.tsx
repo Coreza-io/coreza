@@ -212,7 +212,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       const data = JSON.parse(raw);
       console.log("📦 Parsed data:", data);
       
-      const keyPath = data.keyPath || data;
+      // Handle both old format (direct keyPath) and new format (structured object)
+      const keyPath = data.type === "jsonReference" ? data.keyPath : (data.keyPath || data);
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode
         ? getDisplayName(sourceNode, nodes)

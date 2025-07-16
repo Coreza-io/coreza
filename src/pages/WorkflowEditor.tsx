@@ -24,6 +24,7 @@ import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -58,6 +59,7 @@ const WorkflowEditor = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user: authUser, loading: authLoading } = useAuth();
   const isNewWorkflow = id === 'new' || !id;
   const projectId = searchParams.get('project'); // Get project ID from URL parameters
   
@@ -68,7 +70,6 @@ const WorkflowEditor = () => {
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
-  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [executingNode, setExecutingNode] = useState<string | null>(null);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -121,7 +122,7 @@ const WorkflowEditor = () => {
 
   // Save workflow to Supabase
   const handleSaveWorkflow = async () => {
-    if (!user) {
+    if (!authUser) {
       toast({
         title: "Error",
         description: "Please log in to save workflows",
@@ -144,7 +145,7 @@ const WorkflowEditor = () => {
     }));
 
     const payload = {
-      user_id: user.id,
+      user_id: authUser.id,
       name: workflowName,
       nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
       edges: JSON.parse(JSON.stringify(edges)) as any,
@@ -195,7 +196,7 @@ const WorkflowEditor = () => {
   };
 
   const handleActivate = async () => {
-    if (!user || !workflowId) return;
+    if (!authUser || !workflowId) return;
     
     try {
       setIsActive(!isActive);
@@ -293,105 +294,101 @@ const WorkflowEditor = () => {
 
   // Check for user authentication and load latest workflow
   useEffect(() => {
-    const checkUserAndLoadWorkflow = async () => {
-      const userEmail = localStorage.getItem('userEmail');
-      const userId = localStorage.getItem('userId');
-      const userName = localStorage.getItem('userName');
-      
-      if (userEmail && userId && userName) {
-        const userObj = { id: userId, email: userEmail, name: userName };
-        setUser(userObj);
-        
-        // Load workflow - either start fresh for new workflow or load specific existing workflow
-        if (isNewWorkflow) {
-          // For ALL new workflows, start completely fresh
-          // Generate smart workflow name based on existing workflows
-          setLoading(true);
-          try {
-            // Get existing workflow names to determine next number
-            const { data: existingWorkflows, error } = await supabase
-              .from("workflows")
-              .select("name")
-              .eq("user_id", userId);
+    if (authLoading) return; // Wait for auth to finish loading
+    
+    if (!authUser) {
+      // Redirect to login if no user found
+      navigate('/login');
+      return;
+    }
 
-            let workflowName = "My workflow 1";
-            
-            if (!error && existingWorkflows) {
-              // Find the highest number in existing "My workflow X" names
-              const workflowNumbers = existingWorkflows
-                .map(w => w.name)
-                .filter(name => name.startsWith("My workflow "))
-                .map(name => {
-                  const match = name.match(/My workflow (\d+)/);
-                  return match ? parseInt(match[1]) : 0;
-                })
-                .filter(num => !isNaN(num));
+    const loadWorkflow = async () => {
+      // Load workflow - either start fresh for new workflow or load specific existing workflow
+      if (isNewWorkflow) {
+        // For ALL new workflows, start completely fresh
+        // Generate smart workflow name based on existing workflows
+        setLoading(true);
+        try {
+          // Get existing workflow names to determine next number
+          const { data: existingWorkflows, error } = await supabase
+            .from("workflows")
+            .select("name")
+            .eq("user_id", authUser.id);
 
-              const maxNumber = workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
-              const nextNumber = maxNumber + 1;
-              
-              workflowName = projectId ? `New Project Workflow ${nextNumber}` : `My workflow ${nextNumber}`;
-            }
-
-            setWorkflowName(workflowName);
-          } catch (error) {
-            console.error("Error generating workflow name:", error);
-            // Fallback to default names
-            setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
-          }
+          let workflowName = "My workflow 1";
           
-          setNodes(initialNodes);
-          setEdges(initialEdges);
-          setIsActive(false);
-          setLoading(false);
-        } else if (workflowId) {
-          // Load specific existing workflow
-          setLoading(true);
-          try {
-            const { data, error } = await supabase
-              .from("workflows")
-              .select("*")
-              .eq("id", workflowId)
-              .eq("user_id", userId)
-              .single();
+          if (!error && existingWorkflows) {
+            // Find the highest number in existing "My workflow X" names
+            const workflowNumbers = existingWorkflows
+              .map(w => w.name)
+              .filter(name => name.startsWith("My workflow "))
+              .map(name => {
+                const match = name.match(/My workflow (\d+)/);
+                return match ? parseInt(match[1]) : 0;
+              })
+              .filter(num => !isNaN(num));
 
-            if (data && !error) {
-              setWorkflowName(data.name || "Untitled Workflow");
-              setIsActive(!!data.is_active);
-              
-              // Load nodes and edges
-              if (data.nodes && Array.isArray(data.nodes)) {
-                // Restore node definitions from manifest when loading from database
-                const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
-                  }
-                }));
-                setNodes(restoredNodes);
-              }
-              if (data.edges && Array.isArray(data.edges)) {
-                setEdges(data.edges as unknown as Edge[]);
-              }
-            } else {
-              console.error("Workflow not found or access denied");
-              navigate('/workflows');
+            const maxNumber = workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
+            const nextNumber = maxNumber + 1;
+            
+            workflowName = projectId ? `New Project Workflow ${nextNumber}` : `My workflow ${nextNumber}`;
+          }
+
+          setWorkflowName(workflowName);
+        } catch (error) {
+          console.error("Error generating workflow name:", error);
+          // Fallback to default names
+          setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
+        }
+        
+        setNodes(initialNodes);
+        setEdges(initialEdges);
+        setIsActive(false);
+        setLoading(false);
+      } else if (workflowId) {
+        // Load specific existing workflow
+        setLoading(true);
+        try {
+          const { data, error } = await supabase
+            .from("workflows")
+            .select("*")
+            .eq("id", workflowId)
+            .eq("user_id", authUser.id)
+            .single();
+
+          if (data && !error) {
+            setWorkflowName(data.name || "Untitled Workflow");
+            setIsActive(!!data.is_active);
+            
+            // Load nodes and edges
+            if (data.nodes && Array.isArray(data.nodes)) {
+              // Restore node definitions from manifest when loading from database
+              const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
+                }
+              }));
+              setNodes(restoredNodes);
             }
-          } catch (error) {
-            console.error("Error loading workflow:", error);
+            if (data.edges && Array.isArray(data.edges)) {
+              setEdges(data.edges as unknown as Edge[]);
+            }
+          } else {
+            console.error("Workflow not found or access denied");
             navigate('/workflows');
           }
-          setLoading(false);
+        } catch (error) {
+          console.error("Error loading workflow:", error);
+          navigate('/workflows');
         }
-      } else {
-        // Redirect to login if no user found
-        navigate('/login');
+        setLoading(false);
       }
     };
     
-    checkUserAndLoadWorkflow();
-  }, [navigate, isNewWorkflow, workflowId, setNodes, setEdges]);
+    loadWorkflow();
+  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, setNodes, setEdges, projectId]);
 
   // Persist workflow state to localStorage
   useEffect(() => {

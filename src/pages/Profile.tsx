@@ -55,8 +55,8 @@ const Profile = () => {
           setFormData({
             firstName: data.first_name || "",
             lastName: data.last_name || "",
-            phone: data.phone || "+1 (555) 123-4567",
-            location: data.location || "New York, NY"
+            phone: (data as any).phone || "+1 (555) 123-4567",
+            location: (data as any).location || "New York, NY"
           });
         }
       };
@@ -108,8 +108,8 @@ const Profile = () => {
       setFormData({
         firstName: userProfile.first_name || "",
         lastName: userProfile.last_name || "",
-        phone: userProfile.phone || "",
-        location: userProfile.location || ""
+        phone: (userProfile as any).phone || "",
+        location: (userProfile as any).location || ""
       });
     }
     setIsEditing(false);
@@ -238,7 +238,7 @@ const Profile = () => {
               ) : (
                 <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{userProfile.phone}</span>
+                  <span>{(userProfile as any).phone || "+1 (555) 123-4567"}</span>
                 </div>
               )}
             </div>
@@ -254,7 +254,7 @@ const Profile = () => {
               ) : (
                 <div className="flex items-center space-x-2 p-2 rounded-md bg-muted/50">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>{userProfile.location}</span>
+                  <span>{(userProfile as any).location || "New York, NY"}</span>
                 </div>
               )}
             </div>

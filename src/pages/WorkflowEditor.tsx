@@ -427,7 +427,9 @@ const WorkflowEditor = () => {
       const target = event.target as Element;
       const palette = document.querySelector('.node-palette-container');
       const toggleButton = document.querySelector('.palette-toggle-button');
+      const reactFlowWrapper = document.querySelector('.react-flow');
       
+      // Hide palette if clicking on ReactFlow editor, outside palette, or not on toggle button
       if (palette && toggleButton && 
           !palette.contains(target) && 
           !toggleButton.contains(target)) {

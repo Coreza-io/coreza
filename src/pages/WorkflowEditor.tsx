@@ -439,7 +439,9 @@ const WorkflowEditor = () => {
                 ...node,
                 data: {
                   ...node.data,
-                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest]
+                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
+                  // Ensure values are properly mapped to data.values for BaseNode to use
+                  values: (node as any).values || node.data?.values || {}
                 }
               }));
               setNodes(restoredNodes);

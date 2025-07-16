@@ -31,12 +31,12 @@ serve(async (req) => {
     }
 
     console.log(`Storing encrypted credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
-    console.log(`Encrypted data type: ${typeof encrypted_data}, length: ${encrypted_data.length}`)
+    console.log(`Encrypted data type: ${typeof encrypted_data}, fields: ${Object.keys(encrypted_data).join(', ')}`)
     
-    // Validate that encrypted_data is a string (encrypted blob)
-    if (typeof encrypted_data !== 'string') {
+    // Validate that encrypted_data is an object with encrypted fields
+    if (typeof encrypted_data !== 'object' || encrypted_data === null) {
       return new Response(
-        JSON.stringify({ error: 'Encrypted data must be a string' }),
+        JSON.stringify({ error: 'Encrypted data must be an object with encrypted fields' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -52,7 +52,7 @@ serve(async (req) => {
         user_id,
         service_type,
         name,
-        client_json: { encrypted: encrypted_data }, // Store the encrypted string in a wrapper object
+        client_json: encrypted_data, // Store the object with individually encrypted fields
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'

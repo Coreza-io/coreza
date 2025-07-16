@@ -53,18 +53,27 @@ class CredentialManager {
 
       for (const record of data) {
         try {
-          // The client_json should contain { encrypted: "encrypted_string" }
-          const clientJson = record.client_json as { encrypted?: string } | null;
-          const encryptedData = clientJson?.encrypted;
+          // The client_json should contain individual encrypted fields
+          const clientJson = record.client_json as Record<string, string> | null;
           
-          if (!encryptedData || typeof encryptedData !== 'string') {
-            console.warn(`Invalid encrypted data for credential ${record.id}`);
+          if (!clientJson || typeof clientJson !== 'object') {
+            console.warn(`Invalid client_json data for credential ${record.id}`);
             continue;
           }
 
-          // Decrypt the data
-          const decryptedDataString = await EncryptionUtil.decrypt(encryptedData, userId);
-          const credentials = JSON.parse(decryptedDataString);
+          // Decrypt each field individually
+          const credentials: Record<string, string> = {};
+          for (const [fieldName, encryptedValue] of Object.entries(clientJson)) {
+            if (typeof encryptedValue === 'string') {
+              try {
+                credentials[fieldName] = await EncryptionUtil.decrypt(encryptedValue, userId);
+              } catch (fieldDecryptError) {
+                console.error(`Failed to decrypt field ${fieldName} for credential ${record.id}:`, fieldDecryptError);
+                // Skip this credential if any field fails to decrypt
+                throw fieldDecryptError;
+              }
+            }
+          }
 
           decryptedCredentials.push({
             id: record.id,

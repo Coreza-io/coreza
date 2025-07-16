@@ -57,20 +57,18 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     setLoading(true);
     try {
-      // Create a simple JSON object with field names and values
-      const credentialData: Record<string, string> = {};
+      // Create encrypted credentials object with each field encrypted individually
+      const encryptedCredentials: Record<string, string> = {};
 
       for (const f of definition.authFields || []) {
         if (f.type !== "static" && f.key !== "credential_name") {
-          credentialData[f.key] = fields[f.key];
+          // Encrypt each field individually
+          encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
+            fields[f.key], 
+            user.id
+          );
         }
       }
-
-      // CRITICAL: Encrypt the credential data before sending to backend
-      const encryptedData = await EncryptionUtil.encrypt(
-        JSON.stringify(credentialData), 
-        user.id
-      );
 
       // Store encrypted credentials in Supabase
       const { error } = await supabase.functions.invoke('store-credentials', {
@@ -78,7 +76,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
           name: fields.credential_name || `${definition.name} Account`,
-          encrypted_data: encryptedData
+          encrypted_data: encryptedCredentials
         }
       });
 

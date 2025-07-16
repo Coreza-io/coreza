@@ -346,6 +346,8 @@ const WorkflowEditor = () => {
   }, [createNode]);
 
   // Check for user authentication and load latest workflow
+  const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(null);
+  
   useEffect(() => {
     console.log("🔄 Loading effect triggered:", {
       authLoading,
@@ -353,7 +355,8 @@ const WorkflowEditor = () => {
       isNewWorkflow,
       workflowId,
       currentId: id,
-      currentUrl: window.location.pathname
+      currentUrl: window.location.pathname,
+      hasLoadedWorkflowId
     });
     
     if (authLoading) return; // Wait for auth to finish loading
@@ -361,6 +364,12 @@ const WorkflowEditor = () => {
     if (!authUser) {
       // Redirect to login if no user found
       navigate('/login');
+      return;
+    }
+
+    // Prevent reloading if we've already loaded this workflow
+    if (hasLoadedWorkflowId && workflowId === hasLoadedWorkflowId) {
+      console.log("🚫 Skipping reload - workflow already loaded");
       return;
     }
 
@@ -407,8 +416,9 @@ const WorkflowEditor = () => {
         setEdges(initialEdges);
         setIsActive(false);
         setLoading(false);
-      } else if (workflowId) {
-        // Load specific existing workflow
+        setHasLoadedWorkflowId('new');
+      } else if (workflowId && workflowId !== hasLoadedWorkflowId) {
+        // Load specific existing workflow only if it's different from what we've loaded
         setLoading(true);
         try {
           const { data, error } = await supabase
@@ -437,6 +447,7 @@ const WorkflowEditor = () => {
             if (data.edges && Array.isArray(data.edges)) {
               setEdges(data.edges as unknown as Edge[]);
             }
+            setHasLoadedWorkflowId(workflowId);
           } else {
             console.error("Workflow not found or access denied");
             navigate('/workflows');
@@ -450,7 +461,7 @@ const WorkflowEditor = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, id, projectId]); // Removed setNodes, setEdges to prevent constant reloads
+  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId]); // Removed id from dependencies to prevent reload on tab switch
 
 
   // Auto-hide palette when clicking outside or on editor

@@ -424,24 +424,8 @@ const WorkflowEditor = () => {
                          });
                        };
                        
-                        // Explicitly trigger the conditional target with a flag
-                        const conditionalEvent = new CustomEvent('auto-execute-node', {
-                          detail: { 
-                            nodeId: activeEdge.target,
-                            executedNodes: new Set([...executedNodes, nodeId]),
-                            allNodes: nodes,
-                            allEdges: edges,
-                            explicitlyTriggered: true, // Flag to indicate this is an explicit trigger from If node
-                            onSuccess: (result?: any) => {
-                              console.log(`✅ Conditional target node ${activeEdge.target} executed successfully`);
-                              executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
-                            },
-                            onError: (error: any) => {
-                              console.error(`❌ Conditional node ${activeEdge.target} failed:`, error);
-                            }
-                          }
-                        });
-                        window.dispatchEvent(conditionalEvent);
+                         // Execute the conditional target immediately without re-executing the source
+                         executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
                     }
                   }
                   

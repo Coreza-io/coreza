@@ -130,7 +130,7 @@ const EMADef = {
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/execute/ema",
+    "url": "/indicators/ema",
     "method": "POST"
   },
   "fields": [
@@ -150,7 +150,41 @@ const EMADef = {
     }
   ]
 };
-const RSIDef = { name: "RSI", def: "RSI node definition", node_type: "rsi", icon: "BarChart3", category: "Indicators", description: "Relative Strength Index technical indicator", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
+
+const RSIDef = {
+  "name": "RSI",
+  "def": "Relative Strength Index technical indicator",
+  "node_type": "main",
+  "icon": "/assets/icons/rsi.svg",
+  "category": "Indicators",
+  "description": "Relative Strength Index indicator",
+  "color": "text-blue-500",
+  "size": { "width": 300, "height": 220 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/rsi",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "window",
+      "label": "EMA Window",
+      "type": "text",
+      "placeholder": "e.g. 20",
+      "default": "20",
+      "required": true
+    }
+  ]
+};
 const VisualizeDef = { name: "Visualize", def: "Visualize node definition", node_type: "visualize", icon: "BarChart3", category: "Visualization", description: "Chart and visualize trading data", color: "text-green-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }], fields: [] };
 const IfDef = {
   name: "If",
@@ -168,7 +202,7 @@ const IfDef = {
     { type: "source", position: "right", id: "false" }
   ],
   action: {
-    url: "/execute/if",
+    url: "/comparator/if",
     method: "POST"
   },
   fields: [

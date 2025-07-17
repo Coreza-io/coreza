@@ -327,15 +327,22 @@ const WorkflowEditor = () => {
                 onSuccess: (result?: any) => {
                   console.log(`✅ Node ${nodeId} executed successfully`, result);
                   
-                  // Special handling for If nodes to determine which path to take
-                  const currentNode = nodes.find(n => n.id === nodeId);
-                  if ((currentNode?.data?.definition as any)?.name === "If" && result) {
-                    console.log(`🔀 If node result:`, result);
-                    
-                    // Extract the condition evaluation result from the API response
-                    // API returns { "true": boolean, "false": boolean }
-                    const conditionResult = result.true === true;
-                    console.log(`🔀 If node condition evaluated to: ${conditionResult}`);
+                   // Special handling for If nodes to determine which path to take
+                   const currentNode = nodes.find(n => n.id === nodeId);
+                   console.log(`🔍 Checking node for If condition: ${nodeId}`, {
+                     nodeName: (currentNode?.data?.definition as any)?.name,
+                     nodeType: currentNode?.type,
+                     hasResult: !!result,
+                     result: result
+                   });
+                   
+                   if ((currentNode?.data?.definition as any)?.name === "If" && result) {
+                     console.log(`🔀 If node result:`, result);
+                     
+                     // Extract the condition evaluation result from the API response
+                     // API returns { "true": boolean, "false": boolean }
+                     const conditionResult = result.true === true;
+                     console.log(`🔀 If node condition evaluated to: ${conditionResult}`);
                     
                     // Find outgoing edges for this If node
                     const outgoingEdges = edges.filter(edge => edge.source === nodeId);

@@ -137,82 +137,32 @@ const WorkflowEditor = () => {
   const getExecutionLevels = useCallback(() => {
     console.log("🔥 Building execution levels...");
     
-    // First, identify all nodes that are targets of conditional edges (true/false paths from If nodes)
-    const conditionalTargetNodes = new Set<string>();
-    const conditionalSourceNodes = new Set<string>(); // Track If nodes
-    
-    edges.forEach(edge => {
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      if (sourceNode && (sourceNode.data?.definition as any)?.name === "If") {
-        if (edge.sourceHandle === 'true' || edge.sourceHandle === 'false') {
-          conditionalTargetNodes.add(edge.target);
-          conditionalSourceNodes.add(edge.source);
-          console.log(`🔀 Found conditional target: ${edge.target} from If node: ${edge.source} (${edge.sourceHandle} path)`);
-        }
-      }
-    });
-    
-    // Recursively find ALL downstream nodes from conditional targets
-    const findAllDownstreamNodes = (startNodeId: string, visited = new Set<string>()): Set<string> => {
-      if (visited.has(startNodeId)) return visited;
-      visited.add(startNodeId);
-      
-      edges.forEach(edge => {
-        if (edge.source === startNodeId) {
-          // Don't follow conditional edges from other If nodes
-          const sourceNode = nodes.find(n => n.id === edge.source);
-          const isConditionalEdge = sourceNode && 
-            (sourceNode.data?.definition as any)?.name === "If" && 
-            (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
-          
-          if (!isConditionalEdge) {
-            findAllDownstreamNodes(edge.target, visited);
-          }
-        }
-      });
-      
-      return visited;
-    };
-    
-    // Add all downstream nodes from conditional targets to the exclusion set
-    const allConditionalNodes = new Set<string>();
-    conditionalTargetNodes.forEach(targetId => {
-      const downstreamNodes = findAllDownstreamNodes(targetId);
-      downstreamNodes.forEach(nodeId => allConditionalNodes.add(nodeId));
-    });
-    
-    console.log(`🚫 Excluding conditional nodes from auto-execution:`, Array.from(allConditionalNodes));
-    
-    const nodeIds = nodes.map(node => node.id).filter(id => !allConditionalNodes.has(id));
-    console.log(`✅ Nodes included in auto-execution:`, nodeIds);
-    
+    const nodeIds = nodes.map(node => node.id);
     const inDegree = new Map<string, number>();
     const adjList = new Map<string, string[]>();
     
-    // Initialize only for non-conditional nodes
+    // Initialize
     nodeIds.forEach(id => {
       inDegree.set(id, 0);
       adjList.set(id, []);
     });
     
     // Build adjacency list and calculate in-degrees
-    // EXCLUDE conditional edges and edges to/from conditional nodes
+    // EXCLUDE conditional edges (true/false paths) from automatic execution dependency calculation
+    // If nodes will handle their own path execution based on their result
     const activeEdges = edges.filter(edge => {
-      // Skip if source or target is a conditional node
-      if (allConditionalNodes.has(edge.source) || allConditionalNodes.has(edge.target)) {
-        return false;
-      }
-      
       const sourceNode = nodes.find(n => n.id === edge.source);
       const isConditionalEdge = sourceNode && 
         (sourceNode.data?.definition as any)?.name === "If" && 
         (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
       
-      // Exclude conditional edges from automatic execution
+      // Exclude conditional edges from dependency calculation
+      // This allows If nodes to execute normally, but prevents their target nodes
+      // from auto-executing until the If node triggers the correct path
       return !isConditionalEdge;
     });
     
-    console.log(`🔗 Active edges for auto-execution:`, activeEdges.length);
+    console.log(`🔗 Active edges for dependency calculation:`, activeEdges.length);
     
     activeEdges.forEach(edge => {
       const source = edge.source;

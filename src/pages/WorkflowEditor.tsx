@@ -362,18 +362,10 @@ const WorkflowEditor = () => {
                             if (visited.has(currentNodeId)) continue;
                             visited.add(currentNodeId);
                             
-                            // Find all outgoing edges from current node (excluding conditional edges from other If nodes)
-                            const outgoingEdges = edges.filter(edge => {
-                              if (edge.source !== currentNodeId) return false;
-                              
-                              const sourceNode = nodes.find(n => n.id === edge.source);
-                              const isConditionalEdge = sourceNode && 
-                                (sourceNode.data?.definition as any)?.name === "If" && 
-                                (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
-                              
-                              // For If nodes, we'll handle the conditional logic when that node executes
-                              return !isConditionalEdge;
-                            });
+                            // Find all outgoing edges from current node
+                            // INCLUDE conditional edges when building the execution chain
+                            // because we need to discover all downstream nodes that might execute
+                            const outgoingEdges = edges.filter(edge => edge.source === currentNodeId);
                             
                             outgoingEdges.forEach(edge => {
                               if (!visited.has(edge.target)) {
@@ -400,25 +392,9 @@ const WorkflowEditor = () => {
                                     console.log(`✅ Conditional chain node ${nodeId} executed successfully`);
                                     completedNodes.add(nodeId);
                                     
-                                     // If this is also an If node, handle its conditional logic
-                                     const currentNode = nodes.find(n => n.id === nodeId);
-                                     if ((currentNode?.data?.definition as any)?.name === "If" && result) {
-                                       const conditionResult = result.true === true;
-                                       console.log(`🔀 Nested If node ${nodeId} condition: ${conditionResult}`);
-                                      
-                                      const ifOutgoingEdges = edges.filter(edge => edge.source === nodeId);
-                                      const activeIfEdge = conditionResult 
-                                        ? ifOutgoingEdges.find(edge => edge.sourceHandle === 'true')
-                                        : ifOutgoingEdges.find(edge => edge.sourceHandle === 'false');
-                                      
-                                      if (activeIfEdge) {
-                                        console.log(`🎯 Nested If node activating ${conditionResult ? 'TRUE' : 'FALSE'} path`);
-                                        // Recursively execute the nested conditional chain
-                                        setTimeout(() => {
-                                          executeConditionalChain(activeIfEdge.target, new Set([...completedNodes]));
-                                        }, 100);
-                                      }
-                                    }
+                                     // REMOVED: Nested If node handling to prevent double execution
+                                     // If nodes in the conditional chain will handle their own conditional logic
+                                     // when executeConditionalChain processes them - no need for special handling here
                                     
                                     resolve();
                                   },

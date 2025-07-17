@@ -67,9 +67,6 @@ const InputPanel: React.FC<InputPanelProps> = ({
     if (!selectedPrevNodeId) return {};
     const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
     const result = prevNode?.data?.output || prevNode?.data?.input || {};
-    console.log("InputPanel outputData:", result);
-    console.log("InputPanel selectedPrevNodeId:", selectedPrevNodeId);
-    console.log("InputPanel prevNode:", prevNode);
     return result;
   }, [selectedPrevNodeId, nodes]);
 

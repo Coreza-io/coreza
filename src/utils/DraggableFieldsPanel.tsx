@@ -11,10 +11,6 @@ const DraggableFieldsPanel = ({
 }) => {
   if (!data || typeof data !== "object") return null;
 
-  console.log("DraggableFieldsPanel data:", data);
-  console.log("DraggableFieldsPanel data type:", typeof data);
-  console.log("DraggableFieldsPanel is array:", Array.isArray(data));
-
   // Handle arrays by flattening their meaningful properties
   let entriesToShow;
   if (Array.isArray(data)) {

@@ -66,7 +66,7 @@ export function resolveReferences(expr: string, inputData: any, allNodeData?: Re
 
     let result: any = targetData;
     for (const key of keys) {
-      console.log("🔍 Accessing key:", key, "in:", result);
+      //console.log("🔍 Accessing key:", key, "in:", result);
       if (result == null) { 
         result = undefined; 
         break; 

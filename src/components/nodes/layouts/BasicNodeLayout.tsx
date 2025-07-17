@@ -78,27 +78,26 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const renderField = (f: any) => {
     // Conditional field display logic
     if (f.displayOptions?.show) {
-      console.log(`Field ${f.key} displayOptions:`, f.displayOptions);
-      console.log(`Current fieldState:`, fieldState);
+    
       const shouldShow = Object.entries(f.displayOptions.show).every(
         ([depKey, allowedValues]) => {
           const currentValue = fieldState[depKey];
-          console.log(`Checking field ${f.key}: dependency ${depKey} = "${currentValue}", allowed values:`, allowedValues);
+          //console.log(`Checking field ${f.key}: dependency ${depKey} = "${currentValue}", allowed values:`, allowedValues);
           // If the dependency field is empty/undefined, don't show this field
           if (!currentValue) {
-            console.log(`Field ${f.key} hidden: dependency ${depKey} is empty`);
+            //console.log(`Field ${f.key} hidden: dependency ${depKey} is empty`);
             return false;
           }
           const isAllowed = (allowedValues as string[]).includes(currentValue);
-          console.log(`Field ${f.key}: ${currentValue} is allowed = ${isAllowed}`);
+          //console.log(`Field ${f.key}: ${currentValue} is allowed = ${isAllowed}`);
           return isAllowed;
         }
       );
       if (!shouldShow) {
-        console.log(`Field ${f.key} will be hidden`);
+        //console.log(`Field ${f.key} will be hidden`);
         return null;
       }
-      console.log(`Field ${f.key} will be shown`);
+      //console.log(`Field ${f.key} will be shown`);
     }
 
     const commonInputProps = {
@@ -109,18 +108,18 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       className: "nodrag",
       style: fieldState[f.key]?.includes("{{") ? referenceStyle : undefined,
       onDragOver: (e: React.DragEvent) => {
-        console.log("🔄 DRAG OVER input field:", f.key);
+        //console.log("🔄 DRAG OVER input field:", f.key);
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = "copy";
       },
       onDrop: (e: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        console.log("💧 DROP EVENT on input field:", f.key);
+        //console.log("💧 DROP EVENT on input field:", f.key);
         e.preventDefault();
         e.stopPropagation();
         
-        console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
-        console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+        //console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+        //console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
         
         // Just call the handleDrop function directly - no additional logic needed
         handleDrop(
@@ -141,18 +140,18 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           <div
             className="nodrag"
             onDragOver={(e) => {
-              console.log("🔄 DRAG OVER wrapper div for:", f.key);
+              //console.log("🔄 DRAG OVER wrapper div for:", f.key);
               e.preventDefault();
               e.stopPropagation();
               e.dataTransfer.dropEffect = "copy";
             }}
             onDrop={(e) => {
-              console.log("💧 DROP EVENT on wrapper div for:", f.key);
+              //console.log("💧 DROP EVENT on wrapper div for:", f.key);
               e.preventDefault();
               e.stopPropagation();
               
-              console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
-              console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+              //console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+              //console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
               
               handleDrop(
                 f.key,
@@ -178,18 +177,18 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           <div
             className="nodrag"
             onDragOver={(e) => {
-              console.log("🔄 DRAG OVER textarea wrapper for:", f.key);
+              //console.log("🔄 DRAG OVER textarea wrapper for:", f.key);
               e.preventDefault();
               e.stopPropagation();
               e.dataTransfer.dropEffect = "copy";
             }}
             onDrop={(e) => {
-              console.log("💧 DROP EVENT on textarea wrapper for:", f.key);
+              //console.log("💧 DROP EVENT on textarea wrapper for:", f.key);
               e.preventDefault();
               e.stopPropagation();
               
-              console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
-              console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
+              //console.log("📦 Available data types:", Array.from(e.dataTransfer.types));
+              //console.log("📦 Data content:", e.dataTransfer.getData("application/reactflow"));
               
               handleDrop(
                 f.key,

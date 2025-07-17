@@ -39,8 +39,8 @@ const nodeTypes = Object.fromEntries([
   ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
 ]);
 
-console.log("Available nodeTypes:", Object.keys(nodeTypes));
-console.log("NodeManifest keys:", Object.keys(nodeManifest));
+//console.log("Available nodeTypes:", Object.keys(nodeTypes));
+//console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
   removable: RemovableEdge,
@@ -77,7 +77,7 @@ const WorkflowEditor = () => {
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {
     if (!isNewWorkflow && id !== workflowId) {
-      console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
+      //console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
       setWorkflowId(id || null);
     }
   }, [id, isNewWorkflow, workflowId]);
@@ -210,12 +210,6 @@ const WorkflowEditor = () => {
         setLoading(false);
       }
       if (data) {
-        console.log("🎯 Workflow saved, updating state:", {
-          oldWorkflowId: workflowId,
-          newWorkflowId: data.id,
-          oldIsNewWorkflow: isNewWorkflow,
-          currentUrl: window.location.pathname
-        });
         
         setWorkflowId(data.id);
         
@@ -270,7 +264,7 @@ const WorkflowEditor = () => {
         description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
       });
 
-      console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
+      //console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
     } catch (error) {
       console.error("Failed to change workflow status:", error);
       // Revert the local state change
@@ -342,15 +336,6 @@ const WorkflowEditor = () => {
   const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(null);
   
   useEffect(() => {
-    console.log("🔄 Loading effect triggered:", {
-      authLoading,
-      authUser: !!authUser,
-      isNewWorkflow,
-      workflowId,
-      currentId: id,
-      currentUrl: window.location.pathname,
-      hasLoadedWorkflowId
-    });
     
     if (authLoading) return; // Wait for auth to finish loading
     
@@ -362,7 +347,7 @@ const WorkflowEditor = () => {
 
     // Prevent reloading if we've already loaded this workflow
     if (hasLoadedWorkflowId && workflowId === hasLoadedWorkflowId) {
-      console.log("🚫 Skipping reload - workflow already loaded");
+      //console.log("🚫 Skipping reload - workflow already loaded");
       return;
     }
 
@@ -491,14 +476,14 @@ const WorkflowEditor = () => {
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
+      //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === 'Delete') {
-        console.log("Delete key pressed - removing selected nodes");
+        //console.log("Delete key pressed - removing selected nodes");
         setNodes((nds) => nds.filter((node) => !node.selected));
         setEdges((eds) => eds.filter((edge) => !edge.selected));
       }
       if (event.key === 'Backspace') {
-        console.log("Backspace key pressed but should NOT delete nodes");
+        //console.log("Backspace key pressed but should NOT delete nodes");
       }
     };
 

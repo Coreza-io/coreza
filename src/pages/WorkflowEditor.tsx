@@ -173,8 +173,13 @@ const WorkflowEditor = () => {
       const source = edge.source;
       const target = edge.target;
       
-      if (adjList.has(source) && inDegree.has(target)) {
+      // Add edge to adjacency list if source is in execution levels
+      if (adjList.has(source)) {
         adjList.get(source)!.push(target);
+      }
+      
+      // Increment in-degree for target if it's in execution levels
+      if (inDegree.has(target)) {
         inDegree.set(target, inDegree.get(target)! + 1);
       }
     });

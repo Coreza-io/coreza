@@ -304,8 +304,9 @@ const WorkflowEditor = () => {
                   if ((currentNode?.data?.definition as any)?.name === "If" && result) {
                     console.log(`🔀 If node result:`, result);
                     
-                    // Get the condition evaluation result from the API response
-                    const conditionResult = result[0]?.result ?? false;
+                    // Extract the condition evaluation result from the API response
+                    // API returns { "true": boolean, "false": boolean }
+                    const conditionResult = result.true === true;
                     console.log(`🔀 If node condition evaluated to: ${conditionResult}`);
                     
                     // Find outgoing edges for this If node
@@ -371,11 +372,11 @@ const WorkflowEditor = () => {
                                     console.log(`✅ Conditional chain node ${nodeId} executed successfully`);
                                     completedNodes.add(nodeId);
                                     
-                                    // If this is also an If node, handle its conditional logic
-                                    const currentNode = nodes.find(n => n.id === nodeId);
-                                    if ((currentNode?.data?.definition as any)?.name === "If" && result) {
-                                      const conditionResult = result[0]?.result ?? false;
-                                      console.log(`🔀 Nested If node ${nodeId} condition: ${conditionResult}`);
+                                     // If this is also an If node, handle its conditional logic
+                                     const currentNode = nodes.find(n => n.id === nodeId);
+                                     if ((currentNode?.data?.definition as any)?.name === "If" && result) {
+                                       const conditionResult = result.true === true;
+                                       console.log(`🔀 Nested If node ${nodeId} condition: ${conditionResult}`);
                                       
                                       const ifOutgoingEdges = edges.filter(edge => edge.source === nodeId);
                                       const activeIfEdge = conditionResult 

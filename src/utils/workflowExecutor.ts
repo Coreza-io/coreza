@@ -95,6 +95,13 @@ export class WorkflowExecutor {
         console.log(`⏭️ Skipping already executed node: ${nodeId}`);
         continue; // skip already-run
       }
+
+      // Check if all dependencies are satisfied for this node
+      if (!this.areNodeDependenciesSatisfied(nodeId)) {
+        console.log(`⏳ Node ${nodeId} dependencies not satisfied, re-queuing`);
+        queue.push(nodeId); // Re-queue for later
+        continue;
+      }
       this.executed.add(nodeId);
 
       // Highlight current node
@@ -139,6 +146,28 @@ export class WorkflowExecutor {
       title: 'Execution Complete',
       description: 'All runnable nodes have executed.',
     });
+  }
+
+  /**
+   * Check if all non-conditional dependencies of a node are satisfied
+   */
+  private areNodeDependenciesSatisfied(nodeId: string): boolean {
+    const incomingEdges = this.ctx.edges.filter(e => e.target === nodeId);
+    
+    for (const edge of incomingEdges) {
+      const srcDef = this.ctx.nodes.find(n => n.id === edge.source)?.data?.definition as any;
+      
+      // Skip conditional edges (If true/false handles)
+      const isConditional = srcDef?.name === 'If' && 
+                           (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
+      
+      if (!isConditional && !this.executed.has(edge.source)) {
+        console.log(`❌ Node ${nodeId} missing dependency: ${edge.source}`);
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   /**

@@ -347,73 +347,72 @@ const WorkflowEditor = () => {
                     if (activeEdge) {
                       console.log(`🎯 If node activating ${conditionResult ? 'TRUE' : 'FALSE'} path to node: ${activeEdge.target}`);
                       
-                      // Execute the conditional path with proper downstream propagation
-                      setTimeout(() => {
-                        // Execute the conditionally selected path and its entire downstream chain
-                        const executeConditionalChain = async (startNodeId: string, completedNodes: Set<string>) => {
-                          // Find all nodes reachable from this starting node
-                          const nodesToExecute = [startNodeId];
-                          const visited = new Set<string>();
-                          
-                          // Use BFS to find all downstream nodes that should execute after the conditional path
-                          const queue = [startNodeId];
-                          while (queue.length > 0) {
-                            const currentNodeId = queue.shift()!;
-                            if (visited.has(currentNodeId)) continue;
-                            visited.add(currentNodeId);
-                            
-                            // Find all outgoing edges from current node
-                            // INCLUDE conditional edges when building the execution chain
-                            // because we need to discover all downstream nodes that might execute
-                            const outgoingEdges = edges.filter(edge => edge.source === currentNodeId);
-                            
-                            outgoingEdges.forEach(edge => {
-                              if (!visited.has(edge.target)) {
-                                queue.push(edge.target);
-                                if (!nodesToExecute.includes(edge.target)) {
-                                  nodesToExecute.push(edge.target);
-                                }
-                              }
-                            });
-                          }
-                          
-                          // Execute each node in the conditional chain sequentially
-                          for (const nodeId of nodesToExecute) {
-                            await new Promise<void>((resolve) => {
-                              console.log(`🎯 Executing conditional chain node: ${nodeId}`);
-                              
-                              const nodeExecuteEvent = new CustomEvent('auto-execute-node', {
-                                detail: { 
-                                  nodeId,
-                                  executedNodes: completedNodes,
-                                  allNodes: nodes,
-                                  allEdges: edges,
-                                  onSuccess: (result?: any) => {
-                                    console.log(`✅ Conditional chain node ${nodeId} executed successfully`);
-                                    completedNodes.add(nodeId);
-                                    
-                                     // REMOVED: Nested If node handling to prevent double execution
-                                     // If nodes in the conditional chain will handle their own conditional logic
-                                     // when executeConditionalChain processes them - no need for special handling here
-                                    
-                                    resolve();
-                                  },
-                                  onError: (error: any) => {
-                                    console.error(`❌ Conditional chain node ${nodeId} failed:`, error);
-                                    resolve(); // Continue with next node even if one fails
-                                  }
-                                }
-                              });
-                              window.dispatchEvent(nodeExecuteEvent);
-                            });
-                            
-                            // Small delay between conditional chain executions
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                          }
-                        };
-                        
-                        executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
-                      }, 100);
+                       // Execute the conditional path immediately (no setTimeout delay)
+                       const executeConditionalChain = async (startNodeId: string, completedNodes: Set<string>) => {
+                         console.log(`🎯 Starting conditional chain execution from: ${startNodeId}`);
+                         
+                         // Execute only the immediate target node, let it handle its own downstream logic
+                         await new Promise<void>((resolve) => {
+                           const nodeExecuteEvent = new CustomEvent('auto-execute-node', {
+                             detail: { 
+                               nodeId: startNodeId,
+                               executedNodes: completedNodes,
+                               allNodes: nodes,
+                               allEdges: edges,
+                               onSuccess: (result?: any) => {
+                                 console.log(`✅ Conditional target node ${startNodeId} executed successfully`);
+                                 completedNodes.add(startNodeId);
+                                 
+                                 // If this is also an If node, handle its conditional logic efficiently
+                                 const currentNode = nodes.find(n => n.id === startNodeId);
+                                 if ((currentNode?.data?.definition as any)?.name === "If" && result) {
+                                   const conditionResult = result.true === true;
+                                   console.log(`🔀 Nested If node ${startNodeId} condition: ${conditionResult}`);
+                                  
+                                   const ifOutgoingEdges = edges.filter(edge => edge.source === startNodeId);
+                                   const activeIfEdge = conditionResult 
+                                     ? ifOutgoingEdges.find(edge => edge.sourceHandle === 'true')
+                                     : ifOutgoingEdges.find(edge => edge.sourceHandle === 'false');
+                                  
+                                   if (activeIfEdge) {
+                                     console.log(`🎯 Nested If node activating ${conditionResult ? 'TRUE' : 'FALSE'} path to: ${activeIfEdge.target}`);
+                                     // Recursively execute the nested conditional chain immediately
+                                     executeConditionalChain(activeIfEdge.target, new Set([...completedNodes]));
+                                   }
+                                 } else {
+                                   // For non-If nodes, execute all immediate non-conditional downstream nodes
+                                   const downstreamEdges = edges.filter(edge => {
+                                     if (edge.source !== startNodeId) return false;
+                                     
+                                     // Only include non-conditional edges (regular flow)
+                                     const sourceNode = nodes.find(n => n.id === edge.source);
+                                     const isConditionalEdge = sourceNode && 
+                                       (sourceNode.data?.definition as any)?.name === "If" && 
+                                       (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
+                                     
+                                     return !isConditionalEdge;
+                                   });
+                                   
+                                   // Execute downstream nodes in parallel for better performance
+                                   downstreamEdges.forEach(edge => {
+                                     console.log(`🔄 Triggering downstream node: ${edge.target}`);
+                                     executeConditionalChain(edge.target, new Set([...completedNodes]));
+                                   });
+                                 }
+                                 
+                                 resolve();
+                               },
+                               onError: (error: any) => {
+                                 console.error(`❌ Conditional node ${startNodeId} failed:`, error);
+                                 resolve();
+                               }
+                             }
+                           });
+                           window.dispatchEvent(nodeExecuteEvent);
+                         });
+                       };
+                       
+                       executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
                     }
                   }
                   

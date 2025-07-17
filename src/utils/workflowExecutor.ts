@@ -1,3 +1,5 @@
+// src/utils/WorkflowExecutor.ts
+
 import { Node, Edge } from '@xyflow/react';
 
 export interface ExecutionContext {
@@ -20,248 +22,143 @@ export interface NodeExecutionDetail {
 }
 
 export class WorkflowExecutor {
-  private context: ExecutionContext;
-  private isAutoExecuting = false;
+  private ctx: ExecutionContext;
+  private executed = new Set<string>();
 
   constructor(context: ExecutionContext) {
-    this.context = context;
+    this.ctx = context;
   }
 
   /**
-   * Topologically group nodes into parallelizable execution levels,
-   * excluding targets of If-true/false edges.
+   * Find all "root" nodes: those with no incoming non-conditional edges.
+   * These are where we start our queue.
    */
-  getExecutionLevels(): string[][] {
-    console.log('🔥 Building execution levels…');
+  private getRootNodeIds(): string[] {
+    const conditionalTargets = new Set(
+      this.ctx.edges
+        .filter(e => {
+          const srcDef = this.ctx.nodes.find(n => n.id === e.source)?.data?.definition as any;
+          return srcDef?.name === 'If' &&
+                 (e.sourceHandle === 'true' || e.sourceHandle === 'false');
+        })
+        .map(e => e.target)
+    );
 
-    // 1) Identify nodes that only get triggered by If(true/false)
-    const conditionalTargets = new Set<string>();
-    this.context.edges.forEach(edge => {
-      const src = this.context.nodes.find(n => n.id === edge.source);
-      if (src?.data?.definition?.name === 'If' &&
-          (edge.sourceHandle === 'true' || edge.sourceHandle === 'false')) {
-        conditionalTargets.add(edge.target);
-        console.log(`🚫 Excluding conditional target: ${edge.target}`);
+    const nonConditionalIncomings = new Map<string, number>();
+    this.ctx.nodes.forEach(n => nonConditionalIncomings.set(n.id, 0));
+
+    this.ctx.edges.forEach(e => {
+      // skip conditional handles
+      const srcDef = this.ctx.nodes.find(n => n.id === e.source)?.data?.definition as any;
+      const isCond = srcDef?.name === 'If' &&
+                     (e.sourceHandle === 'true' || e.sourceHandle === 'false');
+      if (!isCond && nonConditionalIncomings.has(e.target)) {
+        nonConditionalIncomings.set(e.target, nonConditionalIncomings.get(e.target)! + 1);
       }
     });
 
-    // 2) Build in-degree & adjacency for the rest
-    const nodeIds = this.context.nodes
-      .map(n => n.id)
-      .filter(id => !conditionalTargets.has(id));
-
-    const inDegree = new Map<string, number>();
-    const adjList = new Map<string, string[]>();
-    nodeIds.forEach(id => { inDegree.set(id, 0); adjList.set(id, []); });
-
-    this.context.edges.forEach(edge => {
-      const { source, target } = edge;
-      if (adjList.has(source))   adjList.get(source)!.push(target);
-      if (inDegree.has(target))  inDegree.set(target, inDegree.get(target)! + 1);
-    });
-
-    // 3) Kahn’s algorithm
-    const levels: string[][] = [];
-    const deg = new Map(inDegree);
-    while (deg.size > 0) {
-      const zero = [...deg.entries()].filter(([, d]) => d === 0).map(([id]) => id);
-      if (zero.length === 0) {
-        console.warn('⚠️ Circular dependency detected');
-        break;
-      }
-      levels.push(zero);
-      zero.forEach(id => {
-        deg.delete(id);
-        adjList.get(id)!.forEach(neigh => {
-          if (deg.has(neigh)) deg.set(neigh, deg.get(neigh)! - 1);
-        });
-      });
-    }
-
-    console.log('🎯 Execution levels:', levels);
-    return levels;
+    // roots = those with zero non-conditional incoming edges
+    return [...nonConditionalIncomings.entries()]
+      .filter(([, deg]) => deg === 0)
+      .map(([id]) => id);
   }
 
   /**
-   * Recursively execute from a given node, handling If-branches
-   */
-  async executeConditionalChain(
-    startNodeId: string,
-    completed: Set<string>
-  ): Promise<void> {
-    console.log(`🔄 Chain start: ${startNodeId}`);
-
-    await new Promise<void>(resolve => {
-      const detail: NodeExecutionDetail = {
-        nodeId: startNodeId,
-        executedNodes: completed,
-        allNodes: this.context.nodes,
-        allEdges: this.context.edges,
-        explicitlyTriggered: true,
-        onSuccess: async result => {
-          completed.add(startNodeId);
-          const nodeDef = this.context.nodes.find(n => n.id === startNodeId)?.data.definition;
-          if (nodeDef?.name === 'If') {
-            await this.handleIfNodeResult(startNodeId, result, completed);
-          } else {
-            await this.executeDownstreamNodes(startNodeId, completed);
-          }
-          resolve();
-        },
-        onError: () => {
-          console.error(`❌ Failed: ${startNodeId}`);
-          resolve(); // swallow errors
-        }
-      };
-      window.dispatchEvent(new CustomEvent('auto-execute-node', { detail }));
-    });
-  }
-
-  /**
-   * Fire the correct true/false branch of an If node
-   */
-  private async handleIfNodeResult(
-    nodeId: string,
-    result: any,
-    completed: Set<string>
-  ): Promise<void> {
-    const takeTrue = result?.true === true;
-    console.log(`🔀 If ${nodeId} → ${takeTrue ? 'true' : 'false'}`);
-    const outgoing = this.context.edges.filter(e => e.source === nodeId);
-    const edge = outgoing.find(e => e.sourceHandle === (takeTrue ? 'true' : 'false'));
-    if (edge) {
-      await this.executeConditionalChain(edge.target, completed);
-    }
-  }
-
-  /**
-   * Trigger all non-conditional downstream edges in parallel
-   */
-  private async executeDownstreamNodes(
-    nodeId: string,
-    completed: Set<string>
-  ): Promise<void> {
-    const downstream = this.context.edges.filter(e => {
-      if (e.source !== nodeId) return false;
-      const srcDef = this.context.nodes.find(n => n.id === nodeId)?.data.definition;
-      return !(srcDef?.name === 'If' &&
-               (e.sourceHandle === 'true' || e.sourceHandle === 'false'));
-    });
-
-    await Promise.all(downstream.map(e => this.executeConditionalChain(e.target, completed)));
-  }
-
-  /**
-   * Execute a single node (visual highlight + event dispatch)
-   */
-  async executeNode(
-    nodeId: string,
-    completed: Set<string>
-  ): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.context.setExecutingNode(nodeId);
-      const connected = this.context.edges.filter(
-        e => e.source === nodeId || e.target === nodeId
-      );
-
-      this.context.setEdges(ed =>
-        ed.map(edge =>
-          connected.some(c => c.id === edge.id)
-            ? {
-                ...edge,
-                animated: true,
-                className: 'executing-edge',
-                style: {
-                  ...edge.style,
-                  stroke: '#22c55e',
-                  strokeWidth: 3,
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round'
-                }
-              }
-            : edge
-        )
-      );
-
-      this.context.setNodes(nds =>
-        nds.map(n =>
-          n.id === nodeId
-            ? {
-                ...n,
-                className: 'executing-node',
-                style: {
-                  ...n.style,
-                  border: '3px solid #22c55e',
-                  backgroundColor: '#f0fdf4',
-                  boxShadow: '0 0 20px rgba(34,197,94,0.4)'
-                }
-              }
-            : n
-        )
-      );
-
-      const detail: NodeExecutionDetail = {
-        nodeId,
-        executedNodes: completed,
-        allNodes: this.context.nodes,
-        allEdges: this.context.edges,
-        onSuccess: async res => {
-          const def = this.context.nodes.find(n => n.id === nodeId)?.data.definition;
-          if (def?.name === 'If') {
-            await this.handleIfNodeResult(nodeId, res, completed);
-          }
-          resolve();
-        },
-        onError: err => {
-          console.error(`❌ Node ${nodeId} error:`, err);
-          reject(err);
-        }
-      };
-      window.dispatchEvent(new CustomEvent('auto-execute-node', { detail }));
-    });
-  }
-
-  /**
-   * Drive the full batch execution in topological order
+   * Run the entire workflow dynamically.
+   * Starts from all root nodes.
    */
   async executeAllNodes(): Promise<void> {
-    if (this.isAutoExecuting) return;
-    const levels = this.getExecutionLevels();
-    if (!levels.length || levels.every(l => !l.length)) {
-      this.context.toast({ title: 'No Nodes', description: 'Nothing to execute', variant: 'destructive' });
+    // Reset state
+    this.executed.clear();
+    this.ctx.setExecutingNode(null);
+
+    const queue = this.getRootNodeIds().slice();
+    if (queue.length === 0) {
+      this.ctx.toast({
+        title: 'No start nodes',
+        description: 'No entry points found',
+        variant: 'destructive',
+      });
       return;
     }
 
-    this.isAutoExecuting = true;
-    try {
-      for (let i = 0; i < levels.length; i++) {
-        const lvl = levels[i];
-        if (!lvl.length) continue;
-
-        console.log(`🔥 Level ${i + 1}: [${lvl.join(', ')}]`);
-        const done = new Set<string>();
-        for (let j = 0; j < i; j++) levels[j].forEach(id => done.add(id));
-
-        await Promise.all(lvl.map(id => this.executeNode(id, done)));
-        console.log(`✅ Level ${i + 1} done`);
+    while (queue.length) {
+      const nodeId = queue.shift()!;
+      if (this.executed.has(nodeId)) {
+        continue; // skip already-run
       }
-      this.context.toast({ title: 'Execution Complete', description: 'All nodes ran successfully' });
-    } catch (err) {
-      console.error('❌ Execution failure:', err);
-      this.context.toast({
-        title: 'Execution Failed',
-        description: err instanceof Error ? err.message : 'Unknown error',
-        variant: 'destructive'
-      });
-    } finally {
-      this.isAutoExecuting = false;
-      this.context.setExecutingNode(null);
-      this.context.setEdges(ed => ed.map(e => ({ ...e, animated: false, className: '', style: {} })));
-      this.context.setNodes(nds => nds.map(n => ({ ...n, className: '', style: {} })));
+      this.executed.add(nodeId);
+
+      // Highlight current node
+      this.ctx.setExecutingNode(nodeId);
+
+      let result: any = {};
+      try {
+        result = await this.executeNode(nodeId);
+      } catch (err) {
+        // onError inside executeNode already toasts
+        continue;
+      }
+
+      // Determine next nodes
+      const srcDef = this.ctx.nodes.find(n => n.id === nodeId)?.data?.definition as any;
+      const outgoing = this.ctx.edges.filter(e => e.source === nodeId);
+      if (srcDef?.name === 'If') {
+        // follow only the matching handle
+        const takeTrue = !!result.true;
+        outgoing
+          .filter(e => e.sourceHandle === (takeTrue ? 'true' : 'false'))
+          .forEach(e => queue.push(e.target));
+      } else {
+        // follow all outgoing
+        outgoing.forEach(e => queue.push(e.target));
+      }
     }
+
+    // Cleanup UI state
+    this.ctx.setExecutingNode(null);
+    this.ctx.toast({
+      title: 'Execution Complete',
+      description: 'All runnable nodes have executed.',
+    });
   }
 
-  /** For external control if needed */
-  setAutoExecuting(value: boolean) { this.isAutoExecuting = value; }
-  getIsAutoExecuting(): boolean { return this.isAutoExecuting; }
+  /**
+   * Execute one node by dispatching the custom event.
+   * Resolves with the node's "result" payload.
+   */
+  private executeNode(nodeId: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const detail: NodeExecutionDetail = {
+        nodeId,
+        executedNodes: new Set(this.executed),
+        allNodes: this.ctx.nodes,
+        allEdges: this.ctx.edges,
+        explicitlyTriggered: true,
+        onSuccess: (res?: any) => resolve(res || {}),
+        onError: (err: any) => {
+          console.error(`Node ${nodeId} failed:`, err);
+          this.ctx.toast({
+            title: 'Node Error',
+            description: err?.message || String(err),
+            variant: 'destructive',
+          });
+          // resolve empty so the queue continues
+          resolve({});
+        },
+      };
+
+      window.dispatchEvent(new CustomEvent('auto-execute-node', { detail }));
+    });
+  }
+
+  /** Optional: expose whether an execution is in flight */
+  isExecuting(): boolean {
+    return this.executed.size > 0;
+  }
+
+  /** Legacy compatibility method */
+  getIsAutoExecuting(): boolean {
+    return this.isExecuting();
+  }
 }

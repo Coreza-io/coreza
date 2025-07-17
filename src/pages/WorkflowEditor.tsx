@@ -137,7 +137,24 @@ const WorkflowEditor = () => {
   const getExecutionLevels = useCallback(() => {
     console.log("🔥 Building execution levels...");
     
-    const nodeIds = nodes.map(node => node.id);
+    // First, identify all nodes that are targets of conditional edges (true/false paths from If nodes)
+    const conditionalTargetNodes = new Set<string>();
+    
+    edges.forEach(edge => {
+      const sourceNode = nodes.find(n => n.id === edge.source);
+      if (sourceNode && (sourceNode.data?.definition as any)?.name === "If") {
+        if (edge.sourceHandle === 'true' || edge.sourceHandle === 'false') {
+          conditionalTargetNodes.add(edge.target);
+          console.log(`🚫 Excluding conditional target from auto-execution: ${edge.target} (from If node: ${edge.source})`);
+        }
+      }
+    });
+    
+    // Only include nodes that are NOT conditional targets in execution levels
+    const nodeIds = nodes.map(node => node.id).filter(id => !conditionalTargetNodes.has(id));
+    console.log(`✅ Nodes included in auto-execution:`, nodeIds);
+    console.log(`🚫 Conditional targets excluded:`, Array.from(conditionalTargetNodes));
+    
     const inDegree = new Map<string, number>();
     const adjList = new Map<string, string[]>();
     

@@ -9,6 +9,14 @@ export interface ExecutionContext {
   toast: (params: any) => void;
 }
 
+export interface ExecutionMetrics {
+  startTime: number;
+  nodeTimings: Map<string, number>;
+  totalNodes: number;
+  failedNodes: Set<string>;
+  completedNodes: Set<string>;
+}
+
 export interface NodeExecutionDetail {
   nodeId: string;
   executedNodes: Set<string>;
@@ -22,9 +30,59 @@ export interface NodeExecutionDetail {
 export class WorkflowExecutor {
   private context: ExecutionContext;
   private isAutoExecuting = false;
+  private conditionalMap = new Map<string, { trueTarget?: string, falseTarget?: string }>();
 
   constructor(context: ExecutionContext) {
     this.context = context;
+    this.preCalculateConditionalBranches();
+  }
+
+  /**
+   * Pre-calculate conditional branches for optimization
+   */
+  private preCalculateConditionalBranches(): void {
+    this.conditionalMap.clear();
+    this.context.edges.forEach(edge => {
+      const sourceNode = this.context.nodes.find(n => n.id === edge.source);
+      if ((sourceNode?.data?.definition as any)?.name === 'If') {
+        const entry = this.conditionalMap.get(edge.source) || {};
+        if (edge.sourceHandle === 'true') entry.trueTarget = edge.target;
+        if (edge.sourceHandle === 'false') entry.falseTarget = edge.target;
+        this.conditionalMap.set(edge.source, entry);
+      }
+    });
+  }
+
+  /**
+   * Detect cycles in the workflow graph
+   */
+  private detectCycles(): boolean {
+    const visitedInCycle = new Set<string>();
+    const inCurrentPath = new Set<string>();
+
+    const hasCycle = (nodeId: string): boolean => {
+      if (inCurrentPath.has(nodeId)) return true;
+      if (visitedInCycle.has(nodeId)) return false;
+      
+      visitedInCycle.add(nodeId);
+      inCurrentPath.add(nodeId);
+      
+      const outgoing = this.context.edges.filter(e => e.source === nodeId);
+      for (const edge of outgoing) {
+        if (hasCycle(edge.target)) return true;
+      }
+      
+      inCurrentPath.delete(nodeId);
+      return false;
+    };
+
+    for (const node of this.context.nodes) {
+      if (!visitedInCycle.has(node.id) && hasCycle(node.id)) {
+        console.error(`🔄 Cycle detected starting from node: ${node.id}`);
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -67,7 +125,7 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Handle If node result and execute appropriate conditional path
+   * Handle If node result and execute appropriate conditional path (optimized)
    */
   private async handleIfNodeResult(
     nodeId: string,
@@ -77,14 +135,12 @@ export class WorkflowExecutor {
     const condition = !!result;
     console.log(`🔀 If node ${nodeId} branch: ${condition}`);
 
-    const outgoing = this.context.edges.filter(e => e.source === nodeId);
-    const activeEdge = condition
-      ? outgoing.find(e => e.sourceHandle === 'true')
-      : outgoing.find(e => e.sourceHandle === 'false');
+    const conditionalBranch = this.conditionalMap.get(nodeId);
+    const targetNodeId = condition ? conditionalBranch?.trueTarget : conditionalBranch?.falseTarget;
 
-    if (activeEdge) {
-      console.log(`👉 Executing branch to ${activeEdge.target}`);
-      await this.executeConditionalChain(activeEdge.target, completedNodes);
+    if (targetNodeId) {
+      console.log(`👉 Executing optimized branch to ${targetNodeId}`);
+      await this.executeConditionalChain(targetNodeId, completedNodes);
     }
   }
 
@@ -166,53 +222,143 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Execute all nodes using a FIFO queue, respecting dependencies and branching
+   * Execute all nodes using optimized FIFO queue with cycle detection and retry limits
    */
   async executeAllNodes(): Promise<void> {
-    console.log('🚀 Starting FIFO queue‑based workflow execution');
+    console.log('🚀 [WORKFLOW EXECUTOR] Starting optimized FIFO queue‑based workflow execution');
 
     if (this.isAutoExecuting) {
-      console.log('⚠️ FIFO queue‑based execution already in progress');
+      console.log('⚠️ [WORKFLOW EXECUTOR] Execution already in progress');
       return;
     }
+
+    // Check for cycles first
+    if (this.detectCycles()) {
+      const error = 'Circular dependency detected in workflow';
+      console.error(`❌ [WORKFLOW EXECUTOR] ${error}`);
+      this.context.toast({ title: 'Workflow Error', description: error, variant: 'destructive' });
+      return;
+    }
+
     this.isAutoExecuting = true;
+    this.preCalculateConditionalBranches(); // Refresh conditional map
+
+    // Initialize execution metrics
+    const metrics: ExecutionMetrics = {
+      startTime: performance.now(),
+      nodeTimings: new Map(),
+      totalNodes: this.context.nodes.length,
+      failedNodes: new Set(),
+      completedNodes: new Set()
+    };
 
     const executed = new Set<string>();
+    const failed = new Set<string>();
+    const retryCount = new Map<string, number>();
+    const MAX_RETRIES = this.context.nodes.length * 2;
+
     const roots = this.context.nodes
       .filter(n => !this.context.edges.some(e => e.target === n.id))
       .map(n => n.id);
     const queue: string[] = [...roots];
 
+    console.log(`🎯 [WORKFLOW EXECUTOR] Found ${roots.length} root nodes:`, roots);
+
     try {
       while (queue.length) {
         const id = queue.shift()!;
-        if (executed.has(id)) continue;
+        if (executed.has(id) || failed.has(id)) continue;
 
         const inc = this.context.edges.filter(e => e.target === id);
-        const missing = inc.filter(e => !executed.has(e.source));
+        const missing = inc.filter(e => !executed.has(e.source) && !failed.has(e.source));
+        
         if (missing.length) {
+          const retries = retryCount.get(id) || 0;
+          if (retries >= MAX_RETRIES) {
+            console.error(`❌ [WORKFLOW EXECUTOR] Node ${id} exceeded retry limit (${MAX_RETRIES}), marking as failed`);
+            failed.add(id);
+            metrics.failedNodes.add(id);
+            continue;
+          }
+          retryCount.set(id, retries + 1);
           queue.push(id);
           continue;
         }
 
-        const result = await this.executeNode(id, executed);
-        executed.add(id);
+        console.log(`⚡ [WORKFLOW EXECUTOR] Executing node: ${id}`);
+        const nodeStart = performance.now();
 
-        const out = this.context.edges.filter(e => e.source === id);
-        const node = this.context.nodes.find(n => n.id === id);
-        const next =
-          node?.data.definition.name === 'If'
-            ? [(result ? out.find(e => e.sourceHandle === 'true') : out.find(e => e.sourceHandle === 'false'))].filter(Boolean)
-            : out;
+        try {
+          const result = await this.executeNode(id, executed);
+          const nodeTime = performance.now() - nodeStart;
+          metrics.nodeTimings.set(id, nodeTime);
+          
+          executed.add(id);
+          metrics.completedNodes.add(id);
+          console.log(`✅ [WORKFLOW EXECUTOR] Node ${id} completed in ${nodeTime.toFixed(2)}ms`);
 
-        next.forEach(e => queue.push(e.target));
+          const out = this.context.edges.filter(e => e.source === id);
+          const node = this.context.nodes.find(n => n.id === id);
+          
+          // Use optimized conditional branch handling
+          let next: Edge[] = [];
+          if ((node?.data?.definition as any)?.name === 'If') {
+            const conditionalBranch = this.conditionalMap.get(id);
+            const targetNodeId = result ? conditionalBranch?.trueTarget : conditionalBranch?.falseTarget;
+            if (targetNodeId) {
+              const targetEdge = out.find(e => e.target === targetNodeId);
+              if (targetEdge) next = [targetEdge];
+            }
+          } else {
+            next = out;
+          }
+
+          next.forEach(e => {
+            if (!queue.includes(e.target)) {
+              queue.push(e.target);
+            }
+          });
+        } catch (error) {
+          const nodeTime = performance.now() - nodeStart;
+          metrics.nodeTimings.set(id, nodeTime);
+          failed.add(id);
+          metrics.failedNodes.add(id);
+          console.error(`❌ [WORKFLOW EXECUTOR] Node ${id} failed after ${nodeTime.toFixed(2)}ms:`, error);
+          
+          // Continue execution of non-dependent nodes
+          const independentNodes = this.context.nodes.filter(n => 
+            !executed.has(n.id) && 
+            !failed.has(n.id) && 
+            !queue.includes(n.id) &&
+            !this.context.edges.some(e => e.target === n.id && e.source === id)
+          );
+          independentNodes.forEach(n => queue.push(n.id));
+        }
       }
 
-      console.log('🎉 FIFO queue‑based execution complete');
-      this.context.toast({ title: 'Queue Execution Complete', description: 'All workflow nodes executed successfully' });
-    } catch (err) {
-      console.error('❌ FIFO queue‑based execution error:', err);
-      this.context.toast({ title: 'Queue Execution Error', description: err.message || String(err), variant: 'destructive' });
+      const totalTime = performance.now() - metrics.startTime;
+      const successCount = metrics.completedNodes.size;
+      const failureCount = metrics.failedNodes.size;
+
+      console.log(`🎉 [WORKFLOW EXECUTOR] Execution complete in ${totalTime.toFixed(2)}ms`);
+      console.log(`📊 [WORKFLOW EXECUTOR] Results: ${successCount} succeeded, ${failureCount} failed`);
+      
+      if (metrics.nodeTimings.size > 0) {
+        const avgTime = Array.from(metrics.nodeTimings.values()).reduce((a, b) => a + b, 0) / metrics.nodeTimings.size;
+        console.log(`⏱️ [WORKFLOW EXECUTOR] Average node execution time: ${avgTime.toFixed(2)}ms`);
+      }
+
+      this.context.toast({ 
+        title: 'Workflow Execution Complete', 
+        description: `${successCount} nodes succeeded${failureCount > 0 ? `, ${failureCount} failed` : ''}` 
+      });
+    } catch (err: any) {
+      console.error('❌ [WORKFLOW EXECUTOR] Critical execution error:', err);
+      this.context.toast({ 
+        title: 'Workflow Execution Error', 
+        description: err.message || String(err), 
+        variant: 'destructive' 
+      });
     } finally {
       this.isAutoExecuting = false;
       this.context.setExecutingNode(null);

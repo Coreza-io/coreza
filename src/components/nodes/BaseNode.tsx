@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
@@ -68,6 +68,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const edges = useEdges();
   const { setNodes } = useReactFlow();
   const { user } = useAuth();
+  const isMounted = useRef(true);
 
   const definition = data.definition || data.config;
   const displayName = useMemo(
@@ -608,12 +609,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         
         console.log(`✅ All dependencies ready for node: ${nodeId}, proceeding with execution`);
         
+        let timeoutId: NodeJS.Timeout;
+        
         try {
           // Execute the node logic and capture the result
           await handleSubmit();
           
           // Use a small delay to ensure the setNodes callback has updated the state
-          setTimeout(() => {
+          timeoutId = setTimeout(() => {
+            // Check if component is still mounted before proceeding
+            if (!isMounted.current) {
+              console.log(`⚠️ Node ${nodeId} unmounted, skipping timeout callback`);
+              return;
+            }
+            
             // Re-fetch the nodes to get the most current state
             setNodes((currentNodes) => {
               const currentNode = currentNodes.find(n => n.id === nodeId);
@@ -637,6 +646,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           }, 300); // Give sufficient time for state updates
         } catch (executionError) {
           console.error(`❌ Node ${nodeId} execution failed:`, executionError);
+          // Clear timeout on error
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
           // Call error callback if provided
           if (event.detail.onError) {
             event.detail.onError(executionError);
@@ -647,6 +660,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
     window.addEventListener('auto-execute-node', handleAutoExecute as EventListener);
     return () => {
+      isMounted.current = false;
       window.removeEventListener('auto-execute-node', handleAutoExecute as EventListener);
     };
   }, [nodeId, handleSubmit, error, lastOutput]);

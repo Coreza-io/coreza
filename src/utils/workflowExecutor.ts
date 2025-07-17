@@ -50,8 +50,8 @@ export class WorkflowExecutor {
       .map(n => n.id)
       .filter(id => !conditionalTargets.has(id));
 
-    const inDegree  = new Map<string, number>();
-    const adjList   = new Map<string, string[]>();
+    const inDegree = new Map<string, number>();
+    const adjList = new Map<string, string[]>();
     nodeIds.forEach(id => { inDegree.set(id, 0); adjList.set(id, []); });
 
     this.context.edges.forEach(edge => {
@@ -64,7 +64,7 @@ export class WorkflowExecutor {
     const levels: string[][] = [];
     const deg = new Map(inDegree);
     while (deg.size > 0) {
-      const zero  = [...deg.entries()].filter(([, d]) => d === 0).map(([id]) => id);
+      const zero = [...deg.entries()].filter(([, d]) => d === 0).map(([id]) => id);
       if (zero.length === 0) {
         console.warn('⚠️ Circular dependency detected');
         break;
@@ -90,18 +90,18 @@ export class WorkflowExecutor {
     completed: Set<string>
   ): Promise<void> {
     console.log(`🔄 Chain start: ${startNodeId}`);
-    await new Promise<void>((resolve) => {
+
+    await new Promise<void>(resolve => {
       const detail: NodeExecutionDetail = {
         nodeId: startNodeId,
         executedNodes: completed,
         allNodes: this.context.nodes,
         allEdges: this.context.edges,
-        onSuccess: async (result?: any) => {
+        explicitlyTriggered: true,
+        onSuccess: async result => {
           completed.add(startNodeId);
-          const nodeDef = this.context.nodes.find(n => n.id === startNodeId)
-                              ?.data.definition;
+          const nodeDef = this.context.nodes.find(n => n.id === startNodeId)?.data.definition;
           if (nodeDef?.name === 'If') {
-            // Await whichever branch is taken
             await this.handleIfNodeResult(startNodeId, result, completed);
           } else {
             await this.executeDownstreamNodes(startNodeId, completed);
@@ -110,10 +110,9 @@ export class WorkflowExecutor {
         },
         onError: () => {
           console.error(`❌ Failed: ${startNodeId}`);
-          resolve();  // swallow errors in chain
+          resolve(); // swallow errors
         }
       };
-
       window.dispatchEvent(new CustomEvent('auto-execute-node', { detail }));
     });
   }
@@ -129,7 +128,7 @@ export class WorkflowExecutor {
     const takeTrue = result?.true === true;
     console.log(`🔀 If ${nodeId} → ${takeTrue ? 'true' : 'false'}`);
     const outgoing = this.context.edges.filter(e => e.source === nodeId);
-    const edge     = outgoing.find(e => e.sourceHandle === (takeTrue ? 'true' : 'false'));
+    const edge = outgoing.find(e => e.sourceHandle === (takeTrue ? 'true' : 'false'));
     if (edge) {
       await this.executeConditionalChain(edge.target, completed);
     }
@@ -145,14 +144,11 @@ export class WorkflowExecutor {
     const downstream = this.context.edges.filter(e => {
       if (e.source !== nodeId) return false;
       const srcDef = this.context.nodes.find(n => n.id === nodeId)?.data.definition;
-      // exclude If(true/false) handles
       return !(srcDef?.name === 'If' &&
                (e.sourceHandle === 'true' || e.sourceHandle === 'false'));
     });
 
-    await Promise.all(
-      downstream.map(e => this.executeConditionalChain(e.target, completed))
-    );
+    await Promise.all(downstream.map(e => this.executeConditionalChain(e.target, completed)));
   }
 
   /**
@@ -163,50 +159,60 @@ export class WorkflowExecutor {
     completed: Set<string>
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      // 1) highlight node & its edges
       this.context.setExecutingNode(nodeId);
-      const connected = this.context.edges.filter(e => e.source === nodeId || e.target === nodeId);
+      const connected = this.context.edges.filter(
+        e => e.source === nodeId || e.target === nodeId
+      );
+
       this.context.setEdges(ed =>
         ed.map(edge =>
           connected.some(c => c.id === edge.id)
-            ? { ...edge, animated: true, className: 'executing-edge', style: {
-                ...edge.style,
-                stroke:      '#22c55e',
-                strokeWidth: 3,
-                strokeLinecap: 'round',
-                strokeLinejoin:'round'
-              }}
+            ? {
+                ...edge,
+                animated: true,
+                className: 'executing-edge',
+                style: {
+                  ...edge.style,
+                  stroke: '#22c55e',
+                  strokeWidth: 3,
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round'
+                }
+              }
             : edge
         )
       );
+
       this.context.setNodes(nds =>
         nds.map(n =>
           n.id === nodeId
-            ? { ...n, className: 'executing-node', style: {
-                ...n.style,
-                border:          '3px solid #22c55e',
-                backgroundColor: '#f0fdf4',
-                boxShadow:       '0 0 20px rgba(34,197,94,0.4)'
-              } }
+            ? {
+                ...n,
+                className: 'executing-node',
+                style: {
+                  ...n.style,
+                  border: '3px solid #22c55e',
+                  backgroundColor: '#f0fdf4',
+                  boxShadow: '0 0 20px rgba(34,197,94,0.4)'
+                }
+              }
             : n
         )
       );
 
-      // 2) dispatch event
       const detail: NodeExecutionDetail = {
         nodeId,
         executedNodes: completed,
         allNodes: this.context.nodes,
         allEdges: this.context.edges,
-        onSuccess: async (res?: any) => {
-          // After basic node logic, chain any conditionals
+        onSuccess: async res => {
           const def = this.context.nodes.find(n => n.id === nodeId)?.data.definition;
           if (def?.name === 'If') {
             await this.handleIfNodeResult(nodeId, res, completed);
           }
           resolve();
         },
-        onError: (err: any) => {
+        onError: err => {
           console.error(`❌ Node ${nodeId} error:`, err);
           reject(err);
         }
@@ -232,14 +238,12 @@ export class WorkflowExecutor {
         const lvl = levels[i];
         if (!lvl.length) continue;
 
-        console.log(`🔥 Level ${i+1}: [${lvl.join(', ')}]`);
-        // Build the completed set up to this point
+        console.log(`🔥 Level ${i + 1}: [${lvl.join(', ')}]`);
         const done = new Set<string>();
         for (let j = 0; j < i; j++) levels[j].forEach(id => done.add(id));
 
-        // Run them all in parallel (each will fan out into conditionals)
         await Promise.all(lvl.map(id => this.executeNode(id, done)));
-        console.log(`✅ Level ${i+1} done`);
+        console.log(`✅ Level ${i + 1} done`);
       }
       this.context.toast({ title: 'Execution Complete', description: 'All nodes ran successfully' });
     } catch (err) {
@@ -252,14 +256,8 @@ export class WorkflowExecutor {
     } finally {
       this.isAutoExecuting = false;
       this.context.setExecutingNode(null);
-
-      // Reset visuals
-      this.context.setEdges(ed =>
-        ed.map(e => ({ ...e, animated: false, className: '', style: {} }))
-      );
-      this.context.setNodes(nds =>
-        nds.map(n => ({ ...n, className: '', style: {} }))
-      );
+      this.context.setEdges(ed => ed.map(e => ({ ...e, animated: false, className: '', style: {} })));
+      this.context.setNodes(nds => nds.map(n => ({ ...n, className: '', style: {} })));
     }
   }
 

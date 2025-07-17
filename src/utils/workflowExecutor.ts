@@ -167,17 +167,27 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Highlight edges connected to a node
+   * Highlight edges connected to a node, optionally specific to a target
    */
-  private highlightEdges(nodeId: string): void {
-    const connected = this.context.edges.filter(
-      e => e.source === nodeId || e.target === nodeId
-    );
+  private highlightEdges(nodeId: string, targetNodeId?: string): void {
+    let connected;
+    if (targetNodeId) {
+      // Highlight only the specific edge from source to target (for conditional paths)
+      connected = this.context.edges.filter(
+        e => e.source === nodeId && e.target === targetNodeId
+      );
+    } else {
+      // Highlight all edges connected to the node
+      connected = this.context.edges.filter(
+        e => e.source === nodeId || e.target === nodeId
+      );
+    }
+    
     this.context.setEdges(edges =>
       edges.map(edge =>
         connected.some(c => c.id === edge.id)
           ? { ...edge, animated: true, className: 'executing-edge', style: { ...edge.style, stroke: '#22c55e', strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' } }
-          : edge
+          : { ...edge, animated: false, className: '', style: { ...edge.style, stroke: undefined, strokeWidth: undefined } }
       )
     );
   }
@@ -310,6 +320,7 @@ export class WorkflowExecutor {
           // Use optimized conditional branch handling
           let next: Edge[] = [];
           let isConditionalExecution = false;
+          let conditionalTargetId: string | undefined;
           
           if ((node?.data?.definition as any)?.name === 'If') {
             const conditionalBranch = this.conditionalMap.get(id);
@@ -319,6 +330,10 @@ export class WorkflowExecutor {
               if (targetEdge) {
                 next = [targetEdge];
                 isConditionalExecution = true;
+                conditionalTargetId = targetNodeId;
+                // Highlight the specific conditional path taken
+                console.log(`🔀 [WORKFLOW EXECUTOR] If node ${id} taking ${result ? 'TRUE' : 'FALSE'} path to ${targetNodeId}`);
+                this.highlightEdges(id, targetNodeId);
               }
             }
           } else {

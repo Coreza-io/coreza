@@ -161,19 +161,28 @@ const WorkflowEditor = () => {
     }));
 
     // Clean edges by removing execution-related properties
-    const cleanEdges = edges.map(edge => ({
-      id: edge.id,
-      type: edge.type,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      // Keep only the basic style properties, remove execution styling
-      style: {
-        strokeLinecap: edge.style?.strokeLinecap || 'round',
-        strokeLinejoin: edge.style?.strokeLinejoin || 'round',
+    const cleanEdges = edges.map(edge => {
+      const cleanEdge: any = {
+        id: edge.id,
+        type: edge.type,
+        source: edge.source,
+        target: edge.target,
+      };
+      
+      // Only include handles if they exist
+      if (edge.sourceHandle) cleanEdge.sourceHandle = edge.sourceHandle;
+      if (edge.targetHandle) cleanEdge.targetHandle = edge.targetHandle;
+      
+      // Only include basic style properties (no execution styling)
+      if (edge.style?.strokeLinecap || edge.style?.strokeLinejoin) {
+        cleanEdge.style = {
+          strokeLinecap: edge.style?.strokeLinecap || 'round',
+          strokeLinejoin: edge.style?.strokeLinejoin || 'round',
+        };
       }
-    }));
+      
+      return cleanEdge;
+    });
 
     const payload = {
       user_id: authUser.id,

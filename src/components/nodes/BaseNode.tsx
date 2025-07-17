@@ -15,14 +15,6 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   const idx = sameType.findIndex((n) => n.id === node.id);
   const result = idx > 0 ? `${baseName}${idx}` : baseName;
   
-  console.log(`🏷️ getDisplayName for node ${node.id}:`, {
-    baseName,
-    nodeType: node.data.definition?.name || node.data.config?.name,
-    sameTypeNodes: sameType.map(n => ({ id: n.id, name: n.data.definition?.name || n.data.config?.name })),
-    indexInArray: idx,
-    finalDisplayName: result
-  });
-  
   return result;
 };
 
@@ -185,30 +177,26 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     e: React.DragEvent,
     currentValue: string
   ) => {
-    console.log("🎯 HANDLE DROP TRIGGERED!", { fieldKey, currentValue });
-    console.log("📦 Event types:", Array.from(e.dataTransfer.types));
-    console.log("📦 Event effectAllowed:", e.dataTransfer.effectAllowed);
-    console.log("📦 Event dropEffect:", e.dataTransfer.dropEffect);
     
     e.preventDefault();
     e.stopPropagation();
     
     try {
       const raw = e.dataTransfer.getData("application/reactflow");
-      console.log("📦 Raw data retrieved:", raw);
+     
       
       if (!raw) {
-        console.warn("❌ No data found in dataTransfer!");
+        
         // Try alternative data types
         for (const type of e.dataTransfer.types) {
           const altData = e.dataTransfer.getData(type);
-          console.log(`📦 Alternative data (${type}):`, altData);
+          
         }
         return;
       }
       
       const data = JSON.parse(raw);
-      console.log("📦 Parsed data:", data);
+      
       
       // Handle both old format (direct keyPath) and new format (structured object)
       let keyPath;
@@ -229,12 +217,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
       const newValue = currentValue + insert;
       
-      console.log("✅ Successfully processed drop:", { 
-        keyPath, 
-        sourceDisplayName, 
-        insert, 
-        newValue 
-      });
       
       setter(newValue);
       handleChange(fieldKey, newValue);
@@ -275,28 +257,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       allNodeData[displayName] = nodeData;
     });
     
-    console.log("🔍 Preview Debug:", {
-      fieldKey,
-      expr,
-      srcId,
-      srcNode: srcNode?.data,
-      srcData,
-      allNodeData,
-      selectedPrevNodeId
-    });
-    
     try {
       const resolved = resolveReferences(expr, srcData, allNodeData);
-      console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
+      //console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
       return summarizePreview(resolved);
     } catch (error) {
-      console.error("❌ Resolution error:", error);
+      //console.error("❌ Resolution error:", error);
       return "";
     }
   };
 
   const userId = user?.id;
-  console.log("userId from auth context:", userId);
+  //console.log("userId from auth context:", userId);
 
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
@@ -376,19 +348,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData: Record<string, any>,
     userId: string
   ): Record<string, any> {
-    console.log("🔧 BuildPayload Debug:", {
-      fieldState,
-      supportData,
-      selectedInputData,
-      userId
-    });
     
     // Create a map of all upstream node data by display name using the most current nodes data
     const allNodeData: Record<string, any> = {};
-    
-    console.log("🔧 DEBUGGING NODE MAPPING:");
-    console.log("🔧 Previous nodes:", previousNodes.map(n => ({ id: n.id, type: n.type, data: n.data })));
-    console.log("🔧 All nodes:", nodes.map(n => ({ id: n.id, type: n.type, data: n.data })));
     
     previousNodes.forEach(prevNode => {
       const displayName = getDisplayName(prevNode, nodes);
@@ -397,14 +359,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       // Get the most current version of this node from the nodes array
       const currentNode = nodes.find(n => n.id === prevNode.id);
       let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
-      
-      console.log(`🔧 Node data sources for ${displayName}:`, {
-        currentNodeOutput: currentNode?.data?.output,
-        currentNodeData: currentNode?.data,
-        prevNodeOutput: prevNode.data?.output,
-        prevNodeData: prevNode.data,
-        finalNodeData: nodeData
-      });
       
       // If nodeData is an array, get the first item
       if (Array.isArray(nodeData) && nodeData.length > 0) {

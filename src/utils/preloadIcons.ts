@@ -14,12 +14,18 @@ const getIconPaths = (): string[] => {
 export const preloadIcons = (): void => {
   const iconPaths = getIconPaths();
   
+  console.log(`🔄 Preloading ${iconPaths.length} icons:`, iconPaths);
+  
   iconPaths.forEach(iconPath => {
     const img = new Image();
     img.src = iconPath;
-    // Optional: Add error handling
+    
+    img.onload = () => {
+      console.log(`✅ Successfully preloaded icon: ${iconPath}`);
+    };
+    
     img.onerror = () => {
-      console.warn(`Failed to preload icon: ${iconPath}`);
+      console.error(`❌ Failed to preload icon: ${iconPath}`);
     };
   });
 };

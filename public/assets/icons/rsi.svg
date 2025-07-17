@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background circle -->
+  <circle cx="16" cy="16" r="15" fill="#F8FAFC" stroke="#8B5CF6" stroke-width="2"/>
+  
+  <!-- Chart grid lines -->
+  <path d="M6 10H26M6 16H26M6 22H26" stroke="#E5E7EB" stroke-width="0.5"/>
+  
+  <!-- RSI oscillator levels -->
+  <path d="M6 10H26" stroke="#EF4444" stroke-width="1" opacity="0.5"/>
+  <path d="M6 22H26" stroke="#10B981" stroke-width="1" opacity="0.5"/>
+  
+  <!-- RSI line -->
+  <path d="M6 18L9 20L12 14L15 12L18 16L21 19L24 15L26 17" stroke="#8B5CF6" stroke-width="2" fill="none"/>
+  
+  <!-- RSI text -->
+  <text x="16" y="8" text-anchor="middle" fill="#8B5CF6" font-family="Arial, sans-serif" font-size="4" font-weight="bold">RSI</text>
+  
+  <!-- Level indicators -->
+  <text x="2" y="11" fill="#EF4444" font-family="Arial, sans-serif" font-size="2">70</text>
+  <text x="2" y="23" fill="#10B981" font-family="Arial, sans-serif" font-size="2">30</text>
+</svg>

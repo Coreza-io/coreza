@@ -165,17 +165,19 @@ const WorkflowEditor = () => {
     });
     
     // Build adjacency list and calculate in-degrees
-    // EXCLUDE conditional edges (true/false paths) from automatic execution dependency calculation
-    // If nodes will handle their own path execution based on their result
+    // EXCLUDE conditional edges AND edges pointing to conditional targets
     const activeEdges = edges.filter(edge => {
+      // Skip if target is a conditional target node (excluded from execution levels)
+      if (conditionalTargetNodes.has(edge.target)) {
+        return false;
+      }
+      
       const sourceNode = nodes.find(n => n.id === edge.source);
       const isConditionalEdge = sourceNode && 
         (sourceNode.data?.definition as any)?.name === "If" && 
         (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
       
       // Exclude conditional edges from dependency calculation
-      // This allows If nodes to execute normally, but prevents their target nodes
-      // from auto-executing until the If node triggers the correct path
       return !isConditionalEdge;
     });
     

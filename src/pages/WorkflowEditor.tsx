@@ -137,9 +137,22 @@ const WorkflowEditor = () => {
   const getExecutionLevels = useCallback(() => {
     console.log("🔥 Building execution levels...");
     
-    // Include ALL nodes in execution levels - conditional logic will be handled during execution
-    const nodeIds = nodes.map(node => node.id);
-    console.log(`✅ All nodes included in execution levels:`, nodeIds);
+    // Identify nodes that are targets of conditional edges (true/false handles from If nodes)
+    const conditionalTargetNodes = new Set<string>();
+    edges.forEach(edge => {
+      const sourceNode = nodes.find(n => n.id === edge.source);
+      if (sourceNode && (sourceNode.data?.definition as any)?.name === "If") {
+        if (edge.sourceHandle === 'true' || edge.sourceHandle === 'false') {
+          conditionalTargetNodes.add(edge.target);
+          console.log(`🚫 Excluding conditional target from auto-execution: ${edge.target} (from If node: ${edge.source})`);
+        }
+      }
+    });
+    
+    // Only include nodes that are NOT conditional targets in automatic execution levels
+    const nodeIds = nodes.map(node => node.id).filter(id => !conditionalTargetNodes.has(id));
+    console.log(`✅ Nodes included in execution levels:`, nodeIds);
+    console.log(`🚫 Conditional targets excluded:`, Array.from(conditionalTargetNodes));
     
     const inDegree = new Map<string, number>();
     const adjList = new Map<string, string[]>();
@@ -406,7 +419,24 @@ const WorkflowEditor = () => {
                          });
                        };
                        
-                       executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
+                        // Explicitly trigger the conditional target with a flag
+                        const conditionalEvent = new CustomEvent('auto-execute-node', {
+                          detail: { 
+                            nodeId: activeEdge.target,
+                            executedNodes: new Set([...executedNodes, nodeId]),
+                            allNodes: nodes,
+                            allEdges: edges,
+                            explicitlyTriggered: true, // Flag to indicate this is an explicit trigger from If node
+                            onSuccess: (result?: any) => {
+                              console.log(`✅ Conditional target node ${activeEdge.target} executed successfully`);
+                              executeConditionalChain(activeEdge.target, new Set([...executedNodes, nodeId]));
+                            },
+                            onError: (error: any) => {
+                              console.error(`❌ Conditional node ${activeEdge.target} failed:`, error);
+                            }
+                          }
+                        });
+                        window.dispatchEvent(conditionalEvent);
                     }
                   }
                   

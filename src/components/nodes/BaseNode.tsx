@@ -567,6 +567,23 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       if (event.detail?.nodeId === nodeId) {
         console.log(`🚀 Auto-executing node: ${nodeId}`);
         
+        // Check if this node is a conditional target (should only execute when explicitly triggered)
+        if (event.detail.allEdges && event.detail.allNodes) {
+          const incomingEdges = event.detail.allEdges.filter((edge: any) => edge.target === nodeId);
+          const isConditionalTarget = incomingEdges.some((edge: any) => {
+            const sourceNode = event.detail.allNodes.find((n: any) => n.id === edge.source);
+            return sourceNode && 
+                   (sourceNode.data?.definition as any)?.name === "If" && 
+                   (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
+          });
+          
+          // If this is a conditional target and wasn't explicitly triggered by the If node, skip execution
+          if (isConditionalTarget && !event.detail.explicitlyTriggered) {
+            console.log(`🚫 Node ${nodeId} is a conditional target, skipping auto-execution (waiting for explicit trigger)`);
+            return;
+          }
+        }
+        
         // Check if all input dependencies have completed
         if (event.detail.executedNodes && event.detail.allEdges) {
           const incomingEdges = event.detail.allEdges.filter((edge: any) => edge.target === nodeId);

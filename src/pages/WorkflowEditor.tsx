@@ -137,23 +137,9 @@ const WorkflowEditor = () => {
   const getExecutionLevels = useCallback(() => {
     console.log("🔥 Building execution levels...");
     
-    // First, identify all nodes that are targets of conditional edges (true/false paths from If nodes)
-    const conditionalTargetNodes = new Set<string>();
-    
-    edges.forEach(edge => {
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      if (sourceNode && (sourceNode.data?.definition as any)?.name === "If") {
-        if (edge.sourceHandle === 'true' || edge.sourceHandle === 'false') {
-          conditionalTargetNodes.add(edge.target);
-          console.log(`🚫 Excluding conditional target from auto-execution: ${edge.target} (from If node: ${edge.source})`);
-        }
-      }
-    });
-    
-    // Only include nodes that are NOT conditional targets in execution levels
-    const nodeIds = nodes.map(node => node.id).filter(id => !conditionalTargetNodes.has(id));
-    console.log(`✅ Nodes included in auto-execution:`, nodeIds);
-    console.log(`🚫 Conditional targets excluded:`, Array.from(conditionalTargetNodes));
+    // Include ALL nodes in execution levels - conditional logic will be handled during execution
+    const nodeIds = nodes.map(node => node.id);
+    console.log(`✅ All nodes included in execution levels:`, nodeIds);
     
     const inDegree = new Map<string, number>();
     const adjList = new Map<string, string[]>();
@@ -165,21 +151,8 @@ const WorkflowEditor = () => {
     });
     
     // Build adjacency list and calculate in-degrees
-    // EXCLUDE conditional edges AND edges pointing to conditional targets
-    const activeEdges = edges.filter(edge => {
-      // Skip if target is a conditional target node (excluded from execution levels)
-      if (conditionalTargetNodes.has(edge.target)) {
-        return false;
-      }
-      
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      const isConditionalEdge = sourceNode && 
-        (sourceNode.data?.definition as any)?.name === "If" && 
-        (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
-      
-      // Exclude conditional edges from dependency calculation
-      return !isConditionalEdge;
-    });
+    // Include ALL edges for proper dependency calculation
+    const activeEdges = edges;
     
     console.log(`🔗 Active edges for dependency calculation:`, activeEdges.length);
     

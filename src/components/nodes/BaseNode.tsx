@@ -569,35 +569,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           // Execute the node logic and capture the result
           await handleSubmit();
           
-          // Use a small delay to ensure the setNodes callback has updated the state
-          timeoutId = setTimeout(() => {
-            // Check if component is still mounted before proceeding
-            if (!isMounted.current) {
-              console.log(`⚠️ Node ${nodeId} unmounted, skipping timeout callback`);
-              return;
-            }
-            
-            // Re-fetch the nodes to get the most current state
-            setNodes((currentNodes) => {
-              const currentNode = currentNodes.find(n => n.id === nodeId);
-              const actualResult = currentNode?.data?.output;
-              
-              console.log(`✅ Node ${nodeId} executed successfully with result:`, actualResult);
-              
-              // For If nodes and other nodes, extract the first item from the array if it's an array
-              let resultToPass = actualResult;
-              if (Array.isArray(actualResult) && actualResult.length > 0) {
-                resultToPass = actualResult[0];
-              }
-              
-              // Call success callback with the actual API response
-              if (event.detail.onSuccess) {
-                event.detail.onSuccess(resultToPass);
-              }
-              
-              return currentNodes; // Return unchanged nodes
-            });
-          }, 300); // Give sufficient time for state updates
+          // Get the result immediately after handleSubmit completes
+          const currentNode = nodes.find(n => n.id === nodeId);
+          const actualResult = currentNode?.data?.output;
+          
+          console.log(`✅ Node ${nodeId} executed successfully with result:`, actualResult);
+          
+          // For If nodes and other nodes, extract the first item from the array if it's an array
+          let resultToPass = actualResult;
+          if (Array.isArray(actualResult) && actualResult.length > 0) {
+            resultToPass = actualResult[0];
+          }
+          
+          // Call success callback immediately with the result
+          if (event.detail.onSuccess) {
+            event.detail.onSuccess(resultToPass);
+          }
         } catch (executionError) {
           console.error(`❌ Node ${nodeId} execution failed:`, executionError);
           // Clear timeout on error

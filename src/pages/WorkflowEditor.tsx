@@ -236,10 +236,24 @@ const WorkflowEditor = () => {
 
   // Auto-execute all nodes in parallel levels
   const executeAllNodes = useCallback(async () => {
-    if (isAutoExecuting) return;
+    console.log("🚀 executeAllNodes called");
+    console.log("📊 Current nodes:", nodes.map(n => ({ 
+      id: n.id, 
+      type: n.type, 
+      name: (n.data as any)?.definition?.name || (n.data as any)?.label 
+    })));
+    console.log("🔗 Current edges:", edges);
+    
+    if (isAutoExecuting) {
+      console.log("⚠️ Already executing, returning");
+      return;
+    }
     
     const executionLevels = getExecutionLevels();
+    console.log("📋 Execution levels:", executionLevels);
+    
     if (executionLevels.length === 0 || executionLevels.every(level => level.length === 0)) {
+      console.log("❌ No nodes to execute");
       toast({
         title: "No Nodes",
         description: "No nodes to execute",

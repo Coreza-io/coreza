@@ -68,12 +68,17 @@ export class WorkflowExecutor {
    * Starts from all root nodes.
    */
   async executeAllNodes(): Promise<void> {
+    console.log('🚀 Starting workflow execution...');
+    
     // Reset state
     this.executed.clear();
     this.ctx.setExecutingNode(null);
 
     const queue = this.getRootNodeIds().slice();
+    console.log('📋 Root nodes found:', queue);
+    
     if (queue.length === 0) {
+      console.log('❌ No root nodes found');
       this.ctx.toast({
         title: 'No start nodes',
         description: 'No entry points found',
@@ -84,18 +89,24 @@ export class WorkflowExecutor {
 
     while (queue.length) {
       const nodeId = queue.shift()!;
+      console.log(`🔄 Processing node: ${nodeId}`);
+      
       if (this.executed.has(nodeId)) {
+        console.log(`⏭️ Skipping already executed node: ${nodeId}`);
         continue; // skip already-run
       }
       this.executed.add(nodeId);
 
       // Highlight current node
       this.ctx.setExecutingNode(nodeId);
+      console.log(`✨ Executing node: ${nodeId}`);
 
       let result: any = {};
       try {
         result = await this.executeNode(nodeId);
+        console.log(`✅ Node ${nodeId} completed with result:`, result);
       } catch (err) {
+        console.error(`❌ Node ${nodeId} failed:`, err);
         // onError inside executeNode already toasts
         continue;
       }
@@ -103,15 +114,22 @@ export class WorkflowExecutor {
       // Determine next nodes
       const srcDef = this.ctx.nodes.find(n => n.id === nodeId)?.data?.definition as any;
       const outgoing = this.ctx.edges.filter(e => e.source === nodeId);
+      console.log(`🔍 Node ${nodeId} outgoing edges:`, outgoing.length);
+      
       if (srcDef?.name === 'If') {
         // follow only the matching handle
         const takeTrue = !!result.true;
-        outgoing
+        console.log(`🔀 If node ${nodeId} taking ${takeTrue ? 'TRUE' : 'FALSE'} path`);
+        const nextNodes = outgoing
           .filter(e => e.sourceHandle === (takeTrue ? 'true' : 'false'))
-          .forEach(e => queue.push(e.target));
+          .map(e => e.target);
+        console.log(`➡️ Adding conditional targets to queue:`, nextNodes);
+        nextNodes.forEach(target => queue.push(target));
       } else {
         // follow all outgoing
-        outgoing.forEach(e => queue.push(e.target));
+        const nextNodes = outgoing.map(e => e.target);
+        console.log(`➡️ Adding ${nextNodes.length} targets to queue:`, nextNodes);
+        nextNodes.forEach(target => queue.push(target));
       }
     }
 

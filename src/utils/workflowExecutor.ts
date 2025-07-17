@@ -75,7 +75,9 @@ export class WorkflowExecutor {
    * Run the entire workflow dynamically.
    */
   async executeAllNodes(): Promise<void> {
-    console.log('🚀 Starting workflow execution...');
+    console.log('🚀 [WORKFLOW EXECUTOR] Starting workflow execution...');
+    console.log('🚀 [WORKFLOW EXECUTOR] Total nodes:', this.ctx.nodes.length);
+    console.log('🚀 [WORKFLOW EXECUTOR] Total edges:', this.ctx.edges.length);
     
     // Reset state
     this.executed.clear();

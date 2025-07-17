@@ -146,7 +146,13 @@ const WorkflowEditor = () => {
     });
     
     // Build adjacency list and calculate in-degrees
-    edges.forEach(edge => {
+    // Skip conditional nodes' unused paths during topological sort
+    const activeEdges = edges.filter(edge => {
+      // For now, include all edges - conditional logic will be handled during execution
+      return true;
+    });
+    
+    activeEdges.forEach(edge => {
       const source = edge.source;
       const target = edge.target;
       
@@ -285,8 +291,46 @@ const WorkflowEditor = () => {
                 executedNodes, // Pass the set of completed nodes from previous levels
                 allNodes: nodes, // Pass all nodes for dependency checking
                 allEdges: edges, // Pass all edges for dependency checking
-                onSuccess: () => {
-                  console.log(`✅ Node ${nodeId} executed successfully`);
+                onSuccess: (result?: any) => {
+                  console.log(`✅ Node ${nodeId} executed successfully`, result);
+                  
+                  // Special handling for If nodes to determine which path to take
+                  const currentNode = nodes.find(n => n.id === nodeId);
+                  if ((currentNode?.data?.definition as any)?.name === "If" && result) {
+                    console.log(`🔀 If node result:`, result);
+                    
+                    // Get the condition evaluation result from the API response
+                    const conditionResult = result[0]?.result ?? false;
+                    console.log(`🔀 If node condition evaluated to: ${conditionResult}`);
+                    
+                    // Find outgoing edges for this If node
+                    const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+                    const trueEdge = outgoingEdges.find(edge => edge.sourceHandle === 'true');
+                    const falseEdge = outgoingEdges.find(edge => edge.sourceHandle === 'false');
+                    
+                    // Only activate the edge that matches the condition result
+                    const activeEdge = conditionResult ? trueEdge : falseEdge;
+                    if (activeEdge) {
+                      console.log(`🎯 If node activating ${conditionResult ? 'TRUE' : 'FALSE'} path to node: ${activeEdge.target}`);
+                      
+                      // Update the nodes to add the next execution level based on condition
+                      setTimeout(() => {
+                        // Dispatch execution event for the target node
+                        const nextNodeEvent = new CustomEvent('auto-execute-node', {
+                          detail: { 
+                            nodeId: activeEdge.target,
+                            executedNodes: new Set([...executedNodes, nodeId]),
+                            allNodes: nodes,
+                            allEdges: edges,
+                            onSuccess: () => console.log(`✅ Conditional target node ${activeEdge.target} executed`),
+                            onError: (error: any) => console.error(`❌ Conditional target node ${activeEdge.target} failed:`, error)
+                          }
+                        });
+                        window.dispatchEvent(nextNodeEvent);
+                      }, 100);
+                    }
+                  }
+                  
                   // Node stays green during success - will be reset after timeout
                 },
                 onError: (error: any) => {

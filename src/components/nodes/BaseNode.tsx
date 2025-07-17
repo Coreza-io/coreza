@@ -591,20 +591,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         try {
           await handleSubmit(); // Execute the actual node logic
           
-          // Check if there's an error state after execution
-          setTimeout(() => {
-            // Check the error state and lastOutput to determine success/failure
-            if (error || (lastOutput && lastOutput.status === "error")) {
-              console.error(`❌ Node ${nodeId} execution failed:`, error || lastOutput.message);
-              // Call error callback if provided
-              if (event.detail.onError) {
+            // Check if there's an error state after execution
+            setTimeout(() => {
+              // Check the error state and lastOutput to determine success/failure
+              if (error || (lastOutput && lastOutput.status === "error")) {
+                console.error(`❌ Node ${nodeId} execution failed:`, error || lastOutput.message);
+                // Call error callback if provided
+                if (event.detail.onError) {
                 event.detail.onError(error || lastOutput.message || "Execution failed");
               }
             } else {
               console.log(`✅ Node ${nodeId} executed successfully`);
               // Call success callback if provided
               if (event.detail.onSuccess) {
-                event.detail.onSuccess();
+                event.detail.onSuccess(lastOutput);
               }
             }
           }, 100); // Small delay to let state updates settle

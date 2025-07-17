@@ -160,11 +160,26 @@ const WorkflowEditor = () => {
       values: n.data.values
     }));
 
+    // Clean edges by removing execution-related properties
+    const cleanEdges = edges.map(edge => ({
+      id: edge.id,
+      type: edge.type,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      // Keep only the basic style properties, remove execution styling
+      style: {
+        strokeLinecap: edge.style?.strokeLinecap || 'round',
+        strokeLinejoin: edge.style?.strokeLinejoin || 'round',
+      }
+    }));
+
     const payload = {
       user_id: authUser.id,
       name: workflowName,
       nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
-      edges: JSON.parse(JSON.stringify(edges)) as any,
+      edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
       updated_at: new Date().toISOString(),
       ...(projectId && { project_id: projectId }), // Include project_id if available
     };

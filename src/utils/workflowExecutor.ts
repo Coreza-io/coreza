@@ -1,12 +1,10 @@
-// src/utils/WorkflowExecutor.ts
-
 import { Node, Edge } from '@xyflow/react';
 
 export interface ExecutionContext {
   nodes: Node[];
   edges: Edge[];
-  setNodes: (updater: (nodes: Node[]) => Node[]) => void;
-  setEdges: (updater: (edges: Edge[]) => Edge[]) => void;
+  setNodes: (update: (nodes: Node[]) => Node[]) => void;
+  setEdges: (update: (edges: Edge[]) => Edge[]) => void;
   setExecutingNode: (nodeId: string | null) => void;
   toast: (params: any) => void;
 }
@@ -22,209 +20,216 @@ export interface NodeExecutionDetail {
 }
 
 export class WorkflowExecutor {
-  private ctx: ExecutionContext;
-  private executed = new Set<string>();
-  private maxIterations = 100; // Safety limit
+  private context: ExecutionContext;
+  private isAutoExecuting = false;
 
   constructor(context: ExecutionContext) {
-    this.ctx = context;
+    this.context = context;
   }
 
   /**
-   * Find all nodes that can execute right now (dependencies satisfied)
+   * Execute conditional chain starting from a specific node
    */
-  private getReadyNodes(): string[] {
-    const readyNodes: string[] = [];
-    
-    for (const node of this.ctx.nodes) {
-      // Skip already executed nodes
-      if (this.executed.has(node.id)) continue;
-      
-      // Check if all dependencies are satisfied
-      if (this.areNodeDependenciesSatisfied(node.id)) {
-        readyNodes.push(node.id);
-      }
-    }
-    
-    console.log(`🎯 Ready nodes found: [${readyNodes.join(', ')}]`);
-    return readyNodes;
-  }
+  async executeConditionalChain(
+    startNodeId: string,
+    completedNodes: Set<string>
+  ): Promise<void> {
+    console.log(`🎯 Starting conditional chain from: ${startNodeId}`);
 
-  /**
-   * Check if all non-conditional dependencies of a node are satisfied
-   */
-  private areNodeDependenciesSatisfied(nodeId: string): boolean {
-    const incomingEdges = this.ctx.edges.filter(e => e.target === nodeId);
-    
-    for (const edge of incomingEdges) {
-      const srcDef = this.ctx.nodes.find(n => n.id === edge.source)?.data?.definition as any;
-      
-      // Skip conditional edges (If true/false handles) - these don't count as dependencies
-      const isConditional = srcDef?.name === 'If' && 
-                           (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
-      
-      if (!isConditional && !this.executed.has(edge.source)) {
-        return false;
-      }
-    }
-    
-    return true;
-  }
+    return new Promise<void>(resolve => {
+      const event = new CustomEvent('auto-execute-node', {
+        detail: {
+          nodeId: startNodeId,
+          executedNodes: completedNodes,
+          allNodes: this.context.nodes,
+          allEdges: this.context.edges,
+          onSuccess: async (result?: any) => {
+            console.log(`✅ Node ${startNodeId} succeeded with result`, result);
+            completedNodes.add(startNodeId);
+            const currentNode = this.context.nodes.find(n => n.id === startNodeId);
 
-  /**
-   * Run the entire workflow dynamically.
-   */
-  async executeAllNodes(): Promise<void> {
-    console.log('🚀 [WORKFLOW EXECUTOR] Starting workflow execution...');
-    console.log('🚀 [WORKFLOW EXECUTOR] Total nodes:', this.ctx.nodes.length);
-    console.log('🚀 [WORKFLOW EXECUTOR] Total edges:', this.ctx.edges.length);
-    
-    // Reset state
-    this.executed.clear();
-    this.ctx.setExecutingNode(null);
+            if ((currentNode?.data?.definition as any)?.name === 'If') {
+              await this.handleIfNodeResult(startNodeId, result, completedNodes);
+            } else {
+              await this.executeDownstreamNodes(startNodeId, completedNodes);
+            }
 
-    let iterations = 0;
-    
-    while (iterations < this.maxIterations) {
-      iterations++;
-      console.log(`\n🔄 Iteration ${iterations}`);
-      
-      // Find all nodes that are ready to execute
-      const readyNodes = this.getReadyNodes();
-      
-      // If no nodes are ready, we're done (or stuck)
-      if (readyNodes.length === 0) {
-        const remainingNodes = this.ctx.nodes
-          .filter(n => !this.executed.has(n.id))
-          .map(n => n.id);
-          
-        if (remainingNodes.length > 0) {
-          console.log(`⚠️ Workflow stuck. Remaining nodes: [${remainingNodes.join(', ')}]`);
-          this.ctx.toast({
-            title: 'Workflow Incomplete',
-            description: `${remainingNodes.length} nodes couldn't execute due to missing dependencies`,
-            variant: 'destructive',
-          });
-        } else {
-          console.log('✅ All nodes executed successfully');
-          this.ctx.toast({
-            title: 'Execution Complete',
-            description: 'All nodes executed successfully',
-          });
-        }
-        break;
-      }
-      
-      // Execute all ready nodes in parallel
-      console.log(`🚀 Executing ${readyNodes.length} ready nodes in parallel...`);
-      
-      try {
-        await Promise.all(readyNodes.map(nodeId => this.executeNodeWithHandling(nodeId)));
-      } catch (error) {
-        console.error('❌ Execution batch failed:', error);
-        break;
-      }
-    }
-    
-    if (iterations >= this.maxIterations) {
-      console.log('⚠️ Maximum iterations reached - possible infinite loop');
-      this.ctx.toast({
-        title: 'Execution Timeout',
-        description: 'Workflow execution stopped due to complexity limits',
-        variant: 'destructive',
+            resolve();
+          },
+          onError: (err: any) => {
+            console.error(`❌ Node ${startNodeId} failed:`, err);
+            resolve();
+          }
+        } as NodeExecutionDetail
       });
-    }
-
-    // Cleanup UI state
-    this.ctx.setExecutingNode(null);
-  }
-
-  /**
-   * Execute a single node and handle If-node branching
-   */
-  private async executeNodeWithHandling(nodeId: string): Promise<void> {
-    console.log(`✨ Executing node: ${nodeId}`);
-    
-    // Mark as executed before starting (prevents re-execution)
-    this.executed.add(nodeId);
-    
-    // Highlight current node
-    this.ctx.setExecutingNode(nodeId);
-    
-    try {
-      const result = await this.executeNode(nodeId);
-      console.log(`✅ Node ${nodeId} completed with result:`, result);
-      
-      // Handle If-node conditional execution
-      const srcDef = this.ctx.nodes.find(n => n.id === nodeId)?.data?.definition as any;
-      if (srcDef?.name === 'If') {
-        await this.handleIfNodeConditionalExecution(nodeId, result);
-      }
-      
-    } catch (error) {
-      console.error(`❌ Node ${nodeId} failed:`, error);
-      // Don't remove from executed set - failed nodes shouldn't retry automatically
-    }
-  }
-
-  /**
-   * Handle conditional execution for If nodes
-   */
-  private async handleIfNodeConditionalExecution(nodeId: string, result: any): Promise<void> {
-    const takeTrue = !!result.true;
-    console.log(`🔀 If node ${nodeId} taking ${takeTrue ? 'TRUE' : 'FALSE'} path`);
-    
-    const conditionalEdges = this.ctx.edges.filter(e => 
-      e.source === nodeId && 
-      e.sourceHandle === (takeTrue ? 'true' : 'false')
-    );
-    
-    if (conditionalEdges.length > 0) {
-      console.log(`🎯 If node triggering conditional targets: [${conditionalEdges.map(e => e.target).join(', ')}]`);
-      
-      // Execute conditional targets immediately
-      for (const edge of conditionalEdges) {
-        if (!this.executed.has(edge.target)) {
-          await this.executeNodeWithHandling(edge.target);
-        }
-      }
-    }
-  }
-
-  /**
-   * Execute one node by dispatching the custom event.
-   */
-  private executeNode(nodeId: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const detail: NodeExecutionDetail = {
-        nodeId,
-        executedNodes: new Set(this.executed),
-        allNodes: this.ctx.nodes,
-        allEdges: this.ctx.edges,
-        explicitlyTriggered: true,
-        onSuccess: (res?: any) => resolve(res || {}),
-        onError: (err: any) => {
-          console.error(`Node ${nodeId} failed:`, err);
-          this.ctx.toast({
-            title: 'Node Error',
-            description: err?.message || String(err),
-            variant: 'destructive',
-          });
-          reject(err);
-        },
-      };
-
-      window.dispatchEvent(new CustomEvent('auto-execute-node', { detail }));
+      window.dispatchEvent(event);
     });
   }
 
-  /** Optional: expose whether an execution is in flight */
-  isExecuting(): boolean {
-    return this.executed.size > 0;
+  /**
+   * Handle If node result and execute appropriate conditional path
+   */
+  private async handleIfNodeResult(
+    nodeId: string,
+    result: any,
+    completedNodes: Set<string>
+  ): Promise<void> {
+    const condition = !!result;
+    console.log(`🔀 If node ${nodeId} branch: ${condition}`);
+
+    const outgoing = this.context.edges.filter(e => e.source === nodeId);
+    const activeEdge = condition
+      ? outgoing.find(e => e.sourceHandle === 'true')
+      : outgoing.find(e => e.sourceHandle === 'false');
+
+    if (activeEdge) {
+      console.log(`👉 Executing branch to ${activeEdge.target}`);
+      await this.executeConditionalChain(activeEdge.target, completedNodes);
+    }
   }
 
-  /** Legacy compatibility method */
+  /**
+   * Execute downstream nodes for non-conditional flows
+   */
+  private async executeDownstreamNodes(
+    nodeId: string,
+    completedNodes: Set<string>
+  ): Promise<void> {
+    const downstream = this.context.edges.filter(e => {
+      if (e.source !== nodeId) return false;
+      const sourceNode = this.context.nodes.find(n => n.id === e.source);
+      const isCond = sourceNode && (sourceNode.data?.definition as any)?.name === 'If';
+      return !isCond;
+    });
+
+    const tasks = downstream.map(e => {
+      console.log(`🔄 Triggering downstream: ${e.target}`);
+      return this.executeConditionalChain(e.target, completedNodes);
+    });
+
+    await Promise.all(tasks);
+  }
+
+  /**
+   * Highlight edges connected to a node
+   */
+  private highlightEdges(nodeId: string): void {
+    const connected = this.context.edges.filter(
+      e => e.source === nodeId || e.target === nodeId
+    );
+    this.context.setEdges(edges =>
+      edges.map(edge =>
+        connected.some(c => c.id === edge.id)
+          ? { ...edge, animated: true, className: 'executing-edge', style: { ...edge.style, stroke: '#22c55e', strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' } }
+          : edge
+      )
+    );
+  }
+
+  /**
+   * Highlight a node
+   */
+  private highlightNode(nodeId: string): void {
+    this.context.setNodes(nodes =>
+      nodes.map(n =>
+        n.id === nodeId
+          ? { ...n, className: 'executing-node', style: { ...n.style, border: '3px solid #22c55e', backgroundColor: '#f0fdf4', boxShadow: '0 0 20px rgba(34,197,94,0.4)' } }
+          : n
+      )
+    );
+  }
+
+  /**
+   * Execute a single node with visual feedback
+   */
+  async executeNode(
+    nodeId: string,
+    executedNodes: Set<string>
+  ): Promise<any> {
+    this.context.setExecutingNode(nodeId);
+    this.highlightEdges(nodeId);
+    this.highlightNode(nodeId);
+
+    return new Promise<any>((resolve, reject) => {
+      const execEvent = new CustomEvent('auto-execute-node', {
+        detail: {
+          nodeId,
+          executedNodes,
+          allNodes: this.context.nodes,
+          allEdges: this.context.edges,
+          onSuccess: (result?: any) => resolve(result),
+          onError: (err: any) => reject(err)
+        } as NodeExecutionDetail
+      });
+      window.dispatchEvent(execEvent);
+    });
+  }
+
+  /**
+   * Execute all nodes using a FIFO queue, respecting dependencies and branching
+   */
+  async executeAllNodes(): Promise<void> {
+    console.log('🚀 Starting FIFO queue‑based workflow execution');
+
+    if (this.isAutoExecuting) {
+      console.log('⚠️ FIFO queue‑based execution already in progress');
+      return;
+    }
+    this.isAutoExecuting = true;
+
+    const executed = new Set<string>();
+    const roots = this.context.nodes
+      .filter(n => !this.context.edges.some(e => e.target === n.id))
+      .map(n => n.id);
+    const queue: string[] = [...roots];
+
+    try {
+      while (queue.length) {
+        const id = queue.shift()!;
+        if (executed.has(id)) continue;
+
+        const inc = this.context.edges.filter(e => e.target === id);
+        const missing = inc.filter(e => !executed.has(e.source));
+        if (missing.length) {
+          queue.push(id);
+          continue;
+        }
+
+        const result = await this.executeNode(id, executed);
+        executed.add(id);
+
+        const out = this.context.edges.filter(e => e.source === id);
+        const node = this.context.nodes.find(n => n.id === id);
+        const next =
+          node?.data.definition.name === 'If'
+            ? [(result ? out.find(e => e.sourceHandle === 'true') : out.find(e => e.sourceHandle === 'false'))].filter(Boolean)
+            : out;
+
+        next.forEach(e => queue.push(e.target));
+      }
+
+      console.log('🎉 FIFO queue‑based execution complete');
+      this.context.toast({ title: 'Queue Execution Complete', description: 'All workflow nodes executed successfully' });
+    } catch (err) {
+      console.error('❌ FIFO queue‑based execution error:', err);
+      this.context.toast({ title: 'Queue Execution Error', description: err.message || String(err), variant: 'destructive' });
+    } finally {
+      this.isAutoExecuting = false;
+      this.context.setExecutingNode(null);
+      this.context.setEdges(edges =>
+        edges.map(e => ({ ...e, animated: false, className: '', style: { ...e.style, stroke: undefined, strokeWidth: undefined } }))
+      );
+      this.context.setNodes(nodes =>
+        nodes.map(n => ({ ...n, className: '', style: { ...n.style, border: undefined, backgroundColor: undefined, boxShadow: undefined } }))
+      );
+    }
+  }
+
+  setAutoExecuting(val: boolean): void {
+    this.isAutoExecuting = val;
+  }
+
   getIsAutoExecuting(): boolean {
-    return this.isExecuting();
+    return this.isAutoExecuting;
   }
 }

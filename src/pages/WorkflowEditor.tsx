@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -104,57 +104,31 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  // Execute a node and animate outgoing edges
-  const executeNode = useCallback((nodeId: string) => {
-    setExecutingNode(nodeId);
-    
-    // Find all edges coming out of this node
-    const outgoingEdges = edges.filter(edge => edge.source === nodeId);
-    
-    // Animate the outgoing edges
-    setEdges(currentEdges => 
-      currentEdges.map(edge => 
-        outgoingEdges.some(outEdge => outEdge.id === edge.id)
-          ? { ...edge, animated: true, className: 'animated' }
-          : edge
-      )
-    );
-    
-    // Simulate execution time
-    setTimeout(() => {
-      setExecutingNode(null);
-      // Stop animation
-      setEdges(currentEdges => 
-        currentEdges.map(edge => 
-          outgoingEdges.some(outEdge => outEdge.id === edge.id)
-            ? { ...edge, animated: false, className: '' }
-            : edge
-        )
-      );
-    }, 2000);
-  }, [edges, setEdges]);
+  // Memoized WorkflowExecutor instance
+  const workflowExecutor = useMemo(() => (
+    new WorkflowExecutor({
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      setExecutingNode,
+      toast
+    })
+  ), [nodes, edges, setNodes, setEdges, setExecutingNode, toast]);
 
-  // Create workflow executor instance
-  const workflowExecutor = new WorkflowExecutor({
-    nodes,
-    edges,
-    setNodes,
-    setEdges,
-    setExecutingNode,
-    toast
-  });
-
-  // Auto-execute all nodes using the workflow executor
+  // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
+    setIsAutoExecuting(true);
     await workflowExecutor.executeAllNodes();
-    setIsAutoExecuting(workflowExecutor.getIsAutoExecuting());
-  }, [nodes, edges, setNodes, setEdges, setExecutingNode, toast]);
+    setIsAutoExecuting(false);
+  }, [workflowExecutor]);
 
   // Handle node double click to execute
-  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+  // Double click to execute one node only (optional: show highlight/animation)
+  const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, node: Node) => {
     event.preventDefault();
-    executeNode(node.id);
-  }, [executeNode]);
+    await workflowExecutor.executeNode(node.id, new Set());
+  }, [workflowExecutor]);
 
   // Save workflow to Supabase
   const handleSaveWorkflow = async (isAutosave = false) => {

@@ -589,25 +589,32 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         console.log(`✅ All dependencies ready for node: ${nodeId}, proceeding with execution`);
         
         try {
-          await handleSubmit(); // Execute the actual node logic
+          // Execute the node logic and capture the result
+          await handleSubmit();
           
-            // Check if there's an error state after execution
-            setTimeout(() => {
-              // Check the error state and lastOutput to determine success/failure
-              if (error || (lastOutput && lastOutput.status === "error")) {
-                console.error(`❌ Node ${nodeId} execution failed:`, error || lastOutput.message);
-                // Call error callback if provided
-                if (event.detail.onError) {
-                event.detail.onError(error || lastOutput.message || "Execution failed");
+          // Use a small delay to ensure the setNodes callback has updated the state
+          setTimeout(() => {
+            // Re-fetch the nodes to get the most current state
+            setNodes((currentNodes) => {
+              const currentNode = currentNodes.find(n => n.id === nodeId);
+              const actualResult = currentNode?.data?.output;
+              
+              console.log(`✅ Node ${nodeId} executed successfully with result:`, actualResult);
+              
+              // For If nodes and other nodes, extract the first item from the array if it's an array
+              let resultToPass = actualResult;
+              if (Array.isArray(actualResult) && actualResult.length > 0) {
+                resultToPass = actualResult[0];
               }
-            } else {
-              console.log(`✅ Node ${nodeId} executed successfully`);
-              // Call success callback if provided
+              
+              // Call success callback with the actual API response
               if (event.detail.onSuccess) {
-                event.detail.onSuccess(lastOutput);
+                event.detail.onSuccess(resultToPass);
               }
-            }
-          }, 100); // Small delay to let state updates settle
+              
+              return currentNodes; // Return unchanged nodes
+            });
+          }, 300); // Give sufficient time for state updates
         } catch (executionError) {
           console.error(`❌ Node ${nodeId} execution failed:`, executionError);
           // Call error callback if provided

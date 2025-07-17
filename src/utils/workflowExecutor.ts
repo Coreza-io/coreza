@@ -200,7 +200,8 @@ export class WorkflowExecutor {
    */
   async executeNode(
     nodeId: string,
-    executedNodes: Set<string>
+    executedNodes: Set<string>,
+    explicitlyTriggered: boolean = false
   ): Promise<any> {
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
@@ -213,6 +214,7 @@ export class WorkflowExecutor {
           executedNodes,
           allNodes: this.context.nodes,
           allEdges: this.context.edges,
+          explicitlyTriggered,
           onSuccess: (result?: any) => resolve(result),
           onError: (err: any) => reject(err)
         } as NodeExecutionDetail
@@ -289,7 +291,12 @@ export class WorkflowExecutor {
         const nodeStart = performance.now();
 
         try {
-          const result = await this.executeNode(id, executed);
+          // Check if this is a conditional target that should be explicitly triggered
+          const isConditionalTarget = retryCount.has(id + "_conditional");
+          const result = await this.executeNode(id, executed, isConditionalTarget);
+          if (isConditionalTarget) {
+            retryCount.delete(id + "_conditional"); // Clean up the flag
+          }
           const nodeTime = performance.now() - nodeStart;
           metrics.nodeTimings.set(id, nodeTime);
           
@@ -302,20 +309,31 @@ export class WorkflowExecutor {
           
           // Use optimized conditional branch handling
           let next: Edge[] = [];
+          let isConditionalExecution = false;
+          
           if ((node?.data?.definition as any)?.name === 'If') {
             const conditionalBranch = this.conditionalMap.get(id);
             const targetNodeId = result ? conditionalBranch?.trueTarget : conditionalBranch?.falseTarget;
             if (targetNodeId) {
               const targetEdge = out.find(e => e.target === targetNodeId);
-              if (targetEdge) next = [targetEdge];
+              if (targetEdge) {
+                next = [targetEdge];
+                isConditionalExecution = true;
+              }
             }
           } else {
             next = out;
           }
 
+          // Add next nodes to queue
           next.forEach(e => {
             if (!queue.includes(e.target)) {
               queue.push(e.target);
+              // Mark conditional targets for explicit triggering
+              if (isConditionalExecution) {
+                console.log(`🎯 [WORKFLOW EXECUTOR] Marking conditional target ${e.target} for explicit execution`);
+                retryCount.set(e.target + "_conditional", 1); // Use this as a flag
+              }
             }
           });
         } catch (error) {

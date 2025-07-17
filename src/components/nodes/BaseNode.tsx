@@ -587,19 +587,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         // Check if all input dependencies have completed
         if (event.detail.executedNodes && event.detail.allEdges) {
           const incomingEdges = event.detail.allEdges.filter((edge: any) => edge.target === nodeId);
-          const missingDependencies = incomingEdges.filter((edge: any) => 
-            !event.detail.executedNodes.has(edge.source)
-          );
+          const dependencies = incomingEdges.map((edge: any) => edge.source);
           
-          if (missingDependencies.length > 0) {
-            const missingNodes = missingDependencies.map((edge: any) => edge.source);
-            console.log(`⏳ Node ${nodeId} waiting for dependencies: [${missingNodes.join(', ')}]`);
+          console.log(`🔍 Node ${nodeId} dependencies:`, dependencies);
+          console.log(`🔍 Node ${nodeId} executed nodes:`, Array.from(event.detail.executedNodes));
+          
+          // For nodes without dependencies, allow immediate execution
+          if (dependencies.length === 0) {
+            console.log(`✅ Node ${nodeId} has no dependencies, proceeding with execution`);
+          } else {
+            const allDependenciesCompleted = dependencies.every(dep => event.detail.executedNodes.has(dep));
             
-            // Wait a bit and try again
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('auto-execute-node', event));
-            }, 500);
-            return;
+            if (!allDependenciesCompleted) {
+              const pendingDeps = dependencies.filter(dep => !event.detail.executedNodes.has(dep));
+              console.log(`⏳ Node ${nodeId} waiting for dependencies:`, pendingDeps);
+              return; // Don't retry, let the workflow manager handle execution order
+            }
           }
         }
         

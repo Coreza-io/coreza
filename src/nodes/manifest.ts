@@ -341,8 +341,6 @@ const SwitchDef = {
   handles: [
     { type: "target", position: "left", id: "input" },
     { type: "source", position: "right", id: "case1" },
-    { type: "source", position: "right", id: "case2" },
-    { type: "source", position: "right", id: "case3" },
     { type: "source", position: "right", id: "default" }
   ],
   action: {
@@ -366,9 +364,7 @@ const SwitchDef = {
         { key: "caseName", type: "string", placeholder: "Case Label" }
       ],
       default: [
-        { caseValue: "case1", caseName: "Case 1" },
-        { caseValue: "case2", caseName: "Case 2" },
-        { caseValue: "case3", caseName: "Case 3" }
+        { caseValue: "case1", caseName: "Case 1" }
       ]
     },
     {

@@ -92,32 +92,42 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData = selectedInputData[0] || {};
   }
 
-  const [fieldState, setFieldState] = useState<Record<string, any>>(() =>
-    definition && definition.fields
-      ? Object.fromEntries(
-          definition.fields.map((f: any) => [
-            f.key, 
-            f.type === "repeater" 
-              ? data.values?.[f.key] || [f.default || {}]
-              : data.values?.[f.key] || ""
-          ])
-        )
-      : {}
-  );
+  const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
+    if (!definition?.fields) return {};
+    return Object.fromEntries(
+      definition.fields.map((f: any) => [
+        f.key, 
+        f.type === "repeater" 
+          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
+          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+      ])
+    );
+  });
 
+  // Only update fieldState when the actual field definitions change, not when data changes
   useEffect(() => {
     if (!definition?.fields) return;
-    setFieldState(
-      Object.fromEntries(
-        definition.fields.map((f: any) => [
-          f.key, 
-          f.type === "repeater" 
-            ? data.values?.[f.key] || [f.default || {}]
-            : data.values?.[f.key] || ""
-        ])
-      )
+    
+    const newFieldState = Object.fromEntries(
+      definition.fields.map((f: any) => [
+        f.key, 
+        f.type === "repeater" 
+          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
+          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+      ])
     );
-  }, [definition?.fields, data.values]);
+    
+    // Only update if the structure actually changed (deep comparison for essential fields)
+    const hasChanges = definition.fields.some((f: any) => {
+      const currentValue = fieldState[f.key];
+      const newValue = newFieldState[f.key];
+      return JSON.stringify(currentValue) !== JSON.stringify(newValue);
+    });
+    
+    if (hasChanges) {
+      setFieldState(newFieldState);
+    }
+  }, [definition?.fields]);
 
   const [error, setError] = useState("");
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>({});

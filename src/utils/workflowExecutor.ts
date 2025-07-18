@@ -136,8 +136,12 @@ export class WorkflowExecutor {
     console.log(`🔀 If node ${nodeId} branch: ${condition}`);
 
     const conditionalBranch = this.conditionalMap.get(nodeId);
-    const targetNodeId = condition ? conditionalBranch?.trueTarget : conditionalBranch?.falseTarget;
-
+    const targetNodeId =
+            result.true === true
+              ? conditionalBranch?.trueTarget
+              : result.false === true
+              ? conditionalBranch?.falseTarget
+              : null; // or throw error / skip
     if (targetNodeId) {
       console.log(`👉 Executing optimized branch to ${targetNodeId}`);
       await this.executeConditionalChain(targetNodeId, completedNodes);
@@ -356,7 +360,12 @@ export class WorkflowExecutor {
           
           if ((node?.data?.definition as any)?.name === 'If') {
             const conditionalBranch = this.conditionalMap.get(id);
-            const targetNodeId = result ? conditionalBranch?.trueTarget : conditionalBranch?.falseTarget;
+            const targetNodeId =
+            result.true === true
+              ? conditionalBranch?.trueTarget
+              : result.false === true
+              ? conditionalBranch?.falseTarget
+              : null; // or throw error / skip
             if (targetNodeId) {
               const targetEdge = out.find(e => e.target === targetNodeId);
               if (targetEdge) {

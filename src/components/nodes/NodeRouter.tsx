@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layouts/BasicNodeLayout";
@@ -54,8 +54,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   const layoutType = getLayoutType(definition);
 
-  // Generate dynamic handles for Switch nodes
-  const getDynamicHandles = (definition: any, data: any) => {
+  // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
+  const dynamicHandles = useMemo(() => {
     if (definition.name !== "Switch") {
       return definition.handles || [];
     }
@@ -91,10 +91,10 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     });
     
     return handles;
-  };
+  }, [definition.name, definition.handles, definition.fields, data.fieldState]);
 
-  // Calculate dynamic size for Switch nodes
-  const getDynamicSize = (definition: any, data: any) => {
+  // Memoize dynamic size for Switch nodes to prevent infinite re-renders
+  const dynamicSize = useMemo(() => {
     if (definition.name !== "Switch") {
       return {
         width: definition.size?.width || 340,
@@ -122,10 +122,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       width: definition.size?.width || 340,
       height: dynamicHeight
     };
-  };
-
-  const dynamicHandles = getDynamicHandles(definition, data);
-  const dynamicSize = getDynamicSize(definition, data);
+  }, [definition.name, definition.size, definition.fields, data.fieldState]);
 
   return (
     <BaseNode data={data} selected={selected}>

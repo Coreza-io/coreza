@@ -60,7 +60,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const initialOps = isConditional && fieldState.logicalOps && fieldState.logicalOps.length === initialConds.length - 1
     ? fieldState.logicalOps
-    : Array(initialConds.length - 1).fill("AND");
+    : isConditional ? Array(Math.max(0, initialConds.length - 1)).fill("AND") : [];
 
   // =========== SWITCH LOGIC ===========
   const defaultCase = isSwitch && Array.isArray(repeaterField?.default) && repeaterField.default.length > 0

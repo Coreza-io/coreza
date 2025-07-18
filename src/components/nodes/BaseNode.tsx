@@ -606,6 +606,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             resultToPass = actualResult[0];
           }
           
+          // Special handling for Switch/comparator nodes
+          const nodeType = definition?.name;
+          if (nodeType === 'Switch' && resultToPass && typeof resultToPass === 'object' && 'result' in resultToPass) {
+            resultToPass = resultToPass.result; // Extract the 'result' field
+          }
+          
           // Call success callback immediately with the result
           if (event.detail.onSuccess) {
             event.detail.onSuccess(resultToPass);

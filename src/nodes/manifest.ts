@@ -340,8 +340,7 @@ const SwitchDef = {
   size: { width: 360, height: 300 },
   handles: [
     { type: "target", position: "left", id: "input" },
-    { type: "source", position: "right", id: "case1" },
-    { type: "source", position: "right", id: "default" }
+    { type: "source", position: "right", id: "case1" }
   ],
   action: {
     url: "/comparator/switch",
@@ -362,18 +361,7 @@ const SwitchDef = {
       subFields: [
         { key: "caseValue", type: "string", placeholder: "case1" },
         { key: "caseName", type: "string", placeholder: "Case Label" }
-      ],
-      default: [
-        { caseValue: "case1", caseName: "Case 1" }
       ]
-    },
-    {
-      key: "defaultCase",
-      label: "Default Case",
-      type: "text",
-      placeholder: "default",
-      default: "default",
-      required: true
     }
   ]
 };

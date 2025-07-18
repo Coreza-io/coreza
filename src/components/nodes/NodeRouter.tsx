@@ -67,7 +67,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     const casesField = definition.fields?.find((f: any) => f.key === "cases");
     const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
     return defaultCases.length;
-  }, [definition.name, definition.fields, data.fieldState?.cases?.length, data.values?.cases?.length]);
+  }, [definition.name, definition.fields, data.fieldState?.cases, data.values?.cases]);
 
   // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
   const dynamicHandles = useMemo(() => {

@@ -30,7 +30,7 @@ export interface NodeExecutionDetail {
 export class WorkflowExecutor {
   private context: ExecutionContext;
   private isAutoExecuting = false;
-  private conditionalMap = new Map<string, { trueTarget?: string, falseTarget?: string }>();
+  private conditionalMap = new Map<string, Record<string, string>>();
 
   constructor(context: ExecutionContext) {
     this.context = context;
@@ -38,16 +38,15 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Pre-calculate conditional branches for optimization
+   * Pre-calculate all conditional branches for optimization (universal)
    */
   private preCalculateConditionalBranches(): void {
     this.conditionalMap.clear();
     this.context.edges.forEach(edge => {
-      const sourceNode = this.context.nodes.find(n => n.id === edge.source);
-      if ((sourceNode?.data?.definition as any)?.name === 'If') {
+      // Build universal branch map for ANY node with sourceHandle
+      if (edge.sourceHandle) {
         const entry = this.conditionalMap.get(edge.source) || {};
-        if (edge.sourceHandle === 'true') entry.trueTarget = edge.target;
-        if (edge.sourceHandle === 'false') entry.falseTarget = edge.target;
+        entry[edge.sourceHandle] = edge.target;
         this.conditionalMap.set(edge.source, entry);
       }
     });
@@ -106,8 +105,9 @@ export class WorkflowExecutor {
             completedNodes.add(startNodeId);
             const currentNode = this.context.nodes.find(n => n.id === startNodeId);
 
-            if ((currentNode?.data?.definition as any)?.name === 'If') {
-              await this.handleIfNodeResult(startNodeId, result, completedNodes);
+            const isBranchNode = this.conditionalMap.has(startNodeId);
+            if (isBranchNode) {
+              await this.handleBranchNodeResult(startNodeId, result, completedNodes);
             } else {
               await this.executeDownstreamNodes(startNodeId, completedNodes);
             }
@@ -125,27 +125,37 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Handle If node result and execute appropriate conditional path (optimized)
+   * Handle any branching node by picking the next edge
+   * based on the sourceHandle → target map (universal)
    */
-  private async handleIfNodeResult(
+  private async handleBranchNodeResult(
     nodeId: string,
     result: any,
     completedNodes: Set<string>
   ): Promise<void> {
-    const condition = !!result;
-    console.log(`🔀 If node ${nodeId} branch: ${condition}`);
-
-    const conditionalBranch = this.conditionalMap.get(nodeId);
-    const targetNodeId =
-            result.true === true
-              ? conditionalBranch?.trueTarget
-              : result.false === true
-              ? conditionalBranch?.falseTarget
-              : null; // or throw error / skip
-    if (targetNodeId) {
-      console.log(`👉 Executing optimized branch to ${targetNodeId}`);
-      await this.executeConditionalChain(targetNodeId, completedNodes);
+    // Normalize result to handle key
+    let handleKey: string;
+    
+    if (typeof result === 'boolean') {
+      handleKey = result.toString(); // "true" or "false"
+    } else if (result && typeof result === 'object' && ('true' in result || 'false' in result)) {
+      // Handle current If node format: { true: boolean, false: boolean }
+      handleKey = result.true === true ? 'true' : result.false === true ? 'false' : '';
+    } else {
+      handleKey = String(result);
     }
+
+    // Look up the branch map
+    const branchMap = this.conditionalMap.get(nodeId) || {};
+    const targetId = branchMap[handleKey];
+
+    if (!targetId) {
+      console.warn(`No branch found for node ${nodeId} handle "${handleKey}"`);
+      return;
+    }
+
+    console.log(`🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targetId}`);
+    await this.executeConditionalChain(targetId, completedNodes);
   }
 
   /**
@@ -157,9 +167,9 @@ export class WorkflowExecutor {
   ): Promise<void> {
     const downstream = this.context.edges.filter(e => {
       if (e.source !== nodeId) return false;
-      const sourceNode = this.context.nodes.find(n => n.id === e.source);
-      const isCond = sourceNode && (sourceNode.data?.definition as any)?.name === 'If';
-      return !isCond;
+      // Exclude edges from any branching node (not just If)
+      const isBranchNode = this.conditionalMap.has(e.source);
+      return !isBranchNode;
     });
 
     const tasks = downstream.map(e => {
@@ -358,22 +368,28 @@ export class WorkflowExecutor {
           let isConditionalExecution = false;
           let conditionalTargetId: string | undefined;
           
-          if ((node?.data?.definition as any)?.name === 'If') {
-            const conditionalBranch = this.conditionalMap.get(id);
-            const targetNodeId =
-            result.true === true
-              ? conditionalBranch?.trueTarget
-              : result.false === true
-              ? conditionalBranch?.falseTarget
-              : null; // or throw error / skip
+          const isBranchNode = this.conditionalMap.has(id);
+          if (isBranchNode) {
+            // Use universal branch handler
+            let handleKey: string;
+            if (typeof result === 'boolean') {
+              handleKey = result.toString();
+            } else if (result && typeof result === 'object' && ('true' in result || 'false' in result)) {
+              handleKey = result.true === true ? 'true' : result.false === true ? 'false' : '';
+            } else {
+              handleKey = String(result);
+            }
+
+            const branchMap = this.conditionalMap.get(id) || {};
+            const targetNodeId = branchMap[handleKey];
+            
             if (targetNodeId) {
               const targetEdge = out.find(e => e.target === targetNodeId);
               if (targetEdge) {
                 next = [targetEdge];
                 isConditionalExecution = true;
                 conditionalTargetId = targetNodeId;
-                // Highlight the specific conditional path taken
-                console.log(`🔀 [WORKFLOW EXECUTOR] If node ${id} taking ${result ? 'TRUE' : 'FALSE'} path to ${targetNodeId}`);
+                console.log(`🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to ${targetNodeId}`);
                 this.highlightEdges(id, targetNodeId);
               }
             }

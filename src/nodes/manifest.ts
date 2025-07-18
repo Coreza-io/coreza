@@ -377,6 +377,68 @@ const SwitchDef = {
 
 const IndicatorDef = { name: "Indicator", def: "Indicator node definition", node_type: "indicator", icon: "Target", category: "Indicators", description: "Custom technical indicator analysis", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 
+const MarketStatusDef = {
+  name: "Market Status",
+  def: "Market Status",
+  node_type: "main",
+  icon: "Building2",
+  category: "Data",
+  description: "Get real-time market status, hours, and trading sessions for global markets",
+  color: "text-blue-500",
+  size: { width: 320, height: 280 },
+  handles: [
+    { type: "source", position: "right", id: "output" }
+  ],
+  action: {
+    url: "/market-status",
+    method: "POST"
+  },
+  fields: [
+    {
+      key: "market",
+      label: "Market",
+      type: "select",
+      options: [
+        { id: "US", name: "US Markets (NYSE, NASDAQ)" },
+        { id: "EU", name: "European Markets (LSE, Euronext)" },
+        { id: "ASIA", name: "Asian Markets (TSE, HKEX)" },
+        { id: "CRYPTO", name: "Cryptocurrency Markets" },
+        { id: "FOREX", name: "Forex Markets" }
+      ],
+      placeholder: "Select market",
+      required: true
+    },
+    {
+      key: "info_types",
+      label: "Information Types",
+      type: "multiselect",
+      options: [
+        { id: "status", name: "Market Status (Open/Closed)" },
+        { id: "hours", name: "Trading Hours" },
+        { id: "next_event", name: "Next Open/Close Event" },
+        { id: "holidays", name: "Upcoming Holidays" },
+        { id: "session_type", name: "Session Type (Regular/Extended)" }
+      ],
+      default: ["status", "hours"],
+      required: true
+    },
+    {
+      key: "timezone",
+      label: "Timezone",
+      type: "select",
+      options: [
+        { id: "UTC", name: "UTC" },
+        { id: "America/New_York", name: "Eastern Time (ET)" },
+        { id: "Europe/London", name: "London Time (GMT/BST)" },
+        { id: "Asia/Tokyo", name: "Tokyo Time (JST)" },
+        { id: "Asia/Hong_Kong", name: "Hong Kong Time (HKT)" }
+      ],
+      default: "America/New_York",
+      required: true
+    }
+  ]
+};
+
 // Node configuration interface
 export interface NodeConfig {
   name: string;
@@ -449,7 +511,8 @@ export const nodeManifest = {
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaDataDef.name]: AlpacaDataDef,
   [AlpacaTradeDef.name]: AlpacaTradeDef,
-  [IndicatorDef.name]: IndicatorDef
+  [IndicatorDef.name]: IndicatorDef,
+  [MarketStatusDef.name]: MarketStatusDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

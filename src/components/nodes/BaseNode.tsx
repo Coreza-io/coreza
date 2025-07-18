@@ -409,6 +409,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
+    // Log the start of execution for all nodes
+    console.log("🎯 [NODE EXECUTION] Starting execution for node:", definition?.name || 'Unknown');
+    console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
+    
     // Validate required fields *only if visible*
     for (const f of definition?.fields || []) {
       let shouldShow = true;

@@ -62,7 +62,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
     // For Switch nodes, generate handles based on cases
     const fieldState = data.fieldState || {};
-    const cases = fieldState.cases || definition.fields?.find(f => f.key === "cases")?.default || [];
+    let cases = fieldState.cases;
+    
+    // If no cases in fieldState yet, use defaults from definition
+    if (!cases || cases.length === 0) {
+      const casesField = definition.fields?.find(f => f.key === "cases");
+      cases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+    }
     
     const handles = [
       { type: "target", position: "left", id: "input" }

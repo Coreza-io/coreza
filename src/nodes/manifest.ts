@@ -342,7 +342,6 @@ const SwitchDef = {
     { type: "target", position: "left", id: "input" },
     { type: "source", position: "right", id: "case1" },
     { type: "source", position: "right", id: "case2" },
-    { type: "source", position: "right", id: "case3" },
     { type: "source", position: "right", id: "default" }
   ],
   action: {

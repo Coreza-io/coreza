@@ -401,16 +401,22 @@ export class WorkflowExecutor {
           }
 
           // Add next nodes to queue
+          console.log(`📝 [WORKFLOW EXECUTOR] About to queue ${next.length} edges from node ${id}`);
           next.forEach(e => {
+            console.log(`🔄 [WORKFLOW EXECUTOR] Checking if target ${e.target} should be queued (currently in queue: ${queue.includes(e.target)})`);
             if (!queue.includes(e.target)) {
               queue.push(e.target);
+              console.log(`✅ [WORKFLOW EXECUTOR] Added ${e.target} to queue. Queue length now: ${queue.length}`);
               // Mark conditional targets for explicit triggering
               if (isConditionalExecution) {
                 console.log(`🎯 [WORKFLOW EXECUTOR] Marking conditional target ${e.target} for explicit execution`);
                 retryCount.set(e.target + "_conditional", 1); // Use this as a flag
               }
+            } else {
+              console.log(`⚠️ [WORKFLOW EXECUTOR] Target ${e.target} already in queue, skipping`);
             }
           });
+          console.log(`📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`, queue);
         } catch (error) {
           const nodeTime = performance.now() - nodeStart;
           metrics.nodeTimings.set(id, nodeTime);

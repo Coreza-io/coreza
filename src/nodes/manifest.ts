@@ -366,8 +366,7 @@ const SwitchDef = {
       ],
       default: [
         { caseValue: "case1", caseName: "Case 1" },
-        { caseValue: "case2", caseName: "Case 2" },
-        { caseValue: "case3", caseName: "Case 3" }
+        { caseValue: "case2", caseName: "Case 2" }
       ]
     },
     {

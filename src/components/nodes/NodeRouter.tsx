@@ -93,7 +93,39 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     return handles;
   };
 
+  // Calculate dynamic size for Switch nodes
+  const getDynamicSize = (definition: any, data: any) => {
+    if (definition.name !== "Switch") {
+      return {
+        width: definition.size?.width || 340,
+        height: definition.size?.height || 340
+      };
+    }
+
+    // For Switch nodes, calculate height based on number of cases
+    const fieldState = data.fieldState || {};
+    let cases = fieldState.cases;
+    
+    // If no cases in fieldState yet, use defaults from definition
+    if (!cases || cases.length === 0) {
+      const casesField = definition.fields?.find(f => f.key === "cases");
+      cases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+    }
+
+    // Base height + extra height per case (including default case)
+    const baseHeight = 340;
+    const heightPerCase = 40;
+    const totalCases = cases.length + 1; // +1 for default case
+    const dynamicHeight = Math.max(baseHeight, baseHeight + (totalCases - 2) * heightPerCase);
+
+    return {
+      width: definition.size?.width || 340,
+      height: dynamicHeight
+    };
+  };
+
   const dynamicHandles = getDynamicHandles(definition, data);
+  const dynamicSize = getDynamicSize(definition, data);
 
   return (
     <BaseNode data={data} selected={selected}>
@@ -145,8 +177,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             );
           })()}
           label={renderProps.displayName}
-          minWidth={definition.size?.width || 340}
-          minHeight={definition.size?.height || 340}
+          minWidth={dynamicSize.width}
+          minHeight={dynamicSize.height}
           handles={dynamicHandles}
           nodeType={definition.node_type}
         >

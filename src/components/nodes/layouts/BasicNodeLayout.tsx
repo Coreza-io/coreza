@@ -253,20 +253,42 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         return (
           <Select
             value={fieldState[f.key]}
-            onValueChange={(val) => handleChange(f.key, val)}
+            onValueChange={(val) => {
+              handleChange(f.key, val);
+              // Clear dependent field when parent changes
+              if (f.conditionalOptions) {
+                const dependentFields = definition.fields?.filter((field: any) => field.dependsOn === f.key);
+                dependentFields?.forEach((depField: any) => {
+                  handleChange(depField.key, "");
+                });
+              }
+            }}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder={f.placeholder || "Select option"} />
             </SelectTrigger>
             <SelectContent>
-              {(selectOptions[f.key] || []).map((opt: any) => (
-                <SelectItem
-                  key={opt.id || opt.value}
-                  value={opt.id || opt.value}
-                >
-                  {opt.name || opt.label || opt.id || opt.value}
-                </SelectItem>
-              ))}
+              {(() => {
+                // Handle conditional options
+                if (f.dependsOn && f.conditionalOptions) {
+                  const parentValue = fieldState[f.dependsOn];
+                  const conditionalOptions = f.conditionalOptions[parentValue] || [];
+                  return conditionalOptions.map((option: any) => (
+                    <SelectItem key={option.id || option.value} value={option.id || option.value}>
+                      {option.name || option.label || option.id || option.value}
+                    </SelectItem>
+                  ));
+                }
+                // Handle regular options
+                return (selectOptions[f.key] || f.options || []).map((opt: any) => (
+                  <SelectItem
+                    key={opt.id || opt.value}
+                    value={opt.id || opt.value}
+                  >
+                    {opt.name || opt.label || opt.id || opt.value}
+                  </SelectItem>
+                ));
+              })()}
             </SelectContent>
           </Select>
         );

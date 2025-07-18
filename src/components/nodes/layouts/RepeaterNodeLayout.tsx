@@ -79,14 +79,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     conditions.map(() => ({}))
   );
 
+  // Debounced updates to prevent rapid-fire handleChange calls
   useEffect(() => {
-    if (isConditional) {
-      handleChange("conditions", conditions);
-      handleChange("logicalOps", logicalOps);
-    }
-    if (isSwitch) {
-      handleChange("cases", cases);
-    }
+    const timeoutId = setTimeout(() => {
+      console.log('🔄 RepeaterNodeLayout updating conditions/cases');
+      if (isConditional) {
+        handleChange("conditions", conditions);
+        handleChange("logicalOps", logicalOps);
+      }
+      if (isSwitch) {
+        handleChange("cases", cases);
+      }
+    }, 100); // 100ms debounce
+
+    return () => clearTimeout(timeoutId);
   }, [conditions, logicalOps, cases, handleChange, isConditional, isSwitch]);
 
   // =========== CONDITIONAL HELPERS ===========

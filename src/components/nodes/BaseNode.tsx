@@ -104,7 +104,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     );
   });
 
-  // Only update fieldState when the actual field definitions change, not when data changes
+  // Initialize fieldState only once when definition changes, prevent continuous updates
   useEffect(() => {
     if (!definition?.fields) return;
     
@@ -117,17 +117,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       ])
     );
     
-    // Only update if the structure actually changed (deep comparison for essential fields)
-    const hasChanges = definition.fields.some((f: any) => {
-      const currentValue = fieldState[f.key];
-      const newValue = newFieldState[f.key];
-      return JSON.stringify(currentValue) !== JSON.stringify(newValue);
-    });
+    // Only update if we don't have fieldState initialized yet or if field definitions actually changed
+    const isInitializing = Object.keys(fieldState).length === 0;
+    const fieldKeysChanged = definition.fields.length !== Object.keys(fieldState).length ||
+      definition.fields.some((f: any) => !(f.key in fieldState));
     
-    if (hasChanges) {
+    if (isInitializing || fieldKeysChanged) {
+      console.log('🔄 BaseNode initializing fieldState for', definition.name);
       setFieldState(newFieldState);
     }
-  }, [definition?.fields]);
+  }, [definition?.fields?.length, definition?.name]); // Stable dependencies
 
   const [error, setError] = useState("");
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>({});
@@ -164,7 +163,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     document.body.classList.add("cursor-grabbing", "select-none");
   };
 
-  const handleChange = (key: string, value: any) => {
+  const handleChange = useCallback((key: string, value: any) => {
     const newFieldState = { ...fieldState, [key]: value };
     setFieldState(newFieldState);
     setNodes((nds) =>
@@ -175,13 +174,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
               data: {
                 ...n.data,
                 values: { ...((n.data as any)?.values || {}), [key]: value },
-                fieldState: newFieldState, // Ensure fieldState is available for NodeRouter
+                fieldState: newFieldState,
               },
             }
           : n
       )
     );
-  };
+  }, [fieldState, nodeId, setNodes]);
 
   const handleDrop = (
     fieldKey: string,

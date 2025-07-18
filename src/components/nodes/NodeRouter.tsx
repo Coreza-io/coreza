@@ -60,14 +60,23 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       return definition.handles || [];
     }
 
-    // For Switch nodes, generate handles based on cases
-    const fieldState = data.fieldState || {};
-    let cases = fieldState.cases;
+    // For Switch nodes, generate handles based on cases - use stable reference
+    const cases = data.fieldState?.cases || data.values?.cases;
     
-    // If no cases in fieldState yet, use defaults from definition
+    // If no cases available, use defaults from definition
     if (!cases || cases.length === 0) {
-      const casesField = definition.fields?.find(f => f.key === "cases");
-      cases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+      const casesField = definition.fields?.find((f: any) => f.key === "cases");
+      const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+      
+      return [
+        { type: "target", position: "left", id: "input" },
+        ...defaultCases.map((caseItem: any, index: number) => ({
+          type: "source",
+          position: "right",
+          id: caseItem.caseValue || `case${index + 1}`
+        })),
+        { type: "source", position: "right", id: "default" }
+      ];
     }
     
     const handles = [
@@ -87,11 +96,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     handles.push({
       type: "source",
       position: "right", 
-      id: fieldState.defaultCase || "default"
+      id: data.fieldState?.defaultCase || data.values?.defaultCase || "default"
     });
     
     return handles;
-  }, [definition.name, definition.handles, definition.fields, data.fieldState]);
+  }, [definition.name, definition.handles, definition.fields, (data.fieldState?.cases || data.values?.cases)?.length]); // Use stable reference
 
   // Memoize dynamic size for Switch nodes to prevent infinite re-renders
   const dynamicSize = useMemo(() => {
@@ -102,27 +111,30 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       };
     }
 
-    // For Switch nodes, calculate height based on number of cases
-    const fieldState = data.fieldState || {};
-    let cases = fieldState.cases;
+    // For Switch nodes, calculate height based on number of cases - use stable reference
+    const cases = data.fieldState?.cases || data.values?.cases;
+    let caseCount = 1; // Default case count
     
-    // If no cases in fieldState yet, use defaults from definition
-    if (!cases || cases.length === 0) {
-      const casesField = definition.fields?.find(f => f.key === "cases");
-      cases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+    if (cases && cases.length > 0) {
+      caseCount = cases.length;
+    } else {
+      // Use defaults from definition
+      const casesField = definition.fields?.find((f: any) => f.key === "cases");
+      const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+      caseCount = defaultCases.length;
     }
 
     // Base height + extra height per case (including default case)
     const baseHeight = 340;
     const heightPerCase = 40;
-    const totalCases = cases.length + 1; // +1 for default case
+    const totalCases = caseCount + 1; // +1 for default case
     const dynamicHeight = Math.max(baseHeight, baseHeight + (totalCases - 2) * heightPerCase);
 
     return {
       width: definition.size?.width || 340,
       height: dynamicHeight
     };
-  }, [definition.name, definition.size, definition.fields, data.fieldState]);
+  }, [definition.name, definition.size, definition.fields, (data.fieldState?.cases || data.values?.cases)?.length]); // Fix variable reference
 
   return (
     <BaseNode data={data} selected={selected}>

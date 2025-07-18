@@ -54,6 +54,21 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   const layoutType = getLayoutType(definition);
 
+  // Extract cases length for stable dependency tracking
+  const casesLength = useMemo(() => {
+    if (definition.name !== "Switch") return 0;
+    
+    const cases = data.fieldState?.cases || data.values?.cases;
+    if (cases && cases.length > 0) {
+      return cases.length;
+    }
+    
+    // Use defaults from definition
+    const casesField = definition.fields?.find((f: any) => f.key === "cases");
+    const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
+    return defaultCases.length;
+  }, [definition.name, definition.fields, data.fieldState?.cases?.length, data.values?.cases?.length]);
+
   // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
   const dynamicHandles = useMemo(() => {
     if (definition.name !== "Switch") {
@@ -100,7 +115,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     });
     
     return handles;
-  }, [definition.name, definition.handles, definition.fields, (data.fieldState?.cases || data.values?.cases)?.length]); // Use stable reference
+  }, [definition.name, definition.handles, definition.fields, casesLength]);
 
   // Memoize dynamic size for Switch nodes to prevent infinite re-renders
   const dynamicSize = useMemo(() => {
@@ -134,7 +149,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       width: definition.size?.width || 340,
       height: dynamicHeight
     };
-  }, [definition.name, definition.size, definition.fields, (data.fieldState?.cases || data.values?.cases)?.length]); // Fix variable reference
+  }, [definition.name, definition.size, definition.fields, casesLength]);
 
   return (
     <BaseNode data={data} selected={selected}>

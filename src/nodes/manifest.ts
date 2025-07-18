@@ -387,7 +387,9 @@ const MarketStatusDef = {
   color: "text-blue-500",
   size: { width: 320, height: 280 },
   handles: [
+    { type: "target", position: "left", id: "input" },
     { type: "source", position: "right", id: "output" }
+    
   ],
   action: {
     url: "/market/market_info",

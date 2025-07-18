@@ -371,7 +371,10 @@ export class WorkflowExecutor {
           let conditionalTargetId: string | undefined;
           
           const isBranchNode = this.conditionalMap.has(id);
+          console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} is branch node: ${isBranchNode}, conditionalMap has:`, Array.from(this.conditionalMap.keys()));
+          
           if (isBranchNode) {
+            console.log(`🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`);
             // Use universal branch handler
             let handleKey: string;
             if (typeof result === 'boolean') {
@@ -382,7 +385,9 @@ export class WorkflowExecutor {
               handleKey = String(result);
             }
 
+            console.log(`🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`);
             const branchMap = this.conditionalMap.get(id) || {};
+            console.log(`🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`, branchMap);
             const targetNodeId = branchMap[handleKey];
             
             if (targetNodeId) {
@@ -394,8 +399,11 @@ export class WorkflowExecutor {
                 console.log(`🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to ${targetNodeId}`);
                 this.highlightEdges(id, targetNodeId);
               }
+            } else {
+              console.log(`⚠️ [WORKFLOW EXECUTOR] No target found for branch node ${id} with handle "${handleKey}"`);
             }
           } else {
+            console.log(`📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`);
             next = out;
             console.log(`➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`, next.map(e => e.target));
           }

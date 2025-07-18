@@ -1,8 +1,9 @@
-import React, { memo, useMemo } from "react";
+import React, { memo } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layouts/BasicNodeLayout";
-import RepeaterNodeLayout from "./layouts/RepeaterNodeLayout";
+import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
+import SwitchNodeLayout from "./layouts/SwitchNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -40,118 +41,22 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
-    // Check if node has repeater fields (conditional logic or switch cases)
-    const hasRepeaterFields = definition.fields?.some((f: any) => f.type === "repeater");
-    if (hasRepeaterFields) return "repeater";
+    // Switch nodes get their own special layout
+    if (definition.name === "Switch") return "switch";
     
-    // Check for specific conditional/switch node types (backwards compatibility)
-    const repeaterNodeTypes = ["If", "Switch", "Filter"];
-    if (repeaterNodeTypes.includes(definition.name)) return "repeater";
+    // Check if node has repeater fields (conditional logic)
+    const hasRepeaterFields = definition.fields?.some((f: any) => f.type === "repeater");
+    if (hasRepeaterFields) return "conditional";
+    
+    // Check for specific conditional node types
+    const conditionalNodeTypes = ["If", "Filter"];
+    if (conditionalNodeTypes.includes(definition.name)) return "conditional";
     
     // Default to basic layout
     return "basic";
   };
 
   const layoutType = getLayoutType(definition);
-
-  // Extract cases length for stable dependency tracking
-  const casesLength = useMemo(() => {
-    if (definition.name !== "Switch") return 0;
-    
-    const cases = data.fieldState?.cases || data.values?.cases;
-    if (cases && cases.length > 0) {
-      return cases.length;
-    }
-    
-    // Use defaults from definition
-    const casesField = definition.fields?.find((f: any) => f.key === "cases");
-    const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
-    return defaultCases.length;
-  }, [definition.name, definition.fields, data.fieldState?.cases, data.values?.cases]);
-
-  // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
-  const dynamicHandles = useMemo(() => {
-    if (definition.name !== "Switch") {
-      return definition.handles || [];
-    }
-
-    // For Switch nodes, generate handles based on cases - use stable reference
-    const cases = data.fieldState?.cases || data.values?.cases;
-    
-    // If no cases available, use defaults from definition
-    if (!cases || cases.length === 0) {
-      const casesField = definition.fields?.find((f: any) => f.key === "cases");
-      const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
-      
-      return [
-        { type: "target", position: "left", id: "input" },
-        ...defaultCases.map((caseItem: any, index: number) => ({
-          type: "source",
-          position: "right",
-          id: caseItem.caseValue || `case${index + 1}`
-        })),
-        { type: "source", position: "right", id: "default" }
-      ];
-    }
-    
-    const handles = [
-      { type: "target", position: "left", id: "input" }
-    ];
-    
-    // Add handle for each case - ensure stable IDs
-    cases.forEach((caseItem: any, index: number) => {
-      const handleId = caseItem.caseValue || `case${index + 1}`;
-      console.log(`🔧 Adding Switch handle: ${handleId}`);
-      handles.push({
-        type: "source",
-        position: "right",
-        id: handleId
-      });
-    });
-    
-    // Add default handle
-    handles.push({
-      type: "source",
-      position: "right", 
-      id: data.fieldState?.defaultCase || data.values?.defaultCase || "default"
-    });
-    
-    return handles;
-  }, [definition.name, definition.handles, definition.fields, casesLength]);
-
-  // Memoize dynamic size for Switch nodes to prevent infinite re-renders
-  const dynamicSize = useMemo(() => {
-    if (definition.name !== "Switch") {
-      return {
-        width: definition.size?.width || 340,
-        height: definition.size?.height || 340
-      };
-    }
-
-    // For Switch nodes, calculate height based on number of cases - use stable reference
-    const cases = data.fieldState?.cases || data.values?.cases;
-    let caseCount = 1; // Default case count
-    
-    if (cases && cases.length > 0) {
-      caseCount = cases.length;
-    } else {
-      // Use defaults from definition
-      const casesField = definition.fields?.find((f: any) => f.key === "cases");
-      const defaultCases = casesField?.default || [{ caseValue: "case1", caseName: "Case 1" }];
-      caseCount = defaultCases.length;
-    }
-
-    // Base height + extra height per case (including default case)
-    const baseHeight = 340;
-    const heightPerCase = 40;
-    const totalCases = caseCount + 1; // +1 for default case
-    const dynamicHeight = Math.max(baseHeight, baseHeight + (totalCases - 2) * heightPerCase);
-
-    return {
-      width: definition.size?.width || 340,
-      height: dynamicHeight
-    };
-  }, [definition.name, definition.size, definition.fields, casesLength]);
 
   return (
     <BaseNode data={data} selected={selected}>
@@ -203,13 +108,15 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             );
           })()}
           label={renderProps.displayName}
-          minWidth={dynamicSize.width}
-          minHeight={dynamicSize.height}
-          handles={dynamicHandles}
+          minWidth={definition.size?.width || 340}
+          minHeight={definition.size?.height || 340}
+          handles={definition.handles || []}
           nodeType={definition.node_type}
         >
-          {layoutType === "repeater" ? (
-            <RepeaterNodeLayout {...renderProps} />
+          {layoutType === "switch" ? (
+            <SwitchNodeLayout {...renderProps} />
+          ) : layoutType === "conditional" ? (
+            <ConditionalNodeLayout {...renderProps} />
           ) : (
             <BasicNodeLayout {...renderProps} />
           )}

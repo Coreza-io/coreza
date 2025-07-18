@@ -452,35 +452,8 @@ const WorkflowEditor = () => {
                 }
               }));
               setNodes(restoredNodes);
-              
-              // Clean up invalid edges after nodes are set
-              if (data.edges && Array.isArray(data.edges)) {
-                const validEdges = (data.edges as unknown as Edge[]).filter(edge => {
-                  // Check if edge connects to a valid source handle
-                  const sourceNode = restoredNodes.find(n => n.id === edge.source);
-                  if (!sourceNode || !edge.sourceHandle) return true; // Keep non-handle edges
-                  
-                  // For Switch nodes, validate that the sourceHandle exists in cases
-                  const nodeDefinition = sourceNode.data?.definition as any;
-                  const nodeType = nodeDefinition?.name;
-                  if (nodeType === "Switch") {
-                    const cases = sourceNode.data?.values?.cases || (sourceNode as any).values?.cases || [];
-                    const validHandles = cases.map((c: any) => c.caseValue || `case${cases.indexOf(c) + 1}`);
-                    validHandles.push("default"); // Add default handle
-                    
-                    if (!validHandles.includes(edge.sourceHandle)) {
-                      console.log(`🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`);
-                      return false; // Remove invalid edge
-                    }
-                  }
-                  
-                  return true; // Keep valid edge
-                });
-                
-                setEdges(validEdges);
-              }
-            } else if (data.edges && Array.isArray(data.edges)) {
-              // If no nodes but edges exist, just set edges directly
+            }
+            if (data.edges && Array.isArray(data.edges)) {
               setEdges(data.edges as unknown as Edge[]);
             }
             setHasLoadedWorkflowId(workflowId);

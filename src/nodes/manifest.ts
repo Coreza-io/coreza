@@ -211,7 +211,7 @@ const IfDef = {
       label: "conditions",
       type: "repeater",
       subFields: [
-        { key: "left", type: "string", placeholder: "{{ $('Market Status').json.market_type }}" },
+        { key: "left", type: "string", placeholder: "{{ $json.value }}" },
         { 
           key: "operator", 
           type: "string", 
@@ -222,7 +222,7 @@ const IfDef = {
             { label: "less than", value: "<=" }
           ]
         },
-        { key: "right", type: "string", placeholder: "stocks" }
+        { key: "right", type: "string", placeholder: "100" }
       ],
       default: { left: "", operator: "===", right: "" }
     }
@@ -341,7 +341,9 @@ const SwitchDef = {
   handles: [
     { type: "target", position: "left", id: "input" },
     { type: "source", position: "right", id: "case1" },
-    { type: "source", position: "right", id: "case2" }
+    { type: "source", position: "right", id: "case2" },
+    { type: "source", position: "right", id: "case3" },
+    { type: "source", position: "right", id: "default" }
   ],
   action: {
     url: "/comparator/switch",
@@ -362,6 +364,11 @@ const SwitchDef = {
       subFields: [
         { key: "caseValue", type: "string", placeholder: "case1" },
         { key: "caseName", type: "string", placeholder: "Case Label" }
+      ],
+      default: [
+        { caseValue: "case1", caseName: "Case 1" },
+        { caseValue: "case2", caseName: "Case 2" },
+        { caseValue: "case3", caseName: "Case 3" }
       ]
     },
     {
@@ -370,122 +377,12 @@ const SwitchDef = {
       type: "text",
       placeholder: "default",
       default: "default",
-      required: false
+      required: true
     }
   ]
 };
 
 const IndicatorDef = { name: "Indicator", def: "Indicator node definition", node_type: "indicator", icon: "Target", category: "Indicators", description: "Custom technical indicator analysis", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
-
-const MarketStatusDef = {
-  name: "Market Status",
-  def: "Market Status",
-  node_type: "main",
-  icon: "Building2",
-  category: "Data",
-  description: "Get real-time market status, hours, and trading sessions for global markets",
-  color: "text-blue-500",
-  size: { width: 320, height: 280 },
-  handles: [
-    { type: "target", position: "left", id: "input" },
-    { type: "source", position: "right", id: "output" }
-    
-  ],
-  action: {
-    url: "/market/market_info",
-    method: "POST"
-  },
-  fields: [
-    {
-      key: "market_type",
-      label: "Market Type",
-      type: "select",
-      options: [
-        { id: "stocks", name: "Stocks" },
-        { id: "crypto", name: "Crypto" },
-        { id: "forex", name: "Forex" },
-        { id: "commodities", name: "Commodities" },
-        { id: "bonds", name: "Bonds" }
-      ],
-      placeholder: "Select market type",
-      required: true
-    },
-    {
-      key: "exchange",
-      label: "Exchange",
-      type: "select",
-      options: [],
-      placeholder: "Select exchange",
-      required: true,
-      dependsOn: "market_type",
-      conditionalOptions: {
-        stocks: [
-          { id: "nyse", name: "NYSE" },
-          { id: "nasdaq", name: "NASDAQ" },
-          { id: "lse", name: "London Stock Exchange" },
-          { id: "euronext", name: "Euronext" },
-          { id: "tse", name: "Tokyo Stock Exchange" },
-          { id: "hkex", name: "Hong Kong Exchange" },
-          { id: "tsx", name: "Toronto Stock Exchange" }
-        ],
-        crypto: [
-          { id: "binance", name: "Binance" },
-          { id: "coinbase", name: "Coinbase" },
-          { id: "kraken", name: "Kraken" },
-          { id: "bitfinex", name: "Bitfinex" },
-          { id: "gemini", name: "Gemini" },
-          { id: "huobi", name: "Huobi" }
-        ],
-        forex: [
-          { id: "london", name: "London Session" },
-          { id: "new_york", name: "New York Session" },
-          { id: "tokyo", name: "Tokyo Session" },
-          { id: "sydney", name: "Sydney Session" }
-        ],
-        commodities: [
-          { id: "comex", name: "COMEX" },
-          { id: "nymex", name: "NYMEX" },
-          { id: "lme", name: "London Metal Exchange" },
-          { id: "cbot", name: "Chicago Board of Trade" }
-        ],
-        bonds: [
-          { id: "us_treasury", name: "US Treasury" },
-          { id: "uk_gilts", name: "UK Gilts" },
-          { id: "german_bunds", name: "German Bunds" },
-          { id: "japanese_bonds", name: "Japanese Government Bonds" }
-        ]
-      }
-    },
-    {
-      key: "info_types",
-      label: "Information Types",
-      type: "multiselect",
-      options: [
-        { id: "status", name: "Market Status (Open/Closed)" },
-        { id: "hours", name: "Trading Hours" },
-        { id: "next_event", name: "Next Open/Close Event" },
-        { id: "holidays", name: "Upcoming Holidays" },
-        { id: "session_type", name: "Session Type (Regular/Extended)" }
-      ],
-      default: ["status", "hours"],
-      required: true
-    },
-    {
-      key: "timezone",
-      label: "Timezone",
-      type: "select",
-      options: [
-        { id: "UTC", name: "UTC" },
-        { id: "America/New_York", name: "Eastern Time (ET)" },
-        { id: "Europe/London", name: "London Time (GMT/BST)" },
-        { id: "Asia/Tokyo", name: "Tokyo Time (JST)" },
-        { id: "Asia/Hong_Kong", name: "Hong Kong Time (HKT)" }
-      ],
-      default: "America/New_York",
-      required: true
-    }
-  ]
-};
 
 // Node configuration interface
 export interface NodeConfig {
@@ -559,8 +456,7 @@ export const nodeManifest = {
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaDataDef.name]: AlpacaDataDef,
   [AlpacaTradeDef.name]: AlpacaTradeDef,
-  [IndicatorDef.name]: IndicatorDef,
-  [MarketStatusDef.name]: MarketStatusDef
+  [IndicatorDef.name]: IndicatorDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

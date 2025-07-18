@@ -340,7 +340,8 @@ const SwitchDef = {
   size: { width: 360, height: 300 },
   handles: [
     { type: "target", position: "left", id: "input" },
-    { type: "source", position: "right", id: "case1" }
+    { type: "source", position: "right", id: "case1" },
+    { type: "source", position: "right", id: "case2" }
   ],
   action: {
     url: "/comparator/switch",

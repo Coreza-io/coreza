@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
@@ -275,31 +276,29 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         const availableOptions = selectOptions[f.key] || f.options || [];
         
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {availableOptions.map((opt: any) => {
               const optionId = opt.id || opt.value;
               const optionLabel = opt.name || opt.label || opt.id || opt.value;
               const isSelected = selectedValues.includes(optionId);
               
               return (
-                <label key={optionId} className="flex items-center space-x-2 text-sm">
-                  <input
-                    type="checkbox"
+                <div key={optionId} className="flex items-center justify-between">
+                  <span className="text-sm text-foreground">{optionLabel}</span>
+                  <Switch
                     checked={isSelected}
-                    onChange={(e) => {
+                    onCheckedChange={(checked) => {
                       const currentValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
                       let newValues;
-                      if (e.target.checked) {
+                      if (checked) {
                         newValues = [...currentValues, optionId];
                       } else {
                         newValues = currentValues.filter((v: string) => v !== optionId);
                       }
                       handleChange(f.key, newValues);
                     }}
-                    className="rounded border-gray-300"
                   />
-                  <span>{optionLabel}</span>
-                </label>
+                </div>
               );
             })}
           </div>

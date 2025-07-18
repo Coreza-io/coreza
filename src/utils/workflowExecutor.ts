@@ -363,6 +363,8 @@ export class WorkflowExecutor {
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
           
+          console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
+          
           // Use optimized conditional branch handling
           let next: Edge[] = [];
           let isConditionalExecution = false;
@@ -395,6 +397,7 @@ export class WorkflowExecutor {
             }
           } else {
             next = out;
+            console.log(`➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`, next.map(e => e.target));
           }
 
           // Add next nodes to queue

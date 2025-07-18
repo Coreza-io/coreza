@@ -98,12 +98,14 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       { type: "target", position: "left", id: "input" }
     ];
     
-    // Add handle for each case
+    // Add handle for each case - ensure stable IDs
     cases.forEach((caseItem: any, index: number) => {
+      const handleId = caseItem.caseValue || `case${index + 1}`;
+      console.log(`🔧 Adding Switch handle: ${handleId}`);
       handles.push({
         type: "source",
         position: "right",
-        id: caseItem.caseValue || `case${index + 1}`
+        id: handleId
       });
     });
     

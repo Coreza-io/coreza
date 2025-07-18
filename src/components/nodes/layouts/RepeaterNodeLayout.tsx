@@ -55,13 +55,21 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     ? repeaterField.default[0]
     : (repeaterField?.default ?? { left: "", operator: "===", right: "" });
 
-  const initialConds = isConditional && fieldState.conditions && fieldState.conditions.length > 0
-    ? fieldState.conditions
-    : isConditional ? [defaultCond] : [];
+  // Improve state persistence for conditions
+  const initialConds = useMemo(() => {
+    console.log('🔧 Calculating initialConds', { fieldState, isConditional, defaultCond });
+    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions) && fieldState.conditions.length > 0) {
+      return fieldState.conditions;
+    }
+    return isConditional ? [defaultCond] : [];
+  }, [isConditional, fieldState.conditions, defaultCond]);
 
-  const initialOps = isConditional && fieldState.logicalOps && fieldState.logicalOps.length === initialConds.length - 1
-    ? fieldState.logicalOps
-    : isConditional ? Array(Math.max(0, initialConds.length - 1)).fill("AND") : [];
+  const initialOps = useMemo(() => {
+    if (isConditional && fieldState.logicalOps && Array.isArray(fieldState.logicalOps) && fieldState.logicalOps.length === initialConds.length - 1) {
+      return fieldState.logicalOps;
+    }
+    return isConditional ? Array(Math.max(0, initialConds.length - 1)).fill("AND") : [];
+  }, [isConditional, fieldState.logicalOps, initialConds.length]);
 
   // =========== SWITCH LOGIC ===========
   const defaultCase = isSwitch && Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
@@ -77,13 +85,33 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const [logicalOps, setLogicalOps] = useState<string[]>(initialOps);
   const [cases, setCases] = useState(initialCases);
   const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(
-    conditions.map(() => ({}))
+    initialConds.map(() => ({}))
   );
+
+  // Update state when field state changes from external sources
+  useEffect(() => {
+    console.log('🔧 Syncing state with fieldState changes');
+    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions)) {
+      setConditions(fieldState.conditions);
+      if (fieldState.logicalOps && Array.isArray(fieldState.logicalOps)) {
+        setLogicalOps(fieldState.logicalOps);
+      }
+    }
+    if (isSwitch && fieldState.cases && Array.isArray(fieldState.cases)) {
+      setCases(fieldState.cases);
+    }
+  }, [fieldState.conditions, fieldState.logicalOps, fieldState.cases, isConditional, isSwitch]);
 
   // Debounced updates to prevent rapid-fire handleChange calls
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      console.log('🔄 RepeaterNodeLayout updating conditions/cases');
+      console.log('🔄 RepeaterNodeLayout updating conditions/cases', {
+        isConditional,
+        isSwitch,
+        conditions,
+        cases,
+        fieldState
+      });
       if (isConditional) {
         handleChange("conditions", conditions);
         handleChange("logicalOps", logicalOps);

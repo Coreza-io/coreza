@@ -211,7 +211,7 @@ const IfDef = {
       label: "conditions",
       type: "repeater",
       subFields: [
-        { key: "left", type: "string", placeholder: "{{ $json.value }}" },
+        { key: "left", type: "string", placeholder: "{{ $('Market Status').json.market_type }}" },
         { 
           key: "operator", 
           type: "string", 
@@ -222,7 +222,7 @@ const IfDef = {
             { label: "less than", value: "<=" }
           ]
         },
-        { key: "right", type: "string", placeholder: "100" }
+        { key: "right", type: "string", placeholder: "stocks" }
       ],
       default: { left: "", operator: "===", right: "" }
     }

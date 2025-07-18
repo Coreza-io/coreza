@@ -467,8 +467,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       if (definition?.action?.url && definition?.action?.method) {
         let fullUrl = `${BACKEND_URL}${url}`;
+        let params: URLSearchParams | undefined;
+        
         if (method === "GET") {
-          const params = new URLSearchParams();
+          params = new URLSearchParams();
           params.append("user_id", userId);
           params.append("credential_id", fieldState.credential_id ?? "");
           fullUrl += `?${params.toString()}`;
@@ -478,6 +480,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         if (method !== "GET") {
           fetchOptions.headers = { "Content-Type": "application/json" };
           fetchOptions.body = JSON.stringify(payload);
+        }
+
+        // Log the payload and request details
+        console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+        console.log("🚀 [BACKEND REQUEST] Method:", method);
+        console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
+        if (method === "GET" && params) {
+          console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
         }
 
         const res = await fetch(fullUrl, fetchOptions);

@@ -363,6 +363,14 @@ const SwitchDef = {
         { key: "caseValue", type: "string", placeholder: "case1" },
         { key: "caseName", type: "string", placeholder: "Case Label" }
       ]
+    },
+    {
+      key: "defaultCase",
+      label: "Default Case",
+      type: "text",
+      placeholder: "default",
+      default: "default",
+      required: false
     }
   ]
 };

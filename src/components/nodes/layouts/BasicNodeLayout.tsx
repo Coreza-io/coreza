@@ -269,6 +269,41 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             </SelectContent>
           </Select>
         );
+
+      case "multiselect":
+        const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+        const availableOptions = selectOptions[f.key] || f.options || [];
+        
+        return (
+          <div className="space-y-2">
+            {availableOptions.map((opt: any) => {
+              const optionId = opt.id || opt.value;
+              const optionLabel = opt.name || opt.label || opt.id || opt.value;
+              const isSelected = selectedValues.includes(optionId);
+              
+              return (
+                <label key={optionId} className="flex items-center space-x-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => {
+                      const currentValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                      let newValues;
+                      if (e.target.checked) {
+                        newValues = [...currentValues, optionId];
+                      } else {
+                        newValues = currentValues.filter((v: string) => v !== optionId);
+                      }
+                      handleChange(f.key, newValues);
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  <span>{optionLabel}</span>
+                </label>
+              );
+            })}
+          </div>
+        );
       
       default:
         return null;

@@ -46,6 +46,12 @@ export function resolveReferences(expr: string, inputData: any, allNodeData?: Re
       if (allNodeData[nodeName]) {
         targetData = allNodeData[nodeName];
         console.log(`🔍 Found data for node '${nodeName}':`, targetData);
+        
+        // Handle nested json structure for Market Status and other nodes
+        if (targetData.json) {
+          targetData = targetData.json;
+          console.log(`🔍 Using nested json data:`, targetData);
+        }
       } else {
         console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
         return fullMatch; // Return original if node not found

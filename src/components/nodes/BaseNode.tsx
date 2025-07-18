@@ -92,32 +92,41 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData = selectedInputData[0] || {};
   }
 
-  const [fieldState, setFieldState] = useState<Record<string, any>>(() =>
-    definition && definition.fields
-      ? Object.fromEntries(
-          definition.fields.map((f: any) => [
-            f.key, 
-            f.type === "repeater" 
-              ? data.values?.[f.key] || [f.default || {}]
-              : data.values?.[f.key] || ""
-          ])
-        )
-      : {}
-  );
+  const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
+    if (!definition?.fields) return {};
+    return Object.fromEntries(
+      definition.fields.map((f: any) => [
+        f.key, 
+        f.type === "repeater" 
+          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
+          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+      ])
+    );
+  });
 
+  // Initialize fieldState only once when definition changes, prevent continuous updates
   useEffect(() => {
     if (!definition?.fields) return;
-    setFieldState(
-      Object.fromEntries(
-        definition.fields.map((f: any) => [
-          f.key, 
-          f.type === "repeater" 
-            ? data.values?.[f.key] || [f.default || {}]
-            : data.values?.[f.key] || ""
-        ])
-      )
+    
+    const newFieldState = Object.fromEntries(
+      definition.fields.map((f: any) => [
+        f.key, 
+        f.type === "repeater" 
+          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
+          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+      ])
     );
-  }, [definition?.fields, data.values]);
+    
+    // Only update if we don't have fieldState initialized yet or if field definitions actually changed
+    const isInitializing = Object.keys(fieldState).length === 0;
+    const fieldKeysChanged = definition.fields.length !== Object.keys(fieldState).length ||
+      definition.fields.some((f: any) => !(f.key in fieldState));
+    
+    if (isInitializing || fieldKeysChanged) {
+      console.log('🔄 BaseNode initializing fieldState for', definition.name);
+      setFieldState(newFieldState);
+    }
+  }, [definition?.fields?.length, definition?.name]); // Stable dependencies
 
   const [error, setError] = useState("");
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>({});
@@ -154,8 +163,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     document.body.classList.add("cursor-grabbing", "select-none");
   };
 
-  const handleChange = (key: string, value: any) => {
-    setFieldState((fs) => ({ ...fs, [key]: value }));
+  const handleChange = useCallback((key: string, value: any) => {
+    const newFieldState = { ...fieldState, [key]: value };
+    setFieldState(newFieldState);
     setNodes((nds) =>
       nds.map((n) =>
         n.id === nodeId
@@ -164,12 +174,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
               data: {
                 ...n.data,
                 values: { ...((n.data as any)?.values || {}), [key]: value },
+                fieldState: newFieldState,
               },
             }
           : n
       )
     );
-  };
+  }, [fieldState, nodeId, setNodes]);
 
   const handleDrop = (
     fieldKey: string,
@@ -398,6 +409,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
+    // Log the start of execution for all nodes
+    console.log("🎯 [NODE EXECUTION] Starting execution for node:", definition?.name || 'Unknown');
+    console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
+    
     // Validate required fields *only if visible*
     for (const f of definition?.fields || []) {
       let shouldShow = true;
@@ -456,8 +471,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       if (definition?.action?.url && definition?.action?.method) {
         let fullUrl = `${BACKEND_URL}${url}`;
+        let params: URLSearchParams | undefined;
+        
         if (method === "GET") {
-          const params = new URLSearchParams();
+          params = new URLSearchParams();
           params.append("user_id", userId);
           params.append("credential_id", fieldState.credential_id ?? "");
           fullUrl += `?${params.toString()}`;
@@ -467,6 +484,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         if (method !== "GET") {
           fetchOptions.headers = { "Content-Type": "application/json" };
           fetchOptions.body = JSON.stringify(payload);
+        }
+
+        // Log the payload and request details
+        console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+        console.log("🚀 [BACKEND REQUEST] Method:", method);
+        console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
+        if (method === "GET" && params) {
+          console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
         }
 
         const res = await fetch(fullUrl, fetchOptions);
@@ -579,6 +604,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           let resultToPass = actualResult;
           if (Array.isArray(actualResult) && actualResult.length > 0) {
             resultToPass = actualResult[0];
+          }
+          
+          // Special handling for Switch/comparator nodes
+          const nodeType = definition?.name;
+          if (nodeType === 'Switch' && resultToPass && typeof resultToPass === 'object' && 'result' in resultToPass) {
+            resultToPass = resultToPass.result; // Extract the 'result' field
           }
           
           // Call success callback immediately with the result

@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
@@ -252,22 +253,77 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         return (
           <Select
             value={fieldState[f.key]}
-            onValueChange={(val) => handleChange(f.key, val)}
+            onValueChange={(val) => {
+              handleChange(f.key, val);
+              // Clear dependent field when parent changes
+              if (f.conditionalOptions) {
+                const dependentFields = definition.fields?.filter((field: any) => field.dependsOn === f.key);
+                dependentFields?.forEach((depField: any) => {
+                  handleChange(depField.key, "");
+                });
+              }
+            }}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder={f.placeholder || "Select option"} />
             </SelectTrigger>
             <SelectContent>
-              {(selectOptions[f.key] || []).map((opt: any) => (
-                <SelectItem
-                  key={opt.id || opt.value}
-                  value={opt.id || opt.value}
-                >
-                  {opt.name || opt.label || opt.id || opt.value}
-                </SelectItem>
-              ))}
+              {(() => {
+                // Handle conditional options
+                if (f.dependsOn && f.conditionalOptions) {
+                  const parentValue = fieldState[f.dependsOn];
+                  const conditionalOptions = f.conditionalOptions[parentValue] || [];
+                  return conditionalOptions.map((option: any) => (
+                    <SelectItem key={option.id || option.value} value={option.id || option.value}>
+                      {option.name || option.label || option.id || option.value}
+                    </SelectItem>
+                  ));
+                }
+                // Handle regular options
+                return (selectOptions[f.key] || f.options || []).map((opt: any) => (
+                  <SelectItem
+                    key={opt.id || opt.value}
+                    value={opt.id || opt.value}
+                  >
+                    {opt.name || opt.label || opt.id || opt.value}
+                  </SelectItem>
+                ));
+              })()}
             </SelectContent>
           </Select>
+        );
+
+      case "multiselect":
+        const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+        const availableOptions = selectOptions[f.key] || f.options || [];
+        
+        return (
+          <div className="space-y-3">
+            {availableOptions.map((opt: any) => {
+              const optionId = opt.id || opt.value;
+              const optionLabel = opt.name || opt.label || opt.id || opt.value;
+              const isSelected = selectedValues.includes(optionId);
+              
+              return (
+                <div key={optionId} className="flex items-center justify-between">
+                  <span className="text-sm text-foreground">{optionLabel}</span>
+                  <Switch
+                    checked={isSelected}
+                    onCheckedChange={(checked) => {
+                      const currentValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                      let newValues;
+                      if (checked) {
+                        newValues = [...currentValues, optionId];
+                      } else {
+                        newValues = currentValues.filter((v: string) => v !== optionId);
+                      }
+                      handleChange(f.key, newValues);
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
         );
       
       default:

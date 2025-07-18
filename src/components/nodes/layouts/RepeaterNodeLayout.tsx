@@ -3,7 +3,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Loader2, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, X, Plus } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { resolveReferences } from "@/utils/resolveReferences";
@@ -20,11 +21,11 @@ const getDisplayName = (node: any, allNodes: any[]) => {
   return idx > 0 ? `${baseName}${idx}` : baseName;
 };
 
-interface ConditionalNodeLayoutProps extends BaseNodeRenderProps {
+interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
 }
 
-const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
+const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
   fieldState,
   error,
@@ -44,32 +45,86 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
 }) => {
   const { setNodes, setEdges, getNodes } = useReactFlow();
 
-  // =========== CONDITIONS/REPEATER LOGIC ===========
-  const condField = definition.fields?.find((f: any) => f.key === "conditions");
-  const defaultCond = Array.isArray(condField?.default) && condField.default.length > 0
-    ? condField.default[0]
-    : (condField?.default ?? { left: "", operator: "===", right: "" });
+  // =========== DETERMINE REPEATER TYPE ===========
+  const repeaterField = definition.fields?.find((f: any) => f.type === "repeater");
+  const isConditional = repeaterField?.key === "conditions";
+  const isSwitch = repeaterField?.key === "cases";
 
-  const initialConds = fieldState.conditions && fieldState.conditions.length > 0
-    ? fieldState.conditions
-    : [defaultCond];
+  // =========== CONDITIONAL LOGIC ===========
+  const defaultCond = Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
+    ? repeaterField.default[0]
+    : (repeaterField?.default ?? { left: "", operator: "===", right: "" });
 
-  const initialOps = fieldState.logicalOps && fieldState.logicalOps.length === initialConds.length - 1
-    ? fieldState.logicalOps
-    : Array(initialConds.length - 1).fill("AND");
+  // Improve state persistence for conditions
+  const initialConds = useMemo(() => {
+    console.log('🔧 Calculating initialConds', { fieldState, isConditional, defaultCond });
+    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions) && fieldState.conditions.length > 0) {
+      return fieldState.conditions;
+    }
+    return isConditional ? [defaultCond] : [];
+  }, [isConditional, fieldState.conditions, defaultCond]);
 
+  const initialOps = useMemo(() => {
+    if (isConditional && fieldState.logicalOps && Array.isArray(fieldState.logicalOps) && fieldState.logicalOps.length === initialConds.length - 1) {
+      return fieldState.logicalOps;
+    }
+    return isConditional ? Array(Math.max(0, initialConds.length - 1)).fill("AND") : [];
+  }, [isConditional, fieldState.logicalOps, initialConds.length]);
+
+  // =========== SWITCH LOGIC ===========
+  const defaultCase = isSwitch && Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
+    ? repeaterField.default
+    : [{ caseValue: "case1", caseName: "Case 1" }];
+
+  const initialCases = isSwitch && fieldState.cases && fieldState.cases.length > 0
+    ? fieldState.cases
+    : isSwitch ? defaultCase : [];
+
+  // =========== STATE ===========
   const [conditions, setConditions] = useState(initialConds);
   const [logicalOps, setLogicalOps] = useState<string[]>(initialOps);
+  const [cases, setCases] = useState(initialCases);
   const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(
-    conditions.map(() => ({}))
+    initialConds.map(() => ({}))
   );
 
+  // Update state when field state changes from external sources
   useEffect(() => {
-    handleChange("conditions", conditions);
-    handleChange("logicalOps", logicalOps);
-  }, [conditions, logicalOps, handleChange]);
+    console.log('🔧 Syncing state with fieldState changes');
+    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions)) {
+      setConditions(fieldState.conditions);
+      if (fieldState.logicalOps && Array.isArray(fieldState.logicalOps)) {
+        setLogicalOps(fieldState.logicalOps);
+      }
+    }
+    if (isSwitch && fieldState.cases && Array.isArray(fieldState.cases)) {
+      setCases(fieldState.cases);
+    }
+  }, [fieldState.conditions, fieldState.logicalOps, fieldState.cases, isConditional, isSwitch]);
 
-  // List-manipulation helpers
+  // Debounced updates to prevent rapid-fire handleChange calls
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      console.log('🔄 RepeaterNodeLayout updating conditions/cases', {
+        isConditional,
+        isSwitch,
+        conditions,
+        cases,
+        fieldState
+      });
+      if (isConditional) {
+        handleChange("conditions", conditions);
+        handleChange("logicalOps", logicalOps);
+      }
+      if (isSwitch) {
+        handleChange("cases", cases);
+      }
+    }, 100); // 100ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [conditions, logicalOps, cases, handleChange, isConditional, isSwitch]);
+
+  // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {
     setConditions((c) => [...c, { ...defaultCond }]);
     setLogicalOps((lo) => [...lo, "AND"]);
@@ -95,6 +150,26 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     setLogicalOps((lo) => lo.map((v, i) => (i === idx ? op : v)));
   }, []);
 
+  // =========== SWITCH HELPERS ===========
+  const addCase = () => {
+    const newIndex = cases.length + 1;
+    setCases((c) => [...c, { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` }]);
+  };
+
+  const removeCase = (idx: number) => {
+    setCases((c) => c.filter((_, i) => i !== idx));
+  };
+
+  const updateCase = useCallback(
+    (idx: number, field: string, value: string) => {
+      setCases((c) =>
+        c.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+      );
+    },
+    []
+  );
+
+  // =========== SHARED HELPERS ===========
   function resolveDeep(val, selectedInputData, allNodeData) {
     if (typeof val === "string") {
       return resolveReferences(val, selectedInputData, allNodeData);
@@ -112,8 +187,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     return val;
   }
 
-
-  // Drag helper for repeater
+  // Drag helper for repeater (conditional)
   const handleRepeaterDrop = useCallback(
     (
       idx: number,
@@ -123,7 +197,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     ) => {
       e.preventDefault();
       e.stopPropagation();
-      console.log("Drop fired!", { idx, field, e, currentValue });
 
       const raw = e.dataTransfer.getData("application/reactflow");
       if (!raw) {
@@ -132,7 +205,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       }
       try {
         const { keyPath } = JSON.parse(raw);
-        // INJECT SOURCE NODE'S UNIQUE DISPLAY NAME FOR DRAG-AND-DROP
         const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
         const sourceDisplayName = sourceNode
           ? getDisplayName(sourceNode, previousNodes)
@@ -141,7 +213,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
 
         updateCondition(idx, field, currentValue + insert);
 
-        // 👇 NEW: robust object-based sourceMap logic
         setSourceMap((sm) => ({
           ...sm,
           [idx]: {
@@ -157,6 +228,37 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     [selectedPrevNodeId, updateCondition, previousNodes]
   );
 
+  // Drag helper for switch
+  const handleSwitchDrop = useCallback(
+    (
+      field: string,
+      e: React.DragEvent,
+      currentValue: string
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const raw = e.dataTransfer.getData("application/reactflow");
+      if (!raw) {
+        document.body.classList.remove("cursor-grabbing", "select-none");
+        return;
+      }
+      try {
+        const { keyPath } = JSON.parse(raw);
+        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceDisplayName = sourceNode
+          ? getDisplayName(sourceNode, previousNodes)
+          : 'Node';
+        const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+
+        handleChange(field, currentValue + insert);
+      } catch (error) {
+        console.error("Drop error:", error);
+      }
+      document.body.classList.remove("cursor-grabbing", "select-none");
+    },
+    [selectedPrevNodeId, handleChange, previousNodes]
+  );
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
@@ -168,7 +270,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
       const srcNode = allNodes.find((n) => n.id === srcId);
 
       if (!srcNode) {
-        console.log("🔍 Preview Debug - No source node found:", { srcId, allNodes: allNodes.length });
         return "";
       }
 
@@ -177,7 +278,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
         srcData = srcData[0];
       }
 
-      // 👇 Build allNodeData as you do in your payload
       const allNodeData = {};
       previousNodes.forEach(prevNode => {
         const displayName = getDisplayName(prevNode, allNodes);
@@ -199,6 +299,44 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
     [selectedPrevNodeId, sourceMap, getNodes, previousNodes]
   );
 
+  const getSwitchPreviewFor = useCallback(
+    (expr: any) => {
+      if (typeof expr !== "string" && typeof expr !== "object") return null;
+      if (typeof expr === "string" && !expr.includes("{{")) return null;
+
+      const allNodes = getNodes();
+      const srcNode = allNodes.find((n) => n.id === selectedPrevNodeId);
+
+      if (!srcNode) {
+        return "";
+      }
+
+      let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
+      if (Array.isArray(srcData) && srcData.length === 1) {
+        srcData = srcData[0];
+      }
+
+      const allNodeData = {};
+      previousNodes.forEach(prevNode => {
+        const displayName = getDisplayName(prevNode, allNodes);
+        let nodeData = prevNode.data?.output || prevNode.data || {};
+        if (Array.isArray(nodeData) && nodeData.length > 0) {
+          nodeData = nodeData[0] || {};
+        }
+        allNodeData[displayName] = nodeData;
+      });
+
+      try {
+        const resolved = resolveDeep(expr, srcData, allNodeData);
+        return summarizePreview(resolved);
+      } catch (error) {
+        console.error("❌ Preview resolution error:", error);
+        return "";
+      }
+    },
+    [selectedPrevNodeId, getNodes, previousNodes]
+  );
+
   return (
     <>
       <div className="mb-4">
@@ -216,6 +354,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
+          if (isSwitch && f.key === "defaultCase") return null; // Handle separately for switch
           
           // --------- CONDITIONAL FIELD DISPLAY ---------
           let shouldShow = true;
@@ -245,12 +384,16 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                     e.dataTransfer.dropEffect = "copy";
                   }}
                   onDrop={(e) => {
-                    handleDrop(
-                      f.key,
-                      (val: string) => handleChange(f.key, val),
-                      e,
-                      fieldState[f.key] || ""
-                    );
+                    if (isSwitch) {
+                      handleSwitchDrop(f.key, e, fieldState[f.key] || "");
+                    } else {
+                      handleDrop(
+                        f.key,
+                        (val: string) => handleChange(f.key, val),
+                        e,
+                        fieldState[f.key] || ""
+                      );
+                    }
                   }}
                 >
                 <Input
@@ -263,7 +406,7 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                 />
                   {fieldState[f.key]?.includes("{{") && (
                     <div className="text-xs text-gray-500 mt-1">
-                      Preview: {getFieldPreview(f.key)}
+                      Preview: {isSwitch ? getSwitchPreviewFor(fieldState[f.key]) : getFieldPreview(f.key)}
                     </div>
                   )}
                 </div>
@@ -315,40 +458,89 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
               {f.type === "select" && f.optionsSource !== "credentialsApi" && (
                 <Select
                   value={fieldState[f.key]}
-                  onValueChange={(val) => handleChange(f.key, val)}
+                  onValueChange={(val) => {
+                    handleChange(f.key, val);
+                    // Clear dependent field when parent changes
+                    if (f.conditionalOptions) {
+                      const dependentFields = definition.fields?.filter((field: any) => field.dependsOn === f.key);
+                      dependentFields?.forEach((depField: any) => {
+                        handleChange(depField.key, "");
+                      });
+                    }
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={f.placeholder || "Select option"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {(selectOptions[f.key] || []).map((opt: any) => (
-                      <SelectItem
-                        key={opt.id || opt.value}
-                        value={opt.id || opt.value}
-                      >
-                        {opt.name || opt.label || opt.id || opt.value}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      // Handle conditional options
+                      if (f.dependsOn && f.conditionalOptions) {
+                        const parentValue = fieldState[f.dependsOn];
+                        const conditionalOptions = f.conditionalOptions[parentValue] || [];
+                        return conditionalOptions.map((option: any) => (
+                          <SelectItem key={option.id || option.value} value={option.id || option.value}>
+                            {option.name || option.label || option.id || option.value}
+                          </SelectItem>
+                        ));
+                      }
+                      // Handle regular options
+                      return (selectOptions[f.key] || f.options || []).map((opt: any) => (
+                        <SelectItem
+                          key={opt.id || opt.value}
+                          value={opt.id || opt.value}
+                        >
+                          {opt.name || opt.label || opt.id || opt.value}
+                        </SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
+              )}
+
+              {/* --------- Multiselect Field --------- */}
+              {f.type === "multiselect" && (
+                <div className="space-y-3">
+                  {((selectOptions[f.key] || f.options || [])).map((opt: any) => {
+                    const optionId = opt.id || opt.value;
+                    const optionLabel = opt.name || opt.label || opt.id || opt.value;
+                    const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                    const isSelected = selectedValues.includes(optionId);
+                    
+                    return (
+                      <div key={optionId} className="flex items-center justify-between">
+                        <span className="text-sm text-foreground">{optionLabel}</span>
+                        <Switch
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            const currentValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                            let newValues;
+                            if (checked) {
+                              newValues = [...currentValues, optionId];
+                            } else {
+                              newValues = currentValues.filter((v: string) => v !== optionId);
+                            }
+                            handleChange(f.key, newValues);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           );
         })}
 
-        {/* --------- Repeater Field (Conditions) --------- */}
-        {condField && (
+        {/* --------- CONDITIONAL REPEATER (Conditions) --------- */}
+        {isConditional && repeaterField && (
           <div className="space-y-3">
             <h4 className="font-semibold">Conditions</h4>
 
             {conditions.map((cond, i) => {
-              // Pull out the three main subFields
-              const leftField = condField.subFields?.find((sf: any) => sf.key === "left");
-              const operatorField = condField.subFields?.find((sf: any) => sf.key === "operator");
-              const rightField = condField.subFields?.find((sf: any) => sf.key === "right");
-              const extraFields = condField.subFields?.filter((sf: any) =>
-                !["left", "operator", "right"].includes(sf.key)
-              ) || [];
+              const leftField = repeaterField.subFields?.find((sf: any) => sf.key === "left");
+              const operatorField = repeaterField.subFields?.find((sf: any) => sf.key === "operator");
+              const rightField = repeaterField.subFields?.find((sf: any) => sf.key === "right");
 
               return (
                 <div key={i} className="space-y-2">
@@ -370,7 +562,6 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                     </div>
                   )}
 
-                  {/* Main row: Left, Operator, Right */}
                   <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
                     {/* Left */}
                     {leftField && (leftField.options && leftField.options.length > 0) ? (
@@ -450,83 +641,20 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
                         onClick={() => removeCondition(i)}
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="w-3 h-3" />
                       </Button>
                     )}
                   </div>
 
-                  {/* Extra conditional fields */}
-                  {extraFields.map((sf: any) => {
-                    let show = true;
-                    if (sf.displayOptions?.show) {
-                      for (const [depKey, allowed] of Object.entries(sf.displayOptions.show)) {
-                        if (!(allowed as string[]).includes(cond[depKey])) {
-                          show = false;
-                          break;
-                        }
-                      }
-                    }
-                    if (!show) return null;
-                    return (
-                      <div key={sf.key} className="space-y-1">
-                        <Label className="text-xs">{sf.label}</Label>
-                        {sf.type === "select" ? (
-                          <Select
-                            value={cond[sf.key]}
-                            onValueChange={(v) => updateCondition(i, sf.key, v)}
-                          >
-                            <SelectTrigger className="w-full h-8 text-xs">
-                              <SelectValue placeholder={sf.placeholder || sf.label} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(sf.options || []).map((opt: any) => (
-                                <SelectItem
-                                  key={opt.id ?? opt.value}
-                                  value={opt.id ?? opt.value}
-                                >
-                                  {opt.name || opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <>
-                             <Input
-                               className="w-full h-8 text-xs nodrag"
-                               placeholder={sf.placeholder || sf.label}
-                               value={cond[sf.key] ?? ""}
-                               onChange={(e) => updateCondition(i, sf.key, e.target.value)}
-                               onDragOver={(e) => {
-                                 e.preventDefault();
-                                 e.stopPropagation();
-                                 e.dataTransfer.dropEffect = "copy";
-                               }}
-                               onFocus={(e) => e.target.select()}
-                               style={
-                                 cond[sf.key]?.includes("{{") ? referenceStyle : {}
-                               }
-                               onDrop={(e) => handleRepeaterDrop(i, sf.key, e, cond[sf.key] ?? "")}
-                             />
-                            {typeof cond[sf.key] === "string" && cond[sf.key]?.includes("{{") && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                Preview: {getPreviewFor(i, sf.key, cond[sf.key])}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Previews for left/right */}
-                  {typeof cond.left === "string" && cond.left.includes("{{") && (
-                    <div className="text-xs text-gray-500">
-                      Left Preview: {getPreviewFor(i, "left", cond.left)}
-                    </div>
-                  )}
-                  {typeof cond.right === "string" && cond.right.includes("{{") && (
-                    <div className="text-xs text-gray-500">
-                      Right Preview: {getPreviewFor(i, "right", cond.right)}
+                  {/* Previews */}
+                  {(cond.left?.includes("{{") || cond.right?.includes("{{")) && (
+                    <div className="text-xs text-gray-500 space-y-1 ml-2">
+                      {cond.left?.includes("{{") && (
+                        <div>Left preview: {getPreviewFor(i, "left", cond.left)}</div>
+                      )}
+                      {cond.right?.includes("{{") && (
+                        <div>Right preview: {getPreviewFor(i, "right", cond.right)}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -534,61 +662,123 @@ const ConditionalNodeLayout: React.FC<ConditionalNodeLayoutProps> = ({
             })}
 
             <Button
+              type="button"
               size="sm"
               variant="outline"
-              onClick={(e) => {
-                e.preventDefault(); // Prevent form submission
-                addCondition();
-              }}
-              type="button" // Explicitly set as button type
-              className="w-full text-xs h-8 mt-3"
+              onClick={addCondition}
+              className="h-7 px-2"
             >
-              + Add Condition
+              <Plus className="w-3 h-3 mr-1" />
+              Add Condition
             </Button>
           </div>
         )}
 
-        {/* --------- Error Message --------- */}
-        {error && (
-          <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
-            {error}
+        {/* --------- SWITCH REPEATER (Cases) --------- */}
+        {isSwitch && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">Cases</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addCase}
+                className="h-7 px-2"
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Add Case
+              </Button>
+            </div>
+
+            {cases.map((caseItem, i) => (
+              <div key={i} className="flex items-center gap-2 p-2 border rounded bg-muted/10">
+                <Input
+                  className="flex-1 h-8 text-xs nodrag"
+                  placeholder="case value (e.g., case1)"
+                  value={caseItem.caseValue || ""}
+                  onChange={(e) => updateCase(i, "caseValue", e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                />
+                <Input
+                  className="flex-1 h-8 text-xs nodrag"
+                  placeholder="Case Label"
+                  value={caseItem.caseName || ""}
+                  onChange={(e) => updateCase(i, "caseName", e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                />
+                {cases.length > 1 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeCase(i)}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
-        {/* --------- Submit Button --------- */}
-        <Button
-          type="submit"
-          className="w-full bg-success hover:bg-success/90 text-success-foreground"
-          disabled={isSending}
-        >
-          {isSending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Running...
-            </>
-          ) : (
-            "Run"
-          )}
-        </Button>
+        {/* Default Case Field (Switch only) */}
+        {isSwitch && definition.fields?.map((f: any) => {
+          if (f.key !== "defaultCase") return null;
+          
+          return (
+            <div key={f.key}>
+              <Label>{f.label}</Label>
+              <Input
+                value={fieldState[f.key] || f.default || ""}
+                onChange={(e) => handleChange(f.key, e.target.value)}
+                placeholder={f.placeholder}
+                className="nodrag"
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+          );
+        })}
+
+        {/* Submit Button */}
+        <div className="pt-2">
+          <Button
+            type="submit"
+            size="sm"
+            disabled={isSending}
+            className="w-full"
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Executing...
+              </>
+            ) : (
+              "Execute"
+            )}
+          </Button>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="text-red-500 text-xs mt-2 p-2 bg-red-50 rounded">
+            {error}
+          </div>
+        )}
       </form>
 
-      {showAuth && GenericAuthModal && (
-        <Suspense fallback={<div>Loading...</div>}>
+      {/* Auth Modal */}
+      <Suspense fallback={<div>Loading modal...</div>}>
+        {showAuth && (
           <GenericAuthModal
             definition={definition}
-            onClose={() => {
-              setShowAuth(false);
-              (definition.fields || []).forEach((f: any) => {
-                if (f.type === "select" && f.optionsSource === "credentialsApi") {
-                  fetchCredentials(f.key);
-                }
-              });
-            }}
+            onClose={() => setShowAuth(false)}
           />
-        </Suspense>
-      )}
+        )}
+      </Suspense>
     </>
   );
 };
 
-export default ConditionalNodeLayout;
+export default RepeaterNodeLayout;

@@ -390,7 +390,7 @@ const MarketStatusDef = {
     { type: "source", position: "right", id: "output" }
   ],
   action: {
-    url: "/market-status",
+    url: "/market/market_info",
     method: "POST"
   },
   fields: [

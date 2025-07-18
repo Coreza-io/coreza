@@ -193,14 +193,32 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Highlight a node
+   * Clear all node highlights
+   */
+  private clearNodeHighlights(): void {
+    this.context.setNodes(nodes =>
+      nodes.map(n => ({ 
+        ...n, 
+        className: '', 
+        style: { 
+          ...n.style, 
+          border: undefined, 
+          backgroundColor: undefined, 
+          boxShadow: undefined 
+        } 
+      }))
+    );
+  }
+
+  /**
+   * Highlight a node (clears previous highlights first)
    */
   private highlightNode(nodeId: string): void {
     this.context.setNodes(nodes =>
       nodes.map(n =>
         n.id === nodeId
           ? { ...n, className: 'executing-node', style: { ...n.style, border: '3px solid #22c55e', backgroundColor: '#f0fdf4', boxShadow: '0 0 20px rgba(34,197,94,0.4)' } }
-          : n
+          : { ...n, className: '', style: { ...n.style, border: undefined, backgroundColor: undefined, boxShadow: undefined } }
       )
     );
   }
@@ -217,6 +235,9 @@ export class WorkflowExecutor {
     this.highlightEdges(nodeId);
     this.highlightNode(nodeId);
 
+    // Add a small delay to make highlighting visible
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     return new Promise<any>((resolve, reject) => {
       const execEvent = new CustomEvent('auto-execute-node', {
         detail: {
@@ -225,8 +246,16 @@ export class WorkflowExecutor {
           allNodes: this.context.nodes,
           allEdges: this.context.edges,
           explicitlyTriggered,
-          onSuccess: (result?: any) => resolve(result),
-          onError: (err: any) => reject(err)
+          onSuccess: async (result?: any) => {
+            // Keep highlight visible for a moment after execution
+            await new Promise(resolve => setTimeout(resolve, 300));
+            resolve(result);
+          },
+          onError: async (err: any) => {
+            // Keep highlight visible even on error
+            await new Promise(resolve => setTimeout(resolve, 300));
+            reject(err);
+          }
         } as NodeExecutionDetail
       });
       window.dispatchEvent(execEvent);
@@ -313,6 +342,9 @@ export class WorkflowExecutor {
           executed.add(id);
           metrics.completedNodes.add(id);
           console.log(`✅ [WORKFLOW EXECUTOR] Node ${id} completed in ${nodeTime.toFixed(2)}ms`);
+
+          // Add delay between node executions to make highlighting visible
+          await new Promise(resolve => setTimeout(resolve, 500));
 
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);

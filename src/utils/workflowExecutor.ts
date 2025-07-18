@@ -38,18 +38,24 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Pre-calculate all conditional branches for optimization (universal)
+   * Pre-calculate conditional branches for optimization (only for actual branching nodes)
    */
   private preCalculateConditionalBranches(): void {
     this.conditionalMap.clear();
     this.context.edges.forEach(edge => {
-      // Build universal branch map for ANY node with sourceHandle
-      if (edge.sourceHandle) {
+      // Only build branch map for actual branching nodes (If, Switch, etc.)
+      const sourceNode = this.context.nodes.find(n => n.id === edge.source);
+      const nodeType = (sourceNode?.data?.definition as any)?.name;
+      const isBranchingNode = ['If', 'Switch', 'Router'].includes(nodeType); // Add more branching node types as needed
+      
+      if (edge.sourceHandle && isBranchingNode) {
         const entry = this.conditionalMap.get(edge.source) || {};
         entry[edge.sourceHandle] = edge.target;
         this.conditionalMap.set(edge.source, entry);
       }
     });
+    
+    console.log(`🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`, Array.from(this.conditionalMap.keys()));
   }
 
   /**

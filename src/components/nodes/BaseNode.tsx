@@ -155,7 +155,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   const handleChange = (key: string, value: any) => {
-    setFieldState((fs) => ({ ...fs, [key]: value }));
+    const newFieldState = { ...fieldState, [key]: value };
+    setFieldState(newFieldState);
     setNodes((nds) =>
       nds.map((n) =>
         n.id === nodeId
@@ -164,6 +165,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
               data: {
                 ...n.data,
                 values: { ...((n.data as any)?.values || {}), [key]: value },
+                fieldState: newFieldState, // Ensure fieldState is available for NodeRouter
               },
             }
           : n

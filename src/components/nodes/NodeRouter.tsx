@@ -54,6 +54,41 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   const layoutType = getLayoutType(definition);
 
+  // Generate dynamic handles for Switch nodes
+  const getDynamicHandles = (definition: any, data: any) => {
+    if (definition.name !== "Switch") {
+      return definition.handles || [];
+    }
+
+    // For Switch nodes, generate handles based on cases
+    const fieldState = data.fieldState || {};
+    const cases = fieldState.cases || definition.fields?.find(f => f.key === "cases")?.default || [];
+    
+    const handles = [
+      { type: "target", position: "left", id: "input" }
+    ];
+    
+    // Add handle for each case
+    cases.forEach((caseItem: any, index: number) => {
+      handles.push({
+        type: "source",
+        position: "right",
+        id: caseItem.caseValue || `case${index + 1}`
+      });
+    });
+    
+    // Add default handle
+    handles.push({
+      type: "source",
+      position: "right", 
+      id: fieldState.defaultCase || "default"
+    });
+    
+    return handles;
+  };
+
+  const dynamicHandles = getDynamicHandles(definition, data);
+
   return (
     <BaseNode data={data} selected={selected}>
       {(renderProps) => (
@@ -106,7 +141,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           label={renderProps.displayName}
           minWidth={definition.size?.width || 340}
           minHeight={definition.size?.height || 340}
-          handles={definition.handles || []}
+          handles={dynamicHandles}
           nodeType={definition.node_type}
         >
           {layoutType === "repeater" ? (

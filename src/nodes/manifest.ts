@@ -328,6 +328,60 @@ const AlpacaTradeDef = {
     }
   ]
 };
+const SwitchDef = {
+  name: "Switch",
+  label: "Switch",
+  def: "Route execution based on input value to multiple paths",
+  node_type: "main",
+  icon: "/assets/icons/switch.svg",
+  category: "Logic",
+  description: "Multi-path conditional routing for complex workflow logic",
+  color: "text-orange-500",
+  size: { width: 360, height: 300 },
+  handles: [
+    { type: "target", position: "left", id: "input" },
+    { type: "source", position: "right", id: "case1" },
+    { type: "source", position: "right", id: "case2" },
+    { type: "source", position: "right", id: "case3" },
+    { type: "source", position: "right", id: "default" }
+  ],
+  action: {
+    url: "/comparator/switch",
+    method: "POST"
+  },
+  fields: [
+    {
+      key: "inputValue",
+      label: "Input Value",
+      type: "text",
+      placeholder: "{{ $json.field }}",
+      required: true
+    },
+    {
+      key: "cases",
+      label: "Cases",
+      type: "repeater",
+      subFields: [
+        { key: "caseValue", type: "string", placeholder: "case1" },
+        { key: "caseName", type: "string", placeholder: "Case Label" }
+      ],
+      default: [
+        { caseValue: "case1", caseName: "Case 1" },
+        { caseValue: "case2", caseName: "Case 2" },
+        { caseValue: "case3", caseName: "Case 3" }
+      ]
+    },
+    {
+      key: "defaultCase",
+      label: "Default Case",
+      type: "text",
+      placeholder: "default",
+      default: "default",
+      required: true
+    }
+  ]
+};
+
 const IndicatorDef = { name: "Indicator", def: "Indicator node definition", node_type: "indicator", icon: "Target", category: "Indicators", description: "Custom technical indicator analysis", color: "text-purple-500", size: { width: 200, height: 120 }, handles: [{ type: "target", position: "left", id: "input" }, { type: "source", position: "right", id: "output" }], fields: [] };
 
 // Node configuration interface
@@ -397,6 +451,7 @@ export const nodeManifest = {
   [RSIDef.name]: RSIDef,
   [EMADef.name]: EMADef,
   [IfDef.name]: IfDef,
+  [SwitchDef.name]: SwitchDef,
   [VisualizeDef.name]: VisualizeDef,
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaDataDef.name]: AlpacaDataDef,

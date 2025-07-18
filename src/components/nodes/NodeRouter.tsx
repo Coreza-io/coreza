@@ -3,6 +3,7 @@ import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layouts/BasicNodeLayout";
 import ConditionalNodeLayout from "./layouts/ConditionalNodeLayout";
+import SwitchNodeLayout from "./layouts/SwitchNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -40,12 +41,15 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
+    // Switch nodes get their own special layout
+    if (definition.name === "Switch") return "switch";
+    
     // Check if node has repeater fields (conditional logic)
     const hasRepeaterFields = definition.fields?.some((f: any) => f.type === "repeater");
     if (hasRepeaterFields) return "conditional";
     
     // Check for specific conditional node types
-    const conditionalNodeTypes = ["If", "Switch", "Filter"];
+    const conditionalNodeTypes = ["If", "Filter"];
     if (conditionalNodeTypes.includes(definition.name)) return "conditional";
     
     // Default to basic layout
@@ -109,7 +113,9 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           handles={definition.handles || []}
           nodeType={definition.node_type}
         >
-          {layoutType === "conditional" ? (
+          {layoutType === "switch" ? (
+            <SwitchNodeLayout {...renderProps} />
+          ) : layoutType === "conditional" ? (
             <ConditionalNodeLayout {...renderProps} />
           ) : (
             <BasicNodeLayout {...renderProps} />

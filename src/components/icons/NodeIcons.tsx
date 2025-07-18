@@ -53,11 +53,44 @@ export const IfIcon: React.FC<{ className?: string }> = ({ className = "w-10 h-1
   </svg>
 );
 
+// Switch SVG as React component for instant rendering
+export const SwitchIcon: React.FC<{ className?: string }> = ({ className = "w-10 h-10" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+    {/* Background circle */}
+    <circle cx="16" cy="16" r="15" fill="#F8FAFC" stroke="#F97316" strokeWidth="2"/>
+    
+    {/* Central hub */}
+    <circle cx="16" cy="16" r="4" fill="#F97316" stroke="#EA580C" strokeWidth="1"/>
+    
+    {/* Input line from left */}
+    <path d="M2 16L12 16" stroke="#6B7280" strokeWidth="2" strokeLinecap="round"/>
+    
+    {/* Output branches to right */}
+    <path d="M20 16L28 8" stroke="#F97316" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M20 16L28 12" stroke="#F97316" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M20 16L28 20" stroke="#F97316" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M20 16L28 24" stroke="#F97316" strokeWidth="2" strokeLinecap="round"/>
+    
+    {/* Small circles at branch endpoints */}
+    <circle cx="28" cy="8" r="1.5" fill="#F97316"/>
+    <circle cx="28" cy="12" r="1.5" fill="#F97316"/>
+    <circle cx="28" cy="20" r="1.5" fill="#F97316"/>
+    <circle cx="28" cy="24" r="1.5" fill="#F97316"/>
+    
+    {/* Labels */}
+    <text x="30" y="6" textAnchor="middle" fill="#F97316" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">1</text>
+    <text x="30" y="10" textAnchor="middle" fill="#F97316" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">2</text>
+    <text x="30" y="18" textAnchor="middle" fill="#F97316" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">3</text>
+    <text x="30" y="22" textAnchor="middle" fill="#F97316" fontFamily="Arial, sans-serif" fontSize="2" fontWeight="bold">D</text>
+  </svg>
+);
+
 // Icon registry for easy access
 export const IconRegistry = {
   'Alpaca': AlpacaIcon,
   'EMA': EMAIcon,
   'If': IfIcon,
+  'Switch': SwitchIcon,
 } as const;
 
 export type IconName = keyof typeof IconRegistry;

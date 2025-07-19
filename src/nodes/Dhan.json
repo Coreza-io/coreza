@@ -3,7 +3,7 @@
   "def": "Dhan",
   "node_type": "main",
   "icon": "/assets/icons/dhan.svg",
-  "category": "Trading",
+  "category": "Broker",
   "description": "Execute trades and get market data from Dhan Api",
   "color": "text-green-600",
   "size": { "width": 340, "height": 360 },

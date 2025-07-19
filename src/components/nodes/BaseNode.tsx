@@ -41,6 +41,7 @@ export interface BaseNodeRenderProps {
   isPinned: boolean;
   // Event handlers
   handleChange: (key: string, value: any) => void;
+  handleFieldStateBatch: (updates: Record<string, any>) => void;
   handleSubmit: (e: React.FormEvent) => void;
   handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
   handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
@@ -135,6 +136,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const [lastOutput, setLastOutput] = useState<any>({ status: "pending" });
   const [overrideOutput, setOverrideOutput] = useState<any | null>(null);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
+  
 
   const handlePanelSave = useCallback((newData: any) => {
     setOverrideOutput(newData);
@@ -178,6 +180,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
               },
             }
           : n
+      )
+    );
+  }, [fieldState, nodeId, setNodes]);
+
+   // ========== New batch updater ===========
+  const handleFieldStateBatch = useCallback((updates: Record<string, any>) => {
+    const newFS = { ...fieldState, ...updates };
+    setFieldState(newFS);
+    setNodes(nds =>
+      nds.map(n => n.id === nodeId
+        ? { ...n, data: { ...n.data, values: newFS, fieldState: newFS } }
+        : n
       )
     );
   }, [fieldState, nodeId, setNodes]);
@@ -657,6 +671,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     displayedData,
     isPinned,
     handleChange,
+    handleFieldStateBatch,
     handleSubmit,
     handleDrop,
     handleDragStart,

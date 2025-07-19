@@ -34,6 +34,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   handleChange,
+  handleFieldStateBatch,
   handleSubmit,
   handleDrop,
   getFieldPreview,
@@ -55,119 +56,136 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     ? repeaterField.default[0]
     : (repeaterField?.default ?? { left: "", operator: "===", right: "" });
 
-  // Improve state persistence for conditions
-  const initialConds = useMemo(() => {
-    console.log('🔧 Calculating initialConds', { fieldState, isConditional, defaultCond });
-    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions) && fieldState.conditions.length > 0) {
-      return fieldState.conditions;
-    }
-    return isConditional ? [defaultCond] : [];
-  }, [isConditional, fieldState.conditions, defaultCond]);
-
-  const initialOps = useMemo(() => {
-    if (isConditional && fieldState.logicalOps && Array.isArray(fieldState.logicalOps) && fieldState.logicalOps.length === initialConds.length - 1) {
-      return fieldState.logicalOps;
-    }
-    return isConditional ? Array(Math.max(0, initialConds.length - 1)).fill("AND") : [];
-  }, [isConditional, fieldState.logicalOps, initialConds.length]);
-
   // =========== SWITCH LOGIC ===========
   const defaultCase = isSwitch && Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
     ? repeaterField.default
     : [{ caseValue: "case1", caseName: "Case 1" }];
 
-  const initialCases = isSwitch && fieldState.cases && fieldState.cases.length > 0
-    ? fieldState.cases
-    : isSwitch ? defaultCase : [];
-
   // =========== STATE ===========
-  const [conditions, setConditions] = useState(initialConds);
-  const [logicalOps, setLogicalOps] = useState<string[]>(initialOps);
-  const [cases, setCases] = useState(initialCases);
-  const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(
-    initialConds.map(() => ({}))
-  );
+  // make sure these are always arrays before you map/filter them
+  const conditions = Array.isArray(fieldState.conditions) 
+    ? fieldState.conditions 
+    : [];
+  const logicalOps = Array.isArray(fieldState.logicalOps) 
+    ? fieldState.logicalOps 
+    : [];
+  const cases = Array.isArray(fieldState.cases) 
+    ? fieldState.cases 
+    : [];
+  const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(conditions.map(() => ({})));
 
-  // Update state when field state changes from external sources
+  // ─── Seed the repeater on first render ────────────────────────────────────
   useEffect(() => {
-    console.log('🔧 Syncing state with fieldState changes');
-    if (isConditional && fieldState.conditions && Array.isArray(fieldState.conditions)) {
-      setConditions(fieldState.conditions);
-      if (fieldState.logicalOps && Array.isArray(fieldState.logicalOps)) {
-        setLogicalOps(fieldState.logicalOps);
-      }
-    }
-    if (isSwitch && fieldState.cases && Array.isArray(fieldState.cases)) {
-      setCases(fieldState.cases);
-    }
-  }, [fieldState.conditions, fieldState.logicalOps, fieldState.cases, isConditional, isSwitch]);
+    if (!repeaterField) return;
+    const key = repeaterField.key;         // "conditions" or "cases"
+    const current = fieldState[key] || [];
+    if (Array.isArray(current) && current.length > 0) return; // already seeded
 
-  // Debounced updates to prevent rapid-fire handleChange calls
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      console.log('🔄 RepeaterNodeLayout updating conditions/cases', {
-        isConditional,
-        isSwitch,
-        conditions,
-        cases,
-        fieldState
+    // 1) build the seed rows array from your manifest
+    const seedRows = Array.isArray(repeaterField.default)
+      ? repeaterField.default
+      : repeaterField.default
+        ? [repeaterField.default]
+        : [{}];
+
+    // 2) batch-set both fields: repeater + logicalOps (for If nodes)
+    if (key === "conditions") {
+      handleFieldStateBatch({
+        conditions:  seedRows,
+        logicalOps:  []        // no logic dropdown when only one condition
       });
-      if (isConditional) {
-        handleChange("conditions", conditions);
-        handleChange("logicalOps", logicalOps);
-      }
-      if (isSwitch) {
-        handleChange("cases", cases);
-      }
-    }, 100); // 100ms debounce
+    } else {
+      // for Switch: just seed the cases array
+      handleFieldStateBatch({ cases: seedRows });
+    }
 
-    return () => clearTimeout(timeoutId);
-  }, [conditions, logicalOps, cases, handleChange, isConditional, isSwitch]);
+    // 3) keep your sourceMap in sync
+    setSourceMap(Array(seedRows.length).fill({}));
+  }, []);  // <- only on mount
+
+
+  // whenever conditions.length changes, ensure sourceMap has the same length
+  useEffect(() => {
+    setSourceMap((sm) => {
+      if (sm.length === conditions.length) return sm;
+      if (sm.length <  conditions.length) {
+        return [...sm, ...Array(conditions.length - sm.length).fill({})];
+      }
+      return sm.slice(0, conditions.length);
+    });
+  }, [conditions.length]);
 
   // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {
-    setConditions((c) => [...c, { ...defaultCond }]);
-    setLogicalOps((lo) => [...lo, "AND"]);
-    setSourceMap((sm) => (Array.isArray(sm) ? [...sm, {}] : [{}]));
+    const newConds    = [...conditions, { ...defaultCond }];
+    const newLogOps   = [...logicalOps, "AND"];
+    handleFieldStateBatch({
+      conditions:  newConds,
+      logicalOps:  newLogOps
+    });
+    // sourceMap still needs to grow
+    setSourceMap(sm => [...sm, {}]);
   };
 
   const removeCondition = (idx: number) => {
-    setConditions((c) => c.filter((_, i) => i !== idx));
-    setLogicalOps((lo) => lo.filter((_, i) => i !== idx - 1));
+    // 1) compute new conditions array
+    const newConds = conditions.filter((_, i) => i !== idx);
+
+    // 2) compute new logicalOps—drop the op immediately before the removed condition,
+    //    or if idx===0 then drop the first op.
+    const removeOpIndex = idx > 0 ? idx - 1 : 0;
+    const newLogOps = logicalOps.filter((_, i) => i !== removeOpIndex);
+
+    // 3) batch-update both fields
+    handleFieldStateBatch({
+      conditions: newConds,
+      logicalOps: newLogOps,
+    });
+
+    // 4) trim your sourceMap too
     setSourceMap((sm) => sm.filter((_, i) => i !== idx));
   };
 
   const updateCondition = useCallback(
     (idx: number, field: string, value: string) => {
-      setConditions((c) =>
-        c.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+      handleChange(
+        "conditions",
+        conditions.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
       );
     },
-    []
+    [conditions, handleChange]
   );
 
-  const updateLogicalOp = useCallback((idx: number, op: string) => {
-    setLogicalOps((lo) => lo.map((v, i) => (i === idx ? op : v)));
-  }, []);
+  const updateLogicalOp = useCallback(
+    (idx: number, op: string) => {
+      handleChange(
+        "logicalOps",
+        logicalOps.map((v, i) => (i === idx ? op : v))
+      );
+    },
+    [logicalOps, handleChange]
+  );
 
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
     const newIndex = cases.length + 1;
-    setCases((c) => [...c, { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` }]);
+    handleChange("cases", [...cases, { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` }]);
   };
 
   const removeCase = (idx: number) => {
-    setCases((c) => c.filter((_, i) => i !== idx));
+    handleChange("cases", cases.filter((_, i) => i !== idx));
   };
 
   const updateCase = useCallback(
     (idx: number, field: string, value: string) => {
-      setCases((c) =>
-        c.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+      handleChange(
+        "cases",
+        cases.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
       );
     },
-    []
+    [cases, handleChange]
   );
+
 
   // =========== SHARED HELPERS ===========
   function resolveDeep(val, selectedInputData, allNodeData) {

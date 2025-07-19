@@ -1,0 +1,42 @@
+{
+  "name": "Bollinger Bands",
+  "def": "Bollinger Bands",
+  "node_type": "main",
+  "icon": "/assets/icons/bollinger.svg",
+  "category": "Indicators",
+  "description": "Bollinger Bands to detect volatility, price envelopes, and breakout signals",
+  "color": "text-sky-500",
+  "size": { "width": 340, "height": 260 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/bollinger",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "period",
+      "label": "Period (SMA)",
+      "type": "text",
+      "default": "20",
+      "placeholder": "e.g. 20",
+      "required": true
+    },
+    {
+      "key": "std_dev_multiplier",
+      "label": "Standard Deviation Multiplier",
+      "type": "text",
+      "default": "2",
+      "placeholder": "e.g. 2",
+      "required": true
+    }
+  ]
+}

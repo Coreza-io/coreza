@@ -1,0 +1,50 @@
+{
+  "name": "VWAP",
+  "def": "Volume-Weighted Average Price",
+  "node_type": "main",
+  "icon": "/assets/icons/vwap.svg",
+  "category": "Indicators",
+  "description": "VWAP indicator to identify average price levels weighted by volume over a time frame",
+  "color": "text-indigo-500",
+  "size": { "width": 320, "height": 240 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/vwap",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "session_type",
+      "label": "VWAP Session Type",
+      "type": "select",
+      "options": [
+        { "id": "daily", "name": "Daily Session VWAP" },
+        { "id": "weekly", "name": "Weekly VWAP" },
+        { "id": "custom", "name": "Custom Range VWAP" }
+      ],
+      "default": "daily",
+      "required": true
+    },
+    {
+      "key": "custom_start_time",
+      "label": "Custom Start Time (UTC)",
+      "type": "text",
+      "placeholder": "e.g. 2025-07-18T09:30:00Z",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "session_type": ["custom"]
+        }
+      }
+    }
+  ]
+}

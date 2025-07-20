@@ -59,11 +59,11 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
 
   const filteredNodes = Object.entries(nodeManifest).filter(([nodeType, node]) =>
     node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    node.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    node.category?.toLowerCase().includes(searchQuery.toLowerCase())
+    (node as any).description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (node as any).category?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const categories = Array.from(new Set(Object.values(nodeManifest).map(node => node.category)));
+  const categories = Array.from(new Set(Object.values(nodeManifest).map(node => (node as any).category).filter(Boolean)));
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -87,7 +87,7 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
 
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {categories.map(category => {
-          const categoryNodes = filteredNodes.filter(([nodeType, node]) => node.category === category);
+          const categoryNodes = filteredNodes.filter(([nodeType, node]) => (node as any).category === category);
           if (categoryNodes.length === 0) return null;
 
           return (
@@ -112,7 +112,7 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg bg-muted/50 ${node.color} group-hover:shadow-glow transition-all`}>
+                          <div className={`p-2 rounded-lg bg-muted/50 ${(node as any).color || ''} group-hover:shadow-glow transition-all`}>
                             {(() => {
                               // Handle SVG icons or Lucide icons
                               if (node.icon?.startsWith('/assets/')) {
@@ -133,9 +133,9 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <h5 className="font-medium text-sm mb-1">{node.name}</h5>
-                            <p className="text-xs text-muted-foreground line-clamp-2">
-                              {node.description}
-                            </p>
+                             <p className="text-xs text-muted-foreground line-clamp-2">
+                               {(node as any).description || 'No description available'}
+                             </p>
                           </div>
                         </div>
                       </CardContent>

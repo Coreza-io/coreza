@@ -1,0 +1,214 @@
+
+{
+  "name": "HttpRequest",
+  "def": "HTTP Request",
+  "node_type": "main",
+  "icon": "Globe",
+  "category": "Data",
+  "description": "Make HTTP requests to external APIs and services",
+  "color": "text-green-500",
+  "size": { "width": 360, "height": 400 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/http/request",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "method",
+      "label": "HTTP Method",
+      "type": "select",
+      "options": [
+        { "id": "GET", "name": "GET" },
+        { "id": "POST", "name": "POST" },
+        { "id": "PUT", "name": "PUT" },
+        { "id": "DELETE", "name": "DELETE" },
+        { "id": "PATCH", "name": "PATCH" },
+        { "id": "HEAD", "name": "HEAD" },
+        { "id": "OPTIONS", "name": "OPTIONS" }
+      ],
+      "default": "GET",
+      "required": true
+    },
+    {
+      "key": "url",
+      "label": "URL",
+      "type": "text",
+      "placeholder": "https://api.example.com/endpoint",
+      "required": true
+    },
+    {
+      "key": "auth_type",
+      "label": "Authentication",
+      "type": "select",
+      "options": [
+        { "id": "none", "name": "None" },
+        { "id": "bearer", "name": "Bearer Token" },
+        { "id": "basic", "name": "Basic Auth" },
+        { "id": "api_key", "name": "API Key" }
+      ],
+      "default": "none",
+      "required": true
+    },
+    {
+      "key": "bearer_token",
+      "label": "Bearer Token",
+      "type": "text",
+      "placeholder": "your-bearer-token",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["bearer"]
+        }
+      }
+    },
+    {
+      "key": "basic_username",
+      "label": "Username",
+      "type": "text",
+      "placeholder": "username",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["basic"]
+        }
+      }
+    },
+    {
+      "key": "basic_password",
+      "label": "Password",
+      "type": "text",
+      "placeholder": "password",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["basic"]
+        }
+      }
+    },
+    {
+      "key": "api_key_location",
+      "label": "API Key Location",
+      "type": "select",
+      "options": [
+        { "id": "header", "name": "Header" },
+        { "id": "query", "name": "Query Parameter" }
+      ],
+      "default": "header",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["api_key"]
+        }
+      }
+    },
+    {
+      "key": "api_key_name",
+      "label": "API Key Name",
+      "type": "text",
+      "placeholder": "X-API-Key",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["api_key"]
+        }
+      }
+    },
+    {
+      "key": "api_key_value",
+      "label": "API Key Value",
+      "type": "text",
+      "placeholder": "your-api-key",
+      "displayOptions": {
+        "show": {
+          "auth_type": ["api_key"]
+        }
+      }
+    },
+    {
+      "key": "headers",
+      "label": "Custom Headers",
+      "type": "repeater",
+      "subFields": [
+        {
+          "key": "name",
+          "type": "text",
+          "placeholder": "Header name"
+        },
+        {
+          "key": "value",
+          "type": "text",
+          "placeholder": "Header value"
+        }
+      ],
+      "default": []
+    },
+    {
+      "key": "body_type",
+      "label": "Body Type",
+      "type": "select",
+      "options": [
+        { "id": "none", "name": "No Body" },
+        { "id": "json", "name": "JSON" },
+        { "id": "form", "name": "Form Data" },
+        { "id": "raw", "name": "Raw Text" }
+      ],
+      "default": "none",
+      "displayOptions": {
+        "show": {
+          "method": ["POST", "PUT", "PATCH"]
+        }
+      }
+    },
+    {
+      "key": "json_body",
+      "label": "JSON Body",
+      "type": "textarea",
+      "placeholder": "{\n  \"key\": \"value\"\n}",
+      "displayOptions": {
+        "show": {
+          "body_type": ["json"]
+        }
+      }
+    },
+    {
+      "key": "form_data",
+      "label": "Form Data",
+      "type": "repeater",
+      "subFields": [
+        {
+          "key": "name",
+          "type": "text",
+          "placeholder": "Field name"
+        },
+        {
+          "key": "value",
+          "type": "text",
+          "placeholder": "Field value"
+        }
+      ],
+      "default": [],
+      "displayOptions": {
+        "show": {
+          "body_type": ["form"]
+        }
+      }
+    },
+    {
+      "key": "raw_body",
+      "label": "Raw Body",
+      "type": "textarea",
+      "placeholder": "Raw text content",
+      "displayOptions": {
+        "show": {
+          "body_type": ["raw"]
+        }
+      }
+    },
+    {
+      "key": "timeout",
+      "label": "Timeout (seconds)",
+      "type": "text",
+      "placeholder": "30",
+      "default": "30"
+    }
+  ]
+}

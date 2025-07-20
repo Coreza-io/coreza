@@ -19,7 +19,8 @@ import {
   Activity,
   Bot,
   Target,
-  Play
+  Play,
+  Globe
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { nodeManifest } from "@/nodes/manifest";
@@ -43,7 +44,8 @@ const getIconComponent = (iconName: string) => {
     Bot,
     Target,
     Play,
-    Search
+    Search,
+    Globe
   };
   return icons[iconName as keyof typeof icons] || Database;
 };

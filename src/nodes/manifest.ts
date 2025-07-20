@@ -18,8 +18,7 @@ import BBDDef from './BB.json'
 import IchimokuDef from './Ichimoku.json'
 import OBVDef from './OBV.json'
 import VWAPDef from './VWAP.json'
-
-
+import HttpRequestDef from './HttpRequest.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -96,7 +95,8 @@ export const nodeManifest = {
   [VisualizeDef.name]: VisualizeDef,
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaTradeDef.name]: AlpacaTradeDef,
-  [MarketDef.name]: MarketDef
+  [MarketDef.name]: MarketDef,
+  [HttpRequestDef.name]: HttpRequestDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

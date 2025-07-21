@@ -22,12 +22,12 @@ import {
 } from 'lucide-react';
 
 interface CandleData {
-  t: string[];  // timestamps
-  o: number[];  // open
-  h: number[];  // high 
-  l: number[];  // low
-  c: number[];  // close
-  v: number[];
+  t: string[] | string;  // timestamps - can be array or single value
+  o: number[] | number;  // open - can be array or single value
+  h: number[] | number;  // high - can be array or single value 
+  l: number[] | number;  // low - can be array or single value
+  c: number[] | number;  // close - can be array or single value
+  v: number[] | number;  // volume - can be array or single value
 }
 
 interface IndicatorData {
@@ -46,7 +46,19 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
   const [showVolume, setShowVolume] = useState(true);
   const [showIndicator, setShowIndicator] = useState(true);
   
-  const hasData = candles?.t?.length > 0;
+  // Normalize data to arrays
+  const normalizeToArray = (data: any[] | any): any[] => {
+    return Array.isArray(data) ? data : [data];
+  };
+
+  const timestamps = normalizeToArray(candles.t);
+  const opens = normalizeToArray(candles.o);
+  const highs = normalizeToArray(candles.h);
+  const lows = normalizeToArray(candles.l);
+  const closes = normalizeToArray(candles.c);
+  const volumes = normalizeToArray(candles.v);
+  
+  const hasData = timestamps.length > 0;
 
   if (!hasData) {
     return (
@@ -60,12 +72,12 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
   }
 
   // Prepare chart data by combining candles and indicators
-  const chartData = candles.t.map((timestamp, index) => {
-    const open = candles.o[index];
-    const close = candles.c[index];
-    const high = candles.h[index];
-    const low = candles.l[index];
-    const volume = candles.v?.[index] || 0;
+  const chartData = timestamps.map((timestamp, index) => {
+    const open = opens[index] || opens[0];
+    const close = closes[index] || closes[0];
+    const high = highs[index] || highs[0];
+    const low = lows[index] || lows[0];
+    const volume = volumes[index] || volumes[0] || 0;
     
     // Calculate candlestick body and shadows
     const bodyTop = Math.max(open, close);
@@ -191,7 +203,7 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
         
         {/* Buy signals */}
         {buySignals.map((signal, index) => {
-          const dataIndex = candles.t.findIndex(t => t === signal.timestamp);
+          const dataIndex = timestamps.findIndex(t => t === signal.timestamp);
           if (dataIndex >= 0 && chartData[dataIndex]) {
             return (
               <ReferenceDot
@@ -210,7 +222,7 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
         
         {/* Sell signals */}
         {sellSignals.map((signal, index) => {
-          const dataIndex = candles.t.findIndex(t => t === signal.timestamp);
+          const dataIndex = timestamps.findIndex(t => t === signal.timestamp);
           if (dataIndex >= 0 && chartData[dataIndex]) {
             return (
               <ReferenceDot
@@ -236,7 +248,7 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/20">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-xs">
-            {candles.t.length} candles
+            {timestamps.length} candle{timestamps.length !== 1 ? 's' : ''}
           </Badge>
           {indicator && (
             <Badge variant="secondary" className="text-xs">

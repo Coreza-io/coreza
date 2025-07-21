@@ -128,7 +128,7 @@ const VisualizeCandlesSignals: React.FC<VisualizeCandlesSignalsProps> = ({ candl
         
         {/* Volume bars (if enabled) */}
         {showVolume && (
-          <Bar dataKey="volume" yAxisId="volume" opacity={0.3}>
+          <Bar dataKey="volume" opacity={0.3}>
             {chartData.map((entry, index) => (
               <Cell key={`volume-${index}`} fill={entry.volumeColor} />
             ))}

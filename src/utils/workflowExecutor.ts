@@ -158,22 +158,15 @@ export class WorkflowExecutor {
       const action = nodeDefinition.action as { url: string; method?: string };
       console.log(`📤 Sending request to ${action.url}:`, requestPayload);
 
-      // Make API call
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1${action.url}`, {
-        method: action.method || 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-        },
-        body: JSON.stringify(requestPayload),
+      // Use Supabase client to invoke edge function instead of direct fetch
+      const functionName = action.url.startsWith('/') ? action.url.substring(1) : action.url;
+      const { data: result, error } = await supabase.functions.invoke(functionName, {
+        body: requestPayload,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      if (error) {
+        throw new Error(`Function error: ${error.message}`);
       }
-
-      const result = await response.json();
       console.log(`📥 Received response for ${nodeId}:`, result);
 
       // Update node with output

@@ -190,7 +190,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   // =========== SHARED HELPERS ===========
   function resolveDeep(val, selectedInputData, allNodeData) {
     if (typeof val === "string") {
-      return resolveReferences(val, selectedInputData, allNodeData);
+      const allNodes = getNodes();
+      return resolveReferences(val, selectedInputData, allNodeData, allNodes);
     }
     if (Array.isArray(val)) {
       return val.map(v => resolveDeep(v, selectedInputData, allNodeData));

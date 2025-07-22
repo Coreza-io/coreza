@@ -283,7 +283,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     });
     
     try {
-      const resolved = resolveReferences(expr, srcData, allNodeData);
+      const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
       //console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
       return summarizePreview(resolved);
     } catch (error) {
@@ -354,7 +354,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   }
   function resolveDeep(val: any, selectedInputData: any, allNodeData: any): any {
     if (typeof val === "string") {
-      return resolveReferences(val, selectedInputData, allNodeData);
+      return resolveReferences(val, selectedInputData, allNodeData, nodes);
     }
     if (Array.isArray(val)) {
       return val.map(v => resolveDeep(v, selectedInputData, allNodeData));

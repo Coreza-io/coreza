@@ -157,7 +157,9 @@ const WorkflowEditor = () => {
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,
       // ONLY keep the user's inputs + last output (or whatever you actually need)
-      values: n.data.values
+      values: n.data.values,
+      // Save display name information for reference resolution
+      displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
     }));
 
     // Get existing node IDs
@@ -448,7 +450,9 @@ const WorkflowEditor = () => {
                   ...node.data,
                   definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
                   // Ensure values are properly mapped to data.values for BaseNode to use
-                  values: (node as any).values || node.data?.values || {}
+                  values: (node as any).values || node.data?.values || {},
+                  // Restore display name for backward compatibility
+                  displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
                 }
               }));
               setNodes(restoredNodes);

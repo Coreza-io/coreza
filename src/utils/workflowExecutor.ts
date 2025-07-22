@@ -90,7 +90,9 @@ export class WorkflowExecutor {
     const resolvedInputs: Record<string, any> = {};
     const nodeDefinition = node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest];
     
-    if (!nodeDefinition?.fields) return resolvedInputs;
+    if (!nodeDefinition || typeof nodeDefinition !== 'object' || !('fields' in nodeDefinition) || !Array.isArray(nodeDefinition.fields)) {
+      return resolvedInputs;
+    }
 
     for (const field of nodeDefinition.fields) {
       const rawValue = node.data?.values?.[field.key];
@@ -134,7 +136,7 @@ export class WorkflowExecutor {
       console.log(`🚀 Executing node: ${nodeId} (${node.type})`);
       
       const nodeDefinition = node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest];
-      if (!nodeDefinition?.action) {
+      if (!nodeDefinition || typeof nodeDefinition !== 'object' || !('action' in nodeDefinition) || !nodeDefinition.action) {
         console.log(`📋 Node ${nodeId} has no action defined, skipping execution`);
         executedNodes.add(nodeId);
         this.setNodeExecutionState(nodeId, false, false);
@@ -153,11 +155,12 @@ export class WorkflowExecutor {
         node_type: node.type
       };
 
-      console.log(`📤 Sending request to ${nodeDefinition.action.url}:`, requestPayload);
+      const action = nodeDefinition.action as { url: string; method?: string };
+      console.log(`📤 Sending request to ${action.url}:`, requestPayload);
 
       // Make API call
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1${nodeDefinition.action.url}`, {
-        method: nodeDefinition.action.method || 'POST',
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1${action.url}`, {
+        method: action.method || 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,

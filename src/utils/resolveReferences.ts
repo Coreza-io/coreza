@@ -1,3 +1,4 @@
+
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
  * Now supports negative numbers (e.g. -1, -2).
@@ -25,27 +26,95 @@ function parsePath(path: string): Array<string|number> {
 }
 
 /**
- * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
- * Now with support for negative array indexes and multi-node data lookup.
+ * Generate display name for a node based on type and existing names
  */
-export function resolveReferences(expr: string, inputData: any, allNodeData?: Record<string, any>): string {
+function generateDisplayName(nodeType: string, existingDisplayNames: Set<string>): string {
+  let baseName = nodeType;
+  let counter = 1;
+  let displayName = baseName;
+
+  while (existingDisplayNames.has(displayName)) {
+    counter++;
+    displayName = `${baseName}${counter}`;
+  }
+
+  return displayName;
+}
+
+/**
+ * Create a mapping from display names to technical node IDs
+ */
+function createDisplayNameMapping(nodes: any[]): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  const usedDisplayNames = new Set<string>();
+
+  // Sort nodes by creation time (extract timestamp from ID) to ensure consistent naming
+  const sortedNodes = [...nodes].sort((a, b) => {
+    const timestampA = parseInt(a.id.split('-').pop() || '0');
+    const timestampB = parseInt(b.id.split('-').pop() || '0');
+    return timestampA - timestampB;
+  });
+
+  for (const node of sortedNodes) {
+    let displayName = node.displayName;
+    
+    // If no saved display name, generate one
+    if (!displayName) {
+      displayName = generateDisplayName(node.type, usedDisplayNames);
+    }
+    
+    // Ensure uniqueness (handle duplicates in saved data)
+    if (usedDisplayNames.has(displayName)) {
+      displayName = generateDisplayName(node.type, usedDisplayNames);
+    }
+    
+    mapping[displayName] = node.id;
+    usedDisplayNames.add(displayName);
+  }
+
+  return mapping;
+}
+
+/**
+ * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
+ * Now with support for negative array indexes, multi-node data lookup, and display name mapping.
+ */
+export function resolveReferences(
+  expr: string, 
+  inputData: any, 
+  allNodeData?: Record<string, any>, 
+  nodes?: any[]
+): string {
   if (!inputData || typeof expr !== 'string') {
     return expr;
   }
+
+  // Create display name to ID mapping if nodes are provided
+  const displayNameMapping = nodes ? createDisplayNameMapping(nodes) : {};
 
   // Match $('NodeName').json.path or $json.path patterns
   const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
 
   return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
-    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData });
+    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData, displayNameMapping });
     
     let targetData = inputData;
     
     // If nodeName is specified and we have allNodeData, look up the specific node's data
     if (nodeName && allNodeData) {
-      if (allNodeData[nodeName]) {
-        targetData = allNodeData[nodeName];
-        console.log(`🔍 Found data for node '${nodeName}':`, targetData);
+      // First try to resolve display name to technical ID
+      let actualNodeId = nodeName;
+      if (displayNameMapping[nodeName]) {
+        actualNodeId = displayNameMapping[nodeName];
+        console.log(`🔍 Mapped display name '${nodeName}' to ID '${actualNodeId}'`);
+      }
+      
+      // Try both the original name and mapped ID
+      let nodeData = allNodeData[actualNodeId] || allNodeData[nodeName];
+      
+      if (nodeData) {
+        targetData = nodeData;
+        console.log(`🔍 Found data for node '${nodeName}' (ID: ${actualNodeId}):`, targetData);
         
         // Handle nested json structure for Market Status and other nodes
         if (targetData.json) {
@@ -53,7 +122,7 @@ export function resolveReferences(expr: string, inputData: any, allNodeData?: Re
           console.log(`🔍 Using nested json data:`, targetData);
         }
       } else {
-        console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
+        console.warn(`🔍 No data found for node '${nodeName}' (tried ID: ${actualNodeId}), available nodes:`, Object.keys(allNodeData));
         return fullMatch; // Return original if node not found
       }
     }
@@ -72,7 +141,6 @@ export function resolveReferences(expr: string, inputData: any, allNodeData?: Re
 
     let result: any = targetData;
     for (const key of keys) {
-      //console.log("🔍 Accessing key:", key, "in:", result);
       if (result == null) { 
         result = undefined; 
         break; 
@@ -100,3 +168,6 @@ export function resolveReferences(expr: string, inputData: any, allNodeData?: Re
       : String(result);
   });
 }
+
+// Export the helper functions for use in other modules
+export { createDisplayNameMapping, generateDisplayName };

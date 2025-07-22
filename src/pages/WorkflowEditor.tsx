@@ -30,6 +30,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
+import { createDisplayNameMapping, generateDisplayName } from "@/utils/resolveReferences";
 
 // Create nodeTypes mapping both by manifest keys AND by node_type values
 const nodeTypes = Object.fromEntries([
@@ -38,9 +39,6 @@ const nodeTypes = Object.fromEntries([
   // Map by node_type values (for proper type mapping)
   ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
 ]);
-
-//console.log("Available nodeTypes:", Object.keys(nodeTypes));
-//console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
   removable: RemovableEdge,
@@ -77,7 +75,6 @@ const WorkflowEditor = () => {
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {
     if (!isNewWorkflow && id !== workflowId) {
-      //console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
       setWorkflowId(id || null);
     }
   }, [id, isNewWorkflow, workflowId]);
@@ -95,6 +92,30 @@ const WorkflowEditor = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
+  // Generate display names for nodes
+  const generateNodeDisplayNames = useCallback((nodesList: Node[]) => {
+    const usedDisplayNames = new Set<string>();
+    const sortedNodes = [...nodesList].sort((a, b) => {
+      const timestampA = parseInt(a.id.split('-').pop() || '0');
+      const timestampB = parseInt(b.id.split('-').pop() || '0');
+      return timestampA - timestampB;
+    });
+
+    return sortedNodes.map(node => {
+      // Check if node already has a display name
+      const existingDisplayName = (node as any).displayName;
+      if (existingDisplayName && !usedDisplayNames.has(existingDisplayName)) {
+        usedDisplayNames.add(existingDisplayName);
+        return { ...node, displayName: existingDisplayName };
+      }
+
+      // Generate new display name
+      const displayName = generateDisplayName(node.type, usedDisplayNames);
+      usedDisplayNames.add(displayName);
+      return { ...node, displayName };
+    });
+  }, []);
+
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({
       ...params,
@@ -104,17 +125,18 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  // Memoized WorkflowExecutor instance
-  const workflowExecutor = useMemo(() => (
-    new WorkflowExecutor({
-      nodes,
+  // Memoized WorkflowExecutor instance with display name mapping
+  const workflowExecutor = useMemo(() => {
+    const nodesWithDisplayNames = generateNodeDisplayNames(nodes);
+    return new WorkflowExecutor({
+      nodes: nodesWithDisplayNames,
       edges,
       setNodes,
       setEdges,
       setExecutingNode,
       toast
-    })
-  ), [nodes, edges, setNodes, setEdges, setExecutingNode, toast]);
+    });
+  }, [nodes, edges, setNodes, setEdges, setExecutingNode, toast, generateNodeDisplayNames]);
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
@@ -124,7 +146,6 @@ const WorkflowEditor = () => {
   }, [workflowExecutor]);
 
   // Handle node double click to execute
-  // Double click to execute one node only (optional: show highlight/animation)
   const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, node: Node) => {
     event.preventDefault();
     await workflowExecutor.executeNode(node.id, new Set());
@@ -149,13 +170,17 @@ const WorkflowEditor = () => {
       setLoading(true);
     }
 
-    // 1) Turn each node into a "minimal" version without its definition
-    const minimalNodes = nodes.map((n) => ({
+    // Generate display names for all nodes
+    const nodesWithDisplayNames = generateNodeDisplayNames(nodes);
+
+    // Turn each node into a "minimal" version with display name
+    const minimalNodes = nodesWithDisplayNames.map((n) => ({
       id: n.id,
       type: n.type,
       position: n.position,
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,
+      displayName: (n as any).displayName,
       // ONLY keep the user's inputs + last output (or whatever you actually need)
       values: n.data.values
     }));
@@ -293,7 +318,6 @@ const WorkflowEditor = () => {
         description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
       });
 
-      //console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
     } catch (error) {
       console.error("Failed to change workflow status:", error);
       // Revert the local state change
@@ -376,7 +400,6 @@ const WorkflowEditor = () => {
 
     // Prevent reloading if we've already loaded this workflow
     if (hasLoadedWorkflowId && workflowId === hasLoadedWorkflowId) {
-      //console.log("🚫 Skipping reload - workflow already loaded");
       return;
     }
 
@@ -499,7 +522,6 @@ const WorkflowEditor = () => {
     loadWorkflow();
   }, [authUser, authLoading, navigate, isNewWorkflow, workflowId]); // Removed id from dependencies to prevent reload on tab switch
 
-
   // Auto-hide palette when clicking outside or on editor
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -532,14 +554,9 @@ const WorkflowEditor = () => {
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === 'Delete') {
-        //console.log("Delete key pressed - removing selected nodes");
         setNodes((nds) => nds.filter((node) => !node.selected));
         setEdges((eds) => eds.filter((edge) => !edge.selected));
-      }
-      if (event.key === 'Backspace') {
-        //console.log("Backspace key pressed but should NOT delete nodes");
       }
     };
 

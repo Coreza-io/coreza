@@ -2,7 +2,6 @@
   "name": "Scheduler",
   "def": "Schedule Trigger",
   "node_type": "trigger",
-  "category": "Scheduler",
   "icon": "/assets/icons/scheduler.svg",
   "size": { "width": 340, "height": 200 },
   "handles": [

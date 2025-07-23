@@ -130,6 +130,85 @@ const WorkflowEditor = () => {
     await workflowExecutor.executeNode(node.id, new Set());
   }, [workflowExecutor]);
 
+  // Function to generate a unique display name based ID
+  const generateUniqueDisplayId = useCallback((nodeType: string) => {
+    const nodeDefinition = nodeManifest[nodeType];
+    const baseName = nodeDefinition?.name || nodeType;
+    
+    // Find existing nodes with similar names
+    const existingNodes = nodes.filter(node => {
+      const nodeDisplayName = node.data?.displayName || node.data?.definition?.name || node.type;
+      return nodeDisplayName.startsWith(baseName);
+    });
+    
+    // If no existing nodes, use the base name
+    if (existingNodes.length === 0) {
+      return baseName;
+    }
+    
+    // Find the next available number
+    const existingNumbers = existingNodes.map(node => {
+      const displayName = node.data?.displayName || node.data?.definition?.name || node.type;
+      const match = displayName.match(new RegExp(`^${baseName}(\\d+)$`));
+      return match ? parseInt(match[1]) : (displayName === baseName ? 1 : 0);
+    }).filter(num => num > 0);
+    
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    return `${baseName}${nextNumber}`;
+  }, [nodes]);
+
+  // Function to create a new node
+  const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
+    const nodeDefinition = nodeManifest[nodeType];
+    const displayId = generateUniqueDisplayId(nodeType);
+    
+    const newNode: Node = {
+      id: displayId, // Use display name as ID
+      type: nodeType,
+      position,
+      data: { 
+        label: nodeDefinition?.name || `${nodeType} node`,
+        definition: nodeDefinition,
+        displayName: displayId // Store display name for reference
+      },
+    };
+    
+    setNodes((nds) => nds.concat(newNode));
+  }, [setNodes, generateUniqueDisplayId]);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      if (!type) return;
+
+      // Get the ReactFlow wrapper element to calculate relative position
+      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
+      const position = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      };
+
+      createNode(type, position);
+    },
+    [createNode],
+  );
+
+  // Handle node click from palette
+  const handleNodeClick = useCallback((nodeType: string) => {
+    // Position new node at center of viewport
+    const position = {
+      x: 250,
+      y: 250,
+    };
+    
+    createNode(nodeType, position);
+    
+    // Optionally hide palette after adding node
+    setIsPaletteVisible(false);
+  }, [createNode]);
+
   // Save workflow to Supabase
   const handleSaveWorkflow = async (isAutosave = false) => {
     if (!authUser) {
@@ -151,15 +230,15 @@ const WorkflowEditor = () => {
 
     // 1) Turn each node into a "minimal" version without its definition
     const minimalNodes = nodes.map((n) => ({
-      id: n.id,
+      id: n.id, // Now using display name as ID
       type: n.type,
       position: n.position,
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,
       // ONLY keep the user's inputs + last output (or whatever you actually need)
       values: n.data.values,
-      // Save display name information for reference resolution
-      displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
+      // Display name is now the same as ID
+      displayName: n.id
     }));
 
     // Get existing node IDs
@@ -313,56 +392,6 @@ const WorkflowEditor = () => {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  // Function to create a new node
-  const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
-    const nodeDefinition = nodeManifest[nodeType];
-    
-    const newNode: Node = {
-      id: `${nodeType}-${Date.now()}`,
-      type: nodeType,
-      position,
-      data: { 
-        label: nodeDefinition?.name || `${nodeType} node`,
-        definition: nodeDefinition
-      },
-    };
-    
-    setNodes((nds) => nds.concat(newNode));
-  }, [setNodes]);
-
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-
-      const type = event.dataTransfer.getData('application/reactflow');
-      if (!type) return;
-
-      // Get the ReactFlow wrapper element to calculate relative position
-      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
-      const position = {
-        x: event.clientX - reactFlowBounds.left,
-        y: event.clientY - reactFlowBounds.top,
-      };
-
-      createNode(type, position);
-    },
-    [createNode],
-  );
-
-  // Handle node click from palette
-  const handleNodeClick = useCallback((nodeType: string) => {
-    // Position new node at center of viewport
-    const position = {
-      x: 250,
-      y: 250,
-    };
-    
-    createNode(nodeType, position);
-    
-    // Optionally hide palette after adding node
-    setIsPaletteVisible(false);
-  }, [createNode]);
-
   // Check for user authentication and load latest workflow
   const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(null);
   
@@ -451,8 +480,8 @@ const WorkflowEditor = () => {
                   definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
                   // Ensure values are properly mapped to data.values for BaseNode to use
                   values: (node as any).values || node.data?.values || {},
-                  // Restore display name for backward compatibility
-                  displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
+                  // Use the node ID as display name since they're the same now
+                  displayName: node.id
                 }
               }));
               setNodes(restoredNodes);
@@ -501,8 +530,7 @@ const WorkflowEditor = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId]); // Removed id from dependencies to prevent reload on tab switch
-
+  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, generateUniqueDisplayId]); // Added generateUniqueDisplayId to dependencies
 
   // Auto-hide palette when clicking outside or on editor
   useEffect(() => {

@@ -35,6 +35,12 @@ const Dashboard = () => {
   });
   const [executionHistory, setExecutionHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeWorkflowsData, setActiveWorkflowsData] = useState<any[]>([]);
+  const [activeWorkflowsLoading, setActiveWorkflowsLoading] = useState(false);
+  const [allWorkflowsData, setAllWorkflowsData] = useState<any[]>([]);
+  const [allWorkflowsLoading, setAllWorkflowsLoading] = useState(false);
+  const [performanceStats, setPerformanceStats] = useState<any[]>([]);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
   const { toast } = useToast();
 
   // Fetch dashboard data
@@ -160,6 +166,133 @@ const Dashboard = () => {
     }
   };
 
+  // Fetch active workflows data
+  const fetchActiveWorkflows = async () => {
+    if (!user) return;
+    
+    setActiveWorkflowsLoading(true);
+    try {
+      const { data: workflows, error } = await supabase
+        .from('workflows')
+        .select(`
+          id,
+          name,
+          created_at,
+          updated_at,
+          is_active,
+          projects(name)
+        `)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching active workflows:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load active workflows",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setActiveWorkflowsData(workflows || []);
+    } catch (error) {
+      console.error('Error fetching active workflows:', error);
+    } finally {
+      setActiveWorkflowsLoading(false);
+    }
+  };
+
+  // Fetch all workflows data
+  const fetchAllWorkflows = async () => {
+    if (!user) return;
+    
+    setAllWorkflowsLoading(true);
+    try {
+      const { data: workflows, error } = await supabase
+        .from('workflows')
+        .select(`
+          id,
+          name,
+          created_at,
+          updated_at,
+          is_active,
+          projects(name)
+        `)
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching all workflows:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load workflows",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setAllWorkflowsData(workflows || []);
+    } catch (error) {
+      console.error('Error fetching all workflows:', error);
+    } finally {
+      setAllWorkflowsLoading(false);
+    }
+  };
+
+  // Fetch performance statistics
+  const fetchPerformanceStats = async () => {
+    if (!user) return;
+    
+    setPerformanceLoading(true);
+    try {
+      const { data: workflowRuns, error } = await supabase
+        .from('workflow_runs')
+        .select(`
+          id,
+          status,
+          started_at,
+          completed_at,
+          workflows!inner(name, user_id)
+        `)
+        .eq('workflows.user_id', user.id)
+        .order('started_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error fetching performance stats:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load performance statistics",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Calculate performance metrics
+      const stats = workflowRuns?.map(run => {
+        const runtime = run.completed_at ? 
+          Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000) : 
+          null;
+        
+        return {
+          workflow_name: run.workflows?.name || 'Unknown',
+          status: run.status,
+          runtime,
+          started_at: run.started_at,
+          completed_at: run.completed_at
+        };
+      }) || [];
+
+      setPerformanceStats(stats);
+    } catch (error) {
+      console.error('Error fetching performance stats:', error);
+    } finally {
+      setPerformanceLoading(false);
+    }
+  };
+
   // Calculate run time for completed executions
   const getRunTime = (startedAt: string, completedAt: string | null) => {
     if (!completedAt) return "Running...";
@@ -259,7 +392,223 @@ const Dashboard = () => {
       >
         {stats.map((stat, index) => (
           <motion.div key={stat.title} variants={item}>
-             {stat.title === "Success Rate" && dashboardData.totalRuns > 0 ? (
+            {stat.title === "Active Workflows" && dashboardData.activeWorkflows > 0 ? (
+              <Dialog onOpenChange={(open) => {
+                if (open) {
+                  fetchActiveWorkflows();
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        {stat.title}
+                      </CardTitle>
+                      <stat.icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.change}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle>Active Workflows</DialogTitle>
+                  </DialogHeader>
+                  <ScrollArea className="h-[60vh]">
+                    {activeWorkflowsLoading ? (
+                      <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="ml-2">Loading active workflows...</span>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Workflow Name</TableHead>
+                            <TableHead>Project</TableHead>
+                            <TableHead>Created Date</TableHead>
+                            <TableHead>Last Updated</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activeWorkflowsData.map((workflow) => (
+                            <TableRow key={workflow.id}>
+                              <TableCell className="font-medium">
+                                {workflow.name}
+                              </TableCell>
+                              <TableCell>
+                                {workflow.projects?.name || 'No Project'}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(workflow.created_at).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(workflow.updated_at).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="default">Active</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
+            ) : stat.title === "Total Workflows" && dashboardData.totalWorkflows > 0 ? (
+              <Dialog onOpenChange={(open) => {
+                if (open) {
+                  fetchAllWorkflows();
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        {stat.title}
+                      </CardTitle>
+                      <stat.icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.change}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle>All Workflows</DialogTitle>
+                  </DialogHeader>
+                  <ScrollArea className="h-[60vh]">
+                    {allWorkflowsLoading ? (
+                      <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="ml-2">Loading workflows...</span>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Workflow Name</TableHead>
+                            <TableHead>Project</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created Date</TableHead>
+                            <TableHead>Last Updated</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {allWorkflowsData.map((workflow) => (
+                            <TableRow key={workflow.id}>
+                              <TableCell className="font-medium">
+                                {workflow.name}
+                              </TableCell>
+                              <TableCell>
+                                {workflow.projects?.name || 'No Project'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={workflow.is_active ? 'default' : 'secondary'}
+                                >
+                                  {workflow.is_active ? 'Active' : 'Paused'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {new Date(workflow.created_at).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(workflow.updated_at).toLocaleDateString()}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
+            ) : stat.title === "Performance" && dashboardData.totalRuns > 0 ? (
+              <Dialog onOpenChange={(open) => {
+                if (open) {
+                  fetchPerformanceStats();
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        {stat.title}
+                      </CardTitle>
+                      <stat.icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.change}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle>Performance Statistics</DialogTitle>
+                  </DialogHeader>
+                  <ScrollArea className="h-[60vh]">
+                    {performanceLoading ? (
+                      <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="ml-2">Loading performance data...</span>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Workflow Name</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Runtime</TableHead>
+                            <TableHead>Started Time</TableHead>
+                            <TableHead>Completed Time</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {performanceStats.map((stat, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="font-medium">
+                                {stat.workflow_name}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={stat.status === 'success' ? 'default' : 
+                                          stat.status === 'failed' ? 'destructive' : 'secondary'}
+                                >
+                                  {stat.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {stat.runtime ? `${stat.runtime}s` : 'Running...'}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(stat.started_at).toLocaleString()}
+                              </TableCell>
+                              <TableCell>
+                                {stat.completed_at ? new Date(stat.completed_at).toLocaleString() : 'N/A'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
+            ) : stat.title === "Success Rate" && dashboardData.totalRuns > 0 ? (
               <Dialog onOpenChange={(open) => {
                 if (open) {
                   fetchExecutionHistory();

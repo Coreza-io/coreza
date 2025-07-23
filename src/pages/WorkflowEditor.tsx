@@ -104,17 +104,29 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  // Memoized WorkflowExecutor instance
+  // Memoized WorkflowExecutor instance - only create once
   const workflowExecutor = useMemo(() => (
     new WorkflowExecutor({
+      nodes: [],
+      edges: [],
+      setNodes,
+      setEdges,
+      setExecutingNode,
+      toast
+    })
+  ), [setNodes, setEdges, setExecutingNode, toast]);
+
+  // Update executor context when nodes/edges change
+  useEffect(() => {
+    workflowExecutor.updateContext({
       nodes,
       edges,
       setNodes,
       setEdges,
       setExecutingNode,
       toast
-    })
-  ), [nodes, edges, setNodes, setEdges, setExecutingNode, toast]);
+    });
+  }, [nodes, edges, workflowExecutor, setNodes, setEdges, setExecutingNode, toast]);
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {

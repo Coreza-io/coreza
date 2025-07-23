@@ -3,9 +3,20 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
+# Install system dependencies (TA-Lib, psycopg2, build tools)
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    build-essential \
+    libta-lib0 \
+    libta-lib-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 COPY coreza-backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# Copy project files
 COPY coreza-backend/ /app
 
 EXPOSE 8000

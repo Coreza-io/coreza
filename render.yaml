@@ -22,6 +22,6 @@ services:
   - type: web
     name: coreza-frontend
     env: static
-    rootDir: frontend
+    rootDir: coreza
     buildCommand: "npm install && npm run build"
     staticPublishPath: dist

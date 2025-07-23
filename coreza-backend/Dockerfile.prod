@@ -3,18 +3,19 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Install build deps for psycopg2 and other C extensions
+# Build deps for Postgres C driver, TA-Lib binary wheel
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip & install dependencies
+# Copy and install Python deps
 COPY coreza-backend/requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip setuptools wheel && pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy backend code
+# Copy app code
 COPY coreza-backend/ /app
 
 EXPOSE 8000

@@ -11,6 +11,21 @@ services:
     env: docker
     plan: free
     dockerfilePath: ./coreza-backend/Dockerfile.prod
+    contextPath: ./coreza-backend
+    envVars:
+      - key: REDIS_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: SECRET_KEY
+        value: "change-me"
+
+  - type: worker
+    name: coreza-worker
+    env: docker
+    plan: starter          # change/remove if you don't want worker now
+    dockerfilePath: ./coreza-backend/Dockerfile.worker
+    contextPath: ./coreza-backend
     envVars:
       - key: REDIS_URL
         fromDatabase:

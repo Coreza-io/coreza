@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Build deps
+# Build deps for psycopg2 & other C extensions
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
@@ -18,5 +18,6 @@ RUN pip install --upgrade pip setuptools wheel \
 # Copy your code
 COPY coreza-backend/ /app
 
-# No change here
-CMD ["celery", "-A", "scheduler.services.queue.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+EXPOSE 8000
+# ← point at main.py, not app.main
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

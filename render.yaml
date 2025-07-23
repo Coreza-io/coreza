@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: coreza-backend
+    env: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile.prod
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: coreza-redis
+          type: redis
+
+  - type: worker
+    name: coreza-worker
+    env: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile.prod
+    startCommand: "celery -A scheduler.services.queue.celery_app worker --loglevel=info --pool=solo"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: coreza-redis
+          type: redis
+
+  - type: redis
+    name: coreza-redis
+    plan: free
+
+  - type: static
+    name: coreza-frontend
+    env: static
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: frontend/dist
+    rootDir: frontend

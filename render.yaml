@@ -19,9 +19,22 @@ services:
       - key: SECRET_KEY
         value: "change-me"
 
+  # Optional: Comment out if staying free-only (Celery worker needs Starter plan)
+  - type: worker
+    name: coreza-worker
+    env: docker
+    plan: starter
+    dockerfilePath: ./coreza-backend/Dockerfile.worker
+    envVars:
+      - key: REDIS_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: SECRET_KEY
+        value: "change-me"
+
   - type: web
     name: coreza-frontend
     env: static
-    rootDir: coreza
     buildCommand: "npm install && npm run build"
     staticPublishPath: dist

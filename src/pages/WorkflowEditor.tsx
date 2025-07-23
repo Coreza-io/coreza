@@ -159,7 +159,7 @@ const WorkflowEditor = () => {
       // ONLY keep the user's inputs + last output (or whatever you actually need)
       values: n.data.values,
       // Save display name information for reference resolution
-      displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
+      //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
     }));
 
     // Get existing node IDs

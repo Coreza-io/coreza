@@ -1,23 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Build deps for psycopg2 & other C extensions
+# Install any C‑extension deps (Postgres client, build tools)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
+# Copy & install Python deps
 COPY coreza-backend/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip setuptools wheel \
  && pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy your code
+# Copy app code
 COPY coreza-backend/ /app
 
 EXPOSE 8000
-# ← point at main.py, not app.main
+# Point Uvicorn at main.py (where your FastAPI app = `app`)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

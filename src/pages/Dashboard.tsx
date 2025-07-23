@@ -25,7 +25,9 @@ const Dashboard = () => {
     activeWorkflows: 0,
     totalWorkflows: 0,
     recentWorkflows: [] as any[],
-    performanceData: [] as any[]
+    performanceData: [] as any[],
+    successRate: 0,
+    totalRuns: 0
   });
   const { toast } = useToast();
 
@@ -55,6 +57,30 @@ const Dashboard = () => {
 
         const activeWorkflows = workflows?.filter(w => w.is_active) || [];
         
+        // Fetch workflow runs statistics for success rate calculation
+        const { data: workflowRunsStats, error: runsError } = await supabase
+          .from('workflow_runs')
+          .select(`
+            status,
+            workflow_id,
+            workflows!inner(user_id)
+          `)
+          .eq('workflows.user_id', user.id);
+
+        if (runsError) {
+          console.error('Error fetching workflow runs:', runsError);
+        }
+
+        // Calculate success rate
+        let successRate = 0;
+        let totalRuns = 0;
+        
+        if (workflowRunsStats && workflowRunsStats.length > 0) {
+          totalRuns = workflowRunsStats.length;
+          const successfulRuns = workflowRunsStats.filter(run => run.status === 'success').length;
+          successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 100) : 0;
+        }
+        
         // Generate mock performance data for now (you can replace this with real data later)
         const performanceData = Array.from({ length: 30 }, (_, i) => ({
           date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -65,7 +91,9 @@ const Dashboard = () => {
           activeWorkflows: activeWorkflows.length,
           totalWorkflows: workflows?.length || 0,
           recentWorkflows: workflows?.slice(0, 3) || [],
-          performanceData
+          performanceData,
+          successRate,
+          totalRuns
         });
 
       } catch (error) {
@@ -101,10 +129,10 @@ const Dashboard = () => {
     },
     {
       title: "Success Rate",
-      value: "N/A",
-      change: "Coming soon",
+      value: loading ? "..." : dashboardData.totalRuns > 0 ? `${dashboardData.successRate}%` : "No data",
+      change: dashboardData.totalRuns > 0 ? `${dashboardData.totalRuns} total runs` : "No executions yet",
       icon: TrendingUp,
-      trend: "neutral" as const
+      trend: dashboardData.successRate >= 80 ? "up" as const : dashboardData.successRate >= 60 ? "neutral" as const : "down" as const
     },
     {
       title: "Performance",

@@ -3,14 +3,20 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies (TA-Lib, psycopg2, build tools)
+# Install build dependencies (gcc, make, etc.)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
-    libta-lib0 \
-    libta-lib-dev \
+    wget \
+    tar \
     && rm -rf /var/lib/apt/lists/*
+
+# Build and install TA-Lib from source
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xvzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib && ./configure --prefix=/usr && make && make install \
+    && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
 # Install Python dependencies
 COPY coreza-backend/requirements.txt /app/requirements.txt
@@ -19,5 +25,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Copy project files
 COPY coreza-backend/ /app
 
-# Start Celery worker
 CMD ["celery", "-A", "scheduler.services.queue.celery_app", "worker", "--loglevel=info", "--pool=solo"]

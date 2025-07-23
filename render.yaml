@@ -3,28 +3,32 @@ services:
     name: coreza-backend
     env: docker
     plan: free
-    dockerfilePath: ./backend/Dockerfile.prod
+    dockerfilePath: ./coreza-backend/Dockerfile.prod
     envVars:
       - key: REDIS_URL
         fromService:
           name: coreza-redis
           type: redis
+          property: connectionString
 
   - type: worker
     name: coreza-worker
     env: docker
     plan: free
-    dockerfilePath: ./backend/Dockerfile.prod
-    startCommand: "celery -A scheduler.services.queue.celery_app worker --loglevel=info --pool=solo"
+    dockerfilePath: ./coreza-backend/Dockerfile.worker
     envVars:
       - key: REDIS_URL
         fromService:
           name: coreza-redis
           type: redis
+          property: connectionString
 
   - type: redis
     name: coreza-redis
     plan: free
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: Allow all
 
   - type: web
     name: coreza-frontend

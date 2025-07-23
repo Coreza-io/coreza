@@ -3,26 +3,18 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Install build dependencies (TA-Lib + Postgres + build tools)
+# Install build deps for psycopg2 and other C extensions
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
-    wget \
-    tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Build and install TA-Lib from source
-RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
-    && tar -xvzf ta-lib-0.4.0-src.tar.gz \
-    && cd ta-lib && ./configure --prefix=/usr && make && make install \
-    && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-
-# Upgrade pip & install Python dependencies
+# Upgrade pip & install dependencies
 COPY coreza-backend/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip setuptools wheel && pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy project files
+# Copy backend code
 COPY coreza-backend/ /app
 
 # Start Celery worker

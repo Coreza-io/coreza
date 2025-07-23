@@ -392,7 +392,7 @@ const Dashboard = () => {
       >
         {stats.map((stat, index) => (
           <motion.div key={stat.title} variants={item}>
-            {stat.title === "Active Workflows" && dashboardData.activeWorkflows > 0 ? (
+            {stat.title === "Active Workflows" ? (
               <Dialog onOpenChange={(open) => {
                 if (open) {
                   fetchActiveWorkflows();
@@ -436,32 +436,40 @@ const Dashboard = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activeWorkflowsData.map((workflow) => (
-                            <TableRow key={workflow.id}>
-                              <TableCell className="font-medium">
-                                {workflow.name}
-                              </TableCell>
-                              <TableCell>
-                                {workflow.projects?.name || 'No Project'}
-                              </TableCell>
-                              <TableCell>
-                                {new Date(workflow.created_at).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell>
-                                {new Date(workflow.updated_at).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="default">Active</Badge>
+                          {activeWorkflowsData.length > 0 ? (
+                            activeWorkflowsData.map((workflow) => (
+                              <TableRow key={workflow.id}>
+                                <TableCell className="font-medium">
+                                  {workflow.name}
+                                </TableCell>
+                                <TableCell>
+                                  {workflow.projects?.name || 'No Project'}
+                                </TableCell>
+                                <TableCell>
+                                  {new Date(workflow.created_at).toLocaleDateString()}
+                                </TableCell>
+                                <TableCell>
+                                  {new Date(workflow.updated_at).toLocaleDateString()}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="default">Active</Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                No active workflows found
                               </TableCell>
                             </TableRow>
-                          ))}
+                          )}
                         </TableBody>
                       </Table>
                     )}
                   </ScrollArea>
                 </DialogContent>
               </Dialog>
-            ) : stat.title === "Total Workflows" && dashboardData.totalWorkflows > 0 ? (
+            ) : stat.title === "Total Workflows" ? (
               <Dialog onOpenChange={(open) => {
                 if (open) {
                   fetchAllWorkflows();
@@ -505,36 +513,44 @@ const Dashboard = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {allWorkflowsData.map((workflow) => (
-                            <TableRow key={workflow.id}>
-                              <TableCell className="font-medium">
-                                {workflow.name}
-                              </TableCell>
-                              <TableCell>
-                                {workflow.projects?.name || 'No Project'}
-                              </TableCell>
-                              <TableCell>
-                                <Badge 
-                                  variant={workflow.is_active ? 'default' : 'secondary'}
-                                >
-                                  {workflow.is_active ? 'Active' : 'Paused'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {new Date(workflow.created_at).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell>
-                                {new Date(workflow.updated_at).toLocaleDateString()}
+                          {allWorkflowsData.length > 0 ? (
+                            allWorkflowsData.map((workflow) => (
+                              <TableRow key={workflow.id}>
+                                <TableCell className="font-medium">
+                                  {workflow.name}
+                                </TableCell>
+                                <TableCell>
+                                  {workflow.projects?.name || 'No Project'}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={workflow.is_active ? 'default' : 'secondary'}
+                                  >
+                                    {workflow.is_active ? 'Active' : 'Paused'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {new Date(workflow.created_at).toLocaleDateString()}
+                                </TableCell>
+                                <TableCell>
+                                  {new Date(workflow.updated_at).toLocaleDateString()}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                No workflows found
                               </TableCell>
                             </TableRow>
-                          ))}
+                          )}
                         </TableBody>
                       </Table>
                     )}
                   </ScrollArea>
                 </DialogContent>
               </Dialog>
-            ) : stat.title === "Performance" && dashboardData.totalRuns > 0 ? (
+            ) : stat.title === "Performance" ? (
               <Dialog onOpenChange={(open) => {
                 if (open) {
                   fetchPerformanceStats();
@@ -578,30 +594,38 @@ const Dashboard = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {performanceStats.map((stat, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-medium">
-                                {stat.workflow_name}
-                              </TableCell>
-                              <TableCell>
-                                <Badge 
-                                  variant={stat.status === 'success' ? 'default' : 
-                                          stat.status === 'failed' ? 'destructive' : 'secondary'}
-                                >
-                                  {stat.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {stat.runtime ? `${stat.runtime}s` : 'Running...'}
-                              </TableCell>
-                              <TableCell>
-                                {new Date(stat.started_at).toLocaleString()}
-                              </TableCell>
-                              <TableCell>
-                                {stat.completed_at ? new Date(stat.completed_at).toLocaleString() : 'N/A'}
+                          {performanceStats.length > 0 ? (
+                            performanceStats.map((stat, index) => (
+                              <TableRow key={index}>
+                                <TableCell className="font-medium">
+                                  {stat.workflow_name}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={stat.status === 'success' ? 'default' : 
+                                            stat.status === 'failed' ? 'destructive' : 'secondary'}
+                                  >
+                                    {stat.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {stat.runtime ? `${stat.runtime}s` : 'Running...'}
+                                </TableCell>
+                                <TableCell>
+                                  {new Date(stat.started_at).toLocaleString()}
+                                </TableCell>
+                                <TableCell>
+                                  {stat.completed_at ? new Date(stat.completed_at).toLocaleString() : 'N/A'}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                No performance data available
                               </TableCell>
                             </TableRow>
-                          ))}
+                          )}
                         </TableBody>
                       </Table>
                     )}

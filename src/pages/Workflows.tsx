@@ -131,26 +131,25 @@ const Workflows = () => {
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
-      if (!currentStatus) {
-        // Activating workflow - first check if backend is available
-        const API_URL = "http://localhost:8000";
+      const API_URL = "http://localhost:8000";
+      
+      // Check backend health first for both activation and deactivation
+      try {
+        const healthCheck = await fetch(`${API_URL}/health`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
         
-        // Check backend health first
-        try {
-          const healthCheck = await fetch(`${API_URL}/health`, {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-          });
-          
-          if (!healthCheck.ok) {
-            throw new Error("Backend server is not responding");
-          }
-        } catch (healthError: any) {
-          console.error("Backend health check failed:", healthError);
-          throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
+        if (!healthCheck.ok) {
+          throw new Error("Backend server is not responding");
         }
+      } catch (healthError: any) {
+        console.error("Backend health check failed:", healthError);
+        throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
+      }
 
-        // Backend is available, proceed with activation
+      if (!currentStatus) {
+        // Activating workflow
         const res = await fetch(`${API_URL}/workflows/${workflowId}/activate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -172,7 +171,19 @@ const Workflows = () => {
           throw error;
         }
       } else {
-        // Pausing workflow - update database directly
+        // Deactivating workflow - call backend first
+        const res = await fetch(`${API_URL}/workflows/${workflowId}/deactivate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ownerId: user?.id }),
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText);
+        }
+
+        // Update database to reflect deactivation
         const { error } = await supabase
           .from('workflows')
           .update({ is_active: false })
@@ -190,12 +201,12 @@ const Workflows = () => {
 
       toast({
         title: "Success",
-        description: `Workflow ${!currentStatus ? 'activated' : 'paused'} successfully`,
+        description: `Workflow ${!currentStatus ? 'activated' : 'deactivated'} successfully`,
       });
     } catch (error: any) {
       toast({
         title: "Error",
-        description: `Failed to ${!currentStatus ? 'activate' : 'pause'} workflow: ${error.message}`,
+        description: `Failed to ${!currentStatus ? 'activate' : 'deactivate'} workflow: ${error.message}`,
         variant: "destructive",
       });
     }

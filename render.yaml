@@ -26,9 +26,10 @@ services:
     name: coreza-redis
     plan: free
 
-  - type: static
+  - type: web
     name: coreza-frontend
     env: static
+    plan: free
     buildCommand: "npm install && npm run build"
-    staticPublishPath: frontend/dist
+    staticPublishPath: dist
     rootDir: frontend

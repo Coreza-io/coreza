@@ -8,5 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Start Celery worker
 CMD ["celery", "-A", "scheduler.services.queue.celery_app", "worker", "--loglevel=info", "--pool=solo"]

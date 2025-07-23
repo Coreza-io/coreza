@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Activity, 
   TrendingUp, 
@@ -29,6 +33,8 @@ const Dashboard = () => {
     successRate: 0,
     totalRuns: 0
   });
+  const [executionHistory, setExecutionHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const { toast } = useToast();
 
   // Fetch dashboard data
@@ -110,6 +116,65 @@ const Dashboard = () => {
 
     fetchDashboardData();
   }, [user, toast]);
+
+  // Fetch detailed execution history
+  const fetchExecutionHistory = async () => {
+    if (!user) return;
+    
+    setHistoryLoading(true);
+    try {
+      const { data: workflowRuns, error } = await supabase
+        .from('workflow_runs')
+        .select(`
+          id,
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          workflows!inner(name, user_id)
+        `)
+        .eq('workflows.user_id', user.id)
+        .order('started_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.error('Error fetching execution history:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load execution history",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setExecutionHistory(workflowRuns || []);
+    } catch (error) {
+      console.error('Error fetching execution history:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load execution history",
+        variant: "destructive",
+      });
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Calculate run time for completed executions
+  const getRunTime = (startedAt: string, completedAt: string | null) => {
+    if (!completedAt) return "Running...";
+    
+    const start = new Date(startedAt);
+    const end = new Date(completedAt);
+    const diffMs = end.getTime() - start.getTime();
+    const diffSeconds = Math.round(diffMs / 1000);
+    
+    if (diffSeconds < 60) return `${diffSeconds}s`;
+    const diffMinutes = Math.round(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m`;
+    const diffHours = Math.round(diffMinutes / 60);
+    return `${diffHours}h`;
+  };
 
   // Calculate dynamic stats based on real data
   const stats = [
@@ -194,20 +259,96 @@ const Dashboard = () => {
       >
         {stats.map((stat, index) => (
           <motion.div key={stat.title} variants={item}>
-            <Card className="bg-gradient-card border-border hover:shadow-card transition-all">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
-                <stat.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stat.change}
-                </p>
-              </CardContent>
-            </Card>
+             {stat.title === "Success Rate" && dashboardData.totalRuns > 0 ? (
+              <Dialog onOpenChange={(open) => {
+                if (open) {
+                  fetchExecutionHistory();
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        {stat.title}
+                      </CardTitle>
+                      <stat.icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.change}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle>Workflow Execution History</DialogTitle>
+                  </DialogHeader>
+                  <ScrollArea className="h-[60vh]">
+                    {historyLoading ? (
+                      <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="ml-2">Loading execution history...</span>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Workflow Name</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Started Time</TableHead>
+                            <TableHead>Run Time</TableHead>
+                            <TableHead>Execution ID</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {executionHistory.map((run) => (
+                            <TableRow key={run.id}>
+                              <TableCell className="font-medium">
+                                {run.workflows?.name || 'Unknown'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={run.status === 'success' ? 'default' : 
+                                          run.status === 'failed' ? 'destructive' : 'secondary'}
+                                >
+                                  {run.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {new Date(run.started_at).toLocaleString()}
+                              </TableCell>
+                              <TableCell>
+                                {getRunTime(run.started_at, run.completed_at)}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {run.id.slice(0, 8)}...
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
+            ) : (
+              <Card className="bg-gradient-card border-border hover:shadow-card transition-all">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    {stat.title}
+                  </CardTitle>
+                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stat.value}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {stat.change}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </motion.div>
         ))}
       </motion.div>

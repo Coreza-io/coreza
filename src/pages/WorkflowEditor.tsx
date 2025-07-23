@@ -137,7 +137,8 @@ const WorkflowEditor = () => {
     
     // Find existing nodes with similar names
     const existingNodes = nodes.filter(node => {
-      const nodeDisplayName = node.data?.displayName || node.data?.definition?.name || node.type;
+      const nodeData = node.data as any;
+      const nodeDisplayName = nodeData?.displayName || nodeData?.definition?.name || node.type;
       return nodeDisplayName.startsWith(baseName);
     });
     
@@ -148,7 +149,8 @@ const WorkflowEditor = () => {
     
     // Find the next available number
     const existingNumbers = existingNodes.map(node => {
-      const displayName = node.data?.displayName || node.data?.definition?.name || node.type;
+      const nodeData = node.data as any;
+      const displayName = nodeData?.displayName || nodeData?.definition?.name || node.type;
       const match = displayName.match(new RegExp(`^${baseName}(\\d+)$`));
       return match ? parseInt(match[1]) : (displayName === baseName ? 1 : 0);
     }).filter(num => num > 0);

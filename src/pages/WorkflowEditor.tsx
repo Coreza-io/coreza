@@ -317,8 +317,12 @@ const WorkflowEditor = () => {
   const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
     const nodeDefinition = nodeManifest[nodeType];
     
+    // Generate human-readable ID by counting existing nodes of same type
+    const existingNodesOfType = nodes.filter(node => node.type === nodeType);
+    const nextNumber = existingNodesOfType.length + 1;
+    
     const newNode: Node = {
-      id: `${nodeType}-${Date.now()}`,
+      id: `${nodeType}${nextNumber}`,
       type: nodeType,
       position,
       data: { 
@@ -328,7 +332,7 @@ const WorkflowEditor = () => {
     };
     
     setNodes((nds) => nds.concat(newNode));
-  }, [setNodes]);
+  }, [setNodes, nodes]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {

@@ -1,3 +1,10 @@
+databases:
+  - name: coreza-redis
+    plan: free
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: allow all
+
 services:
   - type: web
     name: coreza-backend
@@ -6,33 +13,22 @@ services:
     dockerfilePath: ./coreza-backend/Dockerfile.prod
     envVars:
       - key: REDIS_URL
-        fromService:
+        fromDatabase:
           name: coreza-redis
-          type: redis
           property: connectionString
+      - key: SECRET_KEY
+        value: "change-me"
 
+  # Remove or upgrade this if free plan blocks it
   - type: worker
     name: coreza-worker
     env: docker
-    plan: free
+    plan: starter   # or comment this whole block out if you can't upgrade
     dockerfilePath: ./coreza-backend/Dockerfile.worker
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          name: coreza-redis
-          type: redis
-          property: connectionString
-
-  - type: redis
-    name: coreza-redis
-    plan: free
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: Allow all
 
   - type: web
     name: coreza-frontend
     env: static
+    rootDir: frontend
     buildCommand: "npm install && npm run build"
     staticPublishPath: dist
-    rootDir: frontend

@@ -3,20 +3,20 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Build deps for Postgres C driver, TA-Lib binary wheel
+# Build deps
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python deps
+# Install Python deps
 COPY coreza-backend/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip setuptools wheel \
  && pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy app code
+# Copy your code
 COPY coreza-backend/ /app
 
-# Start Celery worker
+# No change here
 CMD ["celery", "-A", "scheduler.services.queue.celery_app", "worker", "--loglevel=info", "--pool=solo"]

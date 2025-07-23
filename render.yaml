@@ -19,13 +19,6 @@ services:
       - key: SECRET_KEY
         value: "change-me"
 
-  # Remove or upgrade this if free plan blocks it
-  - type: worker
-    name: coreza-worker
-    env: docker
-    plan: starter   # or comment this whole block out if you can't upgrade
-    dockerfilePath: ./coreza-backend/Dockerfile.worker
-
   - type: web
     name: coreza-frontend
     env: static

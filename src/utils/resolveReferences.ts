@@ -1,4 +1,3 @@
-
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
  * Now supports negative numbers (e.g. -1, -2).
@@ -26,16 +25,38 @@ function parsePath(path: string): Array<string|number> {
 }
 
 /**
- * Generate display name for a node (same as ID now)
+ * Create display name mapping from node array
+ */
+function createDisplayNameMapping(nodes: any[]): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  nodes.forEach(node => {
+    const displayName = generateDisplayName(node);
+    mapping[displayName] = node.id;
+  });
+  return mapping;
+}
+
+/**
+ * Generate display name for a node
  */
 function generateDisplayName(node: any): string {
-  // Since we're using display names as IDs, just return the ID
-  return node.id;
+  // Use custom label if provided
+  if (node.data?.values?.label && node.data.values.label.trim()) {
+    return node.data.values.label.trim();
+  }
+  
+  // Use definition name if available
+  if (node.data?.definition?.name) {
+    return node.data.definition.name;
+  }
+  
+  // Fallback to node type
+  return node.type || 'Unknown';
 }
 
 /**
  * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
- * Now with support for negative array indexes and simplified node lookup using display name IDs.
+ * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
  */
 export function resolveReferences(
   expr: string, 
@@ -57,10 +78,23 @@ export function resolveReferences(
     
     // If nodeName is specified and we have allNodeData, look up the specific node's data
     if (nodeName && allNodeData) {
-      // Since we're using display names as IDs, direct lookup should work
+      // First try direct lookup by node name
       if (allNodeData[nodeName]) {
         targetData = allNodeData[nodeName];
         console.log(`🔍 Found data for node '${nodeName}':`, targetData);
+      } else if (nodes) {
+        // Try lookup by display name if direct lookup fails
+        const displayNameMapping = createDisplayNameMapping(nodes);
+        const nodeId = displayNameMapping[nodeName];
+        
+        if (nodeId && allNodeData[nodeId]) {
+          targetData = allNodeData[nodeId];
+          console.log(`🔍 Found data for node '${nodeName}' via display name mapping (ID: ${nodeId}):`, targetData);
+        } else {
+          console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
+          console.warn(`🔍 Available display names:`, Object.keys(displayNameMapping));
+          return fullMatch; // Return original if node not found
+        }
       } else {
         console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
         return fullMatch; // Return original if node not found
@@ -75,7 +109,7 @@ export function resolveReferences(
     
     const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
     
-    // If no path specified (e.g., just {{ $('Alpaca1').json }}), return the whole object
+    // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
     if (!cleanPath) {
       return (typeof targetData === 'object' && targetData !== null)
         ? JSON.stringify(targetData)
@@ -87,6 +121,7 @@ export function resolveReferences(
 
     let result: any = targetData;
     for (const key of keys) {
+      //console.log("🔍 Accessing key:", key, "in:", result);
       if (result == null) { 
         result = undefined; 
         break; 

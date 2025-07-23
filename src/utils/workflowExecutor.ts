@@ -38,18 +38,6 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Update the execution context without recreating the entire executor
-   */
-  updateContext(context: ExecutionContext): void {
-    const edgesChanged = JSON.stringify(this.context.edges) !== JSON.stringify(context.edges);
-    this.context = context;
-    // Only recalculate conditional branches when edges actually change
-    if (edgesChanged) {
-      this.preCalculateConditionalBranches();
-    }
-  }
-
-  /**
    * Pre-calculate conditional branches for optimization (only for actual branching nodes)
    */
   private preCalculateConditionalBranches(): void {

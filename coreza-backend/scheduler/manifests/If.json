@@ -1,0 +1,42 @@
+{
+  "name": "If",
+  "label": "If",
+  "def": "Evaluate one or more conditions and branch on true/false",
+  "node_type": "main",
+  "icon": "/assets/icons/if.svg",
+  "category": "Logic",
+  "description": "Conditional logic for trading decisions",
+  "color": "text-yellow-500",
+  "size": { "width": 340, "height": 340 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "true" },
+    { "type": "source", "position": "right", "id": "false" }
+  ],
+  "action": {
+    "url": "/comparator/if",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "conditions",
+      "label": "conditions",
+      "type": "repeater",
+      "subFields": [
+        { "key": "left", "type": "string", "placeholder": "{{ $('Market Status').json.market_type }}" },
+        { 
+          "key": "operator", 
+          "type": "string", 
+          "options": [
+            { "label": "equals", "value": "===" },
+            { "label": "not equals", "value": "!==" },
+            { "label": "greater than", "value": ">=" },
+            { "label": "less than", "value": "<=" }
+          ]
+        },
+        { "key": "right", "type": "string", "placeholder": "stocks" }
+      ],
+      "default": { "left": "", "operator": "===", "right": "" }
+    }
+  ]
+}

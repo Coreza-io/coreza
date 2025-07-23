@@ -319,10 +319,10 @@ const WorkflowEditor = () => {
     
     // Generate human-readable ID by counting existing nodes of same type
     const existingNodesOfType = nodes.filter(node => node.type === nodeType);
-    const nextNumber = existingNodesOfType.length + 1;
+    const nodeId = existingNodesOfType.length === 0 ? nodeType : `${nodeType}${existingNodesOfType.length}`;
     
     const newNode: Node = {
-      id: `${nodeType}${nextNumber}`,
+      id: nodeId,
       type: nodeType,
       position,
       data: { 

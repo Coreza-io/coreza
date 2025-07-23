@@ -73,7 +73,7 @@ msgpack==1.0.3
 multidict==6.4.4
 multitasking==0.0.11
 mypy_extensions==1.1.0
-numpy==1.24.4
+numpy>=1.26.2
 oauthlib==3.3.1
 openai==1.82.0
 orjson==3.10.18

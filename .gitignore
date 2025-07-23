@@ -1,4 +1,4 @@
-# Logs
+# === Logs ===
 logs
 *.log
 npm-debug.log*
@@ -7,12 +7,29 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# === Node (frontend) ===
 node_modules
 dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# === Python (backend) ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.venv*/
+.env
+coreza-backend/.env
+*.egg-info
+*.egg
+
+# === Docker ===
+docker-compose.override.yml
+*.pid
+
+# === Editor ===
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -22,3 +39,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# === Build artifacts ===
+frontend/.env
+frontend/dist/

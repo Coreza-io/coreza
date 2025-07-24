@@ -148,55 +148,36 @@ const Workflows = () => {
         throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
       }
 
-      if (!currentStatus) {
-        // Activating workflow
-        const res = await fetch(`${API_URL}/workflows/${workflowId}/activate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ownerId: user?.id }),
-        });
+      const newStatus = !currentStatus;
+      
+      // Call the correct backend endpoint
+      const res = await fetch(`${API_URL}/workflows/${user?.id}/${workflowId}/schedule`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          is_active: newStatus,
+          schedule_cron: "*/5 * * * *" // Default cron schedule for activation
+        }),
+      });
 
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText);
-        }
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText);
+      }
 
-        // Update database to reflect activation
-        const { error } = await supabase
-          .from('workflows')
-          .update({ is_active: true })
-          .eq('id', workflowId);
+      // Update database to reflect the change
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_active: newStatus })
+        .eq('id', workflowId);
 
-        if (error) {
-          throw error;
-        }
-      } else {
-        // Deactivating workflow - call backend first
-        const res = await fetch(`${API_URL}/workflows/${workflowId}/deactivate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ownerId: user?.id }),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText);
-        }
-
-        // Update database to reflect deactivation
-        const { error } = await supabase
-          .from('workflows')
-          .update({ is_active: false })
-          .eq('id', workflowId);
-
-        if (error) {
-          throw error;
-        }
+      if (error) {
+        throw error;
       }
 
       // Update local state
       setWorkflows(workflows.map(w => 
-        w.id === workflowId ? { ...w, is_active: !currentStatus } : w
+        w.id === workflowId ? { ...w, is_active: newStatus } : w
       ));
 
       toast({

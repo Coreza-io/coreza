@@ -17,7 +17,11 @@
     "docker:build": "../scripts/docker-optimize.sh build",
     "docker:test": "../scripts/docker-optimize.sh test",
     "docker:analyze": "../scripts/docker-optimize.sh analyze",
-    "docker:all": "../scripts/docker-optimize.sh all"
+    "docker:all": "../scripts/docker-optimize.sh all",
+    "performance:benchmark": "node tests/performance/benchmark.js",
+    "performance:memory": "node tests/performance/memory-profiler.js",
+    "performance:stress": "node tests/performance/stress-test.js",
+    "performance:all": "npm run performance:benchmark && npm run performance:memory"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.51.0",

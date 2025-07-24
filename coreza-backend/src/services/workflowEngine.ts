@@ -510,12 +510,38 @@ export class WorkflowEngine {
   }
 
   private async executeSchedulerNode(node: WorkflowNode, input: any): Promise<any> {
-    // Scheduler nodes just pass through data and set scheduling metadata
+    // Scheduler nodes are triggers that pass through data and provide scheduling metadata
+    const scheduleData = node.data || {};
+    
+    // Generate cron expression from scheduler data if available
+    let cronExpression = null;
+    if (scheduleData.interval && scheduleData.count) {
+      const hour = scheduleData.hour || 0;
+      const minute = scheduleData.minute || 0;
+      
+      if (scheduleData.interval === 'daily') {
+        cronExpression = `${minute} ${hour} * * *`;
+      } else if (scheduleData.interval === 'weekly') {
+        cronExpression = `${minute} ${hour} * * 0`;
+      } else if (scheduleData.interval === 'monthly') {
+        cronExpression = `${minute} ${hour} 1 * *`;
+      }
+    }
+    
     return {
       ...input,
-      scheduled: true,
-      scheduledAt: new Date().toISOString(),
-      cronExpression: node.data.cron_expression
+      trigger: {
+        type: 'scheduler',
+        scheduled: true,
+        scheduledAt: new Date().toISOString(),
+        scheduleConfig: {
+          interval: scheduleData.interval,
+          count: scheduleData.count,
+          hour: scheduleData.hour,
+          minute: scheduleData.minute,
+          ...(cronExpression && { cronExpression })
+        }
+      }
     };
   }
 

@@ -74,7 +74,7 @@ async function startServer() {
     await workflowScheduler.initialize();
 
     // Initialize WebSocket server
-    WebSocketManager.initialize(8080);
+    WebSocketManager.initialize(8081);
 
     app.listen(PORT, () => {
       console.log(`🚀 Coreza Node.js Backend running on port ${PORT}`);

@@ -454,18 +454,8 @@ export class WorkflowEngine {
   private async executeIndicatorNode(node: WorkflowNode, input: any): Promise<any> {
     const indicatorType = node.type.toLowerCase();
     
-    // Extract node configuration parameters and resolve references
-    const nodeParams = node.values || {};
-    const resolvedParams: any = {};
-    
-    // Resolve references in each parameter value
-    for (const [key, value] of Object.entries(nodeParams)) {
-      if (typeof value === 'string') {
-        resolvedParams[key] = this.resolveValue(value, input);
-      } else {
-        resolvedParams[key] = value;
-      }
-    }
+    // Use the existing resolveNodeParameters method
+    const resolvedParams = this.resolveNodeParameters(node, input);
     
     // Apply field mapping for frontend -> backend compatibility
     const mappedParams = this.mapIndicatorFields(indicatorType, resolvedParams);
@@ -525,21 +515,6 @@ export class WorkflowEngine {
     return mappedParams;
   }
 
-  private resolveNodeParameters(node: WorkflowNode, input: any): any {
-    const resolvedParams: any = {};
-    
-    // Resolve all node.values parameters, excluding operational fields like credential_id and operation
-    if (node.values) {
-      for (const [key, value] of Object.entries(node.values)) {
-        // Skip operational fields that are handled separately
-        if (key !== 'credential_id' && key !== 'operation') {
-          resolvedParams[key] = this.resolveValue(value, input);
-        }
-      }
-    }
-    
-    return resolvedParams;
-  }
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'get_account';
@@ -605,10 +580,10 @@ export class WorkflowEngine {
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    const condition = this.resolveValue(node.values?.condition, input);
-    const left = this.resolveValue(condition.left, input);
+    const condition = node.values?.condition || {};
+    const left = condition.left;
     const operator = condition.operator || '==';
-    const right = this.resolveValue(condition.right, input);
+    const right = condition.right;
 
     const result = await ComparatorService.executeIf({ left, operator, right });
     
@@ -625,11 +600,11 @@ export class WorkflowEngine {
 
     const switchCases = cases.map((c: any) => ({
       condition: {
-        left: this.resolveValue(c.condition?.left, input),
+        left: c.condition?.left,
         operator: c.condition?.operator || '==',
-        right: this.resolveValue(c.condition?.right, input)
+        right: c.condition?.right
       },
-      value: this.resolveValue(c.value, input)
+      value: c.value
     }));
 
     const result = await ComparatorService.executeSwitch(switchCases, defaultValue);
@@ -786,19 +761,16 @@ export class WorkflowEngine {
     return result.data;
   }
 
-  private resolveValue(value: any, context: any): any {
-    if (typeof value === 'string' && value.startsWith('$')) {
-      // Reference to context value
-      const key = value.substring(1);
-      return this.getNestedValue(context, key);
+  private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    const nodeParams = node.values || {};
+    const resolvedParams: any = {};
+    
+    // Simple parameter resolution - could be enhanced to use frontend resolveReferences logic
+    for (const [key, value] of Object.entries(nodeParams)) {
+      resolvedParams[key] = value;
     }
-    return value;
-  }
-
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => {
-      return current && current[key] !== undefined ? current[key] : undefined;
-    }, obj);
+    
+    return resolvedParams;
   }
 
   private async logNodeExecution(

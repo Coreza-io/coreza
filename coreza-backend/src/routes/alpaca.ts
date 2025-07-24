@@ -5,6 +5,35 @@ import { supabase } from '../config/supabase';
 
 const router = express.Router();
 
+// Get user credentials list for Alpaca
+router.get('/credentials', async (req, res, next) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
+    }
+    
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .select('id, name, service_type, created_at')
+      .eq('user_id', user_id)
+      .eq('service_type', 'alpaca');
+      
+    if (error) {
+      console.error('Error fetching credentials:', error);
+      return res.status(500).json({ error: 'Failed to fetch credentials' });
+    }
+    
+    res.json({
+      success: true,
+      credentials: data || []
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Helper function to get user credentials
 const getUserCredentials = async (userId: string, service: string) => {
   const { data, error } = await supabase

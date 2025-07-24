@@ -8,7 +8,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "lint": "eslint src/**/*.ts",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:integration": "jest tests/integration",
+    "test:load": "artillery run tests/load/artillery-config.ts",
+    "test:all": "npm run test && npm run test:integration"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.51.0",

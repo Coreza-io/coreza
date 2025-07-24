@@ -6,6 +6,7 @@ import { CommunicationService } from './communications';
 import { DataService } from './data';
 import { HttpService } from './http';
 import { WebhookService } from './webhooks';
+import { ComparatorService } from './comparator';
 
 interface WorkflowNode {
   id: string;
@@ -470,63 +471,40 @@ export class WorkflowEngine {
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    const { conditions } = node.data;
+    const condition = this.resolveValue(node.data.condition, input);
+    const left = this.resolveValue(condition.left, input);
+    const operator = condition.operator || '==';
+    const right = this.resolveValue(condition.right, input);
+
+    const result = await ComparatorService.executeIf({ left, operator, right });
     
-    if (!conditions || !Array.isArray(conditions)) {
-      throw new Error('If node requires conditions array');
+    if (!result.success) {
+      throw new Error(result.error || 'Condition evaluation failed');
     }
 
-    // Resolve template values in conditions
-    const resolvedConditions = conditions.map(condition => ({
-      left: this.resolveValue(condition.left, input),
-      operator: condition.operator,
-      right: this.resolveValue(condition.right, input)
-    }));
-
-    // Call the comparator API
-    const apiUrl = `http://localhost:8000/comparator/if`;
-    
-    const response = await axios.post(apiUrl, {
-      conditions: resolvedConditions
-    }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    console.log(`🔍 If node ${node.id} result:`, response.data);
-    return response.data;
+    return { condition_met: result.result, ...input };
   }
 
   private async executeSwitchNode(node: WorkflowNode, input: any): Promise<any> {
-    const { inputValue, cases = [], defaultCase = 'default' } = node.data;
-    
-    if (inputValue === undefined) {
-      throw new Error('Switch node requires inputValue');
-    }
+    const cases = node.data.cases || [];
+    const defaultValue = node.data.defaultValue;
 
-    // Resolve the input value
-    const resolvedInputValue = this.resolveValue(inputValue, input);
-
-    // Resolve case values
-    const resolvedCases = cases.map((caseItem: any) => ({
-      caseValue: this.resolveValue(caseItem.caseValue, input),
-      caseName: caseItem.caseName || caseItem.caseValue
+    const switchCases = cases.map((c: any) => ({
+      condition: {
+        left: this.resolveValue(c.condition?.left, input),
+        operator: c.condition?.operator || '==',
+        right: this.resolveValue(c.condition?.right, input)
+      },
+      value: this.resolveValue(c.value, input)
     }));
 
-    // Call the comparator API
-    const apiUrl = `http://localhost:8000/comparator/switch`;
+    const result = await ComparatorService.executeSwitch(switchCases, defaultValue);
     
-    const response = await axios.post(apiUrl, {
-      inputValue: resolvedInputValue,
-      cases: resolvedCases,
-      defaultCase
-    }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
+    if (!result.success) {
+      throw new Error(result.error || 'Switch evaluation failed');
+    }
 
-    console.log(`🔀 Switch node ${node.id} result:`, response.data);
-    return response.data;
+    return { switch_result: result.result, matched_case: result.matchedCase, ...input };
   }
 
   private async executeSchedulerNode(node: WorkflowNode, input: any): Promise<any> {
@@ -573,51 +551,47 @@ export class WorkflowEngine {
   }
 
   private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'send';
-    const apiUrl = `http://localhost:8000/gmail/${action}`;
+    const operation = node.data?.operation || 'send';
+    const result = await CommunicationService.execute('gmail', operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Gmail operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeFinnhubNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'quote';
-    const apiUrl = `http://localhost:8000/finnhub/${action}`;
+    const operation = node.data?.operation || 'get_quote';
+    const result = await DataService.execute('finnhub', operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'FinnHub operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeYahooFinanceNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'quote';
-    const apiUrl = `http://localhost:8000/yahoofinance/${action}`;
+    const operation = node.data?.operation || 'get_quote';
+    const result = await DataService.execute('yahoofinance', operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Yahoo Finance operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeWhatsappNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'send';
-    const apiUrl = `http://localhost:8000/whatsapp/${action}`;
+    const operation = node.data?.operation || 'send';
+    const result = await CommunicationService.execute('whatsapp', operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'WhatsApp operation failed');
+    }
+    
+    return result.data;
   }
 
   private resolveValue(value: any, context: any): any {

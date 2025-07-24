@@ -1,7 +1,5 @@
 import express from 'express';
-import Alpaca from '@alpacahq/alpaca-trade-api';
-import { createError } from '../middleware/errorHandler';
-import { supabase } from '../config/supabase';
+import { BrokerService } from '../services/brokers';
 
 const router = express.Router();
 
@@ -14,55 +12,16 @@ router.get('/credentials', async (req, res, next) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
     
-    const { data, error } = await supabase
-      .from('user_credentials')
-      .select('id, name, service_type, created_at')
-      .eq('user_id', user_id)
-      .eq('service_type', 'alpaca');
-      
-    if (error) {
-      console.error('Error fetching credentials:', error);
-      return res.status(500).json({ error: 'Failed to fetch credentials' });
-    }
+    const credentials = await BrokerService.getCredentialsList('alpaca', user_id as string);
     
     res.json({
       success: true,
-      credentials: data || []
+      credentials
     });
   } catch (error) {
     next(error);
   }
 });
-
-// Helper function to get API credentials
-const getApiCredentials = async (
-  userId: string,
-  credentialId: string
-): Promise<{ api_key: string; secret_key: string }> => {
-  try {
-    const { data, error } = await supabase
-      .from('user_credentials')
-      .select('client_json')
-      .eq('user_id', userId)
-      .eq('name', credentialId)            // ← lookup by row ID, not name
-      .eq('service_type', 'alpaca')
-      .single();
-      
-    if (error) {
-      throw createError(`Supabase error: ${error.message}`, 500);
-    }
-    
-    const { api_key, secret_key } = data.client_json || {};
-    if (!api_key || !secret_key) {
-      throw createError('API credentials not found.', 400);
-    }
-    
-    return { api_key, secret_key };
-  } catch (err: any) {
-    if (err.isOperational) throw err;
-    throw createError(`Supabase error: ${err.message}`, 500);
-  }
-};
 
 // Add auth-url endpoint for authAction
 router.post('/auth-url', async (req, res, next) => {
@@ -72,33 +31,10 @@ router.post('/auth-url', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // Test credentials
-    try {
-      const testClient = new Alpaca({
-        keyId: api_key,       // ← use keyId + secretKey
-        secretKey: secret_key,
-        paper: true
-      });
-      await testClient.getAccount();
-    } catch {
-      return res.status(401).json({ error: 'Invalid Alpaca API credentials' });
-    }
-
-    // Save to Supabase
-    const { data, error } = await supabase
-      .from('user_credentials')
-      .upsert({
-        user_id,
-        name: credential_name,
-        service_type: 'alpaca',
-        client_json: { api_key, secret_key }
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(500).json({ error: 'Failed to save credentials' });
-    }
+    const data = await BrokerService.saveCredentials('alpaca', user_id, credential_name, {
+      api_key,
+      secret_key
+    });
 
     res.json({
       success: true,
@@ -119,123 +55,18 @@ router.post('/:operation', async (req, res, next) => {
       return res.status(400).json({ error: 'user_id and credential_id are required' });
     }
 
-    const { api_key, secret_key } = await getApiCredentials(user_id, credential_id);
-    const alpaca = new Alpaca({
-      keyId: api_key,        // ← use keyId + secretKey
-      secretKey: secret_key,
-      paper: true,
-      baseUrl: "https://paper-api.alpaca.markets",
-      dataBaseUrl: "https://data.alpaca.markets"
+    const result = await BrokerService.execute('alpaca', {
+      user_id,
+      credential_id,
+      operation,
+      ...req.body
     });
 
-    let result;
-    switch (operation) {
-      case 'get_account':
-        result = await alpaca.getAccount();
-        break;
-
-      case 'get_positions':
-        result = await alpaca.getPositions();
-        break;
-
-      case 'get_orders':
-        result = await alpaca.getOrders({
-          status: req.body.status || 'all',
-          limit: Number(req.body.limit) || 500
-        });
-        break;
-
-      case 'cancel_orders':
-        result = await alpaca.cancelAllOrders();
-        break;
-
-      case 'get_candle': {
-        const { symbol, interval, lookback } = req.body;
-        if (!symbol) {
-          return res.status(400).json({ error: 'symbol is required for historical bars' });
-        }
-
-        // determine timeframe
-        const timeframe =
-          interval === '1Min' ? '1Min' :
-          interval === '5Min' ? '5Min' : '1Day';
-
-        const barsCount = Number(lookback) || 100;
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - barsCount);  // now truly N days back
-
-        // Use user credentials for market data with paper trading URL
-        const marketDataAlpaca = new Alpaca({
-          keyId: api_key,
-          secretKey: secret_key,
-          paper: true,
-          baseUrl: 'https://paper-api.alpaca.markets',
-          dataBaseUrl: "https://data.alpaca.markets"
-        });
-
-        try {
-          const barsData = marketDataAlpaca.getBarsV2(symbol, {
-            start: startDate.toISOString(),
-            end:   endDate.toISOString(),
-            timeframe,
-            limit: barsCount,
-            feed:       'iex', 
-          });
-
-          const candles: any[] = [];
-          for await (const bar of barsData) {
-            candles.push({
-              t: bar.Timestamp,
-              o: bar.OpenPrice,
-              h: bar.HighPrice,
-              l: bar.LowPrice,
-              c: bar.ClosePrice,
-              v: bar.Volume
-            });
-          }
-
-          console.log('Returning candles:', candles);
-
-          return res.json({ symbol, interval: timeframe, candles });
-        } catch (apiError: any) {
-          if (apiError.message?.includes('403')) {
-            return res.status(403).json({
-              error:   'Market data access forbidden. Please verify your Alpaca account has market data permissions.',
-              details: 'This usually means your account needs to be upgraded or verified for market data access'
-            });
-          }
-          throw apiError;
-        }
-      }
-
-      case 'place_order': {
-        const { symbol: orderSymbol, side, qty, type, time_in_force } = req.body;
-        if (!orderSymbol || !side || !qty || !type || !time_in_force) {
-          return res.status(400).json({
-            error: 'symbol, side, qty, type, and time_in_force are required for placing orders'
-          });
-        }
-        const quantity = Number(qty);
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          return res.status(400).json({ error: 'Invalid qty' });
-        }
-
-        result = await alpaca.createOrder({
-          symbol:     orderSymbol,
-          qty:        quantity,
-          side,
-          type,
-          time_in_force
-        });
-        break;
-      }
-
-      default:
-        return res.status(400).json({ error: `Unsupported operation: ${operation}` });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
 
-    res.json(result);
+    res.json(result.data);
   } catch (error) {
     console.error('Alpaca operation error:', error);
     next(error);

@@ -226,4 +226,154 @@ router.get('/bars/:symbol', async (req, res, next) => {
   }
 });
 
+// Add auth-url endpoint for authAction
+router.post('/auth-url', async (req, res, next) => {
+  try {
+    const { user_id, credential_name, api_key, secret_key } = req.body;
+    
+    if (!user_id || !credential_name || !api_key || !secret_key) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Test the credentials by making a test API call
+    try {
+      const alpaca = new Alpaca({
+        key: api_key,
+        secret: secret_key,
+        paper: true
+      });
+      
+      const account = await alpaca.getAccount();
+      
+      if (!account) {
+        return res.status(401).json({ error: 'Invalid Alpaca API credentials' });
+      }
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid Alpaca API credentials' });
+    }
+
+    // Save credentials to database
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .upsert({
+        user_id,
+        name: credential_name,
+        service_type: 'alpaca',
+        client_json: { api_key, secret_key }
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to save credentials' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Alpaca credentials saved successfully',
+      credential_id: data.id
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Dynamic operation endpoint to match node pattern
+router.post('/:operation', async (req, res, next) => {
+  try {
+    const { operation } = req.params;
+    const { user_id, credential_id } = req.body;
+    
+    if (!user_id || !credential_id) {
+      return res.status(400).json({ error: 'user_id and credential_id are required' });
+    }
+
+    const credentials = await getUserCredentials(user_id, 'alpaca');
+    const alpaca = new Alpaca({
+      key: credentials.client_json.api_key,
+      secret: credentials.client_json.secret_key,
+      paper: true
+    });
+
+    let result;
+    switch (operation) {
+      case 'get_account':
+        result = await alpaca.getAccount();
+        break;
+      case 'get_positions':
+        result = await alpaca.getPositions();
+        break;
+      case 'get_orders':
+        result = await alpaca.getOrders({
+          status: req.body.status || 'all',
+          limit: req.body.limit || 500
+        });
+        break;
+      case 'cancel_orders':
+        result = await alpaca.cancelAllOrders();
+        break;
+      case 'get_historical_bars':
+        const { symbol, interval, bars } = req.body;
+        
+        if (!symbol || !interval || !bars) {
+          return res.status(400).json({ error: 'symbol, interval, and bars are required for historical bars' });
+        }
+
+        const timeframe = interval === '1Min' ? '1Min' : interval === '5Min' ? '5Min' : '1Day';
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - (bars || 100));
+
+        const barsData = await alpaca.getBarsV2(symbol, {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+          timeframe: timeframe,
+          limit: bars || 100
+        });
+
+        const candles = [];
+        for await (const bar of barsData) {
+          candles.push({
+            t: bar.Timestamp,
+            o: bar.OpenPrice,
+            h: bar.HighPrice,
+            l: bar.LowPrice,
+            c: bar.ClosePrice,
+            v: bar.Volume
+          });
+        }
+
+        return res.json({
+          symbol,
+          interval: timeframe,
+          candles: candles.slice(-bars)
+        });
+      case 'place_order':
+        const { symbol: orderSymbol, side, qty, type, time_in_force } = req.body;
+        
+        if (!orderSymbol || !side || !qty || !type || !time_in_force) {
+          return res.status(400).json({ error: 'symbol, side, qty, type, and time_in_force are required for placing orders' });
+        }
+
+        const orderRequest = {
+          symbol: orderSymbol,
+          qty: parseInt(qty),
+          side: side,
+          type: type,
+          time_in_force: time_in_force
+        };
+
+        result = await alpaca.createOrder(orderRequest);
+        break;
+      default:
+        return res.status(400).json({ error: `Unsupported operation: ${operation}` });
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Alpaca operation error:', error);
+    next(error);
+  }
+});
+
 export default router;

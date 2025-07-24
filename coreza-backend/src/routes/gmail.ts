@@ -6,6 +6,35 @@ import { QueueManager } from '../services/queueManager';
 
 const router = express.Router();
 
+// Get user credentials list for Gmail
+router.get('/credentials', async (req, res, next) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
+    }
+    
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .select('id, name, service_type, created_at')
+      .eq('user_id', user_id)
+      .eq('service_type', 'gmail');
+      
+    if (error) {
+      console.error('Error fetching credentials:', error);
+      return res.status(500).json({ error: 'Failed to fetch credentials' });
+    }
+    
+    res.json({
+      success: true,
+      credentials: data || []
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Gmail API configuration
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -63,8 +92,8 @@ function createGmailAuth(credentials: GmailCredentials): any {
   return auth;
 }
 
-// Gmail OAuth flow - Get auth URL
-router.post('/auth/url', async (req, res, next) => {
+// Gmail OAuth flow - Get auth URL (for authAction)
+router.post('/auth-url', async (req, res, next) => {
   try {
     const { user_id, credential_name, client_id, client_secret, redirect_uri } = req.body;
     

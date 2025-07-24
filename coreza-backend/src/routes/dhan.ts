@@ -5,6 +5,220 @@ import { createError } from '../middleware/errorHandler';
 
 const router = express.Router();
 
+// Get user credentials list for Dhan
+router.get('/credentials', async (req, res, next) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
+    }
+    
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .select('id, name, service_type, created_at')
+      .eq('user_id', user_id)
+      .eq('service_type', 'dhan');
+      
+    if (error) {
+      console.error('Error fetching credentials:', error);
+      return res.status(500).json({ error: 'Failed to fetch credentials' });
+    }
+    
+    res.json({
+      success: true,
+      credentials: data || []
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add auth-url endpoint for authAction
+router.post('/auth-url', async (req, res, next) => {
+  try {
+    const { user_id, credential_name, client_id, api_key } = req.body;
+    
+    if (!user_id || !credential_name || !client_id || !api_key) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Test the credentials by making a test API call
+    const headers = {
+      'access-token': api_key,
+      'Accept': 'application/json'
+    };
+
+    try {
+      const testResponse = await axios.get(`${BASE_URL}/funds`, { headers, timeout: 10000 });
+      
+      if (testResponse.status !== 200) {
+        return res.status(401).json({ error: 'Invalid Dhan API credentials' });
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        return res.status(401).json({ error: 'Invalid Dhan API credentials' });
+      }
+      return res.status(502).json({ error: 'Failed to validate Dhan credentials' });
+    }
+
+    // Save credentials to database
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .upsert({
+        user_id,
+        name: credential_name,
+        service_type: 'dhan',
+        client_json: { client_id, api_key }
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to save credentials' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Dhan credentials saved successfully',
+      credential_id: data.id
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Dynamic operation endpoint to match node pattern
+router.post('/:operation', async (req, res, next) => {
+  try {
+    const { operation } = req.params;
+    const { user_id, credential_id } = req.body;
+    
+    if (!user_id || !credential_id) {
+      return res.status(400).json({ error: 'user_id and credential_id are required' });
+    }
+
+    const creds = await getApiCredentials(user_id, credential_id);
+    
+    const headers = {
+      'access-token': creds.api_key,
+      'Accept': 'application/json'
+    };
+
+    let response;
+    switch (operation) {
+      case 'get_account':
+        response = await axios.get(`${BASE_URL}/funds`, { headers, timeout: 10000 });
+        break;
+      case 'get_positions':
+        response = await axios.get(`${BASE_URL}/positions`, { headers, timeout: 10000 });
+        break;
+      case 'get_holdings':
+        response = await axios.get(`${BASE_URL}/holdings`, { headers, timeout: 10000 });
+        break;
+      case 'get_orders':
+        response = await axios.get(`${BASE_URL}/order`, { headers, timeout: 10000 });
+        break;
+      case 'get_historical_bars':
+        const { exchange, symbol, interval, lookback } = req.body;
+        
+        if (!exchange || !symbol || !interval || !lookback) {
+          return res.status(400).json({ error: 'exchange, symbol, interval, and lookback are required for historical bars' });
+        }
+
+        // Get security ID from scrip master
+        const securityId = await lookupSecurityId(symbol, exchange);
+        
+        const isDaily = interval === '1Day';
+        const endpoint = isDaily 
+          ? `${BASE_URL}/charts/historical` 
+          : `${BASE_URL}/charts/intraday`;
+
+        const payload: any = {
+          securityId,
+          exchangeSegment: exchange,
+          instrument: 'EQUITY',
+          expiryCode: 0,
+          oi: false
+        };
+
+        if (isDaily) {
+          const today = new Date();
+          const fromDate = new Date(today);
+          fromDate.setDate(today.getDate() - lookback);
+          
+          payload.fromDate = fromDate.toISOString().split('T')[0];
+          payload.toDate = today.toISOString().split('T')[0];
+        }
+
+        response = await axios.post(endpoint, payload, { 
+          headers: { ...headers, 'Content-Type': 'application/json' }, 
+          timeout: 10000 
+        });
+        
+        let bars = response.data.data || response.data;
+        
+        // Handle different response formats
+        if (typeof bars === 'object' && Array.isArray(bars.open)) {
+          const length = bars.open.length;
+          const reconstructed = [];
+          
+          for (let i = 0; i < length; i++) {
+            reconstructed.push({
+              timestamp: bars.timestamp[i],
+              open: bars.open[i],
+              high: bars.high[i],
+              low: bars.low[i],
+              close: bars.close[i],
+              volume: bars.volume[i]
+            });
+          }
+          bars = reconstructed;
+        }
+
+        // Limit to lookback for intraday data
+        if (!isDaily && Array.isArray(bars)) {
+          bars = bars.slice(-lookback);
+        }
+
+        // Transform to standardized candle format
+        const candles = bars.map((bar: any) => {
+          const timestamp = bar.timestamp || bar.t || bar.T;
+          const open = bar.open || bar.o || bar.O;
+          const high = bar.high || bar.h || bar.H;
+          const low = bar.low || bar.l || bar.L;
+          const close = bar.close || bar.c || bar.C;
+          const volume = bar.volume || bar.v || bar.V;
+          
+          return {
+            t: timestamp,
+            o: open,
+            h: high,
+            l: low,
+            c: close,
+            v: volume
+          };
+        });
+
+        return res.json({
+          symbol,
+          exchange,
+          interval,
+          candles
+        });
+      default:
+        return res.status(400).json({ error: `Unsupported operation: ${operation}` });
+    }
+    
+    res.json(response.data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      return res.status(error.response.status).json({ error: `Dhan API error: ${error.response.data}` });
+    }
+    next(error);
+  }
+});
+
 // Dhan API Configuration
 const BASE_URL = 'https://sandbox.dhan.co/v2';
 const SCRIP_MASTER_URL = 'https://images.dhan.co/api-data/api-scrip-master-detailed.csv';

@@ -30,7 +30,7 @@
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
     "dotenv": "^16.4.5",
-    "trading-signals": "^5.2.0",
+    "trading-signals": "^6.3.0",
     "yahoo-finance2": "^2.11.3",
     "bullmq": "^5.4.6",
     "ioredis": "^5.3.2",

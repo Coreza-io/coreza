@@ -3,7 +3,7 @@ FROM python:3.10-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies including TA-Lib
+# Install system dependencies including TA-Lib with caching optimization
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
@@ -13,16 +13,19 @@ RUN apt-get update && apt-get install -y \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
     && ./configure --prefix=/usr \
-    && make \
+    && make -j$(nproc) \
     && make install \
     && cd .. \
     && rm -rf ta-lib* \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
+# Copy requirements first for better Docker layer caching
 COPY requirements.txt /app/requirements.txt
+
+# Install Python dependencies with optimizations
 RUN pip install --upgrade pip setuptools wheel \
- && pip install --no-cache-dir -r /app/requirements.txt
+    && pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application code
 COPY . /app

@@ -23,8 +23,9 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt /app/requirements.txt
 
-# Install Python dependencies with optimizations
+# Install Python dependencies with NumPy constraint to prevent 2.x upgrade
 RUN pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir "numpy>=1.26.2,<2.0" \
     && pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application code

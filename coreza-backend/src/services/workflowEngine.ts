@@ -41,9 +41,11 @@ export class WorkflowEngine {
   private nodeResults: Map<string, any> = new Map();
   private conditionalMap = new Map<string, Record<string, string>>();
   private executedNodes = new Set<string>();
+  private userId: string;
 
-  constructor(runId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  constructor(runId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.runId = runId;
+    this.userId = userId;
     this.nodes = nodes;
     this.edges = edges;
     this.preCalculateConditionalBranches();
@@ -453,7 +455,18 @@ export class WorkflowEngine {
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.data?.operation || 'get_account';
-    const result = await BrokerService.execute('dhan', { ...input, operation });
+    const credential_id = node.data?.credential_id;
+    
+    if (!credential_id) {
+      throw new Error('Dhan credential_id is required');
+    }
+    
+    const result = await BrokerService.execute('dhan', { 
+      user_id: this.userId,
+      credential_id,
+      operation,
+      ...input 
+    });
     
     if (!result.success) {
       throw new Error(result.error || 'Dhan operation failed');
@@ -464,7 +477,18 @@ export class WorkflowEngine {
 
   private async executeAlpacaNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.data?.operation || 'get_account';
-    const result = await BrokerService.execute('alpaca', { ...input, operation });
+    const credential_id = node.data?.credential_id;
+    
+    if (!credential_id) {
+      throw new Error('Alpaca credential_id is required');
+    }
+    
+    const result = await BrokerService.execute('alpaca', { 
+      user_id: this.userId,
+      credential_id,
+      operation,
+      ...input 
+    });
     
     if (!result.success) {
       throw new Error(result.error || 'Alpaca operation failed');
@@ -700,10 +724,11 @@ export class WorkflowEngine {
 
 // Factory function to create and execute workflows
 export async function executeWorkflow(
-  runId: string, 
+  runId: string,
+  userId: string,
   nodes: WorkflowNode[], 
   edges: WorkflowEdge[]
 ): Promise<{ success: boolean; result?: any; error?: string }> {
-  const engine = new WorkflowEngine(runId, nodes, edges);
+  const engine = new WorkflowEngine(runId, userId, nodes, edges);
   return await engine.execute();
 }

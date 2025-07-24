@@ -165,26 +165,17 @@ router.post('/:operation', async (req, res, next) => {
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - barsCount);  // now truly N days back
 
-<<<<<<< HEAD
-        // market‐data client
-        const marketClient = new Alpaca({
+        // Use user credentials for market data with paper trading URL
+        const marketDataAlpaca = new Alpaca({
           keyId: api_key,
           secretKey: secret_key,
           paper: true,
-          baseUrl: "https://paper-api.alpaca.markets",
+          baseUrl: 'https://paper-api.alpaca.markets',
           dataBaseUrl: "https://data.alpaca.markets"
-=======
-        // Use user credentials for market data with paper trading URL
-        const marketDataAlpaca = new Alpaca({
-          keyId: credentials.api_key,
-          secretKey: credentials.secret_key,
-          paper: true,
-          baseUrl: 'https://paper-api.alpaca.markets'
->>>>>>> 8121240d1753dd47b1958b2121a1e19a9fca02a0
         });
 
         try {
-          const barsData = marketClient.getBarsV2(symbol, {
+          const barsData = marketDataAlpaca.getBarsV2(symbol, {
             start: startDate.toISOString(),
             end:   endDate.toISOString(),
             timeframe,

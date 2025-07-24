@@ -32,40 +32,79 @@ export class WorkflowEngine {
   private edges: WorkflowEdge[];
   private executions: Map<string, NodeExecution> = new Map();
   private nodeResults: Map<string, any> = new Map();
+  private conditionalMap = new Map<string, Record<string, string>>();
+  private executedNodes = new Set<string>();
 
   constructor(runId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.runId = runId;
     this.nodes = nodes;
     this.edges = edges;
+    this.preCalculateConditionalBranches();
+  }
+
+  /**
+   * Pre-calculate conditional branches for optimization (only for actual branching nodes)
+   */
+  private preCalculateConditionalBranches(): void {
+    this.conditionalMap.clear();
+    this.edges.forEach(edge => {
+      // Only build branch map for actual branching nodes (If, Switch, etc.)
+      const sourceNode = this.nodes.find(n => n.id === edge.source);
+      const isBranchingNode = ['if', 'switch', 'router'].includes(sourceNode?.type?.toLowerCase() || '');
+      
+      if (edge.sourceHandle && isBranchingNode) {
+        const entry = this.conditionalMap.get(edge.source) || {};
+        entry[edge.sourceHandle] = edge.target;
+        this.conditionalMap.set(edge.source, entry);
+      }
+    });
+    
+    console.log(`🗺️ [WORKFLOW ENGINE] Built conditional map for ${this.conditionalMap.size} branching nodes:`, Array.from(this.conditionalMap.keys()));
+  }
+
+  /**
+   * Detect cycles in the workflow graph
+   */
+  private detectCycles(): boolean {
+    const visitedInCycle = new Set<string>();
+    const inCurrentPath = new Set<string>();
+
+    const hasCycle = (nodeId: string): boolean => {
+      if (inCurrentPath.has(nodeId)) return true;
+      if (visitedInCycle.has(nodeId)) return false;
+      
+      visitedInCycle.add(nodeId);
+      inCurrentPath.add(nodeId);
+      
+      const outgoing = this.edges.filter(e => e.source === nodeId);
+      for (const edge of outgoing) {
+        if (hasCycle(edge.target)) return true;
+      }
+      
+      inCurrentPath.delete(nodeId);
+      return false;
+    };
+
+    for (const node of this.nodes) {
+      if (!visitedInCycle.has(node.id) && hasCycle(node.id)) {
+        console.error(`🔄 Cycle detected starting from node: ${node.id}`);
+        return true;
+      }
+    }
+    return false;
   }
 
   async execute(): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
-      // Get execution order using topological sort
-      const executionOrder = this.getExecutionOrder();
-      
-      if (!executionOrder) {
+      // Check for cycles first
+      if (this.detectCycles()) {
         throw new Error('Circular dependency detected in workflow');
       }
 
-      console.log(`Starting workflow execution for run ${this.runId}`);
-      console.log(`Execution order: ${executionOrder.join(' -> ')}`);
-
-      // Execute nodes in order
-      for (const nodeId of executionOrder) {
-        const node = this.nodes.find(n => n.id === nodeId);
-        if (!node) {
-          throw new Error(`Node ${nodeId} not found`);
-        }
-
-        try {
-          await this.executeNode(node);
-        } catch (error) {
-          console.error(`Failed to execute node ${nodeId}:`, error);
-          await this.markRunAsFailed(error.message);
-          return { success: false, error: error.message };
-        }
-      }
+      console.log(`🚀 Starting queue-based workflow execution for run ${this.runId}`);
+      
+      // Execute nodes using queue-based approach
+      await this.executeAllNodes();
 
       // Mark workflow as completed
       await this.markRunAsCompleted();
@@ -76,12 +115,191 @@ export class WorkflowEngine {
         return acc;
       }, {} as Record<string, any>);
 
+      console.log(`✅ Workflow execution completed successfully`);
       return { success: true, result: finalResults };
     } catch (error) {
-      console.error('Workflow execution failed:', error);
+      console.error('❌ Workflow execution failed:', error);
       await this.markRunAsFailed(error.message);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Execute all nodes using queue-based approach with conditional routing
+   */
+  private async executeAllNodes(): Promise<void> {
+    const queue: string[] = [];
+    const MAX_RETRIES = 100;
+    let retryCount = 0;
+
+    // Find nodes with no incoming edges (starting points)
+    const startingNodes = this.nodes
+      .filter(node => !this.edges.some(edge => edge.target === node.id))
+      .map(node => node.id);
+
+    if (startingNodes.length === 0) {
+      throw new Error('No starting nodes found (nodes without incoming edges)');
+    }
+
+    queue.push(...startingNodes);
+    console.log(`🎯 Found ${startingNodes.length} starting nodes:`, startingNodes);
+
+    while (queue.length > 0 && retryCount < MAX_RETRIES) {
+      const nodeId = queue.shift()!;
+      
+      // Skip if already executed
+      if (this.executedNodes.has(nodeId)) {
+        continue;
+      }
+
+      const node = this.nodes.find(n => n.id === nodeId);
+      if (!node) {
+        console.warn(`⚠️ Node ${nodeId} not found, skipping`);
+        continue;
+      }
+
+      // Check if all dependencies are satisfied
+      const upstreamNodes = this.getUpstreamNodes(nodeId);
+      const allDependenciesSatisfied = upstreamNodes.every(id => this.executedNodes.has(id));
+
+      if (!allDependenciesSatisfied) {
+        // Re-queue the node for later execution
+        queue.push(nodeId);
+        retryCount++;
+        console.log(`⏳ Dependencies not satisfied for ${nodeId}, re-queuing (retry ${retryCount})`);
+        continue;
+      }
+
+      try {
+        console.log(`🔄 Executing node: ${nodeId} (${node.type})`);
+        await this.executeNode(node);
+        this.executedNodes.add(nodeId);
+        
+        // Handle conditional routing for branching nodes
+        const isBranchingNode = this.conditionalMap.has(nodeId);
+        if (isBranchingNode) {
+          await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+        } else {
+          // Add downstream nodes to queue for non-branching nodes
+          this.addDownstreamNodesToQueue(nodeId, queue);
+        }
+        
+        retryCount = 0; // Reset retry count on successful execution
+      } catch (error) {
+        console.error(`❌ Failed to execute node ${nodeId}:`, error);
+        throw error;
+      }
+    }
+
+    if (retryCount >= MAX_RETRIES) {
+      throw new Error(`Maximum retry count exceeded. Possible circular dependency or missing nodes.`);
+    }
+
+    console.log(`✅ All nodes executed successfully. Total executed: ${this.executedNodes.size}`);
+  }
+
+  /**
+   * Handle branching node result and route to appropriate downstream nodes
+   */
+  private async handleBranchNodeResult(nodeId: string, result: any): Promise<void> {
+    // Normalize result to handle key
+    let handleKey: string;
+    
+    if (typeof result === 'boolean') {
+      handleKey = result.toString(); // "true" or "false"
+    } else if (result && typeof result === 'object') {
+      // Handle If node format: check for result field
+      if ('result' in result) {
+        handleKey = result.result; // "true" or "false" from comparator
+      } else if ('output' in result) {
+        handleKey = result.output; // Switch case output
+      } else {
+        handleKey = 'default';
+      }
+    } else {
+      handleKey = String(result);
+    }
+
+    // Look up the branch map
+    const branchMap = this.conditionalMap.get(nodeId) || {};
+    const targetId = branchMap[handleKey];
+
+    if (!targetId) {
+      console.warn(`⚠️ No branch found for node ${nodeId} handle "${handleKey}". Available handles:`, Object.keys(branchMap));
+      return;
+    }
+
+    console.log(`🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targetId}`);
+    
+    // Execute the targeted branch
+    await this.executeConditionalChain(targetId);
+  }
+
+  /**
+   * Execute conditional chain starting from a specific node
+   */
+  private async executeConditionalChain(startNodeId: string): Promise<void> {
+    const queue: string[] = [startNodeId];
+    const MAX_RETRIES = 50;
+    let retryCount = 0;
+
+    while (queue.length > 0 && retryCount < MAX_RETRIES) {
+      const nodeId = queue.shift()!;
+      
+      // Skip if already executed
+      if (this.executedNodes.has(nodeId)) {
+        continue;
+      }
+
+      const node = this.nodes.find(n => n.id === nodeId);
+      if (!node) {
+        console.warn(`⚠️ Node ${nodeId} not found in conditional chain, skipping`);
+        continue;
+      }
+
+      // Check if all dependencies are satisfied
+      const upstreamNodes = this.getUpstreamNodes(nodeId);
+      const allDependenciesSatisfied = upstreamNodes.every(id => this.executedNodes.has(id));
+
+      if (!allDependenciesSatisfied) {
+        // Re-queue the node for later execution
+        queue.push(nodeId);
+        retryCount++;
+        continue;
+      }
+
+      try {
+        console.log(`🎯 Executing conditional node: ${nodeId} (${node.type})`);
+        await this.executeNode(node);
+        this.executedNodes.add(nodeId);
+        
+        // Handle further branching or add downstream nodes
+        const isBranchingNode = this.conditionalMap.has(nodeId);
+        if (isBranchingNode) {
+          await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+        } else {
+          this.addDownstreamNodesToQueue(nodeId, queue);
+        }
+        
+        retryCount = 0;
+      } catch (error) {
+        console.error(`❌ Failed to execute conditional node ${nodeId}:`, error);
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Add downstream nodes to the execution queue
+   */
+  private addDownstreamNodesToQueue(nodeId: string, queue: string[]): void {
+    const downstreamNodes = this.edges
+      .filter(edge => edge.source === nodeId)
+      .map(edge => edge.target)
+      .filter(targetId => !this.executedNodes.has(targetId));
+
+    queue.push(...downstreamNodes);
+    console.log(`📤 Added ${downstreamNodes.length} downstream nodes to queue:`, downstreamNodes);
   }
 
   private async executeNode(node: WorkflowNode): Promise<void> {
@@ -127,6 +345,9 @@ export class WorkflowEngine {
           break;
         case 'if':
           result = await this.executeIfNode(node, nodeInput);
+          break;
+        case 'switch':
+          result = await this.executeSwitchNode(node, nodeInput);
           break;
         case 'scheduler':
           result = await this.executeSchedulerNode(node, nodeInput);
@@ -179,44 +400,6 @@ export class WorkflowEngine {
       .map(edge => edge.source);
   }
 
-  private getExecutionOrder(): string[] | null {
-    const visited = new Set<string>();
-    const visiting = new Set<string>();
-    const result: string[] = [];
-
-    const visit = (nodeId: string): boolean => {
-      if (visiting.has(nodeId)) {
-        return false; // Circular dependency
-      }
-      if (visited.has(nodeId)) {
-        return true;
-      }
-
-      visiting.add(nodeId);
-
-      // Visit all upstream nodes first
-      const upstreamNodes = this.getUpstreamNodes(nodeId);
-      for (const upstreamId of upstreamNodes) {
-        if (!visit(upstreamId)) {
-          return false;
-        }
-      }
-
-      visiting.delete(nodeId);
-      visited.add(nodeId);
-      result.push(nodeId);
-      return true;
-    };
-
-    // Visit all nodes
-    for (const node of this.nodes) {
-      if (!visit(node.id)) {
-        return null; // Circular dependency detected
-      }
-    }
-
-    return result;
-  }
 
   private async executeInputNode(node: WorkflowNode, input: any): Promise<any> {
     // Input nodes just pass through their data
@@ -272,47 +455,63 @@ export class WorkflowEngine {
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    const { condition, operator = '>', value } = node.data;
+    const { conditions } = node.data;
     
-    if (!condition || value === undefined) {
-      throw new Error('If node requires condition and value');
+    if (!conditions || !Array.isArray(conditions)) {
+      throw new Error('If node requires conditions array');
     }
 
-    // Resolve condition value from input
-    const conditionValue = this.resolveValue(condition, input);
-    const compareValue = this.resolveValue(value, input);
+    // Resolve template values in conditions
+    const resolvedConditions = conditions.map(condition => ({
+      left: this.resolveValue(condition.left, input),
+      operator: condition.operator,
+      right: this.resolveValue(condition.right, input)
+    }));
+
+    // Call the comparator API
+    const apiUrl = `http://localhost:8000/api/comparator/if`;
     
-    let result = false;
-    switch (operator) {
-      case '>':
-        result = conditionValue > compareValue;
-        break;
-      case '<':
-        result = conditionValue < compareValue;
-        break;
-      case '>=':
-        result = conditionValue >= compareValue;
-        break;
-      case '<=':
-        result = conditionValue <= compareValue;
-        break;
-      case '==':
-        result = conditionValue == compareValue;
-        break;
-      case '!=':
-        result = conditionValue != compareValue;
-        break;
-      default:
-        throw new Error(`Unknown operator: ${operator}`);
+    const response = await axios.post(apiUrl, {
+      conditions: resolvedConditions
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    console.log(`🔍 If node ${node.id} result:`, response.data);
+    return response.data;
+  }
+
+  private async executeSwitchNode(node: WorkflowNode, input: any): Promise<any> {
+    const { inputValue, cases = [], defaultCase = 'default' } = node.data;
+    
+    if (inputValue === undefined) {
+      throw new Error('Switch node requires inputValue');
     }
 
-    return {
-      condition: result,
-      conditionValue,
-      compareValue,
-      operator,
-      input
-    };
+    // Resolve the input value
+    const resolvedInputValue = this.resolveValue(inputValue, input);
+
+    // Resolve case values
+    const resolvedCases = cases.map((caseItem: any) => ({
+      caseValue: this.resolveValue(caseItem.caseValue, input),
+      caseName: caseItem.caseName || caseItem.caseValue
+    }));
+
+    // Call the comparator API
+    const apiUrl = `http://localhost:8000/api/comparator/switch`;
+    
+    const response = await axios.post(apiUrl, {
+      inputValue: resolvedInputValue,
+      cases: resolvedCases,
+      defaultCase
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    console.log(`🔀 Switch node ${node.id} result:`, response.data);
+    return response.data;
   }
 
   private async executeSchedulerNode(node: WorkflowNode, input: any): Promise<any> {

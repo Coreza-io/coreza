@@ -342,30 +342,67 @@ router.post('/:operation', async (req, res, next) => {
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - Math.max(barsCount, 30)); // Ensure we get enough data
 
-        const barsData = await alpaca.getBarsV2(symbol, {
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-          timeframe: timeframe,
-          limit: barsCount
-        });
-
-        const candles = [];
-        for await (const bar of barsData) {
-          candles.push({
-            t: bar.Timestamp,
-            o: bar.OpenPrice,
-            h: bar.HighPrice,
-            l: bar.LowPrice,
-            c: bar.ClosePrice,
-            v: bar.Volume
+        // Try with user credentials first, fallback to system credentials for market data
+        let marketDataAlpaca;
+        try {
+          marketDataAlpaca = new Alpaca({
+            key: credentials.api_key,
+            secret: credentials.secret_key,
+            paper: true
+          });
+        } catch (userCredError) {
+          // Fallback to system credentials if available
+          const systemKey = process.env.ALPACA_API_KEY;
+          const systemSecret = process.env.ALPACA_API_SECRET;
+          
+          if (!systemKey || !systemSecret) {
+            return res.status(403).json({ 
+              error: 'Market data access requires valid Alpaca credentials. Please check your API key permissions or contact support.',
+              details: 'User credentials may not have market data access permissions'
+            });
+          }
+          
+          marketDataAlpaca = new Alpaca({
+            key: systemKey,
+            secret: systemSecret,
+            paper: true
           });
         }
 
-        return res.json({
-          symbol,
-          interval: timeframe,
-          candles: candles.slice(-barsCount)
-        });
+        try {
+          const barsData = await marketDataAlpaca.getBarsV2(symbol, {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            timeframe: timeframe,
+            limit: barsCount
+          });
+
+          const candles = [];
+          for await (const bar of barsData) {
+            candles.push({
+              t: bar.Timestamp,
+              o: bar.OpenPrice,
+              h: bar.HighPrice,
+              l: bar.LowPrice,
+              c: bar.ClosePrice,
+              v: bar.Volume
+            });
+          }
+
+          return res.json({
+            symbol,
+            interval: timeframe,
+            candles: candles.slice(-barsCount)
+          });
+        } catch (apiError: any) {
+          if (apiError.message && apiError.message.includes('403')) {
+            return res.status(403).json({ 
+              error: 'Market data access forbidden. Please verify your Alpaca account has market data permissions.',
+              details: 'This usually means your account needs to be upgraded or verified for market data access'
+            });
+          }
+          throw apiError;
+        }
       case 'place_order':
         const { symbol: orderSymbol, side, qty, type, time_in_force } = req.body;
         

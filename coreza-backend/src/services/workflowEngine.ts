@@ -580,12 +580,26 @@ export class WorkflowEngine {
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    const condition = node.values?.condition || {};
-    const left = condition.left;
-    const operator = condition.operator || '==';
-    const right = condition.right;
+    // Get all node data for cross-references
+    const allNodeData: Record<string, any> = {};
+    for (const [nodeId, result] of this.nodeResults.entries()) {
+      allNodeData[nodeId] = result;
+    }
 
-    const result = await ComparatorService.executeIf({ left, operator, right });
+    const conditions = node.values?.conditions || [];
+    
+    // Resolve each condition's left and right values
+    const resolvedConditions = conditions.map((condition: any) => ({
+      left: typeof condition.left === 'string' 
+        ? this.resolveReferences(condition.left, input, allNodeData)
+        : condition.left,
+      operator: condition.operator || '===',
+      right: typeof condition.right === 'string'
+        ? this.resolveReferences(condition.right, input, allNodeData)
+        : condition.right
+    }));
+
+    const result = await ComparatorService.executeIf({ conditions: resolvedConditions });
     
     if (!result.success) {
       throw new Error(result.error || 'Condition evaluation failed');
@@ -595,19 +609,34 @@ export class WorkflowEngine {
   }
 
   private async executeSwitchNode(node: WorkflowNode, input: any): Promise<any> {
-    const cases = node.values?.cases || [];
-    const defaultValue = node.values?.defaultValue;
+    // Get all node data for cross-references
+    const allNodeData: Record<string, any> = {};
+    for (const [nodeId, result] of this.nodeResults.entries()) {
+      allNodeData[nodeId] = result;
+    }
 
-    const switchCases = cases.map((c: any) => ({
-      condition: {
-        left: c.condition?.left,
-        operator: c.condition?.operator || '==',
-        right: c.condition?.right
-      },
-      value: c.value
+    const inputValue = node.values?.inputValue;
+    const cases = node.values?.cases || [];
+    const defaultCase = node.values?.defaultCase || 'default';
+
+    // Resolve the input value
+    const resolvedInputValue = typeof inputValue === 'string'
+      ? this.resolveReferences(inputValue, input, allNodeData)
+      : inputValue;
+
+    // Resolve case values and create switch cases
+    const resolvedCases = cases.map((c: any) => ({
+      caseValue: typeof c.caseValue === 'string'
+        ? this.resolveReferences(c.caseValue, input, allNodeData)
+        : c.caseValue,
+      caseName: c.caseName || c.caseValue
     }));
 
-    const result = await ComparatorService.executeSwitch(switchCases, defaultValue);
+    const result = await ComparatorService.executeSwitch({ 
+      inputValue: resolvedInputValue, 
+      cases: resolvedCases, 
+      defaultCase 
+    });
     
     if (!result.success) {
       throw new Error(result.error || 'Switch evaluation failed');
@@ -761,13 +790,173 @@ export class WorkflowEngine {
     return result.data;
   }
 
+  /**
+   * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
+   * Now supports negative numbers (e.g. -1, -2).
+   */
+  private parsePath(path: string): Array<string|number> {
+    const parts: Array<string|number> = [];
+    const regex = /([^[.\]]+)|\[(\-?\d+|["'][^"']+["'])\]/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(path))) {
+      const [ , dotKey, bracketKey ] = match;
+      if (dotKey !== undefined) {
+        parts.push(dotKey);
+      } else {
+        // bracketKey is either a quoted string or a number (possibly negative)
+        if (/^-?\d+$/.test(bracketKey!)) {
+          parts.push(Number(bracketKey));      // e.g. "-1" → -1
+        } else {
+          parts.push(bracketKey!.slice(1, -1)); // strip quotes from 'foo' or "foo"
+        }
+      }
+    }
+
+    return parts;
+  }
+
+  /**
+   * Create display name mapping from node array
+   */
+  private createDisplayNameMapping(): Record<string, string> {
+    const mapping: Record<string, string> = {};
+    this.nodes.forEach(node => {
+      const displayName = this.generateDisplayName(node);
+      mapping[displayName] = node.id;
+    });
+    return mapping;
+  }
+
+  /**
+   * Generate display name for a node
+   */
+  private generateDisplayName(node: WorkflowNode): string {
+    // Use custom label if provided
+    if (node.values?.label && node.values.label.trim()) {
+      return node.values.label.trim();
+    }
+    
+    // Use definition name if available
+    if (node.data?.definition?.name) {
+      return node.data.definition.name;
+    }
+    
+    // Fallback to node type
+    return node.type || 'Unknown';
+  }
+
+  /**
+   * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
+   * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
+   */
+  private resolveReferences(
+    expr: string, 
+    inputData: any, 
+    allNodeData?: Record<string, any>
+  ): string {
+    if (!inputData || typeof expr !== 'string') {
+      return expr;
+    }
+
+    // Match $('NodeName').json.path or $json.path patterns
+    const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
+
+    return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
+      console.log("🔍 [BACKEND] Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData });
+      
+      let targetData = inputData;
+      
+      // If nodeName is specified and we have allNodeData, look up the specific node's data
+      if (nodeName && allNodeData) {
+        // First try direct lookup by node name
+        if (allNodeData[nodeName]) {
+          targetData = allNodeData[nodeName];
+          console.log(`🔍 [BACKEND] Found data for node '${nodeName}':`, targetData);
+        } else {
+          // Try lookup by display name if direct lookup fails
+          const displayNameMapping = this.createDisplayNameMapping();
+          const nodeId = displayNameMapping[nodeName];
+          
+          if (nodeId && allNodeData[nodeId]) {
+            targetData = allNodeData[nodeId];
+            console.log(`🔍 [BACKEND] Found data for node '${nodeName}' via display name mapping (ID: ${nodeId}):`, targetData);
+          } else {
+            console.warn(`🔍 [BACKEND] No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
+            console.warn(`🔍 [BACKEND] Available display names:`, Object.keys(displayNameMapping));
+            return fullMatch; // Return original if node not found
+          }
+        }
+        
+        // Handle nested json structure for Market Status and other nodes
+        if (targetData && targetData.json) {
+          targetData = targetData.json;
+          console.log(`🔍 [BACKEND] Using nested json data:`, targetData);
+        }
+      }
+      
+      const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
+      
+      // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
+      if (!cleanPath) {
+        return (typeof targetData === 'object' && targetData !== null)
+          ? JSON.stringify(targetData)
+          : String(targetData);
+      }
+      
+      const keys = this.parsePath(cleanPath);
+      console.log("🔍 [BACKEND] Parsed keys:", keys);
+
+      let result: any = targetData;
+      for (const key of keys) {
+        if (result == null) { 
+          result = undefined; 
+          break; 
+        }
+
+        // If we're indexing into an array with a number...
+        if (Array.isArray(result) && typeof key === 'number') {
+          // handle negative indexes
+          const idx = key >= 0 ? key : result.length + key;
+          result = result[idx];
+        } else {
+          result = result[key as keyof typeof result];
+        }
+      }
+
+      console.log("🔍 [BACKEND] Final result:", result);
+
+      if (result === undefined) {
+        // leave original placeholder if not found
+        return fullMatch;
+      }
+
+      return (typeof result === 'object' && result !== null)
+        ? JSON.stringify(result)
+        : String(result);
+    });
+  }
+
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
     const nodeParams = node.values || {};
     const resolvedParams: any = {};
     
-    // Simple parameter resolution - could be enhanced to use frontend resolveReferences logic
+    // Get all node data for cross-references
+    const allNodeData: Record<string, any> = {};
+    for (const [nodeId, result] of this.nodeResults.entries()) {
+      allNodeData[nodeId] = result;
+    }
+    
+    // Resolve all node.values parameters with reference resolution
     for (const [key, value] of Object.entries(nodeParams)) {
-      resolvedParams[key] = value;
+      // Skip operational fields that are handled separately
+      if (key !== 'credential_id' && key !== 'operation') {
+        if (typeof value === 'string') {
+          resolvedParams[key] = this.resolveReferences(value, input, allNodeData);
+        } else {
+          resolvedParams[key] = value;
+        }
+      }
     }
     
     return resolvedParams;

@@ -348,15 +348,19 @@ export class WorkflowEngine {
           result = await this.executeAlpacaNode(node, nodeInput);
           break;
         case 'dhan':
+        case 'Dhan':
           result = await this.executeDhanNode(node, nodeInput);
           break;
         case 'market':
+        case 'Market':
           result = await this.executeMarketNode(node, nodeInput);
           break;
         case 'if':
+        case 'If':
           result = await this.executeIfNode(node, nodeInput);
           break;
         case 'switch':
+        case 'Switch':
           result = await this.executeSwitchNode(node, nodeInput);
           break;
         case 'scheduler':
@@ -365,6 +369,7 @@ export class WorkflowEngine {
           result = await this.executeSchedulerNode(node, nodeInput);
           break;
         case 'visualize':
+        case 'Visualize':
           result = await this.executeVisualizeNode(node, nodeInput);
           break;
         case 'webhook':
@@ -375,15 +380,19 @@ export class WorkflowEngine {
           result = await this.executeHttpNode(node, nodeInput);
           break;
         case 'gmail':
+        case 'Gmail':
           result = await this.executeGmailNode(node, nodeInput);
           break;
         case 'finnhub':
+        case 'FinnHub':
           result = await this.executeFinnhubNode(node, nodeInput);
           break;
         case 'yahoofinance':
+        case 'YahooFinance':
           result = await this.executeYahooFinanceNode(node, nodeInput);
           break;
         case 'whatsapp':
+        case 'WhatsApp':
           result = await this.executeWhatsappNode(node, nodeInput);
           break;
         default:

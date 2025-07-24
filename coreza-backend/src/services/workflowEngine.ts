@@ -1,5 +1,11 @@
 import { supabase } from '../config/supabase';
 import axios from 'axios';
+import { IndicatorService } from './indicators';
+import { BrokerService } from './brokers';
+import { CommunicationService } from './communications';
+import { DataService } from './data';
+import { HttpService } from './http';
+import { WebhookService } from './webhooks';
 
 interface WorkflowNode {
   id: string;
@@ -427,50 +433,40 @@ export class WorkflowEngine {
 
   private async executeIndicatorNode(node: WorkflowNode, input: any): Promise<any> {
     const indicatorType = node.type.toLowerCase();
-    const apiUrl = `http://localhost:8000/indicators/${indicatorType}`;
-    
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    return await IndicatorService.calculate(indicatorType, input);
   }
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'funds';
-    const apiUrl = `http://localhost:8000/dhan/${action}`;
+    const operation = node.data?.operation || 'get_account';
+    const result = await BrokerService.execute('dhan', { ...input, operation });
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Dhan operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeAlpacaNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'account';
-    const apiUrl = `http://localhost:8000/alpaca/${action}`;
+    const operation = node.data?.operation || 'get_account';
+    const result = await BrokerService.execute('alpaca', { ...input, operation });
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Alpaca operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeMarketNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'quote';
-    const apiUrl = `http://localhost:8000/market/${action}`;
+    const operation = node.data?.operation || 'get_quote';
+    const result = await DataService.execute('market', operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Market operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
@@ -556,26 +552,24 @@ export class WorkflowEngine {
   }
 
   private async executeWebhookNode(node: WorkflowNode, input: any): Promise<any> {
-    const action = node.data.action || 'send';
-    const apiUrl = `http://localhost:8000/webhooks/${action}`;
+    const operation = node.data?.operation || 'trigger';
+    const result = await WebhookService.execute(operation, input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'Webhook operation failed');
+    }
+    
+    return result.data;
   }
 
   private async executeHttpNode(node: WorkflowNode, input: any): Promise<any> {
-    const apiUrl = `http://localhost:8000/http/request`;
+    const result = await HttpService.execute(input);
     
-    const response = await axios.post(apiUrl, input, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
-
-    return response.data;
+    if (!result.success) {
+      throw new Error(result.error || 'HTTP request failed');
+    }
+    
+    return result;
   }
 
   private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {

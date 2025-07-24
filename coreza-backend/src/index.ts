@@ -47,20 +47,35 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Routes
+// Routes - with debugging
+console.log('📍 Setting up routes...');
 app.use('/indicators', indicatorRoutes);
+console.log('✅ Indicators route mounted');
 app.use('/alpaca', alpacaRoutes);
+console.log('✅ Alpaca route mounted');
 app.use('/market', marketRoutes);
+console.log('✅ Market route mounted');
 app.use('/credentials', credentialsRoutes);
+console.log('✅ Credentials route mounted');
 app.use('/dhan', dhanRoutes);
+console.log('✅ Dhan route mounted');
 app.use('/gmail', gmailRoutes);
+console.log('✅ Gmail route mounted');
 app.use('/whatsapp', whatsappRoutes);
+console.log('✅ WhatsApp route mounted');
 app.use('/webhooks', webhookRoutes);
+console.log('✅ Webhooks route mounted');
 app.use('/workflows', workflowRoutes);
+console.log('✅ Workflows route mounted');
 app.use('/yahoofinance', yahoofinanceRoutes);
+console.log('✅ YahooFinance route mounted');
 app.use('/http', httpRoutes);
+console.log('✅ HTTP route mounted');
 app.use('/execute', schedulerRoutes);
+console.log('✅ Execute/Scheduler route mounted');
 app.use('/comparator', comparatorRoutes);
+console.log('✅ Comparator route mounted');
+console.log('📍 All routes mounted successfully');
 
 // Error handling
 app.use(errorHandler);

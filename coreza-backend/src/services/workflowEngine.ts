@@ -12,6 +12,7 @@ interface WorkflowNode {
   id: string;
   type: string;
   data: any;
+  values?: any;
   position: { x: number; y: number };
 }
 
@@ -454,8 +455,8 @@ export class WorkflowEngine {
   }
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'get_account';
-    const credential_id = node.data?.credential_id;
+    const operation = node.values?.operation || 'get_account';
+    const credential_id = node.values?.credential_id;
     
     if (!credential_id) {
       throw new Error('Dhan credential_id is required');
@@ -476,8 +477,8 @@ export class WorkflowEngine {
   }
 
   private async executeAlpacaNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'get_account';
-    const credential_id = node.data?.credential_id;
+    const operation = node.values?.operation || 'get_account';
+    const credential_id = node.values?.credential_id;
     
     if (!credential_id) {
       throw new Error('Alpaca credential_id is required');
@@ -498,7 +499,7 @@ export class WorkflowEngine {
   }
 
   private async executeMarketNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'get_quote';
+    const operation = node.values?.operation || 'get_quote';
     const result = await DataService.execute('market', operation, input);
     
     if (!result.success) {
@@ -509,7 +510,7 @@ export class WorkflowEngine {
   }
 
   private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    const condition = this.resolveValue(node.data.condition, input);
+    const condition = this.resolveValue(node.values?.condition, input);
     const left = this.resolveValue(condition.left, input);
     const operator = condition.operator || '==';
     const right = this.resolveValue(condition.right, input);
@@ -524,8 +525,8 @@ export class WorkflowEngine {
   }
 
   private async executeSwitchNode(node: WorkflowNode, input: any): Promise<any> {
-    const cases = node.data.cases || [];
-    const defaultValue = node.data.defaultValue;
+    const cases = node.values?.cases || [];
+    const defaultValue = node.values?.defaultValue;
 
     const switchCases = cases.map((c: any) => ({
       condition: {
@@ -547,7 +548,7 @@ export class WorkflowEngine {
 
   private async executeSchedulerNode(node: WorkflowNode, input: any): Promise<any> {
     // Scheduler nodes are triggers that pass through data and provide scheduling metadata
-    const scheduleData = node.data || {};
+    const scheduleData = node.values || {};
     
     // Generate cron expression from scheduler data if available
     let cronExpression = null;
@@ -586,7 +587,7 @@ export class WorkflowEngine {
     return {
       ...input,
       visualization: {
-        type: node.data.chart_type || 'line',
+        type: node.values?.chart_type || 'line',
         data: input,
         timestamp: new Date().toISOString()
       }
@@ -594,7 +595,7 @@ export class WorkflowEngine {
   }
 
   private async executeWebhookNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'trigger';
+    const operation = node.values?.operation || 'trigger';
     const result = await WebhookService.execute(operation, input);
     
     if (!result.success) {
@@ -615,7 +616,7 @@ export class WorkflowEngine {
   }
 
   private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'send';
+    const operation = node.values?.operation || 'send';
     const result = await CommunicationService.execute('gmail', operation, input);
     
     if (!result.success) {
@@ -626,7 +627,7 @@ export class WorkflowEngine {
   }
 
   private async executeFinnhubNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'get_quote';
+    const operation = node.values?.operation || 'get_quote';
     const result = await DataService.execute('finnhub', operation, input);
     
     if (!result.success) {
@@ -637,7 +638,7 @@ export class WorkflowEngine {
   }
 
   private async executeYahooFinanceNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'get_quote';
+    const operation = node.values?.operation || 'get_quote';
     const result = await DataService.execute('yahoofinance', operation, input);
     
     if (!result.success) {
@@ -648,7 +649,7 @@ export class WorkflowEngine {
   }
 
   private async executeWhatsappNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.data?.operation || 'send';
+    const operation = node.values?.operation || 'send';
     const result = await CommunicationService.execute('whatsapp', operation, input);
     
     if (!result.success) {

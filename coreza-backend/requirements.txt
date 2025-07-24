@@ -64,7 +64,7 @@ kombu==5.5.4
 langchain==0.3.19
 langchain-community==0.3.18
 langchain-core==0.3.55
-langchain-text-splitters==0.3.2
+langchain-text-splitters==0.3.6
 langsmith==0.3.42
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2

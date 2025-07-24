@@ -3,7 +3,7 @@ import express from 'express';
 const router = express.Router();
 
 // Scheduler execution handler
-router.post('/', async (req, res) => {
+router.post('/scheduler', async (req, res) => {
   try {
     const { interval, count, hour, minute } = req.body;
 

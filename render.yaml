@@ -17,7 +17,13 @@ services:
           name: coreza-redis
           property: connectionString
       - key: SECRET_KEY
-        value: "change-me"
+        generateValue: true
+      - key: SUPABASE_URL
+        value: "https://tiitofotheupylvxivge.supabase.co"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXRvZm90aGV1cHlsdnhpdmdlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDkyNzI0MSwiZXhwIjoyMDY2NTAzMjQxfQ.azjdmYIYlqd9-CBTuHoPHux_PUs97Dk4jpP_2RX9_n8"
+      - key: ENVIRONMENT
+        value: "production"
 
   # Optional: Comment out if staying free-only (Celery worker needs Starter plan)
   - type: worker
@@ -31,10 +37,22 @@ services:
           name: coreza-redis
           property: connectionString
       - key: SECRET_KEY
-        value: "change-me"
+        generateValue: true
+      - key: SUPABASE_URL
+        value: "https://tiitofotheupylvxivge.supabase.co"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXRvZm90aGV1cHlsdnhpdmdlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDkyNzI0MSwiZXhwIjoyMDY2NTAzMjQxfQ.azjdmYIYlqd9-CBTuHoPHux_PUs97Tk4jpP_2RX9_n8"
+      - key: ENVIRONMENT
+        value: "production"
 
   - type: web
     name: coreza-frontend
     env: static
     buildCommand: "npm install && npm run build"
     staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: coreza-backend
+          type: web
+          property: host

@@ -200,47 +200,6 @@ router.get('/orders/:userId/:credentialName', async (req, res, next) => {
   }
 });
 
-// Get market data
-router.get('/bars/:symbol', async (req, res, next) => {
-  try {
-    const { symbol } = req.params;
-    const { timeframe = '1Day', start, end, limit = 100 } = req.query;
-    
-    // Create a basic alpaca client for market data (doesn't require user credentials)
-    const alpaca = new Alpaca({
-      key: process.env.ALPACA_API_KEY || '',
-      secret: process.env.ALPACA_API_SECRET || '',
-      paper: true
-    });
-    
-    const bars = await alpaca.getBarsV2(symbol, {
-      timeframe,
-      start: start as string,
-      end: end as string,
-      limit: parseInt(limit as string)
-    });
-    
-    const barData: any[] = [];
-    for await (const bar of bars) {
-      barData.push({
-        timestamp: bar.Timestamp,
-        open: bar.OpenPrice,
-        high: bar.HighPrice,
-        low: bar.LowPrice,
-        close: bar.ClosePrice,
-        volume: bar.Volume
-      });
-    }
-    
-    res.json({
-      symbol,
-      timeframe,
-      bars: barData
-    });
-  } catch (error) {
-    next(error);
-  }
-});
 
 // Add auth-url endpoint for authAction
 router.post('/auth-url', async (req, res, next) => {

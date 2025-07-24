@@ -34,42 +34,48 @@ router.get('/credentials', async (req, res, next) => {
   }
 });
 
-// Helper function to get user credentials
-const getUserCredentials = async (userId: string, service: string, credentialId?: string) => {
-  let query = supabase
-    .from('user_credentials')
-    .select('client_json, token_json')
-    .eq('user_id', userId)
-    .eq('service_type', service);
-
-  // If credentialId is provided, filter by name or id
-  if (credentialId) {
-    query = query.or(`name.eq.${credentialId},id.eq.${credentialId}`);
-  }
-
-  const { data, error } = await query.maybeSingle();
+// Helper function to get API credentials
+const getApiCredentials = async (userId: string, credentialId: string): Promise<{ api_key: string; secret_key: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .select('client_json')
+      .eq('user_id', userId)
+      .eq('name', credentialId)
+      .eq('service_type', 'alpaca')
+      .single();
+      
+    if (error) {
+      throw createError(`Supabase error: ${error.message}`, 500);
+    }
     
-  if (error) {
-    throw createError(`Database error: ${error.message}`, 500);
+    const creds = data?.client_json || {};
+    const api_key = creds.api_key;
+    const secret_key = creds.secret_key;
+    
+    if (!api_key || !secret_key) {
+      throw createError('API credentials not found.', 400);
+    }
+    
+    return { api_key, secret_key };
+  } catch (error: any) {
+    if (error.isOperational) {
+      throw error;
+    }
+    throw createError(`Supabase error: ${error.message}`, 500);
   }
-  
-  if (!data) {
-    throw createError(`${service} credentials not found. Please set up your credentials first.`, 404);
-  }
-  
-  return data;
 };
 
-// Get account information
-router.get('/account/:userId', async (req, res, next) => {
+// Get account information  
+router.get('/account/:userId/:credentialName', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const credentials = await getUserCredentials(userId, 'alpaca');
+    const { userId, credentialName } = req.params;
+    const credentials = await getApiCredentials(userId, credentialName);
     
     const alpaca = new Alpaca({
-      key: credentials.client_json.api_key,
-      secret: credentials.client_json.api_secret,
-      paper: credentials.client_json.paper || true
+      key: credentials.api_key,
+      secret: credentials.secret_key,
+      paper: true
     });
     
     const account = await alpaca.getAccount();
@@ -88,15 +94,15 @@ router.get('/account/:userId', async (req, res, next) => {
 });
 
 // Get positions
-router.get('/positions/:userId', async (req, res, next) => {
+router.get('/positions/:userId/:credentialName', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const credentials = await getUserCredentials(userId, 'alpaca');
+    const { userId, credentialName } = req.params;
+    const credentials = await getApiCredentials(userId, credentialName);
     
     const alpaca = new Alpaca({
-      key: credentials.client_json.api_key,
-      secret: credentials.client_json.api_secret,
-      paper: credentials.client_json.paper || true
+      key: credentials.api_key,
+      secret: credentials.secret_key,
+      paper: true
     });
     
     const positions = await alpaca.getPositions();
@@ -118,21 +124,21 @@ router.get('/positions/:userId', async (req, res, next) => {
 });
 
 // Place order
-router.post('/orders/:userId', async (req, res, next) => {
+router.post('/orders/:userId/:credentialName', async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const { userId, credentialName } = req.params;
     const { symbol, qty, side, type = 'market', time_in_force = 'day' } = req.body;
     
     if (!symbol || !qty || !side) {
       throw createError('Symbol, quantity, and side are required', 400);
     }
     
-    const credentials = await getUserCredentials(userId, 'alpaca');
+    const credentials = await getApiCredentials(userId, credentialName);
     
     const alpaca = new Alpaca({
-      key: credentials.client_json.api_key,
-      secret: credentials.client_json.api_secret,
-      paper: credentials.client_json.paper || true
+      key: credentials.api_key,
+      secret: credentials.secret_key,
+      paper: true
     });
     
     const order = await alpaca.createOrder({
@@ -158,17 +164,17 @@ router.post('/orders/:userId', async (req, res, next) => {
 });
 
 // Get orders
-router.get('/orders/:userId', async (req, res, next) => {
+router.get('/orders/:userId/:credentialName', async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const { userId, credentialName } = req.params;
     const { status, limit = 50 } = req.query;
     
-    const credentials = await getUserCredentials(userId, 'alpaca');
+    const credentials = await getApiCredentials(userId, credentialName);
     
     const alpaca = new Alpaca({
-      key: credentials.client_json.api_key,
-      secret: credentials.client_json.api_secret,
-      paper: credentials.client_json.paper || true
+      key: credentials.api_key,
+      secret: credentials.secret_key,
+      paper: true
     });
     
     const orders = await alpaca.getOrders({
@@ -298,10 +304,10 @@ router.post('/:operation', async (req, res, next) => {
       return res.status(400).json({ error: 'user_id and credential_id are required' });
     }
 
-    const credentials = await getUserCredentials(user_id, 'alpaca', credential_id);
+    const credentials = await getApiCredentials(user_id, credential_id);
     const alpaca = new Alpaca({
-      key: credentials.client_json.api_key,
-      secret: credentials.client_json.api_secret,
+      key: credentials.api_key,
+      secret: credentials.secret_key,
       paper: true
     });
 

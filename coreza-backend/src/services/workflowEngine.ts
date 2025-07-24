@@ -337,8 +337,12 @@ export class WorkflowEngine {
         case 'input':
           result = await this.executeInputNode(node, nodeInput);
           break;
-        case 'ema':
-        case 'rsi':
+        case 'EMA':
+          result = await this.executeIndicatorNode(node, nodeInput);
+          break;
+        case 'RSI':
+          result = await this.executeIndicatorNode(node, nodeInput);
+          break;
         case 'macd':
         case 'bollinger':
         case 'adx':
@@ -346,7 +350,6 @@ export class WorkflowEngine {
         case 'ichimoku':
           result = await this.executeIndicatorNode(node, nodeInput);
           break;
-        case 'alpaca':
         case 'Alpaca':
           result = await this.executeAlpacaNode(node, nodeInput);
           break;
@@ -358,16 +361,15 @@ export class WorkflowEngine {
         case 'Market':
           result = await this.executeMarketNode(node, nodeInput);
           break;
-        case 'if':
         case 'If':
           result = await this.executeIfNode(node, nodeInput);
           break;
-        case 'switch':
         case 'Switch':
           result = await this.executeSwitchNode(node, nodeInput);
           break;
-        case 'scheduler':
         case 'Scheduler':
+          result = await this.executeIndicatorNode(node, nodeInput);
+          break;
         case 'trigger':
           result = await this.executeSchedulerNode(node, nodeInput);
           break;

@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { supabase } from './config/supabase';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { workflowScheduler } from './services/scheduler';
 
 // Import routes
 import indicatorRoutes from './routes/indicators';
@@ -57,6 +58,9 @@ async function startServer() {
     } else {
       console.log('✅ Supabase connected successfully');
     }
+
+    // Initialize workflow scheduler
+    await workflowScheduler.initialize();
 
     app.listen(PORT, () => {
       console.log(`🚀 Coreza Node.js Backend running on port ${PORT}`);

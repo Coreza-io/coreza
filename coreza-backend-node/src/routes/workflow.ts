@@ -1,6 +1,8 @@
 import express from 'express';
 import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
+import { executeWorkflow } from '../services/workflowEngine';
+import { workflowScheduler } from '../services/scheduler';
 
 const router = express.Router();
 
@@ -95,6 +97,9 @@ router.delete('/:userId/:workflowId', async (req, res, next) => {
   try {
     const { userId, workflowId } = req.params;
     
+    // Unschedule workflow first
+    await workflowScheduler.unscheduleWorkflow(workflowId);
+    
     const { error } = await supabase
       .from('workflows')
       .delete()
@@ -177,25 +182,179 @@ router.post('/:userId/:workflowId/execute', async (req, res, next) => {
       throw createError('Failed to create workflow run', 500);
     }
     
-    // TODO: Implement actual workflow execution logic
-    // For now, just mark as completed
-    const { error: updateError } = await supabase
-      .from('workflow_runs')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        result: { message: 'Workflow executed successfully' }
+    // Execute workflow asynchronously
+    executeWorkflow(run.id, workflow.nodes, workflow.edges)
+      .then(async (result) => {
+        console.log(`Workflow ${workflowId} execution completed:`, result);
+        
+        if (!result.success) {
+          console.error(`Workflow ${workflowId} failed:`, result.error);
+        }
       })
-      .eq('id', run.id);
-    
-    if (updateError) {
-      console.error('Failed to update workflow run:', updateError);
-    }
+      .catch(async (error) => {
+        console.error(`Workflow ${workflowId} execution error:`, error);
+        
+        // Update run status to failed
+        await supabase
+          .from('workflow_runs')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            error_message: error.message
+          })
+          .eq('id', run.id);
+      });
     
     res.json({
       run_id: run.id,
       status: 'started',
       message: 'Workflow execution started'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Activate/Deactivate workflow scheduling
+router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
+  try {
+    const { userId, workflowId } = req.params;
+    const { is_active, schedule_cron } = req.body;
+    
+    // Update workflow
+    const { data: workflow, error } = await supabase
+      .from('workflows')
+      .update({
+        is_active,
+        schedule_cron,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    
+    if (error || !workflow) {
+      throw createError('Workflow not found', 404);
+    }
+    
+    // Update scheduler
+    if (is_active && schedule_cron) {
+      await workflowScheduler.scheduleWorkflow(
+        workflowId,
+        userId,
+        schedule_cron,
+        workflow.nodes,
+        workflow.edges
+      );
+    } else {
+      await workflowScheduler.unscheduleWorkflow(workflowId);
+    }
+    
+    res.json({
+      workflow,
+      message: is_active ? 'Workflow scheduled successfully' : 'Workflow unscheduled successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get scheduler status
+router.get('/scheduler/status', async (req, res, next) => {
+  try {
+    const scheduledJobs = workflowScheduler.getScheduledJobs();
+    
+    res.json({
+      status: 'active',
+      scheduled_workflows: scheduledJobs.length,
+      jobs: scheduledJobs.map(job => ({
+        workflow_id: job.workflowId,
+        user_id: job.userId,
+        cron_expression: job.cronExpression,
+        next_run: job.job.nextInvocation()
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get node execution details for a workflow run
+router.get('/:userId/:workflowId/runs/:runId/executions', async (req, res, next) => {
+  try {
+    const { userId, workflowId, runId } = req.params;
+    
+    // Verify workflow belongs to user
+    const { data: workflow } = await supabase
+      .from('workflows')
+      .select('id')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (!workflow) {
+      throw createError('Workflow not found', 404);
+    }
+    
+    // Get node executions
+    const { data, error } = await supabase
+      .from('node_executions')
+      .select('*')
+      .eq('run_id', runId)
+      .order('started_at', { ascending: true });
+    
+    if (error) {
+      throw createError('Failed to fetch node executions', 500);
+    }
+    
+    res.json({ executions: data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get workflow run status
+router.get('/:userId/:workflowId/runs/:runId/status', async (req, res, next) => {
+  try {
+    const { userId, workflowId, runId } = req.params;
+    
+    // Verify workflow belongs to user
+    const { data: workflow } = await supabase
+      .from('workflows')
+      .select('id')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (!workflow) {
+      throw createError('Workflow not found', 404);
+    }
+    
+    // Get workflow run
+    const { data: run, error: runError } = await supabase
+      .from('workflow_runs')
+      .select('*')
+      .eq('id', runId)
+      .single();
+    
+    if (runError || !run) {
+      throw createError('Workflow run not found', 404);
+    }
+    
+    // Get node executions count
+    const { count, error: countError } = await supabase
+      .from('node_executions')
+      .select('*', { count: 'exact', head: true })
+      .eq('run_id', runId);
+    
+    if (countError) {
+      console.error('Failed to count node executions:', countError);
+    }
+    
+    res.json({
+      run,
+      node_executions_count: count || 0
     });
   } catch (error) {
     next(error);

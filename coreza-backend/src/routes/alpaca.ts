@@ -168,11 +168,12 @@ router.post('/:operation', async (req, res, next) => {
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - Math.max(barsCount, 30)); // Ensure we get enough data
 
-        // Use user credentials for market data
+        // Use user credentials for market data with paper trading URL
         const marketDataAlpaca = new Alpaca({
-          key: credentials.api_key,
-          secret: credentials.secret_key,
-          paper: true
+          keyId: credentials.api_key,
+          secretKey: credentials.secret_key,
+          paper: true,
+          baseUrl: 'https://paper-api.alpaca.markets'
         });
 
         try {

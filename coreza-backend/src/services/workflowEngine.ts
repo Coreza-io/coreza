@@ -451,7 +451,28 @@ export class WorkflowEngine {
 
   private async executeIndicatorNode(node: WorkflowNode, input: any): Promise<any> {
     const indicatorType = node.type.toLowerCase();
-    return await IndicatorService.calculate(indicatorType, input);
+    
+    // Extract node configuration parameters and resolve references
+    const nodeParams = node.values || {};
+    const resolvedParams: any = {};
+    
+    // Resolve references in each parameter value
+    for (const [key, value] of Object.entries(nodeParams)) {
+      if (typeof value === 'string') {
+        resolvedParams[key] = this.resolveValue(value, input);
+      } else {
+        resolvedParams[key] = value;
+      }
+    }
+    
+    // Merge node configuration with input data
+    // Node parameters take precedence over input data
+    const combinedInput = {
+      ...input,
+      ...resolvedParams
+    };
+    
+    return await IndicatorService.calculate(indicatorType, combinedInput);
   }
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {

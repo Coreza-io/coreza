@@ -344,6 +344,7 @@ export class WorkflowEngine {
           result = await this.executeIndicatorNode(node, nodeInput);
           break;
         case 'alpaca':
+        case 'Alpaca':
           result = await this.executeAlpacaNode(node, nodeInput);
           break;
         case 'dhan':

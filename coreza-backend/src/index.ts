@@ -48,19 +48,19 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
-app.use('/api/indicators', indicatorRoutes);
-app.use('/api/alpaca', alpacaRoutes);
-app.use('/api/market', marketRoutes);
-app.use('/api/credentials', credentialsRoutes);
-app.use('/api/dhan', dhanRoutes);
-app.use('/api/gmail', gmailRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/workflows', workflowRoutes);
-app.use('/api/yahoofinance', yahoofinanceRoutes);
-app.use('/api/http', httpRoutes);
-app.use('/api/execute', schedulerRoutes);
-app.use('/api/comparator', comparatorRoutes);
+app.use('/indicators', indicatorRoutes);
+app.use('/alpaca', alpacaRoutes);
+app.use('/market', marketRoutes);
+app.use('/credentials', credentialsRoutes);
+app.use('/dhan', dhanRoutes);
+app.use('/gmail', gmailRoutes);
+app.use('/whatsapp', whatsappRoutes);
+app.use('/webhooks', webhookRoutes);
+app.use('/workflows', workflowRoutes);
+app.use('/yahoofinance', yahoofinanceRoutes);
+app.use('/http', httpRoutes);
+app.use('/execute', schedulerRoutes);
+app.use('/comparator', comparatorRoutes);
 
 // Error handling
 app.use(errorHandler);

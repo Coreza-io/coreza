@@ -23,7 +23,7 @@ router.post('/scheduler', async (req, res) => {
     const scheduleHour = hour ? parseInt(hour) : now.getHours();
     const scheduleMinute = minute ? parseInt(minute) : now.getMinutes();
 
-    switch (interval) {
+    switch (interval.toLowerCase()) {
       case 'minutes':
         nextExecution.setMinutes(now.getMinutes() + intervalCount);
         break;

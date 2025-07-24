@@ -13,7 +13,11 @@
     "test:coverage": "jest --coverage",
     "test:integration": "jest tests/integration",
     "test:load": "artillery run tests/load/artillery-config.ts",
-    "test:all": "npm run test && npm run test:integration"
+    "test:all": "npm run test && npm run test:integration",
+    "docker:build": "../scripts/docker-optimize.sh build",
+    "docker:test": "../scripts/docker-optimize.sh test",
+    "docker:analyze": "../scripts/docker-optimize.sh analyze",
+    "docker:all": "../scripts/docker-optimize.sh all"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.51.0",

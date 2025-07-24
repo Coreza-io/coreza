@@ -41,10 +41,14 @@ const getUserCredentials = async (userId: string, service: string) => {
     .select('client_json, token_json')
     .eq('user_id', userId)
     .eq('service_type', service)
-    .single();
+    .maybeSingle();
     
-  if (error || !data) {
-    throw createError('Alpaca credentials not found', 404);
+  if (error) {
+    throw createError(`Database error: ${error.message}`, 500);
+  }
+  
+  if (!data) {
+    throw createError(`${service} credentials not found. Please set up your credentials first.`, 404);
   }
   
   return data;

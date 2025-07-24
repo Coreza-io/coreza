@@ -20,6 +20,11 @@ import dhanRoutes from './routes/dhan';
 import gmailRoutes from './routes/gmail';
 import whatsappRoutes from './routes/whatsapp';
 import webhookRoutes from './routes/webhooks';
+import workflowRoutes from './routes/workflow';
+import yahoofinanceRoutes from './routes/yahoofinance';
+import httpRoutes from './routes/http';
+import schedulerRoutes from './routes/scheduler';
+import comparatorRoutes from './routes/comparator';
 import WebSocketManager from './services/websocketManager';
 
 
@@ -51,6 +56,11 @@ app.use('/api/dhan', dhanRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/workflows', workflowRoutes);
+app.use('/api/yahoofinance', yahoofinanceRoutes);
+app.use('/api/http', httpRoutes);
+app.use('/api/execute', schedulerRoutes);
+app.use('/api/comparator', comparatorRoutes);
 
 // Error handling
 app.use(errorHandler);

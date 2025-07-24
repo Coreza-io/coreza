@@ -278,4 +278,132 @@ router.post('/ichimoku', async (req, res, next) => {
   }
 });
 
+// OBV (On-Balance Volume) endpoint
+router.post('/obv', async (req, res, next) => {
+  try {
+    const { candle_data } = req.body;
+
+    if (!candle_data || !Array.isArray(candle_data)) {
+      return res.status(400).json({ error: 'Candle data array is required' });
+    }
+
+    const obvValues = [];
+    let obv = 0;
+
+    for (let i = 0; i < candle_data.length; i++) {
+      const candle = candle_data[i];
+      
+      if (!candle.close || !candle.volume) {
+        return res.status(400).json({ 
+          error: 'Each candle must have close price and volume',
+          invalidCandle: candle
+        });
+      }
+
+      if (i === 0) {
+        obv = candle.volume;
+      } else {
+        const prevClose = candle_data[i - 1].close;
+        if (candle.close > prevClose) {
+          obv += candle.volume;
+        } else if (candle.close < prevClose) {
+          obv -= candle.volume;
+        }
+        // If close === prevClose, OBV remains unchanged
+      }
+
+      obvValues.push({
+        timestamp: candle.timestamp,
+        obv: obv
+      });
+    }
+
+    res.json({
+      indicator: 'OBV',
+      values: obvValues,
+      count: obvValues.length
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// VWAP (Volume-Weighted Average Price) endpoint
+router.post('/vwap', async (req, res, next) => {
+  try {
+    const { candle_data, session_type = 'daily', custom_start_time } = req.body;
+
+    if (!candle_data || !Array.isArray(candle_data)) {
+      return res.status(400).json({ error: 'Candle data array is required' });
+    }
+
+    const vwapValues = [];
+    let cumulativeTPV = 0; // Typical Price * Volume
+    let cumulativeVolume = 0;
+    let sessionStart = 0;
+
+    for (let i = 0; i < candle_data.length; i++) {
+      const candle = candle_data[i];
+      
+      if (!candle.high || !candle.low || !candle.close || !candle.volume) {
+        return res.status(400).json({ 
+          error: 'Each candle must have high, low, close, and volume',
+          invalidCandle: candle
+        });
+      }
+
+      // Calculate typical price
+      const typicalPrice = (candle.high + candle.low + candle.close) / 3;
+      
+      // Handle session resets
+      const currentTime = new Date(candle.timestamp);
+      let resetSession = false;
+
+      if (session_type === 'daily' && i > 0) {
+        const prevTime = new Date(candle_data[i - 1].timestamp);
+        resetSession = currentTime.getDate() !== prevTime.getDate();
+      } else if (session_type === 'weekly' && i > 0) {
+        const prevTime = new Date(candle_data[i - 1].timestamp);
+        const currentWeek = Math.floor(currentTime.getTime() / (7 * 24 * 60 * 60 * 1000));
+        const prevWeek = Math.floor(prevTime.getTime() / (7 * 24 * 60 * 60 * 1000));
+        resetSession = currentWeek !== prevWeek;
+      } else if (session_type === 'custom' && custom_start_time) {
+        const startTime = new Date(custom_start_time);
+        resetSession = currentTime < startTime;
+      }
+
+      // Reset accumulation if new session
+      if (resetSession || i === 0) {
+        cumulativeTPV = 0;
+        cumulativeVolume = 0;
+        sessionStart = i;
+      }
+
+      // Add to cumulative values
+      cumulativeTPV += typicalPrice * candle.volume;
+      cumulativeVolume += candle.volume;
+
+      // Calculate VWAP
+      const vwap = cumulativeVolume > 0 ? cumulativeTPV / cumulativeVolume : typicalPrice;
+
+      vwapValues.push({
+        timestamp: candle.timestamp,
+        vwap: vwap,
+        sessionStart: sessionStart
+      });
+    }
+
+    res.json({
+      indicator: 'VWAP',
+      sessionType: session_type,
+      values: vwapValues,
+      count: vwapValues.length
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

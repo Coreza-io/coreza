@@ -355,6 +355,25 @@ export class WorkflowEngine {
         case 'visualize':
           result = await this.executeVisualizeNode(node, nodeInput);
           break;
+        case 'webhook':
+          result = await this.executeWebhookNode(node, nodeInput);
+          break;
+        case 'http':
+        case 'httprequest':
+          result = await this.executeHttpNode(node, nodeInput);
+          break;
+        case 'gmail':
+          result = await this.executeGmailNode(node, nodeInput);
+          break;
+        case 'finnhub':
+          result = await this.executeFinnhubNode(node, nodeInput);
+          break;
+        case 'yahoofinance':
+          result = await this.executeYahooFinanceNode(node, nodeInput);
+          break;
+        case 'whatsapp':
+          result = await this.executeWhatsappNode(node, nodeInput);
+          break;
         default:
           throw new Error(`Unknown node type: ${node.type}`);
       }
@@ -408,7 +427,7 @@ export class WorkflowEngine {
 
   private async executeIndicatorNode(node: WorkflowNode, input: any): Promise<any> {
     const indicatorType = node.type.toLowerCase();
-    const apiUrl = `http://localhost:8000/api/indicators/${indicatorType}`;
+    const apiUrl = `http://localhost:8000/indicators/${indicatorType}`;
     
     const response = await axios.post(apiUrl, input, {
       headers: { 'Content-Type': 'application/json' },
@@ -420,7 +439,7 @@ export class WorkflowEngine {
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
     const action = node.data.action || 'funds';
-    const apiUrl = `http://localhost:8000/api/dhan/${action}`;
+    const apiUrl = `http://localhost:8000/dhan/${action}`;
     
     const response = await axios.post(apiUrl, input, {
       headers: { 'Content-Type': 'application/json' },
@@ -432,7 +451,7 @@ export class WorkflowEngine {
 
   private async executeAlpacaNode(node: WorkflowNode, input: any): Promise<any> {
     const action = node.data.action || 'account';
-    const apiUrl = `http://localhost:8000/api/alpaca/${action}`;
+    const apiUrl = `http://localhost:8000/alpaca/${action}`;
     
     const response = await axios.post(apiUrl, input, {
       headers: { 'Content-Type': 'application/json' },
@@ -444,7 +463,7 @@ export class WorkflowEngine {
 
   private async executeMarketNode(node: WorkflowNode, input: any): Promise<any> {
     const action = node.data.action || 'quote';
-    const apiUrl = `http://localhost:8000/api/market/${action}`;
+    const apiUrl = `http://localhost:8000/market/${action}`;
     
     const response = await axios.post(apiUrl, input, {
       headers: { 'Content-Type': 'application/json' },
@@ -469,7 +488,7 @@ export class WorkflowEngine {
     }));
 
     // Call the comparator API
-    const apiUrl = `http://localhost:8000/api/comparator/if`;
+    const apiUrl = `http://localhost:8000/comparator/if`;
     
     const response = await axios.post(apiUrl, {
       conditions: resolvedConditions
@@ -499,7 +518,7 @@ export class WorkflowEngine {
     }));
 
     // Call the comparator API
-    const apiUrl = `http://localhost:8000/api/comparator/switch`;
+    const apiUrl = `http://localhost:8000/comparator/switch`;
     
     const response = await axios.post(apiUrl, {
       inputValue: resolvedInputValue,
@@ -534,6 +553,77 @@ export class WorkflowEngine {
         timestamp: new Date().toISOString()
       }
     };
+  }
+
+  private async executeWebhookNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'send';
+    const apiUrl = `http://localhost:8000/webhooks/${action}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeHttpNode(node: WorkflowNode, input: any): Promise<any> {
+    const apiUrl = `http://localhost:8000/http/request`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'send';
+    const apiUrl = `http://localhost:8000/gmail/${action}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeFinnhubNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'quote';
+    const apiUrl = `http://localhost:8000/finnhub/${action}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeYahooFinanceNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'quote';
+    const apiUrl = `http://localhost:8000/yahoofinance/${action}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeWhatsappNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'send';
+    const apiUrl = `http://localhost:8000/whatsapp/${action}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
   }
 
   private resolveValue(value: any, context: any): any {

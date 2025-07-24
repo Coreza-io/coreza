@@ -59,8 +59,9 @@ class WorkflowScheduler {
 
     try {
       const job = schedule.scheduleJob(cronExpression, async () => {
-        console.log(`🚀 Executing scheduled workflow: ${workflowId}`);
+        console.log(`🚀 Executing scheduled workflow: ${workflowId} at ${new Date().toISOString()}`);
         
+        let runId = null;
         try {
           // Create workflow run
           const { data: run, error: runError } = await supabase
@@ -74,20 +75,45 @@ class WorkflowScheduler {
             .single();
 
           if (runError) {
-            console.error(`Failed to create run for workflow ${workflowId}:`, runError);
+            console.error(`❌ Failed to create run for workflow ${workflowId}:`, runError);
+            // Log to scheduler error tracking if we add it later
             return;
           }
 
-          // Execute workflow
-          const result = await executeWorkflow(run.id, nodes, edges);
+          runId = run.id;
+          console.log(`📋 Created workflow run ${runId} for scheduled workflow ${workflowId}`);
+
+          // Execute workflow with timeout protection
+          const executionPromise = executeWorkflow(run.id, nodes, edges);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Workflow execution timeout (10 minutes)')), 10 * 60 * 1000)
+          );
+
+          const result = await Promise.race([executionPromise, timeoutPromise]) as any;
           
           if (result.success) {
-            console.log(`✅ Scheduled workflow ${workflowId} completed successfully`);
+            console.log(`✅ Scheduled workflow ${workflowId} (run ${runId}) completed successfully`);
           } else {
-            console.error(`❌ Scheduled workflow ${workflowId} failed:`, result.error);
+            console.error(`❌ Scheduled workflow ${workflowId} (run ${runId}) failed:`, result.error);
           }
         } catch (error) {
-          console.error(`Error executing scheduled workflow ${workflowId}:`, error);
+          console.error(`💥 Critical error executing scheduled workflow ${workflowId}:`, error);
+          
+          // Update run status to failed if we have a runId
+          if (runId) {
+            try {
+              await supabase
+                .from('workflow_runs')
+                .update({
+                  status: 'failed',
+                  completed_at: new Date().toISOString(),
+                  error_message: error.message || 'Unknown scheduler error'
+                })
+                .eq('id', runId);
+            } catch (updateError) {
+              console.error(`Failed to update failed run ${runId}:`, updateError);
+            }
+          }
         }
       });
 

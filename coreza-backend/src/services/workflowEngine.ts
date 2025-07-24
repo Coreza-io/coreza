@@ -465,14 +465,62 @@ export class WorkflowEngine {
       }
     }
     
+    // Apply field mapping for frontend -> backend compatibility
+    const mappedParams = this.mapIndicatorFields(indicatorType, resolvedParams);
+    
     // Merge node configuration with input data
     // Node parameters take precedence over input data
     const combinedInput = {
       ...input,
-      ...resolvedParams
+      ...mappedParams
     };
     
     return await IndicatorService.calculate(indicatorType, combinedInput);
+  }
+
+  private mapIndicatorFields(indicatorType: string, params: any): any {
+    const mappedParams = { ...params };
+    
+    switch (indicatorType) {
+      case 'ema':
+      case 'rsi':
+        // Map 'window' to 'period' for EMA and RSI
+        if (mappedParams.window !== undefined) {
+          mappedParams.period = mappedParams.window;
+          delete mappedParams.window;
+        }
+        break;
+        
+      case 'macd':
+        // Map MACD field names
+        if (mappedParams.fast_length !== undefined) {
+          mappedParams.fastPeriod = mappedParams.fast_length;
+          delete mappedParams.fast_length;
+        }
+        if (mappedParams.slow_length !== undefined) {
+          mappedParams.slowPeriod = mappedParams.slow_length;
+          delete mappedParams.slow_length;
+        }
+        if (mappedParams.signal_length !== undefined) {
+          mappedParams.signalPeriod = mappedParams.signal_length;
+          delete mappedParams.signal_length;
+        }
+        break;
+        
+      case 'bb':
+        // Map Bollinger Bands field names
+        if (mappedParams.std_dev_multiplier !== undefined) {
+          mappedParams.stdDev = mappedParams.std_dev_multiplier;
+          delete mappedParams.std_dev_multiplier;
+        }
+        break;
+        
+      // ADX and Stochastic already use correct field names
+      default:
+        break;
+    }
+    
+    return mappedParams;
   }
 
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {

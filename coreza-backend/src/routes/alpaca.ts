@@ -35,13 +35,19 @@ router.get('/credentials', async (req, res, next) => {
 });
 
 // Helper function to get user credentials
-const getUserCredentials = async (userId: string, service: string) => {
-  const { data, error } = await supabase
+const getUserCredentials = async (userId: string, service: string, credentialId?: string) => {
+  let query = supabase
     .from('user_credentials')
     .select('client_json, token_json')
     .eq('user_id', userId)
-    .eq('service_type', service)
-    .maybeSingle();
+    .eq('service_type', service);
+
+  // If credentialId is provided, filter by name or id
+  if (credentialId) {
+    query = query.or(`name.eq.${credentialId},id.eq.${credentialId}`);
+  }
+
+  const { data, error } = await query.maybeSingle();
     
   if (error) {
     throw createError(`Database error: ${error.message}`, 500);
@@ -292,10 +298,10 @@ router.post('/:operation', async (req, res, next) => {
       return res.status(400).json({ error: 'user_id and credential_id are required' });
     }
 
-    const credentials = await getUserCredentials(user_id, 'alpaca');
+    const credentials = await getUserCredentials(user_id, 'alpaca', credential_id);
     const alpaca = new Alpaca({
       key: credentials.client_json.api_key,
-      secret: credentials.client_json.secret_key,
+      secret: credentials.client_json.api_secret,
       paper: true
     });
 
@@ -316,23 +322,25 @@ router.post('/:operation', async (req, res, next) => {
       case 'cancel_orders':
         result = await alpaca.cancelAllOrders();
         break;
+      case 'get_candle':
       case 'get_historical_bars':
-        const { symbol, interval, bars } = req.body;
+        const { symbol, interval, lookback } = req.body;
         
-        if (!symbol || !interval || !bars) {
-          return res.status(400).json({ error: 'symbol, interval, and bars are required for historical bars' });
+        if (!symbol) {
+          return res.status(400).json({ error: 'symbol is required for historical bars' });
         }
 
         const timeframe = interval === '1Min' ? '1Min' : interval === '5Min' ? '5Min' : '1Day';
+        const barsCount = parseInt(lookback || '100');
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - (bars || 100));
+        startDate.setDate(endDate.getDate() - Math.max(barsCount, 30)); // Ensure we get enough data
 
         const barsData = await alpaca.getBarsV2(symbol, {
           start: startDate.toISOString(),
           end: endDate.toISOString(),
           timeframe: timeframe,
-          limit: bars || 100
+          limit: barsCount
         });
 
         const candles = [];
@@ -350,7 +358,7 @@ router.post('/:operation', async (req, res, next) => {
         return res.json({
           symbol,
           interval: timeframe,
-          candles: candles.slice(-bars)
+          candles: candles.slice(-barsCount)
         });
       case 'place_order':
         const { symbol: orderSymbol, side, qty, type, time_in_force } = req.body;

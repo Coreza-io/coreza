@@ -15,4 +15,11 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey, 
   }
 });
 
+// Alpaca Configuration - Paper Trading URLs (Public)
+export const ALPACA_CONFIG = {
+  PAPER_URL: 'https://paper-api.alpaca.markets',
+  DATA_URL: 'https://data.alpaca.markets',
+  // API keys will be loaded from Supabase secrets
+};
+
 export default supabase;

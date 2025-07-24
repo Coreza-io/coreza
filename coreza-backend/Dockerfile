@@ -3,11 +3,20 @@ FROM python:3.10-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies including TA-Lib
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
+    wget \
+    && wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib/ \
+    && ./configure --prefix=/usr \
+    && make \
+    && make install \
+    && cd .. \
+    && rm -rf ta-lib* \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies

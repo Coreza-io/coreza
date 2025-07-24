@@ -3,7 +3,7 @@
 # Container resource monitoring script
 set -e
 
-CONTAINER_NAME="coreza-backend-node"
+CONTAINER_NAME="coreza-backend"
 ALERT_CPU_THRESHOLD=80
 ALERT_MEMORY_THRESHOLD=80
 LOG_FILE="/tmp/container-monitor.log"

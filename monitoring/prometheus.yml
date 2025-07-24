@@ -11,9 +11,9 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'coreza-backend-node'
+  - job_name: 'coreza-backend'
     static_configs:
-      - targets: ['coreza-backend-node:8000']
+      - targets: ['coreza-backend:8000']
     metrics_path: '/metrics'
     scrape_interval: 30s
 

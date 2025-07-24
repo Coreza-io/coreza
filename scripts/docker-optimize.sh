@@ -14,7 +14,7 @@ echo -e "${GREEN}🐳 Coreza Backend - Docker Optimization Script${NC}"
 # =============================================================================
 # Configuration
 # =============================================================================
-IMAGE_NAME="coreza-backend-node"
+IMAGE_NAME="coreza-backend"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE_NAME="$IMAGE_NAME:$IMAGE_TAG"
 REGISTRY="${REGISTRY:-}"
@@ -54,7 +54,7 @@ build_image() {
         --tag "$FULL_IMAGE_NAME" \
         --build-arg NODE_VERSION=18-alpine \
         --build-arg BUILDKIT_INLINE_CACHE=1 \
-        -f coreza-backend-node/Dockerfile \
+        -f coreza-backend/Dockerfile \
         .
     
     print_success "Image built: $FULL_IMAGE_NAME"

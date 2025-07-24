@@ -68,7 +68,7 @@ check_backend() {
 run_benchmark() {
     print_step "Running Performance Benchmark"
     
-    cd coreza-backend-node
+    cd coreza-backend
     
     NODE_BACKEND_URL="$NODE_BACKEND_URL" \
     TEST_DURATION=$((TEST_DURATION * 1000)) \
@@ -89,7 +89,7 @@ run_benchmark() {
 run_memory_profiling() {
     print_step "Running Memory Profiling"
     
-    cd coreza-backend-node
+    cd coreza-backend
     
     # Start memory profiler in background
     node tests/performance/memory-profiler.js \
@@ -112,7 +112,7 @@ run_memory_profiling() {
 run_stress_test() {
     print_step "Running Stress Testing"
     
-    cd coreza-backend-node
+    cd coreza-backend
     
     BACKEND_URL="$NODE_BACKEND_URL" \
     MAX_CONCURRENCY=50 \
@@ -131,7 +131,7 @@ run_stress_test() {
 run_artillery_tests() {
     print_step "Running Artillery Load Tests"
     
-    cd coreza-backend-node
+    cd coreza-backend
     
     # Update artillery config for current test
     sed -i.bak "s|http://localhost:8000|$NODE_BACKEND_URL|g" tests/load/artillery-config.ts

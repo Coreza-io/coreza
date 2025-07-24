@@ -4,12 +4,12 @@ services:
   # =============================================================================
   # Node.js Backend Service
   # =============================================================================
-  coreza-backend-node:
+  coreza-backend:
     build:
       context: .
-      dockerfile: coreza-backend-node/Dockerfile
+      dockerfile: coreza-backend/Dockerfile
       target: production
-    container_name: coreza-backend-node
+    container_name: coreza-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -74,12 +74,12 @@ services:
   # =============================================================================
   # Development Services (only for development)
   # =============================================================================
-  coreza-backend-node-dev:
+  coreza-backend-dev:
     build:
       context: .
-      dockerfile: coreza-backend-node/Dockerfile
+      dockerfile: coreza-backend/Dockerfile
       target: development
-    container_name: coreza-backend-node-dev
+    container_name: coreza-backend-dev
     ports:
       - "8000:8000"
       - "9229:9229"  # Debug port
@@ -91,8 +91,8 @@ services:
     networks:
       - coreza-network
     volumes:
-      - ./coreza-backend-node/src:/app/coreza-backend-node/src
-      - /app/coreza-backend-node/node_modules
+      - ./coreza-backend/src:/app/coreza-backend/src
+      - /app/coreza-backend/node_modules
     profiles:
       - development
 
@@ -152,7 +152,7 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl
       - ./logs/nginx:/var/log/nginx
     depends_on:
-      - coreza-backend-node
+      - coreza-backend
     networks:
       - coreza-network
     profiles:
@@ -170,7 +170,7 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - coreza-backend-node
+      - coreza-backend
     networks:
       - coreza-network
 

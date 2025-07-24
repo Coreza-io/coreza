@@ -90,19 +90,19 @@
       },
       "targets": [
         {
-          "expr": "nodejs_heap_size_total_bytes{job=\"coreza-backend-node\"}",
+          "expr": "nodejs_heap_size_total_bytes{job=\"coreza-backend\"}",
           "interval": "",
           "legendFormat": "Heap Total",
           "refId": "A"
         },
         {
-          "expr": "nodejs_heap_size_used_bytes{job=\"coreza-backend-node\"}",
+          "expr": "nodejs_heap_size_used_bytes{job=\"coreza-backend\"}",
           "interval": "",
           "legendFormat": "Heap Used",
           "refId": "B"
         },
         {
-          "expr": "nodejs_external_memory_bytes{job=\"coreza-backend-node\"}",
+          "expr": "nodejs_external_memory_bytes{job=\"coreza-backend\"}",
           "interval": "",
           "legendFormat": "External Memory",
           "refId": "C"

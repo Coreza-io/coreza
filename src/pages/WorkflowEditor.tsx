@@ -104,24 +104,35 @@ const WorkflowEditor = () => {
     [setEdges],
   );
 
-  // Memoized WorkflowExecutor instance
-  const workflowExecutor = useMemo(() => (
-    new WorkflowExecutor({
+  // Memoized WorkflowExecutor instance - only recreate when structure changes
+  const workflowExecutor = useMemo(() => {
+    if (nodes.length === 0) return null;
+    
+    return new WorkflowExecutor({
       nodes,
       edges,
       setNodes,
       setEdges,
       setExecutingNode,
       toast
-    })
-  ), [nodes, edges, setNodes, setEdges, setExecutingNode, toast]);
+    });
+  }, [nodes.length, edges.length, setNodes, setEdges, setExecutingNode, toast]);
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
+    if (!workflowExecutor) {
+      toast({
+        title: "Error",
+        description: "No workflow to execute",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsAutoExecuting(true);
     await workflowExecutor.executeAllNodes();
     setIsAutoExecuting(false);
-  }, [workflowExecutor]);
+  }, [workflowExecutor, toast]);
 
   // Handle node double click to execute
   // Double click to execute one node only (optional: show highlight/animation)

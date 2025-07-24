@@ -16,7 +16,6 @@ echo -e "${GREEN}🚀 Coreza Performance Testing Suite${NC}"
 # Configuration
 # =============================================================================
 NODE_BACKEND_URL="${NODE_BACKEND_URL:-http://localhost:8000}"
-PYTHON_BACKEND_URL="${PYTHON_BACKEND_URL:-http://localhost:8001}"
 TEST_DURATION="${TEST_DURATION:-300}" # 5 minutes
 MEMORY_PROFILE_DURATION="${MEMORY_PROFILE_DURATION:-300}" # 5 minutes
 RESULTS_DIR="${RESULTS_DIR:-./performance-results}"
@@ -53,8 +52,8 @@ setup_directories() {
     print_success "Created results directory: $REPORT_DIR"
 }
 
-# Check if backends are running
-check_backends() {
+# Check if backend is running
+check_backend() {
     print_step "Checking Backend Availability"
     
     # Check Node.js backend
@@ -62,15 +61,6 @@ check_backends() {
         print_success "Node.js backend is running at $NODE_BACKEND_URL"
     else
         print_error "Node.js backend is not responding at $NODE_BACKEND_URL"
-    fi
-    
-    # Check Python backend (optional for comparison)
-    if curl -f "$PYTHON_BACKEND_URL/health" >/dev/null 2>&1; then
-        print_success "Python backend is running at $PYTHON_BACKEND_URL"
-        COMPARE_WITH_PYTHON=true
-    else
-        print_info "Python backend not available - skipping comparison tests"
-        COMPARE_WITH_PYTHON=false
     fi
 }
 
@@ -81,7 +71,6 @@ run_benchmark() {
     cd coreza-backend-node
     
     NODE_BACKEND_URL="$NODE_BACKEND_URL" \
-    PYTHON_BACKEND_URL="$PYTHON_BACKEND_URL" \
     TEST_DURATION=$((TEST_DURATION * 1000)) \
     node tests/performance/benchmark.js > "$REPORT_DIR/benchmarks/benchmark-output.log" 2>&1
     
@@ -168,7 +157,6 @@ Generated: $(date)
 
 ## Test Configuration
 - Node.js Backend: $NODE_BACKEND_URL
-- Python Backend: $PYTHON_BACKEND_URL
 - Test Duration: ${TEST_DURATION}s
 - Memory Profile Duration: ${MEMORY_PROFILE_DURATION}s
 - Results Directory: $REPORT_DIR
@@ -262,8 +250,7 @@ main() {
     echo ""
     
     # Setup
-    setup_directories
-    check_backends
+    check_backend
     
     # Set cleanup trap
     trap cleanup EXIT

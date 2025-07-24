@@ -13,7 +13,6 @@ const path = require('path');
 // Configuration
 const CONFIG = {
   nodeBackend: process.env.NODE_BACKEND_URL || 'http://localhost:8000',
-  pythonBackend: process.env.PYTHON_BACKEND_URL || 'http://localhost:8001',
   testDuration: parseInt(process.env.TEST_DURATION) || 60000, // 1 minute
   concurrency: parseInt(process.env.CONCURRENCY) || 10,
   warmupRequests: parseInt(process.env.WARMUP_REQUESTS) || 50

@@ -272,13 +272,12 @@ export class AgentSystem {
   // Tool implementations
   private async executeWorkflowTool(params: any, context: any): Promise<any> {
     try {
-      const response = await axios.post(`http://localhost:8000/api/workflow/${context.userId}/${params.workflowId}/execute`, {
-        input_data: params.inputData || {}
-      });
+      const { WorkflowEngine } = await import('./workflowEngine');
+      const result = await WorkflowEngine.executeWorkflow(context.userId, params.workflowId, params.inputData || {});
       
       return {
         success: true,
-        runId: response.data.run_id,
+        runId: result.runId,
         message: 'Workflow execution started successfully'
       };
     } catch (error) {
@@ -338,33 +337,34 @@ export class AgentSystem {
 
   private async getMarketDataTool(params: any, context: any): Promise<any> {
     try {
-      const response = await axios.post('http://localhost:8000/api/market/quote', {
-        symbol: params.symbol,
-        exchange: params.exchange || 'NASDAQ'
+      const { DataService } = await import('./data');
+      const result = await DataService.execute('market', 'get_quote', {
+        symbol: params.symbol
       });
       
       return {
-        success: true,
-        data: response.data
+        success: result.success,
+        data: result.data
       };
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.error || error.message
+        error: error.message
       };
     }
   }
 
   private async calculateIndicatorTool(params: any, context: any): Promise<any> {
     try {
-      const response = await axios.post(`http://localhost:8000/api/indicators/${params.indicator}`, {
+      const { IndicatorService } = await import('./indicators');
+      const result = await IndicatorService.calculate(params.indicator, {
         symbol: params.symbol,
         period: params.period || 14
       });
       
       return {
         success: true,
-        data: response.data
+        data: result
       };
     } catch (error) {
       return {

@@ -1,137 +1,34 @@
 import express from 'express';
-import yahooFinance from 'yahoo-finance2';
-import { createError } from '../middleware/errorHandler';
+import { DataService } from '../services/data';
 
 const router = express.Router();
 
-// Get quote data
-router.get('/quote/:symbol', async (req, res, next) => {
+// Get candle data from Yahoo Finance
+router.post('/get-candle', async (req, res) => {
   try {
-    const { symbol } = req.params;
-    
-    const quote = await yahooFinance.quote(symbol);
-    
-    res.json({
-      symbol: quote.symbol,
-      price: quote.regularMarketPrice,
-      change: quote.regularMarketChange,
-      changePercent: quote.regularMarketChangePercent,
-      volume: quote.regularMarketVolume,
-      marketCap: quote.marketCap,
-      previousClose: quote.regularMarketPreviousClose,
-      open: quote.regularMarketOpen,
-      dayHigh: quote.regularMarketDayHigh,
-      dayLow: quote.regularMarketDayLow,
-      fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
-      fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    next(createError(`Failed to fetch quote for ${req.params.symbol}`, 400));
-  }
-});
+    const { ticker, interval = '1d', lookback = 100 } = req.body;
 
-// Get historical data
-router.get('/history/:symbol', async (req, res, next) => {
-  try {
-    const { symbol } = req.params;
-    const { period1, period2, interval = '1d' } = req.query;
-    
-    const options: any = {
-      period1: period1 ? new Date(period1 as string) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-      period2: period2 ? new Date(period2 as string) : new Date(),
-      interval
-    };
-    
-    const history = await yahooFinance.historical(symbol, options);
-    
-    res.json({
-      symbol,
+    if (!ticker) {
+      return res.status(400).json({ error: 'Ticker symbol is required' });
+    }
+
+    const result = await DataService.execute('market', 'get_candle', {
+      ticker,
       interval,
-      data: history.map(item => ({
-        date: item.date,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-        volume: item.volume,
-        adjClose: item.adjClose
-      }))
+      lookback
     });
-  } catch (error) {
-    next(createError(`Failed to fetch historical data for ${req.params.symbol}`, 400));
-  }
-});
 
-// Search symbols
-router.get('/search/:query', async (req, res, next) => {
-  try {
-    const { query } = req.params;
-    
-    const results = await yahooFinance.search(query);
-    
-    res.json({
-      query,
-      results: results.quotes?.map(quote => ({
-        symbol: quote.symbol,
-        shortname: quote.shortname,
-        longname: quote.longname,
-        exchange: quote.exchange,
-        type: quote.quoteType
-      })) || []
-    });
-  } catch (error) {
-    next(createError(`Failed to search for ${req.params.query}`, 400));
-  }
-});
+    if (!result.success) {
+      return res.status(result.error?.includes('not found') ? 404 : 500).json({ error: result.error });
+    }
 
-// Get market summary
-router.get('/summary', async (req, res, next) => {
-  try {
-    const indices = ['^GSPC', '^DJI', '^IXIC', '^RUT']; // S&P 500, Dow, Nasdaq, Russell 2000
-    const quotes = await Promise.all(
-      indices.map(async (symbol) => {
-        try {
-          const quote = await yahooFinance.quote(symbol);
-          return {
-            symbol: quote.symbol,
-            name: quote.shortName,
-            price: quote.regularMarketPrice,
-            change: quote.regularMarketChange,
-            changePercent: quote.regularMarketChangePercent
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
-    
-    res.json({
-      timestamp: new Date().toISOString(),
-      indices: quotes.filter(Boolean)
-    });
+    res.json(result.data);
   } catch (error) {
-    next(createError('Failed to fetch market summary', 500));
-  }
-});
-
-// Get trending symbols
-router.get('/trending', async (req, res, next) => {
-  try {
-    const trending = await yahooFinance.trendingSymbols('US');
-    
-    res.json({
-      region: 'US',
-      trending: trending.quotes?.map(quote => ({
-        symbol: quote.symbol,
-        name: quote.shortName,
-        price: quote.regularMarketPrice,
-        change: quote.regularMarketChange,
-        changePercent: quote.regularMarketChangePercent
-      })) || []
+    console.error('Market data API error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch market data',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
-  } catch (error) {
-    next(createError('Failed to fetch trending symbols', 500));
   }
 });
 

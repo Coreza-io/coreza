@@ -1,64 +1,92 @@
 import express from 'express';
-import yahooFinance from 'yahoo-finance2';
+import { DataService } from '../services/data';
 
 const router = express.Router();
 
-// Get candle data from Yahoo Finance
-router.post('/get-candle', async (req, res) => {
+// Get quote data
+router.get('/quote/:symbol', async (req, res, next) => {
   try {
-    const { ticker, interval = '1d', lookback = 100 } = req.body;
+    const { symbol } = req.params;
+    
+    const result = await DataService.execute('yahoofinance', 'get_quote', { symbol });
 
-    if (!ticker) {
-      return res.status(400).json({ error: 'Ticker symbol is required' });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
 
-    // Calculate the start date based on lookback
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    // Calculate days to go back based on interval and lookback
-    let daysBack = parseInt(lookback);
-    if (interval === '1m' || interval === '5m' || interval === '15m' || interval === '60m') {
-      daysBack = Math.max(7, Math.ceil(daysBack / (6.5 * 60))); // Trading hours approximation
-    }
-    
-    startDate.setDate(endDate.getDate() - daysBack);
-
-    const queryOptions = {
-      period1: startDate,
-      period2: endDate,
-      interval: interval as any
-    };
-
-    const result = await yahooFinance.historical(ticker, queryOptions);
-    
-    if (!result || result.length === 0) {
-      return res.status(404).json({ error: 'No data found for the given ticker' });
-    }
-
-    // Transform data to match expected format
-    const candleData = result.slice(-parseInt(lookback)).map(item => ({
-      timestamp: item.date.getTime(),
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-      volume: item.volume
-    }));
-
-    res.json({
-      ticker,
-      interval,
-      data: candleData,
-      count: candleData.length
-    });
-
+    res.json(result.data);
   } catch (error) {
-    console.error('Yahoo Finance API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch data from Yahoo Finance',
-      details: error instanceof Error ? error.message : 'Unknown error'
+    next(error);
+  }
+});
+
+// Get historical data
+router.get('/history/:symbol', async (req, res, next) => {
+  try {
+    const { symbol } = req.params;
+    const { period1, period2, interval = '1d' } = req.query;
+    
+    const result = await DataService.execute('yahoofinance', 'get_history', {
+      symbol,
+      period1: period1 as string,
+      period2: period2 as string,
+      interval: interval as string
     });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Search symbols
+router.get('/search/:query', async (req, res, next) => {
+  try {
+    const { query } = req.params;
+    
+    const result = await DataService.execute('yahoofinance', 'search', { query });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get market summary
+router.get('/summary', async (req, res, next) => {
+  try {
+    const result = await DataService.execute('yahoofinance', 'get_summary', {});
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    res.json(result.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get trending symbols
+router.get('/trending', async (req, res, next) => {
+  try {
+    const result = await DataService.execute('yahoofinance', 'get_trending', {});
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    res.json(result.data);
+  } catch (error) {
+    next(error);
   }
 });
 

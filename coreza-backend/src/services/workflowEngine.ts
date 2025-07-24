@@ -368,7 +368,7 @@ export class WorkflowEngine {
           result = await this.executeSwitchNode(node, nodeInput);
           break;
         case 'Scheduler':
-          result = await this.executeIndicatorNode(node, nodeInput);
+          result = await this.executeSchedulerNode(node, nodeInput);
           break;
         case 'trigger':
           result = await this.executeSchedulerNode(node, nodeInput);

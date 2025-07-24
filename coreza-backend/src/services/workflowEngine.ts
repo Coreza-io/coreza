@@ -108,7 +108,7 @@ export class WorkflowEngine {
         throw new Error('Circular dependency detected in workflow');
       }
 
-      console.log(`🚀 Starting queue-based workflow execution for run ${this.runId}`);
+      console.log(`🚀 [WORKFLOW] Starting queue-based workflow execution for run ${this.runId}`);
       
       // Execute nodes using queue-based approach
       await this.executeAllNodes();
@@ -173,18 +173,20 @@ export class WorkflowEngine {
         // Re-queue the node for later execution
         queue.push(nodeId);
         retryCount++;
-        console.log(`⏳ Dependencies not satisfied for ${nodeId}, re-queuing (retry ${retryCount})`);
+        console.log(`⏳ [WORKFLOW] Dependencies not satisfied for ${nodeId} (${node.type}), re-queuing (retry ${retryCount}) - Run: ${this.runId}`);
         continue;
       }
 
       try {
-        console.log(`🔄 Executing node: ${nodeId} (${node.type})`);
+        console.log(`🔄 [WORKFLOW] Executing node: ${nodeId} (${node.type}) - Run: ${this.runId}`);
         await this.executeNode(node);
         this.executedNodes.add(nodeId);
+        console.log(`✅ [WORKFLOW] Node ${nodeId} (${node.type}) completed successfully - Run: ${this.runId}`);
         
         // Handle conditional routing for branching nodes
         const isBranchingNode = this.conditionalMap.has(nodeId);
         if (isBranchingNode) {
+          console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
           await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
         } else {
           // Add downstream nodes to queue for non-branching nodes
@@ -193,7 +195,7 @@ export class WorkflowEngine {
         
         retryCount = 0; // Reset retry count on successful execution
       } catch (error) {
-        console.error(`❌ Failed to execute node ${nodeId}:`, error);
+        console.error(`❌ [WORKFLOW] Failed to execute node ${nodeId} (${node.type}) - Run: ${this.runId}:`, error);
         throw error;
       }
     }

@@ -523,6 +523,22 @@ export class WorkflowEngine {
     return mappedParams;
   }
 
+  private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    const resolvedParams: any = {};
+    
+    // Resolve all node.values parameters, excluding operational fields like credential_id and operation
+    if (node.values) {
+      for (const [key, value] of Object.entries(node.values)) {
+        // Skip operational fields that are handled separately
+        if (key !== 'credential_id' && key !== 'operation') {
+          resolvedParams[key] = this.resolveValue(value, input);
+        }
+      }
+    }
+    
+    return resolvedParams;
+  }
+
   private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'get_account';
     const credential_id = node.values?.credential_id;
@@ -530,12 +546,16 @@ export class WorkflowEngine {
     if (!credential_id) {
       throw new Error('Dhan credential_id is required');
     }
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
     
     const result = await BrokerService.execute('dhan', { 
       user_id: this.userId,
       credential_id,
       operation,
-      ...input 
+      ...input,
+      ...resolvedParams
     });
     
     if (!result.success) {
@@ -552,12 +572,16 @@ export class WorkflowEngine {
     if (!credential_id) {
       throw new Error('Alpaca credential_id is required');
     }
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
     
     const result = await BrokerService.execute('alpaca', { 
       user_id: this.userId,
       credential_id,
       operation,
-      ...input 
+      ...input,
+      ...resolvedParams
     });
     
     if (!result.success) {
@@ -686,7 +710,15 @@ export class WorkflowEngine {
 
   private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'send';
-    const result = await CommunicationService.execute('gmail', operation, input);
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
+    const combinedInput = {
+      ...input,
+      ...resolvedParams
+    };
+    
+    const result = await CommunicationService.execute('gmail', operation, combinedInput);
     
     if (!result.success) {
       throw new Error(result.error || 'Gmail operation failed');
@@ -697,7 +729,15 @@ export class WorkflowEngine {
 
   private async executeFinnhubNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'get_quote';
-    const result = await DataService.execute('finnhub', operation, input);
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
+    const combinedInput = {
+      ...input,
+      ...resolvedParams
+    };
+    
+    const result = await DataService.execute('finnhub', operation, combinedInput);
     
     if (!result.success) {
       throw new Error(result.error || 'FinnHub operation failed');
@@ -708,7 +748,15 @@ export class WorkflowEngine {
 
   private async executeYahooFinanceNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'get_quote';
-    const result = await DataService.execute('yahoofinance', operation, input);
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
+    const combinedInput = {
+      ...input,
+      ...resolvedParams
+    };
+    
+    const result = await DataService.execute('yahoofinance', operation, combinedInput);
     
     if (!result.success) {
       throw new Error(result.error || 'Yahoo Finance operation failed');
@@ -719,7 +767,15 @@ export class WorkflowEngine {
 
   private async executeWhatsappNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'send';
-    const result = await CommunicationService.execute('whatsapp', operation, input);
+
+    // Resolve and merge node parameters with input data
+    const resolvedParams = this.resolveNodeParameters(node, input);
+    const combinedInput = {
+      ...input,
+      ...resolvedParams
+    };
+    
+    const result = await CommunicationService.execute('whatsapp', operation, combinedInput);
     
     if (!result.success) {
       throw new Error(result.error || 'WhatsApp operation failed');

@@ -11,7 +11,7 @@ import { workflowScheduler } from './services/scheduler';
 import indicatorRoutes from './routes/indicators';
 import alpacaRoutes from './routes/alpaca';
 import marketRoutes from './routes/market';
-import workflowRoutes from './routes/workflow';
+import credentialsRoutes from './routes/credentials';
 import dhanRoutes from './routes/dhan';
 import gmailRoutes from './routes/gmail';
 import whatsappRoutes from './routes/whatsapp';
@@ -44,7 +44,7 @@ app.get('/health', (req, res) => {
 app.use('/api/indicators', indicatorRoutes);
 app.use('/api/alpaca', alpacaRoutes);
 app.use('/api/market', marketRoutes);
-app.use('/api/workflow', workflowRoutes);
+app.use('/api/credentials', credentialsRoutes);
 app.use('/api/dhan', dhanRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/whatsapp', whatsappRoutes);

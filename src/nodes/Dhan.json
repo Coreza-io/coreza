@@ -33,7 +33,7 @@
       "placeholder": "Your Dhan API Key"
     }
   ],
-  "authAction": { "url": "/dhan/auth-url", "method": "POST" },
+  "authAction": { "url": "/dhan/auth", "method": "POST" },
   "action": {
     "url": "/dhan/{{operation}}",
     "method": "{{method}}"

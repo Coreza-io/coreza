@@ -119,6 +119,9 @@ export class WorkflowEngine {
         case 'alpaca':
           result = await this.executeAlpacaNode(node, nodeInput);
           break;
+        case 'dhan':
+          result = await this.executeDhanNode(node, nodeInput);
+          break;
         case 'market':
           result = await this.executeMarketNode(node, nodeInput);
           break;
@@ -223,6 +226,18 @@ export class WorkflowEngine {
   private async executeIndicatorNode(node: WorkflowNode, input: any): Promise<any> {
     const indicatorType = node.type.toLowerCase();
     const apiUrl = `http://localhost:8000/api/indicators/${indicatorType}`;
+    
+    const response = await axios.post(apiUrl, input, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
+    const action = node.data.action || 'funds';
+    const apiUrl = `http://localhost:8000/api/dhan/${action}`;
     
     const response = await axios.post(apiUrl, input, {
       headers: { 'Content-Type': 'application/json' },

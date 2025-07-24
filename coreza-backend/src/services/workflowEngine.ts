@@ -11,6 +11,7 @@ import { ComparatorService } from './comparator';
 interface WorkflowNode {
   id: string;
   type: string;
+  category: string;
   data: any;
   values?: any;
   position: { x: number; y: number };
@@ -333,31 +334,16 @@ export class WorkflowEngine {
       
       // Execute based on node type
       let result;
-      switch (node.type) {
-        case 'input':
+      switch (node.category) {
+        case 'IO':
           result = await this.executeInputNode(node, nodeInput);
           break;
-        case 'EMA':
+        case 'Indicators':
           result = await this.executeIndicatorNode(node, nodeInput);
           break;
-        case 'RSI':
-          result = await this.executeIndicatorNode(node, nodeInput);
-          break;
-        case 'macd':
-        case 'bollinger':
-        case 'adx':
-        case 'stochastic':
-        case 'ichimoku':
-          result = await this.executeIndicatorNode(node, nodeInput);
-          break;
-        case 'Alpaca':
+        case 'Broker':
           result = await this.executeAlpacaNode(node, nodeInput);
-          break;
-        case 'dhan':
-        case 'Dhan':
-          result = await this.executeDhanNode(node, nodeInput);
-          break;
-        case 'market':
+          break;  
         case 'Market':
           result = await this.executeMarketNode(node, nodeInput);
           break;
@@ -373,30 +359,24 @@ export class WorkflowEngine {
         case 'trigger':
           result = await this.executeSchedulerNode(node, nodeInput);
           break;
-        case 'visualize':
         case 'Visualize':
           result = await this.executeVisualizeNode(node, nodeInput);
           break;
         case 'webhook':
           result = await this.executeWebhookNode(node, nodeInput);
           break;
-        case 'http':
         case 'httprequest':
           result = await this.executeHttpNode(node, nodeInput);
           break;
-        case 'gmail':
         case 'Gmail':
           result = await this.executeGmailNode(node, nodeInput);
           break;
-        case 'finnhub':
         case 'FinnHub':
           result = await this.executeFinnhubNode(node, nodeInput);
           break;
-        case 'yahoofinance':
         case 'YahooFinance':
           result = await this.executeYahooFinanceNode(node, nodeInput);
           break;
-        case 'whatsapp':
         case 'WhatsApp':
           result = await this.executeWhatsappNode(node, nodeInput);
           break;

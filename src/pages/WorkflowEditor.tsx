@@ -164,6 +164,7 @@ const WorkflowEditor = () => {
     const minimalNodes = nodes.map((n) => ({
       id: n.id,
       type: n.type,
+      category: (n.data.definition as any)?.category,
       position: n.position,
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,

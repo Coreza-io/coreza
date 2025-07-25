@@ -1,6 +1,6 @@
 import axios from 'axios';
 import fs from 'fs';
-import csv from 'csv-parser';
+import * as csv from 'csv-parser';
 import path from 'path';
 import { BaseBrokerService } from './BaseBrokerService';
 import { BrokerInput } from './types';

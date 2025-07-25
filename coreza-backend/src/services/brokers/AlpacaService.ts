@@ -1,4 +1,4 @@
-import Alpaca from '@alpacahq/alpaca-trade-api';
+import axios from 'axios';
 import { BaseBrokerService } from './BaseBrokerService';
 import { BrokerInput } from './types';
 
@@ -8,95 +8,104 @@ export class AlpacaService extends BaseBrokerService {
   protected handlers = {
     get_account: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
+      
+      // Use direct API call since we don't have the Alpaca SDK
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const response = await axios.get(`${baseUrl}/v2/account`, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+        }
       });
-      return await client.getAccount();
+      return response.data;
     },
 
     get_positions: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
+      
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const response = await axios.get(`${baseUrl}/v2/positions`, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+        }
       });
-      return await client.getPositions();
+      return response.data;
     },
 
     get_orders: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
+      
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const response = await axios.get(`${baseUrl}/v2/orders?status=all&limit=100`, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+        }
       });
-      return await client.getOrders({ status: 'all', limit: 100 });
+      return response.data;
     },
 
     cancel_orders: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
+      
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const response = await axios.delete(`${baseUrl}/v2/orders`, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+        }
       });
-      return await client.cancelAllOrders();
+      return response.data;
     },
 
     get_candle: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
-      });
-
+      
       const { symbol, timeframe = '1Day', start, end, limit = 100 } = input;
       if (!symbol) throw new Error('Symbol is required for get_candle operation');
 
-      return await client.getBarsV2(symbol, {
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const params = new URLSearchParams({
+        symbols: symbol,
         timeframe,
-        start,
-        end,
-        limit,
+        limit: limit.toString(),
+        ...(start && { start }),
+        ...(end && { end }),
       });
+
+      const response = await axios.get(`${baseUrl}/v2/stocks/bars?${params}`, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+        }
+      });
+      return response.data;
     },
 
     place_order: async (input: BrokerInput) => {
       const { api_key, secret_key, paper_trading } = await this.getCredentials(input.user_id, input.credential_id);
-      const client = new Alpaca({
-        credentials: {
-          key: api_key,
-          secret: secret_key,
-        },
-        paper: paper_trading || false,
-      });
-
+      
       const { symbol, qty, side, type = 'market', time_in_force = 'day' } = input;
       if (!symbol || !qty || !side) {
         throw new Error('Symbol, quantity, and side are required for place_order operation');
       }
 
-      return await client.createOrder({
+      const baseUrl = paper_trading ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
+      const response = await axios.post(`${baseUrl}/v2/orders`, {
         symbol,
         qty,
         side,
         type,
         time_in_force,
+      }, {
+        headers: {
+          'APCA-API-KEY-ID': api_key,
+          'APCA-API-SECRET-KEY': secret_key,
+          'Content-Type': 'application/json',
+        }
       });
+      return response.data;
     },
   };
 }

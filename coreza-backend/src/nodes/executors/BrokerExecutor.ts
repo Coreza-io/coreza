@@ -1,5 +1,5 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
-import { BrokerService } from '../../services/brokers';
+import { getBrokerService } from '../../services/brokers';
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = 'Broker';
@@ -22,7 +22,15 @@ export class BrokerExecutor implements INodeExecutor {
         context.resolveNodeParameters(node, input) : 
         { ...node.values, ...input };
       
-      const result = await BrokerService.execute(broker, { 
+      const brokerService = getBrokerService(broker);
+      if (!brokerService) {
+        return {
+          success: false,
+          error: `Unsupported broker: ${broker}`
+        };
+      }
+
+      const result = await brokerService.execute({ 
         user_id: context?.userId,
         credential_id,
         operation,

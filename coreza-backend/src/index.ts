@@ -28,6 +28,7 @@ import schedulerRoutes from './routes/scheduler';
 import comparatorRoutes from './routes/comparator';
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
+import { initializeBrokerServices } from './services/brokers';
 
 
 const app = express();
@@ -99,8 +100,9 @@ async function startServer() {
       console.log('✅ Supabase connected successfully');
     }
 
-    // Initialize node executors
-    initializeNodeExecutors();
+  // Initialize node executors and broker services
+  initializeNodeExecutors();
+  initializeBrokerServices();
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();

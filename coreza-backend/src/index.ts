@@ -28,7 +28,7 @@ import schedulerRoutes from './routes/scheduler';
 import comparatorRoutes from './routes/comparator';
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
-import { initializeBrokerServices } from './services/brokers';
+import { initializeBrokerServices } from './services/brokers/index';
 
 
 const app = express();

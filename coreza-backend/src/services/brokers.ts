@@ -81,6 +81,7 @@ export class BrokerService {
   }
 }
 
-// Re-export everything from the new broker system  
-export { initializeBrokerServices, getBrokerService, getAllRegisteredBrokers } from './brokers';
+// Note: initializeBrokerServices should be imported directly from './brokers/index'
+// to avoid circular imports. Other functions are re-exported for convenience.
+export { getBrokerService, getAllRegisteredBrokers } from './brokers';
 export { BrokerInput, BrokerResult, IBrokerService } from './brokers/types';

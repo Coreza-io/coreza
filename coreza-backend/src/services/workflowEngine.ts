@@ -1,7 +1,6 @@
 import { supabase } from '../config/supabase';
 import axios from 'axios';
 import { IndicatorService } from './indicators';
-import { BrokerService } from './brokers';
 import { CommunicationService } from './communications';
 import { DataService } from './data';
 import { HttpService } from './http';
@@ -490,58 +489,6 @@ export class WorkflowEngine {
   }
 
 
-  private async executeBrokerNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation;
-    const broker = node.values?.type;
-    const credential_id = node.values?.credential_id;
-    
-    if (!credential_id) {
-      throw new Error(`${broker} credential_id is required`);
-    }
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    
-    const result = await BrokerService.execute(broker, { 
-      user_id: this.userId,
-      credential_id,
-      operation,
-      ...input,
-      ...resolvedParams
-    });
-    
-    if (!result.success) {
-      throw new Error(result.error || `${broker} ${operation} operation failed`);
-    }
-    
-    return result.data;
-  }
-
-  private async executeAlpacaNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'get_account';
-    const credential_id = node.values?.credential_id;
-    
-    if (!credential_id) {
-      throw new Error('Alpaca credential_id is required');
-    }
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    
-    const result = await BrokerService.execute('alpaca', { 
-      user_id: this.userId,
-      credential_id,
-      operation,
-      ...input,
-      ...resolvedParams
-    });
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Alpaca operation failed');
-    }
-    
-    return result.data;
-  }
 
   private async executeMarketNode(node: WorkflowNode, input: any): Promise<any> {
     const operation = node.values?.operation || 'get_quote';

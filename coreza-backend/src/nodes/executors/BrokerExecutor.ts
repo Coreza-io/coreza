@@ -1,5 +1,5 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
-import { getBrokerService } from '../../services/brokers';
+import { getBrokerService } from '../../services/brokers/registry';
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = 'Broker';

@@ -201,7 +201,7 @@ class DhanService extends BaseBrokerService {
         case 'get_orders':
           result = await this.makeRequest(`${this.baseUrl}/order`, { headers });
           break;
-        case 'get_historical_bars':
+        case 'get_candle':
           result = await this.getHistoricalBars(input, headers);
           break;
         default:

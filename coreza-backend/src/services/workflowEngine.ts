@@ -342,7 +342,7 @@ export class WorkflowEngine {
           result = await this.executeIndicatorNode(node, nodeInput);
           break;
         case 'Broker':
-          result = await this.executeAlpacaNode(node, nodeInput);
+          result = await this.executeBrokerNode(node, nodeInput);
           break;  
         case 'Market':
           result = await this.executeMarketNode(node, nodeInput);
@@ -496,18 +496,19 @@ export class WorkflowEngine {
   }
 
 
-  private async executeDhanNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'get_account';
+  private async executeBrokerNode(node: WorkflowNode, input: any): Promise<any> {
+    const operation = node.values?.operation;
+    const broker = node.values?.type;
     const credential_id = node.values?.credential_id;
     
     if (!credential_id) {
-      throw new Error('Dhan credential_id is required');
+      throw new Error(`${broker} credential_id is required`);
     }
 
     // Resolve and merge node parameters with input data
     const resolvedParams = this.resolveNodeParameters(node, input);
     
-    const result = await BrokerService.execute('dhan', { 
+    const result = await BrokerService.execute(broker, { 
       user_id: this.userId,
       credential_id,
       operation,
@@ -516,7 +517,7 @@ export class WorkflowEngine {
     });
     
     if (!result.success) {
-      throw new Error(result.error || 'Dhan operation failed');
+      throw new Error(result.error || `${broker} ${operation} operation failed`);
     }
     
     return result.data;

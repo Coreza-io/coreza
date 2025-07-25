@@ -18,9 +18,11 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       // Resolve and merge node parameters with input data
+      console.log(`🔧 [BROKER] Starting parameter resolution for node ${node.id}`);
       const resolvedParams = context?.resolveNodeParameters ? 
         context.resolveNodeParameters(node, input) : 
         { ...node.values, ...input };
+      console.log(`🔧 [BROKER] Parameter resolution completed for node ${node.id}`);
       
       const brokerService = getBrokerService(broker);
       if (!brokerService) {

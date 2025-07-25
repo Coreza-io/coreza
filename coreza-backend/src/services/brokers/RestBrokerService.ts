@@ -36,14 +36,19 @@ export class RestBrokerService extends BaseBrokerService implements IBrokerServi
 
     try {
       // 1. fetch credentials
-      const creds = await this.getCredentials(input.user_id, input.credential_id);
+      const {
+        credentials: {
+          client_json,
+          token_json
+        }
+      } = await this.getCredentials(input.user_id, input.credential_id);
 
       // 2. build request
       const baseUrl = typeof this.config.baseUrl === 'function' 
-        ? this.config.baseUrl(creds) 
+        ? this.config.baseUrl(client_json) 
         : this.config.baseUrl;
       const url = `${baseUrl}${op.path}`;
-      const headers = this.config.makeAuthHeaders(creds);
+      const headers = this.config.makeAuthHeaders(client_json);
       const params = op.makeParams?.(input) ?? {};
       const data = op.makeBody?.(input);
 

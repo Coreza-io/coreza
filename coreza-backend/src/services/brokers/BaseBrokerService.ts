@@ -30,16 +30,23 @@ export abstract class BaseBrokerService implements IBrokerService {
     try {
       const { data, error } = await supabase
         .from('user_credentials')
-        .select('credentials')
+        .select('client_json, token_json')
         .eq('user_id', userId)
-        .eq('id', credentialId)
+        .eq('name', credentialId)
         .eq('service_type', this.brokerKey)
         .single();
 
-      if (error) throw error;
-      if (!data) throw new Error('Credentials not found');
+      if (error) {
+        // handle or throw error as needed
+        return { credentials: null }; // or throw error
+      }
 
-      return data.credentials;
+      if (!data) {
+        // Not found
+        return { credentials: null };
+      }
+
+      return { credentials: { client_json: data.client_json, token_json: data.token_json } };
     } catch (error) {
       throw new Error(`Failed to get ${this.brokerKey} credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

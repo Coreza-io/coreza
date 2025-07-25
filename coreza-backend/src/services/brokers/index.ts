@@ -1,17 +1,14 @@
 import { registerBroker } from './registry';
-import { AlpacaService } from './AlpacaService';
-import { DhanService } from './DhanService';
+import { RestBrokerService } from './RestBrokerService';
+import { alpacaConfig } from './configs/alpaca';
+import { dhanConfig } from './configs/dhan';
 
 export function initializeBrokerServices() {
   console.log('🚀 Initializing broker services...');
   
-  [
-    AlpacaService,
-    DhanService,
-    // Add future broker services here
-  ].forEach(BrokerClass => {
-    registerBroker(new BrokerClass());
-  });
+  // Register REST-based broker services with their configurations
+  registerBroker(new RestBrokerService('alpaca', alpacaConfig));
+  registerBroker(new RestBrokerService('dhan', dhanConfig));
   
   console.log('✅ All broker services initialized');
 }

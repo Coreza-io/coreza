@@ -7,6 +7,8 @@ import { DataService } from './data';
 import { HttpService } from './http';
 import { WebhookService } from './webhooks';
 import { ComparatorService } from './comparator';
+import { getNodeExecutor } from '../nodes/registry';
+import { NodeInput, NodeResult } from '../nodes/types';
 
 interface WorkflowNode {
   id: string;
@@ -332,57 +334,8 @@ export class WorkflowEngine {
       // Get node input from upstream nodes
       const nodeInput = this.getNodeInput(node);
       
-      // Execute based on node type
-      let result;
-      switch (node.category) {
-        case 'IO':
-          result = await this.executeInputNode(node, nodeInput);
-          break;
-        case 'Indicators':
-          result = await this.executeIndicatorNode(node, nodeInput);
-          break;
-        case 'Broker':
-          result = await this.executeBrokerNode(node, nodeInput);
-          break;  
-        case 'Market':
-          result = await this.executeMarketNode(node, nodeInput);
-          break;
-        case 'If':
-          result = await this.executeIfNode(node, nodeInput);
-          break;
-        case 'Switch':
-          result = await this.executeSwitchNode(node, nodeInput);
-          break;
-        case 'Scheduler':
-          result = await this.executeSchedulerNode(node, nodeInput);
-          break;
-        case 'trigger':
-          result = await this.executeSchedulerNode(node, nodeInput);
-          break;
-        case 'Visualize':
-          result = await this.executeVisualizeNode(node, nodeInput);
-          break;
-        case 'webhook':
-          result = await this.executeWebhookNode(node, nodeInput);
-          break;
-        case 'httprequest':
-          result = await this.executeHttpNode(node, nodeInput);
-          break;
-        case 'Gmail':
-          result = await this.executeGmailNode(node, nodeInput);
-          break;
-        case 'FinnHub':
-          result = await this.executeFinnhubNode(node, nodeInput);
-          break;
-        case 'YahooFinance':
-          result = await this.executeYahooFinanceNode(node, nodeInput);
-          break;
-        case 'WhatsApp':
-          result = await this.executeWhatsappNode(node, nodeInput);
-          break;
-        default:
-          throw new Error(`Unknown node type: ${node.type}`);
-      }
+      // Execute using registry-based approach
+      const result = await this.executeNodeWithRegistry(node, nodeInput);
 
       // Store result and mark as completed
       this.nodeResults.set(node.id, result);
@@ -423,6 +376,47 @@ export class WorkflowEngine {
     return this.edges
       .filter(edge => edge.target === nodeId)
       .map(edge => edge.source);
+  }
+
+  /**
+   * Execute node using registry-based approach
+   */
+  private async executeNodeWithRegistry(node: WorkflowNode, input: NodeInput): Promise<any> {
+    // Map node categories to ensure compatibility
+    let category = node.category;
+    
+    // Handle special category mappings for existing nodes
+    if (node.type === 'If' || node.type === 'Switch') {
+      category = 'ControlFlow';
+    } else if (['Scheduler', 'trigger', 'Visualize', 'webhook', 'httprequest'].includes(node.type)) {
+      category = 'Utility';
+    } else if (['Gmail', 'WhatsApp'].includes(node.type)) {
+      category = 'Communication';
+    } else if (['FinnHub', 'YahooFinance'].includes(node.type)) {
+      category = 'DataSource';
+    }
+
+    const executor = getNodeExecutor(category);
+    
+    if (!executor) {
+      throw new Error(`Unsupported node category: ${category} for node type: ${node.type}`);
+    }
+
+    console.log(`🔧 Executing node ${node.id} (${node.type}) with category ${category} using ${executor.constructor.name}`);
+
+    // Provide context with utility methods
+    const context = {
+      userId: this.userId,
+      resolveNodeParameters: (node: WorkflowNode, input: NodeInput) => this.resolveNodeParameters(node, input)
+    };
+
+    const result = await executor.execute(node, input, context);
+    
+    if (!result.success) {
+      throw new Error(result.error || `Node execution failed: ${category}`);
+    }
+
+    return result.data;
   }
 
 

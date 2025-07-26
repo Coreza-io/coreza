@@ -77,6 +77,11 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
   // Field rendering helper
   const renderField = (f: any) => {
+    // Skip hidden fields
+    if (f.type === "hidden") {
+      return null;
+    }
+
     // Conditional field display logic
     if (f.displayOptions?.show) {
     

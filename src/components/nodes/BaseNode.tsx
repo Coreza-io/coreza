@@ -298,7 +298,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const fetchCredentials = async (fieldKey: string) => {
     setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
     try {
-      const apiName = (definition?.parentNode || definition?.name || "").toLowerCase();
+      const apiName = (definition?.subCategory || definition?.parentNode || definition?.name || "").toLowerCase();
       
       // Check if userId exists and is valid
       if (!userId) {

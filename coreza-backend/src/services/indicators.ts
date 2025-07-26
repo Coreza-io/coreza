@@ -21,6 +21,7 @@ export interface IndicatorInput {
 }
 
 export interface IndicatorResult {
+  success: boolean;
   indicator: string;
   period?: number;
   periods?: any;
@@ -91,7 +92,7 @@ export class IndicatorService {
       if (ema.isStable) results.push(ema.getResult());
     }
 
-    return { indicator: 'EMA', period, values: results, latest: results.pop() ?? null };
+    return { success: true, indicator: 'EMA', period, values: results, latest: results.pop() ?? null };
   }
 
   static async calculateSMA(input: IndicatorInput): Promise<IndicatorResult> {

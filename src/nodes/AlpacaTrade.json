@@ -4,10 +4,10 @@
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
+  "subCategory":"Alpaca",
   "description": "Execute trades through Alpaca Markets",
   "color": "text-red-500",
   "size": { "width": 340, "height": 360 },
-  "parentNode":"Alpaca",
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }

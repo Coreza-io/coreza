@@ -7,7 +7,7 @@ export class BrokerExecutor implements INodeExecutor {
   async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
     try {
       const operation = node.values?.operation;
-      const broker = node.type;
+      const broker = node.subCategory ?? node.type;
       const credential_id = node.values?.credential_id;
       
       if (!credential_id) {

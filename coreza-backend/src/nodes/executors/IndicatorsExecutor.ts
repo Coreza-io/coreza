@@ -24,7 +24,7 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       return {
         success: true,
-        data: result.data
+        data: result
       };
     } catch (error) {
       return {

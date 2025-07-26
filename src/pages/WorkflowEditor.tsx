@@ -165,6 +165,7 @@ const WorkflowEditor = () => {
       id: n.id,
       type: n.type,
       category: (n.data.definition as any)?.category,
+      subCategory: (n.data.definition as any)?.subCategory,
       position: n.position,
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,

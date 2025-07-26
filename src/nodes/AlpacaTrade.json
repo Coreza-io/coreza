@@ -35,8 +35,14 @@
   ],
   "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
 
-  "action": { "url": "/alpaca/place_order", "method": "POST" },
+  "action": { "url": "/alpaca/{{operation}}", "method": "POST" },
   "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "hidden",
+      "default": "place_order"
+    },
     {
       "key": "credential_id",
       "label": "Credential",

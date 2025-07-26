@@ -18,7 +18,7 @@ export class BrokerService {
     try {
       const { data, error } = await supabase
         .from('user_credentials')
-        .select('id, credential_name, created_at')
+        .select('id, name, created_at')
         .eq('user_id', userId)
         .eq('service_type', broker);
 

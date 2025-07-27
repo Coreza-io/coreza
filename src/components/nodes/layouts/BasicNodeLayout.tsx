@@ -401,6 +401,11 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
           {(definition.fields || []).map((f: any) => {
+            // Skip hidden fields entirely
+            if (f.type === "hidden") {
+              return null;
+            }
+            
             // Check if field should be shown
             if (f.displayOptions?.show) {
               const shouldShow = Object.entries(f.displayOptions.show).every(

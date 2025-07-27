@@ -52,6 +52,7 @@ export class RestBrokerService
       } = await this.getCredentials(input.user_id, input.credential_id);
 
       // 2. build request
+      //const baseUrl = " https://paper-api.alpaca.markets";
       const baseUrl = typeof this.config.baseUrl === 'function'
         ? this.config.baseUrl(client_json, input)
         : this.config.baseUrl;

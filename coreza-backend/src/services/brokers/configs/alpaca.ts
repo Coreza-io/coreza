@@ -10,7 +10,8 @@ export const alpacaConfig: RestConfig = {
     }
     return creds.paper_trading
       ? 'https://paper-api.alpaca.markets'
-      : 'https://api.alpaca.markets';
+      //: 'https://api.alpaca.markets';
+      : 'https://paper-api.alpaca.markets';
   },
 
   // 2. Auth headers remain the same

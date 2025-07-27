@@ -35,7 +35,7 @@
   ],
   "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
 
-  "action": { "url": "/alpaca/{{operation}}", "method": "POST" },
+  "action": { "url": "/alpaca/place_order", "method": "POST" },
   "fields": [
     {
       "key": "operation",

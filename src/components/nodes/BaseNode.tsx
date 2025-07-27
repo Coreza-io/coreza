@@ -129,6 +129,25 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   }, [definition?.fields?.length, definition?.name]); // Stable dependencies
 
+  // Sync fieldState changes to node data.values for proper persistence
+  useEffect(() => {
+    if (Object.keys(fieldState).length > 0) {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  values: { ...fieldState },
+                },
+              }
+            : n
+        )
+      );
+    }
+  }, [fieldState, nodeId, setNodes]);
+
   const [error, setError] = useState("");
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>({});
   const [selectOptions, setSelectOptions] = useState<Record<string, any[]>>({});

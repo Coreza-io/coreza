@@ -100,7 +100,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         f.key, 
         f.type === "repeater" 
           ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
-          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+          : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || ""
       ])
     );
   });
@@ -114,7 +114,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         f.key, 
         f.type === "repeater" 
           ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
-          : data.fieldState?.[f.key] || data.values?.[f.key] || ""
+          : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || ""
       ])
     );
     

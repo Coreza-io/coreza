@@ -1,5 +1,5 @@
 // New registry-based broker service - replaces the old static BrokerService
-import { getBrokerService } from './brokers';
+import { getBrokerService } from './brokers/registry';
 import { supabase } from '../config/supabase';
 
 export class BrokerService {
@@ -83,5 +83,5 @@ export class BrokerService {
 
 // Note: initializeBrokerServices should be imported directly from './brokers/index'
 // to avoid circular imports. Other functions are re-exported for convenience.
-export { getBrokerService, getAllRegisteredBrokers } from './brokers';
+export { getBrokerService, getAllRegisteredBrokers } from './brokers/registry';
 export { BrokerInput, BrokerResult, IBrokerService } from './brokers/types';

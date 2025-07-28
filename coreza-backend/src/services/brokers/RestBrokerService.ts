@@ -59,7 +59,7 @@ export class RestBrokerService
       const url     = `${baseUrl}${op.path}`;
       const headers = this.config.makeAuthHeaders(client_json);
       const params  = op.makeParams?.(input) ?? {};
-      const body    = op.makeBody?.(input);
+      const body    = op.makeBody ? await op.makeBody(input) : undefined;
 
       // build the axios config:
       const axiosConfig: AxiosRequestConfig = {

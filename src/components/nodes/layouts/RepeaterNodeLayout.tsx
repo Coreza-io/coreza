@@ -124,7 +124,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       logicalOps:  newLogOps
     });
     // sourceMap still needs to grow
-    setSourceMap(sm => [...sm, {}]);
+    setSourceMap(sm => Array.isArray(sm) ? [...sm, {}] : [{}]);
   };
 
   const removeCondition = (idx: number) => {
@@ -143,7 +143,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     });
 
     // 4) trim your sourceMap too
-    setSourceMap((sm) => sm.filter((_, i) => i !== idx));
+    setSourceMap((sm) => Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : []);
   };
 
   const updateCondition = useCallback(

@@ -121,6 +121,48 @@ export const dhanConfig: RestConfig = {
       path: '/orders',
     },
 
+    place_order: {
+      method: 'post',
+      path: '/orders',
+      makeBody: async (input: BrokerInput) => {
+        const {
+          symbol,
+          exchange_segment = 'NSE_EQ',
+          qty,
+          side,
+          type = 'MARKET',
+          validity = 'DAY',
+          price
+        } = input;
+
+        if (!symbol || !qty || !side) {
+          throw new Error('Symbol, quantity, and side are required for place_order');
+        }
+
+        // resolve security ID
+        const securityId = await lookupSecurityId(symbol, exchange_segment);
+        if (!securityId) {
+          throw new Error(
+            `Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`
+          );
+        }
+
+        return {
+          securityId,
+          exchangeSegment: exchange_segment,
+          transactionType: side.toUpperCase(), // BUY or SELL
+          quantity: parseInt(qty),
+          orderType: type.toUpperCase(), // MARKET, LIMIT
+          validity: validity.toUpperCase(), // DAY, IOC
+          productType: 'CNC', // Cash and Carry
+          price: type.toUpperCase() === 'LIMIT' ? parseFloat(price || '0') : 0,
+          tradedPrice: 0,
+          triggerPrice: 0,
+          disclosedQuantity: 0
+        };
+      }
+    },
+
     get_candle: {
       method: 'post',
       path: '/charts/historical',

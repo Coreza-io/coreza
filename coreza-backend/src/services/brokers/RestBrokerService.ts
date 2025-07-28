@@ -8,7 +8,7 @@ export interface RestOperation {
   path: string;
   method: HttpMethod;
   makeParams?:     (input: BrokerInput) => Record<string, string>;
-  makeBody?:       (input: BrokerInput) => any;
+  makeBody?:       (input: BrokerInput, creds?: any) => any;
   /** Optional per-op transform of raw response.data → final data */
   transformResult?: (data: any, input: BrokerInput) => any;
 }
@@ -52,14 +52,13 @@ export class RestBrokerService
       } = await this.getCredentials(input.user_id, input.credential_id);
 
       // 2. build request
-      //const baseUrl = " https://paper-api.alpaca.markets";
       const baseUrl = typeof this.config.baseUrl === 'function'
         ? this.config.baseUrl(client_json, input)
         : this.config.baseUrl;
       const url     = `${baseUrl}${op.path}`;
       const headers = this.config.makeAuthHeaders(client_json);
       const params  = op.makeParams?.(input) ?? {};
-      const body    = op.makeBody ? await op.makeBody(input) : undefined;
+      const body    = op.makeBody ? await op.makeBody(input, client_json) : undefined;
 
       // build the axios config:
       const axiosConfig: AxiosRequestConfig = {
@@ -85,7 +84,27 @@ export class RestBrokerService
 
       return { success: true, data };
     } catch (err: any) {
-      const message = err.response?.data?.message || err.message || 'Unknown error';
+      // --- Enhanced error handling ---
+      // Axios error shape
+      const status = err.response?.status;
+      let message =
+        err.response?.data?.errorMessage ||
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Unknown error';
+
+      if (status === 503) {
+        message = 'Dhan API is temporarily unavailable (HTTP 503). Please try again later.';
+      } else if (status === 400) {
+        // Dhan returns errorType, errorCode, errorMessage
+        if (err.response?.data?.errorMessage || err.response?.data?.errorCode) {
+          message = `Dhan Error [${err.response.data.errorCode || '400'}]: ${err.response.data.errorMessage || message}`;
+        }
+      } else if (!message && err.response?.statusText) {
+        message = err.response.statusText;
+      }
+
       return { success: false, error: message };
     }
   }

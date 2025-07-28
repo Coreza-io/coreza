@@ -5,10 +5,12 @@ import csv from 'csv-parser';
 import path from 'path';
 import { RestConfig } from '../RestBrokerService';
 import { BrokerInput } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface DhanCreds {
   api_key: string;
-  // add other cred fields if needed
+  client_id: string; // Must be present for dhanClientId!
+  // Add other cred fields if needed
 }
 
 // In‑memory cache & loader promise
@@ -17,15 +19,10 @@ let loadingPromise: Promise<Map<string, string>> | null = null;
 
 /**
  * Loads and caches the Dhan scrip master CSV into a Map<"SYMBOL_SEGMENT", "SECURITY_ID">.
- * Subsequent calls will return the same Map instantly.
  */
 async function loadScripMaster(): Promise<Map<string, string>> {
-  if (scripMasterCache) {
-    return scripMasterCache;
-  }
-  if (loadingPromise) {
-    return loadingPromise;
-  }
+  if (scripMasterCache) return scripMasterCache;
+  if (loadingPromise) return loadingPromise;
 
   loadingPromise = new Promise<Map<string, string>>((resolve, reject) => {
     const map = new Map<string, string>();
@@ -69,7 +66,6 @@ async function loadScripMaster(): Promise<Map<string, string>> {
 
 /**
  * Lookup the securityId for a given symbol+segment.
- * Uses only the base segment for lookup (e.g., "NSE" from "NSE_EQ").
  */
 async function lookupSecurityId(
   symbol: string,
@@ -124,19 +120,29 @@ export const dhanConfig: RestConfig = {
     place_order: {
       method: 'post',
       path: '/orders',
-      makeBody: async (input: BrokerInput) => {
+      makeBody: async (input: BrokerInput, creds: DhanCreds) => {
         const {
           symbol,
           exchange_segment = 'NSE_EQ',
-          qty,
-          side,
-          type = 'MARKET',
-          validity = 'DAY',
-          price
+          transactionType = 'BUY',    // BUY | SELL
+          orderType       = 'MARKET', // MARKET | LIMIT | STOP_LOSS | STOP_LOSS_MARKET
+          productType     = 'CNC',    // CNC | INTRADAY | etc
+          validity        = 'DAY',    // DAY | IOC
+          quantity        = 1,
+          disclosedQuantity = 0,
+          price           = '',
+          triggerPrice    = '',
+          afterMarketOrder = false,
+          amoTime         = '',
+          boProfitValue   = 0,
+          boStopLossValue = 0,
+          drvExpiryDate   = '',
+          drvOptionType   = '',
+          drvStrikePrice  = 0,
         } = input;
 
-        if (!symbol || !qty || !side) {
-          throw new Error('Symbol, quantity, and side are required for place_order');
+        if (!symbol || !quantity || !transactionType) {
+          throw new Error('Symbol, quantity, and transactionType are required for place_order');
         }
 
         // resolve security ID
@@ -147,18 +153,39 @@ export const dhanConfig: RestConfig = {
           );
         }
 
+        // Send dhanClientId!
+        if (!creds.client_id) {
+          throw new Error('Dhan client_id missing in credentials (required for order)');
+        }
+
+        // Conditional price/triggerPrice as string (Dhan expects '' for market, etc.)
+        const priceVal =
+          orderType === 'LIMIT' ? String(price || '0') : '';
+        const triggerPriceVal =
+          ['STOP_LOSS', 'STOP_LOSS_MARKET', 'SL', 'SLM'].includes(orderType)
+            ? String(triggerPrice || '0')
+            : '';
+
         return {
+          dhanClientId:      creds.client_id,
+          correlationId:     uuidv4(),
+          transactionType,
+          exchangeSegment:   exchange_segment,
+          productType,
+          orderType,
+          validity,
           securityId,
-          exchangeSegment: exchange_segment,
-          transactionType: side.toUpperCase(), // BUY or SELL
-          quantity: parseInt(qty),
-          orderType: type.toUpperCase(), // MARKET, LIMIT
-          validity: validity.toUpperCase(), // DAY, IOC
-          productType: 'CNC', // Cash and Carry
-          price: type.toUpperCase() === 'LIMIT' ? parseFloat(price || '0') : 0,
-          tradedPrice: 0,
-          triggerPrice: 0,
-          disclosedQuantity: 0
+          quantity,
+          disclosedQuantity,
+          price:             priceVal,
+          triggerPrice:      triggerPriceVal,
+          afterMarketOrder,
+          amoTime,
+          boProfitValue,
+          boStopLossValue,
+          drvExpiryDate,
+          drvOptionType,
+          drvStrikePrice
         };
       }
     },
@@ -238,10 +265,9 @@ export const dhanConfig: RestConfig = {
           Array.isArray(open) && Array.isArray(high) && Array.isArray(low) &&
           Array.isArray(close) && Array.isArray(volume) && Array.isArray(ts)
         ) {
-          // "zip" to array of { t, o, h, l, c, v }
           for (let i = 0; i < open.length; ++i) {
             candles.push({
-              t: ts[i], // you may want to convert to ISO if it's a unix or seconds
+              t: ts[i],
               o: open[i],
               h: high[i],
               l: low[i],
@@ -250,7 +276,6 @@ export const dhanConfig: RestConfig = {
             });
           }
         } else if (Array.isArray(raw.data)) {
-          // fallback: if Dhan returned already array of objects
           candles = raw.data.map((bar: any) => ({
             t: bar.timestamp || bar.t || bar.T,
             o: bar.open      || bar.o || bar.O,

@@ -8,6 +8,7 @@ import { WebhookService } from './webhooks';
 import { ComparatorService } from './comparator';
 import { getNodeExecutor } from '../nodes/registry';
 import { NodeInput, NodeResult } from '../nodes/types';
+import { resolveReferences } from "@/utils/resolveReferences";
 
 interface WorkflowNode {
   id: string;
@@ -221,15 +222,9 @@ export class WorkflowEngine {
     
     if (typeof result === 'boolean') {
       handleKey = result.toString(); // "true" or "false"
-    } else if (result && typeof result === 'object') {
+    } else if (result && typeof result === 'object' && ('true' in result || 'false' in result)) {
       // Handle If node format: check for result field
-      if ('result' in result) {
-        handleKey = result.result; // "true" or "false" from comparator
-      } else if ('output' in result) {
-        handleKey = result.output; // Switch case output
-      } else {
-        handleKey = 'default';
-      }
+      handleKey = result.true === true ? 'true' : result.false === true ? 'false' : '';
     } else {
       handleKey = String(result);
     }
@@ -513,11 +508,11 @@ export class WorkflowEngine {
     // Resolve each condition's left and right values
     const resolvedConditions = conditions.map((condition: any) => ({
       left: typeof condition.left === 'string' 
-        ? this.resolveReferences(condition.left, input, allNodeData)
+        ? resolveReferences(condition.left, input, allNodeData)
         : condition.left,
       operator: condition.operator || '===',
       right: typeof condition.right === 'string'
-        ? this.resolveReferences(condition.right, input, allNodeData)
+        ? resolveReferences(condition.right, input, allNodeData)
         : condition.right
     }));
 
@@ -543,13 +538,13 @@ export class WorkflowEngine {
 
     // Resolve the input value
     const resolvedInputValue = typeof inputValue === 'string'
-      ? this.resolveReferences(inputValue, input, allNodeData)
+      ? resolveReferences(inputValue, input, allNodeData)
       : inputValue;
 
     // Resolve case values and create switch cases
     const resolvedCases = cases.map((c: any) => ({
       caseValue: typeof c.caseValue === 'string'
-        ? this.resolveReferences(c.caseValue, input, allNodeData)
+        ? resolveReferences(c.caseValue, input, allNodeData)
         : c.caseValue,
       caseName: c.caseName || c.caseValue
     }));
@@ -768,95 +763,29 @@ export class WorkflowEngine {
     return node.type || 'Unknown';
   }
 
-  /**
-   * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
-   * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
-   */
-  private resolveReferences(
-    expr: string, 
-    inputData: any, 
-    allNodeData?: Record<string, any>
-  ): string {
-    if (!inputData || typeof expr !== 'string') {
-      return expr;
+  // 1) Define a deep‑resolve helper inside your method (so it closes over `this`, `input`, `allNodeData`)
+  private resolveDeep(
+    val: any,
+    input: any,
+    allNodeData: Record<string, any>
+  ): any {
+    if (typeof val === 'string' && val.includes('{')) {
+      const resolved = resolveReferences(val, input, allNodeData, this.nodes);
+      // If resolveReferences returned non-string, return it directly
+      return resolved;
+      //return this.resolveReferences(val, input, allNodeData);
     }
-
-    // Match $('NodeName').json.path or $json.path patterns
-    const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
-
-    return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
-      console.log("🔍 [BACKEND] Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData });
-      
-      let targetData = inputData;
-      
-      // If nodeName is specified and we have allNodeData, look up the specific node's data
-      if (nodeName && allNodeData) {
-        // First try direct lookup by node name
-        if (allNodeData[nodeName]) {
-          targetData = allNodeData[nodeName];
-          console.log(`🔍 [BACKEND] Found data for node '${nodeName}':`, targetData);
-        } else {
-          // Try lookup by display name if direct lookup fails
-          const displayNameMapping = this.createDisplayNameMapping();
-          const nodeId = displayNameMapping[nodeName];
-          
-          if (nodeId && allNodeData[nodeId]) {
-            targetData = allNodeData[nodeId];
-            console.log(`🔍 [BACKEND] Found data for node '${nodeName}' via display name mapping (ID: ${nodeId}):`, targetData);
-          } else {
-            console.warn(`🔍 [BACKEND] No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
-            console.warn(`🔍 [BACKEND] Available display names:`, Object.keys(displayNameMapping));
-            return fullMatch; // Return original if node not found
-          }
-        }
-        
-        // Handle nested json structure for Market Status and other nodes
-        if (targetData && targetData.json) {
-          targetData = targetData.json;
-          console.log(`🔍 [BACKEND] Using nested json data:`, targetData);
-        }
-      }
-      
-      const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
-      
-      // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
-      if (!cleanPath) {
-        return (typeof targetData === 'object' && targetData !== null)
-          ? JSON.stringify(targetData)
-          : String(targetData);
-      }
-      
-      const keys = this.parsePath(cleanPath);
-      console.log("🔍 [BACKEND] Parsed keys:", keys);
-
-      let result: any = targetData;
-      for (const key of keys) {
-        if (result == null) { 
-          result = undefined; 
-          break; 
-        }
-
-        // If we're indexing into an array with a number...
-        if (Array.isArray(result) && typeof key === 'number') {
-          // handle negative indexes
-          const idx = key >= 0 ? key : result.length + key;
-          result = result[idx];
-        } else {
-          result = result[key as keyof typeof result];
-        }
-      }
-
-      console.log("🔍 [BACKEND] Final result:", result);
-
-      if (result === undefined) {
-        // leave original placeholder if not found
-        return fullMatch;
-      }
-
-      return (typeof result === 'object' && result !== null)
-        ? JSON.stringify(result)
-        : String(result);
-    });
+    if (Array.isArray(val)) {
+      return val.map(item => this.resolveDeep(item, input, allNodeData));
+    }
+    if (val !== null && typeof val === 'object') {
+      return Object.fromEntries(
+        Object.entries(val).map(
+          ([k, v]) => [k, this.resolveDeep(v, input, allNodeData)]
+        )
+      );
+    }
+    return val; // number, boolean, null, undefined
   }
 
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
@@ -871,14 +800,11 @@ export class WorkflowEngine {
     
     // Resolve all node.values parameters with reference resolution
     for (const [key, value] of Object.entries(nodeParams)) {
+
       // Skip operational fields that are handled separately
-      if (key !== 'credential_id' && key !== 'operation') {
-        if (typeof value === 'string') {
-          resolvedParams[key] = this.resolveReferences(value, input, allNodeData);
-        } else {
-          resolvedParams[key] = value;
-        }
-      }
+      if (key === 'credential_id' || key === 'operation') continue;
+      // Deeply resolve strings/arrays/objects
+      resolvedParams[key] = this.resolveDeep(value, input, allNodeData);
     }
     
     return resolvedParams;

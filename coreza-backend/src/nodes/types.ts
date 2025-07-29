@@ -3,7 +3,7 @@ export interface NodeInput {
 }
 
 export interface NodeResult { 
-  success: boolean; 
+  success?: boolean; 
   data?: any; 
   error?: string; 
 }

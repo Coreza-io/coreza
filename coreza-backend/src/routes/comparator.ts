@@ -1,34 +1,7 @@
 import express from 'express';
+import { ComparatorService, ComparatorInput } from '../services/comparator';
 
 const router = express.Router();
-
-// Helper function to evaluate a single condition
-function evaluateCondition(left: any, operator: string, right: any): boolean {
-  // Convert values to appropriate types for comparison
-  const leftVal = isNaN(Number(left)) ? left : Number(left);
-  const rightVal = isNaN(Number(right)) ? right : Number(right);
-
-  switch (operator) {
-    case '===':
-    case 'equals':
-      return leftVal === rightVal;
-    case '!==':
-    case 'not equals':
-      return leftVal !== rightVal;
-    case '>=':
-    case 'greater than':
-      return Number(leftVal) >= Number(rightVal);
-    case '<=':
-    case 'less than':
-      return Number(leftVal) <= Number(rightVal);
-    case '>':
-      return Number(leftVal) > Number(rightVal);
-    case '<':
-      return Number(leftVal) < Number(rightVal);
-    default:
-      return false;
-  }
-}
 
 // If/Then conditional logic with logicalOp support
 router.post('/if', async (req, res) => {
@@ -49,7 +22,7 @@ router.post('/if', async (req, res) => {
       });
     }
 
-    // Evaluate each condition
+    // Evaluate each condition using ComparatorService
     const results: boolean[] = [];
     for (const condition of conditions) {
       const { left, operator, right } = condition;
@@ -59,7 +32,19 @@ router.post('/if', async (req, res) => {
           invalidCondition: condition
         });
       }
-      results.push(evaluateCondition(left, operator, right));
+      
+      const conditionInput: ComparatorInput = { left, operator, right };
+      const result = await ComparatorService.evaluate(conditionInput);
+      
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Failed to evaluate condition',
+          details: result.error,
+          invalidCondition: condition
+        });
+      }
+      
+      results.push(result.result);
     }
 
     // Combine results based on logicalOp
@@ -83,7 +68,7 @@ router.post('/if', async (req, res) => {
   }
 });
 
-// Switch case routing logic (unchanged)
+// Switch case routing logic using ComparatorService
 router.post('/switch', async (req, res) => {
   try {
     const { inputValue, cases = [], defaultCase = 'default' } = req.body;
@@ -101,23 +86,34 @@ router.post('/switch', async (req, res) => {
       });
     }
 
-    let matchedCase = null;
-    let matchedOutput = defaultCase;
+    // Transform cases to ComparatorService format
+    const serviceCases = cases.map(caseItem => ({
+      condition: {
+        left: inputValue,
+        operator: '===',
+        right: caseItem.caseValue
+      } as ComparatorInput,
+      value: caseItem.caseName ?? caseItem.caseValue
+    }));
 
-    for (const caseItem of cases) {
-      const { caseValue, caseName } = caseItem;
-      if (caseValue !== undefined && inputValue === caseValue) {
-        matchedCase = caseItem;
-        matchedOutput = caseName ?? caseValue;
-        break;
-      }
+    // Use ComparatorService to evaluate switch
+    const result = await ComparatorService.executeSwitch(serviceCases, defaultCase);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to evaluate switch cases',
+        details: result.error
+      });
     }
 
+    // Maintain backward compatibility with existing response format
+    const matchedCase = result.matchedCase !== undefined ? cases[result.matchedCase] : null;
+    
     res.json({
       inputValue,
       matchedCase,
-      output: matchedOutput,
-      isDefault: !matchedCase,
+      output: result.result,
+      isDefault: result.matchedCase === undefined,
       timestamp: new Date().toISOString()
     });
 

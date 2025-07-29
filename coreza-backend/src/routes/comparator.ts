@@ -1,9 +1,7 @@
 import express from 'express';
-import { ControlFlowExecutor } from '../nodes/executors/ControlFlowExecutor';
-import { WorkflowNode, NodeInput } from '../nodes/types';
+import { ComparatorService, ComparatorInput } from '../services/comparator';
 
 const router = express.Router();
-const controlFlowExecutor = new ControlFlowExecutor();
 
 // If/Then conditional logic with logicalOp support
 router.post('/if', async (req, res) => {
@@ -24,31 +22,42 @@ router.post('/if', async (req, res) => {
       });
     }
 
-    // Create mock WorkflowNode for If node type
-    const mockIfNode: WorkflowNode = {
-      id: 'if-route-node',
-      type: 'If',
-      category: 'Control Flow',
-      values: {
-        conditions,
-        logicalOp
+    // Evaluate each condition using ComparatorService
+    const results: boolean[] = [];
+    for (const condition of conditions) {
+      const { left, operator, right } = condition;
+      if (left === undefined || operator == null || right === undefined) {
+        return res.status(400).json({
+          error: 'Each condition must have left, operator, and right',
+          invalidCondition: condition
+        });
       }
-    };
-
-    const mockInput: NodeInput = {};
-
-    // Use ControlFlowExecutor to evaluate conditions
-    const result = await controlFlowExecutor.execute(mockIfNode, mockInput);
-    
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Failed to evaluate conditions',
-        details: result.error
-      });
+      
+      const conditionInput: ComparatorInput = { left, operator, right };
+      const result = await ComparatorService.evaluate(conditionInput);
+      
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Failed to evaluate condition',
+          details: result.error,
+          invalidCondition: condition
+        });
+      }
+      
+      results.push(result.result);
     }
 
-    // ControlFlowExecutor returns {true: boolean, false: boolean} format
-    res.json(result.data);
+    // Combine results based on logicalOp
+    const passed =
+      logicalOp === 'AND'
+        ? results.every(r => r)
+        : results.some(r => r);
+
+    // Return same shape as Python version
+    res.json({
+      true: passed,
+      false: !passed
+    });
 
   } catch (error) {
     console.error('If condition evaluation error:', error);
@@ -59,7 +68,7 @@ router.post('/if', async (req, res) => {
   }
 });
 
-// Switch case routing logic using ControlFlowExecutor
+// Switch case routing logic using ComparatorService
 router.post('/switch', async (req, res) => {
   try {
     const { inputValue, cases = [], defaultCase = 'default' } = req.body;
@@ -77,22 +86,18 @@ router.post('/switch', async (req, res) => {
       });
     }
 
-    // Create mock WorkflowNode for Switch node type
-    const mockSwitchNode: WorkflowNode = {
-      id: 'switch-route-node',
-      type: 'Switch',
-      category: 'Control Flow',
-      values: {
-        value: inputValue,
-        cases,
-        defaultCase
-      }
-    };
+    // Transform cases to ComparatorService format
+    const serviceCases = cases.map(caseItem => ({
+      condition: {
+        left: inputValue,
+        operator: '===',
+        right: caseItem.caseValue
+      } as ComparatorInput,
+      value: caseItem.caseName ?? caseItem.caseValue
+    }));
 
-    const mockInput: NodeInput = {};
-
-    // Use ControlFlowExecutor to evaluate switch
-    const result = await controlFlowExecutor.execute(mockSwitchNode, mockInput);
+    // Use ComparatorService to evaluate switch
+    const result = await ComparatorService.executeSwitch(serviceCases, defaultCase);
 
     if (!result.success) {
       return res.status(500).json({
@@ -101,17 +106,14 @@ router.post('/switch', async (req, res) => {
       });
     }
 
-    // Transform executor result to maintain backward compatibility
-    const executorData = result.data || {};
-    const matchedCase = executorData.matchedCase ? cases.find(c => 
-      (c.caseName ?? c.caseValue) === executorData.selectedBranch
-    ) : null;
+    // Maintain backward compatibility with existing response format
+    const matchedCase = result.matchedCase !== undefined ? cases[result.matchedCase] : null;
     
     res.json({
       inputValue,
       matchedCase,
-      output: executorData.selectedBranch || defaultCase,
-      isDefault: !matchedCase,
+      output: result.result,
+      isDefault: result.matchedCase === undefined,
       timestamp: new Date().toISOString()
     });
 

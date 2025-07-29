@@ -100,9 +100,9 @@ async function startServer() {
       console.log('✅ Supabase connected successfully');
     }
 
-  // Initialize node executors and broker services
-  initializeNodeExecutors();
-  initializeBrokerServices();
+    // Initialize node executors and broker services
+    initializeNodeExecutors();
+    initializeBrokerServices();
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();

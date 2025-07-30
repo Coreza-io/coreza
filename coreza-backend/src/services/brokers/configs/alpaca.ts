@@ -52,7 +52,7 @@ export const alpacaConfig: RestConfig = {
       method: 'get',
       path: (input: BrokerInput) => {
         return input.asset_type === 'crypto' 
-          ? '/v1beta3/crypto/bars'
+          ? '/v1beta3/crypto/us/bars'
           : '/v2/stocks/bars';
       },
       makeParams: (input: BrokerInput) => {
@@ -117,23 +117,80 @@ export const alpacaConfig: RestConfig = {
       }
     },
 
+    // inside src/brokers/configs.ts → alpacaConfig.ops:
     place_order: {
       method: 'post',
-      path:   '/v2/orders',
+      path: '/v2/orders',
       makeBody: (input: BrokerInput) => {
         const {
           symbol,
           qty,
+          notional,
           side,
-          type          = 'market',
-          time_in_force = 'day'
+          type,
+          time_in_force,
+          limit_price,
+          stop_price,
+          stop_limit_price,
+          trail_percent,
+          trail_price
         } = input;
 
-        if (!symbol || !qty || !side) {
-          throw new Error('Symbol, quantity, and side are required for place_order operation');
+        // Required base fields
+        if (!symbol) {
+          throw new Error('Symbol and side are required for place_order');
+        }
+        if (!qty && !notional) {
+          throw new Error('Either qty or notional must be provided');
         }
 
-        return { symbol, qty, side, type, time_in_force };
+        const body: any = {
+          symbol,
+          side,
+          type,            // market | limit | stop | stop_limit
+          time_in_force    // day | gtc | fok | ioc
+        };
+
+        // Attach price fields based on order type
+        if (type === 'limit') {
+          if (!limit_price) {
+            throw new Error('Limit orders require a limit_price');
+          }
+          body.limit_price = String(limit_price);
+        } else if (type === 'stop') {
+          if (!stop_price) {
+            throw new Error('Stop orders require a stop_price');
+          }
+          body.stop_price = String(stop_price);
+        } else if (type === 'stop_limit') {
+          if (!stop_price || !stop_limit_price) {
+            throw new Error('Stop limit orders require both stop_price and limit_price');
+          }
+          body.stop_price  = String(stop_price);
+          body.limit_price = String(stop_limit_price);
+        }
+        else if (type === 'trailing_stop') {
+          if (!trail_percent && !trail_price) {
+            throw new Error('Either trail percent or trail price must be provided');
+          }
+
+          if (trail_percent) {
+            body.trail_percent = String(trail_percent);
+          } else {
+            body.trail_price = String(trail_price);
+          }
+          
+        }
+        // market orders need no extra price fields
+
+        // Quantity vs Notional (both supported)
+        if (notional) {
+          body.notional = String(notional);
+        } else {
+          body.qty = String(qty);
+        }
+
+        return body;
       }
     }
   }

@@ -102,18 +102,76 @@
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
-      "required": true
+      "required": false
+    },
+    {
+      "key": "notional",
+      "label": "Notional (USD)",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g. 1",
+      "description": "Amount in USD to spend instead of specifying quantity"
     },
     {
       "key": "type",
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "id": "market", "name": "Market" },
-        { "id": "limit", "name": "Limit" }
+        { "id": "market", "name": "Market Order" },
+        { "id": "limit", "name": "Limit Order" },
+        { "id": "stop", "name": "Stop Order" },
+        { "id": "trailing_stop", "name": "Trailing Stop Order" }
       ],
       "default": "market",
       "required": true
+    },
+    {
+      "key": "limit_price",
+      "label": "Limit Price",
+      "type": "text",
+      "required": false, 
+      "placeholder": "e.g. 1",
+      "displayOptions": {
+        "show": {
+          "type": "limit"
+        }
+      }
+    },
+    {
+      "key": "stop_price",
+      "label": "Stop Price",
+      "type": "text",
+      "required": false, 
+      "placeholder": "e.g. 1",
+      "displayOptions": {
+        "show": {
+          "type": "stop"
+        }
+      }
+    },
+    {
+      "key": "trail_price",
+      "label": "Trailing Price",
+      "type": "text",
+      "required": false, 
+      "placeholder": "e.g. 0.20",
+      "displayOptions": {
+        "show": {
+          "type": "trailing_stop"
+        }
+      }
+    },
+    {
+      "key": "trail_percent",
+      "label": "Trailing Percentage",
+      "type": "text",
+      "required": false, 
+      "placeholder": "e.g. 0.20",
+      "displayOptions": {
+        "show": {
+          "type": "trailing_stop"
+        }
+      }
     },
     {
       "key": "time_in_force",

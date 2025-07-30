@@ -96,11 +96,11 @@ export class RestBrokerService
         'Unknown error';
 
       if (status === 503) {
-        message = 'Dhan API is temporarily unavailable (HTTP 503). Please try again later.';
+        message = 'API service is temporarily unavailable (HTTP 503). Please try again later.';
       } else if (status === 400) {
         // Dhan returns errorType, errorCode, errorMessage
         if (err.response?.data?.errorMessage || err.response?.data?.errorCode) {
-          message = `Dhan Error [${err.response.data.errorCode || '400'}]: ${err.response.data.errorMessage || message}`;
+          message = `API Error [${err.response.data.errorCode || '400'}]: ${err.response.data.errorMessage || message}`;
         }
       } else if (!message && err.response?.statusText) {
         message = err.response.statusText;

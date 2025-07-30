@@ -1,0 +1,81 @@
+{
+  "name": "Risk Engine",
+  "def": "Comprehensive Risk Management",
+  "node_type": "main",
+  "icon": "/assets/icons/risk-engine.svg",
+  "category": "Risk Management",
+  "description": "Manages trade risk, position sizing, exposure, and daily loss limits before trade execution",
+  "color": "text-rose-600",
+  "size": { "width": 420, "height": 380 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/risk/engine",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "risk_per_trade",
+      "label": "Risk Per Trade (%)",
+      "type": "text",
+      "default": 2,
+      "required": true
+    },
+    {
+      "key": "stop_loss_distance",
+      "label": "Stop Loss Distance (Price or %)",
+      "type": "text",
+      "placeholder": "e.g., 1.5 (points or %)",
+      "required": true
+    },
+    {
+      "key": "price_per_unit",
+      "label": "Price Per Unit",
+      "type": "text",
+      "placeholder": "e.g., 50 (stock/crypto price)",
+      "required": true
+    },
+    {
+      "key": "daily_loss_limit",
+      "label": "Max Daily Loss (%)",
+      "type": "text",
+      "default": 5,
+      "required": true
+    },
+    {
+      "key": "max_portfolio_exposure",
+      "label": "Max Portfolio Exposure (%)",
+      "type": "text",
+      "default": 50,
+      "required": true
+    },
+    {
+      "key": "max_open_trades",
+      "label": "Max Open Trades",
+      "type": "text",
+      "default": 5,
+      "required": false
+    },
+    {
+      "key": "min_buying_power",
+      "label": "Minimum Buying Power to Keep ($)",
+      "type": "text",
+      "default": 1000,
+      "required": false
+    },
+    {
+      "key": "action_on_violation",
+      "label": "If Risk Breached",
+      "type": "select",
+      "options": [
+        { "id": "block", "name": "Block Trade" },
+        { "id": "resize", "name": "Auto-Resize Position" },
+        { "id": "alert_only", "name": "Alert Only (Allow Trade)" }
+      ],
+      "default": "block",
+      "required": true
+    }
+  ]
+}

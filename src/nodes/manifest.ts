@@ -20,6 +20,7 @@ import IchimokuDef from './Ichimoku.json'
 import OBVDef from './OBV.json'
 import VWAPDef from './VWAP.json'
 import HttpRequestDef from './HttpRequest.json'
+import RiskEngineDef from './RiskEngine.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -98,7 +99,8 @@ export const nodeManifest = {
   [AlpacaTradeDef.name]: AlpacaTradeDef,
   [DhanTradeDef.name]: DhanTradeDef,
   [MarketDef.name]: MarketDef,
-  [HttpRequestDef.name]: HttpRequestDef
+  [HttpRequestDef.name]: HttpRequestDef,
+  [RiskEngineDef.name]: RiskEngineDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

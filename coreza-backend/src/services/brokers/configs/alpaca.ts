@@ -48,10 +48,7 @@ export const alpacaConfig: RestConfig = {
 
     get_candle: {
       method: 'get',
-      path: (input: BrokerInput) => {
-        const assetType = input.asset_type || 'stocks';
-        return assetType === 'crypto' ? '/v1beta3/crypto/bars' : '/v2/stocks/bars';
-      },
+      path:   '/v2/stocks/bars',
       makeParams: (input: BrokerInput) => {
         const {
           symbol,
@@ -59,23 +56,11 @@ export const alpacaConfig: RestConfig = {
           lookback,
           start:  inputStart,
           end:    inputEnd,
-          limit:  inputLimit = 100,
-          asset_type = 'stocks'
+          limit:  inputLimit = 100
         } = input;
 
         if (!symbol) {
           throw new Error('Symbol is required for get_candle operation');
-        }
-
-        // Validate symbol format based on asset type
-        if (asset_type === 'crypto') {
-          if (!/^[A-Z]{3,4}\/[A-Z]{3,4}$/.test(symbol)) {
-            throw new Error('Crypto symbol must be in format BTC/USD');
-          }
-        } else {
-          if (!/^[A-Z]{1,5}$/.test(symbol)) {
-            throw new Error('Stock symbol must be 1-5 uppercase letters');
-          }
         }
 
         // parse lookback/limit
@@ -101,20 +86,14 @@ export const alpacaConfig: RestConfig = {
           throw new Error('Either lookback or both start and end must be provided');
         }
 
-        const params: any = {
+        return {
           symbols:   symbol,
           timeframe,
           start:     startDate,
           end:       endDate,
-          limit:     String(lim)
+          limit:     String(lim),
+          feed:      'iex'        // ← only here, for free‑plan IEX data
         };
-
-        // Add feed parameter only for stocks (not crypto)
-        if (asset_type === 'stocks') {
-          params.feed = 'iex';
-        }
-
-        return params;
       },
       transformResult: (raw: any, input: BrokerInput) => {
         // Normalize Alpaca bars response into Candle[]
@@ -135,27 +114,11 @@ export const alpacaConfig: RestConfig = {
           qty,
           side,
           type          = 'market',
-          time_in_force = 'day',
-          asset_type    = 'stocks'
+          time_in_force = 'day'
         } = input;
 
         if (!symbol || !qty || !side) {
           throw new Error('Symbol, quantity, and side are required for place_order operation');
-        }
-
-        // Validate symbol format based on asset type
-        if (asset_type === 'crypto') {
-          if (!/^[A-Z]{3,4}\/[A-Z]{3,4}$/.test(symbol)) {
-            throw new Error('Crypto symbol must be in format BTC/USD');
-          }
-          // Validate time_in_force for crypto (only gtc and ioc supported)
-          if (!['gtc', 'ioc'].includes(time_in_force)) {
-            throw new Error('Crypto orders only support time_in_force: gtc or ioc');
-          }
-        } else {
-          if (!/^[A-Z]{1,5}$/.test(symbol)) {
-            throw new Error('Stock symbol must be 1-5 uppercase letters');
-          }
         }
 
         return { symbol, qty, side, type, time_in_force };

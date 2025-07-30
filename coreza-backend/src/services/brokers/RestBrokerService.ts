@@ -5,7 +5,7 @@ import { BrokerInput, BrokerResult, IBrokerService } from './types';
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
 
 export interface RestOperation {
-  path: string | ((input: BrokerInput) => string);
+  path: string;
   method: HttpMethod;
   makeParams?:     (input: BrokerInput) => Record<string, string>;
   makeBody?:       (input: BrokerInput, creds?: any) => any;
@@ -55,10 +55,7 @@ export class RestBrokerService
       const baseUrl = typeof this.config.baseUrl === 'function'
         ? this.config.baseUrl(client_json, input)
         : this.config.baseUrl;
-      const path = typeof op.path === 'function'
-        ? op.path(input)
-        : op.path;
-      const url     = `${baseUrl}${path}`;
+      const url     = `${baseUrl}${op.path}`;
       const headers = this.config.makeAuthHeaders(client_json);
       const params  = op.makeParams?.(input) ?? {};
       const body    = op.makeBody ? await op.makeBody(input, client_json) : undefined;

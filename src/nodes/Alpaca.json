@@ -61,10 +61,26 @@
       "required": true
     },
     {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "id": "stocks", "name": "Stocks" },
+        { "id": "crypto", "name": "Cryptocurrency" }
+      ],
+      "default": "stocks",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      }
+    },
+    {
       "key": "symbol",
-      "label": "Ticker Symbol",
+      "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. AAPL",
+      "placeholder": "e.g. AAPL for stocks, BTC/USD for crypto",
       "required": true,
       "displayOptions": {
         "show": {

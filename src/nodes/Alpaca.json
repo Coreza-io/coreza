@@ -47,6 +47,17 @@
       "required": true
     },
     {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "id": "stock", "name": "Stock" },
+        { "id": "crypto", "name": "Crypto" }
+      ],
+      "default": "stock",
+      "required": true
+    },
+    {
       "key": "operation",
       "label": "Operation",
       "type": "select",
@@ -62,13 +73,27 @@
     },
     {
       "key": "symbol",
-      "label": "Ticker Symbol",
+      "label": "Stock Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": ["get_candle"],
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Crypto Pair",
+      "type": "text",
+      "placeholder": "e.g. BTC/USD",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"],
+          "asset_type": ["crypto"]
         }
       }
     },

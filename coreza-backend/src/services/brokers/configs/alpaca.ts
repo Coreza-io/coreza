@@ -6,7 +6,9 @@ export const alpacaConfig: RestConfig = {
   // 1. Dynamic baseUrl: trading vs market‑data
   baseUrl: (creds: any, input?: BrokerInput) => {
     if (input?.operation === 'get_candle') {
-      return 'https://data.alpaca.markets';
+      return input?.asset_type === 'crypto' 
+        ? 'https://data.alpaca.markets'
+        : 'https://data.alpaca.markets';
     }
     return creds.paper_trading
       ? 'https://paper-api.alpaca.markets'
@@ -48,7 +50,11 @@ export const alpacaConfig: RestConfig = {
 
     get_candle: {
       method: 'get',
-      path:   '/v2/stocks/bars',
+      path: (input: BrokerInput) => {
+        return input.asset_type === 'crypto' 
+          ? '/v1beta3/crypto/bars'
+          : '/v2/stocks/bars';
+      },
       makeParams: (input: BrokerInput) => {
         const {
           symbol,
@@ -86,14 +92,20 @@ export const alpacaConfig: RestConfig = {
           throw new Error('Either lookback or both start and end must be provided');
         }
 
-        return {
+        const params: any = {
           symbols:   symbol,
           timeframe,
           start:     startDate,
           end:       endDate,
-          limit:     String(lim),
-          feed:      'iex'        // ← only here, for free‑plan IEX data
+          limit:     String(lim)
         };
+
+        // Only add feed parameter for stocks (free IEX data)
+        if (input.asset_type !== 'crypto') {
+          params.feed = 'iex';
+        }
+
+        return params;
       },
       transformResult: (raw: any, input: BrokerInput) => {
         // Normalize Alpaca bars response into Candle[]

@@ -52,11 +52,39 @@
       "required": true
     },
     {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "id": "stock", "name": "Stock" },
+        { "id": "crypto", "name": "Crypto" }
+      ],
+      "default": "stock",
+      "required": true
+    },
+    {
       "key": "symbol",
-      "label": "Ticker Symbol",
+      "label": "Stock Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Crypto Pair",
+      "type": "text",
+      "placeholder": "e.g. BTC/USD",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "asset_type": ["crypto"]
+        }
+      }
     },
     {
       "key": "side",
@@ -98,7 +126,29 @@
         { "id": "ioc", "name": "Immediate Or Cancel" }
       ],
       "default": "day",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "time_in_force",
+      "label": "Time In Force",
+      "type": "select",
+      "options": [
+        { "id": "gtc", "name": "Good Till Cancelled" },
+        { "id": "fok", "name": "Fill Or Kill" },
+        { "id": "ioc", "name": "Immediate Or Cancel" }
+      ],
+      "default": "gtc",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "asset_type": ["crypto"]
+        }
+      }
     }
   ]
 }

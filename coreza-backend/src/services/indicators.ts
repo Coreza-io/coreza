@@ -8,17 +8,17 @@ import { createError } from '../middleware/errorHandler';
 export interface IndicatorInput {
   prices?: any;
   candle_data?: any;
-  period?: number;
-  fastPeriod?: number;
-  slowPeriod?: number;
-  signalPeriod?: number;
-  stdDev?: number;
-  k_period?: number;
-  d_period?: number;
-  conversion_period?: number;
-  base_period?: number;
-  leading_span_b_period?: number;
-  displacement?: number;
+  window?: String;
+  fastPeriod?: String;
+  slowPeriod?: String;
+  signalPeriod?: String;
+  stdDev?: String;
+  k_period?: String;
+  d_period?: String;
+  conversion_period?: String;
+  base_period?: String;
+  leading_span_b_period?: String;
+  displacement?: String;
   session_type?: string;
   custom_start_time?: string;
 }
@@ -26,13 +26,13 @@ export interface IndicatorInput {
 export interface IndicatorResult {
   success: boolean;
   indicator: string;
-  period?: number;
+  period?: String;
   periods?: any;
   values: any[];
   latest: any;
   sessionType?: string;
-  stdDev?: number;
-  count?: number;
+  stdDev?: String;
+  count?: String;
 }
 
 // Helper to parse JSON string arrays
@@ -102,7 +102,7 @@ export class IndicatorService {
   }
 
   static async calculateEMA(input: IndicatorInput): Promise<IndicatorResult> {
-    const { prices: rawPrices, candle_data: rawCandles, period: rawPeriod = 14 } = input;
+    const { prices: rawPrices, candle_data: rawCandles, window: rawPeriod } = input;
     const prices = extractPrices(rawPrices, rawCandles);
     const period = Number(rawPeriod);
     if (!Number.isFinite(period) || period <= 0) {
@@ -149,9 +149,9 @@ export class IndicatorService {
     const {
       prices: rawPrices,
       candle_data: rawCandles,
-      fastPeriod: rawFast = 12,
-      slowPeriod: rawSlow = 26,
-      signalPeriod: rawSignal = 9
+      fastPeriod: rawFast,
+      slowPeriod: rawSlow,
+      signalPeriod: rawSignal
     } = input;
     const prices = extractPrices(rawPrices, rawCandles);
     const fast = Number(rawFast),
@@ -161,10 +161,10 @@ export class IndicatorService {
       throw createError('Periods must be positive numbers', 400);
     }
 
-    const macd = new MACD({ indicator: EMA, short: fast, long: slow, signal });
+    const macd = new MACD({ indicator: EMA, shortInterval: fast, longInterval: slow, signalInterval: signal });
     const results: { macd: number; signal: number; histogram: number }[] = [];
     for (const price of prices) {
-      macd.update(price);
+      macd.update(price, false);
       if (macd.isStable) {
         const r = macd.getResult();
         results.push({

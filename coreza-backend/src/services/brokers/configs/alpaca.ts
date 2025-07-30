@@ -71,7 +71,7 @@ export const alpacaConfig: RestConfig = {
 
         // parse lookback/limit
         const lb    = Number(lookback)   || undefined;
-        const lim   = Number(inputLimit) || lb || 100;
+        //const lim   = Number(inputLimit) || lb || 100;
 
         // calculate start/end if needed
         let startDate = inputStart;
@@ -97,7 +97,7 @@ export const alpacaConfig: RestConfig = {
           timeframe,
           start:     startDate,
           end:       endDate,
-          limit:     String(lim)
+          //limit:     String(lim)
         };
 
         // Only add feed parameter for stocks (free IEX data)

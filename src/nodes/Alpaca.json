@@ -62,9 +62,9 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "get_account", "name": "Get Account", "method": "GET" },
-        { "id": "get_positions", "name": "Get Positions", "method": "GET" },
-        { "id": "get_orders", "name": "Get Orders", "method": "GET" },
+        { "id": "get_account", "name": "Get Account", "method": "POST" },
+        { "id": "get_positions", "name": "Get Positions", "method": "POST" },
+        { "id": "get_orders", "name": "Get Orders", "method": "POST" },
         { "id": "cancel_order", "name": "Cancel Orders", "method": "POST" },
         { "id": "get_candle", "name": "Get Historical Bars", "method": "POST" }
       ],

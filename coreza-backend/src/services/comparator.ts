@@ -76,7 +76,7 @@ export class ComparatorService {
         case 'is_not_empty':
           result = !!left && left !== '' && !(Array.isArray(left) && left.length === 0) && !(typeof left === 'object' && Object.keys(left).length === 0);
           break;
-        case 'is_null':
+        case 'isNull':
           result = left === null;
           break;
         case 'is_not_null':

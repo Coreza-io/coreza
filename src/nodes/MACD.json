@@ -24,7 +24,7 @@
       "required": true
     },
     {
-      "key": "fast_length",
+      "key": "fastPeriod",
       "label": "Fast EMA Period",
       "type": "text",
       "placeholder": "e.g. 12",
@@ -32,7 +32,7 @@
       "required": true
     },
     {
-      "key": "slow_length",
+      "key": "slowPeriod",
       "label": "Slow EMA Period",
       "type": "text",
       "placeholder": "e.g. 26",
@@ -40,7 +40,7 @@
       "required": true
     },
     {
-      "key": "signal_length",
+      "key": "signalPeriod",
       "label": "Signal Line EMA",
       "type": "text",
       "placeholder": "e.g. 9",

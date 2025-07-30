@@ -41,22 +41,34 @@ export class WorkflowExecutor {
    * Pre-calculate conditional branches for optimization (only for actual branching nodes)
    */
   private preCalculateConditionalBranches(): void {
-    this.conditionalMap.clear();
-    this.context.edges.forEach(edge => {
-      // Only build branch map for actual branching nodes (If, Switch, etc.)
-      const sourceNode = this.context.nodes.find(n => n.id === edge.source);
-      const nodeType = (sourceNode?.data?.definition as any)?.name;
-      const isBranchingNode = ['If', 'Switch', 'Router'].includes(nodeType); // Add more branching node types as needed
-      
-      if (edge.sourceHandle && isBranchingNode) {
-        const entry = this.conditionalMap.get(edge.source) || {};
-        entry[edge.sourceHandle] = edge.target;
+      this.conditionalMap.clear();
+
+      // Build a map: nodeId → { handle1: [targetA, targetB], handle2: [targetC], … }
+      this.context.edges.forEach(edge => {
+        const sourceNode = this.context.nodes.find(n => n.id === edge.source);
+        const nodeType = (sourceNode?.data?.definition as any)?.name;
+        const isBranchingNode = ['If', 'Switch', 'Router'].includes(nodeType);
+        if (!edge.sourceHandle || !isBranchingNode) return;
+
+        // get—or initialize—the per-node entry
+        const entry: Record<string, string[]> =
+          this.conditionalMap.get(edge.source)
+          ?? {};
+
+        // accumulate multiple targets per handle
+        (entry[edge.sourceHandle] ??= []).push(edge.target);
+
         this.conditionalMap.set(edge.source, entry);
-      }
-    });
-    
-    console.log(`🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`, Array.from(this.conditionalMap.keys()));
-  }
+      });
+
+      console.log(
+        `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${
+          this.conditionalMap.size
+        } branching nodes:`,
+        Array.from(this.conditionalMap.entries())
+      );
+    }
+
 
   /**
    * Detect cycles in the workflow graph
@@ -381,38 +393,76 @@ export class WorkflowExecutor {
           
           if (isBranchNode) {
             console.log(`🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`);
-            // Use universal branch handler
+
+            // 1) figure out the handle key exactly as you already do
             let handleKey: string;
             if (typeof result === 'boolean') {
               handleKey = result.toString();
-            } else if (result && typeof result === 'object' && ('true' in result || 'false' in result)) {
-              handleKey = result.true === true ? 'true' : result.false === true ? 'false' : '';
+            } else if (
+              result &&
+              typeof result === 'object' &&
+              ('true' in result || 'false' in result)
+            ) {
+              handleKey = result.true === true
+                ? 'true'
+                : result.false === true
+                  ? 'false'
+                  : '';
             } else {
               handleKey = String(result);
             }
+            console.log(
+              `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`
+            );
 
-            console.log(`🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`);
+            // 2) pull back an array of targets (might be undefined)
             const branchMap = this.conditionalMap.get(id) || {};
-            console.log(`🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`, branchMap);
-            const targetNodeId = branchMap[handleKey];
-            
-            if (targetNodeId) {
-              const targetEdge = out.find(e => e.target === targetNodeId);
-              if (targetEdge) {
-                next = [targetEdge];
-                isConditionalExecution = true;
-                conditionalTargetId = targetNodeId;
-                console.log(`🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to ${targetNodeId}`);
-                this.highlightEdges(id, targetNodeId);
-              }
+            console.log(
+              `🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`,
+              branchMap
+            );
+
+            // --- CHANGED HERE: treat entry as string[] not single string ---
+            const targets: string[] = Array.isArray(branchMap[handleKey])
+              ? branchMap[handleKey]
+              : branchMap[handleKey]
+                ? [branchMap[handleKey]]
+                : [];
+
+            if (targets.length > 0) {
+              // 3) for each target node, find its outgoing edge and collect into next[]
+              next = targets
+                .map(targetNodeId =>
+                  out.find(e => e.target === targetNodeId)
+                )
+                .filter((e): e is Edge => !!e);
+
+              isConditionalExecution = true;
+              conditionalTargetId = targets.join(','); // or pick the first if you need a single string
+
+              console.log(
+                `🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to`,
+                targets
+              );
+
+              // 4) highlight them all
+              targets.forEach(t => this.highlightEdges(id, t));
             } else {
-              console.log(`⚠️ [WORKFLOW EXECUTOR] No target found for branch node ${id} with handle "${handleKey}"`);
+              console.log(
+                `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`
+              );
             }
           } else {
-            console.log(`📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`);
+            console.log(
+              `📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`
+            );
             next = out;
-            console.log(`➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`, next.map(e => e.target));
+            console.log(
+              `➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`,
+              next.map(e => e.target)
+            );
           }
+
 
           // Add next nodes to queue
           console.log(`📝 [WORKFLOW EXECUTOR] About to queue ${next.length} edges from node ${id}`);

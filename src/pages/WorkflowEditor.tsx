@@ -464,6 +464,12 @@ const WorkflowEditor = () => {
               const uniqueNodes = new Map();
               (data.nodes as unknown as Node[]).forEach(node => {
                 if (!uniqueNodes.has(node.id)) {
+                  console.log(`🔍 Loading node ${node.id}:`, {
+                    type: node.type,
+                    storedDisplayName: (node as any).displayName,
+                    dataDisplayName: node.data?.displayName,
+                    valuesLabel: (node.data?.values as any)?.label
+                  });
                   uniqueNodes.set(node.id, {
                     ...node,
                     data: {
@@ -471,8 +477,8 @@ const WorkflowEditor = () => {
                       definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
                       // Ensure values are properly mapped to data.values for BaseNode to use
                       values: (node as any).values || node.data?.values || {},
-                      // Restore display name for backward compatibility
-                      displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
+                      // Restore display name for backward compatibility - prioritize stored displayName
+                      displayName: (node as any).displayName || node.data?.displayName || (node.data?.values as any)?.label
                     }
                   });
                 } else {

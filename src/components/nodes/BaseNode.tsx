@@ -66,10 +66,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const definition = data.definition || data.config;
   const displayName = useMemo(
     () => {
-      // Always use the deduplication logic to generate unique names like "If", "If1", "If2"
+      // Use stored displayName if available, otherwise generate with deduplication
+      if (data.displayName && data.displayName !== definition?.name) {
+        return data.displayName;
+      }
       return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
     },
-    [nodes, definition?.name, nodeId]
+    [nodes, definition?.name, nodeId, data.displayName]
   );
 
   const [showAuth, setShowAuth] = useState(false);

@@ -460,18 +460,26 @@ const WorkflowEditor = () => {
             
             // Load nodes and edges
             if (data.nodes && Array.isArray(data.nodes)) {
-              // Restore node definitions from manifest when loading from database
-              const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
-                  // Ensure values are properly mapped to data.values for BaseNode to use
-                  values: (node as any).values || node.data?.values || {},
-                  // Restore display name for backward compatibility
-                  displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
+              // Deduplicate nodes by ID and restore node definitions from manifest
+              const uniqueNodes = new Map();
+              (data.nodes as unknown as Node[]).forEach(node => {
+                if (!uniqueNodes.has(node.id)) {
+                  uniqueNodes.set(node.id, {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
+                      // Ensure values are properly mapped to data.values for BaseNode to use
+                      values: (node as any).values || node.data?.values || {},
+                      // Restore display name for backward compatibility
+                      displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
+                    }
+                  });
+                } else {
+                  console.warn(`🔄 Duplicate node detected and removed: ${node.id}`);
                 }
-              }));
+              });
+              const restoredNodes = Array.from(uniqueNodes.values());
               setNodes(restoredNodes);
               
               // Clean up invalid edges after nodes are set

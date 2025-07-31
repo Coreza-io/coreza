@@ -30,7 +30,7 @@ export interface NodeExecutionDetail {
 export class WorkflowExecutor {
   private context: ExecutionContext;
   private isAutoExecuting = false;
-  private conditionalMap = new Map<string, Record<string, string>>();
+  private conditionalMap = new Map<string, Record<string, string[]>>();
 
   constructor(context: ExecutionContext) {
     this.context = context;
@@ -165,15 +165,18 @@ export class WorkflowExecutor {
 
     // Look up the branch map
     const branchMap = this.conditionalMap.get(nodeId) || {};
-    const targetId = branchMap[handleKey];
+    const targets = branchMap[handleKey] || [];
 
-    if (!targetId) {
+    if (targets.length === 0) {
       console.warn(`No branch found for node ${nodeId} handle "${handleKey}"`);
       return;
     }
 
-    console.log(`🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targetId}`);
-    await this.executeConditionalChain(targetId, completedNodes);
+    console.log(`🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targets}`);
+    // Execute all targets for this branch
+    for (const targetId of targets) {
+      await this.executeConditionalChain(targetId, completedNodes);
+    }
   }
 
   /**
@@ -423,11 +426,7 @@ export class WorkflowExecutor {
             );
 
             // --- CHANGED HERE: treat entry as string[] not single string ---
-            const targets: string[] = Array.isArray(branchMap[handleKey])
-              ? branchMap[handleKey]
-              : branchMap[handleKey]
-                ? [branchMap[handleKey]]
-                : [];
+            const targets: string[] = branchMap[handleKey] || [];
 
             if (targets.length > 0) {
               // 3) for each target node, find its outgoing edge and collect into next[]

@@ -48,7 +48,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find((f: any) => f.type === "repeater");
-  const isConditional = repeaterField?.key === "conditions";
+  const isConditional = repeaterField?.key === "conditions" || repeaterField?.key === "fields";
   const isSwitch = repeaterField?.key === "cases";
 
   // =========== CONDITIONAL LOGIC ===========
@@ -554,7 +554,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* --------- CONDITIONAL REPEATER (Conditions) --------- */}
         {isConditional && repeaterField && (
           <div className="space-y-3">
-            <h4 className="font-semibold">Conditions</h4>
+            <h4 className="font-semibold">
+              {repeaterField?.key === "conditions" || repeaterField?.type === "conditions"
+                ? "Conditions"
+                : "Fields"}
+            </h4>
 
             {conditions.map((cond, i) => {
               const leftField = repeaterField.subFields?.find((sf: any) => sf.key === "left");
@@ -563,7 +567,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
               return (
                 <div key={i} className="space-y-2">
-                  {i > 0 && (
+                  {repeaterField?.key === "conditions" && i > 0 && (
                     <div className="flex items-center gap-2">
                       <Select
                         value={logicalOps[i - 1]}
@@ -684,11 +688,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               type="button"
               size="sm"
               variant="outline"
-              onClick={addCondition}
+              onClick={addCondition} // You can rename this to a generic handler if needed
               className="h-7 px-2"
             >
               <Plus className="w-3 h-3 mr-1" />
-              Add Condition
+              {repeaterField?.key === "conditions" ? "Add Condition" : "Add Field"}
             </Button>
           </div>
         )}

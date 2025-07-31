@@ -63,16 +63,26 @@ export class WorkflowEngine {
     this.edges.forEach(edge => {
       // Only build branch map for actual branching nodes (If, Switch, etc.)
       const sourceNode = this.nodes.find(n => n.id === edge.source);
-      const isBranchingNode = ['if', 'switch', 'router'].includes(sourceNode?.type?.toLowerCase() || '');
+      const isBranchingNode = ['if', 'switch'].includes(sourceNode?.type?.toLowerCase() || '');
       
       if (edge.sourceHandle && isBranchingNode) {
-        const entry = this.conditionalMap.get(edge.source) || {};
-        entry[edge.sourceHandle] = edge.target;
+        // get—or initialize—the per-node entry
+        const entry: Record<string, string[]> =
+          this.conditionalMap.get(edge.source)
+          ?? {};
+        // accumulate multiple targets per handle
+        (entry[edge.sourceHandle] ??= []).push(edge.target);
+
         this.conditionalMap.set(edge.source, entry);
       }
     });
     
-    console.log(`🗺️ [WORKFLOW ENGINE] Built conditional map for ${this.conditionalMap.size} branching nodes:`, Array.from(this.conditionalMap.keys()));
+    console.log(
+        `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${
+          this.conditionalMap.size
+        } branching nodes:`,
+        Array.from(this.conditionalMap.entries())
+      );
   }
 
   /**
@@ -217,32 +227,53 @@ export class WorkflowEngine {
    * Handle branching node result and route to appropriate downstream nodes
    */
   private async handleBranchNodeResult(nodeId: string, result: any): Promise<void> {
-    // Normalize result to handle key
+    // 1) Normalize result into a string key
     let handleKey: string;
-    
     if (typeof result === 'boolean') {
-      handleKey = result.toString(); // "true" or "false"
-    } else if (result && typeof result === 'object' && ('true' in result || 'false' in result)) {
-      // Handle If node format: check for result field
-      handleKey = result.true === true ? 'true' : result.false === true ? 'false' : '';
+      handleKey = result.toString();             // "true" or "false"
+    } else if (
+      result &&
+      typeof result === 'object' &&
+      ('true' in result || 'false' in result)
+    ) {
+      handleKey =
+        result.true === true
+          ? 'true'
+          : result.false === true
+            ? 'false'
+            : '';
     } else {
       handleKey = String(result);
     }
 
-    // Look up the branch map
-    const branchMap = this.conditionalMap.get(nodeId) || {};
-    const targetId = branchMap[handleKey];
+    // 2) Look up the branch map (we expect arrays now)
+    const branchMap = this.conditionalMap.get(nodeId) ?? {};
+    const raw = branchMap[handleKey];
 
-    if (!targetId) {
-      console.warn(`⚠️ No branch found for node ${nodeId} handle "${handleKey}". Available handles:`, Object.keys(branchMap));
+    // Normalize to string[]
+    const targets: string[] = Array.isArray(raw)
+      ? raw
+      : raw
+        ? [raw]
+        : [];
+
+    if (targets.length === 0) {
+      console.warn(
+        `⚠️ No branch found for node ${nodeId} handle "${handleKey}". Available handles:`,
+        Object.keys(branchMap)
+      );
       return;
     }
 
-    console.log(`🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targetId}`);
-    
-    // Execute the targeted branch
-    await this.executeConditionalChain(targetId);
+    // 3) Execute each branch in turn
+    console.log(
+      `🔀 Branch node ${nodeId} → handle "${handleKey}" → [${targets.join(', ')}]`
+    );
+    for (const targetId of targets) {
+      await this.executeConditionalChain(targetId);
+    }
   }
+
 
   /**
    * Execute conditional chain starting from a specific node
@@ -482,287 +513,6 @@ export class WorkflowEngine {
     
     return mappedParams;
   }
-
-
-
-  private async executeMarketNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'get_quote';
-    const result = await DataService.execute('market', operation, input);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Market operation failed');
-    }
-    
-    return result.data;
-  }
-
-  private async executeIfNode(node: WorkflowNode, input: any): Promise<any> {
-    // Get all node data for cross-references
-    const allNodeData: Record<string, any> = {};
-    for (const [nodeId, result] of this.nodeResults.entries()) {
-      allNodeData[nodeId] = result;
-    }
-
-    const conditions = node.values?.conditions || [];
-    
-    // Resolve each condition's left and right values
-    const resolvedConditions = conditions.map((condition: any) => ({
-      left: typeof condition.left === 'string' 
-        ? resolveReferences(condition.left, input, allNodeData)
-        : condition.left,
-      operator: condition.operator || '===',
-      right: typeof condition.right === 'string'
-        ? resolveReferences(condition.right, input, allNodeData)
-        : condition.right
-    }));
-
-    const result = await ComparatorService.executeIf({ conditions: resolvedConditions });
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Condition evaluation failed');
-    }
-
-    return { condition_met: result.result, ...input };
-  }
-
-  private async executeSwitchNode(node: WorkflowNode, input: any): Promise<any> {
-    // Get all node data for cross-references
-    const allNodeData: Record<string, any> = {};
-    for (const [nodeId, result] of this.nodeResults.entries()) {
-      allNodeData[nodeId] = result;
-    }
-
-    const inputValue = node.values?.inputValue;
-    const cases = node.values?.cases || [];
-    const defaultCase = node.values?.defaultCase || 'default';
-
-    // Resolve the input value
-    const resolvedInputValue = typeof inputValue === 'string'
-      ? resolveReferences(inputValue, input, allNodeData)
-      : inputValue;
-
-    // Resolve case values and create switch cases
-    const resolvedCases = cases.map((c: any) => ({
-      caseValue: typeof c.caseValue === 'string'
-        ? resolveReferences(c.caseValue, input, allNodeData)
-        : c.caseValue,
-      caseName: c.caseName || c.caseValue
-    }));
-
-    const result = await ComparatorService.executeSwitch({ 
-      inputValue: resolvedInputValue, 
-      cases: resolvedCases, 
-      defaultCase 
-    });
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Switch evaluation failed');
-    }
-
-    return { switch_result: result.result, matched_case: result.matchedCase, ...input };
-  }
-
-  private async executeSchedulerNode(node: WorkflowNode, input: any): Promise<any> {
-    // Scheduler nodes are triggers that pass through data and provide scheduling metadata
-    const scheduleData = node.values || {};
-    
-    // Generate cron expression from scheduler data if available
-    let cronExpression = null;
-    if (scheduleData.interval && scheduleData.count) {
-      const hour = scheduleData.hour || 0;
-      const minute = scheduleData.minute || 0;
-      
-      if (scheduleData.interval === 'daily') {
-        cronExpression = `${minute} ${hour} * * *`;
-      } else if (scheduleData.interval === 'weekly') {
-        cronExpression = `${minute} ${hour} * * 0`;
-      } else if (scheduleData.interval === 'monthly') {
-        cronExpression = `${minute} ${hour} 1 * *`;
-      }
-    }
-    
-    return {
-      ...input,
-      trigger: {
-        type: 'scheduler',
-        scheduled: true,
-        scheduledAt: new Date().toISOString(),
-        scheduleConfig: {
-          interval: scheduleData.interval,
-          count: scheduleData.count,
-          hour: scheduleData.hour,
-          minute: scheduleData.minute,
-          ...(cronExpression && { cronExpression })
-        }
-      }
-    };
-  }
-
-  private async executeVisualizeNode(node: WorkflowNode, input: any): Promise<any> {
-    // Visualize nodes process data for charts/graphs
-    return {
-      ...input,
-      visualization: {
-        type: node.values?.chart_type || 'line',
-        data: input,
-        timestamp: new Date().toISOString()
-      }
-    };
-  }
-
-  private async executeWebhookNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'trigger';
-    const result = await WebhookService.execute(operation, input);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Webhook operation failed');
-    }
-    
-    return result.data;
-  }
-
-  private async executeHttpNode(node: WorkflowNode, input: any): Promise<any> {
-    const result = await HttpService.execute(input);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'HTTP request failed');
-    }
-    
-    return result;
-  }
-
-  private async executeGmailNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'send';
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    const combinedInput = {
-      ...input,
-      ...resolvedParams
-    };
-    
-    const result = await CommunicationService.execute('gmail', operation, combinedInput);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Gmail operation failed');
-    }
-    
-    return result.data;
-  }
-
-  private async executeFinnhubNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'get_quote';
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    const combinedInput = {
-      ...input,
-      ...resolvedParams
-    };
-    
-    const result = await DataService.execute('finnhub', operation, combinedInput);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'FinnHub operation failed');
-    }
-    
-    return result.data;
-  }
-
-  private async executeYahooFinanceNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'get_quote';
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    const combinedInput = {
-      ...input,
-      ...resolvedParams
-    };
-    
-    const result = await DataService.execute('yahoofinance', operation, combinedInput);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Yahoo Finance operation failed');
-    }
-    
-    return result.data;
-  }
-
-  private async executeWhatsappNode(node: WorkflowNode, input: any): Promise<any> {
-    const operation = node.values?.operation || 'send';
-
-    // Resolve and merge node parameters with input data
-    const resolvedParams = this.resolveNodeParameters(node, input);
-    const combinedInput = {
-      ...input,
-      ...resolvedParams
-    };
-    
-    const result = await CommunicationService.execute('whatsapp', operation, combinedInput);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'WhatsApp operation failed');
-    }
-    
-    return result.data;
-  }
-
-  /**
-   * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
-   * Now supports negative numbers (e.g. -1, -2).
-   */
-  private parsePath(path: string): Array<string|number> {
-    const parts: Array<string|number> = [];
-    const regex = /([^[.\]]+)|\[(\-?\d+|["'][^"']+["'])\]/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(path))) {
-      const [ , dotKey, bracketKey ] = match;
-      if (dotKey !== undefined) {
-        parts.push(dotKey);
-      } else {
-        // bracketKey is either a quoted string or a number (possibly negative)
-        if (/^-?\d+$/.test(bracketKey!)) {
-          parts.push(Number(bracketKey));      // e.g. "-1" → -1
-        } else {
-          parts.push(bracketKey!.slice(1, -1)); // strip quotes from 'foo' or "foo"
-        }
-      }
-    }
-
-    return parts;
-  }
-
-  /**
-   * Create display name mapping from node array
-   */
-  private createDisplayNameMapping(): Record<string, string> {
-    const mapping: Record<string, string> = {};
-    this.nodes.forEach(node => {
-      const displayName = this.generateDisplayName(node);
-      mapping[displayName] = node.id;
-    });
-    return mapping;
-  }
-
-  /**
-   * Generate display name for a node
-   */
-  private generateDisplayName(node: WorkflowNode): string {
-    // Use custom label if provided
-    if (node.values?.label && node.values.label.trim()) {
-      return node.values.label.trim();
-    }
-    
-    // Use definition name if available
-    if (node.data?.definition?.name) {
-      return node.data.definition.name;
-    }
-    
-    // Fallback to node type
-    return node.type || 'Unknown';
-  }
-
   // 1) Define a deep‑resolve helper inside your method (so it closes over `this`, `input`, `allNodeData`)
   private resolveDeep(
     val: any,

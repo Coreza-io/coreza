@@ -1,0 +1,60 @@
+{
+  "name":        "Edit Fields",
+  "label":       "Edit Fields",
+  "def":         "Map or drop fields from your JSON payload",
+  "node_type":   "main",
+  "icon":        "/assets/icons/if.svg",
+  "category":    "Logic",
+  "description": "Set, remove or rename JSON fields",
+  "color":       "text-yellow-500",
+  "size":        { "width": 340, "height": 440 },
+  "handles": [
+    { "type": "target", "position": "left",  "id": "input"  },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url":    "/comparator/field",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key":   "fields",
+      "label": "Fields to Set",
+      "type":  "repeater",
+      "subFields": [
+        {
+          "key":         "left",
+          "type":        "string",
+          "placeholder": "Field name"
+        },
+        {
+          "key":     "operator",
+          "type":    "string",
+          "options": [
+            { "label": "Set Value",     "value": "set"    },
+            { "label": "Copy From...",  "value": "copy"   },
+            { "label": "Remove Field",  "value": "remove" }
+          ],
+          "default": "set"
+        },
+        {
+          "key":         "right",
+          "type":        "string",
+          "placeholder": "Value or expression"
+        }
+      ],
+      "default": [
+        { "left": "", "operator": "set", "right": "", "persistent": false }
+      ]
+    },
+    {
+      "key": "persistent",
+      "type": "multiselect",
+      "options": [
+        { "id": "persistent", "name": "persistent" }
+      ],
+      "default": ["persistent"],
+      "required": true
+    }
+  ]
+}

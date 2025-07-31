@@ -47,7 +47,7 @@ export class WorkflowExecutor {
       this.context.edges.forEach(edge => {
         const sourceNode = this.context.nodes.find(n => n.id === edge.source);
         const nodeType = (sourceNode?.data?.definition as any)?.name;
-        const isBranchingNode = ['If', 'Switch', 'Router'].includes(nodeType);
+        const isBranchingNode = ['If', 'Switch'].includes(nodeType);
         if (!edge.sourceHandle || !isBranchingNode) return;
 
         // get—or initialize—the per-node entry

@@ -65,8 +65,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   const definition = data.definition || data.config;
   const displayName = useMemo(
-    () => getDisplayName({ id: nodeId!, data } as Node<any>, nodes),
-    [nodes, definition?.name, nodeId]
+    () => {
+      // Prioritize saved displayName from database over generated name
+      if (data.displayName) {
+        return data.displayName;
+      }
+      return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
+    },
+    [nodes, definition?.name, nodeId, data.displayName]
   );
 
   const [showAuth, setShowAuth] = useState(false);

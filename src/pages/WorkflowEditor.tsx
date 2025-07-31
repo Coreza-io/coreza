@@ -469,7 +469,8 @@ const WorkflowEditor = () => {
                   // Ensure values are properly mapped to data.values for BaseNode to use
                   values: (node as any).values || node.data?.values || {},
                   // Restore display name for backward compatibility
-                  displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
+                  displayName: node.id 
+                  //displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
                 }
               }));
               setNodes(restoredNodes);

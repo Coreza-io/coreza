@@ -10,8 +10,8 @@ const BACKEND_URL = "http://localhost:8000";
 
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
-  const baseName = node.data.definition?.name || node.data.config?.name || 'Node';
-  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name || n.data.config?.name) === baseName);
+  const baseName = node.data.definition?.name;
+  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name) === baseName);
   const idx = sameType.findIndex((n) => n.id === node.id);
   const result = idx > 0 ? `${baseName}${idx}` : baseName;
   
@@ -63,10 +63,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const { user } = useAuth();
   const isMounted = useRef(true);
 
-  const definition = data.definition || data.config;
+  const definition = data.definition;
   const displayName = useMemo(
-    () => getDisplayName({ id: nodeId!, data } as Node<any>, nodes),
-    [nodes, definition?.name, nodeId]
+    () => {
+      // Use stored displayName if available, otherwise generate with deduplication
+      if (data.displayName && data.displayName !== definition?.name) {
+        return data.displayName;
+      }
+      return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
+    },
+    [nodes, definition?.name, nodeId, data.displayName]
   );
 
   const [showAuth, setShowAuth] = useState(false);
@@ -131,22 +137,25 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   // Sync fieldState changes to node data.values for proper persistence
   useEffect(() => {
-    if (Object.keys(fieldState).length > 0) {
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  values: { ...fieldState },
-                },
-              }
-            : n
-        )
-      );
-    }
-  }, [fieldState, nodeId, setNodes]);
+  if (Object.keys(fieldState).length > 0) {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                values: { ...fieldState },
+              },
+            }
+          : n
+      )
+    );
+    // Add this:
+    console.log('After setNodes from BaseNode', nodeId, fieldState);
+  }
+}, [fieldState, nodeId, setNodes]);
+
 
   const [error, setError] = useState("");
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>({});

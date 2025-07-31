@@ -472,8 +472,7 @@ const WorkflowEditor = () => {
                   displayName: node.id 
                   //displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
                 }
-              });
-              const restoredNodes = Array.from(uniqueNodes.values());
+              }));
               setNodes(restoredNodes);
               
               // Clean up invalid edges after nodes are set

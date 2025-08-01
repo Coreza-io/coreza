@@ -221,7 +221,9 @@ export type Database = {
           is_active: boolean | null
           name: string
           nodes: Json
+          persistent_state: Json | null
           project_id: string | null
+          schedule_cron: string | null
           updated_at: string | null
           user_id: string
         }
@@ -232,7 +234,9 @@ export type Database = {
           is_active?: boolean | null
           name: string
           nodes: Json
+          persistent_state?: Json | null
           project_id?: string | null
+          schedule_cron?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -243,7 +247,9 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           nodes?: Json
+          persistent_state?: Json | null
           project_id?: string | null
+          schedule_cron?: string | null
           updated_at?: string | null
           user_id?: string
         }

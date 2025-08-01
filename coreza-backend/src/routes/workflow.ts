@@ -183,7 +183,7 @@ router.post('/:userId/:workflowId/execute', async (req, res, next) => {
     }
     
     // Execute workflow asynchronously
-    executeWorkflow(run.id, workflow.nodes, workflow.edges)
+    executeWorkflow(run.id, workflowId, userId, workflow.nodes, workflow.edges)
       .then(async (result) => {
         console.log(`Workflow ${workflowId} execution completed:`, result);
         

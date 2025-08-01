@@ -96,7 +96,7 @@ class WorkflowScheduler {
 
           // Execute workflow with timeout protection
           console.log(`⚡ [SCHEDULER] Starting workflow execution for run ${runId}...`);
-          const executionPromise = executeWorkflow(run.id, userId, nodes, edges);
+          const executionPromise = executeWorkflow(run.id, workflowId, userId, nodes, edges);
           const timeoutPromise = new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Workflow execution timeout (10 minutes)')), 10 * 60 * 1000)
           );

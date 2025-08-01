@@ -129,20 +129,21 @@ router.post('/switch', async (req, res) => {
 // Field manipulation endpoint
 router.post('/field', async (req, res) => {
   try {
-    const { conditions = [], data = {} } = req.body;
+    const { fields = [], data = {}, workflowId, runId, persistent = false, context } = req.body;
 
-    if (!Array.isArray(conditions)) {
+    if (!Array.isArray(fields)) {
       return res.status(400).json({
         error: 'fields must be an array',
-        received: { conditions }
+        received: { fields }
       });
     }
 
     let result = { ...data };
+    const persistentContext = context; // Context passed from WorkflowEngine
 
     // Process each field operation
-    for (const field of conditions) {
-      const { left: fieldName, operator, right: value } = field;
+    for (const field of fields) {
+      const { left: fieldName, operator, right: value, persistent: fieldPersistent = false } = field;
 
       if (!fieldName) {
         continue; // Skip empty field names
@@ -150,8 +151,40 @@ router.post('/field', async (req, res) => {
 
       switch (operator) {
         case 'set':
-          // Set field to a specific value
-          result[fieldName] = value;
+          if (fieldPersistent && persistentContext) {
+            // Handle persistent field - get current value or use new value
+            const currentPersistentValue = persistentContext.getPersistentValue(fieldName);
+            const finalValue = currentPersistentValue !== undefined ? currentPersistentValue : value;
+            
+            // Set the persistent value and save to DB
+            await persistentContext.setPersistentValue(fieldName, finalValue);
+            
+            // Also set in result for immediate use in current execution
+            result[fieldName] = finalValue;
+            
+            console.log(`💾 Persistent field ${fieldName} set to:`, finalValue);
+          } else {
+            // Regular non-persistent field
+            result[fieldName] = value;
+          }
+          break;
+
+        case 'copy':
+          // Copy value from another field
+          if (value && result[value] !== undefined) {
+            if (fieldPersistent && persistentContext) {
+              await persistentContext.setPersistentValue(fieldName, result[value]);
+            }
+            result[fieldName] = result[value];
+          }
+          break;
+
+        case 'remove':
+          // Remove the field
+          if (fieldPersistent && persistentContext) {
+            await persistentContext.setPersistentValue(fieldName, undefined);
+          }
+          delete result[fieldName];
           break;
           
         default:
@@ -161,7 +194,8 @@ router.post('/field', async (req, res) => {
 
     res.json({
       success: true,
-      result
+      data: result,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {

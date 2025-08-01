@@ -39,6 +39,7 @@ interface NodeExecution {
 
 export class WorkflowEngine {
   private runId: string;
+  private workflowId: string;
   private nodes: WorkflowNode[];
   private edges: WorkflowEdge[];
   private executions: Map<string, NodeExecution> = new Map();
@@ -46,9 +47,11 @@ export class WorkflowEngine {
   private conditionalMap = new Map<string, Record<string, string>>();
   private executedNodes = new Set<string>();
   private userId: string;
+  private persistentState: Map<string, any> = new Map();
 
-  constructor(runId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  constructor(runId: string, workflowId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.runId = runId;
+    this.workflowId = workflowId;
     this.userId = userId;
     this.nodes = nodes;
     this.edges = edges;
@@ -123,6 +126,9 @@ export class WorkflowEngine {
       if (this.detectCycles()) {
         throw new Error('Circular dependency detected in workflow');
       }
+
+      // Load persistent state at the start of execution
+      await this.loadPersistentState();
 
       console.log(`🚀 [WORKFLOW] Starting queue-based workflow execution for run ${this.runId}`);
       
@@ -432,7 +438,12 @@ export class WorkflowEngine {
     // Provide context with utility methods
     const context = {
       userId: this.userId,
-      resolveNodeParameters: (node: WorkflowNode, input: NodeInput) => this.resolveNodeParameters(node, input)
+      workflowId: this.workflowId,
+      runId: this.runId,
+      persistentState: this.persistentState,
+      resolveNodeParameters: (node: WorkflowNode, input: NodeInput) => this.resolveNodeParameters(node, input),
+      getPersistentValue: (key: string) => this.getPersistentValue(key),
+      setPersistentValue: (key: string, value: any) => this.setPersistentValue(key, value)
     };
 
     const result = await executor.execute(node, input, context);
@@ -607,15 +618,81 @@ export class WorkflowEngine {
       })
       .eq('id', this.runId);
   }
+
+  /**
+   * Load persistent state from workflow
+   */
+  private async loadPersistentState(): Promise<void> {
+    try {
+      const { data: workflow, error } = await supabase
+        .from('workflows')
+        .select('persistent_state')
+        .eq('id', this.workflowId)
+        .single();
+
+      if (error) {
+        console.warn(`⚠️ Failed to load persistent state for workflow ${this.workflowId}:`, error);
+        return;
+      }
+
+      if (workflow?.persistent_state) {
+        // Convert JSON object to Map
+        Object.entries(workflow.persistent_state).forEach(([key, value]) => {
+          this.persistentState.set(key, value);
+        });
+        console.log(`📥 Loaded ${this.persistentState.size} persistent values for workflow ${this.workflowId}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error loading persistent state:`, error);
+    }
+  }
+
+  /**
+   * Save persistent state to workflow
+   */
+  private async savePersistentState(): Promise<void> {
+    try {
+      // Convert Map to plain object
+      const stateObject = Object.fromEntries(this.persistentState);
+
+      const { error } = await supabase
+        .from('workflows')
+        .update({
+          persistent_state: stateObject,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', this.workflowId);
+
+      if (error) {
+        console.error(`❌ Failed to save persistent state for workflow ${this.workflowId}:`, error);
+      } else {
+        console.log(`💾 Saved ${this.persistentState.size} persistent values for workflow ${this.workflowId}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error saving persistent state:`, error);
+    }
+  }
+
+  /**
+   * Get a persistent value
+   */
+  public getPersistentValue(key: string): any {
+    return this.persistentState.get(key);
+  }
+
+  /**
+   * Set a persistent value and save to database
+   */
+  public async setPersistentValue(key: string, value: any): Promise<void> {
+    this.persistentState.set(key, value);
+    await this.savePersistentState();
+  }
 }
 
-// Factory function to create and execute workflows
-export async function executeWorkflow(
-  runId: string,
-  userId: string,
-  nodes: WorkflowNode[], 
-  edges: WorkflowEdge[]
-): Promise<{ success: boolean; result?: any; error?: string }> {
-  const engine = new WorkflowEngine(runId, userId, nodes, edges);
-  return await engine.execute();
+/**
+ * Factory function to execute a workflow
+ */
+export async function executeWorkflow(runId: string, workflowId: string, userId: string, nodes: any[], edges: any[]): Promise<{ success: boolean; result?: any; error?: string }> {
+  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges);
+  return await workflowEngine.execute();
 }

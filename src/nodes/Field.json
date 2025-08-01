@@ -31,7 +31,9 @@
           "key":     "operator",
           "type":    "string",
           "options": [
-            { "label": "Set Value",     "value": "set"    }
+            { "label": "Set Value",     "value": "set"    },
+            { "label": "Copy From...",  "value": "copy"   },
+            { "label": "Remove Field",  "value": "remove" }
           ],
           "default": "set"
         },
@@ -39,20 +41,18 @@
           "key":         "right",
           "type":        "string",
           "placeholder": "Value or expression"
+        },
+        {
+          "key":         "persistent",
+          "type":        "checkbox",
+          "label":       "Persistent",
+          "placeholder": "Keep value across workflow runs",
+          "default":     false
         }
       ],
       "default": [
         { "left": "", "operator": "set", "right": "", "persistent": false }
       ]
-    },
-    {
-      "key": "persistent",
-      "type": "multiselect",
-      "options": [
-        { "id": "persistent", "name": "persistent" }
-      ],
-      "default": ["persistent"],
-      "required": true
     }
   ]
 }

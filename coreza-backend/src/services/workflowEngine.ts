@@ -417,7 +417,7 @@ export class WorkflowEngine {
     let category = node.category;
     
     // Handle special category mappings for existing nodes
-    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields') {
+    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields' || node.type === 'Math') {
       category = 'ControlFlow';
     } else if (['Scheduler', 'trigger', 'Visualize', 'webhook', 'httprequest'].includes(node.type)) {
       category = 'Utility';

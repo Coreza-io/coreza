@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, beforeEach } from '@jest/globals';
-import { supabase } from '../coreza-backend-node/src/config/supabase';
+// Adjusted path for backend config
+import { supabase } from '../coreza-backend/src/config/supabase';
 
 // Global test setup
 beforeAll(async () => {

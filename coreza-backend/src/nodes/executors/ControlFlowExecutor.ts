@@ -1,6 +1,7 @@
 // src/nodes/executors/ControlFlowExecutor.ts
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
+import { MathService } from '../../services/math';
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = 'ControlFlow';
@@ -19,6 +20,8 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeSwitchNode(node, input, context);
         case 'Edit Fields':
           return this.executeFieldNode(node, input, context);
+        case 'Math':
+          return this.executeMathNode(node, input, context);
         default:
           return {
             success: false,
@@ -220,6 +223,23 @@ export class ControlFlowExecutor implements INodeExecutor {
       success: true,
       data: result
     };
+  }
+
+  private async executeMathNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const { left, operator, right } = resolvedParams;
+    const result = MathService.calculate({ left, operator, right });
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    return { success: true, data: { result: result.result } };
   }
 
   private evaluateCondition(

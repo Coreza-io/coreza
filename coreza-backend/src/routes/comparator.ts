@@ -1,5 +1,6 @@
 import express from 'express';
 import { ComparatorService, ComparatorInput } from '../services/comparator';
+import { MathService } from '../services/math';
 
 const router = express.Router();
 
@@ -202,6 +203,31 @@ router.post('/field', async (req, res) => {
     console.error('Field manipulation error:', error);
     res.status(500).json({
       error: 'Failed to process field operations',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Simple math operations
+router.post('/math', async (req, res) => {
+  try {
+    const { left, operator, right } = req.body;
+    if (left === undefined || operator == null || right === undefined) {
+      return res.status(400).json({
+        error: 'left, operator and right are required',
+        received: { left, operator, right }
+      });
+    }
+
+    const result = MathService.calculate({ left, operator, right });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ result: result.result });
+  } catch (error) {
+    console.error('Math operation error:', error);
+    res.status(500).json({
+      error: 'Failed to perform math operation',
       details: error instanceof Error ? error.message : String(error)
     });
   }

@@ -17,6 +17,8 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeIfNode(node, input, context);
         case 'Switch':
           return this.executeSwitchNode(node, input, context);
+        case 'Edit Fields':
+          return this.executeFieldNode(node, input, context);
         default:
           return {
             success: false,
@@ -138,6 +140,60 @@ export class ControlFlowExecutor implements INodeExecutor {
         isDefault: !matchedCase,
         timestamp: new Date().toISOString()
       }
+    };
+  }
+
+  private async executeFieldNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const fields = Array.isArray(resolvedParams.fields) ? resolvedParams.fields : [];
+    let result = { ...input };
+
+    console.log('📝 Field node processing:', {
+      fields,
+      inputData: input
+    });
+
+    // Process each field operation
+    for (const field of fields) {
+      const { left: fieldName, operator, right: value } = field;
+
+      if (!fieldName) {
+        continue; // Skip empty field names
+      }
+
+      switch (operator) {
+        case 'set':
+          // Set field to a specific value
+          result[fieldName] = value;
+          break;
+        
+        case 'copy':
+          // Copy value from another field
+          if (value && result[value] !== undefined) {
+            result[fieldName] = result[value];
+          }
+          break;
+        
+        case 'remove':
+          // Remove the field
+          delete result[fieldName];
+          break;
+        
+        default:
+          console.warn(`Unknown field operator: ${operator}`);
+      }
+    }
+
+    return {
+      success: true,
+      data: result
     };
   }
 

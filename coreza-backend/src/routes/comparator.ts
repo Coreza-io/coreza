@@ -126,4 +126,64 @@ router.post('/switch', async (req, res) => {
   }
 });
 
+// Field manipulation endpoint
+router.post('/field', async (req, res) => {
+  try {
+    const { fields = [], data = {} } = req.body;
+
+    if (!Array.isArray(fields)) {
+      return res.status(400).json({
+        error: 'fields must be an array',
+        received: { fields }
+      });
+    }
+
+    let result = { ...data };
+
+    // Process each field operation
+    for (const field of fields) {
+      const { left: fieldName, operator, right: value } = field;
+
+      if (!fieldName) {
+        continue; // Skip empty field names
+      }
+
+      switch (operator) {
+        case 'set':
+          // Set field to a specific value
+          result[fieldName] = value;
+          break;
+        
+        case 'copy':
+          // Copy value from another field
+          if (value && result[value] !== undefined) {
+            result[fieldName] = result[value];
+          }
+          break;
+        
+        case 'remove':
+          // Remove the field
+          delete result[fieldName];
+          break;
+        
+        default:
+          console.warn(`Unknown field operator: ${operator}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Field manipulation error:', error);
+    res.status(500).json({
+      error: 'Failed to process field operations',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 export default router;

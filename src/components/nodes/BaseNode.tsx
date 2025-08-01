@@ -264,9 +264,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode
-        ? getDisplayName(sourceNode, nodes)
-        : definition?.name || 'Node';
+      const sourceDisplayName = sourceNode.id;
       const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
       const newValue = currentValue + insert;
       
@@ -298,7 +296,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     // Build allNodeData for cross-node references
     const allNodeData: Record<string, any> = {};
     previousNodes.forEach(prevNode => {
-      const displayName = getDisplayName(prevNode, nodes);
+      const displayName = prevNode.id;
       const currentNode = nodes.find(n => n.id === prevNode.id);
       let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
       
@@ -406,7 +404,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     const allNodeData: Record<string, any> = {};
     
     previousNodes.forEach(prevNode => {
-      const displayName = getDisplayName(prevNode, nodes);
+      const displayName = prevNode.id;
       console.log(`🔧 Processing node ${prevNode.id} -> display name: "${displayName}"`);
       
       // Get the most current version of this node from the nodes array

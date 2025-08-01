@@ -11,16 +11,6 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
 
-// ▶️ Helper to generate de-duplicated display names ("Alpaca", "Alpaca1", ...)
-const getDisplayName = (node: any, allNodes: any[]) => {
-  const baseName = node.data?.definition?.name || node.data?.config?.name || 'Node';
-  const sameType = allNodes.filter(
-    (n) => (n.data?.definition?.name || n.data?.config?.name) === baseName
-  );
-  const idx = sameType.findIndex((n) => n.id === node.id);
-  return idx > 0 ? `${baseName}${idx}` : baseName;
-};
-
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
 }
@@ -224,10 +214,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
       try {
         const { keyPath } = JSON.parse(raw);
-        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode
-          ? getDisplayName(sourceNode, previousNodes)
-          : 'Node';
+        //const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceDisplayName =selectedPrevNodeId;
         const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
 
         updateCondition(idx, field, currentValue + insert);
@@ -265,9 +253,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       try {
         const { keyPath } = JSON.parse(raw);
         const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode
-          ? getDisplayName(sourceNode, previousNodes)
-          : 'Node';
+        const sourceDisplayName = sourceNode.id;
         const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
 
         handleChange(field, currentValue + insert);
@@ -292,14 +278,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
 
-      let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
+      let srcData = srcNode.data?.output || {};
       if (Array.isArray(srcData) && srcData.length === 1) {
         srcData = srcData[0];
       }
 
       const allNodeData = {};
       previousNodes.forEach(prevNode => {
-        const displayName = getDisplayName(prevNode, allNodes);
+        const displayName = prevNode.id;
         let nodeData = prevNode.data?.output || prevNode.data || {};
         if (Array.isArray(nodeData) && nodeData.length > 0) {
           nodeData = nodeData[0] || {};
@@ -337,7 +323,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       const allNodeData = {};
       previousNodes.forEach(prevNode => {
-        const displayName = getDisplayName(prevNode, allNodes);
+        const displayName = prevNode.id;
         let nodeData = prevNode.data?.output || prevNode.data || {};
         if (Array.isArray(nodeData) && nodeData.length > 0) {
           nodeData = nodeData[0] || {};

@@ -25,36 +25,6 @@ function parsePath(path: string): Array<string|number> {
 }
 
 /**
- * Create display name mapping from node array
- */
-function createDisplayNameMapping(nodes: any[]): Record<string, string> {
-  const mapping: Record<string, string> = {};
-  nodes.forEach(node => {
-    const displayName = generateDisplayName(node);
-    mapping[displayName] = node.id;
-  });
-  return mapping;
-}
-
-/**
- * Generate display name for a node
- */
-function generateDisplayName(node: any): string {
-  // Use custom label if provided
-  if (node.data?.values?.label && node.data.values.label.trim()) {
-    return node.data.values.label.trim();
-  }
-  
-  // Use definition name if available
-  if (node.data?.definition?.name) {
-    return node.data.definition.name;
-  }
-  
-  // Fallback to node type
-  return node.type || 'Unknown';
-}
-
-/**
  * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
  * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
  */
@@ -82,19 +52,6 @@ export function resolveReferences(
       if (allNodeData[nodeName]) {
         targetData = allNodeData[nodeName];
         console.log(`🔍 Found data for node '${nodeName}':`, targetData);
-      } else if (nodes) {
-        // Try lookup by display name if direct lookup fails
-        const displayNameMapping = createDisplayNameMapping(nodes);
-        const nodeId = displayNameMapping[nodeName];
-        
-        if (nodeId && allNodeData[nodeId]) {
-          targetData = allNodeData[nodeId];
-          console.log(`🔍 Found data for node '${nodeName}' via display name mapping (ID: ${nodeId}):`, targetData);
-        } else {
-          console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
-          console.warn(`🔍 Available display names:`, Object.keys(displayNameMapping));
-          return fullMatch; // Return original if node not found
-        }
       } else {
         console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
         return fullMatch; // Return original if node not found

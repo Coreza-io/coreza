@@ -561,6 +561,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const leftField = repeaterField.subFields?.find((sf: any) => sf.key === "left");
               const operatorField = repeaterField.subFields?.find((sf: any) => sf.key === "operator");
               const rightField = repeaterField.subFields?.find((sf: any) => sf.key === "right");
+              const persistentField = repeaterField.subFields?.find((sf: any) => sf.key === "persistent");
 
               return (
                 <div key={i} className="space-y-2">
@@ -653,7 +654,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                        onFocus={(e) => e.target.select()}
                        />
                      )}
-
 
                     {conditions.length > 1 && (
                       <Button

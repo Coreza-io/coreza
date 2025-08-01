@@ -17,6 +17,12 @@
   },
   "fields": [
     {
+      "key": "buying_power",
+      "label": "Buying Power",
+      "type": "text",
+      "required": true
+    },
+    {
       "key": "risk_per_trade",
       "label": "Risk Per Trade (%)",
       "type": "text",

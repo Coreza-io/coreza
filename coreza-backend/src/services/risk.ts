@@ -1,24 +1,23 @@
 export interface RiskInput {
-  account_size: number;
-  open_trades_count?: number;
-  current_exposure?: number;
-  day_loss?: number;
-  buying_power?: number;
-  risk_per_trade: number;
-  stop_loss_distance: number;
-  price_per_unit: number;
-  daily_loss_limit: number;
-  max_portfolio_exposure: number;
-  max_open_trades?: number;
-  min_buying_power?: number;
+  buying_power?: string;
+  open_trades_count?: string;
+  current_exposure?: string;
+  day_loss?: string;
+  risk_per_trade: string;          // percentage
+  stop_loss_distance: string;      // percentage
+  price_per_unit: string;          // absolute price
+  daily_loss_limit: string;        // percentage
+  max_portfolio_exposure: string;  // percentage
+  max_open_trades?: string;        // optional, defaults to unlimited
+  min_buying_power?: string;       // absolute value
   action_on_violation?: 'block' | 'resize' | 'alert_only';
 }
 
 export interface RiskOutput {
   allowed: boolean;
-  quantity: number;
-  position_size: number;
-  risk_amount: number;
+  quantity: string;
+  position_size: string;
+  risk_amount: string;
   violations?: string[];
   action?: string;
 }
@@ -32,75 +31,95 @@ export interface RiskResult {
 export class RiskEngineService {
   static evaluate(input: RiskInput): RiskResult {
     try {
+      // --- Helpers ---
+      const parseNum = (raw: string | undefined, def = NaN): number => {
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : def;
+      };
+      const toFraction = (n: number, name: string): number => {
+        if (n > 1) return n / 100;
+        if (n >= 0 && n <= 1) return n;
+        throw new Error(`${name} must be a percentage (e.g. "2" for 2% or "0.02")`);
+      };
+
+      // --- 1) Destructure raw inputs ---
       const {
-        account_size,
-        open_trades_count = 0,
-        current_exposure = 0,
-        day_loss = 0,
-        buying_power = account_size,
-        risk_per_trade,
-        stop_loss_distance,
-        price_per_unit,
-        daily_loss_limit,
-        max_portfolio_exposure,
-        max_open_trades = Infinity,
-        min_buying_power = 0,
-        action_on_violation = 'block'
+        buying_power:           rawBP,
+        open_trades_count:      rawOpen     = '0',
+        current_exposure:       rawExposure = '0',
+        day_loss:               rawDayLoss  = '0',
+        risk_per_trade:         rawRiskPct,
+        stop_loss_distance:     rawStopPct,
+        price_per_unit:         rawPrice,
+        daily_loss_limit:       rawDailyPct,
+        max_portfolio_exposure: rawPortPct,
+        max_open_trades:        rawMaxOpen,
+        min_buying_power:       rawMinBP     = '0',
+        action_on_violation     = 'block'
       } = input;
 
-      if (!Number.isFinite(account_size) || account_size <= 0) {
-        throw new Error('account_size must be a positive number');
-      }
-      if (!Number.isFinite(stop_loss_distance) || stop_loss_distance <= 0) {
-        throw new Error('stop_loss_distance must be a positive number');
-      }
-      if (!Number.isFinite(price_per_unit) || price_per_unit <= 0) {
-        throw new Error('price_per_unit must be a positive number');
-      }
+      // --- 2) Parse & validate absolute amounts ---
+      const bp           = parseNum(rawBP);
+      const pricePerUnit = parseNum(rawPrice);
+      if (bp <= 0)           throw new Error('buying_power must be > 0');
+      if (pricePerUnit <= 0) throw new Error('price_per_unit must be > 0');
 
-      const riskAmount = (account_size * risk_per_trade) / 100;
-      let quantity = Math.floor(riskAmount / stop_loss_distance);
-      if (quantity < 0) quantity = 0;
-      let positionSize = quantity * price_per_unit;
+      // --- 3) Parse & convert percentages to fractions ---
+      const riskPct  = toFraction(parseNum(rawRiskPct), 'risk_per_trade');
+      const stopPct  = toFraction(parseNum(rawStopPct), 'stop_loss_distance');
+      const dailyPct = toFraction(parseNum(rawDailyPct), 'daily_loss_limit');
+      const portPct  = toFraction(parseNum(rawPortPct), 'max_portfolio_exposure');
 
+      // --- 4) Compute dollar stop-loss distance ---
+      const stopDollar = pricePerUnit * stopPct;
+      if (stopDollar <= 0) throw new Error('stop_loss_distance must yield a positive dollar amount');
+
+      // --- 5) Parse optional counters & limits ---
+      const openTradesCount = parseNum(rawOpen, 0);
+      const currentExposure = parseNum(rawExposure, 0);
+      const dayLoss         = parseNum(rawDayLoss, 0);
+      const maxOpenTrades   = parseNum(rawMaxOpen, Infinity);
+      const minBuyingPower  = parseNum(rawMinBP, 0);
+
+      // --- 6) Core risk math ---
+      const riskAmount = bp * riskPct;                                // $ allocated to this trade
+      let quantity     = Math.max(0, Math.floor(riskAmount / stopDollar));
+      let positionSize = quantity * pricePerUnit;
+      const actualRisk = quantity * stopDollar;                       // $ actually at risk
+
+      // --- 7) Check for violations ---
       const violations: string[] = [];
-      if (open_trades_count + 1 > max_open_trades) violations.push('max_open_trades');
-      if (current_exposure + positionSize > (account_size * max_portfolio_exposure) / 100) {
-        violations.push('max_portfolio_exposure');
-      }
-      if (day_loss + riskAmount > (account_size * daily_loss_limit) / 100) {
-        violations.push('daily_loss_limit');
-      }
-      if (buying_power - positionSize < min_buying_power) {
-        violations.push('min_buying_power');
-      }
+      if (openTradesCount + 1 > maxOpenTrades)          violations.push('max_open_trades');
+      if (currentExposure + positionSize > bp * portPct) violations.push('max_portfolio_exposure');
+      if (dayLoss + actualRisk > bp * dailyPct)          violations.push('daily_loss_limit');
+      if (bp - positionSize < minBuyingPower)            violations.push('min_buying_power');
 
+      // --- 8) Apply action_on_violation ---
       let allowed = violations.length === 0;
-
       if (action_on_violation === 'alert_only') {
         allowed = true;
       } else if (action_on_violation === 'resize' && violations.length > 0) {
-        const qtyLimits: number[] = [quantity];
-        if (open_trades_count + 1 > max_open_trades) qtyLimits.push(0);
-        qtyLimits.push(
-          Math.floor(((account_size * max_portfolio_exposure) / 100 - current_exposure) / price_per_unit)
-        );
-        qtyLimits.push(
-          Math.floor(((account_size * daily_loss_limit) / 100 - day_loss) / stop_loss_distance)
-        );
-        qtyLimits.push(Math.floor((buying_power - min_buying_power) / price_per_unit));
-        quantity = Math.max(0, Math.min(...qtyLimits.filter(n => Number.isFinite(n) && n >= 0)));
-        positionSize = quantity * price_per_unit;
-        allowed = quantity > 0;
+        // re-compute the strictest quantity limit
+        const limits = [
+          quantity,
+          Math.floor((bp * portPct - currentExposure) / pricePerUnit),
+          Math.floor((bp * dailyPct - dayLoss) / stopDollar),
+          Math.floor((bp - minBuyingPower) / pricePerUnit),
+          openTradesCount + 1 > maxOpenTrades ? 0 : Infinity
+        ].filter(n => Number.isFinite(n) && n >= 0);
+        quantity     = Math.max(0, Math.min(...limits));
+        positionSize = quantity * pricePerUnit;
+        allowed      = quantity > 0;
       }
 
+      // --- 9) Build stringified output ---
       const output: RiskOutput = {
         allowed,
-        quantity,
-        position_size: positionSize,
-        risk_amount: quantity * stop_loss_distance,
-        action: action_on_violation,
-        violations: violations.length ? violations : undefined
+        quantity:      quantity.toString(),
+        position_size: positionSize.toString(),
+        risk_amount:   actualRisk.toString(),
+        action:        action_on_violation,
+        violations:    violations.length > 0 ? violations : undefined
       };
 
       return { success: true, data: output };

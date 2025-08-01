@@ -31,9 +31,7 @@
           "key":     "operator",
           "type":    "string",
           "options": [
-            { "label": "Set Value",     "value": "set"    },
-            { "label": "Copy From...",  "value": "copy"   },
-            { "label": "Remove Field",  "value": "remove" }
+            { "label": "Set Value",     "value": "set"    }
           ],
           "default": "set"
         },

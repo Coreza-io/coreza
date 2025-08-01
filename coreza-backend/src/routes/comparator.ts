@@ -129,19 +129,19 @@ router.post('/switch', async (req, res) => {
 // Field manipulation endpoint
 router.post('/field', async (req, res) => {
   try {
-    const { fields = [], data = {} } = req.body;
+    const { conditions = [], data = {} } = req.body;
 
-    if (!Array.isArray(fields)) {
+    if (!Array.isArray(conditions)) {
       return res.status(400).json({
         error: 'fields must be an array',
-        received: { fields }
+        received: { conditions }
       });
     }
 
     let result = { ...data };
 
     // Process each field operation
-    for (const field of fields) {
+    for (const field of conditions) {
       const { left: fieldName, operator, right: value } = field;
 
       if (!fieldName) {
@@ -153,19 +153,7 @@ router.post('/field', async (req, res) => {
           // Set field to a specific value
           result[fieldName] = value;
           break;
-        
-        case 'copy':
-          // Copy value from another field
-          if (value && result[value] !== undefined) {
-            result[fieldName] = result[value];
-          }
-          break;
-        
-        case 'remove':
-          // Remove the field
-          delete result[fieldName];
-          break;
-        
+          
         default:
           console.warn(`Unknown field operator: ${operator}`);
       }
@@ -173,8 +161,7 @@ router.post('/field', async (req, res) => {
 
     res.json({
       success: true,
-      data: result,
-      timestamp: new Date().toISOString()
+      result
     });
 
   } catch (error) {

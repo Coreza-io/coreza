@@ -137,7 +137,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   };
 
   const updateCondition = useCallback(
-    (idx: number, field: string, value: string) => {
+    (idx: number, field: string, value: any) => {
       handleChange(
         "conditions",
         conditions.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
@@ -550,6 +550,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const leftField = repeaterField.subFields?.find((sf: any) => sf.key === "left");
               const operatorField = repeaterField.subFields?.find((sf: any) => sf.key === "operator");
               const rightField = repeaterField.subFields?.find((sf: any) => sf.key === "right");
+              const persistentField = repeaterField.subFields?.find((sf: any) => sf.key === "persistent");
 
               return (
                 <div key={i} className="space-y-2">
@@ -608,7 +609,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
                     {/* Operator */}
                     {operatorField && (
-                      <Select
+                     <Select
                         value={cond.operator}
                         onValueChange={(v) => updateCondition(i, "operator", v)}
                       >
@@ -622,7 +623,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             </SelectItem>
                           ))}
                         </SelectContent>
-                      </Select>
+                     </Select>
                     )}
 
                      {/* Right */}
@@ -639,9 +640,21 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                          }}
                          onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
                          style={cond.right?.includes("{{") ? referenceStyle : undefined}
-                         onFocus={(e) => e.target.select()}
+                       onFocus={(e) => e.target.select()}
                        />
                      )}
+
+                    {persistentField && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">{persistentField.label}</span>
+                        <Switch
+                          checked={!!cond.persistent}
+                          onCheckedChange={(checked) =>
+                            updateCondition(i, "persistent", checked)
+                          }
+                        />
+                      </div>
+                    )}
 
                     {conditions.length > 1 && (
                       <Button

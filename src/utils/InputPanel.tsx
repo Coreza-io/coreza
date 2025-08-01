@@ -103,7 +103,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
                   <option value="">Select node...</option>
                   {previousNodes.map((node: Node<any>) => (
                     <option key={node.id} value={node.id}>
-                      {getDisplayName(node, nodes)}
+                      {node.id}
                     </option>
                   ))}
                 </select>

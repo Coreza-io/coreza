@@ -58,11 +58,10 @@ export const alpacaConfig: RestConfig = {
       makeParams: (input: BrokerInput) => {
         const {
           symbol,
-          timeframe = '1Day',
+          timeframe,
           lookback,
           start:  inputStart,
-          end:    inputEnd,
-          limit:  inputLimit = 100
+          end:    inputEnd
         } = input;
 
         if (!symbol) {

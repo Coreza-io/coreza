@@ -156,10 +156,11 @@ router.post('/field', async (req, res) => {
           if (persistent && persistentContext) {
             // Handle persistent field - get current value or use new value
             const currentPersistentValue = persistentContext.getPersistentValue(fieldName);
-            const finalValue = currentPersistentValue !== undefined ? currentPersistentValue : value;
+            const finalValue = value;
             
-            // Set the persistent value and save to DB
-            await persistentContext.setPersistentValue(fieldName, finalValue);
+            if (currentPersistentValue !== finalValue) {
+              await context.setPersistentValue(fieldName, finalValue); // Save only if changed
+            }
             
             // Also set in result for immediate use in current execution
             result[fieldName] = finalValue;

@@ -208,10 +208,17 @@ export class WorkflowEngine {
         // Handle loop or branching logic
         if (node.type === 'Loop') {
           const loopData = this.nodeResults.get(nodeId);
-          const iterations = Number(loopData?.iterations || 0);
           const targets = this.edges.filter(e => e.source === nodeId).map(e => e.target);
-          if (targets.length > 0 && iterations > 0) {
-            await this.executeLoopChain(targets[0], iterations, nodeId);
+          if (targets.length > 0 && Array.isArray(loopData?.items) && loopData.items.length > 0) {
+            await this.executeLoopChain(
+              targets[0],
+              loopData.items,
+              nodeId,
+              loopData.itemKey,
+              loopData.indexKey,
+              loopData.prevKey,
+              loopData.parallel
+            );
           }
         } else {
           const isBranchingNode = this.conditionalMap.has(nodeId);
@@ -347,24 +354,48 @@ export class WorkflowEngine {
   /**
    * Execute a chain of nodes starting from a specific node multiple times
    */
-  private async executeLoopChain(startNodeId: string, times: number, loopNodeId: string): Promise<void> {
-    if (times <= 0) return;
+  private async executeLoopChain(
+    startNodeId: string,
+    items: any[],
+    loopNodeId: string,
+    itemKey: string,
+    indexKey?: string,
+    prevKey?: string,
+    parallel = false
+  ): Promise<void> {
+    if (!Array.isArray(items) || items.length === 0) return;
 
     const originalLoopResult = this.nodeResults.get(loopNodeId);
 
-    for (let i = 0; i < times; i++) {
-      console.log(`🔁 Loop iteration ${i + 1} / ${times} starting`);
-      this.nodeResults.set(loopNodeId, { index: i });
+    let prevValue: any = null;
+
+    const runIteration = async (item: any, i: number) => {
+      console.log(`🔁 Loop iteration ${i + 1} / ${items.length} starting`);
+      const loopData: any = { [itemKey]: item };
+      if (indexKey) loopData[indexKey] = i;
+      if (prevKey) loopData[prevKey] = prevValue;
+
+      this.nodeResults.set(loopNodeId, loopData);
 
       const before = new Set(this.executedNodes);
       await this.executeConditionalChain(startNodeId);
       const executedThisIter = Array.from(this.executedNodes).filter(id => !before.has(id));
 
-      if (i < times - 1) {
+      prevValue = loopData;
+
+      if (i < items.length - 1) {
         for (const id of executedThisIter) {
           this.executedNodes.delete(id);
           this.nodeResults.delete(id);
         }
+      }
+    };
+
+    if (parallel) {
+      await Promise.all(items.map((item, idx) => runIteration(item, idx)));
+    } else {
+      for (let i = 0; i < items.length; i++) {
+        await runIteration(items[i], i);
       }
     }
 

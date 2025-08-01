@@ -273,10 +273,17 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const iterations = Number(resolvedParams.iterations || 1);
-    const indexKey = resolvedParams.index_key || 'index';
+    const arraySelector = resolvedParams.array_selector;
+    const itemKey = resolvedParams.item_output_field;
+    const indexKey = resolvedParams.index_output_field;
+    const prevKey = resolvedParams.prev_output_field;
+    const limit = resolvedParams.loop_limit ? Number(resolvedParams.loop_limit) : undefined;
+    const parallel = Boolean(resolvedParams.parallel);
 
-    return { success: true, data: { iterations, indexKey } };
+    const arr = this.getByPath(resolvedParams, arraySelector) || [];
+    const items = Array.isArray(arr) ? arr.slice(0, limit ?? arr.length) : [];
+
+    return { success: true, data: { items, itemKey, indexKey, prevKey, parallel } };
   }
 
   private evaluateCondition(
@@ -308,5 +315,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       default:
         return Boolean(value1);
     }
+  }
+  private getByPath(obj: any, path: string): any {
+    if (!path) return undefined;
+    return path.split(".").reduce((o, k) => (o ? o[k] : undefined), obj);
   }
 }

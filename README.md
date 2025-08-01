@@ -71,3 +71,14 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Loop Node
+The Loop node iterates over an array from previous node output. Configure it with:
+- **array_selector**: path to the array within the incoming data.
+- **item_output_field**: key used to expose each item during the loop.
+- **index_output_field** (optional): key to store the current index.
+- **prev_output_field** (optional): key that receives the previous iteration\'s output.
+- **loop_limit** (optional): maximum number of items to process.
+- **parallel** (optional): process items in parallel.
+
+During workflow execution, the engine will run downstream nodes once for each item and provide the configured fields as part of the loop node result.

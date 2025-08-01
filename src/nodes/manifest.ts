@@ -24,6 +24,7 @@ import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
 import MathDef from './Math.json'
 import TransformDef from './Transform.json'
+import LoopDef from './Loop.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -106,7 +107,8 @@ export const nodeManifest = {
   [RiskEngineDef.name]: RiskEngineDef,
   [FieldDef.name]: FieldDef,
   [MathDef.name]: MathDef,
-  [TransformDef.name]: TransformDef
+  [TransformDef.name]: TransformDef,
+  [LoopDef.name]: LoopDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

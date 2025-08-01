@@ -25,6 +25,8 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeMathNode(node, input, context);
         case 'Transform':
           return this.executeTransformNode(node, input, context);
+        case 'Loop':
+          return this.executeLoopNode(node, input, context);
         default:
           return {
             success: false,
@@ -260,6 +262,21 @@ export class ControlFlowExecutor implements INodeExecutor {
       return { success: false, error: result.error };
     }
     return { success: true, data: { result: result.result } };
+  }
+
+  private async executeLoopNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const iterations = Number(resolvedParams.iterations || 1);
+    const indexKey = resolvedParams.index_key || 'index';
+
+    return { success: true, data: { iterations, indexKey } };
   }
 
   private evaluateCondition(

@@ -205,14 +205,23 @@ export class WorkflowEngine {
         this.executedNodes.add(nodeId);
         console.log(`✅ [WORKFLOW] Node ${nodeId} (${node.type}) completed successfully - Run: ${this.runId}`);
         
-        // Handle conditional routing for branching nodes
-        const isBranchingNode = this.conditionalMap.has(nodeId);
-        if (isBranchingNode) {
-          console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
-          await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+        // Handle loop or branching logic
+        if (node.type === 'Loop') {
+          const loopData = this.nodeResults.get(nodeId);
+          const iterations = Number(loopData?.iterations || 0);
+          const targets = this.edges.filter(e => e.source === nodeId).map(e => e.target);
+          if (targets.length > 0 && iterations > 0) {
+            await this.executeLoopChain(targets[0], iterations, nodeId);
+          }
         } else {
-          // Add downstream nodes to queue for non-branching nodes
-          this.addDownstreamNodesToQueue(nodeId, queue);
+          const isBranchingNode = this.conditionalMap.has(nodeId);
+          if (isBranchingNode) {
+            console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
+            await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+          } else {
+            // Add downstream nodes to queue for non-branching nodes
+            this.addDownstreamNodesToQueue(nodeId, queue);
+          }
         }
         
         retryCount = 0; // Reset retry count on successful execution
@@ -333,6 +342,33 @@ export class WorkflowEngine {
         throw error;
       }
     }
+  }
+
+  /**
+   * Execute a chain of nodes starting from a specific node multiple times
+   */
+  private async executeLoopChain(startNodeId: string, times: number, loopNodeId: string): Promise<void> {
+    if (times <= 0) return;
+
+    const originalLoopResult = this.nodeResults.get(loopNodeId);
+
+    for (let i = 0; i < times; i++) {
+      console.log(`🔁 Loop iteration ${i + 1} / ${times} starting`);
+      this.nodeResults.set(loopNodeId, { index: i });
+
+      const before = new Set(this.executedNodes);
+      await this.executeConditionalChain(startNodeId);
+      const executedThisIter = Array.from(this.executedNodes).filter(id => !before.has(id));
+
+      if (i < times - 1) {
+        for (const id of executedThisIter) {
+          this.executedNodes.delete(id);
+          this.nodeResults.delete(id);
+        }
+      }
+    }
+
+    this.nodeResults.set(loopNodeId, originalLoopResult);
   }
 
   /**

@@ -1,0 +1,37 @@
+{
+  "name": "Loop",
+  "label": "Loop",
+  "def": "Repeat following nodes a specified number of times",
+  "node_type": "main",
+  "icon": "/assets/icons/if.svg",
+  "category": "Logic",
+  "description": "Iterate over downstream nodes multiple times",
+  "color": "text-yellow-500",
+  "size": { "width": 300, "height": 200 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/control/loop",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "iterations",
+      "label": "Iterations",
+      "type": "text",
+      "placeholder": "e.g. 3",
+      "default": "1",
+      "required": true
+    },
+    {
+      "key": "index_key",
+      "label": "Index Key",
+      "type": "text",
+      "placeholder": "index",
+      "default": "index",
+      "required": false
+    }
+  ]
+}

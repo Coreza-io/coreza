@@ -406,10 +406,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   onChange={(e) => handleChange(f.key, e.target.value)}
                   placeholder={f.placeholder}
                   className="nodrag"
-                  style={fieldState[f.key]?.includes("{{") ? referenceStyle : undefined}
+                  style={typeof fieldState[f.key] === "string" && fieldState[f.key].includes("{{") ? referenceStyle : undefined}
                   onFocus={(e) => e.target.select()}
                 />
-                  {fieldState[f.key]?.includes("{{") && (
+                  {typeof fieldState[f.key] === "string" && fieldState[f.key].includes("{{") && (
                     <div className="text-xs text-gray-500 mt-1">
                       Preview: {isSwitch ? getSwitchPreviewFor(fieldState[f.key]) : getFieldPreview(f.key)}
                     </div>

@@ -152,9 +152,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const fields = Array.isArray(resolvedParams.fields) ? resolvedParams.fields : [];
+    const fields = Array.isArray(resolvedParams.conditions) ? resolvedParams.conditions : [];
     const persistent = !!resolvedParams.persistent;
-    let result = { ...input };
+    let result: Record<string, any> = {};
 
     console.log('📝 Field node processing:', {
       fields,
@@ -178,8 +178,9 @@ export class ControlFlowExecutor implements INodeExecutor {
             const finalValue = currentPersistentValue !== undefined ? currentPersistentValue : value;
             
             // Set the persistent value and save to DB
-            await context.setPersistentValue(fieldName, finalValue);
-            
+            if (currentPersistentValue !== finalValue) {
+              await context.setPersistentValue(fieldName, finalValue); // Save only if changed
+            }
             // Also set in result for immediate use in current execution
             result[fieldName] = finalValue;
             

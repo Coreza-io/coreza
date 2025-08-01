@@ -417,7 +417,7 @@ export class WorkflowEngine {
     let category = node.category;
     
     // Handle special category mappings for existing nodes
-    if (node.type === 'If' || node.type === 'Switch') {
+    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields') {
       category = 'ControlFlow';
     } else if (['Scheduler', 'trigger', 'Visualize', 'webhook', 'httprequest'].includes(node.type)) {
       category = 'Utility';
@@ -671,7 +671,7 @@ export class WorkflowEngine {
     } catch (error) {
       console.error(`❌ Error saving persistent state:`, error);
     }
-  }
+    }
 
   /**
    * Get a persistent value

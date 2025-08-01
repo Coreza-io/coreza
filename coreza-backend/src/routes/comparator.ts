@@ -129,12 +129,12 @@ router.post('/switch', async (req, res) => {
 // Field manipulation endpoint
 router.post('/field', async (req, res) => {
   try {
-    const { fields = [], data = {}, workflowId, runId, persistent = false, context } = req.body;
+    const { conditions = [], data = {}, persistent, context } = req.body;
 
-    if (!Array.isArray(fields)) {
+    if (!Array.isArray(conditions)) {
       return res.status(400).json({
         error: 'fields must be an array',
-        received: { fields }
+        received: { conditions }
       });
     }
 
@@ -142,7 +142,7 @@ router.post('/field', async (req, res) => {
     const persistentContext = context; // Context passed from WorkflowEngine
 
     // Process each field operation
-    for (const field of fields) {
+    for (const field of conditions) {
       const { left: fieldName, operator, right: value } = field;
 
       if (!fieldName) {

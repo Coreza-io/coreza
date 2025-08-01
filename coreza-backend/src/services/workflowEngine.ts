@@ -207,11 +207,17 @@ export class WorkflowEngine {
         
         // Handle loop or branching logic
         if (node.type === 'Loop') {
-          const loopData = this.nodeResults.get(nodeId);
-          const iterations = Number(loopData?.iterations || 0);
+          const loopData: any = this.nodeResults.get(nodeId) || {};
+          const items = Array.isArray(loopData.items) ? loopData.items : [];
+          const config = {
+            itemKey: loopData.itemKey || 'item',
+            indexKey: loopData.indexKey || 'index',
+            prevKey: loopData.prevKey,
+            parallel: loopData.parallel
+          };
           const targets = this.edges.filter(e => e.source === nodeId).map(e => e.target);
-          if (targets.length > 0 && iterations > 0) {
-            await this.executeLoopChain(targets[0], iterations, nodeId);
+          if (targets.length > 0 && items.length > 0) {
+            await this.executeLoopChain(targets[0], items, config, nodeId);
           }
         } else {
           const isBranchingNode = this.conditionalMap.has(nodeId);
@@ -347,20 +353,35 @@ export class WorkflowEngine {
   /**
    * Execute a chain of nodes starting from a specific node multiple times
    */
-  private async executeLoopChain(startNodeId: string, times: number, loopNodeId: string): Promise<void> {
-    if (times <= 0) return;
+  private async executeLoopChain(
+    startNodeId: string,
+    items: any[],
+    config: { itemKey: string; indexKey?: string; prevKey?: string; parallel?: boolean },
+    loopNodeId: string
+  ): Promise<void> {
+    if (!items || items.length === 0) return;
 
     const originalLoopResult = this.nodeResults.get(loopNodeId);
+    let prevValue: any = null;
 
-    for (let i = 0; i < times; i++) {
-      console.log(`🔁 Loop iteration ${i + 1} / ${times} starting`);
-      this.nodeResults.set(loopNodeId, { index: i });
+    for (let i = 0; i < items.length; i++) {
+      const payload: any = { [config.itemKey]: items[i] };
+      if (config.indexKey) payload[config.indexKey] = i;
+      if (config.prevKey) payload[config.prevKey] = prevValue;
+
+      console.log(`🔁 Loop iteration ${i + 1} / ${items.length} starting`);
+      this.nodeResults.set(loopNodeId, payload);
 
       const before = new Set(this.executedNodes);
       await this.executeConditionalChain(startNodeId);
       const executedThisIter = Array.from(this.executedNodes).filter(id => !before.has(id));
 
-      if (i < times - 1) {
+      if (executedThisIter.length > 0) {
+        const lastNode = executedThisIter[executedThisIter.length - 1];
+        prevValue = this.nodeResults.get(lastNode);
+      }
+
+      if (i < items.length - 1) {
         for (const id of executedThisIter) {
           this.executedNodes.delete(id);
           this.nodeResults.delete(id);

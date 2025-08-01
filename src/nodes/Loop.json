@@ -1,13 +1,12 @@
 {
   "name": "Loop",
-  "label": "Loop",
-  "def": "Repeat following nodes a specified number of times",
+  "def": "Dynamic For-Each Loop",
   "node_type": "main",
-  "icon": "/assets/icons/if.svg",
+  "icon": "/assets/icons/loop.svg",
   "category": "Logic",
-  "description": "Iterate over downstream nodes multiple times",
+  "description": "Iterate dynamically over any array from previous nodes, with access to index and previous values.",
   "color": "text-yellow-500",
-  "size": { "width": 300, "height": 200 },
+  "size": { "width": 370, "height": 260 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -18,20 +17,51 @@
   },
   "fields": [
     {
-      "key": "iterations",
-      "label": "Iterations",
+      "key": "array_selector",
+      "label": "Array Selector",
       "type": "text",
-      "placeholder": "e.g. 3",
-      "default": "1",
-      "required": true
+      "placeholder": "payload.positions or $.positions",
+      "required": true,
+      "description": "Path or key for the array to loop over (supports dot notation for nested fields)."
     },
     {
-      "key": "index_key",
-      "label": "Index Key",
+      "key": "item_output_field",
+      "label": "Item Output Field",
+      "type": "text",
+      "placeholder": "item",
+      "required": true,
+      "description": "Key for the current item being output (downstream nodes access via this key)."
+    },
+    {
+      "key": "index_output_field",
+      "label": "Index Output Field",
       "type": "text",
       "placeholder": "index",
-      "default": "index",
-      "required": false
+      "required": false,
+      "description": "Key for the loop index (iteration counter, starts at 0)."
+    },
+    {
+      "key": "prev_output_field",
+      "label": "Previous Value Output Field",
+      "type": "text",
+      "placeholder": "prevValue",
+      "required": false,
+      "description": "Key for the previous output value, useful for chaining/calculation."
+    },
+    {
+      "key": "loop_limit",
+      "label": "Max Iterations",
+      "type": "number",
+      "placeholder": "e.g. 10",
+      "required": false,
+      "description": "Maximum iterations (leave blank for unlimited)."
+    },
+    {
+      "key": "parallel",
+      "label": "Process in Parallel",
+      "type": "checkbox",
+      "default": false,
+      "description": "If checked, items are processed in parallel (otherwise sequentially)."
     }
   ]
 }

@@ -60,6 +60,13 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Loop Node
+
+The **Loop** node processes an array from previous nodes and executes its
+downstream branch for each element. Configure the array selector, item and index
+output names, a previous-value key, an iteration limit and optional parallel
+processing.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/d30f4a49-94dc-4348-a2bd-4fc547bc1f60) and click on Share -> Publish.

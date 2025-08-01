@@ -153,6 +153,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       : { ...node.values, ...input };
 
     const fields = Array.isArray(resolvedParams.fields) ? resolvedParams.fields : [];
+    const persistent = !!resolvedParams.persistent;
     let result = { ...input };
 
     console.log('📝 Field node processing:', {
@@ -163,7 +164,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     // Process each field operation
     for (const field of fields) {
-      const { left: fieldName, operator, right: value, persistent: fieldPersistent = false } = field;
+      const { left: fieldName, operator, right: value } = field;
 
       if (!fieldName) {
         continue; // Skip empty field names
@@ -171,7 +172,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
       switch (operator) {
         case 'set':
-          if (fieldPersistent && context?.getPersistentValue && context?.setPersistentValue) {
+          if (persistent && context?.getPersistentValue && context?.setPersistentValue) {
             // Handle persistent field - get current value or use new value
             const currentPersistentValue = context.getPersistentValue(fieldName);
             const finalValue = currentPersistentValue !== undefined ? currentPersistentValue : value;
@@ -192,7 +193,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         case 'copy':
           // Copy value from another field
           if (value && result[value] !== undefined) {
-            if (fieldPersistent && context?.setPersistentValue) {
+            if (persistent && context?.setPersistentValue) {
               await context.setPersistentValue(fieldName, result[value]);
               console.log(`💾 Persistent field ${fieldName} copied value:`, result[value]);
             }
@@ -202,7 +203,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         
         case 'remove':
           // Remove the field
-          if (fieldPersistent && context?.setPersistentValue) {
+          if (persistent && context?.setPersistentValue) {
             await context.setPersistentValue(fieldName, undefined);
             console.log(`💾 Persistent field ${fieldName} removed`);
           }

@@ -137,7 +137,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   };
 
   const updateCondition = useCallback(
-    (idx: number, field: string, value: string) => {
+    (idx: number, field: string, value: any) => {
       handleChange(
         "conditions",
         conditions.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
@@ -533,6 +533,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   })}
                 </div>
               )}
+
+              {/* --------- Checkbox Field --------- */}
+              {f.type === "checkbox" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-foreground">{f.label}</span>
+                  <Switch
+                    checked={!!fieldState[f.key]}
+                    onCheckedChange={(checked) => handleChange(f.key, checked)}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
@@ -608,7 +619,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
                     {/* Operator */}
                     {operatorField && (
-                      <Select
+                     <Select
                         value={cond.operator}
                         onValueChange={(v) => updateCondition(i, "operator", v)}
                       >
@@ -622,7 +633,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             </SelectItem>
                           ))}
                         </SelectContent>
-                      </Select>
+                     </Select>
                     )}
 
                      {/* Right */}
@@ -639,9 +650,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                          }}
                          onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
                          style={cond.right?.includes("{{") ? referenceStyle : undefined}
-                         onFocus={(e) => e.target.select()}
+                       onFocus={(e) => e.target.select()}
                        />
                      )}
+
 
                     {conditions.length > 1 && (
                       <Button

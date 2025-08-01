@@ -298,6 +298,17 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           </Select>
         );
 
+      case "checkbox":
+        return (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-foreground">{f.label}</span>
+            <Switch
+              checked={!!fieldState[f.key]}
+              onCheckedChange={(checked) => handleChange(f.key, checked)}
+            />
+          </div>
+        );
+
       case "multiselect":
         const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
         const availableOptions = selectOptions[f.key] || f.options || [];

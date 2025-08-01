@@ -26,6 +26,7 @@ import yahoofinanceRoutes from './routes/yahoofinance';
 import httpRoutes from './routes/http';
 import schedulerRoutes from './routes/scheduler';
 import comparatorRoutes from './routes/comparator';
+import riskRoutes from './routes/risk';
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeBrokerServices } from './services/brokers/index';
@@ -80,6 +81,8 @@ app.use('/execute', schedulerRoutes);
 console.log('✅ Execute/Scheduler route mounted');
 app.use('/comparator', comparatorRoutes);
 console.log('✅ Comparator route mounted');
+app.use('/risk', riskRoutes);
+console.log('✅ Risk route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

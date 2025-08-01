@@ -18,6 +18,13 @@
   },
   "fields": [
     {
+      "key": "persistent",
+      "label": "Persistent",
+      "type": "checkbox",
+      "placeholder": "Keep values across workflow runs",
+      "default": false
+    },
+    {
       "key":   "fields",
       "label": "Fields to Set",
       "type":  "repeater",
@@ -41,17 +48,10 @@
           "key":         "right",
           "type":        "string",
           "placeholder": "Value or expression"
-        },
-        {
-          "key":         "persistent",
-          "type":        "checkbox",
-          "label":       "Persistent",
-          "placeholder": "Keep value across workflow runs",
-          "default":     false
         }
       ],
       "default": [
-        { "left": "", "operator": "set", "right": "", "persistent": false }
+        { "left": "", "operator": "set", "right": "" }
       ]
     }
   ]

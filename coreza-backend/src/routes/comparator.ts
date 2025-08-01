@@ -143,7 +143,7 @@ router.post('/field', async (req, res) => {
 
     // Process each field operation
     for (const field of fields) {
-      const { left: fieldName, operator, right: value, persistent: fieldPersistent = false } = field;
+      const { left: fieldName, operator, right: value } = field;
 
       if (!fieldName) {
         continue; // Skip empty field names
@@ -151,7 +151,7 @@ router.post('/field', async (req, res) => {
 
       switch (operator) {
         case 'set':
-          if (fieldPersistent && persistentContext) {
+          if (persistent && persistentContext) {
             // Handle persistent field - get current value or use new value
             const currentPersistentValue = persistentContext.getPersistentValue(fieldName);
             const finalValue = currentPersistentValue !== undefined ? currentPersistentValue : value;
@@ -172,7 +172,7 @@ router.post('/field', async (req, res) => {
         case 'copy':
           // Copy value from another field
           if (value && result[value] !== undefined) {
-            if (fieldPersistent && persistentContext) {
+            if (persistent && persistentContext) {
               await persistentContext.setPersistentValue(fieldName, result[value]);
             }
             result[fieldName] = result[value];
@@ -181,7 +181,7 @@ router.post('/field', async (req, res) => {
 
         case 'remove':
           // Remove the field
-          if (fieldPersistent && persistentContext) {
+          if (persistent && persistentContext) {
             await persistentContext.setPersistentValue(fieldName, undefined);
           }
           delete result[fieldName];

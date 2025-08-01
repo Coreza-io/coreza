@@ -533,6 +533,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   })}
                 </div>
               )}
+
+              {/* --------- Checkbox Field --------- */}
+              {f.type === "checkbox" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-foreground">{f.label}</span>
+                  <Switch
+                    checked={!!fieldState[f.key]}
+                    onCheckedChange={(checked) => handleChange(f.key, checked)}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
@@ -643,18 +654,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                        onFocus={(e) => e.target.select()}
                        />
                      )}
-
-                    {persistentField && (
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs">{persistentField.label}</span>
-                        <Switch
-                          checked={!!cond.persistent}
-                          onCheckedChange={(checked) =>
-                            updateCondition(i, "persistent", checked)
-                          }
-                        />
-                      </div>
-                    )}
 
                     {conditions.length > 1 && (
                       <Button

@@ -273,10 +273,28 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const iterations = Number(resolvedParams.iterations || 1);
-    const indexKey = resolvedParams.index_key || 'index';
+    const arraySelector = resolvedParams.array_selector;
+    const itemKey = resolvedParams.item_output_field || 'item';
+    const indexKey = resolvedParams.index_output_field || 'index';
+    const prevKey = resolvedParams.prev_output_field;
+    const loopLimit =
+      typeof resolvedParams.loop_limit === 'number'
+        ? resolvedParams.loop_limit
+        : undefined;
+    const parallel = Boolean(resolvedParams.parallel);
 
-    return { success: true, data: { iterations, indexKey } };
+    let items: any[] = [];
+    if (Array.isArray(resolvedParams.array)) {
+      items = resolvedParams.array;
+    } else if (arraySelector) {
+      items = arraySelector.split('.').reduce((acc: any, k: string) => (acc ? acc[k] : undefined), input);
+    }
+    if (!Array.isArray(items)) items = [];
+    if (loopLimit !== undefined) {
+      items = items.slice(0, loopLimit);
+    }
+
+    return { success: true, data: { items, itemKey, indexKey, prevKey, parallel } };
   }
 
   private evaluateCondition(

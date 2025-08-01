@@ -23,6 +23,7 @@ import HttpRequestDef from './HttpRequest.json'
 import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
 import MathDef from './Math.json'
+import TransformDef from './Transform.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -104,7 +105,8 @@ export const nodeManifest = {
   [HttpRequestDef.name]: HttpRequestDef,
   [RiskEngineDef.name]: RiskEngineDef,
   [FieldDef.name]: FieldDef,
-  [MathDef.name]: MathDef
+  [MathDef.name]: MathDef,
+  [TransformDef.name]: TransformDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

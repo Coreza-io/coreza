@@ -2,6 +2,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
 import { MathService } from '../../services/math';
+import { TransformService } from '../../services/transform';
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = 'ControlFlow';
@@ -22,6 +23,8 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeFieldNode(node, input, context);
         case 'Math':
           return this.executeMathNode(node, input, context);
+        case 'Transform':
+          return this.executeTransformNode(node, input, context);
         default:
           return {
             success: false,
@@ -236,6 +239,23 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     const { left, operator, right } = resolvedParams;
     const result = MathService.calculate({ left, operator, right });
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    return { success: true, data: { result: result.result } };
+  }
+
+  private async executeTransformNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const { value, operator, arg1, arg2 } = resolvedParams;
+    const result = TransformService.transform({ value, operator, arg1, arg2 });
     if (!result.success) {
       return { success: false, error: result.error };
     }

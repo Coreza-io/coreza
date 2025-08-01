@@ -1,6 +1,7 @@
 import express from 'express';
 import { ComparatorService, ComparatorInput } from '../services/comparator';
 import { MathService } from '../services/math';
+import { TransformService } from '../services/transform';
 
 const router = express.Router();
 
@@ -228,6 +229,33 @@ router.post('/math', async (req, res) => {
     console.error('Math operation error:', error);
     res.status(500).json({
       error: 'Failed to perform math operation',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Generic transform operations
+router.post('/transform', async (req, res) => {
+  try {
+    const { value, operator, arg1, arg2 } = req.body;
+
+    if (value === undefined || operator == null) {
+      return res.status(400).json({
+        error: 'value and operator are required',
+        received: { value, operator }
+      });
+    }
+
+    const result = TransformService.transform({ value, operator, arg1, arg2 });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({ result: result.result });
+  } catch (error) {
+    console.error('Transform operation error:', error);
+    res.status(500).json({
+      error: 'Failed to perform transform operation',
       details: error instanceof Error ? error.message : String(error)
     });
   }

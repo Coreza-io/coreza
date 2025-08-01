@@ -106,13 +106,16 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       //console.log(`Field ${f.key} will be shown`);
     }
 
+    const fieldValue = fieldState[f.key];
+    const isReference = typeof fieldValue === "string" && fieldValue.includes("{{");
+
     const commonInputProps = {
-      value: fieldState[f.key] || "",
-      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => 
+      value: fieldValue ?? "",
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
         handleChange(f.key, e.target.value),
       placeholder: f.placeholder,
       className: "nodrag",
-      style: fieldState[f.key]?.includes("{{") ? referenceStyle : undefined,
+      style: isReference ? referenceStyle : undefined,
       onDragOver: (e: React.DragEvent) => {
         //console.log("🔄 DRAG OVER input field:", f.key);
         e.preventDefault();
@@ -170,7 +173,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             <Input 
               {...commonInputProps} 
             />
-            {fieldState[f.key]?.includes("{{") && (
+            {isReference && (
               <div className="text-xs text-gray-500 mt-1">
                 Preview: {getFieldPreview(f.key)}
               </div>
@@ -208,7 +211,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               {...commonInputProps}
               className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
             />
-            {fieldState[f.key]?.includes("{{") && (
+            {isReference && (
               <div className="text-xs text-gray-500 mt-1">
                 Preview: {getFieldPreview(f.key)}
               </div>

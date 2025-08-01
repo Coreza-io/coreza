@@ -1,4 +1,5 @@
-import { supabase } from '../../coreza-backend-node/src/config/supabase';
+// Updated import path for backend
+import { supabase } from '../../coreza-backend/src/config/supabase';
 
 export interface TestUser {
   id: string;

@@ -22,6 +22,7 @@ import VWAPDef from './VWAP.json'
 import HttpRequestDef from './HttpRequest.json'
 import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
+import MathDef from './Math.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -102,7 +103,8 @@ export const nodeManifest = {
   [MarketDef.name]: MarketDef,
   [HttpRequestDef.name]: HttpRequestDef,
   [RiskEngineDef.name]: RiskEngineDef,
-  [FieldDef.name]: FieldDef
+  [FieldDef.name]: FieldDef,
+  [MathDef.name]: MathDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

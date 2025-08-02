@@ -4,6 +4,8 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
+import { handleLoopExecution } from "@/utils/loopExecution";
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BACKEND_URL = "http://localhost:8000";
@@ -59,7 +61,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
-  const { setNodes } = useReactFlow();
+  const { setNodes, setEdges } = useReactFlow();
+  const { toast } = useToast();
   const { user } = useAuth();
   const isMounted = useRef(true);
 
@@ -606,6 +609,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           });
         return updated;
       });
+
+      // After creating loop results, run downstream nodes sequentially
+      if (definition?.name === "Loop") {
+        const outgoing = edges.filter((e) => e.source === nodeId);
+        await handleLoopExecution(
+          { nodes, edges, setNodes, setEdges, setExecutingNode: () => {}, toast },
+          nodeId!,
+          outputData,
+          outgoing,
+          new Set([nodeId!])
+        );
+      }
     } catch (err: any) {
       setError(err.message || "Action failed");
       setLastOutput({

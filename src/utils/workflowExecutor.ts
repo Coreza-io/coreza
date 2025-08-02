@@ -390,7 +390,7 @@ export class WorkflowExecutor {
           const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
           if (isLoopNode && result?.items?.length > 0) {
             console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items`);
-            await this.handleLoopExecution(id, result, out, executed, queue, retryCount);
+            await this.handleLoopExecution(id, result, out, executed);
             continue; // Skip normal processing for loop nodes
           }
           
@@ -558,9 +558,7 @@ export class WorkflowExecutor {
     loopNodeId: string,
     loopResult: any,
     outgoingEdges: Edge[],
-    executed: Set<string>,
-    queue: string[],
-    retryCount: Map<string, number>
+    executed: Set<string>
   ): Promise<void> {
     const { items, batchSize = 1 } = loopResult;
     
@@ -575,14 +573,12 @@ export class WorkflowExecutor {
       for (const item of batch) {
         console.log(`🔄 [LOOP EXECUTOR] Processing item:`, item);
         
-        // Queue downstream nodes with the current item as input
+        // Update downstream nodes with current loop item data
+        this.updateDownstreamNodesWithLoopData(outgoingEdges, item, i + batch.indexOf(item));
+        
+        // Execute downstream nodes with the current item as input
         for (const edge of outgoingEdges) {
           const downstreamNodeId = edge.target;
-          
-          // Create a custom execution context for this loop iteration
-          const loopIterationId = `${downstreamNodeId}_loop_${i}_${batch.indexOf(item)}`;
-          
-          // Execute downstream node with current item
           await this.executeLoopIteration(downstreamNodeId, item, i + batch.indexOf(item), executed);
         }
       }
@@ -594,6 +590,30 @@ export class WorkflowExecutor {
     console.log(`🎉 [LOOP EXECUTOR] Completed loop execution for all ${items.length} items`);
   }
   
+  /**
+   * Update downstream nodes with current loop item data
+   */
+  private updateDownstreamNodesWithLoopData(outgoingEdges: Edge[], item: any, index: number): void {
+    this.context.setNodes(nodes =>
+      nodes.map(node => {
+        const isDownstream = outgoingEdges.some(edge => edge.target === node.id);
+        if (isDownstream) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              input: item, // Set the current loop item as input
+              loopItem: item, // Also store as loopItem for reference
+              loopIndex: index,
+              lastUpdated: new Date().toISOString(),
+            }
+          };
+        }
+        return node;
+      })
+    );
+  }
+
   /**
    * Execute a single loop iteration for a downstream node
    */
@@ -628,7 +648,7 @@ export class WorkflowExecutor {
             console.error(`❌ [LOOP ITERATION] Node ${nodeId} iteration ${index} failed:`, err);
             await new Promise(resolve => setTimeout(resolve, 200));
           }
-        } as NodeExecutionDetail & { loopItem?: any; loopIndex?: number }
+        } as NodeExecutionDetail
       });
       
       window.dispatchEvent(execEvent);

@@ -92,10 +92,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
   
-  // Extract selectedInputData with the same logic as preview
+  // Extract selectedInputData with special handling for loop items
   let selectedInputData = selectedPrevNode?.data?.output || selectedPrevNode?.data || {};
-  // If selectedInputData is an array (from previousNodes), get the first item
-  if (Array.isArray(selectedInputData) && selectedInputData.length > 0) {
+  
+  // Check if we're in a loop context and prefer loop item data
+  if (data?.loopItem) {
+    selectedInputData = data.loopItem;
+    console.log("🔄 [LOOP DATA] Using loop item as input:", selectedInputData);
+  } else if (Array.isArray(selectedInputData) && selectedInputData.length > 0) {
     selectedInputData = selectedInputData[0] || {};
   }
 
@@ -486,61 +490,94 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       payload.user_id = userId;
 
       let outputData: any;
-      const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
-      let operationMethod = "POST";
       
-      if (operationField) {
-        const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
-        if (opSelected && opSelected.method) {
-          operationMethod = opSelected.method;
-        }
-      }
-
-      let url = definition?.action?.url || '';
-      let method = definition?.action?.method || "POST";
-      
-      if (url.includes("{{") && url.includes("}}")) {
-        url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
-      }
-
-      if (method.includes("{{") && method.includes("}}")) {
-        method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
-          key === "method" ? operationMethod : fieldState[key] || ""
-        );
-      }
-
-      if (definition?.action?.url && definition?.action?.method) {
-        let fullUrl = `${BACKEND_URL}${url}`;
-        let params: URLSearchParams | undefined;
+      // Special handling for Loop node - process in frontend without backend call
+      if (definition?.name === "Loop") {
+        const inputArrayPath = fieldState.inputArray || "items";
+        const batchSize = parseInt(fieldState.batchSize) || 1;
         
-        if (method === "GET") {
-          params = new URLSearchParams();
-          params.append("user_id", userId);
-          params.append("credential_id", fieldState.credential_id ?? "");
-          fullUrl += `?${params.toString()}`;
+        // Extract array from selected input data
+        let arrayData = selectedInputData;
+        if (inputArrayPath.includes('.')) {
+          const pathParts = inputArrayPath.split('.');
+          for (const part of pathParts) {
+            arrayData = arrayData?.[part];
+          }
+        } else {
+          arrayData = arrayData?.[inputArrayPath];
         }
-
-        const fetchOptions: RequestInit = { method };
-        if (method !== "GET") {
-          fetchOptions.headers = { "Content-Type": "application/json" };
-          fetchOptions.body = JSON.stringify(payload);
+        
+        if (!Array.isArray(arrayData)) {
+          throw new Error(`Field "${inputArrayPath}" is not an array or does not exist`);
         }
-
-        // Log the payload and request details
-        console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
-        console.log("🚀 [BACKEND REQUEST] Method:", method);
-        console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
-        if (method === "GET" && params) {
-          console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
-        }
-
-        const res = await fetch(fullUrl, fetchOptions);
-        const responseData = await res.json();
-        if (!res.ok) throw new Error(responseData.detail || "Action failed");
-        outputData = [responseData];
+        
+        outputData = {
+          isLoopNode: true,
+          items: arrayData,
+          batchSize: batchSize,
+          totalItems: arrayData.length
+        };
+        
+        console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
       } else {
-        outputData = [payload];
+        // Regular backend processing for non-Loop nodes
+        const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
+        let operationMethod = "POST";
+        
+        if (operationField) {
+          const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
+          if (opSelected && opSelected.method) {
+            operationMethod = opSelected.method;
+          }
+        }
+
+        let url = definition?.action?.url || '';
+        let method = definition?.action?.method || "POST";
+        
+        if (url.includes("{{") && url.includes("}}")) {
+          url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
+        }
+
+        if (method.includes("{{") && method.includes("}}")) {
+          method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+            key === "method" ? operationMethod : fieldState[key] || ""
+          );
+        }
+
+        if (definition?.action?.url && definition?.action?.method) {
+          let fullUrl = `${BACKEND_URL}${url}`;
+          let params: URLSearchParams | undefined;
+          
+          if (method === "GET") {
+            params = new URLSearchParams();
+            params.append("user_id", userId);
+            params.append("credential_id", fieldState.credential_id ?? "");
+            fullUrl += `?${params.toString()}`;
+          }
+
+          const fetchOptions: RequestInit = { method };
+          if (method !== "GET") {
+            fetchOptions.headers = { "Content-Type": "application/json" };
+            fetchOptions.body = JSON.stringify(payload);
+          }
+
+          // Log the payload and request details
+          console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+          console.log("🚀 [BACKEND REQUEST] Method:", method);
+          console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
+          if (method === "GET" && params) {
+            console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
+          }
+
+          const res = await fetch(fullUrl, fetchOptions);
+          const responseData = await res.json();
+          if (!res.ok) throw new Error(responseData.detail || "Action failed");
+          outputData = [responseData];
+        } else {
+          outputData = [payload];
+        }
       }
+
 
       setLastOutput(outputData);
       const finalOutput = overrideOutput !== null ? overrideOutput : outputData;

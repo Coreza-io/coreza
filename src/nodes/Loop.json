@@ -11,10 +11,6 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": {
-    "url": "/control/loop",
-    "method": "POST"
-  },
   "fields": [
     {
       "key": "inputArray",

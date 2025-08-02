@@ -4,6 +4,8 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
+import { updateDownstreamNodesWithLoopData } from "@/utils/loopExecution";
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BACKEND_URL = "http://localhost:8000";
@@ -59,7 +61,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
-  const { setNodes } = useReactFlow();
+  const { setNodes, setEdges } = useReactFlow();
+  const { toast } = useToast();
   const { user } = useAuth();
   const isMounted = useRef(true);
 
@@ -579,33 +582,127 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
 
 
-      setLastOutput(outputData);
-      const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
-      data.output = finalOutput;
+      if (definition?.name === "Loop") {
+        const items = outputData.items || [];
+        const firstItem = items[0];
+        setLastOutput(firstItem);
+        data.output = firstItem;
 
-      setNodes((nds) => {
-        const updated = nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, output: finalOutput } }
-            : n
+        const outgoing = edges.filter((e) => e.source === nodeId);
+
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    output: firstItem,
+                    loopItems: items,
+                    loopIndex: 0,
+                    loopItem: firstItem,
+                  },
+                }
+              : n
+          )
         );
-        edges
-          .filter((e) => e.source === nodeId)
-          .forEach((edge) => {
-            const idx = updated.findIndex((n) => n.id === edge.target);
-            if (idx !== -1) {
-              updated[idx] = {
-                ...updated[idx],
-                data: {
-                  ...updated[idx].data,
-                  input: finalOutput,
-                  lastUpdated: new Date().toISOString(),
-                },
-              };
-            }
-          });
-        return updated;
-      });
+
+        updateDownstreamNodesWithLoopData(
+          { nodes, edges, setNodes, setEdges, setExecutingNode: () => {}, toast },
+          outgoing,
+          firstItem,
+          0
+        );
+      } else {
+        setLastOutput(outputData);
+        const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+        data.output = finalOutput;
+
+        setNodes((nds) => {
+          const updated = nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, output: finalOutput } }
+              : n
+          );
+          edges
+            .filter((e) => e.source === nodeId)
+            .forEach((edge) => {
+              const idx = updated.findIndex((n) => n.id === edge.target);
+              if (idx !== -1) {
+                updated[idx] = {
+                  ...updated[idx],
+                  data: {
+                    ...updated[idx].data,
+                    input: finalOutput,
+                    lastUpdated: new Date().toISOString(),
+                  },
+                };
+              }
+            });
+          return updated;
+        });
+
+        // After this node executes, advance upstream Loop iteration if present
+        const incoming = edges.filter((e) => e.target === nodeId);
+        const loopEdge = incoming.find((e) => {
+          const src = nodes.find((n) => n.id === e.source);
+          return (src?.data?.definition as any)?.name === "Loop" && Array.isArray(src.data.loopItems);
+        });
+
+        if (loopEdge) {
+          const loopNodeId = loopEdge.source;
+          const loopNode = nodes.find((n) => n.id === loopNodeId);
+          const loopItems = loopNode?.data.loopItems || [];
+          const currentIndex = loopNode?.data.loopIndex || 0;
+          const nextIndex = currentIndex + 1;
+
+          if (nextIndex < loopItems.length) {
+            const nextItem = loopItems[nextIndex];
+            const outgoingFromLoop = edges.filter((e) => e.source === loopNodeId);
+
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === loopNodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        output: nextItem,
+                        loopItem: nextItem,
+                        loopIndex: nextIndex,
+                      },
+                    }
+                  : n
+              )
+            );
+
+            updateDownstreamNodesWithLoopData(
+              { nodes, edges, setNodes, setEdges, setExecutingNode: () => {}, toast },
+              outgoingFromLoop,
+              nextItem,
+              nextIndex
+            );
+          } else {
+            toast({ title: "Loop completed", description: "All items processed" });
+            const firstItem = loopItems[0];
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === loopNodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        output: firstItem,
+                        loopItem: firstItem,
+                        loopIndex: 0,
+                      },
+                    }
+                  : n
+              )
+            );
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Action failed");
       setLastOutput({

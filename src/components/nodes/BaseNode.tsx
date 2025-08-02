@@ -501,17 +501,21 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         
         // Extract array from selected input data
         let arrayData = selectedInputData;
-        if (inputArrayPath.includes('.')) {
-          const pathParts = inputArrayPath.split('.');
-          for (const part of pathParts) {
-            arrayData = arrayData?.[part];
-          }
-        } else {
-          arrayData = arrayData?.[inputArrayPath];
-        }
+
         
         if (!Array.isArray(arrayData)) {
-          throw new Error(`Field "${inputArrayPath}" is not an array or does not exist`);
+          if (arrayData === undefined || arrayData === null) {
+            arrayData = []; // default to empty array
+          } else if (typeof arrayData === 'string') {
+            try {
+              const parsed = JSON.parse(arrayData);
+              arrayData = Array.isArray(parsed) ? parsed : [parsed]; 
+            } catch {
+              arrayData = [arrayData]; // fallback: wrap single value
+            }
+          } else {
+            arrayData = [arrayData]; // wrap non-array value
+          }
         }
         
         outputData = {

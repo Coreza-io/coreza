@@ -36,7 +36,7 @@ export async function handleLoopExecution(
   console.log(`🎉 [LOOP EXECUTOR] Completed loop execution for all ${items.length} items`);
 }
 
-function updateDownstreamNodesWithLoopData(
+export function updateDownstreamNodesWithLoopData(
   context: ExecutionContext,
   outgoingEdges: Edge[],
   item: any,

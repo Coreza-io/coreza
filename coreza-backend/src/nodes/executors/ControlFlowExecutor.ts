@@ -273,7 +273,13 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const { inputArray, batchSize = 1 } = params;
+    const {
+      inputArray,
+      batchSize = 1,
+      parallel = false,
+      continueOnError = false,
+      throttleMs = 200,
+    } = params;
     
     // Get the array to loop over
     let items: any[] = [];
@@ -296,8 +302,11 @@ export class ControlFlowExecutor implements INodeExecutor {
         items,
         batchSize,
         totalItems: items.length,
-        isLoopNode: true // Special flag to identify loop nodes
-      }
+        parallel,
+        continueOnError,
+        throttleMs,
+        isLoopNode: true, // Special flag to identify loop nodes
+      },
     };
   }
 

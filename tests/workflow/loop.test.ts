@@ -12,12 +12,15 @@ describe('Loop node', () => {
 
     const res = await request(app)
       .post('/control/loop')
-      .send({ inputArray: 'items', items: [1, 2, 3], batchSize: 1 })
+      .send({ inputArray: 'items', items: [1, 2, 3], batchSize: 1, parallel: true, continueOnError: true, throttleMs: 50 })
       .expect(200);
 
     expect(res.body.items).toEqual([1, 2, 3]);
     expect(res.body.batchSize).toBe(1);
     expect(res.body.isLoopNode).toBe(true);
+    expect(res.body.parallel).toBe(true);
+    expect(res.body.continueOnError).toBe(true);
+    expect(res.body.throttleMs).toBe(50);
   });
 
   test('ControlFlowExecutor executes Loop node', async () => {
@@ -39,5 +42,7 @@ describe('Loop node', () => {
     expect(result.data.items).toEqual([1, 2, 3]);
     expect(result.data.batchSize).toBe(1);
     expect(result.data.isLoopNode).toBe(true);
+    expect(result.data.parallel).toBe(false);
+    expect(result.data.continueOnError).toBe(false);
   });
 });

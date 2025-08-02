@@ -23,7 +23,7 @@
     {
       "key": "batchSize",
       "label": "Batch Size",
-      "type": "number",
+      "type": "text",
       "placeholder": "1",
       "default": 1,
       "description": "Number of items to process per iteration."

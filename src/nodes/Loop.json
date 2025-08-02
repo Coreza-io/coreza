@@ -27,6 +27,28 @@
       "placeholder": "1",
       "default": 1,
       "description": "Number of items to process per iteration."
+    },
+    {
+      "key": "parallel",
+      "label": "Parallel Execution",
+      "type": "checkbox",
+      "default": false,
+      "description": "Run all iterations concurrently"
+    },
+    {
+      "key": "continueOnError",
+      "label": "Continue On Error",
+      "type": "checkbox",
+      "default": false,
+      "description": "Skip failed iterations instead of aborting"
+    },
+    {
+      "key": "throttleMs",
+      "label": "Throttle (ms)",
+      "type": "text",
+      "placeholder": "200",
+      "default": 200,
+      "description": "Delay between loop iterations"
     }
   ]
 }

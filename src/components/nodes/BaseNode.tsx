@@ -4,7 +4,7 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
-import { WorkflowExecutor } from "@/utils/workflowExecutor";
+import { handleLoopExecution } from "@/utils/loopExecution";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -612,16 +612,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       // After creating loop results, run downstream nodes sequentially
       if (definition?.name === "Loop") {
-        const workflowExecutor = new WorkflowExecutor({
-          nodes,
-          edges,
-          setNodes,
-          setEdges,
-          setExecutingNode: () => {},
-          toast,
-        });
         const outgoing = edges.filter((e) => e.source === nodeId);
-        await workflowExecutor.handleLoopExecution(
+        await handleLoopExecution(
+          { nodes, edges, setNodes, setEdges, setExecutingNode: () => {}, toast },
           nodeId!,
           outputData,
           outgoing,

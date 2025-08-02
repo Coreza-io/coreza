@@ -12,6 +12,7 @@ import {
   Edge,
   Node,
   BackgroundVariant,
+  MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2, Zap } from "luci
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
+import { LoopEdge } from "@/components/workflow/LoopEdge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,6 +46,7 @@ const nodeTypes = Object.fromEntries([
 
 const edgeTypes = {
   removable: RemovableEdge,
+  loop: LoopEdge,
 };
 
 // Initial nodes for demonstration  
@@ -94,6 +97,30 @@ const WorkflowEditor = () => {
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  const styledEdges = useMemo(() =>
+    edges.map(e => {
+      if (e.sourceHandle === 'loop') {
+        const loopNode = nodes.find(n => n.id === e.source);
+        const loopItems = (loopNode?.data?.loopItems as any[]) || [];
+        return {
+          ...e,
+          type: 'loop',
+          style: { stroke: '#22c55e', strokeWidth: 3 },
+          animated: true,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#22c55e',
+          },
+          data: {
+            ...e.data,
+            label: `${loopItems.length} item${loopItems.length > 1 ? 's' : ''}`,
+          },
+        };
+      }
+      return e;
+    }),
+  [edges, nodes]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({
@@ -662,7 +689,7 @@ const WorkflowEditor = () => {
         <div className="flex-1 bg-trading-grid">
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={styledEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}

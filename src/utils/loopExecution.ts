@@ -1,159 +1,109 @@
-import type { Edge } from '@xyflow/react';
-import type { ExecutionContext, NodeExecutionDetail } from './workflowExecutor';
+import type { Edge, Node } from '@xyflow/react';
+import type { ExecutionContext } from './workflowExecutor';
 
-/**
- * Handle Loop node execution - execute downstream nodes once per item
- */
 export async function handleLoopExecution(
   context: ExecutionContext,
   loopNodeId: string,
-  loopResult: any,
-  outgoingEdges: Edge[],
-  executed: Set<string>
+  result: any,
+  outgoing: Edge[],
+  globalExecuted: Set<string>
 ): Promise<void> {
-  const {
-    items,
-    batchSize = 1,
-    parallel = false,
-    continueOnError = false,
-    throttleMs = 200,
-  } = loopResult;
-  console.log(`🔄 [LOOP EXECUTOR] Starting loop execution for ${items.length} items with batch size ${batchSize}`);
+  const { items = [], continueOnError = false } = result;
 
-  const pending: Promise<void>[] = [];
+  context.setNodes(ns =>
+    ns.map(n =>
+      n.id === loopNodeId
+        ? { ...n, data: { ...n.data, loopItems: items } }
+        : n
+    )
+  );
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    console.log(
-      `🔄 [LOOP EXECUTOR] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)}: items ${i}-${i + batch.length - 1}`
+  const subgraphEdges = collectSubgraph(context.nodes, context.edges, loopNodeId);
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+
+    context.setNodes(ns =>
+      ns.map(n =>
+        n.id === loopNodeId
+          ? {
+              ...n,
+              data: { ...n.data, loopItem: item, loopIndex: idx, output: item },
+            }
+          : n
+      )
     );
 
-    const payload = batchSize > 1 ? batch : batch[0];
-    updateDownstreamNodesWithLoopData(context, outgoingEdges, payload, i);
+    const queue = outgoing.map(e => e.target);
+    const executed = new Set<string>([loopNodeId]);
+    const failed = new Set<string>();
+    const retryCnt = new Map<string, number>();
+    const MAX_RETRIES = context.nodes.length * 2;
 
-    const runEdge = (edge: Edge) =>
-      executeLoopIteration(
-        context,
-        edge.target,
-        payload,
-        i,
-        executed,
-        throttleMs,
-        continueOnError
-      );
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (executed.has(id) || failed.has(id)) continue;
 
-    if (parallel) {
-      outgoingEdges.forEach((edge) => pending.push(runEdge(edge)));
-    } else {
-      for (const edge of outgoingEdges) {
-        try {
-          await runEdge(edge);
-        } catch (err) {
-          if (!continueOnError) throw err;
+      const incoming = subgraphEdges.filter(e => e.target === id);
+      const missing = incoming.filter(e => !executed.has(e.source) && !failed.has(e.source));
+      if (missing.length) {
+        const tries = (retryCnt.get(id) || 0) + 1;
+        if (tries >= MAX_RETRIES) {
+          failed.add(id);
+          continue;
         }
+        retryCnt.set(id, tries);
+        queue.push(id);
+        continue;
       }
-      await new Promise((resolve) => setTimeout(resolve, throttleMs));
+
+      try {
+        await context.executeNode?.(id, new Set([...globalExecuted, ...executed]));
+        executed.add(id);
+      } catch (err) {
+        if (!continueOnError) throw err;
+        failed.add(id);
+      }
+
+      const children = subgraphEdges
+        .filter(e => e.source === id)
+        .map(e => e.target)
+        .filter(t => !queue.includes(t) && !executed.has(t));
+      queue.push(...children);
     }
   }
 
-  if (parallel) {
-    if (continueOnError) {
-      await Promise.allSettled(pending);
-    } else {
-      await Promise.all(pending);
-    }
-  }
-
-  console.log(`🎉 [LOOP EXECUTOR] Completed loop execution for all ${items.length} items`);
-  const firstItem = items[0];
-  context.setNodes(nodes =>
-    nodes.map(node =>
-      node.id === loopNodeId
+  context.setNodes(ns =>
+    ns.map(n =>
+      n.id === loopNodeId
         ? {
-            ...node,
+            ...n,
             data: {
-              ...node.data,
-              output: firstItem,
-              loopItem: firstItem,
-              loopIndex: 0,
-            }
+              ...n.data,
+              output: n.data.originalOutput,
+              loopItem: undefined,
+              loopIndex: undefined,
+              loopItems: undefined,
+            },
           }
-        : node
+        : n
     )
   );
 }
 
-export function updateDownstreamNodesWithLoopData(
-  context: ExecutionContext,
-  outgoingEdges: Edge[],
-  item: any,
-  index: number
-): void {
-  context.setNodes(nodes =>
-    nodes.map(node => {
-      const isDownstream = outgoingEdges.some(edge => edge.target === node.id);
-      if (isDownstream) {
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            input: item,
-            loopItem: item,
-            loopIndex: index,
-            lastUpdated: new Date().toISOString(),
-          }
-        };
+function collectSubgraph(nodes: Node[], edges: Edge[], startId: string): Edge[] {
+  const seen = new Set<string>();
+  const stack = [startId];
+  const sub: Edge[] = [];
+  while (stack.length) {
+    const src = stack.pop()!;
+    for (const e of edges.filter(e => e.source === src)) {
+      if (!seen.has(e.target)) {
+        seen.add(e.target);
+        sub.push(e);
+        stack.push(e.target);
       }
-      return node;
-    })
-  );
-}
-
-async function executeLoopIteration(
-  context: ExecutionContext,
-  nodeId: string,
-  item: any,
-  index: number,
-  executed: Set<string>,
-  throttleMs: number,
-  continueOnError: boolean
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    try {
-      console.log(`🔄 [LOOP ITERATION] Executing node ${nodeId} with item ${index}:`, item);
-
-      const execEvent = new CustomEvent('auto-execute-node', {
-        detail: {
-          nodeId,
-          executedNodes: executed,
-          allNodes: context.nodes,
-          allEdges: context.edges,
-          explicitlyTriggered: true,
-          loopItem: item,
-          loopIndex: index,
-          onSuccess: async () => {
-            console.log(`✅ [LOOP ITERATION] Node ${nodeId} iteration ${index} succeeded`);
-            await new Promise((r) => setTimeout(r, throttleMs));
-            resolve();
-          },
-          onError: async (err: any) => {
-            console.error(`❌ [LOOP ITERATION] Node ${nodeId} iteration ${index} failed:`, err);
-            await new Promise((r) => setTimeout(r, throttleMs));
-            if (continueOnError) {
-              resolve();
-            } else {
-              reject(err);
-            }
-          },
-        } as NodeExecutionDetail,
-      });
-
-      window.dispatchEvent(execEvent);
-    } catch (error) {
-      console.error(`❌ [LOOP ITERATION] Failed to execute node ${nodeId} for item ${index}:`, error);
-      if (continueOnError) resolve();
-      else reject(error);
     }
-  });
+  }
+  return sub;
 }
-

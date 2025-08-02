@@ -8,6 +8,7 @@ export interface ExecutionContext {
   setEdges: (update: (edges: Edge[]) => Edge[]) => void;
   setExecutingNode: (nodeId: string | null) => void;
   toast: (params: any) => void;
+  executeNode?: (nodeId: string, executed: Set<string>) => Promise<any>;
 }
 
 export interface ExecutionMetrics {
@@ -37,6 +38,7 @@ export class WorkflowExecutor {
 
   constructor(context: ExecutionContext) {
     this.context = context;
+    this.context.executeNode = this.executeNode.bind(this);
     this.preCalculateConditionalBranches();
   }
 

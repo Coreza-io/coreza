@@ -597,6 +597,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       if (definition?.name === "Loop") {
         const items = outputData.items || [];
         const firstItem = items[0];
+        const original = selectedInputData;
         setLastOutput(firstItem);
         data.output = firstItem;
 
@@ -607,6 +608,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                 ...n,
                 data: {
                   ...n.data,
+                  originalOutput: original,
                   output: firstItem,
                   loopItems: items,
                   loopIndex: 0,
@@ -706,7 +708,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             );
           } else {
             toast({ title: "Loop completed", description: "All items processed" });
-            const firstItem = loopItems[0];
             setNodes((nds) =>
               nds.map((n) =>
                 n.id === loopNodeId
@@ -714,9 +715,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                       ...n,
                       data: {
                         ...n.data,
-                        output: firstItem,
-                        loopItem: firstItem,
-                        loopIndex: 0,
+                        output: n.data.originalOutput,
+                        loopItem: undefined,
+                        loopIndex: undefined,
+                        loopItems: undefined,
                       },
                     }
                   : n

@@ -269,33 +269,32 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    const resolvedParams = context?.resolveNodeParameters
+    // 1) Resolve node parameters (with template support if available)
+    const params = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const arraySelector = resolvedParams.array_selector;
-    const itemKey = resolvedParams.item_output_field || 'item';
-    const indexKey = resolvedParams.index_output_field || 'index';
-    const prevKey = resolvedParams.prev_output_field;
-    const loopLimit =
-      typeof resolvedParams.loop_limit === 'number'
-        ? resolvedParams.loop_limit
-        : undefined;
-    const parallel = Boolean(resolvedParams.parallel);
+    // 2) Destructure with defaults
+    const {
+      array_selector: counter,
+      parallel: parallelFlag
+    } = params;
+    const parallel = Boolean(parallelFlag);
 
+    // 4) Extract and normalize items
     let items: any[] = [];
-    if (Array.isArray(resolvedParams.array)) {
-      items = resolvedParams.array;
-    } else if (arraySelector) {
-      items = arraySelector.split('.').reduce((acc: any, k: string) => (acc ? acc[k] : undefined), input);
-    }
-    if (!Array.isArray(items)) items = [];
-    if (loopLimit !== undefined) {
-      items = items.slice(0, loopLimit);
-    }
-
-    return { success: true, data: { items, itemKey, indexKey, prevKey, parallel } };
+    items = counter;
+    // 7) Return the loop configuration
+    return {
+      success: true,
+      data: {
+        items,
+        parallel
+      }
+    };
   }
+
+
 
   private evaluateCondition(
     value1: any,

@@ -11,35 +11,13 @@ function getByPath(obj: any, path: string): any {
 router.post('/loop', (req, res) => {
   try {
     const {
-      array = [],
-      array_selector,
-      item_output_field = 'item',
-      index_output_field = 'index',
-      prev_output_field,
-      loop_limit,
-      parallel = false,
-      input = {}
+      counter,
+      parallel = false
     } = req.body;
 
-    let items: any[] = Array.isArray(array) ? array : [];
-
-    if (!items.length && array_selector) {
-      const fromInput = getByPath(input, array_selector);
-      if (Array.isArray(fromInput)) {
-        items = fromInput;
-      }
-    }
-
-    if (typeof loop_limit === 'number') {
-      items = items.slice(0, loop_limit);
-    }
-
     res.json({
-      items,
-      itemKey: item_output_field,
-      indexKey: index_output_field,
-      prevKey: prev_output_field,
-      parallel: Boolean(parallel)
+      counter,
+      parallel
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to process loop data' });

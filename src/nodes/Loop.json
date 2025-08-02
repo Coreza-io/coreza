@@ -17,44 +17,12 @@
   },
   "fields": [
     {
-      "key": "array_selector",
-      "label": "Array Selector",
+      "key": "counter",
+      "label": "Counter",
       "type": "text",
-      "placeholder": "payload.positions or $.positions",
+      "placeholder": "e.g 2",
       "required": true,
       "description": "Path or key for the array to loop over (supports dot notation for nested fields)."
-    },
-    {
-      "key": "item_output_field",
-      "label": "Item Output Field",
-      "type": "text",
-      "placeholder": "item",
-      "required": true,
-      "description": "Key for the current item being output (downstream nodes access via this key)."
-    },
-    {
-      "key": "index_output_field",
-      "label": "Index Output Field",
-      "type": "text",
-      "placeholder": "index",
-      "required": false,
-      "description": "Key for the loop index (iteration counter, starts at 0)."
-    },
-    {
-      "key": "prev_output_field",
-      "label": "Previous Value Output Field",
-      "type": "text",
-      "placeholder": "prevValue",
-      "required": false,
-      "description": "Key for the previous output value, useful for chaining/calculation."
-    },
-    {
-      "key": "loop_limit",
-      "label": "Max Iterations",
-      "type": "number",
-      "placeholder": "e.g. 10",
-      "required": false,
-      "description": "Maximum iterations (leave blank for unlimited)."
     },
     {
       "key": "parallel",

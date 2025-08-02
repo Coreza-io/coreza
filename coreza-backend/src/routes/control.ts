@@ -10,14 +10,23 @@ function getByPath(obj: any, path: string): any {
 
 router.post('/loop', (req, res) => {
   try {
-    const {
-      counter,
-      parallel = false
-    } = req.body;
+    const { inputArray, batchSize = 1, items } = req.body;
+    
+    // Get the array to loop over
+    let arrayData: any[] = [];
+    if (inputArray && req.body[inputArray]) {
+      arrayData = Array.isArray(req.body[inputArray]) ? req.body[inputArray] : [req.body[inputArray]];
+    } else if (Array.isArray(items)) {
+      arrayData = items;
+    }
+
+    console.log(`🔄 Loop processing ${arrayData.length} items with batch size ${batchSize}`);
 
     res.json({
-      counter,
-      parallel
+      items: arrayData,
+      batchSize,
+      totalItems: arrayData.length,
+      isLoopNode: true
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to process loop data' });

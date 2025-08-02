@@ -12,11 +12,12 @@ describe('Loop node', () => {
 
     const res = await request(app)
       .post('/control/loop')
-      .send({ array: [1, 2, 3], loop_limit: 2, index_output_field: 'i' })
+      .send({ inputArray: 'items', items: [1, 2, 3], batchSize: 1 })
       .expect(200);
 
-    expect(res.body.items).toEqual([1, 2]);
-    expect(res.body.indexKey).toBe('i');
+    expect(res.body.items).toEqual([1, 2, 3]);
+    expect(res.body.batchSize).toBe(1);
+    expect(res.body.isLoopNode).toBe(true);
   });
 
   test('ControlFlowExecutor executes Loop node', async () => {
@@ -26,10 +27,8 @@ describe('Loop node', () => {
       type: 'Loop',
       category: 'ControlFlow',
       values: {
-        array_selector: 'items',
-        item_output_field: 'item',
-        index_output_field: 'i',
-        loop_limit: 2
+        inputArray: 'items',
+        batchSize: 1
       }
     } as any;
 
@@ -37,8 +36,8 @@ describe('Loop node', () => {
 
     const result = await executor.execute(node, input, {});
     expect(result.success).toBe(true);
-    expect(result.data.items).toEqual([1, 2]);
-    expect(result.data.itemKey).toBe('item');
-    expect(result.data.indexKey).toBe('i');
+    expect(result.data.items).toEqual([1, 2, 3]);
+    expect(result.data.batchSize).toBe(1);
+    expect(result.data.isLoopNode).toBe(true);
   });
 });

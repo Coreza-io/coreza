@@ -269,27 +269,34 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    // 1) Resolve node parameters (with template support if available)
     const params = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    // 2) Destructure with defaults
-    const {
-      array_selector: counter,
-      parallel: parallelFlag
-    } = params;
-    const parallel = Boolean(parallelFlag);
-
-    // 4) Extract and normalize items
+    const { inputArray, batchSize = 1 } = params;
+    
+    // Get the array to loop over
     let items: any[] = [];
-    items = counter;
-    // 7) Return the loop configuration
+    if (inputArray && input[inputArray]) {
+      items = Array.isArray(input[inputArray]) ? input[inputArray] : [input[inputArray]];
+    } else if (Array.isArray(input.items)) {
+      items = input.items;
+    } else {
+      return {
+        success: false,
+        error: `No array found for field: ${inputArray || 'items'}`
+      };
+    }
+
+    console.log(`🔄 Loop node processing ${items.length} items with batch size ${batchSize}`);
+
     return {
       success: true,
       data: {
         items,
-        parallel
+        batchSize,
+        totalItems: items.length,
+        isLoopNode: true // Special flag to identify loop nodes
       }
     };
   }

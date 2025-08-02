@@ -1,12 +1,12 @@
 {
   "name": "Loop",
-  "def": "Dynamic For-Each Loop",
+  "def": "Loop Over Items",
   "node_type": "main",
   "icon": "/assets/icons/loop.svg",
   "category": "Logic",
-  "description": "Iterate dynamically over any array from previous nodes, with access to index and previous values.",
+  "description": "Iterate over array items, executing downstream nodes once per item (like N8N Loop Over).",
   "color": "text-yellow-500",
-  "size": { "width": 370, "height": 260 },
+  "size": { "width": 320, "height": 200 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -17,19 +17,20 @@
   },
   "fields": [
     {
-      "key": "counter",
-      "label": "Counter",
+      "key": "inputArray",
+      "label": "Input Array",
       "type": "text",
-      "placeholder": "e.g 2",
+      "placeholder": "items",
       "required": true,
-      "description": "Path or key for the array to loop over (supports dot notation for nested fields)."
+      "description": "Field name containing the array to loop over."
     },
     {
-      "key": "parallel",
-      "label": "Process in Parallel",
-      "type": "checkbox",
-      "default": false,
-      "description": "If checked, items are processed in parallel (otherwise sequentially)."
+      "key": "batchSize",
+      "label": "Batch Size",
+      "type": "number",
+      "placeholder": "1",
+      "default": 1,
+      "description": "Number of items to process per iteration."
     }
   ]
 }

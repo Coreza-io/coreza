@@ -23,6 +23,8 @@ export interface NodeExecutionDetail {
   allNodes: Node[];
   allEdges: Edge[];
   explicitlyTriggered?: boolean;
+  loopItem?: any;
+  loopIndex?: number;
   onSuccess?: (result?: any) => void;
   onError?: (error: any) => void;
 }
@@ -384,6 +386,14 @@ export class WorkflowExecutor {
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
           
+          // Check if this is a Loop node and handle iteration
+          const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
+          if (isLoopNode && result?.items?.length > 0) {
+            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items`);
+            await this.handleLoopExecution(id, result, out, executed, queue, retryCount);
+            continue; // Skip normal processing for loop nodes
+          }
+          
           console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
           
           // Use optimized conditional branch handling
@@ -539,5 +549,92 @@ export class WorkflowExecutor {
 
   getIsAutoExecuting(): boolean {
     return this.isAutoExecuting;
+  }
+
+  /**
+   * Handle Loop node execution - execute downstream nodes once per item
+   */
+  private async handleLoopExecution(
+    loopNodeId: string,
+    loopResult: any,
+    outgoingEdges: Edge[],
+    executed: Set<string>,
+    queue: string[],
+    retryCount: Map<string, number>
+  ): Promise<void> {
+    const { items, batchSize = 1 } = loopResult;
+    
+    console.log(`🔄 [LOOP EXECUTOR] Starting loop execution for ${items.length} items with batch size ${batchSize}`);
+    
+    // Process items in batches
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      console.log(`🔄 [LOOP EXECUTOR] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(items.length/batchSize)}: items ${i}-${i + batch.length - 1}`);
+      
+      // Execute downstream nodes for each item in batch
+      for (const item of batch) {
+        console.log(`🔄 [LOOP EXECUTOR] Processing item:`, item);
+        
+        // Queue downstream nodes with the current item as input
+        for (const edge of outgoingEdges) {
+          const downstreamNodeId = edge.target;
+          
+          // Create a custom execution context for this loop iteration
+          const loopIterationId = `${downstreamNodeId}_loop_${i}_${batch.indexOf(item)}`;
+          
+          // Execute downstream node with current item
+          await this.executeLoopIteration(downstreamNodeId, item, i + batch.indexOf(item), executed);
+        }
+      }
+      
+      // Add small delay between batches
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
+    console.log(`🎉 [LOOP EXECUTOR] Completed loop execution for all ${items.length} items`);
+  }
+  
+  /**
+   * Execute a single loop iteration for a downstream node
+   */
+  private async executeLoopIteration(
+    nodeId: string,
+    item: any,
+    index: number,
+    executed: Set<string>
+  ): Promise<void> {
+    try {
+      console.log(`🔄 [LOOP ITERATION] Executing node ${nodeId} with item ${index}:`, item);
+      
+      // Highlight the node being executed
+      this.highlightNode(nodeId);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Create execution event with loop item data
+      const execEvent = new CustomEvent('auto-execute-node', {
+        detail: {
+          nodeId,
+          executedNodes: executed,
+          allNodes: this.context.nodes,
+          allEdges: this.context.edges,
+          explicitlyTriggered: true,
+          loopItem: item, // Pass the current loop item
+          loopIndex: index, // Pass the current loop index
+          onSuccess: async (result?: any) => {
+            console.log(`✅ [LOOP ITERATION] Node ${nodeId} iteration ${index} succeeded`);
+            await new Promise(resolve => setTimeout(resolve, 200));
+          },
+          onError: async (err: any) => {
+            console.error(`❌ [LOOP ITERATION] Node ${nodeId} iteration ${index} failed:`, err);
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } as NodeExecutionDetail & { loopItem?: any; loopIndex?: number }
+      });
+      
+      window.dispatchEvent(execEvent);
+      
+    } catch (error) {
+      console.error(`❌ [LOOP ITERATION] Failed to execute node ${nodeId} for item ${index}:`, error);
+    }
   }
 }

@@ -5,7 +5,6 @@ import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { updateDownstreamNodesWithLoopData } from "@/utils/loopExecution";
-
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -685,6 +684,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             );
           } else {
             toast({ title: "Loop completed", description: "All items processed" });
+            const firstItem = loopItems[0];
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === loopNodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        output: firstItem,
+                        loopItem: firstItem,
+                        loopIndex: 0,
+                      },
+                    }
+                  : n
+              )
+            );
           }
         }
       }

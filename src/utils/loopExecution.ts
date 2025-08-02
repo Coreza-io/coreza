@@ -34,6 +34,22 @@ export async function handleLoopExecution(
   }
 
   console.log(`🎉 [LOOP EXECUTOR] Completed loop execution for all ${items.length} items`);
+  const firstItem = items[0];
+  context.setNodes(nodes =>
+    nodes.map(node =>
+      node.id === loopNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              output: firstItem,
+              loopItem: firstItem,
+              loopIndex: 0,
+            }
+          }
+        : node
+    )
+  );
 }
 
 export function updateDownstreamNodesWithLoopData(

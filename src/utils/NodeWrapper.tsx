@@ -33,6 +33,7 @@ interface NodeWrapperProps {
   minHeight?: number;
   handles?: HandleConfig[];
   nodeType?: string;
+  onDoubleClick?: (e: React.MouseEvent) => void;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -49,6 +50,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   minHeight = 340,
   handles = [],
   nodeType,
+  onDoubleClick,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
 
@@ -90,6 +92,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           e.preventDefault();
           e.stopPropagation();
           setIsExpanded(true);
+          if (onDoubleClick) {
+            onDoubleClick(e);
+          }
         }}
         style={{
           width: isExpanded ? minWidth : 150,

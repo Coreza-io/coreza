@@ -58,22 +58,27 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
               selectedPrevNodeId: renderProps.selectedPrevNodeId,
               setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
             }}
-            outputPanelProps={{
-              data: renderProps.displayedData,
-              position: "right",
-              pinned: renderProps.isPinned,
-              onSave: renderProps.handlePanelSave,
-              onPinToggle: renderProps.handlePanelPinToggle,
-            }}
-            icon={icon}
-            label={renderProps.displayName}
-            minWidth={definition.size?.width || 320}
-            minHeight={definition.size?.height || 200}
-            handles={definition.handles || []}
-            nodeType={definition.node_type}
-          >
-            <BasicNodeLayout {...renderProps} />
-          </NodeWrapper>
+          outputPanelProps={{
+            data: renderProps.displayedData,
+            position: "right",
+            pinned: renderProps.isPinned,
+            onSave: renderProps.handlePanelSave,
+            onPinToggle: renderProps.handlePanelPinToggle,
+          }}
+          icon={icon}
+          label={renderProps.displayName}
+          minWidth={definition.size?.width || 320}
+          minHeight={definition.size?.height || 200}
+          handles={definition.handles || []}
+          nodeType={definition.node_type}
+          onDoubleClick={() => {
+            window.dispatchEvent(
+              new CustomEvent("auto-execute-node", { detail: { nodeId: id } })
+            );
+          }}
+        >
+          <BasicNodeLayout {...renderProps} />
+        </NodeWrapper>
           <div
             onClick={(e) => {
               e.stopPropagation();

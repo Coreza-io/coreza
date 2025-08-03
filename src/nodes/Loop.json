@@ -8,9 +8,8 @@
   "color": "text-yellow-500",
   "size": { "width": 320, "height": 200 },
   "handles": [
-    { "type": "target", "position": "left", "id": "in" },
-    { "type": "source", "position": "top", "id": "done" },
-    { "type": "source", "position": "right", "id": "loop" }
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
   ],
   "fields": [
     {

@@ -23,34 +23,26 @@ describe('Loop node', () => {
     expect(res.body.throttleMs).toBe(50);
   });
 
-  test('Loop node processes frontend-only (N8N style)', async () => {
-    // This test should verify that Loop nodes work entirely in frontend
-    // without backend API calls, similar to N8N's "Loop Over Items" node
-    const loopConfig = {
-      inputArray: 'items',
-      batchSize: 1,
-      parallel: false,
-      continueOnError: false,
-      throttleMs: 200
-    };
+  test('ControlFlowExecutor executes Loop node', async () => {
+    const executor = new ControlFlowExecutor();
+    const node = {
+      id: 'loop1',
+      type: 'Loop',
+      category: 'ControlFlow',
+      values: {
+        inputArray: 'items',
+        batchSize: 1
+      }
+    } as any;
 
-    const inputData = { items: [1, 2, 3] };
-    
-    // Simulate what BaseNode does for Loop nodes
-    const result = {
-      [loopConfig.inputArray]: inputData.items,
-      batchSize: loopConfig.batchSize,
-      parallel: loopConfig.parallel,
-      continueOnError: loopConfig.continueOnError,
-      throttleMs: loopConfig.throttleMs,
-      isLoopNode: true
-    };
+    const input = { items: [1, 2, 3] };
 
-    expect(result.items).toEqual([1, 2, 3]);
-    expect(result.batchSize).toBe(1);
-    expect(result.isLoopNode).toBe(true);
-    expect(result.parallel).toBe(false);
-    expect(result.continueOnError).toBe(false);
-    expect(result.throttleMs).toBe(200);
+    const result = await executor.execute(node, input, {});
+    expect(result.success).toBe(true);
+    expect(result.data.items).toEqual([1, 2, 3]);
+    expect(result.data.batchSize).toBe(1);
+    expect(result.data.isLoopNode).toBe(true);
+    expect(result.data.parallel).toBe(false);
+    expect(result.data.continueOnError).toBe(false);
   });
 });

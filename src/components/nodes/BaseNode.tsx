@@ -502,23 +502,37 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       let outputData: any;
       
-      // Special handling for Loop node - process entirely in frontend
+      // Special handling for Loop node - process in frontend without backend call
       if (definition?.name === "Loop") {
-        const inputArrayField = fieldState.inputArray || 'items';
-        const items = selectedInputData[inputArrayField] || payload[inputArrayField] || [];
-        
-        console.log(`🔄 [LOOP NODE] Processing array field '${inputArrayField}' with ${items.length} items:`, items);
-        
-        // Return loop configuration for workflow executor to handle
+        const batchSize = parseInt(fieldState.batchSize) || 1;
+        const parallel = !!fieldState.parallel;
+        const continueOnError = !!fieldState.continueOnError;
+        const throttleMs = parseInt(fieldState.throttleMs) || 200;
+
+        let arrayData: any[];
+        if (Array.isArray(selectedInputData)) {
+          arrayData = selectedInputData;
+        } else if (typeof selectedInputData === "string") {
+          const parsed = JSON.parse(selectedInputData);
+          arrayData = Array.isArray(parsed) ? parsed : [parsed];
+        } else if (selectedInputData == null) {
+          arrayData = [];
+        } else if (typeof selectedInputData === "object") {
+          arrayData = [selectedInputData];
+        } else {
+          throw new Error("Loop input must be an array or JSON string representing an array");
+        }
+
         outputData = {
-          [inputArrayField]: items,
-          batchSize: payload.batchSize || 1,
-          parallel: payload.parallel || false,
-          continueOnError: payload.continueOnError || false,
-          throttleMs: payload.throttleMs || 200,
-          isLoopNode: true
+          isLoopNode: true,
+          items: arrayData,
+          batchSize,
+          totalItems: arrayData.length,
+          parallel,
+          continueOnError,
+          throttleMs,
         };
-        
+
         console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
       } else {
         // Regular backend processing for non-Loop nodes
@@ -580,27 +594,43 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
 
 
-      // Handle output based on node type
       if (definition?.name === "Loop") {
-        // Loop nodes are handled above, just update the node data
-        setLastOutput(outputData);
-        data.output = outputData;
-        
+        const items = outputData.items || [];
+        const firstItem = items[0];
+        const original = selectedInputData;
+        setLastOutput(firstItem);
+        data.output = firstItem;
+
         setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? { 
-                  ...n, 
-                  data: { 
-                    ...n.data, 
-                    output: outputData,
-                    loopItems: outputData.items,
-                    isLoopReady: true,
-                    currentLoopIndex: 0
-                  } 
-                }
-              : n
-          )
+          nds.map((n) => {
+            if (n.id === nodeId) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  originalOutput: original,
+                  output: firstItem,
+                  loopItems: items,
+                  loopIndex: 0,
+                  loopItem: firstItem,
+                },
+              };
+            }
+            const isDownstream = outgoingEdges.some((e) => e.target === n.id);
+            if (isDownstream) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  input: firstItem,
+                  loopItem: firstItem,
+                  loopIndex: 0,
+                  lastUpdated: new Date().toISOString(),
+                },
+              };
+            }
+            return n;
+          })
         );
       } else {
         setLastOutput(outputData);
@@ -639,8 +669,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         if (loopEdge) {
           const loopNodeId = loopEdge.source;
           const loopNode = nodes.find((n) => n.id === loopNodeId);
-          const loopItems = (loopNode?.data.loopItems as any[]) || [];
-          const currentIndex = (loopNode?.data.loopIndex as number) || 0;
+          const loopItems = loopNode?.data.loopItems || [];
+          const currentIndex = loopNode?.data.loopIndex || 0;
           const nextIndex = currentIndex + 1;
 
           if (nextIndex < loopItems.length) {

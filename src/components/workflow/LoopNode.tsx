@@ -29,6 +29,11 @@ export function LoopNode({ id, data }: NodeProps) {
     >
       <div style={{ fontSize: 24, color: '#22c55e' }}>↻</div>
       <div>{label || 'Loop Over Items'}</div>
+      {loopItems && (
+        <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+          {loopIndex !== undefined ? `Item ${loopIndex + 1}/${loopItems.length}` : `${loopItems.length} items`}
+        </div>
+      )}
       <Handle type="target" position={Position.Left} id="in" style={{ background: '#555' }} />
       <Handle type="source" position={Position.Top} id="done" style={{ top: -4, background: '#555' }} />
       {onAddNode && (

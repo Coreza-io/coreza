@@ -91,6 +91,17 @@ export class WorkflowExecutor {
       
       const outgoing = this.context.edges.filter(e => e.source === nodeId);
       for (const edge of outgoing) {
+        // Skip loop-back edges from Loop nodes to avoid false positive cycles
+        const sourceNode = this.context.nodes.find(n => n.id === edge.source);
+        const targetNode = this.context.nodes.find(n => n.id === edge.target);
+        const isLoopNode = (sourceNode?.data?.definition as any)?.name === 'Loop';
+        
+        // For Loop nodes, ignore edges that go from the loop handle back to nodes within the loop subgraph
+        if (isLoopNode && edge.sourceHandle === 'loop') {
+          // This is a legitimate loop-back connection, not a cycle
+          continue;
+        }
+        
         if (hasCycle(edge.target)) return true;
       }
       

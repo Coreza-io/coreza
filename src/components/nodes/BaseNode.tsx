@@ -589,7 +589,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         setNodes((nds) =>
           nds.map((n) =>
             n.id === nodeId
-              ? { ...n, data: { ...n.data, output: outputData } }
+              ? { 
+                  ...n, 
+                  data: { 
+                    ...n.data, 
+                    output: outputData,
+                    loopItems: outputData.items,
+                    isLoopReady: true,
+                    currentLoopIndex: 0
+                  } 
+                }
               : n
           )
         );

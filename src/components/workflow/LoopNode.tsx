@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { NodeProps, useNodes, useEdges } from "@xyflow/react";
 import BaseNode from "@/components/nodes/BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
@@ -18,7 +18,7 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
   const { onAddNode } = data;
   const definition = data.definition || data.config || {};
 
-  const icon = (() => {
+  const icon = useMemo(() => {
     if (!definition.icon) {
       return (
         <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
@@ -26,7 +26,8 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
         </div>
       );
     }
-    const IconComponent = IconRegistry[definition.name as keyof typeof IconRegistry];
+    const IconComponent =
+      IconRegistry[definition.name as keyof typeof IconRegistry];
     if (IconComponent) {
       return <IconComponent className="w-10 h-10" />;
     }
@@ -42,7 +43,7 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
         }
       />
     );
-  })();
+  }, [definition.icon, definition.name]);
 
   return (
     <BaseNode data={data} selected={selected ?? false}>
@@ -58,37 +59,22 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
               selectedPrevNodeId: renderProps.selectedPrevNodeId,
               setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
             }}
-          outputPanelProps={{
-            data: renderProps.displayedData,
-            position: "right",
-            pinned: renderProps.isPinned,
-            onSave: renderProps.handlePanelSave,
-            onPinToggle: renderProps.handlePanelPinToggle,
-          }}
-          icon={icon}
-          label={renderProps.displayName}
-          minWidth={definition.size?.width || 320}
-          minHeight={definition.size?.height || 200}
-          handles={definition.handles || []}
-          nodeType={definition.node_type}
-          onDoubleClick={() => {
-            window.dispatchEvent(
-              new CustomEvent("auto-execute-node", { detail: { nodeId: id } })
-            );
-          }}
-        >
-          <BasicNodeLayout {...renderProps} />
-        </NodeWrapper>
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddNode(id);
+            outputPanelProps={{
+              data: renderProps.displayedData,
+              position: "right",
+              pinned: renderProps.isPinned,
+              onSave: renderProps.handlePanelSave,
+              onPinToggle: renderProps.handlePanelPinToggle,
             }}
-            className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-white border-2 border-green-500 flex items-center justify-center cursor-pointer z-20"
-            title="Add node to loop"
+            icon={icon}
+            label={renderProps.displayName}
+            minWidth={definition.size?.width || 320}
+            minHeight={definition.size?.height || 200}
+            handles={definition.handles || []}
+            nodeType={definition.node_type}
           >
-            <Plus size={12} color="#22c55e" />
-          </div>
+            <BasicNodeLayout {...renderProps} />
+          </NodeWrapper>
         </div>
       )}
     </BaseNode>

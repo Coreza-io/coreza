@@ -1,5 +1,5 @@
 import React from 'react';
-import { EdgeProps, getSmoothStepPath } from '@xyflow/react';
+import { EdgeProps, getSmoothStepPath, MarkerType } from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
 
 export interface EdgeControl {
@@ -101,7 +101,14 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
 };
 
 export const LoopEdge: React.FC<EdgeProps> = (props) => {
-  const { data } = props;
+  const { data, selected } = props;
+  const controls = selected
+    ? [
+        { icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop! },
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop! },
+      ]
+    : [];
+
   return (
     <InteractiveEdge
       {...props}
@@ -109,25 +116,26 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
       offsetX={20}
       offsetY={80}
       style={{ stroke: '#22c55e', strokeWidth: 3 }}
-      markerEnd={props.markerEnd}
-      controls={[
-        { icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop! },
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop! },
-      ]}
+      markerEnd={{ type: MarkerType.ArrowClosed, color: '#22c55e' }}
+      controls={controls}
       data={{ label: data?.label }}
     />
   );
 };
 
 export const RemovableEdge: React.FC<EdgeProps> = (props) => {
-  const { data } = props;
+  const { data, selected } = props;
+  const controls = selected
+    ? [
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge! },
+      ]
+    : [];
+
   return (
     <InteractiveEdge
       {...props}
       style={{ stroke: '#888', strokeWidth: 2 }}
-      controls={[
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge! },
-      ]}
+      controls={controls}
       data={{ label: data?.label }}
     />
   );

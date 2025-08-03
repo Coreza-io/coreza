@@ -13,6 +13,7 @@ import {
   Node,
   BackgroundVariant,
   MarkerType,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import { RemovableEdge } from "@/components/workflow/RemovableEdge";
 import { LoopEdge } from "@/components/workflow/LoopEdge";
+import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,10 +35,12 @@ import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
 
-// Create nodeTypes mapping both by manifest keys AND by node_type values
-const nodeTypes = Object.fromEntries([
-  // Map by manifest keys (for backward compatibility)
-  ...Object.keys(nodeManifest).map((nodeKey) => [nodeKey, NodeRouter]),
+// Base node type mapping (excluding custom Loop node)
+const baseNodeTypes = Object.fromEntries([
+  // Map by manifest keys (skip Loop; it'll use a custom component)
+  ...Object.keys(nodeManifest)
+    .filter((nodeKey) => nodeKey !== 'Loop')
+    .map((nodeKey) => [nodeKey, NodeRouter]),
   // Map by node_type values (for proper type mapping)
   ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
 ]);
@@ -97,6 +101,66 @@ const WorkflowEditor = () => {
   
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const rf = useReactFlow();
+
+  // Handle "+" click on Loop node to add a new downstream node
+  const handleAddNode = useCallback(
+    (loopNodeId: string) => {
+      const position = rf.getNode(loopNodeId)?.position || { x: 0, y: 0 };
+      const newNode: Node = {
+        id: `node_${Date.now()}`,
+        type: 'default',
+        position: { x: position.x + 200, y: position.y },
+        data: { label: 'New Node' },
+      };
+      setNodes((ns) => [...ns, newNode]);
+
+      const newEdge: Edge = {
+        id: `edge_${loopNodeId}_${newNode.id}`,
+        source: loopNodeId,
+        sourceHandle: 'done',
+        target: newNode.id,
+        type: 'removable',
+      };
+      setEdges((es) => [...es, newEdge]);
+    },
+    [rf, setNodes, setEdges]
+  );
+
+  // Merge base node types with custom Loop node
+  const nodeTypes = useMemo(() => ({
+    ...baseNodeTypes,
+    Loop: (props: any) => (
+      <LoopNode
+        {...props}
+        data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
+      />
+    ),
+  }), [handleAddNode]);
+
+  // Auto-inject self-loop edges (done -> in)
+  useEffect(() => {
+    setEdges((es) => {
+      const loopNodeIds = nodes.filter((n) => n.type === 'Loop').map((n) => n.id);
+      const selfEdges = loopNodeIds.map((id) => ({
+        id: `self_${id}`,
+        source: id,
+        sourceHandle: 'done',
+        target: id,
+        targetHandle: 'in',
+        type: 'loop',
+        style: { stroke: '#22c55e', strokeWidth: 3 },
+        animated: true,
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
+      }));
+      const withoutSelf = es.filter((e) => !e.id.startsWith('self_'));
+      const merged = [...withoutSelf];
+      selfEdges.forEach((se) => {
+        if (!merged.find((e) => e.id === se.id)) merged.push(se);
+      });
+      return merged;
+    });
+  }, [nodes, setEdges]);
 
   const styledEdges = useMemo(() =>
     edges.map(e => {

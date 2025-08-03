@@ -68,7 +68,7 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [];
 
-const WorkflowEditor = () => {
+const WorkflowEditorContent = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -763,6 +763,7 @@ const WorkflowEditor = () => {
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
+            connectionLineType={ConnectionLineType.SmoothStep}
             fitView
             className="workflow-canvas"
             style={{ backgroundColor: 'hsl(var(--trading-grid))' }}
@@ -807,5 +808,11 @@ const WorkflowEditor = () => {
     </div>
   );
 };
+
+const WorkflowEditor = () => (
+  <ReactFlowProvider>
+    <WorkflowEditorContent />
+  </ReactFlowProvider>
+);
 
 export default WorkflowEditor;

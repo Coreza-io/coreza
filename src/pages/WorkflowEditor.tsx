@@ -448,7 +448,9 @@ const WorkflowEditorContent = () => {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow');
+      // Only create a node when dropping a valid palette item
       if (!type) return;
+      if (!(type in nodeManifest)) return;
 
       // Get the ReactFlow wrapper element to calculate relative position
       const reactFlowBounds = event.currentTarget.getBoundingClientRect();

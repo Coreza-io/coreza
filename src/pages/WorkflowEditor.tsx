@@ -147,7 +147,7 @@ const WorkflowEditorContent = () => {
       const selfEdges = loopNodeIds.map((id) => ({
         id: `self_${id}`,
         source: id,
-        sourceHandle: 'done',
+        sourceHandle: 'loop',
         target: id,
         targetHandle: 'in',
         type: 'loop',

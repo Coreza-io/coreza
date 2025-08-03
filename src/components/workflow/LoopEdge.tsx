@@ -37,7 +37,7 @@ export function LoopEdge(props: EdgeProps) {
       {data?.label && (
         <text>
           <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
-            {data.label}
+            {String(data.label)}
           </textPath>
         </text>
       )}

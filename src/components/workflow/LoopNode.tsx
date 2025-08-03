@@ -4,12 +4,15 @@ import { Plus } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 
 export interface LoopNodeData {
-  onAddNode: (parentId: string) => void;
+  onAddNode?: (parentId: string) => void;
   label?: string;
+  loopItems?: any[];
+  loopIndex?: number;
+  currentItem?: any;
 }
 
-export function LoopNode({ id, data }: NodeProps<LoopNodeData>) {
-  const { onAddNode, label } = data;
+export function LoopNode({ id, data }: NodeProps) {
+  const { onAddNode, label, loopItems, loopIndex, currentItem } = (data as LoopNodeData) || {};
 
   return (
     <div
@@ -28,9 +31,10 @@ export function LoopNode({ id, data }: NodeProps<LoopNodeData>) {
       <div>{label || 'Loop Over Items'}</div>
       <Handle type="target" position={Position.Left} id="in" style={{ background: '#555' }} />
       <Handle type="source" position={Position.Top} id="done" style={{ top: -4, background: '#555' }} />
-      <div
-        onClick={() => onAddNode(id)}
-        style={{
+      {onAddNode && (
+        <div
+          onClick={() => onAddNode(id)}
+          style={{
           position: 'absolute',
           top: -12,
           right: -12,
@@ -44,10 +48,11 @@ export function LoopNode({ id, data }: NodeProps<LoopNodeData>) {
           justifyContent: 'center',
           cursor: 'pointer',
         }}
-        title="Add node to loop"
-      >
-        <Plus color="#22c55e" size={12} />
-      </div>
+          title="Add node to loop"
+        >
+          <Plus color="#22c55e" size={12} />
+        </div>
+      )}
       <Handle type="source" position={Position.Right} id="loop" style={{ top: '60%', background: '#22c55e' }} />
     </div>
   );

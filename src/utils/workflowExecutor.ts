@@ -185,6 +185,94 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Handle N8N-style Loop node execution (sequential, one item at a time)
+   */
+  private async handleN8NLoopExecution(
+    loopNodeId: string,
+    result: any,
+    outgoingEdges: Edge[],
+    executed: Set<string>
+  ): Promise<void> {
+    // Extract array from result or node configuration
+    const loopNode = this.context.nodes.find(n => n.id === loopNodeId);
+    const inputArrayField = (loopNode?.data?.values as any)?.inputArray || 'items';
+    const items = result?.[inputArrayField] || result?.items || [];
+    
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log(`🔄 [LOOP] No items to process in Loop node ${loopNodeId}`);
+      // Execute 'done' path if no items
+      const doneEdges = outgoingEdges.filter(e => e.sourceHandle === 'done');
+      for (const edge of doneEdges) {
+        await this.executeConditionalChain(edge.target, executed);
+      }
+      return;
+    }
+
+    console.log(`🔄 [LOOP] Processing ${items.length} items sequentially in Loop node ${loopNodeId}`);
+    
+    // Get edges for loop iteration and done
+    const loopEdges = outgoingEdges.filter(e => e.sourceHandle === 'loop');
+    const doneEdges = outgoingEdges.filter(e => e.sourceHandle === 'done');
+    
+    // Process each item sequentially (N8N style)
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      console.log(`🔄 [LOOP] Processing item ${index + 1}/${items.length}:`, item);
+      
+      // Update loop node data with current item
+      this.context.setNodes(nodes =>
+        nodes.map(n =>
+          n.id === loopNodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  loopItems: items,
+                  loopIndex: index,
+                  currentItem: item,
+                  output: item // Output current item
+                }
+              }
+            : n
+        )
+      );
+
+      // Execute all downstream nodes from 'loop' handle for this item
+      for (const edge of loopEdges) {
+        await this.executeConditionalChain(edge.target, new Set([...executed, loopNodeId]));
+      }
+      
+      // Wait a moment between iterations to show progress
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    // Clear loop data and execute 'done' path
+    this.context.setNodes(nodes =>
+      nodes.map(n =>
+        n.id === loopNodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                loopItems: undefined,
+                loopIndex: undefined,
+                currentItem: undefined,
+                output: items // Final output is all items
+              }
+            }
+          : n
+      )
+    );
+    
+    // Execute 'done' path after all iterations complete
+    for (const edge of doneEdges) {
+      await this.executeConditionalChain(edge.target, executed);
+    }
+    
+    console.log(`✅ [LOOP] Completed processing ${items.length} items in Loop node ${loopNodeId}`);
+  }
+
+  /**
    * Execute downstream nodes for non-conditional flows
    */
   private async executeDownstreamNodes(
@@ -389,11 +477,12 @@ export class WorkflowExecutor {
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
           
-          // Check if this is a Loop node and handle iteration
-          const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
-          if (isLoopNode && result?.items?.length > 0) {
-            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items`);
-            await handleLoopExecution(this.context, id, result, out, executed);
+          // Check if this is a Loop node and handle N8N-style iteration
+          const nodeType = (node?.data?.definition as any)?.name;
+          const isLoopNode = nodeType === 'Loop';
+          if (isLoopNode) {
+            console.log(`🔄 [WORKFLOW EXECUTOR] Processing N8N-style Loop node ${id}`);
+            await this.handleN8NLoopExecution(id, result, out, executed);
             continue; // Skip normal processing for loop nodes
           }
           

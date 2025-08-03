@@ -1,46 +1,49 @@
-import React from 'react';
-import { getSmoothStepPath, EdgeProps } from '@xyflow/react';
+// src/components/workflow/LoopEdge.tsx
+import React from "react";
+import { getBezierPath, EdgeProps } from "@xyflow/react";
 
-export function LoopEdge(props: EdgeProps) {
-  const {
-    id,
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-    style,
-    markerEnd,
-    data,
-  } = props;
+// Controls how far the arc swings around the node
+const LOOP_OFFSET = 56;
 
-  const [edgePath] = getSmoothStepPath({
+export const LoopEdge: React.FC<EdgeProps> = ({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  style,
+  markerEnd,
+  animated,
+}) => {
+  // Curve from bottom left, swings under node, back to left
+  const [edgePath] = getBezierPath({
     sourceX,
-    sourceY,
-    sourcePosition,
+    sourceY: sourceY + LOOP_OFFSET,
+    sourcePosition: "bottom",
     targetX,
-    targetY,
-    targetPosition,
-    borderRadius: 8,
+    targetY: targetY + LOOP_OFFSET,
+    targetPosition: "left",
+    curvature: 0.5,
   });
 
   return (
     <>
       <path
         id={id}
-        className="react-flow__edge-path"
+        className="react-flow__edge-path loop-edge-path"
         d={edgePath}
-        style={style}
+        style={{
+          ...style,
+          stroke: "#22c55e",
+          strokeWidth: 3,
+          fill: "none",
+        }}
         markerEnd={markerEnd}
+        strokeDasharray={animated ? "6 3" : undefined}
       />
-      {data?.label && (
-        <text>
-          <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
-            {data.label}
-          </textPath>
-        </text>
-      )}
     </>
   );
-}
+};
+
+export default LoopEdge;
+

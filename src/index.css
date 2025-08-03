@@ -170,3 +170,15 @@
     }
   }
 }
+
+.react-flow__edges {
+  z-index: 2 !important;
+}
+.react-flow__nodes {
+  z-index: 1 !important;
+}
+.loop-edge-path {
+  z-index: 5 !important;
+  position: relative;
+  pointer-events: stroke;
+}

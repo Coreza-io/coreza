@@ -25,8 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
-import { RemovableEdge } from "@/components/workflow/RemovableEdge";
-import { LoopEdge } from "@/components/workflow/LoopEdge";
+import EdgeManager from "@/components/workflow/EdgeManager";
 import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -51,8 +50,9 @@ const baseNodeTypes = Object.fromEntries([
 //console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
-  removable: RemovableEdge,
-  loop: LoopEdge,
+  default: EdgeManager.InteractiveEdge,
+  loop: EdgeManager.LoopEdge,
+  removable: EdgeManager.RemovableEdge,
 };
 
 // Initial nodes for demonstration  
@@ -105,6 +105,12 @@ const WorkflowEditorContent = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const rf = useReactFlow();
 
+  const removeEdge = useCallback(
+    (edgeId: string) =>
+      setEdges((es) => es.filter((e) => e.id !== edgeId)),
+    [setEdges]
+  );
+
   // Handle "+" click on Loop node to add a new downstream node
   const handleAddNode = useCallback(
     (loopNodeId: string) => {
@@ -117,16 +123,28 @@ const WorkflowEditorContent = () => {
       };
       setNodes((ns) => [...ns, newNode]);
 
+      const edgeId = `edge_${loopNodeId}_${newNode.id}`;
       const newEdge: Edge = {
-        id: `edge_${loopNodeId}_${newNode.id}`,
+        id: edgeId,
         source: loopNodeId,
         sourceHandle: 'done',
         target: newNode.id,
         type: 'removable',
+        data: { onRemoveEdge: () => removeEdge(edgeId) },
       };
       setEdges((es) => [...es, newEdge]);
     },
-    [rf, setNodes, setEdges]
+    [rf, setNodes, setEdges, removeEdge]
+  );
+
+  const handleRemoveLoop = useCallback(
+    (loopNodeId: string) => {
+      setNodes((ns) => ns.filter((n) => n.id !== loopNodeId));
+      setEdges((es) =>
+        es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId)
+      );
+    },
+    [setNodes, setEdges]
   );
 
   // Merge base node types with custom Loop node
@@ -142,59 +160,44 @@ const WorkflowEditorContent = () => {
 
   // Auto-inject self-loop edges (done -> in)
   useEffect(() => {
-    setEdges((es) => {
-      const loopNodeIds = nodes.filter((n) => n.type === 'Loop').map((n) => n.id);
-      const selfEdges = loopNodeIds.map((id) => ({
-        id: `self_${id}`,
-        source: id,
-        sourceHandle: 'loop',
-        target: id,
-        targetHandle: 'in',
-        type: 'loop',
-        style: { stroke: '#22c55e', strokeWidth: 3 },
-        animated: true,
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
-      }));
-      const withoutSelf = es.filter((e) => !e.id.startsWith('self_'));
-      const merged = [...withoutSelf];
-      selfEdges.forEach((se) => {
-        if (!merged.find((e) => e.id === se.id)) merged.push(se);
-      });
-      return merged;
+    setEdges((old) => {
+      const noSelf = old.filter((e) => !e.id.startsWith('self_'));
+      const loops = nodes
+        .filter((n) => n.type === 'Loop')
+        .map((n) => {
+          const count = ((n.data as any)?.loopItems || []).length;
+          return {
+            id: `self_${n.id}`,
+            source: n.id,
+            sourceHandle: 'loop',
+            target: n.id,
+            targetHandle: 'in',
+            type: 'loop',
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
+            data: {
+              onAddLoop: () => handleAddNode(n.id),
+              onRemoveLoop: () => handleRemoveLoop(n.id),
+              label: `${count} item${count === 1 ? '' : 's'}`,
+            },
+          };
+          });
+      return [...noSelf, ...loops];
     });
-  }, [nodes, setEdges]);
-
-  const styledEdges = useMemo(() =>
-    edges.map(e => {
-      if (e.sourceHandle === 'loop') {
-        const loopNode = nodes.find(n => n.id === e.source);
-        const loopItems = (loopNode?.data?.loopItems as any[]) || [];
-        return {
-          ...e,
-          type: 'loop',
-          style: { stroke: '#22c55e', strokeWidth: 3 },
-          animated: true,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: '#22c55e',
-          },
-          data: {
-            ...e.data,
-            label: `${loopItems.length} item${loopItems.length > 1 ? 's' : ''}`,
-          },
-        };
-      }
-      return e;
-    }),
-  [edges, nodes]);
+  }, [nodes, handleAddNode, handleRemoveLoop, setEdges]);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({
-      ...params,
-      type: 'removable',
-      animated: false, // Only animate during execution
-    }, eds)),
-    [setEdges],
+    (params: Connection) =>
+      setEdges((eds) => {
+        const id = `edge_${Date.now()}`;
+        const newEdge: Edge = {
+          id,
+          ...params,
+          type: 'removable',
+          data: { onRemoveEdge: () => removeEdge(id) },
+        };
+        return addEdge(newEdge, eds);
+      }),
+    [removeEdge, setEdges]
   );
 
   // Memoized WorkflowExecutor instance - only recreate when structure changes
@@ -592,11 +595,23 @@ const WorkflowEditorContent = () => {
                   return true; // Keep valid edge
                 });
                 
-                setEdges(validEdges);
+                setEdges(
+                  validEdges.map((e) => ({
+                    ...e,
+                    type: e.type || 'removable',
+                    data: { ...(e.data || {}), onRemoveEdge: () => removeEdge(e.id) },
+                  }))
+                );
               }
             } else if (data.edges && Array.isArray(data.edges)) {
               // If no nodes but edges exist, just set edges directly
-              setEdges(data.edges as unknown as Edge[]);
+              setEdges(
+                (data.edges as unknown as Edge[]).map((e) => ({
+                  ...e,
+                  type: e.type || 'removable',
+                  data: { ...(e.data || {}), onRemoveEdge: () => removeEdge(e.id) },
+                }))
+              );
             }
             setHasLoadedWorkflowId(workflowId);
           } else {
@@ -755,7 +770,7 @@ const WorkflowEditorContent = () => {
         <div className="flex-1 bg-trading-grid">
           <ReactFlow
             nodes={nodes}
-            edges={styledEdges}
+            edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}

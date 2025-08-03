@@ -177,8 +177,7 @@
 .react-flow__nodes {
   z-index: 1 !important;
 }
-.loop-edge-path {
-  z-index: 5 !important;
+.react-flow__edge-path {
   position: relative;
-  pointer-events: stroke;
+  z-index: 3 !important;
 }

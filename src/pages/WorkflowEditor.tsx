@@ -15,7 +15,6 @@ import {
   MarkerType,
   useReactFlow,
   ConnectionLineType,
-  ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from "@/components/ui/button";
@@ -70,7 +69,7 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [];
 
-const WorkflowEditorContent = () => {
+const WorkflowEditor = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -810,11 +809,5 @@ const WorkflowEditorContent = () => {
     </div>
   );
 };
-
-const WorkflowEditor = () => (
-  <ReactFlowProvider>
-    <WorkflowEditorContent />
-  </ReactFlowProvider>
-);
 
 export default WorkflowEditor;

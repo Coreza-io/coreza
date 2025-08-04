@@ -185,6 +185,79 @@ const WorkflowEditorContent = () => {
     });
   }, [nodes, handleAddNode, handleRemoveLoop, setEdges]);
 
+  // Handle adding a node in between an edge
+  const handleAddNodeToEdge = useCallback((edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    // Get source and target nodes to position the new node between them
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    const targetNode = nodes.find(n => n.id === edge.target);
+    
+    if (!sourceNode || !targetNode) return;
+
+    // Calculate position between source and target
+    const newPosition = {
+      x: (sourceNode.position.x + targetNode.position.x) / 2,
+      y: (sourceNode.position.y + targetNode.position.y) / 2 + 50, // Offset slightly
+    };
+
+    // Create new node (default to Edit Fields for now)
+    const newNodeId = `field_${Date.now()}`;
+    const newNode: Node = {
+      id: newNodeId,
+      type: 'default',
+      position: newPosition,
+      data: {
+        definition: {
+          name: 'Edit Fields',
+          icon: '/public/assets/icons/field.svg',
+          node_type: 'Field',
+          handles: [
+            { id: 'in', type: 'target', position: 'left' },
+            { id: 'out', type: 'source', position: 'right' }
+          ]
+        }
+      },
+    };
+
+    // Remove the original edge and create two new edges
+    setEdges((eds) => {
+      const filteredEdges = eds.filter(e => e.id !== edgeId);
+      const edge1Id = `edge_${Date.now()}_1`;
+      const edge2Id = `edge_${Date.now()}_2`;
+      
+      const newEdge1: Edge = {
+        id: edge1Id,
+        source: edge.source,
+        sourceHandle: edge.sourceHandle,
+        target: newNodeId,
+        targetHandle: 'in',
+        type: 'default',
+        data: { 
+          onRemoveEdge: () => removeEdge(edge1Id),
+          onAddNode: () => handleAddNodeToEdge(edge1Id)
+        },
+      };
+      const newEdge2: Edge = {
+        id: edge2Id,
+        source: newNodeId,
+        sourceHandle: 'out',
+        target: edge.target,
+        targetHandle: edge.targetHandle,
+        type: 'default',
+        data: { 
+          onRemoveEdge: () => removeEdge(edge2Id),
+          onAddNode: () => handleAddNodeToEdge(edge2Id)
+        },
+      };
+      return addEdge(newEdge1, addEdge(newEdge2, filteredEdges));
+    });
+
+    // Add the new node
+    setNodes((nds) => [...nds, newNode]);
+  }, [edges, nodes, removeEdge, setEdges, setNodes]);
+
   const onConnect = useCallback(
     (params: Connection) =>
       setEdges((eds) => {
@@ -192,12 +265,15 @@ const WorkflowEditorContent = () => {
         const newEdge: Edge = {
           id,
           ...params,
-          type: 'removable',
-          data: { onRemoveEdge: () => removeEdge(id) },
+          type: 'default',
+          data: { 
+            onRemoveEdge: () => removeEdge(id),
+            onAddNode: () => handleAddNodeToEdge(id)
+          },
         };
         return addEdge(newEdge, eds);
       }),
-    [removeEdge, setEdges]
+    [removeEdge, setEdges, handleAddNodeToEdge]
   );
 
   // Memoized WorkflowExecutor instance - only recreate when structure changes

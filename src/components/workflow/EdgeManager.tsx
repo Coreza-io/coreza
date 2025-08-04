@@ -33,13 +33,7 @@ function InteractiveEdge({
 
   return (
     <g>
-      <path
-        id={id}
-        className="react-flow__edge-path"
-        d={path}
-        markerEnd={markerEnd}
-        style={{ stroke: '#888', strokeWidth: 2, ...(style || {}), fill: 'none' }}
-      />
+      <path id={id} d={path} markerEnd={markerEnd} style={{ ...style, fill: 'none' }} />
       <g
         transform={`translate(${(sourceX + targetX) / 2}, ${(sourceY + targetY) / 2})`}
         className="flex gap-1 items-center"

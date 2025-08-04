@@ -208,7 +208,6 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
 export const DefaultEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
   const controls = buildControls(data);
-
   return (
     <InteractiveEdge
       {...props}

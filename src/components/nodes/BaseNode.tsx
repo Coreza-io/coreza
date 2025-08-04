@@ -65,6 +65,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const { user } = useAuth();
   const isMounted = useRef(true);
 
+  // === NEW: refs for event-driven callbacks ===
+  const onSuccessRef = useRef<null | ((result: any) => void)>(null);
+  const onErrorRef = useRef<null | ((error: any) => void)>(null);
+
   const outgoingEdges = useMemo(
     () => edges.filter((e) => e.source === nodeId),
     [edges, nodeId]
@@ -104,7 +108,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
   
   // Extract selectedInputData with special handling for loop items
-  let selectedInputData = selectedPrevNode?.data?.output || selectedPrevNode?.data || {};
+  let selectedInputData = selectedPrevNode?.data?.output || {};
   
   // Check if we're in a loop context and prefer loop item data
   if (data?.loopItem) {
@@ -532,7 +536,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           continueOnError,
           throttleMs,
         };
-
+ 
         console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
       } else {
         // Regular backend processing for non-Loop nodes
@@ -616,6 +620,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                 },
               };
             }
+
             const isDownstream = outgoingEdges.some((e) => e.target === n.id);
             if (isDownstream) {
               return {
@@ -629,9 +634,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                 },
               };
             }
+
             return n;
           })
         );
+        
       } else {
         setLastOutput(outputData);
         const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
@@ -740,6 +747,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   // Listen for auto-execution events
+  // Refs for stashing callbacks (place these at the top of your component)
   useEffect(() => {
     const handleAutoExecute = async (event: CustomEvent) => {
       if (event.detail?.nodeId === nodeId) {
@@ -751,8 +759,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           const isConditionalTarget = incomingEdges.some((edge: any) => {
             const sourceNode = event.detail.allNodes.find((n: any) => n.id === edge.source);
             return sourceNode && 
-                   (sourceNode.data?.definition as any)?.name === "If" && 
-                   (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
+                  (sourceNode.data?.definition as any)?.name === "If" && 
+                  (edge.sourceHandle === 'true' || edge.sourceHandle === 'false');
           });
           
           // If this is a conditional target and wasn't explicitly triggered by the If node, skip execution
@@ -761,69 +769,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             return;
           }
         }
-        
-        // Check if all input dependencies have completed
-        if (event.detail.executedNodes && event.detail.allEdges) {
-          const incomingEdges = event.detail.allEdges.filter((edge: any) => edge.target === nodeId);
-          const dependencies = incomingEdges.map((edge: any) => edge.source);
-          
-          console.log(`🔍 Node ${nodeId} dependencies:`, dependencies);
-          console.log(`🔍 Node ${nodeId} executed nodes:`, Array.from(event.detail.executedNodes));
-          
-          // For nodes without dependencies, allow immediate execution
-          if (dependencies.length === 0) {
-            console.log(`✅ Node ${nodeId} has no dependencies, proceeding with execution`);
-          } else {
-            const allDependenciesCompleted = dependencies.every(dep => event.detail.executedNodes.has(dep));
-            
-            if (!allDependenciesCompleted) {
-              const pendingDeps = dependencies.filter(dep => !event.detail.executedNodes.has(dep));
-              console.log(`⏳ Node ${nodeId} waiting for dependencies:`, pendingDeps);
-              return; // Don't retry, let the workflow manager handle execution order
-            }
-          }
-        }
-        
-        console.log(`✅ All dependencies ready for node: ${nodeId}, proceeding with execution`);
-        
-        let timeoutId: NodeJS.Timeout;
-        
+
+        // === Stash callbacks for use in [nodes] effect ===
+        onSuccessRef.current = event.detail.onSuccess ?? null;
+        onErrorRef.current = event.detail.onError ?? null;
+
         try {
-          // Execute the node logic and capture the result
           await handleSubmit();
-          
-          // Get the result immediately after handleSubmit completes
-          const currentNode = nodes.find(n => n.id === nodeId);
-          const actualResult = currentNode?.data?.output;
-          
-          console.log(`✅ Node ${nodeId} executed successfully with result:`, actualResult);
-          
-          // For If nodes and other nodes, extract the first item from the array if it's an array
-          let resultToPass = actualResult;
-          if (Array.isArray(actualResult) && actualResult.length > 0) {
-            resultToPass = actualResult[0];
-          }
-          
-          // Special handling for Switch/comparator nodes
-          const nodeType = definition?.name;
-          if (nodeType === 'Switch' && resultToPass && typeof resultToPass === 'object' && 'result' in resultToPass) {
-            resultToPass = resultToPass.result; // Extract the 'result' field
-          }
-          
-          // Call success callback immediately with the result
-          if (event.detail.onSuccess) {
-            event.detail.onSuccess(resultToPass);
-          }
+          // Don't access nodes/output or call callback here!
         } catch (executionError) {
-          console.error(`❌ Node ${nodeId} execution failed:`, executionError);
-          // Clear timeout on error
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-          // Call error callback if provided
-          if (event.detail.onError) {
-            event.detail.onError(executionError);
-          }
+          onErrorRef.current?.(executionError);
+          onSuccessRef.current = onErrorRef.current = null;
         }
       }
     };
@@ -833,7 +789,28 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       isMounted.current = false;
       window.removeEventListener('auto-execute-node', handleAutoExecute as EventListener);
     };
-  }, [nodeId, handleSubmit, error, lastOutput]);
+  }, [nodeId, handleSubmit]);
+
+  useEffect(() => {
+    const currentNode = nodes.find(n => n.id === nodeId);
+    if (!currentNode || !onSuccessRef.current) return;
+
+    const output = currentNode.data?.output;
+    if (output === undefined) return;
+
+    // Normalize result as needed
+    let resultToPass = output;
+    if (Array.isArray(output) && output.length > 0) {
+      resultToPass = output[0];
+    }
+    if (definition?.name === 'Switch' && resultToPass && typeof resultToPass === 'object' && 'result' in resultToPass) {
+      resultToPass = resultToPass.result;
+    }
+
+    // Call the stashed success callback
+    onSuccessRef.current?.(resultToPass);
+    onSuccessRef.current = onErrorRef.current = null;
+  }, [nodes, nodeId, definition]);
 
   const referenceStyle = {
     backgroundColor: "hsl(var(--muted))",

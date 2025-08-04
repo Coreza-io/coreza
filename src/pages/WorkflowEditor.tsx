@@ -139,12 +139,11 @@ const WorkflowEditorContent = () => {
 
   const handleRemoveLoop = useCallback(
     (loopNodeId: string) => {
-      setNodes((ns) => ns.filter((n) => n.id !== loopNodeId));
       setEdges((es) =>
         es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId)
       );
     },
-    [setNodes, setEdges]
+    [setEdges]
   );
 
   // Merge base node types with custom Loop node
@@ -157,33 +156,6 @@ const WorkflowEditorContent = () => {
       />
     ),
   }), [handleAddNode]);
-
-  // Auto-inject self-loop edges (done -> in)
-  useEffect(() => {
-    setEdges((old) => {
-      const noSelf = old.filter((e) => !e.id.startsWith('self_'));
-      const loops = nodes
-        .filter((n) => n.type === 'Loop')
-        .map((n) => {
-          const count = ((n.data as any)?.loopItems || []).length;
-          return {
-            id: `self_${n.id}`,
-            source: n.id,
-            sourceHandle: 'loop',
-            target: n.id,
-            targetHandle: 'in',
-            type: 'loop',
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
-            data: {
-              onAddEdge: () => handleAddNode(n.id),
-              onRemoveEdge: () => handleRemoveLoop(n.id),
-              label: `${count} item${count === 1 ? '' : 's'}`,
-            },
-          };
-          });
-      return [...noSelf, ...loops];
-    });
-  }, [nodes, handleAddNode, handleRemoveLoop, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) =>

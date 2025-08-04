@@ -313,14 +313,6 @@ export class WorkflowExecutor {
       return;
     }
 
-    // Check for cycles first
-    if (this.detectCycles()) {
-      const error = 'Circular dependency detected in workflow';
-      console.error(`❌ [WORKFLOW EXECUTOR] ${error}`);
-      this.context.toast({ title: 'Workflow Error', description: error, variant: 'destructive' });
-      return;
-    }
-
     this.isAutoExecuting = true;
     this.preCalculateConditionalBranches(); // Refresh conditional map
 

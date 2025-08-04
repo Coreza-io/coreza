@@ -18,6 +18,18 @@ export interface InteractiveEdgeProps extends EdgeProps {
   selfLoopConfig?: SelfLoopConfig;
 }
 
+// Build edge controls based on available callbacks
+const buildControls = (data?: any): EdgeControl[] => {
+  const controls: EdgeControl[] = [];
+  if (data?.onAddEdge) {
+    controls.push({ icon: <Plus size={12} color="#22c55e" />, onClick: data.onAddEdge });
+  }
+  if (data?.onRemoveEdge) {
+    controls.push({ icon: <Trash2 size={12} color="#e11d48" />, onClick: data.onRemoveEdge });
+  }
+  return controls;
+};
+
 export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   id,
   source,
@@ -174,11 +186,7 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
     return <DefaultEdge {...props} />;
   }
 
-  const controls = data?.onRemoveEdge
-    ? [
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
-      ]
-    : [];
+  const controls = buildControls(data);
 
   return (
     <InteractiveEdge
@@ -199,12 +207,7 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
 // Default edge for regular connections
 export const DefaultEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
-  const controls = data?.onRemoveEdge
-    ? [
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
-      ]
-    : [];
-
+  const controls = buildControls(data);
   return (
     <InteractiveEdge
       {...props}
@@ -218,14 +221,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
 // Keep LoopEdge for backward compatibility with existing Loop nodes
 export const LoopEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
-  const controls = [
-    ...(data?.onAddLoop
-      ? [{ icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop as (e: React.MouseEvent) => void }]
-      : []),
-    ...(data?.onRemoveLoop
-      ? [{ icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop as (e: React.MouseEvent) => void }]
-      : []),
-  ];
+  const controls = buildControls(data);
 
   return (
     <InteractiveEdge

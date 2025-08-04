@@ -57,8 +57,10 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       case 'top':
         pathD = [
           `M ${sourceX},${sourceY}`,
-          `C ${sourceX},${sourceY - offsetY/2} ${sourceX + offsetX/2},${sourceY - offsetY} ${sourceX + offsetX},${sourceY - offsetY}`,
-          `C ${sourceX + offsetX + offsetX/2},${sourceY - offsetY} ${targetX + offsetX},${targetY - offsetY/2} ${targetX},${targetY}`,
+          `V ${sourceY - offsetY}`,
+          `H ${sourceX + offsetX}`,
+          `V ${targetY}`,
+          `H ${targetX}`,
         ].join(' ');
         midX = sourceX + offsetX / 2;
         midY = sourceY - offsetY;
@@ -66,8 +68,10 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       case 'bottom':
         pathD = [
           `M ${sourceX},${sourceY}`,
-          `C ${sourceX},${sourceY + offsetY/2} ${sourceX + offsetX/2},${sourceY + offsetY} ${sourceX + offsetX},${sourceY + offsetY}`,
-          `C ${sourceX + offsetX + offsetX/2},${sourceY + offsetY} ${targetX + offsetX},${targetY + offsetY/2} ${targetX},${targetY}`,
+          `V ${sourceY + offsetY}`,
+          `H ${sourceX + offsetX}`,
+          `V ${targetY}`,
+          `H ${targetX}`,
         ].join(' ');
         midX = sourceX + offsetX / 2;
         midY = sourceY + offsetY;
@@ -75,8 +79,10 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       case 'left':
         pathD = [
           `M ${sourceX},${sourceY}`,
-          `C ${sourceX - offsetX/2},${sourceY} ${sourceX - offsetX},${sourceY + offsetY/2} ${sourceX - offsetX},${sourceY + offsetY}`,
-          `C ${sourceX - offsetX},${sourceY + offsetY + offsetY/2} ${targetX - offsetX/2},${targetY + offsetY} ${targetX},${targetY}`,
+          `H ${sourceX - offsetX}`,
+          `V ${sourceY + offsetY}`,
+          `H ${targetX}`,
+          `V ${targetY}`,
         ].join(' ');
         midX = sourceX - offsetX;
         midY = sourceY + offsetY / 2;
@@ -85,15 +91,18 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       default:
         pathD = [
           `M ${sourceX},${sourceY}`,
-          `C ${sourceX + offsetX/2},${sourceY} ${sourceX + offsetX},${sourceY + offsetY/2} ${sourceX + offsetX},${sourceY + offsetY}`,
-          `C ${sourceX + offsetX},${sourceY + offsetY + offsetY/2} ${targetX + offsetX/2},${targetY + offsetY} ${targetX},${targetY}`,
+          `H ${sourceX + offsetX}`,
+          `V ${sourceY + offsetY}`,
+          `H ${targetX - offsetX}`,
+          `V ${targetY}`,
+          `H ${targetX}`,
         ].join(' ');
         midX = sourceX + offsetX;
         midY = sourceY + offsetY / 2;
         break;
     }
   } else {
-    // Regular edge path with smooth curves
+    // Regular edge path
     pathD = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })[0];
     midX = (sourceX + targetX) / 2;
     midY = (sourceY + targetY) / 2;
@@ -122,24 +131,14 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       )}
       {controls.length > 0 && (
         <foreignObject
-          x={midX - 40}
-          y={midY - 16}
-          width={80}
-          height={32}
+          x={midX - 24}
+          y={midY - 12}
+          width={48}
+          height={24}
           style={{ pointerEvents: 'all' }}
         >
           <div
-            style={{ 
-              display: 'flex', 
-              gap: '8px', 
-              justifyContent: 'center', 
-              alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.95)',
-              borderRadius: '16px',
-              padding: '4px 8px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}
           >
             {controls.map((ctrl, i) => (
               <button
@@ -147,22 +146,11 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
                 type="button"
                 onClick={ctrl.onClick}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '24px',
-                  height: '24px',
+                  background: '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  padding: '2px',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
                 }}
               >
                 {ctrl.icon}
@@ -186,8 +174,7 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
 
   const controls = selected
     ? [
-        { icon: <Plus size={16} color="#22c55e" />, onClick: data?.onAddNode as (e: React.MouseEvent) => void },
-        { icon: <Trash2 size={16} color="#ef4444" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
       ]
     : [];
 
@@ -212,8 +199,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
   const { data, selected } = props;
   const controls = selected
     ? [
-        { icon: <Plus size={16} color="#22c55e" />, onClick: data?.onAddNode as (e: React.MouseEvent) => void },
-        { icon: <Trash2 size={16} color="#ef4444" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
       ]
     : [];
 

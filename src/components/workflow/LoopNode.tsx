@@ -5,17 +5,17 @@ import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "@/components/nodes/layouts/BasicNodeLayout";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
+import { Plus } from "lucide-react";
 
-export interface LoopNodeData {
-  definition: any;
-  values?: { loopItems?: any[] };
+export interface LoopNodeData extends Record<string, any> {
+  onAddNode: (parentId: string) => void;
 }
 
-export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
+export function LoopNode({ id, data, selected }: NodeProps) {
   const nodes = useNodes();
   const edges = useEdges();
-  const definition = data.definition || (data as any).config || {};
-  const values = data.values;
+  const { onAddNode } = data as any;
+  const definition = (data as any).definition || (data as any).config || {};
 
   const icon = useMemo(() => {
     if (!definition.icon) {
@@ -72,12 +72,7 @@ export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
             handles={definition.handles || []}
             nodeType={definition.node_type}
           >
-            <>
-              <BasicNodeLayout {...renderProps} />
-              <div className="p-2">
-                Items: {values?.loopItems?.length || 0}
-              </div>
-            </>
+            <BasicNodeLayout {...renderProps} />
           </NodeWrapper>
         </div>
       )}

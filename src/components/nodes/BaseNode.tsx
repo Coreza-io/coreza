@@ -669,8 +669,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         if (loopEdge) {
           const loopNodeId = loopEdge.source;
           const loopNode = nodes.find((n) => n.id === loopNodeId);
-          const loopItems = loopNode?.data.loopItems || [];
-          const currentIndex = loopNode?.data.loopIndex || 0;
+          const loopItems = (loopNode?.data.loopItems as any[]) || [];
+          const currentIndex = (loopNode?.data.loopIndex as number) || 0;
           const nextIndex = currentIndex + 1;
 
           if (nextIndex < loopItems.length) {

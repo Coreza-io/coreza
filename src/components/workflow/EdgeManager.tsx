@@ -39,7 +39,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         `V ${targetY}`,
         `H ${targetX}`,
       ].join(' ')
-    : getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+    : getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })[0];
 
   const midX = (sourceX + targetX) / 2;
   const midY = loop ? sourceY + offsetY : (sourceY + targetY) / 2;
@@ -61,7 +61,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       {data?.label && (
         <text className="react-flow__edge-text">
           <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
-            {data.label}
+            {String(data.label)}
           </textPath>
         </text>
       )}
@@ -74,7 +74,6 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           style={{ pointerEvents: 'all' }}
         >
           <div
-            xmlns="http://www.w3.org/1999/xhtml"
             style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}
           >
             {controls.map((ctrl, i) => (
@@ -104,8 +103,8 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
   const { data, selected } = props;
   const controls = selected
     ? [
-        { icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop! },
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop! },
+        { icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop as (e: React.MouseEvent) => void },
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop as (e: React.MouseEvent) => void },
       ]
     : [];
 
@@ -116,7 +115,7 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
       offsetX={20}
       offsetY={80}
       style={{ stroke: '#22c55e', strokeWidth: 3 }}
-      markerEnd={{ type: MarkerType.ArrowClosed, color: '#22c55e' }}
+      markerEnd={MarkerType.ArrowClosed}
       controls={controls}
       data={{ label: data?.label }}
     />
@@ -127,7 +126,7 @@ export const RemovableEdge: React.FC<EdgeProps> = (props) => {
   const { data, selected } = props;
   const controls = selected
     ? [
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge! },
+        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
       ]
     : [];
 

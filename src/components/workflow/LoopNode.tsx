@@ -7,16 +7,15 @@ import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { Plus } from "lucide-react";
 
-export interface LoopNodeData {
+export interface LoopNodeData extends Record<string, any> {
   onAddNode: (parentId: string) => void;
-  [key: string]: any;
 }
 
-export function LoopNode({ id, data, selected }: NodeProps<LoopNodeData>) {
+export function LoopNode({ id, data, selected }: NodeProps) {
   const nodes = useNodes();
   const edges = useEdges();
-  const { onAddNode } = data;
-  const definition = data.definition || data.config || {};
+  const { onAddNode } = data as any;
+  const definition = (data as any).definition || (data as any).config || {};
 
   const icon = useMemo(() => {
     if (!definition.icon) {

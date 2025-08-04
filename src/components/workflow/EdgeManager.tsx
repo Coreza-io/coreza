@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { EdgeProps, getSmoothStepPath, MarkerType } from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
 
@@ -17,6 +17,18 @@ export interface InteractiveEdgeProps extends EdgeProps {
   controls?: EdgeControl[];
   selfLoopConfig?: SelfLoopConfig;
 }
+
+// Build edge controls based on available callbacks
+const buildControls = (data?: any): EdgeControl[] => {
+  const controls: EdgeControl[] = [];
+  if (data?.onAddEdge) {
+    controls.push({ icon: <Plus size={12} color="#22c55e" />, onClick: data.onAddEdge });
+  }
+  if (data?.onRemoveEdge) {
+    controls.push({ icon: <Trash2 size={12} color="#e11d48" />, onClick: data.onRemoveEdge });
+  }
+  return controls;
+};
 
 export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   id,
@@ -108,8 +120,10 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
     midY = (sourceY + targetY) / 2;
   }
 
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <>
+    <g onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <path
         id={id}
         className="react-flow__edge-path"
@@ -118,7 +132,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           ...style,
           strokeLinecap: 'round',
           strokeLinejoin: 'round',
-          pointerEvents: controls.length ? 'none' : undefined,
+          pointerEvents: 'stroke',
         }}
         markerEnd={markerEnd}
       />
@@ -129,7 +143,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
-      {controls.length > 0 && (
+      {controls.length > 0 && hovered && (
         <foreignObject
           x={midX - 24}
           y={midY - 12}
@@ -159,24 +173,20 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           </div>
         </foreignObject>
       )}
-    </>
+    </g>
   );
 };
 
 // Generic Self-Loop Edge for any node
 export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
-  const { data, selected, source, target } = props;
+  const { data, source, target } = props;
   
   // Only apply self-loop styling if it's actually a self-loop
   if (source !== target) {
     return <DefaultEdge {...props} />;
   }
 
-  const controls = selected
-    ? [
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
-      ]
-    : [];
+  const controls = buildControls(data);
 
   return (
     <InteractiveEdge
@@ -196,12 +206,8 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
 
 // Default edge for regular connections
 export const DefaultEdge: React.FC<EdgeProps> = (props) => {
-  const { data, selected } = props;
-  const controls = selected
-    ? [
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveEdge as (e: React.MouseEvent) => void },
-      ]
-    : [];
+  const { data } = props;
+  const controls = buildControls(data);
 
   return (
     <InteractiveEdge
@@ -215,13 +221,8 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
 
 // Keep LoopEdge for backward compatibility with existing Loop nodes
 export const LoopEdge: React.FC<EdgeProps> = (props) => {
-  const { data, selected } = props;
-  const controls = selected
-    ? [
-        { icon: <Plus size={12} color="#22c55e" />, onClick: data?.onAddLoop as (e: React.MouseEvent) => void },
-        { icon: <Trash2 size={12} color="#e11d48" />, onClick: data?.onRemoveLoop as (e: React.MouseEvent) => void },
-      ]
-    : [];
+  const { data } = props;
+  const controls = buildControls(data);
 
   return (
     <InteractiveEdge

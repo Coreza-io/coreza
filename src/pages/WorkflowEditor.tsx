@@ -175,8 +175,8 @@ const WorkflowEditorContent = () => {
             type: 'loop',
             markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
             data: {
-              onAddLoop: () => handleAddNode(n.id),
-              onRemoveLoop: () => handleRemoveLoop(n.id),
+              onAddEdge: () => handleAddNode(n.id),
+              onRemoveEdge: () => handleRemoveLoop(n.id),
               label: `${count} item${count === 1 ? '' : 's'}`,
             },
           };

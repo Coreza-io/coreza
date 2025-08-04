@@ -50,9 +50,9 @@ const baseNodeTypes = Object.fromEntries([
 //console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
-  default: EdgeManager.InteractiveEdge,
+  default: EdgeManager.SelfLoopEdge,
   loop: EdgeManager.LoopEdge,
-  removable: EdgeManager.RemovableEdge,
+  removable: EdgeManager.DefaultEdge,
 };
 
 // Initial nodes for demonstration  

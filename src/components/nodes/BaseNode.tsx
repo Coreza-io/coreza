@@ -311,17 +311,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     const allNodeData: Record<string, any> = {};
     previousNodes.forEach(prevNode => {
       const displayName = prevNode.id;
-      const currentNode = nodes.find(n => n.id === prevNode.id);
-      let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
-      
-      // If nodeData is an array, get the first item
+      // Prefer execution store
+      let nodeData = executionStore.getNodeData(prevNode.id).output;
+      if (nodeData === undefined) {
+        // fallback to static data if not yet executed
+        nodeData = prevNode.data?.output || prevNode.data || {};
+      }
+
       if (Array.isArray(nodeData) && nodeData.length > 0) {
         nodeData = nodeData[0] || {};
       }
-      
       allNodeData[displayName] = nodeData;
     });
-    
     try {
       const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
       //console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
@@ -419,19 +420,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     
     previousNodes.forEach(prevNode => {
       const displayName = prevNode.id;
-      console.log(`🔧 Processing node ${prevNode.id} -> display name: "${displayName}"`);
-      
-      // Get the most current version of this node from the nodes array
-      const currentNode = nodes.find(n => n.id === prevNode.id);
-      let nodeData = currentNode?.data?.output || currentNode?.data || prevNode.data?.output || prevNode.data || {};
-      
-      // If nodeData is an array, get the first item
+      // Prefer execution store
+      let nodeData = executionStore.getNodeData(prevNode.id).output;
+      if (nodeData === undefined) {
+        // fallback to static data if not yet executed
+        nodeData = prevNode.data?.output || prevNode.data || {};
+      }
+
       if (Array.isArray(nodeData) && nodeData.length > 0) {
         nodeData = nodeData[0] || {};
       }
       allNodeData[displayName] = nodeData;
-      console.log(`🔧 Mapped node '${displayName}' -> data:`, nodeData);
     });
+
     
     console.log("🔧 All node data map:", allNodeData);
     
@@ -496,7 +497,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const { supportData } = collectNodeData();
-      const effectiveInput = inputOverride ?? selectedInputData;
+      let effectiveInput = inputOverride ?? selectedInputData;
+      if (
+        !inputOverride &&
+        (!effectiveInput || Object.keys(effectiveInput).length === 0)
+      ) {
+        // Root node with no prior input: default to fieldState (the node's form values)
+        effectiveInput = { ...fieldState };
+      }
       const payload = buildPayload(fieldState, supportData, effectiveInput, userId);
       payload.user_id = userId;
 
@@ -595,7 +603,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
 
       if (definition?.name === "Loop") {
-        executionStore.setNodeData(nodeId!, outputData);
+        executionStore.setNodeData(nodeId!, effectiveInput);
         setLastOutput(outputData);
         data.output = outputData;
         setNodes(nds =>
@@ -609,7 +617,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         setLastOutput(outputData);
         const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
         data.output = finalOutput;
-        executionStore.setNodeData(nodeId!, { input: finalOutput });
+        executionStore.setNodeData(nodeId!, { input: effectiveInput });
         setNodes(nds =>
           nds.map(n =>
             n.id === nodeId

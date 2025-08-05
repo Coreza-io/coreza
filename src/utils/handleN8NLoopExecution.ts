@@ -1,5 +1,6 @@
 import { Edge, Node } from '@xyflow/react';
 import ExecutionContext from './executionContext';
+import { resolveReferences } from '@/utils/resolveReferences'; // Use your actual path
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -20,23 +21,61 @@ function collectSubgraph(nodes: Node[], edges: Edge[], start: string): Edge[] {
   return subEdges;
 }
 
+// If you want to deeply resolve objects/arrays, include this helper:
+function resolveDeep(val: any, selectedInputData: any, allNodeData: any, nodes: Node[]): any {
+  if (typeof val === "string") {
+    return resolveReferences(val, selectedInputData, allNodeData, nodes);
+  }
+  if (Array.isArray(val)) {
+    return val.map(v => resolveDeep(v, selectedInputData, allNodeData, nodes));
+  }
+  if (typeof val === "object" && val !== null) {
+    return Object.fromEntries(
+      Object.entries(val).map(([k, v]) => [k, resolveDeep(v, selectedInputData, allNodeData, nodes)])
+    );
+  }
+  return val;
+}
+
 export async function handleN8NLoopExecution(
   execCtx: ExecutionContext,
   graph: { nodes: Node[]; edges: Edge[] },
   loopNodeId: string,
-  config: {
-    items: any[];
-    batchSize: number;
-    parallel: boolean;
-    continueOnError: boolean;
-    throttleMs: number;
-  },
+  fieldState,
   outgoing: Edge[],
   globalExecuted: Set<string>,
   executeNode: (id: string, executed: Set<string>) => Promise<any>
 ): Promise<void> {
-  const { items, batchSize, parallel, continueOnError, throttleMs } = config;
-  const subgraph = collectSubgraph(graph.nodes, graph.edges, loopNodeId);
+  // --- Resolve node context for references ---
+  const nodes = graph.nodes;
+  const loopNode = nodes.find(n => n.id === loopNodeId);
+  // Get previous (upstream) nodes for context:
+  const previousNodes = nodes.filter(n =>
+    graph.edges.some(e => e.target === loopNodeId && e.source === n.id)
+  );
+  const allNodeData: Record<string, any> = {};
+  previousNodes.forEach(prevNode => {
+    // Use store, not node.data!
+    let nodeData = execCtx.getNodeData(prevNode.id).output ?? {};
+    if (Array.isArray(nodeData) && nodeData.length > 0) {
+      nodeData = nodeData || {};
+    }
+    allNodeData[prevNode.id] = nodeData;
+  });
+  const selectedInputData =
+  previousNodes[0] ? execCtx.getNodeData(previousNodes[0].id).output ?? {} : {};
+
+  // --- Resolve all relevant fieldState values (deep!) ---
+  // If your fieldState keys are named differently, adjust here.
+  let items = resolveDeep(fieldState.inputArray, selectedInputData, allNodeData, nodes) || [];
+  const parsed = JSON.parse(items);
+  items = Array.isArray(parsed) ? parsed : [parsed];
+  const batchSize: number = parseInt(resolveDeep(fieldState.batchSize, selectedInputData, allNodeData, nodes)) || 1;
+  const parallel: boolean = !!resolveDeep(fieldState.parallel, selectedInputData, allNodeData, nodes);
+  const continueOnError: boolean = !!resolveDeep(fieldState.continueOnError, selectedInputData, allNodeData, nodes);
+  const throttleMs: number = parseInt(resolveDeep(fieldState.throttleMs, selectedInputData, allNodeData, nodes)) || 0;
+
+  const subgraph = collectSubgraph(nodes, graph.edges, loopNodeId);
 
   const batches: any[][] = [];
   for (let i = 0; i < items.length; i += batchSize) {
@@ -68,7 +107,7 @@ export async function handleN8NLoopExecution(
       const done = new Set<string>([loopNodeId]);
       const failures = new Set<string>();
       const retries = new Map<string, number>();
-      const MAX_RETRY = graph.nodes.length * 2;
+      const MAX_RETRY = nodes.length * 2;
 
       while (queue.length) {
         const nid = queue.shift()!;

@@ -47,7 +47,7 @@ export class WorkflowExecutor {
     this.nodeStore = context.executionStore;
     this.preCalculateConditionalBranches();
   }
-
+  
   /**
    * Pre-calculate conditional branches for optimization (only for actual branching nodes)
    */
@@ -270,8 +270,8 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Execute a single node with visual feedback
-   */
+ * Execute a single node with visual feedback
+ */
   async executeNode(
     nodeId: string,
     executedSet: Set<string>,
@@ -285,26 +285,7 @@ export class WorkflowExecutor {
 
     const execData = this.nodeStore.getNodeData(nodeId);
     const defName = (node.data.definition as any)?.name;
-
-    if (defName === 'Loop') {
-      const inputData = {
-        items: execData.items!,
-        batchSize: execData.batchSize!,
-        parallel: execData.parallel!,
-        continueOnError: execData.continueOnError!,
-        throttleMs: execData.throttleMs!,
-      };
-      const outgoing = this.context.edges.filter(e => e.source === nodeId);
-      return handleN8NLoopExecution(
-        this.nodeStore,
-        { nodes: this.context.nodes, edges: this.context.edges },
-        nodeId,
-        inputData,
-        outgoing,
-        executedSet,
-        this.executeNode.bind(this)
-      );
-    }
+    const fieldState = node.data.fieldState || node.data.values || {};
 
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
@@ -312,6 +293,41 @@ export class WorkflowExecutor {
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
+    // Utility: Collect all node IDs in the subgraph rooted at 'start'
+    function collectSubgraphNodeIds(nodes: Node[], edges: Edge[], start: string): Set<string> {
+      const visited = new Set<string>();
+      const stack = [start];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        if (visited.has(cur)) continue;
+        visited.add(cur);
+        edges.filter(e => e.source === cur).forEach(e => stack.push(e.target));
+      }
+      return visited;
+    }
+
+    if (defName === 'Loop') {
+      const outgoing = this.context.edges.filter(e => e.source === nodeId);
+
+      // 1. Run loop execution logic
+      await handleN8NLoopExecution(
+        this.nodeStore,
+        { nodes: this.context.nodes, edges: this.context.edges },
+        nodeId,
+        fieldState,
+        outgoing,
+        executedSet,
+        this.executeNode.bind(this)
+      );
+
+      // 2. After loop completes, collect all node ids in this subgraph
+      const loopSubgraph = collectSubgraphNodeIds(this.context.nodes, this.context.edges, nodeId);
+
+      // 3. Return this marker so the main queue can skip these
+      return { loopSubgraph };
+    }
+
+    // Default (non-Loop) node execution
     const result: any = await new Promise((resolve, reject) => {
       const execEvent = new CustomEvent('auto-execute-node', {
         detail: {
@@ -338,6 +354,7 @@ export class WorkflowExecutor {
     return result;
   }
 
+
   /**
    * Execute all nodes using optimized FIFO queue with cycle detection and retry limits
    */
@@ -350,6 +367,7 @@ export class WorkflowExecutor {
     }
 
     this.isAutoExecuting = true;
+    const skipNodes = new Set<string>();
     this.preCalculateConditionalBranches(); // Refresh conditional map
 
     // Initialize execution metrics
@@ -376,6 +394,10 @@ export class WorkflowExecutor {
     try {
       while (queue.length) {
         const id = queue.shift()!;
+        if (skipNodes.has(id)) {
+            console.log(`⏩ [WORKFLOW EXECUTOR] Skipping node ${id} (already processed by Loop subgraph)`);
+            continue;
+        }
         if (executed.has(id) || failed.has(id)) continue;
 
         const inc = this.context.edges.filter(e => e.target === id);
@@ -403,6 +425,10 @@ export class WorkflowExecutor {
           // Check if this is a conditional target that should be explicitly triggered
           const isConditionalTarget = retryCount.has(id + "_conditional");
           const result = await this.executeNode(id, executed, isConditionalTarget);
+          // If result is a Loop subgraph marker, update skipNodes
+          if (result && result.loopSubgraph && result.loopSubgraph instanceof Set) {
+            result.loopSubgraph.forEach(nid => skipNodes.add(nid));
+          }
           if (isConditionalTarget) {
             retryCount.delete(id + "_conditional"); // Clean up the flag
           }

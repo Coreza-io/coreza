@@ -98,19 +98,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
                   onChange={(e) => setSelectedPrevNodeId(e.target.value)}
                 >
                   <option value="">Select node...</option>
-                  {previousNodes.map((node: Node<any>) => {
-                    const output =
-                      executionStore?.getNodeData(node.id)?.output ??
-                      node.data.output;
-                    const nodeLabel =
-                      node.data?.definition?.name || node.id;
-                    return (
-                      <option key={node.id} value={node.id}>
-                        {nodeLabel}
-                        {output && ` (${summarizePreview(output)})`}
-                      </option>
-                    );
-                  })}
+                  {previousNodes.map((node: Node<any>) => (
+                    <option key={node.id} value={node.id}>
+                      {node.id}
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : null}

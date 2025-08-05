@@ -530,15 +530,27 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         } else {
           throw new Error("Loop input must be an array or JSON string representing an array");
         }
+        
+        
+        // When rendering the panel:
+        const loopData = executionStore.getNodeData(nodeId) || {};
+        const loopIndex = loopData.loopIndex ?? 0;
+        const items = loopData.loopItems ?? arrayData;
+
+        // When running manually:
+        const start = loopIndex;
+        const batch = items.slice(start, start + batchSize);
+        const output = batchSize === 1 ? batch[0] : batch;
+        executionStore.setNodeData(nodeId!, effectiveInput);
+        executionStore.setNodeData(nodeId!, {
+          output,
+          loopItems: items,
+          loopIndex: start + batchSize, // for next "Run"
+          loopItem: batch[0],
+        });
 
         outputData = {
-          isLoopNode: true,
-          items: arrayData,
-          batchSize,
-          totalItems: arrayData.length,
-          parallel,
-          continueOnError,
-          throttleMs,
+          item: batch[0]
         };
  
         console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
@@ -603,7 +615,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
 
       if (definition?.name === "Loop") {
-        executionStore.setNodeData(nodeId!, effectiveInput);
+        //executionStore.setNodeData(nodeId!, { output: outputData });
         setLastOutput(outputData);
         data.output = outputData;
         setNodes(nds =>
@@ -618,6 +630,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
         data.output = finalOutput;
         executionStore.setNodeData(nodeId!, { input: effectiveInput });
+        executionStore.setNodeData(nodeId!, { output: finalOutput });
         setNodes(nds =>
           nds.map(n =>
             n.id === nodeId

@@ -42,6 +42,54 @@ export class WorkflowExecutor {
     this.preCalculateConditionalBranches();
   }
 
+  private getNode(id: string): Node | undefined {
+    return this.context.nodes.find(n => n.id === id);
+  }
+
+  private getOutgoingEdges(id: string): Edge[] {
+    return this.context.edges.filter(e => e.source === id);
+  }
+
+  private collectInputs(id: string): any {
+    const node = this.getNode(id);
+    const data: any = node?.data || {};
+    const vals = data.values || {};
+
+    const batchSize = parseInt(vals.batchSize) || 1;
+    const parallel = !!vals.parallel;
+    const continueOnError = !!vals.continueOnError;
+    const throttleMs = parseInt(vals.throttleMs) || 0;
+
+    const input = data.input;
+    let items: any[];
+    if (Array.isArray(input)) {
+      items = input;
+    } else if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        items = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        items = [input];
+      }
+    } else if (input == null) {
+      items = [];
+    } else if (typeof input === 'object') {
+      items = [input];
+    } else {
+      items = [input];
+    }
+
+    return {
+      isLoopNode: true,
+      items,
+      batchSize,
+      parallel,
+      continueOnError,
+      throttleMs,
+      totalItems: items.length,
+    };
+  }
+
   /**
    * Pre-calculate conditional branches for optimization (only for actual branching nodes)
    */
@@ -271,6 +319,13 @@ export class WorkflowExecutor {
     executedNodes: Set<string>,
     explicitlyTriggered: boolean = false
   ): Promise<any> {
+    const node = this.getNode(nodeId);
+    if ((node?.data?.definition as any)?.name === 'Loop') {
+      const inputData = this.collectInputs(nodeId);
+      const outgoing = this.getOutgoingEdges(nodeId);
+      return handleLoopExecution(this.context, nodeId, inputData, outgoing, executedNodes);
+    }
+
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
     this.highlightNode(nodeId);
@@ -370,7 +425,7 @@ export class WorkflowExecutor {
           }
           const nodeTime = performance.now() - nodeStart;
           metrics.nodeTimings.set(id, nodeTime);
-          
+
           executed.add(id);
           metrics.completedNodes.add(id);
           console.log(`✅ [WORKFLOW EXECUTOR] Node ${id} completed in ${nodeTime.toFixed(2)}ms`);
@@ -378,17 +433,12 @@ export class WorkflowExecutor {
           // Add delay between node executions to make highlighting visible
           await new Promise(resolve => setTimeout(resolve, 500));
 
-          const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
-          
-          // Check if this is a Loop node and handle iteration
-          const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
-          if (isLoopNode && result?.items?.length > 0) {
-            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items`);
-            await handleLoopExecution(this.context, id, result, out, executed);
-            continue; // Skip normal processing for loop nodes
+          if ((node?.data?.definition as any)?.name === 'Loop') {
+            continue; // Loop node already handled its subgraph
           }
-          
+
+          const out = this.context.edges.filter(e => e.source === id);
           console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
           
           // Use optimized conditional branch handling

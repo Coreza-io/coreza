@@ -4,7 +4,6 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
-import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BACKEND_URL = "http://localhost:8000";
@@ -61,7 +60,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodes = useNodes();
   const edges = useEdges();
   const { setNodes, setEdges } = useReactFlow();
-  const { toast } = useToast();
   const { user } = useAuth();
   const isMounted = useRef(true);
 
@@ -506,12 +504,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       let outputData: any;
       
-      // Special handling for Loop node - process in frontend without backend call
+      // Special handling for Loop node - parse inputs but defer execution
       if (definition?.name === "Loop") {
         const batchSize = parseInt(fieldState.batchSize) || 1;
         const parallel = !!fieldState.parallel;
         const continueOnError = !!fieldState.continueOnError;
-        const throttleMs = parseInt(fieldState.throttleMs) || 200;
+        const throttleMs = parseInt(fieldState.throttleMs) || 0;
 
         let arrayData: any[];
         if (Array.isArray(selectedInputData)) {
@@ -536,204 +534,95 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           continueOnError,
           throttleMs,
         };
- 
-        console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
-      } else {
-        // Regular backend processing for non-Loop nodes
-        const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
-        let operationMethod = "POST";
-        
-        if (operationField) {
-          const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
-          if (opSelected && opSelected.method) {
-            operationMethod = opSelected.method;
-          }
-        }
 
-        let url = definition?.action?.url || '';
-        let method = definition?.action?.method || "POST";
-        
-        if (url.includes("{{") && url.includes("}}")) {
-          url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
-        }
+        setLastOutput(outputData);
+        return outputData;
+      }
 
-        if (method.includes("{{") && method.includes("}}")) {
-          method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
-            key === "method" ? operationMethod : fieldState[key] || ""
-          );
-        }
+      // Regular backend processing for non-Loop nodes
+      const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
+      let operationMethod = "POST";
 
-        if (definition?.action?.url && definition?.action?.method) {
-          let fullUrl = `${BACKEND_URL}${url}`;
-          let params: URLSearchParams | undefined;
-          
-          if (method === "GET") {
-            params = new URLSearchParams();
-            params.append("user_id", userId);
-            params.append("credential_id", fieldState.credential_id ?? "");
-            fullUrl += `?${params.toString()}`;
-          }
-
-          const fetchOptions: RequestInit = { method };
-          if (method !== "GET") {
-            fetchOptions.headers = { "Content-Type": "application/json" };
-            fetchOptions.body = JSON.stringify(payload);
-          }
-
-          // Log the payload and request details
-          console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
-          console.log("🚀 [BACKEND REQUEST] Method:", method);
-          console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
-          if (method === "GET" && params) {
-            console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
-          }
-
-          const res = await fetch(fullUrl, fetchOptions);
-          const responseData = await res.json();
-          if (!res.ok) throw new Error(responseData.detail || "Action failed");
-          outputData = [responseData];
-        } else {
-          outputData = [payload];
+      if (operationField) {
+        const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
+        if (opSelected && opSelected.method) {
+          operationMethod = opSelected.method;
         }
       }
 
+      let url = definition?.action?.url || '';
+      let method = definition?.action?.method || "POST";
 
-      if (definition?.name === "Loop") {
-        const items = outputData.items || [];
-        const firstItem = items[0];
-        const original = selectedInputData;
-        setLastOutput(firstItem);
-        data.output = firstItem;
+      if (url.includes("{{") && url.includes("}}")) {
+        url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
+      }
 
-        setNodes((nds) =>
-          nds.map((n) => {
-            if (n.id === nodeId) {
-              return {
-                ...n,
+      if (method.includes("{{") && method.includes("}}")) {
+        method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+          key === "method" ? operationMethod : fieldState[key] || ""
+        );
+      }
+
+      if (definition?.action?.url && definition?.action?.method) {
+        let fullUrl = `${BACKEND_URL}${url}`;
+        let params: URLSearchParams | undefined;
+
+        if (method === "GET") {
+          params = new URLSearchParams();
+          params.append("user_id", userId);
+          params.append("credential_id", fieldState.credential_id ?? "");
+          fullUrl += `?${params.toString()}`;
+        }
+
+        const fetchOptions: RequestInit = { method };
+        if (method !== "GET") {
+          fetchOptions.headers = { "Content-Type": "application/json" };
+          fetchOptions.body = JSON.stringify(payload);
+        }
+
+        // Log the payload and request details
+        console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+        console.log("🚀 [BACKEND REQUEST] Method:", method);
+        console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
+        if (method === "GET" && params) {
+          console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
+        }
+
+        const res = await fetch(fullUrl, fetchOptions);
+        const responseData = await res.json();
+        if (!res.ok) throw new Error(responseData.detail || "Action failed");
+        outputData = [responseData];
+      } else {
+        outputData = [payload];
+      }
+
+      setLastOutput(outputData);
+      const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+      data.output = finalOutput;
+
+      setNodes((nds) => {
+        const updated = nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, output: finalOutput } }
+            : n
+        );
+        outgoingEdges.forEach((edge) => {
+            const idx = updated.findIndex((n) => n.id === edge.target);
+            if (idx !== -1) {
+              updated[idx] = {
+                ...updated[idx],
                 data: {
-                  ...n.data,
-                  originalOutput: original,
-                  output: firstItem,
-                  loopItems: items,
-                  loopIndex: 0,
-                  loopItem: firstItem,
-                },
-              };
-            }
-
-            const isDownstream = outgoingEdges.some((e) => e.target === n.id);
-            if (isDownstream) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  input: firstItem,
-                  loopItem: firstItem,
-                  loopIndex: 0,
+                  ...updated[idx].data,
+                  input: finalOutput,
                   lastUpdated: new Date().toISOString(),
                 },
               };
             }
+          });
+        return updated;
+      });
 
-            return n;
-          })
-        );
-        
-      } else {
-        setLastOutput(outputData);
-        const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
-        data.output = finalOutput;
-
-        setNodes((nds) => {
-          const updated = nds.map((n) =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, output: finalOutput } }
-              : n
-          );
-          outgoingEdges.forEach((edge) => {
-              const idx = updated.findIndex((n) => n.id === edge.target);
-              if (idx !== -1) {
-                updated[idx] = {
-                  ...updated[idx],
-                  data: {
-                    ...updated[idx].data,
-                    input: finalOutput,
-                    lastUpdated: new Date().toISOString(),
-                  },
-                };
-              }
-            });
-          return updated;
-        });
-
-        // After this node executes, advance upstream Loop iteration if present
-        const incoming = incomingEdges;
-        const loopEdge = incoming.find((e) => {
-          const src = nodes.find((n) => n.id === e.source);
-          return (src?.data?.definition as any)?.name === "Loop" && Array.isArray(src.data.loopItems);
-        });
-
-        if (loopEdge) {
-          const loopNodeId = loopEdge.source;
-          const loopNode = nodes.find((n) => n.id === loopNodeId);
-          const loopItems = (loopNode?.data.loopItems as any[]) || [];
-          const currentIndex = (loopNode?.data.loopIndex as number) || 0;
-          const nextIndex = currentIndex + 1;
-
-          if (nextIndex < loopItems.length) {
-            const nextItem = loopItems[nextIndex];
-            const outgoingFromLoop = edges.filter((e) => e.source === loopNodeId);
-
-            setNodes((nds) =>
-              nds.map((n) => {
-                if (n.id === loopNodeId) {
-                  return {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      output: nextItem,
-                      loopItem: nextItem,
-                      loopIndex: nextIndex,
-                    },
-                  };
-                }
-                const isDownstream = outgoingFromLoop.some((e) => e.target === n.id);
-                if (isDownstream) {
-                  return {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      input: nextItem,
-                      loopItem: nextItem,
-                      loopIndex: nextIndex,
-                      lastUpdated: new Date().toISOString(),
-                    },
-                  };
-                }
-                return n;
-              })
-            );
-          } else {
-            toast({ title: "Loop completed", description: "All items processed" });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === loopNodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: n.data.originalOutput,
-                        loopItem: undefined,
-                        loopIndex: undefined,
-                        loopItems: undefined,
-                      },
-                    }
-                  : n
-              )
-            );
-          }
-        }
-      }
+      return finalOutput;
     } catch (err: any) {
       setError(err.message || "Action failed");
       setLastOutput({

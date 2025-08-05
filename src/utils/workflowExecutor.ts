@@ -396,7 +396,12 @@ export class WorkflowExecutor {
         if (executed.has(id) || failed.has(id)) continue;
 
         const inc = this.context.edges.filter(e => e.target === id);
-        const missing = inc.filter(e => !executed.has(e.source) && !failed.has(e.source));
+        // Exclude loop back-edges to prevent infinite retries
+        const nonLoopIncoming = inc.filter(e => {
+          const sourceNode = this.context.nodes.find(n => n.id === e.source);
+          return (sourceNode?.data?.definition as any)?.name !== 'Loop';
+        });
+        const missing = nonLoopIncoming.filter(e => !executed.has(e.source) && !failed.has(e.source));
         
         if (missing.length) {
           const retries = retryCount.get(id) || 0;

@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
+import { ExecutionStoreProvider, useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 // Base node type mapping (excluding custom Loop node)
 const baseNodeTypes = Object.fromEntries([
@@ -76,6 +77,7 @@ const WorkflowEditorContent = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useAuth();
+  const executionStore = useExecutionStore();
   
   // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === 'new' || !id;
@@ -175,16 +177,17 @@ const WorkflowEditorContent = () => {
   // Memoized WorkflowExecutor instance - only recreate when structure changes
   const workflowExecutor = useMemo(() => {
     if (nodes.length === 0) return null;
-    
+
     return new WorkflowExecutor({
       nodes,
       edges,
       setNodes,
       setEdges,
       setExecutingNode,
-      toast
+      toast,
+      executionStore
     });
-  }, [nodes.length, edges.length, setNodes, setEdges, setExecutingNode, toast]);
+  }, [nodes.length, edges.length, setNodes, setEdges, setExecutingNode, toast, executionStore]);
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
@@ -802,7 +805,9 @@ const WorkflowEditorContent = () => {
 
 const WorkflowEditor = () => (
   <ReactFlowProvider>
-    <WorkflowEditorContent />
+    <ExecutionStoreProvider>
+      <WorkflowEditorContent />
+    </ExecutionStoreProvider>
   </ReactFlowProvider>
 );
 

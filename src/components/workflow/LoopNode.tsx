@@ -6,6 +6,7 @@ import BasicNodeLayout from "@/components/nodes/layouts/BasicNodeLayout";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { Plus } from "lucide-react";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 export interface LoopNodeData extends Record<string, any> {
   onAddNode: (parentId: string) => void;
@@ -16,6 +17,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
   const edges = useEdges();
   const { onAddNode } = data as any;
   const definition = (data as any).definition || (data as any).config || {};
+  const executionStore = useExecutionStore();
 
   const icon = useMemo(() => {
     if (!definition.icon) {
@@ -57,6 +59,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
               handleDragStart: renderProps.handleDragStart,
               selectedPrevNodeId: renderProps.selectedPrevNodeId,
               setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
+              executionStore,
             }}
             outputPanelProps={{
               data: renderProps.displayedData,

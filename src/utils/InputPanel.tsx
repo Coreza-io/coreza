@@ -3,6 +3,7 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useReactFlow } from "@xyflow/react";
+import { summarizePreview } from "@/utils/summarizePreview";
 
 type InputPanelProps = {
   nodeId?: string;
@@ -17,6 +18,7 @@ type InputPanelProps = {
   position?: "left" | "right";
   selectedPrevNodeId?: string;
   setSelectedPrevNodeId?: (id: string) => void;
+  executionStore?: any;
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
@@ -28,6 +30,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   position = "left",
   selectedPrevNodeId,
   setSelectedPrevNodeId,
+  executionStore,
 }) => {
   const { getNodes, getEdges } = useReactFlow();
 
@@ -52,13 +55,17 @@ const InputPanel: React.FC<InputPanelProps> = ({
     }
   }, [previousNodes, selectedPrevNodeId, setSelectedPrevNodeId]);
 
-  // Get outputData directly from current node state
+  // Get outputData prioritizing execution store
   const outputData = useMemo(() => {
     if (!selectedPrevNodeId) return {};
     const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
-    const result = prevNode?.data?.output || prevNode?.data?.input || {};
+    const result =
+      executionStore?.getNodeData(selectedPrevNodeId)?.output ??
+      prevNode?.data?.output ??
+      prevNode?.data?.input ??
+      {};
     return result;
-  }, [selectedPrevNodeId, nodes]);
+  }, [selectedPrevNodeId, nodes, executionStore]);
 
   if (!isExpanded) return null;
 
@@ -91,11 +98,19 @@ const InputPanel: React.FC<InputPanelProps> = ({
                   onChange={(e) => setSelectedPrevNodeId(e.target.value)}
                 >
                   <option value="">Select node...</option>
-                  {previousNodes.map((node: Node<any>) => (
-                    <option key={node.id} value={node.id}>
-                      {node.id}
-                    </option>
-                  ))}
+                  {previousNodes.map((node: Node<any>) => {
+                    const output =
+                      executionStore?.getNodeData(node.id)?.output ??
+                      node.data.output;
+                    const nodeLabel =
+                      node.data?.definition?.name || node.id;
+                    return (
+                      <option key={node.id} value={node.id}>
+                        {nodeLabel}
+                        {output && ` (${summarizePreview(output)})`}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             ) : null}

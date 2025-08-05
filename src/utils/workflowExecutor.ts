@@ -1,5 +1,4 @@
 import { Node, Edge } from '@xyflow/react';
-import { handleLoopExecution } from './loopExecution';
 
 export interface ExecutionContext {
   nodes: Node[];
@@ -271,6 +270,26 @@ export class WorkflowExecutor {
     executedNodes: Set<string>,
     explicitlyTriggered: boolean = false
   ): Promise<any> {
+    const node = this.context.nodes.find(n => n.id === nodeId);
+    if (!node) {
+      console.error(`❌ [WORKFLOW EXECUTOR] Node ${nodeId} not found`);
+      return;
+    }
+
+    // Intercept Loop nodes before normal execution
+    if ((node.data?.definition as any)?.name === 'Loop') {
+      console.log(`🔄 [WORKFLOW EXECUTOR] Intercepting Loop node ${nodeId} for centralized execution`);
+      
+      // Collect input data for the loop node
+      const inputData = this.collectInputData(nodeId);
+      const outgoingEdges = this.context.edges.filter(e => e.source === nodeId);
+      
+      // Use centralized loop execution
+      const { handleN8NLoopExecution } = await import('./handleN8NLoopExecution');
+      await handleN8NLoopExecution(this.context, nodeId, inputData, outgoingEdges, executedNodes);
+      return;
+    }
+
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
     this.highlightNode(nodeId);
@@ -300,6 +319,40 @@ export class WorkflowExecutor {
       });
       window.dispatchEvent(execEvent);
     });
+  }
+
+  private collectInputData(nodeId: string): any {
+    const node = this.context.nodes.find(n => n.id === nodeId);
+    if (!node) return {};
+
+    const fieldState = node.data?.fieldState || node.data?.values || {};
+    const batchSize = parseInt((fieldState as any)?.batchSize) || 1;
+    const parallel = !!((fieldState as any)?.parallel);
+    const continueOnError = !!((fieldState as any)?.continueOnError);
+    const throttleMs = parseInt((fieldState as any)?.throttleMs) || 200;
+
+    // Get items from upstream node
+    const incomingEdges = this.context.edges.filter(e => e.target === nodeId);
+    let items: any[] = [];
+    
+    if (incomingEdges.length > 0) {
+      const sourceNode = this.context.nodes.find(n => n.id === incomingEdges[0].source);
+      const sourceData = sourceNode?.data?.output;
+      
+      if (Array.isArray(sourceData)) {
+        items = sourceData;
+      } else if (sourceData) {
+        items = [sourceData];
+      }
+    }
+
+    return {
+      items,
+      batchSize,
+      parallel,
+      continueOnError,
+      throttleMs
+    };
   }
 
   /**
@@ -381,11 +434,18 @@ export class WorkflowExecutor {
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
           
-          // Check if this is a Loop node and handle iteration
+          // Check if this is a Loop node and handle iteration with new centralized function
           const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
           if (isLoopNode && result?.items?.length > 0) {
-            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items`);
-            await handleLoopExecution(this.context, id, result, out, executed);
+            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items using N8N-style execution`);
+            const { handleN8NLoopExecution } = await import('./handleN8NLoopExecution');
+            await handleN8NLoopExecution(this.context, id, {
+              items: result.items,
+              batchSize: result.batchSize || 1,
+              parallel: result.parallel || false,
+              continueOnError: result.continueOnError || false,
+              throttleMs: result.throttleMs || 200
+            }, out, executed);
             continue; // Skip normal processing for loop nodes
           }
           

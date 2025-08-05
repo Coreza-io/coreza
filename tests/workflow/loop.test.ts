@@ -1,29 +1,8 @@
 import { describe, test, expect } from '@jest/globals';
 import { ControlFlowExecutor } from '../../coreza-backend/src/nodes/executors/ControlFlowExecutor';
-const express = require('../../coreza-backend/node_modules/express');
-import request from 'supertest';
-import controlRoutes from '../../coreza-backend/src/routes/control';
 
-describe('Loop node', () => {
-  test('POST /control/loop returns loop config', async () => {
-    const app = express();
-    app.use(express.json());
-    app.use('/control', controlRoutes);
-
-    const res = await request(app)
-      .post('/control/loop')
-      .send({ inputArray: 'items', items: [1, 2, 3], batchSize: 1, parallel: true, continueOnError: true, throttleMs: 50 })
-      .expect(200);
-
-    expect(res.body.items).toEqual([1, 2, 3]);
-    expect(res.body.batchSize).toBe(1);
-    expect(res.body.isLoopNode).toBe(true);
-    expect(res.body.parallel).toBe(true);
-    expect(res.body.continueOnError).toBe(true);
-    expect(res.body.throttleMs).toBe(50);
-  });
-
-  test('ControlFlowExecutor executes Loop node', async () => {
+describe('Loop node Backend Executor', () => {
+  test('ControlFlowExecutor executes Loop node and returns metadata', async () => {
     const executor = new ControlFlowExecutor();
     const node = {
       id: 'loop1',
@@ -31,18 +10,68 @@ describe('Loop node', () => {
       category: 'ControlFlow',
       values: {
         inputArray: 'items',
+        batchSize: 2,
+        parallel: true,
+        continueOnError: true,
+        throttleMs: 100
+      }
+    } as any;
+
+    const input = { items: [1, 2, 3, 4, 5] };
+
+    const result = await executor.execute(node, input, {});
+    
+    // Loop executor should return clean metadata only
+    expect(result.success).toBe(true);
+    expect(result.data.items).toEqual([1, 2, 3, 4, 5]);
+    expect(result.data.batchSize).toBe(2);
+    expect(result.data.parallel).toBe(true);
+    expect(result.data.continueOnError).toBe(true);
+    expect(result.data.throttleMs).toBe(100);
+    expect(result.data.isLoopNode).toBe(true);
+    expect(result.data.totalItems).toBe(5);
+  });
+
+  test('ControlFlowExecutor handles missing items gracefully', async () => {
+    const executor = new ControlFlowExecutor();
+    const node = {
+      id: 'loop1',
+      type: 'Loop',
+      category: 'ControlFlow',
+      values: {
+        inputArray: 'nonexistent',
         batchSize: 1
+      }
+    } as any;
+
+    const input = { otherData: [1, 2, 3] };
+
+    const result = await executor.execute(node, input, {});
+    
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No array found for field: nonexistent');
+  });
+
+  test('ControlFlowExecutor uses default values for missing config', async () => {
+    const executor = new ControlFlowExecutor();
+    const node = {
+      id: 'loop1',
+      type: 'Loop',
+      category: 'ControlFlow',
+      values: {
+        inputArray: 'items'
+        // Missing batchSize, parallel, continueOnError, throttleMs
       }
     } as any;
 
     const input = { items: [1, 2, 3] };
 
     const result = await executor.execute(node, input, {});
+    
     expect(result.success).toBe(true);
-    expect(result.data.items).toEqual([1, 2, 3]);
-    expect(result.data.batchSize).toBe(1);
-    expect(result.data.isLoopNode).toBe(true);
-    expect(result.data.parallel).toBe(false);
-    expect(result.data.continueOnError).toBe(false);
+    expect(result.data.batchSize).toBe(1); // default
+    expect(result.data.parallel).toBe(false); // default
+    expect(result.data.continueOnError).toBe(false); // default
+    expect(result.data.throttleMs).toBe(200); // default
   });
 });

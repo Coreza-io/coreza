@@ -599,45 +599,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
 
       if (definition?.name === "Loop") {
-        const items = outputData.items || [];
-        const firstItem = items[0];
-        const original = selectedInputData;
-        setLastOutput(firstItem);
-        data.output = firstItem;
-
-        setNodes((nds) =>
-          nds.map((n) => {
-            if (n.id === nodeId) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  originalOutput: original,
-                  output: firstItem,
-                  loopItems: items,
-                  loopIndex: 0,
-                  loopItem: firstItem,
-                },
-              };
-            }
-
-            const isDownstream = outgoingEdges.some((e) => e.target === n.id);
-            if (isDownstream) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  input: firstItem,
-                  loopItem: firstItem,
-                  loopIndex: 0,
-                  lastUpdated: new Date().toISOString(),
-                },
-              };
-            }
-
-            return n;
-          })
-        );
+        // For Loop nodes, just return clean metadata - no UI state manipulation
+        setLastOutput(outputData);
+        data.output = outputData;
         
       } else {
         setLastOutput(outputData);
@@ -666,73 +630,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           return updated;
         });
 
-        // After this node executes, advance upstream Loop iteration if present
-        const incoming = incomingEdges;
-        const loopEdge = incoming.find((e) => {
-          const src = nodes.find((n) => n.id === e.source);
-          return (src?.data?.definition as any)?.name === "Loop" && Array.isArray(src.data.loopItems);
-        });
-
-        if (loopEdge) {
-          const loopNodeId = loopEdge.source;
-          const loopNode = nodes.find((n) => n.id === loopNodeId);
-          const loopItems = (loopNode?.data.loopItems as any[]) || [];
-          const currentIndex = (loopNode?.data.loopIndex as number) || 0;
-          const nextIndex = currentIndex + 1;
-
-          if (nextIndex < loopItems.length) {
-            const nextItem = loopItems[nextIndex];
-            const outgoingFromLoop = edges.filter((e) => e.source === loopNodeId);
-
-            setNodes((nds) =>
-              nds.map((n) => {
-                if (n.id === loopNodeId) {
-                  return {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      output: nextItem,
-                      loopItem: nextItem,
-                      loopIndex: nextIndex,
-                    },
-                  };
-                }
-                const isDownstream = outgoingFromLoop.some((e) => e.target === n.id);
-                if (isDownstream) {
-                  return {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      input: nextItem,
-                      loopItem: nextItem,
-                      loopIndex: nextIndex,
-                      lastUpdated: new Date().toISOString(),
-                    },
-                  };
-                }
-                return n;
-              })
-            );
-          } else {
-            toast({ title: "Loop completed", description: "All items processed" });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === loopNodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: n.data.originalOutput,
-                        loopItem: undefined,
-                        loopIndex: undefined,
-                        loopItems: undefined,
-                      },
-                    }
-                  : n
-              )
-            );
-          }
-        }
+        // Loop iteration logic removed - now handled centrally in WorkflowExecutor
       }
     } catch (err: any) {
       setError(err.message || "Action failed");

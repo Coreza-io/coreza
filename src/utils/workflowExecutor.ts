@@ -396,7 +396,9 @@ export class WorkflowExecutor {
         if (executed.has(id) || failed.has(id)) continue;
 
         const inc = this.context.edges.filter(e => e.target === id);
-        const missing = inc.filter(e => !executed.has(e.source) && !failed.has(e.source));
+        const missing = id === 'Loop' 
+        ? [] 
+        : inc.filter(e => !executed.has(e.source) && !failed.has(e.source));
         
         if (missing.length) {
           const retries = retryCount.get(id) || 0;
@@ -433,21 +435,6 @@ export class WorkflowExecutor {
 
           const out = this.context.edges.filter(e => e.source === id);
           const node = this.context.nodes.find(n => n.id === id);
-          
-          // Check if this is a Loop node and handle iteration with new centralized function
-          const isLoopNode = result?.isLoopNode || ((node?.data?.definition as any)?.name === 'Loop');
-          if (isLoopNode && result?.items?.length > 0) {
-            console.log(`🔄 [WORKFLOW EXECUTOR] Processing Loop node ${id} with ${result.items.length} items using N8N-style execution`);
-            const { handleN8NLoopExecution } = await import('./handleN8NLoopExecution');
-            await handleN8NLoopExecution(this.context, id, {
-              items: result.items,
-              batchSize: result.batchSize || 1,
-              parallel: result.parallel || false,
-              continueOnError: result.continueOnError || false,
-              throttleMs: result.throttleMs || 200
-            }, out, executed);
-            continue; // Skip normal processing for loop nodes
-          }
           
           console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
           

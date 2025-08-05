@@ -1,7 +1,6 @@
 import { Node, Edge } from '@xyflow/react';
-import ExecutionContext from './executionContext';
 
-export interface ExecutorContext {
+export interface ExecutionContext {
   nodes: Node[];
   edges: Edge[];
   setNodes: (update: (nodes: Node[]) => Node[]) => void;
@@ -32,15 +31,13 @@ export interface NodeExecutionDetail {
 }
 
 export class WorkflowExecutor {
-  private context: ExecutorContext & { nodes: Node[]; edges: Edge[]; setNodes: (u: any) => void; setEdges: (u: any) => void; setExecutingNode: (id: string|null) => void; toast: (params: any) => void; };
-  private nodeStore: ExecutionContext;
+  private context: ExecutionContext;
   private isAutoExecuting = false;
   private conditionalMap = new Map<string, Record<string, string[]>>();
 
-  constructor(context: ExecutorContext & { nodes: Node[]; edges: Edge[]; setNodes: any; setEdges: any; setExecutingNode: any; toast: any }) {
+  constructor(context: ExecutionContext) {
     this.context = context;
     this.context.executeNode = this.executeNode.bind(this);
-    this.nodeStore = new ExecutionContext(context.nodes.map(n => ({ id: n.id, data: n.data })));
     this.preCalculateConditionalBranches();
   }
 
@@ -289,15 +286,7 @@ export class WorkflowExecutor {
       
       // Use centralized loop execution
       const { handleN8NLoopExecution } = await import('./handleN8NLoopExecution');
-      await handleN8NLoopExecution(
-        this.nodeStore,
-        { nodes: this.context.nodes, edges: this.context.edges },
-        nodeId,
-        inputData,
-        outgoingEdges,
-        executedNodes,
-        this.executeNode.bind(this)
-      );
+      await handleN8NLoopExecution(this.context, nodeId, inputData, outgoingEdges, executedNodes);
       return;
     }
 

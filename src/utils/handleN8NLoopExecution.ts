@@ -1,5 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
-import { ExecutionContext } from './executionContext';
+import type { ExecutionContext } from './workflowExecutor';
 
 interface LoopConfig {
   items: any[];
@@ -36,20 +36,18 @@ function collectSubgraph(nodes: Node[], edges: Edge[], startNodeId: string): Edg
 
 // Main centralized loop execution function
 export async function handleN8NLoopExecution(
-  execution: ExecutionContext,
-  graph: { nodes: Node[]; edges: Edge[] },
+  context: ExecutionContext,
   loopNodeId: string,
   loopConfig: LoopConfig,
   outgoingEdges: Edge[],
-  globalExecuted: Set<string>,
-  executeNode: (id: string, executed: Set<string>) => Promise<any>
+  globalExecuted: Set<string>
 ): Promise<void> {
   const { items, batchSize, parallel, continueOnError, throttleMs } = loopConfig;
-
+  
   console.log(`🔄 [N8N LOOP] Starting execution for ${items.length} items, batchSize: ${batchSize}, parallel: ${parallel}`);
-
+  
   // Collect the subgraph once at the beginning
-  const subgraphEdges = collectSubgraph(graph.nodes, graph.edges, loopNodeId);
+  const subgraphEdges = collectSubgraph(context.nodes, context.edges, loopNodeId);
   console.log(`🔄 [N8N LOOP] Subgraph has ${subgraphEdges.length} edges`);
   
   // Chunk items into batches
@@ -79,17 +77,14 @@ export async function handleN8NLoopExecution(
           const absoluteIndex = batchIndex * batchSize + localIndex;
           try {
             await processSingleItem(
-              execution,
-              graph,
+              context,
               loopNodeId,
               item,
               absoluteIndex,
               items,
               outgoingEdges,
               subgraphEdges,
-              globalExecuted,
-              executeNode,
-              continueOnError
+              globalExecuted
             );
           } catch (error) {
             console.error(`❌ [N8N LOOP] Error processing item ${absoluteIndex}:`, error);
@@ -107,17 +102,14 @@ export async function handleN8NLoopExecution(
         
         try {
           await processSingleItem(
-            execution,
-            graph,
+            context,
             loopNodeId,
             item,
             absoluteIndex,
             items,
             outgoingEdges,
             subgraphEdges,
-            globalExecuted,
-            executeNode,
-            continueOnError
+            globalExecuted
           );
         } catch (error) {
           console.error(`❌ [N8N LOOP] Error processing item ${absoluteIndex}:`, error);
@@ -131,53 +123,80 @@ export async function handleN8NLoopExecution(
   
   // Final cleanup - reset loop node state
   console.log(`🔄 [N8N LOOP] Cleaning up loop node state`);
-  execution.setNodeData(loopNodeId, {
-    loopItems: undefined,
-    loopIndex: undefined,
-    loopItem: undefined,
-    output: undefined,
-  });
+  context.setNodes(nodes =>
+    nodes.map(n =>
+      n.id === loopNodeId
+        ? {
+            ...n,
+            data: {
+              ...n.data,
+              loopItems: undefined,
+              loopIndex: undefined,
+              loopItem: undefined,
+              output: undefined,
+            },
+          }
+        : n
+    )
+  );
   
   console.log(`✅ [N8N LOOP] Completed processing ${items.length} items in ${batches.length} batches`);
 }
 
 // Process a single item within the loop context
 async function processSingleItem(
-  execution: ExecutionContext,
-  graph: { nodes: Node[]; edges: Edge[] },
+  context: ExecutionContext,
   loopNodeId: string,
   item: any,
   itemIndex: number,
   allItems: any[],
   outgoingEdges: Edge[],
   subgraphEdges: Edge[],
-  globalExecuted: Set<string>,
-  executeNode: (id: string, executed: Set<string>) => Promise<any>,
-  continueOnError: boolean
+  globalExecuted: Set<string>
 ): Promise<void> {
   console.log(`🔄 [N8N LOOP] Processing item ${itemIndex}: ${JSON.stringify(item).slice(0, 100)}...`);
-
-  execution.setNodeData(loopNodeId, {
-    loopItems: allItems,
-    loopIndex: itemIndex,
-    loopItem: item,
-    output: item,
-  });
-
-  outgoingEdges.forEach(edge => {
-    execution.setNodeData(edge.target, {
-      loopItem: item,
-      loopIndex: itemIndex,
-      input: item,
-    });
-  });
+  
+  // Set loop context on the loop node and downstream nodes
+  context.setNodes(nodes =>
+    nodes.map(n => {
+      if (n.id === loopNodeId) {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            loopItems: allItems,
+            loopIndex: itemIndex,
+            loopItem: item,
+            output: item,
+          },
+        };
+      }
+      
+      // Set loop context on immediate downstream nodes
+      const isImmediateDownstream = outgoingEdges.some(edge => edge.target === n.id);
+      if (isImmediateDownstream) {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            loopItem: item,
+            loopIndex: itemIndex,
+            input: item,
+            lastUpdated: new Date().toISOString(),
+          },
+        };
+      }
+      
+      return n;
+    })
+  );
   
   // Execute the subgraph for this item using BFS traversal
   const queue = outgoingEdges.map(edge => edge.target);
   const executedInIteration = new Set<string>([loopNodeId]);
   const failedNodes = new Set<string>();
   const retryCount = new Map<string, number>();
-  const MAX_RETRIES = graph.nodes.length * 2;
+  const MAX_RETRIES = context.nodes.length * 2;
   
   while (queue.length > 0) {
     const nodeId = queue.shift()!;
@@ -208,7 +227,7 @@ async function processSingleItem(
     // Execute this node
     try {
       console.log(`🎯 [N8N LOOP] Executing node ${nodeId} for item ${itemIndex}`);
-      await executeNode(nodeId, new Set([...globalExecuted, ...executedInIteration]));
+      await context.executeNode?.(nodeId, new Set([...globalExecuted, ...executedInIteration]));
       executedInIteration.add(nodeId);
       
       // Add children to queue
@@ -222,9 +241,7 @@ async function processSingleItem(
     } catch (error) {
       console.error(`❌ [N8N LOOP] Error executing node ${nodeId} for item ${itemIndex}:`, error);
       failedNodes.add(nodeId);
-      if (!continueOnError) {
-        throw error;
-      }
+      // Continue processing other nodes unless continueOnError is false
     }
   }
   

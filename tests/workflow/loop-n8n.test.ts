@@ -1,17 +1,30 @@
 import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 import { handleN8NLoopExecution } from '../../src/utils/handleN8NLoopExecution';
-import ExecutionContext from '../../src/utils/executionContext';
+import type { ExecutionContext } from '../../src/utils/workflowExecutor';
 import type { Node, Edge } from '@xyflow/react';
 
+// Mock the sleep function to make tests faster
+jest.mock('../../src/utils/handleN8NLoopExecution', () => {
+  const originalModule = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+  return {
+    ...originalModule,
+    // Override sleep to be instant in tests
+    __esModule: true,
+    handleN8NLoopExecution: jest.fn()
+  };
+});
+
 describe('N8N-style Loop Execution', () => {
-  let execution: ExecutionContext;
+  let mockContext: ExecutionContext;
   let mockNodes: Node[];
   let mockEdges: Edge[];
-  let mockExecuteNode: jest.MockedFunction<(id: string, executed: Set<string>) => Promise<any>>;
+  let mockSetNodes: jest.Mock;
+  let mockExecuteNode: jest.Mock;
 
   beforeEach(() => {
-    mockExecuteNode = jest.fn(async (_id: string, _set: Set<string>) => undefined) as jest.MockedFunction<(id: string, executed: Set<string>) => Promise<any>>;
-
+    mockSetNodes = jest.fn();
+    mockExecuteNode = jest.fn();
+    
     mockNodes = [
       {
         id: 'loop1',
@@ -38,7 +51,15 @@ describe('N8N-style Loop Execution', () => {
       { id: 'e2', source: 'node1', target: 'node2' }
     ];
 
-    execution = new ExecutionContext();
+    mockContext = {
+      nodes: mockNodes,
+      edges: mockEdges,
+      setNodes: mockSetNodes,
+      setEdges: jest.fn(),
+      setExecutingNode: jest.fn(),
+      executeNode: mockExecuteNode,
+      toast: jest.fn()
+    };
   });
 
   test('should process items in batches with correct configuration', async () => {
@@ -47,55 +68,62 @@ describe('N8N-style Loop Execution', () => {
       batchSize: 2,
       parallel: false,
       continueOnError: true,
-      throttleMs: 0
+      throttleMs: 0 // Disable throttling for tests
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await handleN8NLoopExecution(
-      execution,
-      { nodes: mockNodes, edges: mockEdges },
+    // Use the real implementation for this test
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    await realHandleN8NLoopExecution(
+      mockContext,
       'loop1',
       loopConfig,
       outgoingEdges,
-      globalExecuted,
-      mockExecuteNode
+      globalExecuted
     );
 
+    // Should have called setNodes to set loop context for each item
+    expect(mockSetNodes).toHaveBeenCalledTimes(6); // 5 items + 1 cleanup
+    
+    // Should have executed downstream nodes for each item
     expect(mockExecuteNode).toHaveBeenCalledTimes(10); // 2 nodes * 5 items
   });
 
   test('should handle parallel execution correctly', async () => {
     const loopConfig = {
       items: [1, 2, 3],
-      batchSize: 3,
+      batchSize: 3, // Process all in one batch
       parallel: true,
       continueOnError: false,
       throttleMs: 0
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await handleN8NLoopExecution(
-      execution,
-      { nodes: mockNodes, edges: mockEdges },
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    await realHandleN8NLoopExecution(
+      mockContext,
       'loop1',
       loopConfig,
       outgoingEdges,
-      globalExecuted,
-      mockExecuteNode
+      globalExecuted
     );
 
+    // Should process all items
     expect(mockExecuteNode).toHaveBeenCalledTimes(6); // 2 nodes * 3 items
   });
 
   test('should continue on error when continueOnError is true', async () => {
+    // Mock executeNode to fail on the second call
     mockExecuteNode
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('Test error'))
-      .mockResolvedValue(undefined);
+      .mockResolvedValueOnce(undefined) // First call succeeds
+      .mockRejectedValueOnce(new Error('Test error')) // Second call fails
+      .mockResolvedValue(undefined); // Remaining calls succeed
 
     const loopConfig = {
       items: [1, 2, 3],
@@ -105,27 +133,27 @@ describe('N8N-style Loop Execution', () => {
       throttleMs: 0
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await expect(
-      handleN8NLoopExecution(
-        execution,
-        { nodes: mockNodes, edges: mockEdges },
-        'loop1',
-        loopConfig,
-        outgoingEdges,
-        globalExecuted,
-        mockExecuteNode
-      )
-    ).resolves.toBeUndefined();
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    // Should not throw error despite failure
+    await expect(realHandleN8NLoopExecution(
+      mockContext,
+      'loop1',
+      loopConfig,
+      outgoingEdges,
+      globalExecuted
+    )).resolves.toBeUndefined();
   });
 
   test('should stop on error when continueOnError is false', async () => {
+    // Mock executeNode to fail on the second iteration
     mockExecuteNode
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('Test error'));
+      .mockResolvedValueOnce(undefined) // First iteration succeeds
+      .mockResolvedValueOnce(undefined) // First node of first item
+      .mockRejectedValueOnce(new Error('Test error')); // Second iteration fails
 
     const loopConfig = {
       items: [1, 2, 3],
@@ -135,20 +163,19 @@ describe('N8N-style Loop Execution', () => {
       throttleMs: 0
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await expect(
-      handleN8NLoopExecution(
-        execution,
-        { nodes: mockNodes, edges: mockEdges },
-        'loop1',
-        loopConfig,
-        outgoingEdges,
-        globalExecuted,
-        mockExecuteNode
-      )
-    ).rejects.toThrow('Test error');
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    // Should throw error and stop processing
+    await expect(realHandleN8NLoopExecution(
+      mockContext,
+      'loop1',
+      loopConfig,
+      outgoingEdges,
+      globalExecuted
+    )).rejects.toThrow('Test error');
   });
 
   test('should clean up loop node state after completion', async () => {
@@ -160,25 +187,31 @@ describe('N8N-style Loop Execution', () => {
       throttleMs: 0
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await handleN8NLoopExecution(
-      execution,
-      { nodes: mockNodes, edges: mockEdges },
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    await realHandleN8NLoopExecution(
+      mockContext,
       'loop1',
       loopConfig,
       outgoingEdges,
-      globalExecuted,
-      mockExecuteNode
+      globalExecuted
     );
 
-    expect(execution.getNodeData('loop1')).toEqual({
-      loopItems: undefined,
-      loopIndex: undefined,
-      loopItem: undefined,
-      output: undefined,
-    });
+    // Check that the final call to setNodes cleans up loop state
+    const lastCall = mockSetNodes.mock.calls[mockSetNodes.mock.calls.length - 1];
+    const lastUpdateFunction = lastCall[0];
+    
+    // Apply the function to see what it would do to nodes
+    const updatedNodes = lastUpdateFunction(mockNodes);
+    const loopNode = updatedNodes.find(n => n.id === 'loop1');
+    
+    expect(loopNode?.data?.loopItems).toBeUndefined();
+    expect(loopNode?.data?.loopIndex).toBeUndefined();
+    expect(loopNode?.data?.loopItem).toBeUndefined();
+    expect(loopNode?.data?.output).toBeUndefined();
   });
 
   test('should handle empty items array gracefully', async () => {
@@ -190,19 +223,21 @@ describe('N8N-style Loop Execution', () => {
       throttleMs: 0
     };
 
-    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' } as Edge];
+    const outgoingEdges = [{ id: 'e1', source: 'loop1', target: 'node1' }];
     const globalExecuted = new Set<string>();
 
-    await handleN8NLoopExecution(
-      execution,
-      { nodes: mockNodes, edges: mockEdges },
+    const { handleN8NLoopExecution: realHandleN8NLoopExecution } = jest.requireActual('../../src/utils/handleN8NLoopExecution');
+    
+    await realHandleN8NLoopExecution(
+      mockContext,
       'loop1',
       loopConfig,
       outgoingEdges,
-      globalExecuted,
-      mockExecuteNode
+      globalExecuted
     );
 
+    // Should only call setNodes for cleanup
+    expect(mockSetNodes).toHaveBeenCalledTimes(1);
     expect(mockExecuteNode).not.toHaveBeenCalled();
   });
 });

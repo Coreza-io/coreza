@@ -6,6 +6,7 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -63,20 +64,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const { setNodes, setEdges } = useReactFlow();
   const { toast } = useToast();
   const { user } = useAuth();
+  const executionStore = useExecutionStore();
   const isMounted = useRef(true);
 
   // === NEW: refs for event-driven callbacks ===
   const onSuccessRef = useRef<null | ((result: any) => void)>(null);
   const onErrorRef = useRef<null | ((error: any) => void)>(null);
-
-  const outgoingEdges = useMemo(
-    () => edges.filter((e) => e.source === nodeId),
-    [edges, nodeId]
-  );
-  const incomingEdges = useMemo(
-    () => edges.filter((e) => e.target === nodeId),
-    [edges, nodeId]
-  );
 
   const definition = data.definition;
   const displayName = useMemo(
@@ -106,13 +99,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
 
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
-  
-  // Extract selectedInputData with special handling for loop items
-  let selectedInputData = selectedPrevNode?.data?.output || {};
-  
-  // Check if we're in a loop context and prefer loop item data
-  if (data?.loopItem) {
-    selectedInputData = data.loopItem;
+
+  // Extract selectedInputData prioritizing execution store data
+  const storeEntry = nodeId ? executionStore.getNodeData(nodeId) : {};
+  let selectedInputData =
+    storeEntry.input ?? selectedPrevNode?.data?.output ?? {};
+
+  // Prefer loop item from execution store if present
+  if (storeEntry.loopItem !== undefined) {
+    selectedInputData = storeEntry.loopItem;
     console.log("🔄 [LOOP DATA] Using loop item as input:", selectedInputData);
   } else if (Array.isArray(selectedInputData) && selectedInputData.length > 0) {
     selectedInputData = selectedInputData[0] || {};
@@ -465,7 +460,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     };
   }
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, inputOverride?: any) => {
     if (e) e.preventDefault();
     
     // Log the start of execution for all nodes
@@ -501,7 +496,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const { supportData } = collectNodeData();
-      const payload = buildPayload(fieldState, supportData, selectedInputData, userId);
+      const effectiveInput = inputOverride ?? selectedInputData;
+      const payload = buildPayload(fieldState, supportData, effectiveInput, userId);
       payload.user_id = userId;
 
       let outputData: any;
@@ -514,15 +510,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const throttleMs = parseInt(fieldState.throttleMs) || 200;
 
         let arrayData: any[];
-        if (Array.isArray(selectedInputData)) {
-          arrayData = selectedInputData;
-        } else if (typeof selectedInputData === "string") {
-          const parsed = JSON.parse(selectedInputData);
+        if (Array.isArray(effectiveInput)) {
+          arrayData = effectiveInput;
+        } else if (typeof effectiveInput === "string") {
+          const parsed = JSON.parse(effectiveInput as any);
           arrayData = Array.isArray(parsed) ? parsed : [parsed];
-        } else if (selectedInputData == null) {
+        } else if (effectiveInput == null) {
           arrayData = [];
-        } else if (typeof selectedInputData === "object") {
-          arrayData = [selectedInputData];
+        } else if (typeof effectiveInput === "object") {
+          arrayData = [effectiveInput];
         } else {
           throw new Error("Loop input must be an array or JSON string representing an array");
         }
@@ -599,38 +595,28 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
 
       if (definition?.name === "Loop") {
-        // For Loop nodes, just return clean metadata - no UI state manipulation
+        executionStore.setNodeData(nodeId!, outputData);
         setLastOutput(outputData);
         data.output = outputData;
-        
+        setNodes(nds =>
+          nds.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, ...outputData } }
+              : n
+          )
+        );
       } else {
         setLastOutput(outputData);
         const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
         data.output = finalOutput;
-
-        setNodes((nds) => {
-          const updated = nds.map((n) =>
+        executionStore.setNodeData(nodeId!, { input: finalOutput });
+        setNodes(nds =>
+          nds.map(n =>
             n.id === nodeId
               ? { ...n, data: { ...n.data, output: finalOutput } }
               : n
-          );
-          outgoingEdges.forEach((edge) => {
-              const idx = updated.findIndex((n) => n.id === edge.target);
-              if (idx !== -1) {
-                updated[idx] = {
-                  ...updated[idx],
-                  data: {
-                    ...updated[idx].data,
-                    input: finalOutput,
-                    lastUpdated: new Date().toISOString(),
-                  },
-                };
-              }
-            });
-          return updated;
-        });
-
-        // Loop iteration logic removed - now handled centrally in WorkflowExecutor
+          )
+        );
       }
     } catch (err: any) {
       setError(err.message || "Action failed");
@@ -673,7 +659,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         onErrorRef.current = event.detail.onError ?? null;
 
         try {
-          await handleSubmit();
+          const inputData = nodeId
+            ? executionStore.getNodeData(nodeId).input
+            : undefined;
+          await handleSubmit(undefined, inputData);
           // Don't access nodes/output or call callback here!
         } catch (executionError) {
           onErrorRef.current?.(executionError);

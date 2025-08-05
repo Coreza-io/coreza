@@ -1,13 +1,20 @@
 import { Node, Edge } from '@xyflow/react';
+import ExecutionContext from './executionContext';
+import { handleN8NLoopExecution } from './handleN8NLoopExecution';
 
-export interface ExecutionContext {
+export interface ExecutorContext {
   nodes: Node[];
   edges: Edge[];
   setNodes: (update: (nodes: Node[]) => Node[]) => void;
   setEdges: (update: (edges: Edge[]) => Edge[]) => void;
   setExecutingNode: (nodeId: string | null) => void;
   toast: (params: any) => void;
-  executeNode?: (nodeId: string, executed: Set<string>) => Promise<any>;
+  executionStore: ExecutionContext;
+  executeNode?: (
+    nodeId: string,
+    executed: Set<string>,
+    explicitlyTriggered?: boolean
+  ) => Promise<any>;
 }
 
 export interface ExecutionMetrics {
@@ -20,7 +27,7 @@ export interface ExecutionMetrics {
 
 export interface NodeExecutionDetail {
   nodeId: string;
-  executedNodes: Set<string>;
+  executedSet: Set<string>;
   allNodes: Node[];
   allEdges: Edge[];
   explicitlyTriggered?: boolean;
@@ -31,13 +38,13 @@ export interface NodeExecutionDetail {
 }
 
 export class WorkflowExecutor {
-  private context: ExecutionContext;
+  private nodeStore: ExecutionContext;
   private isAutoExecuting = false;
   private conditionalMap = new Map<string, Record<string, string[]>>();
 
-  constructor(context: ExecutionContext) {
-    this.context = context;
+  constructor(private context: ExecutorContext) {
     this.context.executeNode = this.executeNode.bind(this);
+    this.nodeStore = context.executionStore;
     this.preCalculateConditionalBranches();
   }
 
@@ -119,7 +126,7 @@ export class WorkflowExecutor {
       const event = new CustomEvent('auto-execute-node', {
         detail: {
           nodeId: startNodeId,
-          executedNodes: completedNodes,
+          executedSet: completedNodes,
           allNodes: this.context.nodes,
           allEdges: this.context.edges,
           onSuccess: async (result?: any) => {
@@ -267,8 +274,8 @@ export class WorkflowExecutor {
    */
   async executeNode(
     nodeId: string,
-    executedNodes: Set<string>,
-    explicitlyTriggered: boolean = false
+    executedSet: Set<string>,
+    explicitlyTriggered = false
   ): Promise<any> {
     const node = this.context.nodes.find(n => n.id === nodeId);
     if (!node) {
@@ -276,83 +283,59 @@ export class WorkflowExecutor {
       return;
     }
 
-    // Intercept Loop nodes before normal execution
-    if ((node.data?.definition as any)?.name === 'Loop') {
-      console.log(`🔄 [WORKFLOW EXECUTOR] Intercepting Loop node ${nodeId} for centralized execution`);
-      
-      // Collect input data for the loop node
-      const inputData = this.collectInputData(nodeId);
-      const outgoingEdges = this.context.edges.filter(e => e.source === nodeId);
-      
-      // Use centralized loop execution
-      const { handleN8NLoopExecution } = await import('./handleN8NLoopExecution');
-      await handleN8NLoopExecution(this.context, nodeId, inputData, outgoingEdges, executedNodes);
-      return;
+    const execData = this.nodeStore.getNodeData(nodeId);
+    const defName = (node.data.definition as any)?.name;
+
+    if (defName === 'Loop') {
+      const inputData = {
+        items: execData.items!,
+        batchSize: execData.batchSize!,
+        parallel: execData.parallel!,
+        continueOnError: execData.continueOnError!,
+        throttleMs: execData.throttleMs!,
+      };
+      const outgoing = this.context.edges.filter(e => e.source === nodeId);
+      return handleN8NLoopExecution(
+        this.nodeStore,
+        { nodes: this.context.nodes, edges: this.context.edges },
+        nodeId,
+        inputData,
+        outgoing,
+        executedSet,
+        this.executeNode.bind(this)
+      );
     }
 
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
     this.highlightNode(nodeId);
 
-    // Add a small delay to make highlighting visible
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    return new Promise<any>((resolve, reject) => {
+    const result: any = await new Promise((resolve, reject) => {
       const execEvent = new CustomEvent('auto-execute-node', {
         detail: {
           nodeId,
-          executedNodes,
+          executedSet,
           allNodes: this.context.nodes,
           allEdges: this.context.edges,
           explicitlyTriggered,
-          onSuccess: async (result?: any) => {
-            // Keep highlight visible for a moment after execution
-            await new Promise(resolve => setTimeout(resolve, 300));
-            resolve(result);
+          onSuccess: async (res?: any) => {
+            await new Promise(r => setTimeout(r, 300));
+            resolve(res);
           },
           onError: async (err: any) => {
-            // Keep highlight visible even on error
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(r => setTimeout(r, 300));
             reject(err);
           }
         } as NodeExecutionDetail
       });
       window.dispatchEvent(execEvent);
     });
-  }
 
-  private collectInputData(nodeId: string): any {
-    const node = this.context.nodes.find(n => n.id === nodeId);
-    if (!node) return {};
+    this.nodeStore.setNodeData(nodeId, { output: result });
 
-    const fieldState = node.data?.fieldState || node.data?.values || {};
-    const batchSize = parseInt((fieldState as any)?.batchSize) || 1;
-    const parallel = !!((fieldState as any)?.parallel);
-    const continueOnError = !!((fieldState as any)?.continueOnError);
-    const throttleMs = parseInt((fieldState as any)?.throttleMs) || 200;
-
-    // Get items from upstream node
-    const incomingEdges = this.context.edges.filter(e => e.target === nodeId);
-    let items: any[] = [];
-    
-    if (incomingEdges.length > 0) {
-      const sourceNode = this.context.nodes.find(n => n.id === incomingEdges[0].source);
-      const sourceData = sourceNode?.data?.output;
-      
-      if (Array.isArray(sourceData)) {
-        items = sourceData;
-      } else if (sourceData) {
-        items = [sourceData];
-      }
-    }
-
-    return {
-      items,
-      batchSize,
-      parallel,
-      continueOnError,
-      throttleMs
-    };
+    return result;
   }
 
   /**

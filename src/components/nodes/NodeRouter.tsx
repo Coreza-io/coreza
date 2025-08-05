@@ -6,6 +6,7 @@ import RepeaterNodeLayout from "./layouts/RepeaterNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 interface NodeRouterProps {
   data: any;
@@ -16,6 +17,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
+  const executionStore = useExecutionStore();
   
   // Add safety check for data
   if (!data) {
@@ -165,6 +167,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             handleDragStart: renderProps.handleDragStart,
             selectedPrevNodeId: renderProps.selectedPrevNodeId,
             setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
+            executionStore,
           }}
           outputPanelProps={{
             data: renderProps.displayedData,

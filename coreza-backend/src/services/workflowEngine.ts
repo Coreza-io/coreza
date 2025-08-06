@@ -474,6 +474,8 @@ export class WorkflowEngine {
     const loopContext = this.loopContexts.get(node.id);
     if (loopContext) {
       console.log(`🔄 [WORKFLOW] Using loop context for node ${node.id}:`, loopContext);
+      // For loop nodes, use ONLY the loop context + node data, don't merge upstream results
+      // This ensures downstream nodes get individual items, not the entire array
       return { ...node.data, ...loopContext };
     }
 
@@ -481,7 +483,7 @@ export class WorkflowEngine {
     const upstreamNodes = this.getUpstreamNodes(node.id);
     const input: any = { ...node.data };
 
-    // Merge results from upstream nodes
+    // Merge results from upstream nodes (only when NOT in loop context)
     for (const upstreamNodeId of upstreamNodes) {
       const upstreamResult = this.nodeResults.get(upstreamNodeId);
       if (upstreamResult) {

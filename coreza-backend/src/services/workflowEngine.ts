@@ -125,9 +125,9 @@ export class WorkflowEngine {
   async execute(): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
       // Check for cycles first
-      if (this.detectCycles()) {
-        throw new Error('Circular dependency detected in workflow');
-      }
+      //if (this.detectCycles()) {
+      //  throw new Error('Circular dependency detected in workflow');
+      //}
 
       // Load persistent state at the start of execution
       await this.loadPersistentState();
@@ -193,7 +193,7 @@ export class WorkflowEngine {
       const upstreamNodes = this.getUpstreamNodes(nodeId);
       const allDependenciesSatisfied = upstreamNodes.every(id => this.executedNodes.has(id));
 
-      if (!allDependenciesSatisfied) {
+      if (nodeId !== 'Loop' && !allDependenciesSatisfied) {
         // Re-queue the node for later execution
         queue.push(nodeId);
         retryCount++;
@@ -203,41 +203,20 @@ export class WorkflowEngine {
 
       try {
         console.log(`🔄 [WORKFLOW] Executing node: ${nodeId} (${node.type}) - Run: ${this.runId}`);
+        // Handle loop or branching logic
+        
         await this.executeNode(node);
         this.executedNodes.add(nodeId);
-        console.log(`✅ [WORKFLOW] Node ${nodeId} (${node.type}) completed successfully - Run: ${this.runId}`);
-        
-        // Handle loop or branching logic
-        if (node.type === 'Loop') {
-          console.log(`🔄 [WORKFLOW] Detected Loop node: ${nodeId}, delegating to N8N-style execution`);
-          const outgoing = this.edges.filter(e => e.source === nodeId);
-          const fieldState = node.values || {};
-          
-          // Use centralized N8N-style loop execution
-          await handleN8NLoopExecution(
-            this,
-            { nodes: this.nodes, edges: this.edges },
-            nodeId,
-            fieldState,
-            outgoing,
-            this.executedNodes,
-            this.executeNodeForLoop.bind(this)
-          );
-          
-          // Mark all nodes in loop subgraph as executed
-          const subgraphNodes = this.collectSubgraphNodeIds(nodeId);
-          subgraphNodes.forEach(id => this.executedNodes.add(id));
+        console.log(`✅ [WORKFLOW] Node ${nodeId} (${node.type}) completed successfully - Run: ${this.runId}`);     
+        const isBranchingNode = this.conditionalMap.has(nodeId);
+        if (isBranchingNode) {
+          console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
+          await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
         } else {
-          const isBranchingNode = this.conditionalMap.has(nodeId);
-          if (isBranchingNode) {
-            console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
-            await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
-          } else {
-            // Add downstream nodes to queue for non-branching nodes
-            this.addDownstreamNodesToQueue(nodeId, queue);
-          }
+          // Add downstream nodes to queue for non-branching nodes
+          this.addDownstreamNodesToQueue(nodeId, queue);
         }
-        
+          
         retryCount = 0; // Reset retry count on successful execution
       } catch (error) {
         console.error(`❌ [WORKFLOW] Failed to execute node ${nodeId} (${node.type}) - Run: ${this.runId}:`, error);
@@ -446,11 +425,31 @@ export class WorkflowEngine {
 
     try {
       // Get node input from upstream nodes
-      const nodeInput = this.getNodeInput(node);
-      
-      // Execute using registry-based approach
-      const result = await this.executeNodeWithRegistry(node, nodeInput);
+      let nodeInput = this.getNodeInput(node);
+      let result: string[] = [];
+      if (node.type === 'Loop') {
+          console.log(`🔄 [WORKFLOW] Detected Loop node: ${node.id}, delegating to N8N-style execution`);
+          const outgoing = this.edges.filter(e => e.source === node.id);
+          const fieldState = node.values || {};
+          
+          // Use centralized N8N-style loop execution
+          await handleN8NLoopExecution(
+            this,
+            { nodes: this.nodes, edges: this.edges },
+            node.id,
+            fieldState,
+            outgoing,
+            this.executedNodes,
+            this.executeNodeForLoop.bind(this)
+          );
+          // Mark all nodes in loop subgraph as executed
+          const subgraphNodes = this.collectSubgraphNodeIds(node.id);
+          subgraphNodes.forEach(id => this.executedNodes.add(id));
+      } else {
+        // Execute using registry-based approach
+        result = await this.executeNodeWithRegistry(node, nodeInput);
 
+      }
       // Store result and mark as completed
       this.nodeResults.set(node.id, result);
       execution.status = 'completed';

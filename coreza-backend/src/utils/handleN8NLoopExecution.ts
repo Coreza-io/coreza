@@ -96,6 +96,9 @@ export async function handleN8NLoopExecution(
 
   const subgraph = collectSubgraph(nodes, graph.edges, loopNodeId);
 
+  // Collect results from nodes that route back to the loop node
+  const loopResults: any[] = [];
+
   // Create batches
   const batches: any[][] = [];
   for (let i = 0; i < items.length; i += batchSize) {
@@ -165,7 +168,14 @@ export async function handleN8NLoopExecution(
           console.log(`⚡ [BACKEND] Executing loop subgraph node: ${nid}`);
           await executeNode(nid, new Set([...globalExecuted, ...done]));
           done.add(nid);
-          
+
+          // Capture results from nodes that feed back into the loop
+          graph.edges
+            .filter(e => e.source === nid && e.target === loopNodeId)
+            .forEach(() => {
+              loopResults.push(workflowEngine.getNodeResult(nid));
+            });
+
           // Add downstream nodes to queue
           subgraph
             .filter(e => e.source === nid)
@@ -204,6 +214,9 @@ export async function handleN8NLoopExecution(
       }
     }
   }
+
+  // Store aggregated results as the loop node's final output
+  (workflowEngine as any).nodeResults.set(loopNodeId, { success: true, data: loopResults });
 
   // Clear loop context
   workflowEngine.clearLoopContext(loopNodeId);

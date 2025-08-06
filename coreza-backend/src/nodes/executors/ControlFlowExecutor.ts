@@ -269,44 +269,17 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    const params = context?.resolveNodeParameters
-      ? context.resolveNodeParameters(node, input)
-      : { ...node.values, ...input };
-
-    const {
-      inputArray,
-      batchSize = 1,
-      parallel = false,
-      continueOnError = false,
-      throttleMs = 200,
-    } = params;
+    console.log(`🔄 [BACKEND] Loop node ${node.id} returning metadata only - actual execution handled by WorkflowEngine`);
     
-    // Get the array to loop over
-    let items: any[] = [];
-    if (inputArray && input[inputArray]) {
-      items = Array.isArray(input[inputArray]) ? input[inputArray] : [input[inputArray]];
-    } else if (Array.isArray(input.items)) {
-      items = input.items;
-    } else {
-      return {
-        success: false,
-        error: `No array found for field: ${inputArray || 'items'}`
-      };
-    }
-
-    console.log(`🔄 Loop node processing ${items.length} items with batch size ${batchSize}`);
-
+    // Return simple metadata - actual loop execution is handled in WorkflowEngine
+    // This matches the frontend behavior where Loop nodes just return basic item info
+    const loopContext = input.loopItem || input.item || input;
+    
     return {
       success: true,
       data: {
-        items,
-        batchSize,
-        totalItems: items.length,
-        parallel,
-        continueOnError,
-        throttleMs,
-        isLoopNode: true, // Special flag to identify loop nodes
-      },
+        item: loopContext
+      }
     };
   }
 

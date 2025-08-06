@@ -8,9 +8,10 @@ import { WebhookService } from './webhooks';
 import { ComparatorService } from './comparator';
 import { getNodeExecutor } from '../nodes/registry';
 import { NodeInput, NodeResult } from '../nodes/types';
-import { resolveReferences } from "@/utils/resolveReferences";
+import { resolveReferences } from "../utils/resolveReferences";
+import { handleN8NLoopExecution } from '../utils/handleN8NLoopExecution';
 
-interface WorkflowNode {
+export interface WorkflowNode {
   id: string;
   type: string;
   category: string;
@@ -19,7 +20,7 @@ interface WorkflowNode {
   position: { x: number; y: number };
 }
 
-interface WorkflowEdge {
+export interface WorkflowEdge {
   id: string;
   source: string;
   target: string;
@@ -48,6 +49,7 @@ export class WorkflowEngine {
   private executedNodes = new Set<string>();
   private userId: string;
   private persistentState: Map<string, any> = new Map();
+  private loopContexts: Map<string, any> = new Map();
 
   constructor(runId: string, workflowId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.runId = runId;
@@ -207,18 +209,24 @@ export class WorkflowEngine {
         
         // Handle loop or branching logic
         if (node.type === 'Loop') {
-          const loopData: any = this.nodeResults.get(nodeId) || {};
-          const items = Array.isArray(loopData.items) ? loopData.items : [];
-          const config = {
-            itemKey: loopData.itemKey || 'item',
-            indexKey: loopData.indexKey || 'index',
-            prevKey: loopData.prevKey,
-            parallel: loopData.parallel
-          };
-          const targets = this.edges.filter(e => e.source === nodeId).map(e => e.target);
-          if (targets.length > 0 && items.length > 0) {
-            await this.executeLoopChain(targets[0], items, config, nodeId);
-          }
+          console.log(`🔄 [WORKFLOW] Detected Loop node: ${nodeId}, delegating to N8N-style execution`);
+          const outgoing = this.edges.filter(e => e.source === nodeId);
+          const fieldState = node.values || {};
+          
+          // Use centralized N8N-style loop execution
+          await handleN8NLoopExecution(
+            this,
+            { nodes: this.nodes, edges: this.edges },
+            nodeId,
+            fieldState,
+            outgoing,
+            this.executedNodes,
+            this.executeNodeForLoop.bind(this)
+          );
+          
+          // Mark all nodes in loop subgraph as executed
+          const subgraphNodes = this.collectSubgraphNodeIds(nodeId);
+          subgraphNodes.forEach(id => this.executedNodes.add(id));
         } else {
           const isBranchingNode = this.conditionalMap.has(nodeId);
           if (isBranchingNode) {
@@ -351,45 +359,63 @@ export class WorkflowEngine {
   }
 
   /**
-   * Execute a chain of nodes starting from a specific node multiple times
+   * Collect all node IDs in the subgraph rooted at 'start'
    */
-  private async executeLoopChain(
-    startNodeId: string,
-    items: any[],
-    config: { itemKey: string; indexKey?: string; prevKey?: string; parallel?: boolean },
-    loopNodeId: string
-  ): Promise<void> {
-    if (!items || items.length === 0) return;
+  private collectSubgraphNodeIds(start: string): Set<string> {
+    const visited = new Set<string>();
+    const stack = [start];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      this.edges.filter(e => e.source === cur).forEach(e => stack.push(e.target));
+    }
+    return visited;
+  }
 
-    const originalLoopResult = this.nodeResults.get(loopNodeId);
-    let prevValue: any = null;
-
-    for (let i = 0; i < items.length; i++) {
-      const payload: any = { [config.itemKey]: items[i] };
-      if (config.indexKey) payload[config.indexKey] = i;
-      if (config.prevKey) payload[config.prevKey] = prevValue;
-
-      console.log(`🔁 Loop iteration ${i + 1} / ${items.length} starting`);
-      this.nodeResults.set(loopNodeId, payload);
-
-      const before = new Set(this.executedNodes);
-      await this.executeConditionalChain(startNodeId);
-      const executedThisIter = Array.from(this.executedNodes).filter(id => !before.has(id));
-
-      if (executedThisIter.length > 0) {
-        const lastNode = executedThisIter[executedThisIter.length - 1];
-        prevValue = this.nodeResults.get(lastNode);
-      }
-
-      if (i < items.length - 1) {
-        for (const id of executedThisIter) {
-          this.executedNodes.delete(id);
-          this.nodeResults.delete(id);
-        }
-      }
+  /**
+   * Execute node specifically for loop iteration (bypasses normal dependency checking)
+   */
+  private async executeNodeForLoop(nodeId: string, executed: Set<string>): Promise<any> {
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found for loop execution`);
     }
 
-    this.nodeResults.set(loopNodeId, originalLoopResult);
+    console.log(`🔄 [LOOP] Executing node: ${nodeId} (${node.type})`);
+    
+    // Execute the node directly
+    await this.executeNode(node);
+    
+    return this.nodeResults.get(nodeId);
+  }
+
+  /**
+   * Get node result (for loop context access)
+   */
+  public getNodeResult(nodeId: string): any {
+    return this.nodeResults.get(nodeId);
+  }
+
+  /**
+   * Set loop context for a node
+   */
+  public setLoopContext(nodeId: string, context: any): void {
+    this.loopContexts.set(nodeId, context);
+  }
+
+  /**
+   * Clear loop context for a node
+   */
+  public clearLoopContext(nodeId: string): void {
+    this.loopContexts.delete(nodeId);
+  }
+
+  /**
+   * Get loop context for a node
+   */
+  public getLoopContext(nodeId: string): any {
+    return this.loopContexts.get(nodeId);
   }
 
   /**
@@ -444,6 +470,13 @@ export class WorkflowEngine {
   }
 
   private getNodeInput(node: WorkflowNode): any {
+    // Check if there's loop context for this node
+    const loopContext = this.loopContexts.get(node.id);
+    if (loopContext) {
+      console.log(`🔄 [WORKFLOW] Using loop context for node ${node.id}:`, loopContext);
+      return { ...node.data, ...loopContext };
+    }
+
     // Get input from upstream nodes
     const upstreamNodes = this.getUpstreamNodes(node.id);
     const input: any = { ...node.data };

@@ -455,10 +455,11 @@ export class WorkflowEngine {
       } else {
         // Execute using registry-based approach
         result = await this.executeNodeWithRegistry(node, nodeInput);
+        // Store result and mark as completed
+        this.setNodeResult(node.id, result);
 
       }
-      // Store result and mark as completed
-      this.setNodeResult(node.id, result);
+      
       execution.status = 'completed';
       execution.output = result;
       execution.completedAt = new Date();

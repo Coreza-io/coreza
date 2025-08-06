@@ -377,6 +377,13 @@ export class WorkflowEngine {
   }
 
   /**
+   * Store result for a node
+   */
+  public setNodeResult(nodeId: string, result: any): void {
+    this.nodeResults.set(nodeId, result);
+  }
+
+  /**
    * Set loop context for a node
    */
   public setLoopContext(nodeId: string, context: any): void {
@@ -451,7 +458,7 @@ export class WorkflowEngine {
 
       }
       // Store result and mark as completed
-      this.nodeResults.set(node.id, result);
+      this.setNodeResult(node.id, result);
       execution.status = 'completed';
       execution.output = result;
       execution.completedAt = new Date();

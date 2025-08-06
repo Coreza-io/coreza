@@ -216,7 +216,7 @@ export async function handleN8NLoopExecution(
   }
 
   // Store aggregated results as the loop node's final output
-  (workflowEngine as any).nodeResults.set(loopNodeId, { success: true, data: loopResults });
+  workflowEngine.setNodeResult(loopNodeId, { success: true, data: loopResults });
 
   // Clear loop context
   workflowEngine.clearLoopContext(loopNodeId);

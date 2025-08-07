@@ -128,7 +128,7 @@ export async function handleN8NLoopExecution(
         loopItem: item,
         output: item,
       });
-
+      workflowEngine.setNodeResult(loopNodeId, item);
       // Set context for target nodes
       outgoing.forEach(e => {
         workflowEngine.setLoopContext(e.target, {
@@ -206,6 +206,7 @@ export async function handleN8NLoopExecution(
       console.log(`📝 [BACKEND] Executing batch sequentially`);
       for (let i = 0; i < batch.length; i++) {
         try {
+          
           await runner(batch[i], i);
         } catch (err) {
           console.error(`❌ [BACKEND] Sequential execution failed for item ${i}:`, err);

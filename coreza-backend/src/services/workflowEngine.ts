@@ -461,7 +461,7 @@ export class WorkflowEngine {
       }
       
       execution.status = 'completed';
-      execution.output = result;
+      execution.output = this.getNodeResult(node.id);;
       execution.completedAt = new Date();
 
       await this.logNodeExecution(node.id, 'completed', execution.input, result);

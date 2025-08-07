@@ -77,6 +77,7 @@ export async function handleN8NLoopExecution(
 
   const subgraph = collectSubgraph(nodes, graph.edges, loopNodeId);
 
+  const loopResults: any[] = [];
   const batches: any[][] = [];
   for (let i = 0; i < items.length; i += batchSize) {
     batches.push(items.slice(i, i + batchSize));
@@ -135,6 +136,11 @@ export async function handleN8NLoopExecution(
             .forEach(t => {
               if (!queue.includes(t)) queue.push(t);
             });
+
+          if (graph.edges.some(e => e.source === nid && e.target === loopNodeId)) {
+            const output = execCtx.getNodeData(nid).output;
+            loopResults.push(output);
+          }
         } catch (err) {
           failures.add(nid);
           if (!continueOnError) throw err;
@@ -158,9 +164,9 @@ export async function handleN8NLoopExecution(
   }
 
   execCtx.setNodeData(loopNodeId, {
+    output: loopResults,
     loopItems: undefined,
     loopIndex: undefined,
     loopItem: undefined,
-    output: undefined,
   });
 }

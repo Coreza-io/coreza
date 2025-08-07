@@ -309,7 +309,7 @@ export class WorkflowExecutor {
     if (defName === 'Loop') {
       const outgoing = this.context.edges.filter(e => e.source === nodeId);
 
-      // 1. Run loop execution logic (handles both loop and done edges internally)
+      // 1. Run loop execution logic
       await handleN8NLoopExecution(
         this.nodeStore,
         { nodes: this.context.nodes, edges: this.context.edges },
@@ -321,14 +321,7 @@ export class WorkflowExecutor {
       );
 
       // 2. After loop completes, collect all node ids in this subgraph
-      // Include both loop and done edge targets since handleN8NLoopExecution handles them
       const loopSubgraph = collectSubgraphNodeIds(this.context.nodes, this.context.edges, nodeId);
-      
-      // Add done edge targets to the subgraph so they don't get executed again
-      const doneEdgeTargets = outgoing
-        .filter(e => e.sourceHandle === 'done')
-        .map(e => e.target);
-      doneEdgeTargets.forEach(target => loopSubgraph.add(target));
 
       // 3. Return this marker so the main queue can skip these
       return { loopSubgraph };

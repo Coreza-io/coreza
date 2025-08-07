@@ -75,13 +75,6 @@ export async function handleN8NLoopExecution(
   const continueOnError: boolean = !!resolveDeep(fieldState.continueOnError, selectedInputData, allNodeData, nodes);
   const throttleMs: number = parseInt(resolveDeep(fieldState.throttleMs, selectedInputData, allNodeData, nodes)) || 0;
 
-  // Filter edges by sourceHandle - separate loop and done edges
-  const loopEdges = outgoing.filter(e => e.sourceHandle === 'loop' || !e.sourceHandle); // Default to loop if no handle specified
-  const doneEdges = outgoing.filter(e => e.sourceHandle === 'done');
-  
-  console.log(`🔄 Loop edges (${loopEdges.length}):`, loopEdges.map(e => `${e.source}->${e.target} (${e.sourceHandle || 'default'})`));
-  console.log(`✅ Done edges (${doneEdges.length}):`, doneEdges.map(e => `${e.source}->${e.target} (${e.sourceHandle})`));
-
   const subgraph = collectSubgraph(nodes, graph.edges, loopNodeId);
 
   const loopResults: any[] = [];
@@ -103,8 +96,7 @@ export async function handleN8NLoopExecution(
         loopItem: item,
         output: item,
       });
-      // Set context for loop edge targets only during iterations
-      loopEdges.forEach(e => {
+      outgoing.forEach(e => {
         execCtx.setNodeData(e.target, {
           input: item,
           loopItem: item,
@@ -112,7 +104,7 @@ export async function handleN8NLoopExecution(
         });
       });
 
-      const queue = loopEdges.map(e => e.target);
+      const queue = outgoing.map(e => e.target);
       const done = new Set<string>([loopNodeId]);
       const failures = new Set<string>();
       const retries = new Map<string, number>();
@@ -145,7 +137,6 @@ export async function handleN8NLoopExecution(
               if (!queue.includes(t)) queue.push(t);
             });
 
-          // Collect results from nodes that route back to the loop node
           if (graph.edges.some(e => e.source === nid && e.target === loopNodeId)) {
             const output = execCtx.getNodeData(nid).output;
             loopResults.push(output);
@@ -172,36 +163,10 @@ export async function handleN8NLoopExecution(
     }
   }
 
-  // Set final aggregated results and trigger done edges
-  const finalOutput = loopResults.length > 0 ? loopResults : items;
   execCtx.setNodeData(loopNodeId, {
-    output: finalOutput,
+    output: loopResults,
     loopItems: undefined,
     loopIndex: undefined,
     loopItem: undefined,
   });
-  
-  // Now trigger execution of done edge targets with aggregated results
-  if (doneEdges.length > 0) {
-    console.log(`✅ Triggering ${doneEdges.length} done edge(s) with aggregated results:`, finalOutput);
-    
-    // Set context for done edge targets with final aggregated results
-    doneEdges.forEach(e => {
-      execCtx.setNodeData(e.target, {
-        input: finalOutput,
-        output: finalOutput,
-      });
-    });
-
-    // Execute done edge targets
-    const doneQueue = doneEdges.map(e => e.target);
-    for (const targetNodeId of doneQueue) {
-      try {
-        console.log(`✅ Executing done edge target: ${targetNodeId}`);
-        await executeNode(targetNodeId, new Set([...globalExecuted, loopNodeId]));
-      } catch (err) {
-        console.error(`❌ Failed to execute done edge target ${targetNodeId}:`, err);
-      }
-    }
-  }
 }

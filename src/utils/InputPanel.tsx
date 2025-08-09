@@ -44,16 +44,24 @@ const InputPanel: React.FC<InputPanelProps> = ({
     return getAllUpstreamNodes(nodeId, edges, nodes);
   }, [nodeId, nodes, edges]);
 
-  // Set first as selected by default if possible and setter present
+  // Prefer a direct 'done' edge source when connected (Loop aggregated output)
+  const preferredPrevId = useMemo(() => {
+    if (!nodeId || !edges) return undefined;
+    const incomingDone = edges.find((e) => e.target === nodeId && e.sourceHandle === "done");
+    return incomingDone?.source;
+  }, [nodeId, edges]);
+
+  // Set default selected previous node (prefer 'done' source)
   useEffect(() => {
-    if (
-      previousNodes.length > 0 &&
-      !selectedPrevNodeId &&
-      typeof setSelectedPrevNodeId === "function"
-    ) {
+    if (typeof setSelectedPrevNodeId !== "function" || selectedPrevNodeId) return;
+    if (preferredPrevId) {
+      setSelectedPrevNodeId(preferredPrevId);
+      return;
+    }
+    if (previousNodes.length > 0) {
       setSelectedPrevNodeId(previousNodes[0].id);
     }
-  }, [previousNodes, selectedPrevNodeId, setSelectedPrevNodeId]);
+  }, [preferredPrevId, previousNodes, selectedPrevNodeId, setSelectedPrevNodeId]);
 
   // Get outputData prioritizing execution store
   const outputData = useMemo(() => {

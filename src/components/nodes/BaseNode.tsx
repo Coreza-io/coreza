@@ -20,6 +20,40 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   return result;
 };
 
+const getForwardReachable = (loopId: string, nodes: Node[], edges: any[]) => {
+  const seen = new Set<string>([loopId]);
+  const q = [loopId];
+  while (q.length) {
+    const cur = q.shift()!;
+    edges.filter(e => e.source === cur).forEach(e => {
+      if (!seen.has(e.target) && e.target !== loopId) {
+        seen.add(e.target);
+        q.push(e.target);
+      }
+    });
+  }
+  seen.delete(loopId);
+  return seen; // subgraph nodes excluding the loop itself
+};
+
+const getReturnSourcesToLoop = (loopId: string, nodes: Node[], edges: any[]) => {
+  const subgraph = getForwardReachable(loopId, nodes, edges);
+  const incoming = edges.filter(e => e.target === loopId);
+  const sources = new Set<string>();
+  incoming.forEach(e => { if (subgraph.has(e.source)) sources.add(e.source); });
+  return Array.from(sources);
+};
+
+const makeArraySignature = (arr: any[]): string => {
+  try {
+    const first = arr.length ? JSON.stringify(arr[0]) : "";
+    const last  = arr.length ? JSON.stringify(arr[arr.length - 1]) : "";
+    return `${arr.length}|${first}|${last}`;
+  } catch {
+    return `${arr.length}`;
+  }
+};
+
 
 interface BaseNodeProps {
   data: any;
@@ -61,7 +95,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
-  const { setNodes, setEdges } = useReactFlow();
+  const { setNodes } = useReactFlow();
   const { toast } = useToast();
   const { user } = useAuth();
   const executionStore = useExecutionStore();
@@ -498,142 +532,192 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       payload.user_id = userId;
 
       let outputData: any;
-      
-      // Special handling for Loop node - process in frontend without backend call
+
       if (definition?.name === "Loop") {
-        const batchSize = parseInt(fieldState.batchSize) || 1;
-        const parallel = !!fieldState.parallel;
+        const batchSize       = parseInt(fieldState.batchSize) || 1;
+        const parallel        = !!fieldState.parallel;
         const continueOnError = !!fieldState.continueOnError;
-        const throttleMs = parseInt(fieldState.throttleMs) || 200;
+        const throttleMs      = parseInt(fieldState.throttleMs) || 200;
 
-        let arrayData: any[];
-        if (Array.isArray(effectiveInput)) {
-          arrayData = effectiveInput;
-        } else if (typeof effectiveInput === "string") {
+        // 1) normalize input → loopItems
+        let loopItems: any[];
+        if (Array.isArray(effectiveInput)) loopItems = effectiveInput;
+        else if (typeof effectiveInput === "string") {
           const parsed = JSON.parse(effectiveInput as any);
-          arrayData = Array.isArray(parsed) ? parsed : [parsed];
-        } else if (effectiveInput == null) {
-          arrayData = [];
-        } else if (typeof effectiveInput === "object") {
-          arrayData = [effectiveInput];
+          loopItems = Array.isArray(parsed) ? parsed : [parsed];
+        } else if (effectiveInput == null) loopItems = [];
+        else if (typeof effectiveInput === "object") loopItems = [effectiveInput];
+        else throw new Error("Loop input must be an array or JSON string representing an array");
+
+        // 2) decide aggregation mode based on graph
+        const returnSources = getReturnSourcesToLoop(nodeId!, nodes, edges);
+        const aggregateMode: "items" | "returns" = returnSources.length > 0 ? "returns" : "items";
+
+        // 3) init / resume state
+        const loopSig = makeArraySignature(loopItems);
+        const prev = executionStore.getNodeData(nodeId!) || {};
+        const inputChanged =
+          !Array.isArray(prev.loopItems) ||
+          (prev.loopSig ?? "") !== loopSig ||
+          prev.aggregateMode !== aggregateMode;
+
+        if (inputChanged) {
+          executionStore.startLoop(nodeId!, loopItems, {
+            batchSize, parallel, continueOnError, throttleMs,
+            loopSig, aggregateMode, returnSources,
+          });
         } else {
-          throw new Error("Loop input must be an array or JSON string representing an array");
-        }
-        
-        
-        // When rendering the panel:
-        const loopData = executionStore.getNodeData(nodeId) || {};
-        const arrayLength = arrayData.length;
-        const maxLoopIndex = Math.ceil(arrayLength / batchSize) - 1;
-        let loopIndex = loopData.loopIndex ?? 0;
-
-        // Cap the loopIndex so it doesn't exceed maxLoopIndex
-        if (loopIndex > maxLoopIndex) {
-          loopIndex = maxLoopIndex;
-        }
-        const items = loopData.loopItems ?? arrayData;
-
-        // When running manually:
-        const start = loopIndex;
-        const batch = items.slice(start, start + batchSize);
-        const output = batchSize === 1 ? batch[0] : batch;
-        executionStore.setNodeData(nodeId!, effectiveInput);
-        executionStore.setNodeData(nodeId!, {
-          output,
-          loopItems: items,
-          loopIndex: start + batchSize, // for next "Run"
-          loopItem: batch[0],
-        });
-
-        outputData = {
-          item: batch[0]
-        };
- 
-        console.log("🔄 [LOOP NODE] Frontend processing complete:", outputData);
-      } else {
-        // Regular backend processing for non-Loop nodes
-        const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
-        let operationMethod = "POST";
-        
-        if (operationField) {
-          const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
-          if (opSelected && opSelected.method) {
-            operationMethod = opSelected.method;
-          }
+          executionStore.setNodeData(nodeId!, {
+            batchSize, parallel, continueOnError, throttleMs,
+            aggregateMode, returnSources
+          });
         }
 
-        let url = definition?.action?.url || '';
-        let method = definition?.action?.method || "POST";
-        
-        if (url.includes("{{") && url.includes("}}")) {
-          url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
+        const st = executionStore.getNodeData(nodeId!);
+        const items = st.loopItems || loopItems;
+        const start = st.loopIndex ?? 0;
+
+        // 4) edge case: no items
+        if (items.length === 0) {
+          const finalOut = st.aggregateMode === "returns" ? (st.aggregated ?? []) : [];
+          executionStore.setNodeData(nodeId!, {
+            output: finalOut,
+            loopItems: undefined,
+            loopIndex: 0,
+            loopItem: undefined,
+            finishedByLoop: true,
+            done: true,
+          });
+          setLastOutput(finalOut);
+          data.output = finalOut;
+          setNodes(nds => nds.map(n =>
+            n.id === nodeId ? ({ ...n, data: { ...n.data, output: finalOut } }) : n
+          ));
+          outputData = finalOut;
+          return;
         }
 
-        if (method.includes("{{") && method.includes("}}")) {
-          method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
-            key === "method" ? operationMethod : fieldState[key] || ""
-          );
-        }
+        // 5) next batch & state update
+        const endIndex = Math.min(start + batchSize, items.length);
+        const batch    = items.slice(start, endIndex);
+        const current  = batchSize === 1 ? batch[0] : batch;
+        const finished = endIndex >= items.length;
 
-        if (definition?.action?.url && definition?.action?.method) {
-          let fullUrl = `${BACKEND_URL}${url}`;
-          let params: URLSearchParams | undefined;
-          
-          if (method === "GET") {
-            params = new URLSearchParams();
-            params.append("user_id", userId);
-            params.append("credential_id", fieldState.credential_id ?? "");
-            fullUrl += `?${params.toString()}`;
-          }
-
-          const fetchOptions: RequestInit = { method };
-          if (method !== "GET") {
-            fetchOptions.headers = { "Content-Type": "application/json" };
-            fetchOptions.body = JSON.stringify(payload);
-          }
-
-          // Log the payload and request details
-          console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
-          console.log("🚀 [BACKEND REQUEST] Method:", method);
-          console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
-          if (method === "GET" && params) {
-            console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
-          }
-
-          const res = await fetch(fullUrl, fetchOptions);
-          const responseData = await res.json();
-          if (!res.ok) throw new Error(responseData.detail || "Action failed");
-          outputData = [responseData];
+        if (st.aggregateMode === "items") {
+          // items mode → append emitted items and finalize to full aggregate on last batch
+          const next = executionStore.advanceLoop(nodeId!, current, endIndex, finished);
+          const uiOut = next.output; // current batch until final, then full aggregate
+          setLastOutput(uiOut);
+          data.output = uiOut;
+          setNodes(nds => nds.map(n =>
+            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
+          ));
+          outputData = uiOut;
         } else {
-          outputData = [payload];
+          // returns mode → Loop shows whatever aggregated returns we have
+          executionStore.setNodeData(nodeId!, {
+            loopIndex: endIndex,
+            loopItem: batch[0],
+            finishedByLoop: finished,
+            // output mirrors aggregated only once finished; until then show partial aggregate
+            output: st.aggregated ?? [],
+            done: false,
+          });
+
+          const next = executionStore.getNodeData(nodeId!);
+          const uiOut = finished ? (next.aggregated ?? []) : (next.aggregated ?? []);
+          setLastOutput(uiOut);
+          data.output = uiOut;
+          setNodes(nds => nds.map(n =>
+            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
+          ));
+          outputData = uiOut;
+        }
+
+        return;
+      }
+
+      // Regular backend processing for non-Loop nodes
+      const operationField = (definition?.fields || []).find((f: any) => f.key === "operation");
+      let operationMethod = "POST";
+
+      if (operationField) {
+        const opSelected = (operationField.options || []).find((opt: any) => opt.id === fieldState.operation);
+        if (opSelected && opSelected.method) {
+          operationMethod = opSelected.method;
         }
       }
 
+      let url = definition?.action?.url || '';
+      let method = definition?.action?.method || "POST";
 
-      if (definition?.name === "Loop") {
-        //executionStore.setNodeData(nodeId!, { output: outputData });
-        setLastOutput(outputData);
-        data.output = outputData;
-        setNodes(nds =>
-          nds.map(n =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, ...outputData } }
-              : n
-          )
+      if (url.includes("{{") && url.includes("}}")) {
+        url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
+      }
+
+      if (method.includes("{{") && method.includes("}}")) {
+        method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+          key === "method" ? operationMethod : fieldState[key] || ""
         );
+      }
+
+      if (definition?.action?.url && definition?.action?.method) {
+        let fullUrl = `${BACKEND_URL}${url}`;
+        let params: URLSearchParams | undefined;
+
+        if (method === "GET") {
+          params = new URLSearchParams();
+          params.append("user_id", userId);
+          params.append("credential_id", fieldState.credential_id ?? "");
+          fullUrl += `?${params.toString()}`;
+        }
+
+        const fetchOptions: RequestInit = { method };
+        if (method !== "GET") {
+          fetchOptions.headers = { "Content-Type": "application/json" };
+          fetchOptions.body = JSON.stringify(payload);
+        }
+
+        // Log the payload and request details
+        console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+        console.log("🚀 [BACKEND REQUEST] Method:", method);
+        console.log("🚀 [BACKEND REQUEST] Payload:", JSON.stringify(payload, null, 2));
+        if (method === "GET" && params) {
+          console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
+        }
+
+        const res = await fetch(fullUrl, fetchOptions);
+        const responseData = await res.json();
+        if (!res.ok) throw new Error(responseData.detail || "Action failed");
+        outputData = [responseData];
       } else {
-        setLastOutput(outputData);
-        const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
-        data.output = finalOutput;
-        executionStore.setNodeData(nodeId!, { input: effectiveInput });
-        executionStore.setNodeData(nodeId!, { output: finalOutput });
-        setNodes(nds =>
-          nds.map(n =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, output: finalOutput } }
-              : n
-          )
-        );
+        outputData = [payload];
+      }
+
+      setLastOutput(outputData);
+      const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+      data.output = finalOutput;
+      executionStore.setNodeData(nodeId!, { input: effectiveInput });
+      executionStore.setNodeData(nodeId!, { output: finalOutput });
+      setNodes(nds =>
+        nds.map(n =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, output: finalOutput } }
+            : n
+        )
+      );
+
+      // Non-Loop node: push returns when done
+      const outgoing = edges.filter(e => e.source === nodeId);
+      const loopTargets = outgoing
+        .map(e => nodes.find(n => n.id === e.target))
+        .filter((n): n is Node<any> => !!n && n.data?.definition?.name === "Loop");
+
+      for (const loopNode of loopTargets) {
+        const ls = executionStore.getNodeData(loopNode.id);
+        if (ls.aggregateMode === "returns" && ls.returnSources?.includes(nodeId!)) {
+          executionStore.appendLoopReturn(loopNode.id, nodeId!, outputData);
+        }
       }
     } catch (err: any) {
       setError(err.message || "Action failed");

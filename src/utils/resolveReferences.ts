@@ -29,80 +29,99 @@ function parsePath(path: string): Array<string|number> {
  * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
  */
 export function resolveReferences(
-  expr: string, 
-  inputData: any, 
-  allNodeData?: Record<string, any>, 
+  expr: string,
+  inputData: any,
+  allNodeData?: Record<string, any>,
   nodes?: any[]
 ): string {
-  if (!inputData || typeof expr !== 'string') {
-    return expr;
+  if (typeof expr !== 'string') {
+    return expr as any;
   }
 
-  // Match $('NodeName').json.path or $json.path patterns
-  const templateRegex = /\{\{\s*(?:\$\('([^']+)'\)\.json|\$json)(?:\.|\s*)([^\}]*?)\s*\}\}/g;
+  const templateRegex = /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
-  return expr.replace(templateRegex, (fullMatch, nodeName, rawPath) => {
-    console.log("🔍 Resolving reference:", { fullMatch, nodeName, rawPath, inputData, allNodeData });
-    
-    let targetData = inputData;
-    
-    // If nodeName is specified and we have allNodeData, look up the specific node's data
-    if (nodeName && allNodeData) {
-      // First try direct lookup by node name
-      if (allNodeData[nodeName]) {
-        targetData = allNodeData[nodeName];
-        console.log(`🔍 Found data for node '${nodeName}':`, targetData);
-      } else {
-        console.warn(`🔍 No data found for node '${nodeName}', available nodes:`, Object.keys(allNodeData));
-        return fullMatch; // Return original if node not found
-      }
-      
-      // Handle nested json structure for Market Status and other nodes
-      if (targetData && targetData.json) {
-        targetData = targetData.json;
-        console.log(`🔍 Using nested json data:`, targetData);
-      }
-    }
-    
-    const cleanPath = rawPath?.trim().replace(/^[.\s]+/, '') || '';
-    
-    // If no path specified (e.g., just {{ $('Alpaca').json }}), return the whole object
-    if (!cleanPath) {
-      return (typeof targetData === 'object' && targetData !== null)
-        ? JSON.stringify(targetData)
-        : String(targetData);
-    }
-    
+  function pickJsonSource(d: any) {
+    if (d == null) return d;
+    const candidates = [
+      d.json,
+      d.output?.json,
+      d.output,
+      d.input?.json,
+      d.input,
+      d.data?.output?.json,
+      d.data?.output,
+      d.data?.input?.json,
+      d.data?.input,
+      d,
+    ];
+    for (const c of candidates) if (c !== undefined) return c;
+    return d;
+  }
+
+  function resolveNodeKey(
+    nodeName: string,
+    allNodeData?: Record<string, any>,
+    nodes?: Array<{ id: string; data?: any; label?: string; name?: string }>
+  ): string | undefined {
+    if (!nodeName) return undefined;
+    if (allNodeData?.[nodeName] !== undefined) return nodeName;
+    const candidate = nodes?.find(
+      (n) =>
+        n.id === nodeName ||
+        (n as any).label === nodeName ||
+        (n as any).name === nodeName ||
+        n.data?.title === nodeName ||
+        n.data?.name === nodeName ||
+        n.data?.label === nodeName ||
+        (n.data as any)?.displayName === nodeName
+    );
+    if (candidate && allNodeData?.[candidate.id] !== undefined) return candidate.id;
+    return undefined;
+  }
+
+  function getValueByPath(targetData: any, cleanPath: string) {
+    if (!cleanPath) return targetData;
     const keys = parsePath(cleanPath);
-    console.log("🔍 Parsed keys:", keys);
-
     let result: any = targetData;
     for (const key of keys) {
-      //console.log("🔍 Accessing key:", key, "in:", result);
-      if (result == null) { 
-        result = undefined; 
-        break; 
-      }
-
-      // If we're indexing into an array with a number...
-      if (Array.isArray(result) && typeof key === 'number') {
-        // handle negative indexes
-        const idx = key >= 0 ? key : result.length + key;
-        result = result[idx];
+      if (result == null) return undefined;
+      if (Array.isArray(result)) {
+        if (typeof key === 'number' || (typeof key === 'string' && /^-?\d+$/.test(key))) {
+          const n = typeof key === 'number' ? key : parseInt(key, 10);
+          const idx = n >= 0 ? n : result.length + n;
+          result = result[idx];
+        } else {
+          result = (result as any)[key as any];
+        }
       } else {
-        result = result[key as keyof typeof result];
+        result = (result as any)[key as any];
       }
     }
+    return result;
+  }
 
-    console.log("🔍 Final result:", result);
+  return expr.replace(templateRegex, (full, g1, g2, g3, rawPath) => {
+    let targetData = inputData;
+    const nodeName = (g1 || g2 || g3 || '').trim();
 
-    if (result === undefined) {
-      // leave original placeholder if not found
-      return fullMatch;
+    if (nodeName && allNodeData) {
+      const resolvedKey = resolveNodeKey(nodeName, allNodeData, nodes as any) || nodeName;
+      if (allNodeData[resolvedKey] === undefined) return full;
+      targetData = pickJsonSource(allNodeData[resolvedKey]);
+    } else {
+      targetData = pickJsonSource(targetData);
     }
 
-    return (typeof result === 'object' && result !== null)
-      ? JSON.stringify(result)
-      : String(result);
+    const cleanPath = (rawPath || '').trim().replace(/^[.\s]+/, '');
+
+    if (!cleanPath) {
+      const val = targetData;
+      return typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val);
+    }
+
+    const value = getValueByPath(targetData, cleanPath);
+    if (value === undefined) return full;
+
+    return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
   });
 }

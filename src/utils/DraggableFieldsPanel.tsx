@@ -1,100 +1,108 @@
-import React from "react";
+import React, { useMemo } from "react";
 
-const DraggableFieldsPanel = ({
+type DraggableFieldsPanelProps = {
+  data: unknown;
+  onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
+  parentKey?: string;
+  maxItems?: number;
+};
+
+type Entry = { key: string; value: unknown };
+
+const isObjectLike = (v: unknown): v is Record<string, unknown> | unknown[] =>
+  v !== null && typeof v === "object";
+
+const toStringValue = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+// Build n8n-like path segments
+const buildPath = (parent: string, rawKey: string): string => {
+  const isNumeric = /^\d+$/.test(rawKey);
+  const needsQuote = /[^A-Za-z0-9_]/.test(rawKey);
+  const seg = isNumeric ? `[${rawKey}]` : needsQuote ? `["${rawKey}"]` : rawKey;
+  return parent ? `${parent}.${seg}` : seg;
+};
+
+const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   data,
   onDragStart,
   parentKey = "",
-}: {
-  data: any;
-  onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
-  parentKey?: string;
+  maxItems = 25,
 }) => {
-  if (!data || typeof data !== "object") return null;
+  if (!isObjectLike(data)) return null;
 
-  // Prepare entries for objects and arrays (preserve arrays with indexed view)
   const isArray = Array.isArray(data);
-  let entriesToShow: [string, any][];
-  if (isArray) {
-    const MAX_ITEMS = 25;
-    const arr = data as any[];
-    entriesToShow = arr.slice(0, MAX_ITEMS).map((item, idx) => [String(idx), item]);
-  } else {
-    entriesToShow = Object.entries(data);
-  }
 
-  
+  const entriesToShow: Entry[] = useMemo(() => {
+    if (Array.isArray(data)) {
+      return (data as unknown[]).slice(0, maxItems).map((item, idx) => ({
+        key: String(idx),
+        value: item,
+      }));
+    }
+    return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({ key: k, value: v }));
+  }, [data, maxItems]);
 
   return (
     <div className="flex flex-col gap-2 mb-2">
-      {Array.isArray(data) && parentKey ? (
-        <div className="flex items-center gap-2 ml-2">
-          <div
-            className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors"
-            draggable
-            onDragStart={e => {
-              const value = JSON.stringify(data);
-              e.dataTransfer.setData("application/reactflow", JSON.stringify({ 
-                type: "jsonReference", 
-                keyPath: parentKey, 
-                value 
-              }));
-              e.dataTransfer.effectAllowed = "copy";
-              onDragStart(e, parentKey, value);
-            }}
-            onMouseDown={e => e.stopPropagation()}
-            title={`Array(${(data as any[]).length})`}
-          >
-            Entire Array [{(data as any[]).length}]
-          </div>
-        </div>
-      ) : null}
-      {entriesToShow.map(([key, value]) => {
-        const fullKey = parentKey ? `${parentKey}.${key}` : key;
-        const isObject = typeof value === "object" && value !== null;
+      {entriesToShow.map(({ key, value }) => {
+        const fullKey = buildPath(parentKey, key); // n8n-style path
+        const isNestedObject = isObjectLike(value);
+        const displayKey = isArray ? `[${key}]` : key;
 
         return (
           <div key={fullKey} className="flex flex-col ml-2">
             <div className="flex items-center gap-2">
               <div
-                className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors"
+                className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors cursor-grab active:cursor-grabbing"
                 draggable
-                onDragStart={e => {
-                  console.log("🎯 DRAG START:", { fullKey, value });
-                  e.dataTransfer.setData("application/reactflow", JSON.stringify({ 
-                    type: "jsonReference", 
-                    keyPath: fullKey, 
-                    value: isObject ? JSON.stringify(value) : String(value ?? "") 
-                  }));
-                  e.dataTransfer.effectAllowed = "copy";
-                  console.log("✅ Data set in drag:", e.dataTransfer.getData("application/reactflow"));
-                  onDragStart(
-                    e,
-                    fullKey,
-                    isObject ? JSON.stringify(value) : String(value ?? "")
+                onDragStart={(e) => {
+                  const asString = toStringValue(value);
+                  e.dataTransfer.setData(
+                    "application/reactflow",
+                    JSON.stringify({
+                      type: "jsonReference",
+                      keyPath: fullKey, // e.g. [0].[0].asset_id
+                      value: asString,
+                    })
                   );
+                  e.dataTransfer.effectAllowed = "copy";
+                  onDragStart(e, fullKey, asString);
                 }}
-                onMouseDown={e => e.stopPropagation()}
-                title={isObject ? JSON.stringify(value) : String(value ?? "")}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={
+                  isNestedObject ? (Array.isArray(value) ? "Array" : "Object") : String(value as any)
+                }
               >
-                {key}
+                {displayKey}
               </div>
+
               <span className="text-xs text-muted-foreground">
-                {value === undefined ? (
-                  <span className="text-muted-foreground/60">undefined</span>
-                ) : isObject ? (
-                  <span className="font-mono text-muted-foreground/60">{Array.isArray(value) ? "[...]" : "{...}"}</span>
+                {isNestedObject ? (
+                  <span className="font-mono text-muted-foreground/60">
+                    {Array.isArray(value) ? "[...]" : "{...}"}
+                  </span>
                 ) : (
-                  String(value)
+                  String(value as any)
                 )}
               </span>
             </div>
-            {/* Recursively render nested fields */}
-            {isObject && (
-              <DraggableFieldsPanel
-                data={value}
-                onDragStart={onDragStart}
-                parentKey={fullKey}
-              />
+
+            {isNestedObject && (
+              <div className="ml-4">
+                <DraggableFieldsPanel
+                  data={value}
+                  onDragStart={onDragStart}
+                  parentKey={fullKey}
+                  maxItems={maxItems}
+                />
+              </div>
             )}
           </div>
         );
@@ -103,4 +111,4 @@ const DraggableFieldsPanel = ({
   );
 };
 
-export default DraggableFieldsPanel;
+export default React.memo(DraggableFieldsPanel);

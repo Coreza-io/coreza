@@ -109,10 +109,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   if (storeEntry.loopItem !== undefined) {
     selectedInputData = storeEntry.loopItem;
     console.log("🔄 [LOOP DATA] Using loop item as input:", selectedInputData);
-  } else if (Array.isArray(selectedInputData) && selectedInputData.length > 0) {
-    selectedInputData = selectedInputData[0] || {};
   }
-
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
     return Object.fromEntries(
@@ -279,7 +276,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
       const sourceDisplayName = sourceNode.id;
-      const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+      const kp = (keyPath ?? "").trim();
+      const suffix = kp ? `.${kp}` : "";
+      const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
       const newValue = currentValue + insert;
       
       
@@ -302,10 +301,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     // Extract the actual data from the node structure
     let srcData = srcNode?.data?.output || srcNode?.data || {};
     
-    // If srcData is an array (from previousNodes), get the first item
-    if (Array.isArray(srcData) && srcData.length > 0) {
-      srcData = srcData[0] || {};
-    }
     
     // Build allNodeData for cross-node references
     const allNodeData: Record<string, any> = {};
@@ -318,9 +313,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         nodeData = prevNode.data?.output || prevNode.data || {};
       }
 
-      if (Array.isArray(nodeData) && nodeData.length > 0) {
-        nodeData = nodeData[0] || {};
-      }
       allNodeData[displayName] = nodeData;
     });
     try {
@@ -427,9 +419,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         nodeData = prevNode.data?.output || prevNode.data || {};
       }
 
-      if (Array.isArray(nodeData) && nodeData.length > 0) {
-        nodeData = nodeData[0] || {};
-      }
       allNodeData[displayName] = nodeData;
     });
 

@@ -213,10 +213,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return;
       }
       try {
-        const { keyPath } = JSON.parse(raw);
-        //const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName =selectedPrevNodeId;
-        const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+        const { keyPath = "" } = JSON.parse(raw);
+        const sourceDisplayName = selectedPrevNodeId;
+        const kp = (keyPath ?? "").trim();
+        const suffix = kp ? `.${kp}` : "";
+        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
 
         updateCondition(idx, field, currentValue + insert);
 
@@ -251,10 +252,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return;
       }
       try {
-        const { keyPath } = JSON.parse(raw);
-        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode.id;
-        const insert = `{{ $('${sourceDisplayName}').json.${keyPath} }}`;
+        const { keyPath = "" } = JSON.parse(raw);
+        const sourceDisplayName = selectedPrevNodeId;
+        const kp = (keyPath ?? "").trim();
+        const suffix = kp ? `.${kp}` : "";
+        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
 
         handleChange(field, currentValue + insert);
       } catch (error) {
@@ -279,17 +281,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
 
       let srcData = srcNode.data?.output || {};
-      if (Array.isArray(srcData) && srcData.length === 1) {
-        srcData = srcData[0];
-      }
 
-      const allNodeData = {};
+      const allNodeData = {} as Record<string, any>;
       previousNodes.forEach(prevNode => {
         const displayName = prevNode.id;
-        let nodeData = prevNode.data?.output || prevNode.data || {};
-        if (Array.isArray(nodeData) && nodeData.length > 0) {
-          nodeData = nodeData[0] || {};
-        }
+        const nodeData = prevNode.data?.output || prevNode.data || {};
         allNodeData[displayName] = nodeData;
       });
 
@@ -317,17 +313,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
 
       let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
-      if (Array.isArray(srcData) && srcData.length === 1) {
-        srcData = srcData[0];
-      }
 
-      const allNodeData = {};
+      const allNodeData = {} as Record<string, any>;
       previousNodes.forEach(prevNode => {
         const displayName = prevNode.id;
-        let nodeData = prevNode.data?.output || prevNode.data || {};
-        if (Array.isArray(nodeData) && nodeData.length > 0) {
-          nodeData = nodeData[0] || {};
-        }
+        const nodeData = prevNode.data?.output || prevNode.data || {};
         allNodeData[displayName] = nodeData;
       });
 

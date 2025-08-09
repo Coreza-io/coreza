@@ -534,7 +534,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         
         // When rendering the panel:
         const loopData = executionStore.getNodeData(nodeId) || {};
-        const loopIndex = loopData.loopIndex ?? 0;
+        const arrayLength = arrayData.length;
+        const maxLoopIndex = Math.ceil(arrayLength / batchSize) - 1;
+        let loopIndex = loopData.loopIndex ?? 0;
+
+        // Cap the loopIndex so it doesn't exceed maxLoopIndex
+        if (loopIndex > maxLoopIndex) {
+          loopIndex = maxLoopIndex;
+        }
         const items = loopData.loopItems ?? arrayData;
 
         // When running manually:

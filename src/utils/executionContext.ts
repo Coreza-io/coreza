@@ -1,3 +1,5 @@
+// ExecutionContext.ts
+
 export interface NodeExecutionData {
   // I/O
   input?: any;
@@ -11,16 +13,17 @@ export interface NodeExecutionData {
   parallel?: boolean;
   continueOnError?: boolean;
   throttleMs?: number;
-  loopIndex?: number; // next start index
-  loopItem?: any; // last emitted item (preview)
+  loopIndex?: number;    // next start index
+  loopItem?: any;        // last emitted item (preview)
 
   // Runtime & aggregation
-  loopSig?: string; // signature to detect input-array changes
-  aggregateMode?: "items" | "returns";
-  returnSources?: string[]; // node IDs that return to this Loop
-  aggregated?: any[]; // accumulated results (items or return payloads)
-  finishedByLoop?: boolean; // Loop iterated the final batch
-  done?: boolean; // fully finalized
+  loopSig?: string;                          // signature to detect input changes
+  aggregateMode?: "items" | "returns";       // aggregation semantics
+  returnSources?: string[];                  // node IDs that return to this Loop
+  aggregated?: any[];                        // accumulated results (items or return payloads)
+  finishedByLoop?: boolean;                  // Loop iterated the final batch
+  done?: boolean;                            // fully finalized
+  forwardedDone?: boolean;                   // optional: if you gate one-time forwarding
 }
 
 export class ExecutionContext {
@@ -49,6 +52,7 @@ export class ExecutionContext {
       loopSig: undefined,
       finishedByLoop: false,
       done: false,
+      forwardedDone: false,
       ...extra,
     });
     return this.getNodeData(id);
@@ -77,6 +81,7 @@ export class ExecutionContext {
       aggregated: [],
       finishedByLoop: false,
       done: false,
+      forwardedDone: false,
       batchSize: opts.batchSize,
       parallel: opts.parallel,
       continueOnError: opts.continueOnError,
@@ -88,31 +93,55 @@ export class ExecutionContext {
     return this.getNodeData(id);
   }
 
-  /** Append an emitted batch (items mode) and finalize on last batch. */
+  /**
+   * Advance loop progress. In "items" mode we append 'emitted'.
+   * In "returns" mode we append 'returnSourceOutputs' (normalized).
+   */
   advanceLoop(
     id: string,
-    emitted: any | any[],
+    emitted: any | any[],                // current batch or item
     nextIndex: number,
-    isFinalBatch: boolean
+    isFinalBatch: boolean,
+    returnSourceOutputs?: any | any[]    // optional: pass the new returns you want to append now
   ) {
     const prev = this.getNodeData(id);
     const prevAgg = Array.isArray(prev.aggregated) ? prev.aggregated : [];
-    const toAppend = Array.isArray(emitted) ? emitted : [emitted];
+
+    const asArray = (v: any | any[] | undefined) =>
+      v === undefined ? [] : (Array.isArray(v) ? v : [v]);
+
+    let newAggregated = prevAgg;
+
+    const returnsToAppend = asArray(returnSourceOutputs).flat();
+    if (returnsToAppend.length > 0) {
+      newAggregated = prevAgg.concat(returnsToAppend);
+    }
+
 
     const patch: Partial<NodeExecutionData> = {
       loopIndex: nextIndex,
-      loopItem: toAppend[0],
-      aggregated: prevAgg.concat(toAppend),
-      output: emitted, // for mid-run preview
+      loopItem: asArray(emitted)[0],
+      aggregated: newAggregated,
       finishedByLoop: isFinalBatch,
-      done: isFinalBatch && prev.aggregateMode === "items",
+      done: isFinalBatch && prev.aggregateMode === "items", // in returns mode, done flips when returns are present
+      // mid-run preview:
+      output: prev.aggregateMode === "items"
+        ? emitted
+        : (newAggregated.length ? newAggregated : emitted), // show returns if any, else show current batch
     };
 
     // If items mode and final batch → expose full aggregate as output.
     if (isFinalBatch && prev.aggregateMode === "items") {
-      patch.output = prevAgg.concat(toAppend);
+      patch.output = newAggregated;
       patch.loopItems = undefined;
       patch.loopItem = undefined;
+    }
+
+    // If returns mode and loop already finished iterating,
+    // make sure output mirrors aggregated when it has content.
+    if (prev.aggregateMode === "returns" && isFinalBatch && newAggregated.length > 0) {
+      patch.output = newAggregated;
+      patch.done = true;
     }
 
     this.setNodeData(id, patch);
@@ -125,7 +154,8 @@ export class ExecutionContext {
     if (st.aggregateMode !== "returns") return;
 
     const prevAgg = Array.isArray(st.aggregated) ? st.aggregated : [];
-    const nextAgg = prevAgg.concat(payload);
+    const asArray = (v: any) => (Array.isArray(v) ? v : [v]);
+    const nextAgg = prevAgg.concat(asArray(payload));
 
     const patch: Partial<NodeExecutionData> = { aggregated: nextAgg };
 

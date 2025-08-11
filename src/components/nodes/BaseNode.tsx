@@ -136,14 +136,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   // Extract selectedInputData prioritizing execution store data
   const storeEntry = nodeId ? executionStore.getNodeData(nodeId) : {};
-  let selectedInputData =
-    storeEntry.input ?? selectedPrevNode?.data?.output ?? {};
+  let selectedInputData = selectedPrevNode?.data?.output ?? {};
 
   // Prefer loop item from execution store if present
-  if (storeEntry.loopItem !== undefined) {
-    selectedInputData = storeEntry.loopItem;
-    console.log("🔄 [LOOP DATA] Using loop item as input:", selectedInputData);
-  }
+  //if (storeEntry.loopItem !== undefined) {
+  //  selectedInputData = storeEntry.loopItem;
+  //  console.log("🔄 [LOOP DATA] Using loop item as input:", selectedInputData);
+  //}
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
     return Object.fromEntries(
@@ -551,15 +550,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
         // 2) decide aggregation mode based on graph
         const returnSources = getReturnSourcesToLoop(nodeId!, nodes, edges);
-        const aggregateMode: "items" | "returns" = returnSources.length > 0 ? "returns" : "items";
+        const returnSourceOutputs = returnSources
+        .map(srcId => executionStore.getNodeData(srcId)?.output)
+        .filter(Boolean);
+        const aggregateMode = "items";
 
         // 3) init / resume state
         const loopSig = makeArraySignature(loopItems);
         const prev = executionStore.getNodeData(nodeId!) || {};
         const inputChanged =
           !Array.isArray(prev.loopItems) ||
-          (prev.loopSig ?? "") !== loopSig ||
-          prev.aggregateMode !== aggregateMode;
+          (prev.loopSig ?? "") !== loopSig;
 
         if (inputChanged) {
           executionStore.startLoop(nodeId!, loopItems, {
@@ -575,11 +576,21 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
         const st = executionStore.getNodeData(nodeId!);
         const items = st.loopItems || loopItems;
-        const start = st.loopIndex ?? 0;
 
-        // 4) edge case: no items
-        if (items.length === 0) {
-          const finalOut = st.aggregateMode === "returns" ? (st.aggregated ?? []) : [];
+        // 5) next batch & state update
+        const arrayLength = items.length;
+        const maxLoopIndex = Math.ceil(arrayLength / batchSize) - 1;
+        let loopIndex = st.loopIndex ?? 0;
+        // Cap the loopIndex so it doesn't exceed maxLoopIndex
+        let finished = false;
+        //const endIndex = Math.min(start + batchSize, arrayLength);
+        const start = loopIndex;
+        const batch = items.slice(start, start + batchSize);
+        const current  = batchSize === 1 ? batch[0] : batch;
+        if (loopIndex > maxLoopIndex) {
+          finished = true;
+          const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished,returnSourceOutputs);
+          const finalOut = next.aggregated ?? [];
           executionStore.setNodeData(nodeId!, {
             output: finalOut,
             loopItems: undefined,
@@ -597,43 +608,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           return;
         }
 
-        // 5) next batch & state update
-        const endIndex = Math.min(start + batchSize, items.length);
-        const batch    = items.slice(start, endIndex);
-        const current  = batchSize === 1 ? batch[0] : batch;
-        const finished = endIndex >= items.length;
-
-        if (st.aggregateMode === "items") {
-          // items mode → append emitted items and finalize to full aggregate on last batch
-          const next = executionStore.advanceLoop(nodeId!, current, endIndex, finished);
-          const uiOut = next.output; // current batch until final, then full aggregate
-          setLastOutput(uiOut);
-          data.output = uiOut;
-          setNodes(nds => nds.map(n =>
-            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
-          ));
-          outputData = uiOut;
-        } else {
-          // returns mode → Loop shows whatever aggregated returns we have
-          executionStore.setNodeData(nodeId!, {
-            loopIndex: endIndex,
-            loopItem: batch[0],
-            finishedByLoop: finished,
-            // output mirrors aggregated only once finished; until then show partial aggregate
-            output: st.aggregated ?? [],
-            done: false,
-          });
-
-          const next = executionStore.getNodeData(nodeId!);
-          const uiOut = finished ? (next.aggregated ?? []) : (next.aggregated ?? []);
-          setLastOutput(uiOut);
-          data.output = uiOut;
-          setNodes(nds => nds.map(n =>
-            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
-          ));
-          outputData = uiOut;
-        }
-
+        // items mode → append emitted items and finalize to full aggregate on last batch
+        const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished,returnSourceOutputs);
+        const uiOut = next.output; // current batch until final, then full aggregate
+        setLastOutput(uiOut);
+        data.output = uiOut;
+        setNodes(nds => nds.map(n =>
+          n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
+        ));
+        outputData = uiOut;
+      
         return;
       }
 
@@ -689,9 +673,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const res = await fetch(fullUrl, fetchOptions);
         const responseData = await res.json();
         if (!res.ok) throw new Error(responseData.detail || "Action failed");
-        outputData = [responseData];
+        outputData = responseData;
       } else {
-        outputData = [payload];
+        outputData = payload;
       }
 
       setLastOutput(outputData);
@@ -706,19 +690,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             : n
         )
       );
-
-      // Non-Loop node: push returns when done
-      const outgoing = edges.filter(e => e.source === nodeId);
-      const loopTargets = outgoing
-        .map(e => nodes.find(n => n.id === e.target))
-        .filter((n): n is Node<any> => !!n && n.data?.definition?.name === "Loop");
-
-      for (const loopNode of loopTargets) {
-        const ls = executionStore.getNodeData(loopNode.id);
-        if (ls.aggregateMode === "returns" && ls.returnSources?.includes(nodeId!)) {
-          executionStore.appendLoopReturn(loopNode.id, nodeId!, outputData);
-        }
-      }
     } catch (err: any) {
       setError(err.message || "Action failed");
       setLastOutput({

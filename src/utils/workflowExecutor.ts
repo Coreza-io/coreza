@@ -353,7 +353,7 @@ export class WorkflowExecutor {
       window.dispatchEvent(execEvent);
     });
 
-    this.nodeStore.setNodeData(nodeId, { output: result });
+    //this.nodeStore.setNodeData(nodeId, { output: result });
 
     return result;
   }
@@ -403,9 +403,10 @@ export class WorkflowExecutor {
             continue;
         }
         if (executed.has(id) || failed.has(id)) continue;
+        const node = this.context.nodes.find(n => n.id === id);
 
         const inc = this.context.edges.filter(e => e.target === id);
-        const missing = id === 'Loop' 
+        const missing = node.type === 'Loop' 
         ? [] 
         : inc.filter(e => !executed.has(e.source) && !failed.has(e.source));
         
@@ -447,7 +448,6 @@ export class WorkflowExecutor {
           await new Promise(resolve => setTimeout(resolve, 500));
 
           const out = this.context.edges.filter(e => e.source === id);
-          const node = this.context.nodes.find(n => n.id === id);
           
           console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
           

@@ -1,5 +1,6 @@
 export interface RiskInput {
   buying_power?: string;
+  symbol?: string;
   open_trades_count?: string;
   current_exposure?: string;
   day_loss?: string;
@@ -15,6 +16,7 @@ export interface RiskInput {
 
 export interface RiskOutput {
   allowed: boolean;
+  symbol: string;
   quantity: string;
   position_size: string;
   risk_amount: string;
@@ -45,6 +47,7 @@ export class RiskEngineService {
       // --- 1) Destructure raw inputs ---
       const {
         buying_power:           rawBP,
+        symbol:                 rawSymbol,
         open_trades_count:      rawOpen     = '0',
         current_exposure:       rawExposure = '0',
         day_loss:               rawDayLoss  = '0',
@@ -60,6 +63,7 @@ export class RiskEngineService {
 
       // --- 2) Parse & validate absolute amounts ---
       const bp           = parseNum(rawBP);
+      const symbol       = String(rawSymbol ?? "").trim();
       const pricePerUnit = parseNum(rawPrice);
       if (bp <= 0)           throw new Error('buying_power must be > 0');
       if (pricePerUnit <= 0) throw new Error('price_per_unit must be > 0');
@@ -115,6 +119,7 @@ export class RiskEngineService {
       // --- 9) Build stringified output ---
       const output: RiskOutput = {
         allowed,
+        symbol,
         quantity:      quantity.toString(),
         position_size: positionSize.toString(),
         risk_amount:   actualRisk.toString(),

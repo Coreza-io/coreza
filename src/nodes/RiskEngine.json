@@ -23,6 +23,12 @@
       "required": true
     },
     {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "required": true
+    },
+    {
       "key": "risk_per_trade",
       "label": "Risk Per Trade (%)",
       "type": "text",

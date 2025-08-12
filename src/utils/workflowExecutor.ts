@@ -1,6 +1,5 @@
 import { Node, Edge } from '@xyflow/react';
 import ExecutionContext from './executionContext';
-import { handleN8NLoopExecution } from './handleN8NLoopExecution';
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -293,42 +292,90 @@ export class WorkflowExecutor {
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Utility: Collect all node IDs in the subgraph rooted at 'start'
-    function collectSubgraphNodeIds(nodes: Node[], edges: Edge[], start: string): Set<string> {
-      const visited = new Set<string>();
-      const stack = [start];
-      while (stack.length) {
-        const cur = stack.pop()!;
-        if (visited.has(cur)) continue;
-        visited.add(cur);
-        edges.filter(e => e.source === cur).forEach(e => stack.push(e.target));
-      }
-      return visited;
-    }
-
     if (defName === 'Loop') {
-      const outgoing = this.context.edges.filter(e => e.source === nodeId);
+      // Resolve loop items from execution context input
+      const execData = this.nodeStore.getNodeData(nodeId);
+      let items: any = execData.input ?? [];
+      if (typeof items === 'string') {
+        try {
+          const parsed = JSON.parse(items);
+          items = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          items = [items];
+        }
+      } else if (items == null) {
+        items = [];
+      } else if (!Array.isArray(items)) {
+        items = [items];
+      }
 
-      // 1. Run loop execution logic (handles both loop and done edges internally)
-      await handleN8NLoopExecution(
-        this.nodeStore,
-        { nodes: this.context.nodes, edges: this.context.edges },
+      const batchSize = parseInt(fieldState.batchSize) || 1;
+      const parallel = !!fieldState.parallel;
+      const continueOnError = !!fieldState.continueOnError;
+      const throttleMs = parseInt(fieldState.throttleMs) || 0;
+
+      const loopSig = JSON.stringify(items);
+      const prev = this.nodeStore.getNodeData(nodeId) || {};
+
+      if (!Array.isArray(prev.loopItems) || prev.loopSig !== loopSig) {
+        this.nodeStore.startLoop(nodeId, items, {
+          batchSize,
+          parallel,
+          continueOnError,
+          throttleMs,
+          loopSig,
+          aggregateMode: 'items',
+        });
+      } else {
+        this.nodeStore.setNodeData(nodeId, {
+          batchSize,
+          parallel,
+          continueOnError,
+          throttleMs,
+        });
+      }
+
+      const state = this.nodeStore.getNodeData(nodeId);
+      const allItems = state.loopItems || items;
+      const start = state.loopIndex ?? 0;
+      const batch = allItems.slice(start, start + batchSize);
+      const isFinalBatch = start + batchSize >= allItems.length;
+
+      if (throttleMs > 0 && start > 0) {
+        await new Promise(r => setTimeout(r, throttleMs));
+      }
+
+      this.nodeStore.advanceLoop(
         nodeId,
-        fieldState,
-        outgoing,
-        executedSet,
-        this.executeNode.bind(this)
+        batchSize === 1 ? batch[0] : batch,
+        start + batchSize,
+        isFinalBatch
       );
 
-      // 2. After loop completes, collect all node ids in this subgraph
-      // Include both loop and done edge targets since handleN8NLoopExecution handles them
-      const edgesForLoopTraversal = this.context.edges.filter(
-        e => !(e.source === nodeId && e.sourceHandle === 'done')
+      // Set context for downstream loop edges
+      const loopEdges = this.context.edges.filter(
+        e => e.source === nodeId && (!e.sourceHandle || e.sourceHandle === 'loop')
       );
-      const loopSubgraph = collectSubgraphNodeIds(this.context.nodes, edgesForLoopTraversal, nodeId);
+      loopEdges.forEach(e => {
+        this.nodeStore.setNodeData(e.target, {
+          input: batchSize === 1 ? batch[0] : batch,
+          loopItem: batchSize === 1 ? batch[0] : batch,
+          loopIndex: start,
+        });
+      });
 
-      // 3. Return this marker so the main queue can skip these
-      return { loopSubgraph };
+      // If final batch completed, prepare done edges with aggregated output
+      if (isFinalBatch) {
+        const finalOut = this.nodeStore.getNodeData(nodeId).output;
+        const doneEdges = this.context.edges.filter(
+          e => e.source === nodeId && e.sourceHandle === 'done'
+        );
+        doneEdges.forEach(e => {
+          this.nodeStore.setNodeData(e.target, { input: finalOut });
+        });
+      }
+
+      return this.nodeStore.getNodeData(nodeId).output;
     }
 
     // Default (non-Loop) node execution
@@ -371,7 +418,6 @@ export class WorkflowExecutor {
     }
 
     this.isAutoExecuting = true;
-    const skipNodes = new Set<string>();
     this.preCalculateConditionalBranches(); // Refresh conditional map
 
     // Initialize execution metrics
@@ -398,10 +444,6 @@ export class WorkflowExecutor {
     try {
       while (queue.length) {
         const id = queue.shift()!;
-        if (skipNodes.has(id)) {
-            console.log(`⏩ [WORKFLOW EXECUTOR] Skipping node ${id} (already processed by Loop subgraph)`);
-            continue;
-        }
         if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find(n => n.id === id);
 
@@ -430,10 +472,6 @@ export class WorkflowExecutor {
           // Check if this is a conditional target that should be explicitly triggered
           const isConditionalTarget = retryCount.has(id + "_conditional");
           const result = await this.executeNode(id, executed, isConditionalTarget);
-          // If result is a Loop subgraph marker, update skipNodes
-          if (result && result.loopSubgraph && result.loopSubgraph instanceof Set) {
-            result.loopSubgraph.forEach(nid => skipNodes.add(nid));
-          }
           if (isConditionalTarget) {
             retryCount.delete(id + "_conditional"); // Clean up the flag
           }
@@ -447,7 +485,15 @@ export class WorkflowExecutor {
           // Add delay between node executions to make highlighting visible
           await new Promise(resolve => setTimeout(resolve, 500));
 
-          const out = this.context.edges.filter(e => e.source === id);
+          let out = this.context.edges.filter(e => e.source === id);
+          if (node.type === 'Loop') {
+            const loopState = this.nodeStore.getNodeData(id);
+            out = out.filter(e =>
+              loopState.done
+                ? e.sourceHandle === 'done'
+                : !e.sourceHandle || e.sourceHandle === 'loop'
+            );
+          }
           
           console.log(`🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`, out.map(e => `${e.source} → ${e.target}`));
           

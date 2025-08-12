@@ -269,15 +269,49 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    console.log(`🔄 [BACKEND] Loop node ${node.id} returning metadata only - actual execution handled by WorkflowEngine`);
-    
-    // Return the loop context's output/item directly
-    // This ensures downstream nodes get the actual loop item data, not wrapped metadata
-    const loopOutput = input.output || input.loopItem || input.item || input;
-    
+    // Return clean loop metadata; actual per-item execution happens in WorkflowEngine
+    const values = node.values || {};
+    const inputArrayKey: string | undefined = values.inputArray;
+
+    // Resolve items from input using the configured key
+    let items: any[] | undefined;
+    if (inputArrayKey) {
+      const val = (input as any)[inputArrayKey];
+      if (Array.isArray(val)) {
+        items = val;
+      } else if (val === undefined) {
+        items = undefined;
+      } else {
+        // Coerce single value to array
+        items = [val];
+      }
+    } else if (Array.isArray((input as any).items)) {
+      items = (input as any).items;
+    }
+
+    if (!items) {
+      return {
+        success: false,
+        error: `No array found for field: ${inputArrayKey}`,
+      };
+    }
+
+    const batchSize = Number.isFinite(Number(values.batchSize)) ? parseInt(String(values.batchSize), 10) : 1;
+    const parallel = Boolean(values.parallel ?? false);
+    const continueOnError = Boolean(values.continueOnError ?? false);
+    const throttleMs = Number.isFinite(Number(values.throttleMs)) ? parseInt(String(values.throttleMs), 10) : 200;
+
     return {
       success: true,
-      data: loopOutput
+      data: {
+        items,
+        batchSize,
+        totalItems: items.length,
+        parallel,
+        continueOnError,
+        throttleMs,
+        isLoopNode: true,
+      },
     };
   }
 

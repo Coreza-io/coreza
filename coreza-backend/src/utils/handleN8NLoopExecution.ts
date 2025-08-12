@@ -94,10 +94,13 @@ export async function handleN8NLoopExecution(
     throttleMs
   });
 
-  const subgraph = collectSubgraph(nodes, graph.edges, loopNodeId);
-
-  // Collect results from nodes that route back to the loop node
-  const loopResults: any[] = [];
+  // Separate loop vs done edges and build traversal graph excluding 'done' edges from loop node
+  const loopEdges = outgoing.filter(e => e.sourceHandle === 'loop' || !e.sourceHandle);
+  const doneEdges = outgoing.filter(e => e.sourceHandle === 'done');
+  const edgesForLoopTraversal = graph.edges.filter(
+    e => !(e.source === loopNodeId && e.sourceHandle === 'done')
+  );
+  const subgraph = collectSubgraph(nodes, edgesForLoopTraversal, loopNodeId);
 
   // Create batches
   const batches: any[][] = [];
@@ -129,8 +132,8 @@ export async function handleN8NLoopExecution(
         output: item,
       });
       workflowEngine.setNodeResult(loopNodeId, item);
-      // Set context for target nodes
-      outgoing.forEach(e => {
+      // Set context for target nodes on loop handle only
+      loopEdges.forEach(e => {
         workflowEngine.setLoopContext(e.target, {
           input: item,
           loopItem: item,
@@ -139,7 +142,7 @@ export async function handleN8NLoopExecution(
       });
 
       // Execute subgraph for this item
-      const queue = outgoing.map(e => e.target);
+      const queue = loopEdges.map(e => e.target);
       const done = new Set<string>([loopNodeId]);
       const failures = new Set<string>();
       const retries = new Map<string, number>();
@@ -216,10 +219,8 @@ export async function handleN8NLoopExecution(
     }
   }
 
-  // Store aggregated results as the loop node's final output
-  workflowEngine.setNodeResult(loopNodeId, { success: true, data: loopResults });
-
-  // Clear loop context
+  // Store aggregated results as the loop node's final output (unwrapped array)
+  workflowEngine.setNodeResult(loopNodeId, loopResults);
   workflowEngine.clearLoopContext(loopNodeId);
   console.log(`✅ [BACKEND] N8N-style loop execution completed for node: ${loopNodeId}`);
 }

@@ -88,9 +88,9 @@ const workflowWorker = new Worker(
       throw error;
     }
   },
-  { 
+  {
     connection: redis,
-    concurrency: 5,
+    concurrency: parseInt(process.env.WORKFLOW_JOB_CONCURRENCY || '5'),
     removeOnComplete: 50,
     removeOnFail: 100
   }

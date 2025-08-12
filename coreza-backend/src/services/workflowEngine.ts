@@ -38,6 +38,7 @@ interface NodeExecution {
   error?: string;
   startedAt: Date;
   completedAt?: Date;
+  attempt: number;
 }
 
 export class WorkflowEngine {
@@ -47,19 +48,22 @@ export class WorkflowEngine {
   private edges: WorkflowEdge[];
   private executions: Map<string, NodeExecution> = new Map();
   private nodeResults: Map<string, any> = new Map();
-  private conditionalMap = new Map<string, Record<string, string>>();
+  private conditionalMap = new Map<string, Record<string, string[]>>();
   private executedNodes = new Set<string>();
   private userId: string;
   private persistentState: Map<string, any> = new Map();
   private loopContexts: Map<string, any> = new Map();
   private scheduler = new NodeScheduler();
+  private nodeAttempts: Map<string, number> = new Map();
+  private maxParallel: number;
 
-  constructor(runId: string, workflowId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  constructor(runId: string, workflowId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[], maxParallel = parseInt(process.env.WORKFLOW_MAX_PARALLELISM || '4')) {
     this.runId = runId;
     this.workflowId = workflowId;
     this.userId = userId;
     this.nodes = nodes;
     this.edges = edges;
+    this.maxParallel = maxParallel;
     this.preCalculateConditionalBranches();
   }
 
@@ -153,8 +157,9 @@ export class WorkflowEngine {
       return { success: true, result: finalResults };
     } catch (error) {
       console.error('❌ Workflow execution failed:', error);
-      await this.markRunAsFailed(error.message);
-      return { success: false, error: error.message };
+      const message = (error as Error).message;
+      await this.markRunAsFailed(message);
+      return { success: false, error: message };
     }
   }
 
@@ -163,7 +168,7 @@ export class WorkflowEngine {
    */
   private async executeAllNodes(): Promise<void> {
     const MAX_RETRIES = 100;
-    let retryCount = 0;
+    const retryCount = new Map<string, number>();
 
     // Find nodes with no incoming edges (starting points)
     const startingNodes = this.nodes
@@ -179,62 +184,83 @@ export class WorkflowEngine {
     }
     console.log(`🎯 Found ${startingNodes.length} starting nodes:`, startingNodes);
 
-    while (this.scheduler.length > 0 && retryCount < MAX_RETRIES) {
-      const nodeId = await this.dequeueNode();
-      if (!nodeId) break;
-
-      // Skip if already executed
-      if (this.executedNodes.has(nodeId)) {
-        continue;
-      }
-
-      const node = this.nodes.find(n => n.id === nodeId);
-      if (!node) {
-        console.warn(`⚠️ Node ${nodeId} not found, skipping`);
-        continue;
-      }
-
-      // Check if all dependencies are satisfied
-      const upstreamNodes = this.getUpstreamNodes(nodeId);
-      const allDependenciesSatisfied = upstreamNodes.every(id => this.executedNodes.has(id));
-      const childrenDone = await this.areChildrenComplete(nodeId);
-
-      if (nodeId !== 'Loop' && (!allDependenciesSatisfied || !childrenDone)) {
-        // Re-queue the node for later execution
-        await this.enqueueNode(nodeId, Date.now() + 100);
-        retryCount++;
-        console.log(`⏳ [WORKFLOW] Dependencies not satisfied for ${nodeId} (${node.type}), re-queuing (retry ${retryCount}) - Run: ${this.runId}`);
-        continue;
-      }
-
-      try {
-        console.log(`🔄 [WORKFLOW] Executing node: ${nodeId} (${node.type}) - Run: ${this.runId}`);
-        // Handle loop or branching logic
-
-        await this.executeNode(node);
-        this.executedNodes.add(nodeId);
-        console.log(`✅ [WORKFLOW] Node ${nodeId} (${node.type}) completed successfully - Run: ${this.runId}`);
-        const isBranchingNode = this.conditionalMap.has(nodeId);
-        if (isBranchingNode) {
-          console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
-          await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
-        } else {
-          // Add downstream nodes to queue for non-branching nodes
-          await this.addDownstreamNodesToQueue(nodeId, this.scheduler);
+    const worker = async () => {
+      while (this.executedNodes.size < this.nodes.length) {
+        let nodeId = await this.dequeueNode();
+        if (!nodeId) {
+          // wait briefly for new nodes
+          await new Promise(r => setTimeout(r, 50));
+          if (this.scheduler.length === 0 && this.executedNodes.size >= this.nodes.length) break;
+          continue;
         }
 
-        retryCount = 0; // Reset retry count on successful execution
-      } catch (error) {
-        console.error(`❌ [WORKFLOW] Failed to execute node ${nodeId} (${node.type}) - Run: ${this.runId}:`, error);
-        throw error;
+        if (this.executedNodes.has(nodeId)) {
+          continue;
+        }
+
+        const node = this.nodes.find(n => n.id === nodeId);
+        if (!node) {
+          console.warn(`⚠️ Node ${nodeId} not found, skipping`);
+          continue;
+        }
+
+        // Check if all dependencies are satisfied
+        const upstreamNodes = this.getUpstreamNodes(nodeId);
+        const allDependenciesSatisfied = upstreamNodes.every(id => this.executedNodes.has(id));
+        const childrenDone = await this.areChildrenComplete(nodeId);
+
+        if (nodeId !== 'Loop' && (!allDependenciesSatisfied || !childrenDone)) {
+          const retries = (retryCount.get(nodeId) || 0) + 1;
+          if (retries >= MAX_RETRIES) {
+            throw new Error(`Maximum retry count exceeded for node ${nodeId}`);
+          }
+          retryCount.set(nodeId, retries);
+          await this.enqueueNode(nodeId, Date.now() + 100);
+          console.log(`⏳ [WORKFLOW] Dependencies not satisfied for ${nodeId} (${node.type}), re-queuing (retry ${retries}) - Run: ${this.runId}`);
+          continue;
+        }
+
+        const attempt = (this.nodeAttempts.get(nodeId) || 0) + 1;
+        this.nodeAttempts.set(nodeId, attempt);
+
+        try {
+          console.log(`🔄 [WORKFLOW] Executing node: ${nodeId} (${node.type}) attempt ${attempt} - Run: ${this.runId}`);
+
+          await this.executeNode(node, attempt);
+          this.executedNodes.add(nodeId);
+          retryCount.delete(nodeId);
+
+          const isBranchingNode = this.conditionalMap.has(nodeId);
+          if (isBranchingNode) {
+            console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
+            await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+          } else {
+            await this.addDownstreamNodesToQueue(nodeId, this.scheduler);
+          }
+        } catch (error) {
+          console.error(`❌ [WORKFLOW] Node ${nodeId} failed on attempt ${attempt}:`, error);
+          const maxAttempts = node.values?.maxAttempts ?? 1;
+          const continueOnError = node.values?.continueOnError || node.data?.continueOnError;
+
+          if (attempt < maxAttempts) {
+            console.log(`🔁 [WORKFLOW] Re-queueing node ${nodeId} for retry ${attempt + 1}/${maxAttempts}`);
+            await this.enqueueNode(nodeId, Date.now() + 500);
+          } else if (continueOnError) {
+            console.warn(`⚠️ [WORKFLOW] Node ${nodeId} failed after ${attempt} attempts but continuing due to policy`);
+            this.executedNodes.add(nodeId);
+            this.nodeResults.set(nodeId, { success: false, error: (error as Error).message });
+          } else {
+            throw error;
+          }
+        }
       }
-    }
+    };
 
-    if (retryCount >= MAX_RETRIES) {
-      throw new Error(`Maximum retry count exceeded. Possible circular dependency or missing nodes.`);
-    }
+    // Launch worker pool
+    const workers = Array.from({ length: this.maxParallel }, () => worker());
+    await Promise.all(workers);
 
-    console.log(`✅ All nodes executed successfully. Total executed: ${this.executedNodes.size}`);
+    console.log(`✅ All nodes executed. Total executed: ${this.executedNodes.size}`);
   }
 
   /**
@@ -326,8 +352,10 @@ export class WorkflowEngine {
       }
 
       try {
-        console.log(`🎯 Executing conditional node: ${nodeId} (${node.type})`);
-        await this.executeNode(node);
+        const attempt = (this.nodeAttempts.get(nodeId) || 0) + 1;
+        this.nodeAttempts.set(nodeId, attempt);
+        console.log(`🎯 Executing conditional node: ${nodeId} (${node.type}) attempt ${attempt}`);
+        await this.executeNode(node, attempt);
         this.executedNodes.add(nodeId);
 
         // Handle further branching or add downstream nodes
@@ -340,8 +368,20 @@ export class WorkflowEngine {
 
         retryCount = 0;
       } catch (error) {
-        console.error(`❌ Failed to execute conditional node ${nodeId}:`, error);
-        throw error;
+        console.error(`❌ Failed to execute conditional node ${nodeId} attempt ${this.nodeAttempts.get(nodeId)}:`, error);
+        const maxAttempts = node.values?.maxAttempts ?? 1;
+        const continueOnError = node.values?.continueOnError || node.data?.continueOnError;
+        const attempt = this.nodeAttempts.get(nodeId) || 1;
+
+        if (attempt < maxAttempts) {
+          await scheduler.enqueue(nodeId, Date.now() + 500);
+          retryCount++;
+        } else if (continueOnError) {
+          this.executedNodes.add(nodeId);
+          this.nodeResults.set(nodeId, { success: false, error: (error as Error).message });
+        } else {
+          throw error;
+        }
       }
     }
   }
@@ -371,10 +411,14 @@ export class WorkflowEngine {
     }
 
     console.log(`🔄 [LOOP] Executing node: ${nodeId} (${node.type})`);
-    
+
+    // Track attempts for loop executions as well
+    const attempt = (this.nodeAttempts.get(node.id) || 0) + 1;
+    this.nodeAttempts.set(node.id, attempt);
+
     // Execute the node directly
-    await this.executeNode(node);
-    
+    await this.executeNode(node, attempt);
+
     return this.nodeResults.get(nodeId);
   }
 
@@ -448,19 +492,20 @@ export class WorkflowEngine {
     return true;
   }
 
-  private async executeNode(node: WorkflowNode): Promise<void> {
+  private async executeNode(node: WorkflowNode, attempt: number): Promise<void> {
     const execution: NodeExecution = {
       nodeId: node.id,
       status: 'running',
       input: this.getNodeInput(node),
-      startedAt: new Date()
+      startedAt: new Date(),
+      attempt,
     };
 
     this.executions.set(node.id, execution);
     await NodeStore.setNodeState(this.runId, node.id, 'running');
 
     // Log node execution start
-    await this.logNodeExecution(node.id, 'running', execution.input);
+    await this.logNodeExecution(node.id, 'running', execution.input, undefined, undefined, attempt);
 
     try {
       // Get node input from upstream nodes
@@ -498,15 +543,15 @@ export class WorkflowEngine {
 
       await NodeStore.setNodeOutput(this.runId, node.id, execution.output);
       await NodeStore.setNodeState(this.runId, node.id, 'completed');
-      await this.logNodeExecution(node.id, 'completed', execution.input, result);
+      await this.logNodeExecution(node.id, 'completed', execution.input, result, undefined, attempt);
 
     } catch (error) {
       execution.status = 'failed';
-      execution.error = error.message;
+      execution.error = (error as Error).message;
       execution.completedAt = new Date();
 
       await NodeStore.setNodeState(this.runId, node.id, 'failed');
-      await this.logNodeExecution(node.id, 'failed', execution.input, null, error.message);
+      await this.logNodeExecution(node.id, 'failed', execution.input, null, (error as Error).message, attempt);
       throw error;
     }
   }
@@ -706,11 +751,12 @@ export class WorkflowEngine {
   }
 
   private async logNodeExecution(
-    nodeId: string, 
-    status: string, 
-    input: any, 
-    output?: any, 
-    errorMessage?: string
+    nodeId: string,
+    status: string,
+    input: any,
+    output?: any,
+    errorMessage?: string,
+    attempt?: number
   ): Promise<void> {
     try {
       await supabase
@@ -721,7 +767,8 @@ export class WorkflowEngine {
           status,
           input_payload: input,
           output_payload: output,
-          error_message: errorMessage
+          error_message: errorMessage,
+          attempt
         });
     } catch (error) {
       console.error('Failed to log node execution:', error);
@@ -827,6 +874,7 @@ export class WorkflowEngine {
  * Factory function to execute a workflow
  */
 export async function executeWorkflow(runId: string, workflowId: string, userId: string, nodes: any[], edges: any[]): Promise<{ success: boolean; result?: any; error?: string }> {
-  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges);
+  const maxParallel = parseInt(process.env.WORKFLOW_MAX_PARALLELISM || '4');
+  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges, maxParallel);
   return await workflowEngine.execute();
 }

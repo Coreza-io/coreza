@@ -1,4 +1,5 @@
 import { WorkflowNode, WorkflowEdge, INodeExecutorV2, Item, NodeExecutionOutput } from "../nodes/types";
+import { NodeScheduler } from "./nodeScheduler";
 
 /**
  * Experimental workflow engine (v2).
@@ -16,7 +17,7 @@ import { WorkflowNode, WorkflowEdge, INodeExecutorV2, Item, NodeExecutionOutput 
  * the scheduler yet but showcases the core queue-based algorithm.
  */
 export class EngineV2 {
-  private queue: string[] = [];
+  private scheduler = new NodeScheduler();
   private nodeState = new Map<string, any>();
   private nodeOutput = new Map<string, Item[]>();
   private executors = new Map<string, INodeExecutorV2>();
@@ -38,20 +39,23 @@ export class EngineV2 {
     return exec;
   }
 
-  /** Push starting nodes (those without incoming edges) onto the queue. */
-  private initializeQueue() {
+  /** Push starting nodes (those without incoming edges) onto the scheduler. */
+  private async initializeQueue() {
     const starters = this.nodes.filter(n => !this.edges.some(e => e.target === n.id));
-    this.queue.push(...starters.map(s => s.id));
+    for (const s of starters) {
+      await this.scheduler.enqueue(s.id);
+    }
   }
 
   async run(initialInput: Item[] = []) {
-    this.initializeQueue();
+    await this.initializeQueue();
     // Seed initial input for starter nodes
     const starters = this.nodes.filter(n => !this.edges.some(e => e.target === n.id));
     starters.forEach(node => this.nodeOutput.set(node.id, initialInput));
 
-    while (this.queue.length > 0) {
-      const nodeId = this.queue.shift()!;
+    while (this.scheduler.length > 0) {
+      const nodeId = await this.scheduler.dequeue();
+      if (!nodeId) break;
       const node = this.nodes.find(n => n.id === nodeId);
       if (!node) continue;
 
@@ -69,16 +73,15 @@ export class EngineV2 {
       }
 
       if (node.type === 'If') {
-        this.propagate(node.id, result.control?.branch ?? 'true', result);
+        await this.propagate(node.id, result.control?.branch ?? 'true', result);
       } else if (node.type === 'Loop') {
         const handle = result.control?.requeueSelf ? 'loop' : 'done';
-        this.propagate(node.id, handle, result);
+        await this.propagate(node.id, handle, result);
         if (result.control?.requeueSelf) {
-          // Re-queue the loop node after its children
-          this.queue.push(node.id);
+          await this.scheduler.enqueue(node.id, result.control?.throttleUntil);
         }
       } else {
-        this.propagate(node.id, undefined, result);
+        await this.propagate(node.id, undefined, result);
       }
     }
   }
@@ -86,8 +89,8 @@ export class EngineV2 {
   /**
    * Propagate items to children based on outgoing edges and handle name.
    */
-  private propagate(sourceId: string, handle: string | undefined, result: NodeExecutionOutput) {
-    const route = (items: Item[], h?: string) => {
+  private async propagate(sourceId: string, handle: string | undefined, result: NodeExecutionOutput) {
+    const route = async (items: Item[], h?: string) => {
       if (!items || items.length === 0) return;
       const outgoing = this.edges.filter(
         e => e.source === sourceId && (!h || e.sourceHandle === h)
@@ -96,15 +99,15 @@ export class EngineV2 {
         const current = this.nodeOutput.get(edge.target) || [];
         // In this naive implementation we simply concatenate outputs
         this.nodeOutput.set(edge.target, current.concat(items));
-        this.queue.push(edge.target);
+        await this.scheduler.enqueue(edge.target);
       }
     };
 
     if (result.trueItems || result.falseItems) {
-      route(result.trueItems ?? [], 'true');
-      route(result.falseItems ?? [], 'false');
+      await route(result.trueItems ?? [], 'true');
+      await route(result.falseItems ?? [], 'false');
     } else {
-      route(result.output, handle);
+      await route(result.output, handle);
     }
   }
 }

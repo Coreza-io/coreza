@@ -1,4 +1,5 @@
 import { createError } from '../middleware/errorHandler';
+import { Item } from '../nodes/types';
 
 export interface ComparatorInput {
   left: any;
@@ -122,8 +123,8 @@ export class ComparatorService {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = await this.evaluate(cases[i].condition);
         if (caseResult.success && caseResult.result) {
-          return { 
-            success: true, 
+          return {
+            success: true,
             result: cases[i].value,
             matchedCase: i
           };
@@ -131,16 +132,48 @@ export class ComparatorService {
       }
 
       // No case matched, return default value
-      return { 
-        success: true, 
-        result: defaultValue ?? null 
+      return {
+        success: true,
+        result: defaultValue ?? null
       };
     } catch (error: any) {
-      return { 
-        success: false, 
-        result: null, 
-        error: error.message 
+      return {
+        success: false,
+        result: null,
+        error: error.message
       };
     }
+  }
+
+  /**
+   * Evaluate a single condition against each item and split into true/false arrays.
+   */
+  static async evaluateIfItems(
+    items: Item[],
+    condition: { left: string; operator: string; right: any }
+  ): Promise<{ trueItems: Item[]; falseItems: Item[] }> {
+    const trueItems: Item[] = [];
+    const falseItems: Item[] = [];
+
+    for (const item of items) {
+      const leftValue = this.resolvePath(item, condition.left);
+      const rightValue =
+        typeof condition.right === 'string'
+          ? this.resolvePath(item, condition.right) ?? condition.right
+          : condition.right;
+
+      const { result } = await this.evaluate({
+        left: leftValue,
+        operator: condition.operator,
+        right: rightValue,
+      });
+      (result ? trueItems : falseItems).push(item);
+    }
+
+    return { trueItems, falseItems };
+  }
+
+  private static resolvePath(obj: any, path: string): any {
+    return path.split('.').reduce((acc, key) => acc?.[key], obj);
   }
 }

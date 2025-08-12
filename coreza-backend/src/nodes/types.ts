@@ -25,6 +25,14 @@ export interface WorkflowNode {
   };
 }
 
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
 // -----------------------------------------------------------------------------
 // Experimental v2 engine types
 // -----------------------------------------------------------------------------
@@ -57,6 +65,10 @@ export interface ControlFlags {
 export interface NodeExecutionOutput {
   /** Array of output items produced by the node. */
   output: Item[];
+  /** Items that satisfied a condition (used by If nodes). */
+  trueItems?: Item[];
+  /** Items that did not satisfy a condition (used by If nodes). */
+  falseItems?: Item[];
   /** Optional control instructions for the engine. */
   control?: ControlFlags;
 }

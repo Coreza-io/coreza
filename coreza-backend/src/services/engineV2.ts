@@ -69,17 +69,16 @@ export class EngineV2 {
       }
 
       if (node.type === 'If') {
-        const branch = result.control?.branch ?? 'true';
-        this.propagate(node.id, branch, result.output);
+        this.propagate(node.id, result.control?.branch ?? 'true', result);
       } else if (node.type === 'Loop') {
         const handle = result.control?.requeueSelf ? 'loop' : 'done';
-        this.propagate(node.id, handle, result.output);
+        this.propagate(node.id, handle, result);
         if (result.control?.requeueSelf) {
           // Re-queue the loop node after its children
           this.queue.push(node.id);
         }
       } else {
-        this.propagate(node.id, undefined, result.output);
+        this.propagate(node.id, undefined, result);
       }
     }
   }
@@ -87,13 +86,25 @@ export class EngineV2 {
   /**
    * Propagate items to children based on outgoing edges and handle name.
    */
-  private propagate(sourceId: string, handle: string | undefined, items: Item[]) {
-    const outgoing = this.edges.filter(e => e.source === sourceId && (!handle || e.sourceHandle === handle));
-    for (const edge of outgoing) {
-      const current = this.nodeOutput.get(edge.target) || [];
-      // In this naive implementation we simply concatenate outputs
-      this.nodeOutput.set(edge.target, current.concat(items));
-      this.queue.push(edge.target);
+  private propagate(sourceId: string, handle: string | undefined, result: NodeExecutionOutput) {
+    const route = (items: Item[], h?: string) => {
+      if (!items || items.length === 0) return;
+      const outgoing = this.edges.filter(
+        e => e.source === sourceId && (!h || e.sourceHandle === h)
+      );
+      for (const edge of outgoing) {
+        const current = this.nodeOutput.get(edge.target) || [];
+        // In this naive implementation we simply concatenate outputs
+        this.nodeOutput.set(edge.target, current.concat(items));
+        this.queue.push(edge.target);
+      }
+    };
+
+    if (result.trueItems || result.falseItems) {
+      route(result.trueItems ?? [], 'true');
+      route(result.falseItems ?? [], 'false');
+    } else {
+      route(result.output, handle);
     }
   }
 }

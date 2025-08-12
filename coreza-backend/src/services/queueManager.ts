@@ -51,7 +51,7 @@ interface NotificationJobData {
 const workflowWorker = new Worker(
   'workflow-execution',
   async (job: Job<WorkflowJobData>) => {
-    const { runId, nodes, edges, userId } = job.data;
+    const { runId, nodes, edges, userId, workflowId } = job.data;
     
     console.log(`🚀 Processing workflow job ${job.id} for run ${runId}`);
     
@@ -63,7 +63,7 @@ const workflowWorker = new Worker(
         .eq('id', runId);
 
       // Execute workflow
-      const result = await executeWorkflow(runId, nodes, edges);
+      const result = await executeWorkflow(runId, workflowId, userId, nodes, edges);
       
       // Send real-time update
       WebSocketManager.sendToUser(userId, {

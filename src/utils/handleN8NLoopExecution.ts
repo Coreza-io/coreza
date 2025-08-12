@@ -67,26 +67,13 @@ export async function handleN8NLoopExecution(
 
   // --- Resolve all relevant fieldState values (deep!) ---
   // If your fieldState keys are named differently, adjust here.
-  let rawItems = resolveDeep(fieldState.inputArray, selectedInputData, allNodeData, nodes) || [];
-  let items: any[] = [];
-  try {
-    if (typeof rawItems === 'string') {
-      const parsed = JSON.parse(rawItems);
-      items = Array.isArray(parsed) ? parsed : [parsed];
-    } else if (Array.isArray(rawItems)) {
-      items = rawItems;
-    } else if (rawItems == null) {
-      items = [];
-    } else {
-      items = [rawItems];
-    }
-  } catch {
-    items = Array.isArray(rawItems) ? rawItems : (rawItems != null ? [rawItems] : []);
-  }
-  const batchSize: number = parseInt(String(resolveDeep(fieldState.batchSize, selectedInputData, allNodeData, nodes))) || 1;
+  let items = resolveDeep(fieldState.inputArray, selectedInputData, allNodeData, nodes) || [];
+  const parsed = JSON.parse(items);
+  items = Array.isArray(parsed) ? parsed : [parsed];
+  const batchSize: number = parseInt(resolveDeep(fieldState.batchSize, selectedInputData, allNodeData, nodes)) || 1;
   const parallel: boolean = !!resolveDeep(fieldState.parallel, selectedInputData, allNodeData, nodes);
   const continueOnError: boolean = !!resolveDeep(fieldState.continueOnError, selectedInputData, allNodeData, nodes);
-  const throttleMs: number = parseInt(String(resolveDeep(fieldState.throttleMs, selectedInputData, allNodeData, nodes))) || 0;
+  const throttleMs: number = parseInt(resolveDeep(fieldState.throttleMs, selectedInputData, allNodeData, nodes)) || 0;
 
   // Filter edges by sourceHandle - separate loop and done edges
   const loopEdges = outgoing.filter(e => e.sourceHandle === 'loop' || !e.sourceHandle); // Default to loop if no handle specified
@@ -199,21 +186,12 @@ export async function handleN8NLoopExecution(
   // Now trigger execution of done edge targets with aggregated results
   if (doneEdges.length > 0) {
     console.log(`✅ Triggering ${doneEdges.length} done edge(s) with aggregated results:`, finalOutput);
-
+    
     // Set context for done edge targets with final aggregated results
     doneEdges.forEach(e => {
       execCtx.setNodeData(e.target, {
         input: finalOutput
       });
     });
-
-    // Execute done-edge targets now
-    for (const e of doneEdges) {
-      try {
-        await executeNode(e.target, globalExecuted);
-      } catch (err) {
-        if (!continueOnError) throw err;
-      }
-    }
   }
 }

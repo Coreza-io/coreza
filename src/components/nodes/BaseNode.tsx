@@ -96,6 +96,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodes = useNodes();
   const edges = useEdges();
   const { setNodes } = useReactFlow();
+  const { setEdges } = useReactFlow();
   const { toast } = useToast();
   const { user } = useAuth();
   const executionStore = useExecutionStore();
@@ -616,7 +617,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         setNodes(nds => nds.map(n =>
           n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
         ));
-        outputData = uiOut;
+
+        executionStore.setNodeData(nodeId!, { input: effectiveInput, output: uiOut });
       
         return;
       }
@@ -681,8 +683,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       setLastOutput(outputData);
       const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
       data.output = finalOutput;
-      executionStore.setNodeData(nodeId!, { input: effectiveInput });
-      executionStore.setNodeData(nodeId!, { output: finalOutput });
+      executionStore.setNodeData(nodeId!, { input: effectiveInput, output: finalOutput });
+      //executionStore.setNodeData(nodeId!, { output: finalOutput });
       setNodes(nds =>
         nds.map(n =>
           n.id === nodeId
@@ -720,10 +722,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           });
           
           // If this is a conditional target and wasn't explicitly triggered by the If node, skip execution
-          if (isConditionalTarget && !event.detail.explicitlyTriggered) {
-            console.log(`🚫 Node ${nodeId} is a conditional target, skipping auto-execution (waiting for explicit trigger)`);
-            return;
-          }
+          //if (isConditionalTarget && !event.detail.explicitlyTriggered) {
+          //  console.log(`🚫 Node ${nodeId} is a conditional target, skipping auto-execution (waiting for explicit trigger)`);
+          //  return;
+          //}
         }
 
         // === Stash callbacks for use in [nodes] effect ===

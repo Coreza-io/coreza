@@ -292,92 +292,6 @@ export class WorkflowExecutor {
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    if (defName === 'Loop') {
-      // Resolve loop items from execution context input
-      const execData = this.nodeStore.getNodeData(nodeId);
-      let items: any = execData.input ?? [];
-      if (typeof items === 'string') {
-        try {
-          const parsed = JSON.parse(items);
-          items = Array.isArray(parsed) ? parsed : [parsed];
-        } catch {
-          items = [items];
-        }
-      } else if (items == null) {
-        items = [];
-      } else if (!Array.isArray(items)) {
-        items = [items];
-      }
-
-      const batchSize = parseInt(fieldState.batchSize) || 1;
-      const parallel = !!fieldState.parallel;
-      const continueOnError = !!fieldState.continueOnError;
-      const throttleMs = parseInt(fieldState.throttleMs) || 0;
-
-      const loopSig = JSON.stringify(items);
-      const prev = this.nodeStore.getNodeData(nodeId) || {};
-
-      if (!Array.isArray(prev.loopItems) || prev.loopSig !== loopSig) {
-        this.nodeStore.startLoop(nodeId, items, {
-          batchSize,
-          parallel,
-          continueOnError,
-          throttleMs,
-          loopSig,
-          aggregateMode: 'items',
-        });
-      } else {
-        this.nodeStore.setNodeData(nodeId, {
-          batchSize,
-          parallel,
-          continueOnError,
-          throttleMs,
-        });
-      }
-
-      const state = this.nodeStore.getNodeData(nodeId);
-      const allItems = state.loopItems || items;
-      const start = state.loopIndex ?? 0;
-      const batch = allItems.slice(start, start + batchSize);
-      const isFinalBatch = start + batchSize >= allItems.length;
-
-      if (throttleMs > 0 && start > 0) {
-        await new Promise(r => setTimeout(r, throttleMs));
-      }
-
-      this.nodeStore.advanceLoop(
-        nodeId,
-        batchSize === 1 ? batch[0] : batch,
-        start + batchSize,
-        isFinalBatch
-      );
-
-      // Set context for downstream loop edges
-      const loopEdges = this.context.edges.filter(
-        e => e.source === nodeId && (!e.sourceHandle || e.sourceHandle === 'loop')
-      );
-      loopEdges.forEach(e => {
-        this.nodeStore.setNodeData(e.target, {
-          input: batchSize === 1 ? batch[0] : batch,
-          loopItem: batchSize === 1 ? batch[0] : batch,
-          loopIndex: start,
-        });
-      });
-
-      // If final batch completed, prepare done edges with aggregated output
-      if (isFinalBatch) {
-        const finalOut = this.nodeStore.getNodeData(nodeId).output;
-        const doneEdges = this.context.edges.filter(
-          e => e.source === nodeId && e.sourceHandle === 'done'
-        );
-        doneEdges.forEach(e => {
-          this.nodeStore.setNodeData(e.target, { input: finalOut });
-        });
-      }
-
-      return this.nodeStore.getNodeData(nodeId).output;
-    }
-
     // Default (non-Loop) node execution
     const result: any = await new Promise((resolve, reject) => {
       const execEvent = new CustomEvent('auto-execute-node', {
@@ -400,7 +314,7 @@ export class WorkflowExecutor {
       window.dispatchEvent(execEvent);
     });
 
-    //this.nodeStore.setNodeData(nodeId, { output: result });
+    this.nodeStore.setNodeData(nodeId, { output: result });
 
     return result;
   }
@@ -444,7 +358,7 @@ export class WorkflowExecutor {
     try {
       while (queue.length) {
         const id = queue.shift()!;
-        if (executed.has(id) || failed.has(id)) continue;
+        //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find(n => n.id === id);
 
         const inc = this.context.edges.filter(e => e.target === id);
@@ -472,9 +386,22 @@ export class WorkflowExecutor {
           // Check if this is a conditional target that should be explicitly triggered
           const isConditionalTarget = retryCount.has(id + "_conditional");
           const result = await this.executeNode(id, executed, isConditionalTarget);
-          if (isConditionalTarget) {
-            retryCount.delete(id + "_conditional"); // Clean up the flag
+          if (node.type === 'Loop') {
+            const nodeData = this.nodeStore.getNodeData(node.id);
+            const isFinalBatch = nodeData.done;
+            if (isFinalBatch) {
+              const doneEdges = this.context.edges.filter(
+                  e => e.source === node.id && e.sourceHandle === 'done'
+                );
+                doneEdges.forEach(e => {
+                  this.nodeStore.setNodeData(e.target, { input: nodeData.aggregated });
+                });
+              }
+
           }
+          //if (isConditionalTarget) {
+          //  retryCount.delete(id + "_conditional"); // Clean up the flag
+          //}
           const nodeTime = performance.now() - nodeStart;
           metrics.nodeTimings.set(id, nodeTime);
           

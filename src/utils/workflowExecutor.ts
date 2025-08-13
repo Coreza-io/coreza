@@ -278,12 +278,22 @@ export class WorkflowExecutor {
     if (!isLoop) return;
 
     const loopId = edge.target;
+    
+    // Check if this is a feedback edge (source node is downstream of the Loop)
+    // vs a trigger edge (source node is upstream/independent of the Loop)
+    const isFeedbackEdge = this.isNodeDownstreamOfLoop(sourceNodeId, loopId);
+    
+    if (!isFeedbackEdge) {
+      console.log(`🚫 [LOOP AGGREGATION] Skipping trigger edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} - not a feedback edge`);
+      return;
+    }
+
     const loopData = this.nodeStore.getNodeData(loopId) || {};
     const buf = { ...(loopData._edgeBuf || {}) } as Record<string, any>;
     buf[edge.id] = result;
     this.nodeStore.setNodeData(loopId, { ...loopData, _edgeBuf: buf });
 
-    console.log(`🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated result:`, result);
+    console.log(`🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated feedback result:`, result);
 
     // Optional: mirror payload to edge UI for visibility
     this.context.setEdges(eds =>
@@ -291,6 +301,40 @@ export class WorkflowExecutor {
         e.id === edge.id ? { ...e, data: { ...e.data, lastPayload: result } } : e
       )
     );
+  }
+
+  /**
+   * Check if a source node is downstream of a Loop node (i.e., it's part of the loop flow)
+   * This helps distinguish between trigger edges and feedback edges
+   */
+  private isNodeDownstreamOfLoop(sourceNodeId: string, loopNodeId: string): boolean {
+    // Get all nodes that are downstream of the Loop node
+    const downstreamNodes = this.getDownstreamNodes(loopNodeId, new Set());
+    
+    // If the source node is in the downstream nodes, it's a feedback edge
+    return downstreamNodes.has(sourceNodeId);
+  }
+
+  /**
+   * Get all nodes downstream of a given node
+   */
+  private getDownstreamNodes(nodeId: string, visited: Set<string> = new Set()): Set<string> {
+    if (visited.has(nodeId)) return new Set();
+    
+    visited.add(nodeId);
+    const downstream = new Set<string>();
+    
+    // Find all outgoing edges from this node
+    const outgoingEdges = this.context.edges.filter(e => e.source === nodeId);
+    
+    for (const edge of outgoingEdges) {
+      downstream.add(edge.target);
+      // Recursively get downstream nodes, but avoid infinite loops
+      const nestedDownstream = this.getDownstreamNodes(edge.target, new Set(visited));
+      nestedDownstream.forEach(id => downstream.add(id));
+    }
+    
+    return downstream;
   }
 
   /**

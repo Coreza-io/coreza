@@ -740,9 +740,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
     // Normalize result as needed
     let resultToPass = output;
-    if (Array.isArray(output) && output.length > 0) {
-      resultToPass = output[0];
-    }
+    
+    // Only normalize for Switch nodes that need special handling
     if (definition?.name === 'Switch' && resultToPass && typeof resultToPass === 'object' && 'result' in resultToPass) {
       resultToPass = resultToPass.result;
     }

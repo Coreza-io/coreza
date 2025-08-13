@@ -269,8 +269,33 @@ export class WorkflowExecutor {
   }
 
   /**
- * Execute a single node with visual feedback
- */
+   * Helper method to aggregate payloads to Loop nodes when an edge fires
+   */
+  private aggregateToLoop(sourceNodeId: string, edge: Edge, result: any): void {
+    const targetNode = this.context.nodes.find(n => n.id === edge.target);
+    const isLoop = (targetNode?.data?.definition as any)?.name === 'Loop';
+
+    if (!isLoop) return;
+
+    const loopId = edge.target;
+    const loopData = this.nodeStore.getNodeData(loopId) || {};
+    const buf = { ...(loopData._edgeBuf || {}) } as Record<string, any>;
+    buf[edge.id] = result;
+    this.nodeStore.setNodeData(loopId, { ...loopData, _edgeBuf: buf });
+
+    console.log(`🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated result:`, result);
+
+    // Optional: mirror payload to edge UI for visibility
+    this.context.setEdges(eds =>
+      eds.map(e =>
+        e.id === edge.id ? { ...e, data: { ...e.data, lastPayload: result } } : e
+      )
+    );
+  }
+
+  /**
+   * Execute a single node with visual feedback
+   */
   async executeNode(
     nodeId: string,
     executedSet: Set<string>,
@@ -316,30 +341,19 @@ export class WorkflowExecutor {
 
     this.nodeStore.setNodeData(nodeId, { output: result });
 
-    // Propagate payloads to connected edges, capturing returns to Loop nodes
-    const outgoing = this.context.edges.filter(e => e.source === nodeId);
-    outgoing.forEach(edge => {
-      const targetNode = this.context.nodes.find(n => n.id === edge.target);
-      const isLoop = (targetNode?.data?.definition as any)?.name === 'Loop';
-
-      // Deliver input payload to target node for completeness
-      this.nodeStore.setNodeData(edge.target, { input: result });
-
-      if (isLoop) {
-        const loopId = edge.target;
-        const loopData = this.nodeStore.getNodeData(loopId) || {};
-        const buf = { ...(loopData._edgeBuf || {}) } as Record<string, any>;
-        buf[edge.id] = result;
-        this.nodeStore.setNodeData(loopId, { ...loopData, _edgeBuf: buf });
-
-        // Optional: mirror payload to edge UI for visibility
-        this.context.setEdges(eds =>
-          eds.map(e =>
-            e.id === edge.id ? { ...e, data: { ...e.data, lastPayload: result } } : e
-          )
-        );
-      }
-    });
+    // For non-branch nodes, propagate to all outgoing edges (including Loop nodes)
+    const isBranchNode = this.conditionalMap.has(nodeId);
+    if (!isBranchNode) {
+      const outgoing = this.context.edges.filter(e => e.source === nodeId);
+      outgoing.forEach(edge => {
+        // Deliver input payload to target node for completeness
+        this.nodeStore.setNodeData(edge.target, { input: result });
+        
+        // Aggregate to Loop if target is Loop
+        this.aggregateToLoop(nodeId, edge, result);
+      });
+    }
+    // Note: For branch nodes, Loop aggregation is handled in executeAllNodes after branch decision
 
     return result;
   }
@@ -525,6 +539,17 @@ export class WorkflowExecutor {
             );
           }
 
+
+           // For branch nodes, aggregate to Loop nodes for firing edges only
+          if (isBranchNode) {
+            next.forEach(edge => {
+              // Deliver input payload to target node for completeness
+              this.nodeStore.setNodeData(edge.target, { input: result });
+              
+              // Aggregate to Loop if target is Loop (only for firing edges)
+              this.aggregateToLoop(id, edge, result);
+            });
+          }
 
           // Add next nodes to queue
           console.log(`📝 [WORKFLOW EXECUTOR] About to queue ${next.length} edges from node ${id}`);

@@ -316,6 +316,31 @@ export class WorkflowExecutor {
 
     this.nodeStore.setNodeData(nodeId, { output: result });
 
+    // Propagate payloads to connected edges, capturing returns to Loop nodes
+    const outgoing = this.context.edges.filter(e => e.source === nodeId);
+    outgoing.forEach(edge => {
+      const targetNode = this.context.nodes.find(n => n.id === edge.target);
+      const isLoop = (targetNode?.data?.definition as any)?.name === 'Loop';
+
+      // Deliver input payload to target node for completeness
+      this.nodeStore.setNodeData(edge.target, { input: result });
+
+      if (isLoop) {
+        const loopId = edge.target;
+        const loopData = this.nodeStore.getNodeData(loopId) || {};
+        const buf = { ...(loopData._edgeBuf || {}) } as Record<string, any>;
+        buf[edge.id] = result;
+        this.nodeStore.setNodeData(loopId, { ...loopData, _edgeBuf: buf });
+
+        // Optional: mirror payload to edge UI for visibility
+        this.context.setEdges(eds =>
+          eds.map(e =>
+            e.id === edge.id ? { ...e, data: { ...e.data, lastPayload: result } } : e
+          )
+        );
+      }
+    });
+
     return result;
   }
 

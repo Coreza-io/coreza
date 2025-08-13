@@ -20,30 +20,6 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
   return result;
 };
 
-const getForwardReachable = (loopId: string, nodes: Node[], edges: any[]) => {
-  const seen = new Set<string>([loopId]);
-  const q = [loopId];
-  while (q.length) {
-    const cur = q.shift()!;
-    edges.filter(e => e.source === cur).forEach(e => {
-      if (!seen.has(e.target) && e.target !== loopId) {
-        seen.add(e.target);
-        q.push(e.target);
-      }
-    });
-  }
-  seen.delete(loopId);
-  return seen; // subgraph nodes excluding the loop itself
-};
-
-const getReturnSourcesToLoop = (loopId: string, nodes: Node[], edges: any[]) => {
-  const subgraph = getForwardReachable(loopId, nodes, edges);
-  const incoming = edges.filter(e => e.target === loopId);
-  const sources = new Set<string>();
-  incoming.forEach(e => { if (subgraph.has(e.source)) sources.add(e.source); });
-  return Array.from(sources);
-};
-
 const makeArraySignature = (arr: any[]): string => {
   try {
     const first = arr.length ? JSON.stringify(arr[0]) : "";
@@ -550,10 +526,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         else throw new Error("Loop input must be an array or JSON string representing an array");
 
         // 2) decide aggregation mode based on graph
-        const returnSources = getReturnSourcesToLoop(nodeId!, nodes, edges);
-        const returnSourceOutputs = returnSources
-        .map(srcId => executionStore.getNodeData(srcId)?.output)
-        .filter(Boolean);
         const aggregateMode = "items";
 
         // 3) init / resume state
@@ -566,12 +538,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         if (inputChanged) {
           executionStore.startLoop(nodeId!, loopItems, {
             batchSize, parallel, continueOnError, throttleMs,
-            loopSig, aggregateMode, returnSources,
+            loopSig, aggregateMode,
           });
         } else {
           executionStore.setNodeData(nodeId!, {
             batchSize, parallel, continueOnError, throttleMs,
-            aggregateMode, returnSources
+            aggregateMode
           });
         }
 
@@ -588,10 +560,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const start = loopIndex;
         const batch = items.slice(start, start + batchSize);
         const current  = batchSize === 1 ? batch[0] : batch;
+
+        const incomingToLoop = edges.filter(e => e.target === nodeId!);
+        const loopDataNow = executionStore.getNodeData(nodeId!) || {};
+        const edgeBuf: Record<string, any> = loopDataNow._edgeBuf ?? {};
+        const edgeArrivals = incomingToLoop.map(e => edgeBuf[e.id]).filter(v => v != null);
+
         if (loopIndex > maxLoopIndex) {
           finished = true;
-          const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished,returnSourceOutputs);
-          const finalOut = next.aggregated ?? [];
+          const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished, edgeArrivals);
+          const finalOut = next.aggregated ?? edgeArrivals ?? [];
           executionStore.setNodeData(nodeId!, {
             output: finalOut,
             loopItems: undefined,
@@ -599,6 +577,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             loopItem: undefined,
             finishedByLoop: true,
             done: true,
+            _edgeBuf: {},
           });
           setLastOutput(finalOut);
           data.output = finalOut;
@@ -610,7 +589,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         }
 
         // items mode → append emitted items and finalize to full aggregate on last batch
-        const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished,returnSourceOutputs);
+        const next = executionStore.advanceLoop(nodeId!, current, loopIndex + 1, finished, edgeArrivals);
         const uiOut = next.output; // current batch until final, then full aggregate
         setLastOutput(uiOut);
         data.output = uiOut;
@@ -618,8 +597,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
         ));
 
-        executionStore.setNodeData(nodeId!, { input: effectiveInput, output: uiOut });
-      
+        executionStore.setNodeData(nodeId!, { input: effectiveInput, output: uiOut, _edgeBuf: {} });
+
         return;
       }
 

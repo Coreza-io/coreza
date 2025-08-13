@@ -123,31 +123,34 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const value = resolvedParams.value;
+    const inputValue = resolvedParams.inputValue || resolvedParams.value;
     const cases = Array.isArray(resolvedParams.cases)
       ? resolvedParams.cases
       : [];
-    const defaultCase = resolvedParams.defaultCase;
+    const defaultCase = resolvedParams.defaultCase || 'default';
 
     console.log('🔀 Switch node evaluation:', {
-      value,
+      inputValue,
       cases,
-      defaultCase
+      defaultCase,
+      originalInput: input
     });
 
-    // Find matching case
-    const matchedCase = cases.find((c: any) => c.value === value);
-    const selectedCase = matchedCase ? matchedCase.value : defaultCase;
+    // Find matching case by caseValue (not value)
+    const matchedCase = cases.find((c: any) => c.caseValue === inputValue);
+    const selectedBranch = matchedCase ? matchedCase.caseValue : defaultCase;
 
+    console.log('🔀 Switch node result:', {
+      matchedCase: matchedCase?.caseValue,
+      selectedBranch,
+      isDefault: !matchedCase
+    });
+
+    // Return the selected branch name as a simple string for routing
+    // The workflow executor will use this to determine which edge to take
     return {
       success: true,
-      data: {
-        inputValue: value,
-        matchedCase: matchedCase?.value,
-        selectedBranch: selectedCase,
-        isDefault: !matchedCase,
-        timestamp: new Date().toISOString()
-      }
+      data: selectedBranch
     };
   }
 

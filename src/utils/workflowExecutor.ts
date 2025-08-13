@@ -590,7 +590,7 @@ export class WorkflowExecutor {
             //const branchNodeData = this.nodeStore.getNodeData(id);
             //const originalInput = branchNodeData.input;
             next.forEach(edge => {
-              // Deliver input payload to target node for completeness
+              // Deliver original input payload to target node (not the branch result)
               this.nodeStore.setNodeData(edge.target, { input: result });
               
               // Aggregate to Loop if target is Loop (only for firing edges)

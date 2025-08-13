@@ -24,6 +24,7 @@ export interface NodeExecutionData {
   finishedByLoop?: boolean;                  // Loop iterated the final batch
   done?: boolean;                            // fully finalized
   forwardedDone?: boolean;                   // optional: if you gate one-time forwarding
+  _edgeBuf?: Record<string, any>;            // transient per-iteration edge payloads
 }
 
 export class ExecutionContext {

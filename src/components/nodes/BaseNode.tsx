@@ -496,9 +496,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const { supportData } = collectNodeData();
-      let effectiveInput = inputOverride ?? selectedInputData;
+      //let effectiveInput = inputOverride ?? selectedInputData;
+      let effectiveInput = selectedInputData;
       if (
-        !inputOverride &&
+        //!inputOverride &&
         (!effectiveInput || Object.keys(effectiveInput).length === 0)
       ) {
         // Root node with no prior input: default to fieldState (the node's form values)

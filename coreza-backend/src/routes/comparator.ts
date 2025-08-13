@@ -112,11 +112,7 @@ router.post('/switch', async (req, res) => {
     const matchedCase = result.matchedCase !== undefined ? cases[result.matchedCase] : null;
     
     res.json({
-      inputValue,
-      matchedCase,
-      output: result.result,
-      isDefault: result.matchedCase === undefined,
-      timestamp: new Date().toISOString()
+      output: result.result
     });
 
   } catch (error) {

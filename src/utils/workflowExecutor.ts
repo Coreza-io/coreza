@@ -533,7 +533,7 @@ export class WorkflowExecutor {
                   ? 'false'
                   : '';
             } else {
-              handleKey = String(result);
+              handleKey = String(result.output || result);
             }
             console.log(
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`
@@ -586,6 +586,9 @@ export class WorkflowExecutor {
 
            // For branch nodes, aggregate to Loop nodes for firing edges only
           if (isBranchNode) {
+            // Get the original input data for the branch node
+            //const branchNodeData = this.nodeStore.getNodeData(id);
+            //const originalInput = branchNodeData.input;
             next.forEach(edge => {
               // Deliver input payload to target node for completeness
               this.nodeStore.setNodeData(edge.target, { input: result });

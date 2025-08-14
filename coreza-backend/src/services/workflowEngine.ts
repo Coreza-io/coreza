@@ -4,6 +4,7 @@ import { NodeRouter } from './router';
 import { LoopHandler } from './loopHandler';
 import { NodeStoreV2 } from './nodeStoreV2';
 import { getNodeExecutor } from '../nodes/registry';
+import { resolveReferences } from '../utils/resolveReferences';
 
 interface ExecutionContext {
   nodeId: string;
@@ -14,6 +15,7 @@ interface ExecutionContext {
   setState: (key: string, value: any) => void;
   getPersistentValue: (key: string) => Promise<any>;
   setPersistentValue: (key: string, value: any) => Promise<void>;
+  resolveNodeParameters: (node: WorkflowNode, input: any) => any;
 }
 
 export class WorkflowEngine {
@@ -174,7 +176,34 @@ export class WorkflowEngine {
       getState: (key: string) => this.store.getNodeState(node.id, key),
       setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
       getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
-      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value)
+      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
+      resolveNodeParameters: (node: WorkflowNode, input: any) => {
+        const allNodeData = this.store.getAllResults();
+        const resolvedValues = { ...node.values };
+        
+        // Resolve template expressions in node parameters
+        for (const [key, value] of Object.entries(resolvedValues)) {
+          if (typeof value === 'string' && value.includes('{{')) {
+            resolvedValues[key] = resolveReferences(value, input, allNodeData, this.nodes);
+          } else if (Array.isArray(value)) {
+            // Handle arrays like cases in Switch node
+            resolvedValues[key] = value.map(item => {
+              if (typeof item === 'object') {
+                const resolvedItem = { ...item };
+                for (const [itemKey, itemValue] of Object.entries(resolvedItem)) {
+                  if (typeof itemValue === 'string' && itemValue.includes('{{')) {
+                    resolvedItem[itemKey] = resolveReferences(itemValue, input, allNodeData, this.nodes);
+                  }
+                }
+                return resolvedItem;
+              }
+              return item;
+            });
+          }
+        }
+        
+        return { ...resolvedValues, ...input };
+      }
     };
 
     // Execute node

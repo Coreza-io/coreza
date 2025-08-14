@@ -178,12 +178,7 @@ export class WorkflowEngine {
 
           // Aggregate result to loop with node context
           const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
-          currentResults.push({
-            data: result,
-            sourceNodeId: nodeId,
-            iterIndex: meta.iterIndex,
-            meta: fullResult?.meta
-          });
+          currentResults.push(result);
           this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
         }
       }

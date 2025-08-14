@@ -169,7 +169,12 @@ export class WorkflowEngine {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodes.find(n => n.id === loopNodeId);
         
-        if (loopNode?.type === 'Loop') {
+        // Check if this node actually has an edge back to the loop
+        const hasEdgeBackToLoop = this.edges.some(edge => 
+          edge.source === nodeId && edge.target === loopNodeId
+        );
+        
+        if (loopNode?.type === 'Loop' && hasEdgeBackToLoop) {
           console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
           
           // Aggregate result to loop with node context

@@ -105,9 +105,13 @@ export class WorkflowEngine {
       console.log(`📤 [QUEUE] Routing to ${edge.target} (${targetNode?.type})`);
       
       if (targetNode?.type === 'Loop') {
-        // Buffer feedback to Loop, don't execute immediately
+        // Buffer feedback to Loop AND trigger loop execution
         console.log(`🔄 [LOOP] Buffering to loop ${edge.target}`);
         this.store.bufferToLoop(edge.target, edge.id, result);
+        
+        // Also enqueue the loop to start processing if it's not already queued
+        console.log(`➡️ [QUEUE] Enqueuing loop ${edge.target} to start processing`);
+        this.queue.enqueue({ nodeId: edge.target, input: result, meta });
       } else {
         // Normal propagation with preserved iteration context
         console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with input:`, result);

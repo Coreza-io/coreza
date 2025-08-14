@@ -96,18 +96,24 @@ export class WorkflowEngine {
       const result = await this.executeNode(node, input);
       this.store.setNodeResult(nodeId, result);
 
-      // Route based on result and branch handles
-      const edgesToFire = this.router.select(nodeId, result);
-      for (const edge of edgesToFire) {
-        const targetNode = this.nodes.find(n => n.id === edge.target);
-        if (targetNode?.type === 'Loop') {
-          // Buffer feedback to Loop, don't execute immediately
-          this.store.bufferToLoop(edge.target, edge.id, result);
-        } else {
-          // Normal propagation with preserved iteration context
-          this.queue.enqueue({ nodeId: edge.target, input: result, meta });
-        }
+    // Route based on result and branch handles
+    const edgesToFire = this.router.select(nodeId, result);
+    console.log(`🔀 [ROUTER] Node ${nodeId} (${node.type}) found ${edgesToFire.length} edges to fire:`, edgesToFire.map(e => `${e.source}->${e.target}`));
+    
+    for (const edge of edgesToFire) {
+      const targetNode = this.nodes.find(n => n.id === edge.target);
+      console.log(`📤 [QUEUE] Routing to ${edge.target} (${targetNode?.type})`);
+      
+      if (targetNode?.type === 'Loop') {
+        // Buffer feedback to Loop, don't execute immediately
+        console.log(`🔄 [LOOP] Buffering to loop ${edge.target}`);
+        this.store.bufferToLoop(edge.target, edge.id, result);
+      } else {
+        // Normal propagation with preserved iteration context
+        console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with input:`, result);
+        this.queue.enqueue({ nodeId: edge.target, input: result, meta });
       }
+    }
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
       this.store.setNodeError(nodeId, error);

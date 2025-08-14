@@ -272,15 +272,18 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    console.log(`🔄 [BACKEND] Loop node ${node.id} returning metadata only - actual execution handled by WorkflowEngine`);
+    console.log(`🔄 [BACKEND] Loop node ${node.id} - passing through input data, loop logic handled by frontend`);
     
-    // Return the loop context's output/item directly
-    // This ensures downstream nodes get the actual loop item data, not wrapped metadata
-    const loopOutput = input.output || input.loopItem || input.item || input;
-    
+    // Loop nodes now simply pass through the input data
+    // All loop logic is handled by the frontend workflowExecutor
+    const resolvedParams = context 
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    // Simply return the resolved input data for the frontend to handle
     return {
       success: true,
-      data: loopOutput
+      data: resolvedParams
     };
   }
 

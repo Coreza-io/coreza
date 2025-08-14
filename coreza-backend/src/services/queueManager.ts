@@ -2,7 +2,6 @@ import Redis from 'ioredis';
 import { Queue, Worker, Job } from 'bullmq';
 import { supabase } from '../config/supabase';
 import { executeWorkflow } from './workflowEngine';
-import { executeWorkflowV2 } from './workflowEngineV2';
 import { WebSocketManager } from './websocketManager';
 
 // Redis connection configuration
@@ -63,11 +62,8 @@ const workflowWorker = new Worker(
         .update({ status: 'running' })
         .eq('id', runId);
 
-      // Execute workflow using V2 engine
-      const useV2Engine = process.env.USE_WORKFLOW_ENGINE_V2 === 'true';
-      const result = useV2Engine 
-        ? await executeWorkflowV2(runId, workflowId, userId, nodes, edges)
-        : await executeWorkflow(runId, workflowId, userId, nodes, edges);
+      // Execute workflow using the unified engine
+      const result = await executeWorkflow(runId, workflowId, userId, nodes, edges);
       
       // Send real-time update
       WebSocketManager.sendToUser(userId, {

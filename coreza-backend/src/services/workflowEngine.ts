@@ -9,6 +9,7 @@ import { ComparatorService } from './comparator';
 import { getNodeExecutor } from '../nodes/registry';
 import { NodeInput, NodeResult } from '../nodes/types';
 import { resolveReferences } from "../utils/resolveReferences";
+import { handleN8NLoopExecution } from '../utils/handleN8NLoopExecution';
 import { NodeStore } from './nodeStore';
 import { NodeScheduler } from './nodeScheduler';
 
@@ -229,9 +230,13 @@ export class WorkflowEngine {
           this.executedNodes.add(nodeId);
           retryCount.delete(nodeId);
 
-          // Simplified approach: Always add downstream nodes to queue
-          // Let frontend handle all branching logic for Loop/IF/Switch nodes
-          await this.addDownstreamNodesToQueue(nodeId, this.scheduler);
+          const isBranchingNode = this.conditionalMap.has(nodeId);
+          if (isBranchingNode) {
+            console.log(`🔀 [WORKFLOW] Processing conditional routing for branch node: ${nodeId} - Run: ${this.runId}`);
+            await this.handleBranchNodeResult(nodeId, this.nodeResults.get(nodeId));
+          } else {
+            await this.addDownstreamNodesToQueue(nodeId, this.scheduler);
+          }
         } catch (error) {
           console.error(`❌ [WORKFLOW] Node ${nodeId} failed on attempt ${attempt}:`, error);
           const maxAttempts = node.values?.maxAttempts ?? 1;
@@ -259,13 +264,54 @@ export class WorkflowEngine {
   }
 
   /**
-   * DEPRECATED: Handle branching node result and route to appropriate downstream nodes
-   * This method is no longer used as frontend now handles all branching logic
+   * Handle branching node result and route to appropriate downstream nodes
    */
   private async handleBranchNodeResult(nodeId: string, result: any): Promise<void> {
-    console.log(`⚠️ [WORKFLOW] handleBranchNodeResult called but is deprecated. Frontend should handle branching for node: ${nodeId}`);
-    // Simply add all downstream nodes - let frontend handle the routing
-    await this.addDownstreamNodesToQueue(nodeId, this.scheduler);
+    // 1) Normalize result into a string key
+    let handleKey: string;
+    if (typeof result === 'boolean') {
+      handleKey = result.toString();             // "true" or "false"
+    } else if (
+      result &&
+      typeof result === 'object' &&
+      ('true' in result || 'false' in result)
+    ) {
+      handleKey =
+        result.true === true
+          ? 'true'
+          : result.false === true
+            ? 'false'
+            : '';
+    } else {
+      handleKey = String(result);
+    }
+
+    // 2) Look up the branch map (we expect arrays now)
+    const branchMap = this.conditionalMap.get(nodeId) ?? {};
+    const raw = branchMap[handleKey];
+
+    // Normalize to string[]
+    const targets: string[] = Array.isArray(raw)
+      ? raw
+      : raw
+        ? [raw]
+        : [];
+
+    if (targets.length === 0) {
+      console.warn(
+        `⚠️ No branch found for node ${nodeId} handle "${handleKey}". Available handles:`,
+        Object.keys(branchMap)
+      );
+      return;
+    }
+
+    // 3) Execute each branch in turn
+    console.log(
+      `🔀 Branch node ${nodeId} → handle "${handleKey}" → [${targets.join(', ')}]`
+    );
+    for (const targetId of targets) {
+      await this.executeConditionalChain(targetId);
+    }
   }
 
 
@@ -341,21 +387,39 @@ export class WorkflowEngine {
   }
 
   /**
-   * DEPRECATED: Collect all node IDs in the subgraph rooted at 'start'
-   * This method is no longer used as N8N-style loop execution has been removed
+   * Collect all node IDs in the subgraph rooted at 'start'
    */
   private collectSubgraphNodeIds(start: string): Set<string> {
-    console.warn(`⚠️ [WORKFLOW] collectSubgraphNodeIds called but is deprecated`);
-    return new Set<string>();
+    const visited = new Set<string>();
+    const stack = [start];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      this.edges.filter(e => e.source === cur).forEach(e => stack.push(e.target));
+    }
+    return visited;
   }
 
   /**
-   * DEPRECATED: Execute node specifically for loop iteration
-   * This method is no longer used as N8N-style loop execution has been removed
+   * Execute node specifically for loop iteration (bypasses normal dependency checking)
    */
   private async executeNodeForLoop(nodeId: string, executed: Set<string>): Promise<any> {
-    console.warn(`⚠️ [WORKFLOW] executeNodeForLoop called but is deprecated`);
-    throw new Error(`executeNodeForLoop is deprecated - use standard node execution`);
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found for loop execution`);
+    }
+
+    console.log(`🔄 [LOOP] Executing node: ${nodeId} (${node.type})`);
+
+    // Track attempts for loop executions as well
+    const attempt = (this.nodeAttempts.get(node.id) || 0) + 1;
+    this.nodeAttempts.set(node.id, attempt);
+
+    // Execute the node directly
+    await this.executeNode(node, attempt);
+
+    return this.nodeResults.get(nodeId);
   }
 
   /**
@@ -446,12 +510,32 @@ export class WorkflowEngine {
     try {
       // Get node input from upstream nodes
       let nodeInput = this.getNodeInput(node);
-      // Execute using registry-based approach - all nodes handled uniformly
-      // Loop nodes now return simple pass-through data, letting frontend handle the loop logic
-      const result = await this.executeNodeWithRegistry(node, nodeInput);
-      
-      // Store result and mark as completed
-      this.setNodeResult(node.id, result);
+      let result: string[] = [];
+      if (node.type === 'Loop') {
+          console.log(`🔄 [WORKFLOW] Detected Loop node: ${node.id}, delegating to N8N-style execution`);
+          const outgoing = this.edges.filter(e => e.source === node.id);
+          const fieldState = node.values || {};
+          
+          // Use centralized N8N-style loop execution
+          await handleN8NLoopExecution(
+            this,
+            { nodes: this.nodes, edges: this.edges },
+            node.id,
+            fieldState,
+            outgoing,
+            this.executedNodes,
+            this.executeNodeForLoop.bind(this)
+          );
+          // Mark all nodes in loop subgraph as executed
+          const subgraphNodes = this.collectSubgraphNodeIds(node.id);
+          subgraphNodes.forEach(id => this.executedNodes.add(id));
+      } else {
+        // Execute using registry-based approach
+        result = await this.executeNodeWithRegistry(node, nodeInput);
+        // Store result and mark as completed
+        this.setNodeResult(node.id, result);
+
+      }
 
       execution.status = 'completed';
       execution.output = this.getNodeResult(node.id);

@@ -272,16 +272,102 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    console.log(`🔄 [BACKEND] Loop node ${node.id} returning metadata only - actual execution handled by WorkflowEngine`);
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    // Get loop configuration
+    const inputArray = resolvedParams.inputArray || 'items';
+    const batchSize = Number(resolvedParams.batchSize) || 1;
+    const parallel = !!resolvedParams.parallel;
+    const continueOnError = !!resolvedParams.continueOnError;
+    const throttleMs = Number(resolvedParams.throttleMs) || 200;
+
+    // Extract array items from input
+    const items = Array.isArray(resolvedParams[inputArray]) 
+      ? resolvedParams[inputArray] 
+      : Array.isArray(input[inputArray]) 
+      ? input[inputArray] 
+      : [];
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return {
+        success: false,
+        error: `No array found for field: ${inputArray} or array is empty`
+      };
+    }
+
+    // Get current loop state from context
+    const currentIndex = context?.getState('currentIndex') || 0;
+    const aggregatedResults = context?.getState('aggregatedResults') || [];
+    const isCompleted = context?.getState('isCompleted') || false;
+
+    console.log(`🔄 [LOOP] Node ${node.id} processing:`, {
+      currentIndex,
+      totalItems: items.length,
+      batchSize,
+      isCompleted,
+      aggregatedCount: aggregatedResults.length
+    });
+
+    // If loop is completed, return final aggregated results
+    if (isCompleted) {
+      console.log(`✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`);
+      // Clear loop state
+      context?.setState('currentIndex', undefined);
+      context?.setState('aggregatedResults', undefined);
+      context?.setState('isCompleted', undefined);
+      
+      const result: any = {
+        success: true,
+        data: aggregatedResults
+      };
+      
+      // Add metadata for WorkflowEngine routing
+      result.meta = { 
+        sourceHandle: 'done',
+        isLoopCompleted: true 
+      };
+      
+      return result;
+    }
+
+    // Get current batch
+    const currentBatch = items.slice(currentIndex, currentIndex + batchSize);
+    const nextIndex = currentIndex + currentBatch.length;
+    const isLastBatch = nextIndex >= items.length;
+
+    console.log(`🔄 [LOOP] Node ${node.id} processing batch:`, {
+      batchStart: currentIndex,
+      batchEnd: nextIndex - 1,
+      batchSize: currentBatch.length,
+      isLastBatch
+    });
+
+    // Update loop state for next iteration
+    context?.setState('currentIndex', nextIndex);
     
-    // Return the loop context's output/item directly
-    // This ensures downstream nodes get the actual loop item data, not wrapped metadata
-    const loopOutput = input.output || input.loopItem || input.item || input;
-    
-    return {
+    // If this is the last batch, mark as completed for next execution
+    if (isLastBatch) {
+      context?.setState('isCompleted', true);
+    }
+
+    // Return current batch for loop body execution
+    const result: any = {
       success: true,
-      data: loopOutput
+      data: currentBatch.length === 1 ? currentBatch[0] : currentBatch
     };
+    
+    // Add metadata for WorkflowEngine routing
+    result.meta = { 
+      sourceHandle: 'loop',
+      isLoopIteration: true,
+      currentIndex,
+      isLastBatch,
+      loopConfig: { batchSize, parallel, continueOnError, throttleMs }
+    };
+    
+    return result;
   }
 
 

@@ -1,7 +1,6 @@
 import { WorkflowNode, WorkflowEdge, QueueItem, IterMeta } from '../nodes/types';
 import { QueueManager } from './queueManagerV2';
 import { NodeRouter } from './router';
-import { LoopHandler } from './loopHandler';
 import { NodeStoreV2 } from './nodeStoreV2';
 import { getNodeExecutor } from '../nodes/registry';
 import { resolveReferences } from '../utils/resolveReferences';
@@ -21,7 +20,6 @@ interface ExecutionContext {
 export class WorkflowEngine {
   private router: NodeRouter;
   private queue: QueueManager;
-  private loopHandler: LoopHandler;
   private store: NodeStoreV2;
   private executors: Map<string, any> = new Map();
 
@@ -40,7 +38,6 @@ export class WorkflowEngine {
     };
     this.queue = new QueueManager();
     this.store = new NodeStoreV2(runId, nodes);
-    this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
   }
 
   // Deep resolve helper for resolving template expressions recursively
@@ -126,61 +123,93 @@ export class WorkflowEngine {
     const node = this.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    // Track this task for loop refcount
-    this.queue.inc(meta?.originLoopId, meta?.iterIndex);
-
     try {
-      if (node.type === 'Loop') {
-        // Loop handler manages its own ticking
-        await this.loopHandler.tick(nodeId, input);
-        return;
-      }
-
-      // Execute regular node
+      // Execute the node
       const result = await this.executeNode(node, input);
+      console.log(`✅ Node ${nodeId} result:`, result);
+
+      // Store result
       this.store.setNodeResult(nodeId, result);
 
-    // Route based on result and branch handles
-    const edgesToFire = this.router.select(nodeId, result);
-    console.log(`🔀 [ROUTER] Node ${nodeId} (${node.type}) found ${edgesToFire.length} edges to fire:`, edgesToFire.map(e => `${e.source}->${e.target}`));
-    
-    for (const edge of edgesToFire) {
-      const targetNode = this.nodes.find(n => n.id === edge.target);
-      console.log(`📤 [QUEUE] Routing to ${edge.target} (${targetNode?.type})`);
-      
-      if (targetNode?.type === 'Loop') {
-        // Buffer feedback to Loop AND trigger loop execution
-        console.log(`🔄 [LOOP] Buffering to loop ${edge.target}`);
-        this.store.bufferToLoop(edge.target, edge.id, result);
+      // Handle Loop node routing based on result metadata
+      if (node.type === 'Loop' && result && typeof result === 'object') {
+        if (result.meta?.isLoopCompleted) {
+          // Loop is completed, route to 'done' edges
+          console.log(`🏁 [LOOP] Node ${nodeId} completed, routing to 'done' edges`);
+          const doneEdges = this.router.doneEdges(nodeId);
+          for (const edge of doneEdges) {
+            console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with final result`);
+            this.queue.enqueue({ nodeId: edge.target, input: result, meta });
+          }
+        } else if (result.meta?.isLoopIteration) {
+          // Loop iteration, route to 'loop' edges (body execution)
+          console.log(`🔄 [LOOP] Node ${nodeId} iteration, routing to 'loop' edges`);
+          const loopEdges = this.router.loopBodyEdges(nodeId);
+          for (const edge of loopEdges) {
+            console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with loop item`);
+            this.queue.enqueue({ 
+              nodeId: edge.target, 
+              input: result, 
+              meta: { 
+                ...meta, 
+                originLoopId: nodeId,
+                iterIndex: result.meta.currentIndex
+              }
+            });
+          }
+        }
+        return; // Exit early for Loop nodes
+      }
+
+      // Handle feedback to Loop nodes (from downstream nodes back to loop)
+      if (meta?.originLoopId) {
+        const loopNodeId = meta.originLoopId;
+        const loopNode = this.nodes.find(n => n.id === loopNodeId);
         
-        // Also enqueue the loop to start processing if it's not already queued
-        console.log(`➡️ [QUEUE] Enqueuing loop ${edge.target} to start processing`);
-        this.queue.enqueue({ nodeId: edge.target, input: result, meta });
-      } else {
-        // Normal propagation with preserved iteration context
+        if (loopNode?.type === 'Loop') {
+          console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
+          
+          // Aggregate result to loop
+          const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
+          currentResults.push(result);
+          this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
+          
+          // Re-queue the loop to continue processing
+          this.queue.enqueue({ nodeId: loopNodeId, input: {}, meta: {} });
+          return;
+        }
+      }
+
+      // Regular node routing
+      const edges = this.router.select(nodeId, result);
+      console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
+
+      for (const edge of edges) {
         console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with input:`, result);
         this.queue.enqueue({ nodeId: edge.target, input: result, meta });
       }
-    }
+      
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
       this.store.setNodeError(nodeId, error);
       
-      // For loop iterations with continueOnError, buffer the error instead of crashing
+      // For loop iterations with continueOnError, aggregate the error instead of crashing
       if (meta?.originLoopId) {
-        const loopNode = this.store.getNodeDef(meta.originLoopId);
+        const loopNode = this.nodes.find(n => n.id === meta.originLoopId);
         const config = loopNode?.values || {};
         if (config.continueOnError) {
-          this.store.bufferToLoop(meta.originLoopId, `error-${nodeId}`, { error: error.message });
+          const currentResults = this.store.getNodeState(meta.originLoopId, 'aggregatedResults') || [];
+          currentResults.push({ error: error.message });
+          this.store.setNodeState(meta.originLoopId, 'aggregatedResults', currentResults);
+          
+          // Re-queue the loop to continue processing
+          this.queue.enqueue({ nodeId: meta.originLoopId, input: {}, meta: {} });
           return; // Don't propagate error in continue-on-error mode
         }
       }
       
       // Normal error handling - stop execution
       throw error;
-    } finally {
-      // Complete refcount for loop iteration
-      this.queue.dec(meta?.originLoopId, meta?.iterIndex);
     }
   }
 

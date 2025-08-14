@@ -172,9 +172,14 @@ export class WorkflowEngine {
         if (loopNode?.type === 'Loop') {
           console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
           
-          // Aggregate result to loop
+          // Aggregate result to loop with node context
           const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
-          currentResults.push(result);
+          currentResults.push({
+            data: result,
+            sourceNodeId: nodeId,
+            iterIndex: meta.iterIndex,
+            meta: fullResult?.meta
+          });
           this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
           
           // Re-queue the loop to continue processing

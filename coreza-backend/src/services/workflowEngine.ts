@@ -163,19 +163,19 @@ export class WorkflowEngine {
         return; // Exit early for Loop nodes
       }
 
+      // Regular node routing
+      const edges = this.router.select(nodeId, result);
+      console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
+
       // Handle feedback to Loop nodes (from downstream nodes back to loop)
-    if (meta?.originLoopId) {
+      if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodes.find(n => n.id === loopNodeId);
-        
-        // Check if this node actually has an edge back to the loop
-        const hasEdgeBackToLoop = this.edges.some(edge => 
-          edge.source === nodeId && edge.target === loopNodeId
-        );
-        
-        if (loopNode?.type === 'Loop' && hasEdgeBackToLoop) {
+        const hasActiveEdgeToLoop = edges.some(e => e.target === loopNodeId);
+
+        if (loopNode?.type === 'Loop' && hasActiveEdgeToLoop) {
           console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
-          
+
           // Aggregate result to loop with node context
           const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
           currentResults.push({
@@ -187,10 +187,6 @@ export class WorkflowEngine {
           this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
         }
       }
-
-      // Regular node routing
-      const edges = this.router.select(nodeId, result);
-      console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
 
       for (const edge of edges) {
         console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with input:`, result);

@@ -86,3 +86,24 @@ export interface INodeExecutorV2 {
     context?: any
   ): Promise<NodeExecutionOutput>;
 }
+
+// -----------------------------------------------------------------------------
+// New queue-based workflow execution types
+// -----------------------------------------------------------------------------
+
+/**
+ * Iteration metadata that flows with every queued node execution
+ */
+export type IterMeta = {
+  originLoopId?: string;   // which Loop spawned this subtree
+  iterIndex?: number;      // iteration index of that Loop
+};
+
+/**
+ * Queue item representing a single node execution task
+ */
+export type QueueItem = {
+  nodeId: string;
+  input?: any;             // resolved "input" for this node
+  meta?: IterMeta;         // iteration scope marker
+};

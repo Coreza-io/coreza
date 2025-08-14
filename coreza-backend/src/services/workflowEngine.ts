@@ -125,11 +125,14 @@ export class WorkflowEngine {
 
     try {
       // Execute the node
-      const result = await this.executeNode(node, input);
-      console.log(`✅ Node ${nodeId} result:`, result);
+      const fullResult = await this.executeNode(node, input);
+      console.log(`✅ Node ${nodeId} result:`, fullResult);
 
-      // Store result
-      this.store.setNodeResult(nodeId, result);
+      // Store full result (with metadata)
+      this.store.setNodeResult(nodeId, fullResult);
+
+      // Extract data for downstream routing
+      const result = fullResult?.data || fullResult;
 
       // Handle Loop node routing based on result metadata
       if (node.type === 'Loop' && result && typeof result === 'object') {
@@ -258,10 +261,12 @@ export class WorkflowEngine {
       if (!result.success) {
         throw new Error(result.error || `Node execution failed: ${category}`);
       }
-      return result.data;
+      // Return full result structure to preserve metadata
+      return { data: result.data, meta: result.meta };
     }
 
-    return result;
+    // For simple results, wrap in structure to maintain consistency
+    return { data: result };
   }
 }
 

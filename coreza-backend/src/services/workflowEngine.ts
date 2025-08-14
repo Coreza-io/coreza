@@ -126,17 +126,16 @@ export class WorkflowEngine {
     try {
       // Execute the node
       const fullResult = await this.executeNode(node, input);
-      console.log(`✅ Node ${nodeId} result:`, fullResult);
+       // Extract data for downstream routing
+      const result = fullResult?.data || fullResult;
+      console.log(`✅ Node ${nodeId} result:`, result);
 
       // Store full result (with metadata)
-      this.store.setNodeResult(nodeId, fullResult);
-
-      // Extract data for downstream routing
-      const result = fullResult?.data || fullResult;
+      this.store.setNodeResult(nodeId, result);
 
       // Handle Loop node routing based on result metadata
-      if (node.type === 'Loop' && result && typeof result === 'object') {
-        if (result.meta?.isLoopCompleted) {
+      if (node.type === 'Loop' && fullResult && typeof fullResult === 'object') {
+        if (fullResult.meta?.isLoopCompleted) {
           // Loop is completed, route to 'done' edges
           console.log(`🏁 [LOOP] Node ${nodeId} completed, routing to 'done' edges`);
           const doneEdges = this.router.doneEdges(nodeId);
@@ -144,7 +143,7 @@ export class WorkflowEngine {
             console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with final result`);
             this.queue.enqueue({ nodeId: edge.target, input: result, meta });
           }
-        } else if (result.meta?.isLoopIteration) {
+        } else if (fullResult.meta?.isLoopIteration) {
           // Loop iteration, route to 'loop' edges (body execution)
           console.log(`🔄 [LOOP] Node ${nodeId} iteration, routing to 'loop' edges`);
           const loopEdges = this.router.loopBodyEdges(nodeId);
@@ -156,7 +155,7 @@ export class WorkflowEngine {
               meta: { 
                 ...meta, 
                 originLoopId: nodeId,
-                iterIndex: result.meta.currentIndex
+                iterIndex: fullResult.meta.currentIndex
               }
             });
           }
@@ -165,21 +164,22 @@ export class WorkflowEngine {
       }
 
       // Handle feedback to Loop nodes (from downstream nodes back to loop)
-      if (meta?.originLoopId) {
+    if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodes.find(n => n.id === loopNodeId);
         
-        if (loopNode?.type === 'Loop') {
+        // Check if this node actually has an edge back to the loop
+        const hasEdgeBackToLoop = this.edges.some(edge => 
+          edge.source === nodeId && edge.target === loopNodeId
+        );
+        
+        if (loopNode?.type === 'Loop' && hasEdgeBackToLoop) {
           console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
           
-          // Aggregate result to loop
+          // Aggregate result to loop with node context
           const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
           currentResults.push(result);
           this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
-          
-          // Re-queue the loop to continue processing
-          this.queue.enqueue({ nodeId: loopNodeId, input: {}, meta: {} });
-          return;
         }
       }
 

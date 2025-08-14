@@ -1,8 +1,8 @@
 import { describe, test, expect } from '@jest/globals';
-import { WorkflowEngineV2 } from '../../coreza-backend/src/services/workflowEngineV2';
+import { WorkflowEngine } from '../../coreza-backend/src/services/workflowEngine';
 import { WorkflowNode, WorkflowEdge } from '../../coreza-backend/src/nodes/types';
 
-describe('WorkflowEngineV2 Single Queue Loop Logic', () => {
+describe('WorkflowEngine Single Queue Loop Logic', () => {
   test('processes Loop with single queue and edge buffer aggregation', async () => {
     const nodes: WorkflowNode[] = [
       {
@@ -37,27 +37,37 @@ describe('WorkflowEngineV2 Single Queue Loop Logic', () => {
       { id: 'e4', source: 'loop1', target: 'output', sourceHandle: 'done' },
     ];
 
-    const engine = new WorkflowEngineV2('test-run', 'test-workflow', 'test-user', nodes, edges);
+    const engine = new WorkflowEngine('test-run', 'test-workflow', 'test-user', nodes, edges);
 
-    // Mock implementations for testing
-    engine['impls']['Input'] = async (input: any) => input.items || input;
-    engine['impls']['Math'] = async (input: any) => {
-      const value = input.value || 2;
-      if (Array.isArray(input)) {
-        return input.map((item: any) => ({ ...item, v: item.v * value }));
+    // Register custom test executors
+    engine.registerExecutor('IO', {
+      execute: async (node: any, input: any) => {
+        if (node.type === 'Input') return node.values?.items || input;
+        if (node.type === 'Output') return input;
+        return input;
       }
-      return { ...input, v: input.v * value };
-    };
-    engine['impls']['Output'] = async (input: any) => input;
+    });
+    
+    engine.registerExecutor('ControlFlow', {
+      execute: async (node: any, input: any) => {
+        if (node.type === 'Math') {
+          const value = node.values?.value || 2;
+          if (Array.isArray(input)) {
+            return input.map((item: any) => ({ ...item, v: item.v * value }));
+          }
+          return { ...input, v: input.v * value };
+        }
+        return input;
+      }
+    });
 
-    const result = await engine.run(['start']);
+    const result = await engine.execute();
 
     expect(result.success).toBe(true);
     expect(result.result).toBeDefined();
     
     // Check that output node received aggregated results
-    const outputResult = engine.getNodeResult('output');
-    expect(outputResult).toEqual([
+    expect(result.result?.output).toEqual([
       { v: 2 }, // 1 * 2
       { v: 4 }, // 2 * 2  
       { v: 6 }, // 3 * 2
@@ -96,22 +106,33 @@ describe('WorkflowEngineV2 Single Queue Loop Logic', () => {
       { id: 'e3', source: 'if1', target: 'false_path', sourceHandle: 'false' },
     ];
 
-    const engine = new WorkflowEngineV2('test-run', 'test-workflow', 'test-user', nodes, edges);
+    const engine = new WorkflowEngine('test-run', 'test-workflow', 'test-user', nodes, edges);
 
-    // Mock implementations
-    engine['impls']['Input'] = async (input: any) => input;
-    engine['impls']['If'] = async (input: any) => {
-      // Simple condition evaluation
-      return input.value > 3; // returns true, should fire 'true' edge only
-    };
-    engine['impls']['Output'] = async (input: any) => input;
+    // Register custom test executors
+    engine.registerExecutor('IO', {
+      execute: async (node: any, input: any) => {
+        if (node.type === 'Input') return node.values || input;
+        if (node.type === 'Output') return input;
+        return input;
+      }
+    });
+    
+    engine.registerExecutor('ControlFlow', {
+      execute: async (node: any, input: any) => {
+        if (node.type === 'If') {
+          // Simple condition evaluation - return boolean for router
+          return input.value > 3; // returns true, should fire 'true' edge only
+        }
+        return input;
+      }
+    });
 
-    const result = await engine.run(['start']);
+    const result = await engine.execute();
 
     expect(result.success).toBe(true);
     
     // Only true_path should have been executed
-    expect(engine.getNodeResult('true_path')).toBeDefined();
-    expect(engine.getNodeResult('false_path')).toBeUndefined();
+    expect(result.result?.true_path).toBeDefined();
+    expect(result.result?.false_path).toBeUndefined();
   });
 });

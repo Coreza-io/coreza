@@ -284,11 +284,20 @@ export class ControlFlowExecutor implements INodeExecutor {
     const throttleMs = Number(resolvedParams.throttleMs) || 200;
 
     // Extract array items from input
-    const items = Array.isArray(resolvedParams[inputArray]) 
-      ? resolvedParams[inputArray] 
-      : Array.isArray(input[inputArray]) 
-      ? input[inputArray] 
-      : [];
+    let items = resolvedParams?.inputArray || [];
+    // Parse items if it's a JSON string
+    try {
+      if (typeof items === 'string') {
+        const parsed = JSON.parse(items);
+        items = Array.isArray(parsed) ? parsed : [parsed];
+      } else if (!Array.isArray(items)) {
+        items = items ? [items] : [];
+      }
+    } catch (e) {
+      console.warn(`⚠️ [BACKEND] Failed to parse loop items, using as-is:`, items);
+      items = Array.isArray(items) ? items : [items];
+    }
+
 
     if (!Array.isArray(items) || items.length === 0) {
       return {

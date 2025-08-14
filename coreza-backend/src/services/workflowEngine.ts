@@ -218,7 +218,7 @@ export class WorkflowEngine {
 
     // Map node categories for compatibility
     let category = node.category;
-    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields' || node.type === 'Math' || node.type === 'Transform') {
+    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields' || node.type === 'Math' || node.type === 'Transform' || node.type === 'Loop') {
       category = 'ControlFlow';
     } else if (['Scheduler', 'trigger', 'Visualize', 'webhook', 'httprequest'].includes(node.type)) {
       category = 'Utility';

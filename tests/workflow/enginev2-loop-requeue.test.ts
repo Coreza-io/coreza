@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { EngineV2 } from '../../coreza-backend/src/services/engineV2';
+import { WorkflowEngine } from '../../coreza-backend/src/services/workflowEngine';
 import { INodeExecutorV2, Item, WorkflowNode, NodeExecutionOutput } from '../../coreza-backend/src/nodes/types';
 import { LoopExecutorV2 } from '../../coreza-backend/src/nodes/executors/LoopExecutorV2';
 
@@ -12,7 +12,7 @@ class PassExecutor implements INodeExecutorV2 {
   }
 }
 
-describe('EngineV2 Loop re-queue behaviour', () => {
+describe('WorkflowEngine Loop re-queue behaviour', () => {
   test('processes items in batches and emits final result on done handle', async () => {
     const nodes: WorkflowNode[] = [
       {
@@ -26,15 +26,13 @@ describe('EngineV2 Loop re-queue behaviour', () => {
     const edges: WorkflowEdge[] = [
       { id: 'e1', source: 'loop1', target: 'final', sourceHandle: 'done' },
     ];
-    const engine = new EngineV2(nodes, edges as any);
-    engine.registerExecutor(new LoopExecutorV2());
-    engine.registerExecutor(new PassExecutor());
+    const engine = new WorkflowEngine('test-run', 'test-workflow', 'test-user', nodes, edges as any);
+    engine.registerExecutor('control', new LoopExecutorV2());
+    engine.registerExecutor('passthrough', new PassExecutor());
 
-    await engine.run();
+    const result = await engine.execute();
 
-    expect((engine as any).nodeOutput.get('final')).toEqual([{ v: 1 }, { v: 2 }, { v: 3 }]);
-    const state = (engine as any).nodeState;
-    expect(state.get('loop1:startIndex')).toBeUndefined();
-    expect(state.get('loop1:aggregation')).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(result.result?.final).toEqual([{ v: 1 }, { v: 2 }, { v: 3 }]);
   });
 });

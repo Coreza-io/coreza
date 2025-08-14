@@ -12,6 +12,8 @@ interface ExecutionContext {
   userId: string;
   getState: (key: string) => any;
   setState: (key: string, value: any) => void;
+  getPersistentValue: (key: string) => Promise<any>;
+  setPersistentValue: (key: string, value: any) => Promise<void>;
 }
 
 export class WorkflowEngine {
@@ -30,7 +32,7 @@ export class WorkflowEngine {
   ) {
     this.router = new NodeRouter(edges);
     this.queue = new QueueManager();
-    this.store = new NodeStoreV2(nodes);
+    this.store = new NodeStoreV2(runId, nodes);
     this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
   }
 
@@ -142,7 +144,9 @@ export class WorkflowEngine {
       workflowId: this.workflowId,
       userId: this.userId,
       getState: (key: string) => this.store.getNodeState(node.id, key),
-      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value)
+      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
+      getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
+      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value)
     };
 
     // Execute node

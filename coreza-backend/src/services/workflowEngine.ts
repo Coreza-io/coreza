@@ -43,6 +43,48 @@ export class WorkflowEngine {
     this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
   }
 
+  // Deep resolve helper for resolving template expressions recursively
+  private resolveDeep(
+    val: any,
+    input: any,
+    allNodeData: Record<string, any>
+  ): any {
+    if (typeof val === 'string' && val.includes('{{')) {
+      const resolved = resolveReferences(val, input, allNodeData, this.nodes);
+      // If resolveReferences returned non-string, return it directly
+      return resolved;
+    }
+    if (Array.isArray(val)) {
+      return val.map(item => this.resolveDeep(item, input, allNodeData));
+    }
+    if (val !== null && typeof val === 'object') {
+      return Object.fromEntries(
+        Object.entries(val).map(
+          ([k, v]) => [k, this.resolveDeep(v, input, allNodeData)]
+        )
+      );
+    }
+    return val; // number, boolean, null, undefined
+  }
+
+  private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    const nodeParams = node.values || {};
+    const resolvedParams: any = {};
+    
+    // Get all node data for cross-references
+    const allNodeData = this.store.getAllResults();
+    
+    // Resolve all node.values parameters with reference resolution
+    for (const [key, value] of Object.entries(nodeParams)) {
+      // Skip operational fields that are handled separately
+      if (key === 'credential_id' || key === 'operation') continue;
+      // Deeply resolve strings/arrays/objects
+      resolvedParams[key] = this.resolveDeep(value, input, allNodeData);
+    }
+    
+    return resolvedParams;
+  }
+
   registerExecutor(category: string, executor: any) {
     this.executors.set(category, executor);
   }
@@ -177,33 +219,7 @@ export class WorkflowEngine {
       setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
       getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
       setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
-      resolveNodeParameters: (node: WorkflowNode, input: any) => {
-        const allNodeData = this.store.getAllResults();
-        const resolvedValues = { ...node.values };
-        
-        // Resolve template expressions in node parameters
-        for (const [key, value] of Object.entries(resolvedValues)) {
-          if (typeof value === 'string' && value.includes('{{')) {
-            resolvedValues[key] = resolveReferences(value, input, allNodeData, this.nodes);
-          } else if (Array.isArray(value)) {
-            // Handle arrays like cases in Switch node
-            resolvedValues[key] = value.map(item => {
-              if (typeof item === 'object') {
-                const resolvedItem = { ...item };
-                for (const [itemKey, itemValue] of Object.entries(resolvedItem)) {
-                  if (typeof itemValue === 'string' && itemValue.includes('{{')) {
-                    resolvedItem[itemKey] = resolveReferences(itemValue, input, allNodeData, this.nodes);
-                  }
-                }
-                return resolvedItem;
-              }
-              return item;
-            });
-          }
-        }
-        
-        return { ...resolvedValues, ...input };
-      }
+      resolveNodeParameters: (node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input)
     };
 
     // Execute node

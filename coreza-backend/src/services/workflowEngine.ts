@@ -31,6 +31,11 @@ export class WorkflowEngine {
     private edges: WorkflowEdge[]
   ) {
     this.router = new NodeRouter(edges);
+    // Add node type lookup to router
+    (this.router as any).getSourceNodeType = (nodeId: string) => {
+      const node = this.nodes.find(n => n.id === nodeId);
+      return node?.type;
+    };
     this.queue = new QueueManager();
     this.store = new NodeStoreV2(runId, nodes);
     this.loopHandler = new LoopHandler(this.store, this.router, this.queue);

@@ -21,13 +21,21 @@ export class NodeRouter {
 
   // select edges based on outcome + default/explicit handle
   select(nodeId: string, result: any, opts?: { restrictToHandles?: string[] }) {
-    const chosen = this.decideHandles(result);
-    const allow = new Set(opts?.restrictToHandles ?? chosen);
-    return this.edges.filter(e => e.source === nodeId)
-      .filter(e => {
+    const outgoingEdges = this.edges.filter(e => e.source === nodeId);
+    
+    // For conditional nodes (If, Switch), filter by handles
+    const sourceNode = this.getSourceNodeType?.(nodeId);
+    if (sourceNode === 'If' || sourceNode === 'Switch' || opts?.restrictToHandles) {
+      const chosen = this.decideHandles(result);
+      const allow = new Set(opts?.restrictToHandles ?? chosen);
+      return outgoingEdges.filter(e => {
         const h = e.sourceHandle ?? '';
         return allow.has(h) || (allow.has('default') && !h);
       });
+    }
+    
+    // For data nodes (Alpaca, etc.), return ALL outgoing edges
+    return outgoingEdges;
   }
 
   // helper: edges labeled for loop tick vs final done

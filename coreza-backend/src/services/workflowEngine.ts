@@ -9,7 +9,6 @@ import { ComparatorService } from './comparator';
 import { getNodeExecutor } from '../nodes/registry';
 import { NodeInput, NodeResult } from '../nodes/types';
 import { resolveReferences } from "../utils/resolveReferences";
-import { handleN8NLoopExecution } from '../utils/handleN8NLoopExecution';
 import { NodeStore } from './nodeStore';
 import { NodeScheduler } from './nodeScheduler';
 
@@ -55,6 +54,7 @@ export class WorkflowEngine {
   private loopContexts: Map<string, any> = new Map();
   private scheduler = new NodeScheduler();
   private nodeAttempts: Map<string, number> = new Map();
+  private edgeBuffers: Map<string, Record<string, any>> = new Map();
   private maxParallel: number;
 
   constructor(runId: string, workflowId: string, userId: string, nodes: WorkflowNode[], edges: WorkflowEdge[], maxParallel = parseInt(process.env.WORKFLOW_MAX_PARALLELISM || '4')) {
@@ -305,11 +305,15 @@ export class WorkflowEngine {
       return;
     }
 
-    // 3) Execute each branch in turn
-    console.log(
-      `🔀 Branch node ${nodeId} → handle "${handleKey}" → [${targets.join(', ')}]`
-    );
+    // 3) For each firing edge, aggregate to Loop if target is Loop, pass original input data
+    const originalInput = this.getNodeInput(this.nodes.find(n => n.id === nodeId)!);
     for (const targetId of targets) {
+      // Find the edge from this branch node to the target
+      const edge = this.edges.find(e => e.source === nodeId && e.target === targetId);
+      if (edge) {
+        // Aggregate to Loop using original input data (not branch evaluation result)
+        this.aggregateToLoop(nodeId, edge, originalInput);
+      }
       await this.executeConditionalChain(targetId);
     }
   }
@@ -462,10 +466,15 @@ export class WorkflowEngine {
    * Add downstream nodes to the execution scheduler
    */
   private async addDownstreamNodesToQueue(nodeId: string, scheduler: NodeScheduler): Promise<void> {
-    const downstreamNodes = this.edges
-      .filter(edge => edge.source === nodeId)
+    const downstreamEdges = this.edges.filter(edge => edge.source === nodeId);
+    const downstreamNodes = downstreamEdges
       .map(edge => edge.target)
       .filter(targetId => !this.executedNodes.has(targetId));
+
+    // For each downstream edge, check if target is a Loop and aggregate
+    for (const edge of downstreamEdges) {
+      this.aggregateToLoop(nodeId, edge, this.nodeResults.get(nodeId));
+    }
 
     for (const id of downstreamNodes) {
       await scheduler.enqueue(id);
@@ -510,32 +519,18 @@ export class WorkflowEngine {
     try {
       // Get node input from upstream nodes
       let nodeInput = this.getNodeInput(node);
-      let result: string[] = [];
+      let result: any;
       if (node.type === 'Loop') {
-          console.log(`🔄 [WORKFLOW] Detected Loop node: ${node.id}, delegating to N8N-style execution`);
-          const outgoing = this.edges.filter(e => e.source === node.id);
-          const fieldState = node.values || {};
-          
-          // Use centralized N8N-style loop execution
-          await handleN8NLoopExecution(
-            this,
-            { nodes: this.nodes, edges: this.edges },
-            node.id,
-            fieldState,
-            outgoing,
-            this.executedNodes,
-            this.executeNodeForLoop.bind(this)
-          );
-          // Mark all nodes in loop subgraph as executed
-          const subgraphNodes = this.collectSubgraphNodeIds(node.id);
-          subgraphNodes.forEach(id => this.executedNodes.add(id));
+        // Process Loop using edge buffer like frontend
+        console.log(`🔄 [WORKFLOW] Processing Loop node: ${node.id} using edge buffer approach`);
+        result = this.processLoopNode(node);
       } else {
         // Execute using registry-based approach
         result = await this.executeNodeWithRegistry(node, nodeInput);
-        // Store result and mark as completed
-        this.setNodeResult(node.id, result);
-
       }
+      
+      // Store result and mark as completed
+      this.setNodeResult(node.id, result);
 
       execution.status = 'completed';
       execution.output = this.getNodeResult(node.id);
@@ -557,6 +552,17 @@ export class WorkflowEngine {
   }
 
   private getNodeInput(node: WorkflowNode): any {
+    // For Loop nodes, prioritize edge buffer data
+    if (node.type === 'Loop') {
+      const edgeBuffer = this.edgeBuffers.get(node.id);
+      if (edgeBuffer && Object.keys(edgeBuffer).length > 0) {
+        console.log(`🔄 [WORKFLOW] Using edge buffer for Loop ${node.id}:`, edgeBuffer);
+        // Aggregate all edge buffer values
+        const aggregatedData = Object.values(edgeBuffer).flat();
+        return { ...node.data, _edgeBuf: edgeBuffer, aggregatedData };
+      }
+    }
+
     // Check if there's loop context for this node
     const loopContext = this.loopContexts.get(node.id);
     if (loopContext) {
@@ -867,6 +873,96 @@ export class WorkflowEngine {
   public async setPersistentValue(key: string, value: any): Promise<void> {
     this.persistentState.set(key, value);
     await this.savePersistentState();
+  }
+
+  /**
+   * Helper method to aggregate payloads to Loop nodes when an edge fires
+   */
+  private aggregateToLoop(sourceNodeId: string, edge: WorkflowEdge, result: any): void {
+    const targetNode = this.nodes.find(n => n.id === edge.target);
+    const isLoop = targetNode?.type === 'Loop';
+
+    if (!isLoop) return;
+
+    const loopId = edge.target;
+    
+    // Check if this is a feedback edge (source node is downstream of the Loop)
+    // vs a trigger edge (source node is upstream/independent of the Loop)
+    const isFeedbackEdge = this.isNodeDownstreamOfLoop(sourceNodeId, loopId);
+    
+    if (!isFeedbackEdge) {
+      console.log(`🚫 [LOOP AGGREGATION] Skipping trigger edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} - not a feedback edge`);
+      return;
+    }
+
+    const existingBuffer = this.edgeBuffers.get(loopId) || {};
+    const updatedBuffer = { ...existingBuffer, [edge.id]: result };
+    this.edgeBuffers.set(loopId, updatedBuffer);
+
+    console.log(`🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated feedback result:`, result);
+  }
+
+  /**
+   * Check if a source node is downstream of a Loop node (i.e., it's part of the loop flow)
+   * This helps distinguish between trigger edges and feedback edges
+   */
+  private isNodeDownstreamOfLoop(sourceNodeId: string, loopNodeId: string): boolean {
+    // Get all nodes that are downstream of the Loop node
+    const downstreamNodes = this.getDownstreamNodes(loopNodeId, new Set());
+    
+    // If the source node is in the downstream nodes, it's a feedback edge
+    return downstreamNodes.has(sourceNodeId);
+  }
+
+  /**
+   * Get all nodes downstream of a given node
+   */
+  private getDownstreamNodes(nodeId: string, visited: Set<string> = new Set()): Set<string> {
+    if (visited.has(nodeId)) return new Set();
+    
+    visited.add(nodeId);
+    const downstream = new Set<string>();
+    
+    // Find all outgoing edges from this node
+    const outgoingEdges = this.edges.filter(e => e.source === nodeId);
+    
+    for (const edge of outgoingEdges) {
+      downstream.add(edge.target);
+      // Recursively get downstream nodes, but avoid infinite loops
+      const nestedDownstream = this.getDownstreamNodes(edge.target, new Set(visited));
+      nestedDownstream.forEach(id => downstream.add(id));
+    }
+    
+    return downstream;
+  }
+
+  /**
+   * Process Loop node using edge buffer approach (like frontend)
+   */
+  private processLoopNode(node: WorkflowNode): any {
+    const edgeBuffer = this.edgeBuffers.get(node.id);
+    if (!edgeBuffer || Object.keys(edgeBuffer).length === 0) {
+      console.log(`🔄 [LOOP] No edge buffer data for Loop ${node.id}, returning empty result`);
+      return [];
+    }
+
+    // Get all outgoing edges from Loop node to determine sourceHandle filtering
+    const outgoingEdges = this.edges.filter(e => e.source === node.id);
+    const doneEdges = outgoingEdges.filter(e => e.sourceHandle === 'done');
+    
+    // Aggregate all results from edge buffer
+    const aggregatedResults = Object.values(edgeBuffer).flat();
+    
+    console.log(`🔄 [LOOP] Processing Loop ${node.id} with ${aggregatedResults.length} aggregated items from edge buffer`);
+    
+    // If there are "done" edges, this means we should output the aggregated results
+    if (doneEdges.length > 0) {
+      console.log(`🔄 [LOOP] Loop ${node.id} has "done" edges, outputting aggregated results`);
+      return aggregatedResults;
+    }
+    
+    // Otherwise, return the aggregated results (default behavior)
+    return aggregatedResults;
   }
 }
 

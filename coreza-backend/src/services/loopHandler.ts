@@ -10,14 +10,17 @@ export class LoopHandler {
   constructor(
     private store: NodeStoreV2,
     private router: NodeRouter,
-    private queue: QueueManager,
-    private throttleMs = 0
+    private queue: QueueManager
   ) {}
 
   async tick(loopId: string, input: any) {
-    // 1) normalize/ensure loop state
-    const st = this.store.ensureLoopState(loopId, input);
-    const { loopItems, loopIndex, batchSize } = st;
+    // Get loop node configuration
+    const loopNode = this.store.getNodeDef(loopId);
+    const config = this.parseLoopConfig(loopNode);
+    
+    // 1) normalize/ensure loop state with configuration
+    const st = this.store.ensureLoopState(loopId, input, config);
+    const { loopItems, loopIndex, batchSize, parallel, continueOnError } = st;
 
     const maxLoopIndex = Math.ceil(loopItems.length / batchSize) - 1;
     if (loopItems.length === 0) {
@@ -54,19 +57,92 @@ export class LoopHandler {
       await this.afterBodyDrain(loopId, iterIndex);
     });
 
-    // spawn the body subtree (refcount it)
-    for (const e of bodyEdges) {
-      this.queue.inc(loopId, iterIndex);
-      this.queue.enqueue({ nodeId: e.target, input: currentBatch, meta: originMeta });
+    // spawn the body subtree with N8N-style item context
+    if (parallel) {
+      // Parallel execution - fire all items at once
+      for (let i = 0; i < currentBatch.length; i++) {
+        const itemWithContext = this.addItemContext(currentBatch[i], iterIndex, i, currentBatch.length);
+        for (const e of bodyEdges) {
+          this.queue.inc(loopId, iterIndex);
+          this.queue.enqueue({ 
+            nodeId: e.target, 
+            input: [itemWithContext], 
+            meta: { ...originMeta, itemIndex: i, parallel: true }
+          });
+        }
+      }
+    } else {
+      // Sequential execution - fire batch as group
+      const batchWithContext = currentBatch.map((item, i) => 
+        this.addItemContext(item, iterIndex, i, currentBatch.length)
+      );
+      for (const e of bodyEdges) {
+        this.queue.inc(loopId, iterIndex);
+        this.queue.enqueue({ 
+          nodeId: e.target, 
+          input: batchWithContext, 
+          meta: originMeta 
+        });
+      }
     }
   }
 
-  private async afterBodyDrain(loopId: string, iterIndex: number) {
-    if (this.throttleMs) await new Promise(r => setTimeout(r, this.throttleMs));
+  private parseLoopConfig(loopNode: any) {
+    const values = loopNode?.values || loopNode?.data?.values || {};
+    return {
+      batchSize: parseInt(values.batchSize) || 1,
+      parallel: !!values.parallel,
+      continueOnError: !!values.continueOnError,
+      throttleMs: parseInt(values.throttleMs) || 200,
+      inputArray: values.inputArray || 'items'
+    };
+  }
 
-    // read feedback buffered into the loop by body nodes (see Step 6)
-    const arrivals = this.store.consumeEdgeBuf(loopId); // returns array or {}
-    this.store.appendAggregate(loopId, arrivals);
+  private addItemContext(item: any, iterIndex: number, itemIndex: number, batchSize: number) {
+    // Add N8N-style loop context to each item
+    return {
+      ...item,
+      $loopContext: {
+        iterationIndex: iterIndex,
+        itemIndex: itemIndex,
+        batchSize: batchSize,
+        isFirstItem: itemIndex === 0,
+        isLastItem: itemIndex === batchSize - 1
+      }
+    };
+  }
+
+  private async afterBodyDrain(loopId: string, iterIndex: number) {
+    const loopNode = this.store.getNodeDef(loopId);
+    const config = this.parseLoopConfig(loopNode);
+    
+    if (config.throttleMs) await new Promise(r => setTimeout(r, config.throttleMs));
+
+    // read feedback buffered into the loop by body nodes
+    const arrivals = this.store.consumeEdgeBuf(loopId);
+    
+    // Handle error recovery if continueOnError is enabled
+    if (config.continueOnError) {
+      const validArrivals = arrivals.filter((arrival: any) => {
+        if (arrival && typeof arrival === 'object' && arrival.error) {
+          console.warn(`⚠️ [LOOP] Skipping failed item in iteration ${iterIndex}:`, arrival.error);
+          return false;
+        }
+        return true;
+      });
+      this.store.appendAggregate(loopId, validArrivals);
+    } else {
+      // Check for errors and fail the loop if any
+      const hasErrors = arrivals.some((arrival: any) => 
+        arrival && typeof arrival === 'object' && arrival.error
+      );
+      if (hasErrors) {
+        const error = arrivals.find((a: any) => a?.error)?.error;
+        this.store.setNodeError(loopId, `Loop failed at iteration ${iterIndex}: ${error}`);
+        return;
+      }
+      this.store.appendAggregate(loopId, arrivals);
+    }
 
     // finished?
     const s = this.store.getLoopState(loopId)!;
@@ -82,6 +158,10 @@ export class LoopHandler {
     }
 
     // not finished → enqueue **next** tick
-    this.queue.enqueue({ nodeId: loopId, input: s.loopItems, meta: { originLoopId: loopId, iterIndex: s.loopIndex } });
+    this.queue.enqueue({ 
+      nodeId: loopId, 
+      input: s.loopItems, 
+      meta: { originLoopId: loopId, iterIndex: s.loopIndex } 
+    });
   }
 }

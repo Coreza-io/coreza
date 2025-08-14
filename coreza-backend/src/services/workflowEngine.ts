@@ -106,6 +106,19 @@ export class WorkflowEngine {
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
       this.store.setNodeError(nodeId, error);
+      
+      // For loop iterations with continueOnError, buffer the error instead of crashing
+      if (meta?.originLoopId) {
+        const loopNode = this.store.getNodeDef(meta.originLoopId);
+        const config = loopNode?.values || {};
+        if (config.continueOnError) {
+          this.store.bufferToLoop(meta.originLoopId, `error-${nodeId}`, { error: error.message });
+          return; // Don't propagate error in continue-on-error mode
+        }
+      }
+      
+      // Normal error handling - stop execution
+      throw error;
     } finally {
       // Complete refcount for loop iteration
       this.queue.dec(meta?.originLoopId, meta?.iterIndex);

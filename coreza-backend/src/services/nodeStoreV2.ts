@@ -10,6 +10,8 @@ type LoopState = {
   loopItems: any[];
   loopIndex: number;
   batchSize: number;
+  parallel: boolean;
+  continueOnError: boolean;
   aggregated: any[];              // or object if you aggregate keyed
   _edgeBuf: Record<string, any>;  // edgeId -> payloads
   finished: boolean;
@@ -44,19 +46,32 @@ export class NodeStoreV2 {
     this.nodes.set(id, def);
   }
 
-  ensureLoopState(id: string, input: any): LoopState {
+  ensureLoopState(id: string, input: any, config?: any): LoopState {
     const existing = this.loops.get(id);
     if (existing) return existing;
 
-    const items = Array.isArray(input) ? input
-                : input == null ? []
-                : typeof input === 'string' ? this.tryJson(input)
-                : [input];
+    // Parse input array based on configuration
+    const inputField = config?.inputArray || 'items';
+    let items: any[];
+    
+    if (Array.isArray(input)) {
+      items = input;
+    } else if (input != null && typeof input === 'object' && input[inputField]) {
+      items = Array.isArray(input[inputField]) ? input[inputField] : [input[inputField]];
+    } else if (input == null) {
+      items = [];
+    } else if (typeof input === 'string') {
+      items = this.tryJson(input);
+    } else {
+      items = [input];
+    }
 
     const st: LoopState = {
       loopItems: items,
       loopIndex: 0,
-      batchSize: this.getLoopBatchSize(id) ?? 1,
+      batchSize: config?.batchSize || this.getLoopBatchSize(id) || 1,
+      parallel: config?.parallel || false,
+      continueOnError: config?.continueOnError || false,
       aggregated: [],
       _edgeBuf: {},
       finished: false,

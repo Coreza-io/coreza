@@ -58,7 +58,7 @@ export const alpacaConfig: RestConfig = {
       makeParams: (input: BrokerInput) => {
         const {
           symbol,
-          timeframe,
+          interval,
           lookback,
           start:  inputStart,
           end:    inputEnd
@@ -75,6 +75,7 @@ export const alpacaConfig: RestConfig = {
         // calculate start/end if needed
         let startDate = inputStart;
         let endDate   = inputEnd;
+        let timeframe = interval;
         if ((!startDate || !endDate) && lb) {
           const now = new Date();
           const sd  = new Date(now);

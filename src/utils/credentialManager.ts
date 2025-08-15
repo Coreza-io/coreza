@@ -42,9 +42,16 @@ class ClientEncryption {
         dataBuffer
       );
       
-      const combined = new Uint8Array(iv.length + encrypted.byteLength);
+      // Extract the actual encrypted data and auth tag
+      const encryptedArray = new Uint8Array(encrypted);
+      const ciphertext = encryptedArray.slice(0, -16); // All but last 16 bytes
+      const authTag = encryptedArray.slice(-16); // Last 16 bytes are the auth tag
+      
+      // Combine: IV + ciphertext + authTag
+      const combined = new Uint8Array(iv.length + ciphertext.length + authTag.length);
       combined.set(iv);
-      combined.set(new Uint8Array(encrypted), iv.length);
+      combined.set(ciphertext, iv.length);
+      combined.set(authTag, iv.length + ciphertext.length);
       
       return btoa(String.fromCharCode(...combined));
     } catch (error) {
@@ -57,13 +64,20 @@ class ClientEncryption {
     try {
       const key = await this.getEncryptionKey();
       const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+      
       const iv = combined.slice(0, 12);
-      const encrypted = combined.slice(12);
+      const ciphertext = combined.slice(12, -16);
+      const authTag = combined.slice(-16);
+      
+      // Reconstruct the data that Web Crypto expects (ciphertext + authTag)
+      const encryptedBuffer = new Uint8Array(ciphertext.length + authTag.length);
+      encryptedBuffer.set(ciphertext);
+      encryptedBuffer.set(authTag, ciphertext.length);
       
       const decrypted = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
         key,
-        encrypted
+        encryptedBuffer
       );
       
       const decoder = new TextDecoder();

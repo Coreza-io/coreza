@@ -70,12 +70,16 @@ class CredentialManager {
 
       const credential = data[0];
       
-      // Try client_json field first (frontend encrypted)
-      if (credential.client_json) {
+      // Try client_json field first (frontend encrypted with simple AES-GCM)
+      if (credential.client_json && typeof credential.client_json === 'string') {
         try {
-          // Frontend stores simple encrypted JSON string
-          const decryptionUtil = new DecryptionUtil();
-          const decryptedCredentials = await decryptionUtil.decrypt(credential.client_json as string);
+          // Frontend uses simple base64 encoded encrypted data (iv + encrypted)
+          const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
+          if (!encryptionKey) {
+            throw new Error('Encryption key not available');
+          }
+          
+          const decryptedCredentials = await this.decryptClientData(credential.client_json, encryptionKey);
           return { credentials: decryptedCredentials };
         } catch (decryptError) {
           console.error('Failed to decrypt client_json:', decryptError);
@@ -511,6 +515,39 @@ class CredentialManager {
         failed: 0,
         errors: [error instanceof Error ? error.message : String(error)]
       };
+    }
+  }
+  /**
+   * Decrypt client-side encrypted data using Node.js crypto
+   */
+  private static async decryptClientData(encryptedData: string, encryptionKey: string): Promise<any> {
+    const crypto = await import('crypto');
+    
+    try {
+      // Convert base64 to buffer
+      const combined = Buffer.from(encryptedData, 'base64');
+      
+      // Extract IV (first 12 bytes) and encrypted data
+      const iv = combined.subarray(0, 12);
+      const encrypted = combined.subarray(12, -16); // Remove auth tag from end
+      const authTag = combined.subarray(-16); // Last 16 bytes
+      
+      // Create key buffer
+      const keyBuffer = Buffer.from(encryptionKey, 'base64');
+      
+      // Create decipher
+      const decipher = crypto.createDecipherGCM('aes-256-gcm', keyBuffer);
+      decipher.setIV(iv);
+      decipher.setAuthTag(authTag);
+      
+      // Decrypt
+      let decrypted = decipher.update(encrypted);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      
+      return JSON.parse(decrypted.toString('utf8'));
+    } catch (error) {
+      console.error('Decryption error:', error);
+      throw new Error('Failed to decrypt client data');
     }
   }
 }

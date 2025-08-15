@@ -1,6 +1,7 @@
 import { supabase } from '../../config/supabase';
 import { IBrokerService, BrokerInput, BrokerResult } from './types';
 import DecryptionUtil from '../../utils/decryption';
+import EnvelopeEncryptionUtil from '../../utils/envelopeEncryption';
 import { CredentialValidator } from '../../utils/credentialValidator';
 
 export abstract class BaseBrokerService implements IBrokerService {
@@ -32,7 +33,7 @@ export abstract class BaseBrokerService implements IBrokerService {
     try {
       const { data, error } = await supabase
         .from('user_credentials')
-        .select('client_json, token_json')
+        .select('*')
         .eq('user_id', userId)
         .eq('name', credentialId)
         .eq('service_type', this.brokerKey)
@@ -46,11 +47,32 @@ export abstract class BaseBrokerService implements IBrokerService {
         return { credentials: null };
       }
 
-      // Decrypt credentials before returning
-      const decryptedClientJson = { ...data.client_json };
-      const decryptedTokenJson = { ...data.token_json };
+      let decryptedCredentials: any = {};
 
-      try {
+      if (data.is_encrypted && data.enc_payload) {
+        // New envelope encryption path
+        console.log(`🔓 Decrypting envelope credentials for broker ${this.brokerKey}`);
+        
+        const decryptionInput = {
+          encPayload: data.enc_payload,
+          iv: data.iv,
+          authTag: data.auth_tag,
+          dekWrapped: data.dek_wrapped,
+          keyRef: data.key_ref || 'env:v1',
+          userId,
+          credentialId: data.id
+        };
+
+        const payload = EnvelopeEncryptionUtil.decrypt(decryptionInput);
+        decryptedCredentials = { ...payload.client, ...payload.token };
+
+      } else {
+        // Legacy decryption path for backward compatibility
+        console.log(`🔓 Decrypting legacy credentials for broker ${this.brokerKey}`);
+        
+        const decryptedClientJson = { ...data.client_json };
+        const decryptedTokenJson = { ...data.token_json };
+
         // Decrypt all sensitive fields if they appear to be encrypted
         const sensitiveFields = ['api_key', 'secret_key', 'access_token', 'refresh_token', 'client_secret'];
         
@@ -63,29 +85,26 @@ export abstract class BaseBrokerService implements IBrokerService {
             decryptedTokenJson[field] = await DecryptionUtil.decrypt(decryptedTokenJson[field]);
           }
         }
-        
-        // Validate decrypted credentials
-        const combinedCredentials = { ...decryptedClientJson, ...decryptedTokenJson };
-        const validation = CredentialValidator.validateCredentials(this.brokerKey, combinedCredentials);
-        
-        if (!validation.isValid) {
-          console.error(`Invalid ${this.brokerKey} credentials:`, validation.errors);
-          throw new Error(`Invalid ${this.brokerKey} credentials: ${validation.errors.join(', ')}`);
-        }
-        
-        if (validation.warnings.length > 0) {
-          console.warn(`${this.brokerKey} credential warnings:`, validation.warnings);
-        }
-        
-      } catch (decryptError) {
-        console.error(`Error decrypting ${this.brokerKey} credentials:`, decryptError);
-        throw new Error(`Failed to decrypt ${this.brokerKey} credentials`);
+
+        decryptedCredentials = { ...decryptedClientJson, ...decryptedTokenJson };
+      }
+
+      // Validate decrypted credentials
+      const validation = CredentialValidator.validateCredentials(this.brokerKey, decryptedCredentials);
+      
+      if (!validation.isValid) {
+        console.error(`Invalid ${this.brokerKey} credentials:`, validation.errors);
+        throw new Error(`Invalid ${this.brokerKey} credentials: ${validation.errors.join(', ')}`);
+      }
+      
+      if (validation.warnings.length > 0) {
+        console.warn(`${this.brokerKey} credential warnings:`, validation.warnings);
       }
 
       return { 
         credentials: { 
-          client_json: decryptedClientJson, 
-          token_json: decryptedTokenJson 
+          client_json: decryptedCredentials, 
+          token_json: {} 
         } 
       };
     } catch (error) {

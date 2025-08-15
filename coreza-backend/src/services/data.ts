@@ -3,6 +3,7 @@ import yahooFinance from 'yahoo-finance2';
 import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
 import DecryptionUtil from '../utils/decryption';
+import EnhancedCredentialManager from '../utils/enhancedCredentialManager';
 
 export interface DataInput {
   user_id?: string;

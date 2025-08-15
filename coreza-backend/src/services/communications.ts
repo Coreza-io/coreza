@@ -3,6 +3,7 @@ import axios from 'axios';
 import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
 import DecryptionUtil from '../utils/decryption';
+import EnhancedCredentialManager from '../utils/enhancedCredentialManager';
 
 export interface CommunicationInput {
   user_id: string;

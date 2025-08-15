@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
@@ -90,9 +90,17 @@ export type Database = {
       }
       user_credentials: {
         Row: {
+          auth_tag: string | null
           client_json: Json | null
           created_at: string | null
+          dek_wrapped: string | null
+          enc_payload: string | null
+          enc_version: number | null
           id: string
+          is_encrypted: boolean | null
+          iv: string | null
+          key_algo: string | null
+          key_ref: string | null
           name: string
           scopes: string | null
           service_type: string
@@ -101,9 +109,17 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auth_tag?: string | null
           client_json?: Json | null
           created_at?: string | null
+          dek_wrapped?: string | null
+          enc_payload?: string | null
+          enc_version?: number | null
           id?: string
+          is_encrypted?: boolean | null
+          iv?: string | null
+          key_algo?: string | null
+          key_ref?: string | null
           name: string
           scopes?: string | null
           service_type: string
@@ -112,9 +128,17 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auth_tag?: string | null
           client_json?: Json | null
           created_at?: string | null
+          dek_wrapped?: string | null
+          enc_payload?: string | null
+          enc_version?: number | null
           id?: string
+          is_encrypted?: boolean | null
+          iv?: string | null
+          key_algo?: string | null
+          key_ref?: string | null
           name?: string
           scopes?: string | null
           service_type?: string

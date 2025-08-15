@@ -1,80 +1,97 @@
-# Welcome to your Lovable project
+# Coreza Trading Platform
 
-## Project info
+An advanced, open-source trading platform with workflow automation, real-time market data, and secure credential management.
 
-**URL**: https://lovable.dev/projects/d30f4a49-94dc-4348-a2bd-4fc547bc1f60
+## 🚀 Quick Start
 
-## How can I edit this code?
+Get your own instance running in minutes:
 
-There are several ways of editing your application.
+```bash
+# Clone the repository
+git clone https://github.com/your-username/coreza-trading-platform.git
+cd coreza-trading-platform
 
-**Use Lovable**
+# Run the automated setup
+npm install
+node setup/setup.js
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/d30f4a49-94dc-4348-a2bd-4fc547bc1f60) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start the application
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The setup script will:
+- Collect your Supabase credentials
+- Generate encryption keys
+- Configure environment files
+- Deploy edge functions
+- Set up the database schema
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 📋 Prerequisites
 
-**Use GitHub Codespaces**
+- **Node.js 18+**
+- **Supabase account** (free tier works)
+- **Git** for cloning
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🏗️ Architecture
 
-## What technologies are used for this project?
+- **Frontend**: React + TypeScript + Vite
+- **Backend**: Node.js + Express
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth with RLS
+- **Encryption**: AES-256-GCM for credentials
+- **Real-time**: WebSocket connections
+- **Deployment**: Edge functions + static hosting
 
-This project is built with:
+## 🔐 Security Features
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **End-to-end encryption** for trading credentials
+- **Row Level Security** on all database tables
+- **User-specific key derivation** with HKDF-SHA256
+- **Enterprise-grade** authentication
+- **Audit logging** for all operations
 
-## Loop Node
+## 📊 Trading Features
 
-The **Loop** node processes an array from previous nodes and executes its
-downstream branch for each element. Configure the array selector, item and index
-output names, a previous-value key, an iteration limit and optional parallel
-processing.
+- **Multi-broker support** (Alpaca, Dhan, more coming)
+- **Technical indicators** (RSI, MACD, Bollinger Bands, etc.)
+- **Workflow automation** with visual editor
+- **Real-time market data** integration
+- **Risk management** tools
+- **Backtesting** capabilities
 
-## How can I deploy this project?
+## 🛠️ Manual Setup
 
-Simply open [Lovable](https://lovable.dev/projects/d30f4a49-94dc-4348-a2bd-4fc547bc1f60) and click on Share -> Publish.
+If you prefer manual setup or need to troubleshoot:
 
-## Can I connect a custom domain to my Lovable project?
+1. **Create Supabase Project**
+2. **Configure Environment Variables**
+3. **Run Database Migrations**
+4. **Deploy Edge Functions**
+5. **Set Encryption Secrets**
 
-Yes, you can!
+See [docs/SETUP.md](docs/SETUP.md) for detailed instructions.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## 📚 Documentation
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+- [🚀 Setup Guide](docs/SETUP.md) - Complete setup instructions
+- [🌐 Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
+- [🔒 Security Documentation](docs/SECURITY.md) - Security architecture
+- [🔧 Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines and code of conduct.
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🆘 Support
+
+- 📖 [Documentation](docs/)
+- 🐛 [GitHub Issues](https://github.com/your-username/coreza-trading-platform/issues)
+- 💬 [Community Discussions](https://github.com/your-username/coreza-trading-platform/discussions)
+
+## ⚠️ Disclaimer
+
+This platform is for educational and development purposes. Always test thoroughly before using with real trading accounts. We are not responsible for any financial losses.

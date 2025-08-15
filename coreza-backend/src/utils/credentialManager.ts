@@ -603,6 +603,7 @@ class CredentialManager {
       console.error('Frontend decryption error:', error);
       throw new Error(`Failed to decrypt frontend data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
 }
 
 export default CredentialManager;

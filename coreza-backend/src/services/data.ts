@@ -194,14 +194,38 @@ class YahooFinanceService extends BaseDataService {
     console.log(`Fetching Yahoo Finance historical data for ${symbol}`, { period1, period2, interval });
 
     try {
-      const options: any = {
-        period1: typeof period1 === 'number' ? new Date(period1 * 1000) : new Date(period1),
-        period2: typeof period2 === 'number' ? new Date(period2 * 1000) : new Date(period2),
-        interval,
-        events: 'history'
+      // Convert dates to proper format for yahoo-finance2
+      let startDate, endDate;
+      
+      if (typeof period1 === 'number') {
+        startDate = new Date(period1 * 1000);
+      } else if (period1) {
+        startDate = new Date(period1);
+      } else {
+        startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000); // 1 year ago
+      }
+      
+      if (typeof period2 === 'number') {
+        endDate = new Date(period2 * 1000);
+      } else if (period2) {
+        endDate = new Date(period2);
+      } else {
+        endDate = new Date(); // today
+      }
+
+      const options = {
+        period1: startDate,
+        period2: endDate,
+        interval: interval as '1d' | '1wk' | '1mo'
       };
       
-      console.log('Yahoo Finance options:', options);
+      console.log('Yahoo Finance options:', {
+        symbol,
+        period1: startDate.toISOString(),
+        period2: endDate.toISOString(),
+        interval
+      });
+      
       const history = await yahooFinance.historical(symbol, options);
       console.log(`Retrieved ${history.length} historical records for ${symbol}`);
     

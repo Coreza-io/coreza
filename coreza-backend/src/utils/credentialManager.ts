@@ -87,8 +87,25 @@ class CredentialManager {
         }
       }
 
-      // Fallback to envelope decryption for backend-stored credentials
-      if (credential.is_encrypted && credential.enc_payload) {
+      // Handle new frontend encryption format (enc_version: 2, key_ref: 'user:v2')
+      if (credential.is_encrypted && credential.enc_version === 2 && credential.key_ref === 'user:v2') {
+        try {
+          // Frontend stores data as base64 strings but database returns as binary
+          // Convert binary data back to base64 strings
+          const encPayload = credential.enc_payload.toString('base64');
+          const iv = credential.iv.toString('base64');
+          const authTag = credential.auth_tag.toString('base64');
+          
+          const decryptedCredentials = await this.decryptFrontendData(encPayload, iv, authTag);
+          return { credentials: decryptedCredentials };
+        } catch (frontendDecryptError) {
+          console.error('Failed to decrypt frontend data:', frontendDecryptError);
+          return { error: `Frontend decryption failed: ${frontendDecryptError.message}` };
+        }
+      }
+
+      // Fallback to envelope decryption for backend-stored credentials (enc_version: 1)
+      if (credential.is_encrypted && credential.enc_payload && credential.enc_version === 1) {
         try {
           const decryptionInput = {
             encPayload: credential.enc_payload,
@@ -550,6 +567,42 @@ class CredentialManager {
       throw new Error('Failed to decrypt client data');
     }
   }
+
+  /**
+   * Decrypt frontend data (enc_version: 2) using the same method as frontend
+   */
+  private static async decryptFrontendData(encPayload: string, iv: string, authTag: string): Promise<any> {
+    const crypto = await import('crypto');
+    
+    try {
+      // Get encryption key from environment
+      const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
+      if (!encryptionKey) {
+        throw new Error('Encryption key not available');
+      }
+      
+      // Convert base64 strings back to buffers
+      const ivBuffer = Buffer.from(iv, 'base64');
+      const ciphertextBuffer = Buffer.from(encPayload, 'base64');
+      const authTagBuffer = Buffer.from(authTag, 'base64');
+      
+      // Create key buffer - same derivation as frontend edge function
+      const keyBuffer = Buffer.from(encryptionKey, 'base64');
+      
+      // Create decipher
+      const decipher = crypto.createDecipherGCM('aes-256-gcm', keyBuffer);
+      decipher.setIV(ivBuffer);
+      decipher.setAuthTag(authTagBuffer);
+      
+      // Decrypt
+      let decrypted = decipher.update(ciphertextBuffer);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      
+      return JSON.parse(decrypted.toString('utf8'));
+    } catch (error) {
+      console.error('Frontend decryption error:', error);
+      throw new Error(`Failed to decrypt frontend data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
 }
 
 export default CredentialManager;

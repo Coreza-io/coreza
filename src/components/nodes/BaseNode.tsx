@@ -350,8 +350,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         return;
       }
       
-      // Use enhanced credentials API for better security  
-      const url = `${BACKEND_URL}/api/enhanced-credentials?service_type=${apiName}`;
+      // Use credentials API for security  
+      const url = `${BACKEND_URL}/credentials?service_type=${apiName}`;
       console.log('Fetching credentials from:', url);
       console.log('API name:', apiName, 'User ID:', userId);
       
@@ -359,6 +359,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.session?.access_token}`,
           'user-id': userId
         }
       });

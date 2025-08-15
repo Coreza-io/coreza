@@ -10,11 +10,20 @@ import { supabase } from '@/integrations/supabase/client';
 class ClientEncryption {
   private static async getEncryptionKey(): Promise<CryptoKey> {
     try {
+      console.log('🔑 Requesting encryption key from edge function...');
       const { data, error } = await supabase.functions.invoke('derive-encryption-key');
-      if (error || !data?.key) {
-        throw new Error('Failed to get encryption key');
+      
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(`Failed to get encryption key: ${error.message}`);
       }
       
+      if (!data?.key) {
+        console.error('No key in response:', data);
+        throw new Error('No encryption key received from server');
+      }
+      
+      console.log('✅ Encryption key received successfully');
       const keyData = Uint8Array.from(atob(data.key), c => c.charCodeAt(0));
       return await crypto.subtle.importKey(
         'raw',
@@ -25,7 +34,7 @@ class ClientEncryption {
       );
     } catch (error) {
       console.error('Error getting encryption key:', error);
-      throw new Error('Failed to initialize encryption');
+      throw new Error(`Failed to initialize encryption: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

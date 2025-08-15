@@ -262,7 +262,7 @@ export default function Backtesting() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Edit Backtesting</h1>
+          <h1 className="text-3xl font-bold">Backtesting</h1>
           <p className="text-muted-foreground">
             Test your trading strategies against historical data
           </p>

@@ -142,7 +142,7 @@ export class WorkflowBacktestEngine {
         if (brokerNode) {
           console.log(`📊 Using ${brokerNode.type} for ${symbol} historical data`);
           // TODO: Use broker service for historical data
-          result = await DataService.execute('yahoofinance', 'get_historical', {
+          result = await DataService.execute(brokerNode.type, 'get_historical', {
             symbol,
             start_date: this.config.start_date,
             end_date: this.config.end_date,

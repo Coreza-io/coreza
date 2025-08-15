@@ -554,12 +554,16 @@ class CredentialManager {
       const encrypted = combined.subarray(12, -16); // Remove auth tag from end
       const authTag = combined.subarray(-16); // Last 16 bytes
       
-      // Create key buffer
+      // Create key buffer and validate length
       const keyBuffer = Buffer.from(encryptionKey, 'base64');
-      
-      // Create decipher
-      const decipher = crypto.createDecipherGCM('aes-256-gcm', keyBuffer);
-      decipher.setIV(iv);
+      if (keyBuffer.length !== 32) {
+        throw new Error(
+          `Invalid key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`
+        );
+      }
+
+      // Create decipher with provided IV
+      const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
       decipher.setAuthTag(authTag);
       
       // Decrypt

@@ -604,7 +604,7 @@ const WorkflowEditorContent = () => {
     };
     
     loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId]); // Removed id from dependencies to prevent reload on tab switch
+  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, hasLoadedWorkflowId]); // Added hasLoadedWorkflowId to prevent unnecessary reloads
 
 
   // Auto-hide palette when clicking outside or on editor
@@ -653,6 +653,35 @@ const WorkflowEditorContent = () => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [setNodes, setEdges]);
+
+  // Add visibility change handler to prevent state loss on tab switching
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Auto-save when tab becomes hidden to preserve unsaved changes
+        if (nodes.length > 0 && authUser) {
+          console.log('🔄 Tab hidden - preserving workflow state');
+          handleSaveWorkflow(true); // Autosave
+        }
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Warn user if they have unsaved changes in a new workflow
+      if (isNewWorkflow && nodes.length > 1) { // More than just initial node
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [nodes, authUser, isNewWorkflow, handleSaveWorkflow]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] w-full">

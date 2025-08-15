@@ -38,7 +38,11 @@ class ClientEncryption {
     }
   }
 
-  static async encrypt(data: any): Promise<string> {
+  static async encrypt(data: any): Promise<{
+    enc_payload: string;
+    iv: string;
+    auth_tag: string;
+  }> {
     try {
       const key = await this.getEncryptionKey();
       const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -56,35 +60,33 @@ class ClientEncryption {
       const ciphertext = encryptedArray.slice(0, -16); // All but last 16 bytes
       const authTag = encryptedArray.slice(-16); // Last 16 bytes are the auth tag
       
-      // Combine: IV + ciphertext + authTag
-      const combined = new Uint8Array(iv.length + ciphertext.length + authTag.length);
-      combined.set(iv);
-      combined.set(ciphertext, iv.length);
-      combined.set(authTag, iv.length + ciphertext.length);
-      
-      return btoa(String.fromCharCode(...combined));
+      return {
+        enc_payload: btoa(String.fromCharCode(...ciphertext)),
+        iv: btoa(String.fromCharCode(...iv)),
+        auth_tag: btoa(String.fromCharCode(...authTag))
+      };
     } catch (error) {
       console.error('Encryption error:', error);
       throw new Error('Failed to encrypt data');
     }
   }
 
-  static async decrypt(encryptedData: string): Promise<any> {
+  static async decrypt(encPayload: string, iv: string, authTag: string): Promise<any> {
     try {
       const key = await this.getEncryptionKey();
-      const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
       
-      const iv = combined.slice(0, 12);
-      const ciphertext = combined.slice(12, -16);
-      const authTag = combined.slice(-16);
+      // Convert base64 strings back to Uint8Arrays
+      const ivBytes = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
+      const ciphertextBytes = Uint8Array.from(atob(encPayload), c => c.charCodeAt(0));
+      const authTagBytes = Uint8Array.from(atob(authTag), c => c.charCodeAt(0));
       
       // Reconstruct the data that Web Crypto expects (ciphertext + authTag)
-      const encryptedBuffer = new Uint8Array(ciphertext.length + authTag.length);
-      encryptedBuffer.set(ciphertext);
-      encryptedBuffer.set(authTag, ciphertext.length);
+      const encryptedBuffer = new Uint8Array(ciphertextBytes.length + authTagBytes.length);
+      encryptedBuffer.set(ciphertextBytes);
+      encryptedBuffer.set(authTagBytes, ciphertextBytes.length);
       
       const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
+        { name: 'AES-GCM', iv: ivBytes },
         key,
         encryptedBuffer
       );
@@ -129,7 +131,13 @@ export class CredentialManager {
           user_id: userId,
           service_type: sanitizedServiceType,
           name: sanitizedCredentialName,
-          client_json: encryptedCredentials,
+          enc_payload: encryptedCredentials.enc_payload,
+          iv: encryptedCredentials.iv,
+          auth_tag: encryptedCredentials.auth_tag,
+          is_encrypted: true,
+          enc_version: 2,
+          key_ref: 'user:v2',
+          key_algo: 'AES-256-GCM',
           scopes: scopes?.substring(0, 255), // Limit scope length
           updated_at: new Date().toISOString()
         }, {

@@ -127,25 +127,29 @@ export default function Backtesting() {
       toast.success('Backtest started');
       loadBacktests();
 
-      // Call the Supabase edge function to run the backtest
+      // Call the Express backend API to run the backtest
       try {
-        console.log('Calling run-backtest edge function...');
-        const { data, error } = await supabase.functions.invoke('run-backtest', {
-          body: { backtestId }
+        console.log('Calling Express backend API...');
+        const response = await fetch(`http://localhost:8000/backtesting/${backtestId}/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
         });
 
-        if (error) {
-          console.error('Edge function error:', error);
-          throw error;
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to start backtest');
         }
 
+        const data = await response.json();
         console.log('Backtest execution started:', data);
 
         // Poll for completion status
         pollBacktestStatus(backtestId);
         
       } catch (apiError) {
-        console.error('Failed to call edge function:', apiError);
+        console.error('Failed to call Express backend:', apiError);
         toast.error('Failed to start backtest execution');
         
         // Update status back to pending on error
@@ -153,11 +157,10 @@ export default function Backtesting() {
           .from('backtests')
           .update({ 
             status: 'failed',
-            error_message: 'Failed to start backtest execution'
+            error_message: apiError instanceof Error ? apiError.message : 'Unknown error'
           })
           .eq('id', backtestId);
-          
-        toast.error('Failed to start backtest execution');
+        
         loadBacktests();
       }
 

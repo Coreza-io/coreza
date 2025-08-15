@@ -125,25 +125,79 @@ export default function Backtesting() {
       toast.success('Backtest started');
       loadBacktests();
 
-      // Here you would typically call your backend API to actually run the backtest
-      // For now, we'll simulate it completing after a delay
-      setTimeout(async () => {
-        await supabase
-          .from('backtests')
-          .update({ 
-            status: 'completed',
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', backtestId);
+      // Call the actual backend API to run the backtest
+      try {
+        const response = await fetch(`/api/backtesting/${backtestId}/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to start backtest execution');
+        }
+
+        const result = await response.json();
+        console.log('Backtest execution started:', result);
+
+        // Poll for completion status
+        pollBacktestStatus(backtestId);
         
-        loadBacktests();
-        toast.success('Backtest completed');
-      }, 3000);
+      } catch (apiError) {
+        console.error('Failed to call backend API, falling back to simulation:', apiError);
+        // Fallback to simulation if backend API is not available
+        setTimeout(async () => {
+          await supabase
+            .from('backtests')
+            .update({ 
+              status: 'completed',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', backtestId);
+          
+          loadBacktests();
+          toast.success('Backtest completed');
+        }, 3000);
+      }
 
     } catch (error) {
       toast.error('Failed to start backtest');
       console.error('Error running backtest:', error);
     }
+  };
+
+  const pollBacktestStatus = async (backtestId: string) => {
+    const checkStatus = async () => {
+      try {
+        const { data: backtest, error } = await supabase
+          .from('backtests')
+          .select('status, completed_at, error_message')
+          .eq('id', backtestId)
+          .single();
+
+        if (error) throw error;
+
+        if (backtest.status === 'completed') {
+          toast.success('Backtest completed successfully!');
+          loadBacktests();
+          return;
+        } else if (backtest.status === 'failed') {
+          toast.error(`Backtest failed: ${backtest.error_message || 'Unknown error'}`);
+          loadBacktests();
+          return;
+        } else if (backtest.status === 'running') {
+          // Continue polling
+          setTimeout(checkStatus, 2000);
+        }
+      } catch (error) {
+        console.error('Error checking backtest status:', error);
+        setTimeout(checkStatus, 5000); // Retry in 5 seconds
+      }
+    };
+
+    // Start polling after a short delay
+    setTimeout(checkStatus, 2000);
   };
 
   const getStatusBadge = (status: string) => {

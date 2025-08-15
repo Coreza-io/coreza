@@ -30,10 +30,10 @@ export function BacktestResults({ backtestId, onBack }: BacktestResultsProps) {
 
   const loadBacktestData = async () => {
     try {
-      // Get backtest details
+      // Get backtest details (without workflow join due to foreign key issue)
       const { data: backtest, error: backtestError } = await supabase
         .from('backtests')
-        .select('*, workflows(name)')
+        .select('*')
         .eq('id', backtestId)
         .single();
 
@@ -119,7 +119,7 @@ export function BacktestResults({ backtestId, onBack }: BacktestResultsProps) {
         <div>
           <h1 className="text-2xl font-bold">{backtest.name}</h1>
           <p className="text-muted-foreground">
-            {backtest.workflows?.name} • {format(new Date(backtest.start_date), 'MMM dd, yyyy')} - {format(new Date(backtest.end_date), 'MMM dd, yyyy')}
+            Workflow ID: {backtest.workflow_id} • {format(new Date(backtest.start_date), 'MMM dd, yyyy')} - {format(new Date(backtest.end_date), 'MMM dd, yyyy')}
           </p>
         </div>
       </div>

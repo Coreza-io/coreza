@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,9 +16,10 @@ interface BacktestConfigModalProps {
   onClose: () => void;
   onSubmit: (config: any) => void;
   workflows: Array<{ id: string; name: string }>;
+  editData?: any;
 }
 
-export function BacktestConfigModal({ isOpen, onClose, onSubmit, workflows }: BacktestConfigModalProps) {
+export function BacktestConfigModal({ isOpen, onClose, onSubmit, workflows, editData }: BacktestConfigModalProps) {
   const [config, setConfig] = useState({
     name: '',
     description: '',
@@ -30,6 +31,34 @@ export function BacktestConfigModal({ isOpen, onClose, onSubmit, workflows }: Ba
     slippage_rate: 0.001,
     data_frequency: '1d'
   });
+
+  useEffect(() => {
+    if (editData) {
+      setConfig({
+        name: editData.name || '',
+        description: editData.description || '',
+        workflow_id: editData.workflow_id || '',
+        start_date: editData.start_date ? new Date(editData.start_date) : undefined,
+        end_date: editData.end_date ? new Date(editData.end_date) : undefined,
+        initial_capital: editData.initial_capital || 10000,
+        commission_rate: editData.commission_rate || 0.001,
+        slippage_rate: editData.slippage_rate || 0.001,
+        data_frequency: editData.data_frequency || '1d'
+      });
+    } else {
+      setConfig({
+        name: '',
+        description: '',
+        workflow_id: '',
+        start_date: undefined,
+        end_date: undefined,
+        initial_capital: 10000,
+        commission_rate: 0.001,
+        slippage_rate: 0.001,
+        data_frequency: '1d'
+      });
+    }
+  }, [editData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +93,7 @@ export function BacktestConfigModal({ isOpen, onClose, onSubmit, workflows }: Ba
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Create New Backtest</DialogTitle>
+          <DialogTitle>{editData ? 'Edit Backtest' : 'Create New Backtest'}</DialogTitle>
           <DialogDescription>
             Configure your backtest parameters to analyze strategy performance
           </DialogDescription>
@@ -237,7 +266,7 @@ export function BacktestConfigModal({ isOpen, onClose, onSubmit, workflows }: Ba
               Cancel
             </Button>
             <Button type="submit">
-              Create Backtest
+              {editData ? 'Update Backtest' : 'Create Backtest'}
             </Button>
           </div>
         </form>

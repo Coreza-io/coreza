@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Play, BarChart3, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Play, BarChart3, TrendingUp, TrendingDown, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { BacktestConfigModal } from '@/components/backtesting/BacktestConfigModal';
@@ -22,6 +22,7 @@ export default function Backtesting() {
   const [loading, setLoading] = useState(true);
   const [selectedBacktest, setSelectedBacktest] = useState<string | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [editingBacktest, setEditingBacktest] = useState<Backtest | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -82,33 +83,61 @@ export default function Backtesting() {
 
   const handleCreateBacktest = async (config: any) => {
     try {
-      const { data, error } = await supabase
-        .from('backtests')
-        .insert({
-          user_id: user?.id,
-          workflow_id: config.workflow_id,
-          name: config.name,
-          description: config.description,
-          start_date: config.start_date,
-          end_date: config.end_date,
-          initial_capital: config.initial_capital,
-          commission_rate: config.commission_rate,
-          slippage_rate: config.slippage_rate,
-          data_frequency: config.data_frequency,
-          status: 'pending'
-        })
-        .select()
-        .single();
+      if (editingBacktest) {
+        // Update existing backtest
+        const { error } = await supabase
+          .from('backtests')
+          .update({
+            workflow_id: config.workflow_id,
+            name: config.name,
+            description: config.description,
+            start_date: config.start_date,
+            end_date: config.end_date,
+            initial_capital: config.initial_capital,
+            commission_rate: config.commission_rate,
+            slippage_rate: config.slippage_rate,
+            data_frequency: config.data_frequency,
+          })
+          .eq('id', editingBacktest.id);
 
-      if (error) throw error;
+        if (error) throw error;
+        toast.success('Backtest updated successfully');
+      } else {
+        // Create new backtest
+        const { data, error } = await supabase
+          .from('backtests')
+          .insert({
+            user_id: user?.id,
+            workflow_id: config.workflow_id,
+            name: config.name,
+            description: config.description,
+            start_date: config.start_date,
+            end_date: config.end_date,
+            initial_capital: config.initial_capital,
+            commission_rate: config.commission_rate,
+            slippage_rate: config.slippage_rate,
+            data_frequency: config.data_frequency,
+            status: 'pending'
+          })
+          .select()
+          .single();
 
-      toast.success('Backtest created successfully');
+        if (error) throw error;
+        toast.success('Backtest created successfully');
+      }
+
       setIsConfigModalOpen(false);
+      setEditingBacktest(null);
       loadBacktests();
     } catch (error) {
-      toast.error('Failed to create backtest');
-      console.error('Error creating backtest:', error);
+      toast.error(editingBacktest ? 'Failed to update backtest' : 'Failed to create backtest');
+      console.error('Error with backtest:', error);
     }
+  };
+
+  const handleEditBacktest = (backtest: Backtest) => {
+    setEditingBacktest(backtest);
+    setIsConfigModalOpen(true);
   };
 
   const handleRunBacktest = async (backtestId: string) => {
@@ -267,7 +296,7 @@ export default function Backtesting() {
             Test your trading strategies against historical data
           </p>
         </div>
-        <Button onClick={() => setIsConfigModalOpen(true)}>
+        <Button onClick={() => { setEditingBacktest(null); setIsConfigModalOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" />
           New Backtest
         </Button>
@@ -288,7 +317,7 @@ export default function Backtesting() {
                 <p className="text-muted-foreground mb-4">
                   Create your first backtest to analyze your trading strategies
                 </p>
-                <Button onClick={() => setIsConfigModalOpen(true)}>
+                <Button onClick={() => { setEditingBacktest(null); setIsConfigModalOpen(true); }}>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Backtest
                 </Button>
@@ -308,6 +337,17 @@ export default function Backtesting() {
                       </div>
                       <div className="flex items-center gap-2">
                         {getStatusBadge(backtest.status)}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditBacktest(backtest);
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
                         <Button
                           size="sm"
                           onClick={(e) => {
@@ -388,9 +428,10 @@ export default function Backtesting() {
 
       <BacktestConfigModal
         isOpen={isConfigModalOpen}
-        onClose={() => setIsConfigModalOpen(false)}
+        onClose={() => { setIsConfigModalOpen(false); setEditingBacktest(null); }}
         onSubmit={handleCreateBacktest}
         workflows={workflows}
+        editData={editingBacktest}
       />
     </div>
   );

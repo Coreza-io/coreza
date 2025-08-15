@@ -101,7 +101,7 @@ export class ProfessionalBacktestEngine {
     console.log(`Filtered workflow: ${allNodes.length} → ${filteredNodes.length} nodes, ${allEdges.length} → ${filteredEdges.length} edges`);
     
     // Find Alpaca nodes for historical data
-    await this.loadHistoricalDataFromAlpaca(filteredNodes);
+    await this.loadHistoricalDataFromWorkflow(filteredNodes);
     
     // Initialize strategy with filtered workflow
     this.strategy = new WorkflowStrategy(filteredNodes, filteredEdges);
@@ -154,63 +154,74 @@ export class ProfessionalBacktestEngine {
     });
   }
   
-  private async loadHistoricalDataFromAlpaca(nodes: WorkflowNode[]): Promise<void> {
-    console.log('🔍 Looking for Alpaca nodes to get historical data...');
+  private async loadHistoricalDataFromWorkflow(nodes: WorkflowNode[]): Promise<void> {
+    console.log('🔍 Looking for broker data nodes in workflow...');
     
-    // Find Alpaca nodes that fetch historical data
-    const alpacaNodes = nodes.filter(node => {
+    // Find any broker nodes that can provide historical data
+    const dataNodes = nodes.filter(node => {
       const nodeType = node.type || (node.data?.definition as any)?.name;
-      return nodeType === 'Alpaca' && node.values?.operation === 'get_candle';
+      const operation = node.values?.operation;
+      
+      // Check for any broker node with historical data operation
+      return (
+        (nodeType === 'Alpaca' && operation === 'get_candle') ||
+        (nodeType === 'Dhan' && operation === 'get_candle') ||
+        (node.category === 'Broker' && ['get_candle', 'get_history', 'get_chart'].includes(operation))
+      );
     });
     
-    if (alpacaNodes.length === 0) {
-      console.warn('⚠️ No Alpaca historical data nodes found, falling back to Yahoo Finance');
+    if (dataNodes.length === 0) {
+      console.warn('⚠️ No broker historical data nodes found, falling back to Yahoo Finance');
       const symbols = this.extractSymbolsFromWorkflow(nodes);
       await this.loadHistoricalDataFromYahoo(symbols);
       return;
     }
     
-    // Use Alpaca nodes to get historical data
-    for (const alpacaNode of alpacaNodes) {
+    // Use the broker nodes found in workflow to get historical data
+    for (const dataNode of dataNodes) {
       try {
-        const symbol = alpacaNode.values?.ticker || alpacaNode.values?.symbol;
+        const symbol = dataNode.values?.ticker || dataNode.values?.symbol;
         if (!symbol) continue;
         
-        console.log(`📈 Loading ${symbol} data from Alpaca node: ${alpacaNode.id}`);
+        const brokerType = dataNode.type || (dataNode.data?.definition as any)?.name;
+        console.log(`📈 Loading ${symbol} data from ${brokerType} node: ${dataNode.id}`);
         
-        // Execute the Alpaca node to get historical data
-        const result = await this.executeAlpacaHistoricalNode(alpacaNode);
+        // Execute the broker node to get historical data
+        const result = await this.executeBrokerHistoricalNode(dataNode, brokerType);
         
         if (result && result.data) {
-          const marketEvents = this.convertAlpacaToMarketEvents(symbol, result.data);
+          const marketEvents = this.convertBrokerDataToMarketEvents(symbol, result.data, brokerType);
           this.eventQueue.loadMarketData(symbol, marketEvents);
-          console.log(`✅ Loaded ${marketEvents.length} data points for ${symbol} from Alpaca`);
+          console.log(`✅ Loaded ${marketEvents.length} data points for ${symbol} from ${brokerType}`);
         }
       } catch (error) {
-        console.error(`❌ Failed to load Alpaca data for node ${alpacaNode.id}:`, error);
+        console.error(`❌ Failed to load ${dataNode.type} data for node ${dataNode.id}:`, error);
       }
     }
   }
   
-  private async executeAlpacaHistoricalNode(alpacaNode: WorkflowNode): Promise<any> {
+  private async executeBrokerHistoricalNode(brokerNode: WorkflowNode, brokerType: string): Promise<any> {
     // Import the BrokerService dynamically
     const { BrokerService } = await import('../brokers');
     
     // Prepare parameters for historical data request
     const params = {
-      ...alpacaNode.values,
+      ...brokerNode.values,
       user_id: this.config.user_id,
-      operation: 'get_candle',
+      operation: brokerNode.values?.operation || 'get_candle',
       start: this.config.start_date,
       end: this.config.end_date,
-      timeframe: this.mapFrequencyToAlpacaTimeframe(this.config.data_frequency)
+      timeframe: this.mapFrequencyToBrokerTimeframe(this.config.data_frequency, brokerType)
     };
     
-    return await BrokerService.execute('alpaca', params);
+    // Use the appropriate broker service
+    const serviceKey = brokerType.toLowerCase();
+    return await BrokerService.execute(serviceKey, params);
   }
   
-  private mapFrequencyToAlpacaTimeframe(frequency: string): string {
-    const mapping: Record<string, string> = {
+  private mapFrequencyToBrokerTimeframe(frequency: string, brokerType: string): string {
+    // Common mapping for most brokers
+    const commonMapping: Record<string, string> = {
       '1m': '1Min',
       '5m': '5Min', 
       '15m': '15Min',
@@ -221,20 +232,29 @@ export class ProfessionalBacktestEngine {
       '1mo': '1Month'
     };
     
-    return mapping[frequency] || '1Day';
+    // Broker-specific mappings if needed
+    if (brokerType.toLowerCase() === 'dhan') {
+      return commonMapping[frequency] || 'Daily';
+    }
+    
+    return commonMapping[frequency] || '1Day';
   }
   
-  private convertAlpacaToMarketEvents(symbol: string, alpacaData: any[]): MarketDataEvent[] {
-    return alpacaData.map(candle => ({
+  private convertBrokerDataToMarketEvents(symbol: string, brokerData: any, brokerType: string): MarketDataEvent[] {
+    // Handle different broker data formats
+    const dataArray = Array.isArray(brokerData) ? brokerData : 
+                     brokerData.candles || brokerData.data || brokerData.bars || [brokerData];
+    
+    return dataArray.map((candle: any) => ({
       type: 'MARKET_DATA' as const,
-      timestamp: new Date(candle.timestamp || candle.t),
+      timestamp: new Date(candle.timestamp || candle.t || candle.time || candle.date),
       symbol,
       open: candle.open || candle.o,
       high: candle.high || candle.h, 
       low: candle.low || candle.l,
       close: candle.close || candle.c,
       volume: candle.volume || candle.v,
-      adj_close: candle.close || candle.c
+      adj_close: candle.close || candle.c || candle.adj_close
     }));
   }
   

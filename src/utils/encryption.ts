@@ -8,27 +8,14 @@ class EncryptionUtil {
   private static readonly KEY_LENGTH = 256;
 
   /**
-   * Get the global encryption key from Supabase
+   * Get the global encryption key from environment variable
    */
-  private static async getEncryptionKey(): Promise<string> {
-    try {
-      const response = await fetch(`https://tiitofotheupylvxivge.supabase.co/functions/v1/get-encryption-key`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXRvZm90aGV1cHlsdnhpdmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MjcyNDEsImV4cCI6MjA2NjUwMzI0MX0.J8ZZajbqKcr66HxAN_WJ1eG1Yd77fz57rDSYZsaZNRQ`,
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to get encryption key');
-      }
-      
-      const { key } = await response.json();
-      return key;
-    } catch (error) {
-      console.error('Error getting encryption key:', error);
-      throw new Error('Failed to get encryption key');
+  private static getEncryptionKey(): string {
+    const key = import.meta.env.VITE_COREZA_ENCRYPTION_KEY;
+    if (!key) {
+      throw new Error('VITE_COREZA_ENCRYPTION_KEY not found in environment variables');
     }
+    return key;
   }
 
   /**
@@ -55,7 +42,7 @@ class EncryptionUtil {
    */
   static async encrypt(data: string): Promise<string> {
     try {
-      const keyString = await this.getEncryptionKey();
+      const keyString = this.getEncryptionKey();
       const key = await this.importKey(keyString);
       const encoder = new TextEncoder();
       const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
@@ -87,7 +74,7 @@ class EncryptionUtil {
    */
   static async decrypt(encryptedData: string): Promise<string> {
     try {
-      const keyString = await this.getEncryptionKey();
+      const keyString = this.getEncryptionKey();
       const key = await this.importKey(keyString);
       
       // Convert from base64

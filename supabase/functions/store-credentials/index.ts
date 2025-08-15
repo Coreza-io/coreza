@@ -6,50 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-class EncryptionUtil {
-  private static readonly ALGORITHM = 'AES-GCM';
-
-  private static async importKey(keyString: string): Promise<CryptoKey> {
-    const keyBuffer = Uint8Array.from(atob(keyString), c => c.charCodeAt(0));
-    
-    return await webcrypto.subtle.importKey(
-      'raw',
-      keyBuffer,
-      { name: this.ALGORITHM },
-      false,
-      ['encrypt']
-    );
-  }
-
-  static async encrypt(data: string): Promise<string> {
-    try {
-      const encryptionKey = Deno.env.get('COREZA_ENCRYPTION_KEY');
-      if (!encryptionKey) {
-        throw new Error('COREZA_ENCRYPTION_KEY not found');
-      }
-
-      const key = await this.importKey(encryptionKey);
-      const encoder = new TextEncoder();
-      const iv = webcrypto.getRandomValues(new Uint8Array(12));
-
-      const encrypted = await webcrypto.subtle.encrypt(
-        { name: this.ALGORITHM, iv: iv },
-        key,
-        encoder.encode(data)
-      );
-
-      const combined = new Uint8Array(iv.length + encrypted.byteLength);
-      combined.set(iv);
-      combined.set(new Uint8Array(encrypted), iv.length);
-
-      return btoa(String.fromCharCode.apply(null, Array.from(combined)));
-    } catch (error) {
-      console.error('Encryption error:', error);
-      throw new Error('Failed to encrypt data');
-    }
-  }
-}
-
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -62,9 +18,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { user_id, service_type, name, credentials } = await req.json()
+    const { user_id, service_type, name, encrypted_data } = await req.json()
 
-    if (!user_id || !service_type || !name || !credentials) {
+    if (!user_id || !service_type || !name || !encrypted_data) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { 
@@ -74,23 +30,29 @@ serve(async (req) => {
       )
     }
 
-    console.log(`Encrypting and storing credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
+    console.log(`Storing encrypted credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
+    console.log(`Encrypted data type: ${typeof encrypted_data}, fields: ${Object.keys(encrypted_data).join(', ')}`)
     
-    // Encrypt credentials before storing
-    const encryptedCredentials: Record<string, string> = {};
-    for (const [key, value] of Object.entries(credentials as Record<string, string>)) {
-      encryptedCredentials[key] = await EncryptionUtil.encrypt(value);
+    // Validate that encrypted_data is an object with encrypted fields
+    if (typeof encrypted_data !== 'object' || encrypted_data === null) {
+      return new Response(
+        JSON.stringify({ error: 'Encrypted data must be an object with encrypted fields' }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
 
     // Store encrypted credentials in the database
+    // encrypted_data is now a string containing the encrypted blob
     const { data, error } = await supabaseClient
       .from('user_credentials')
       .upsert({
         user_id,
         service_type,
         name,
-        client_json: encryptedCredentials,
-        token_json: {},
+        client_json: encrypted_data, // Already encrypted from frontend
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'

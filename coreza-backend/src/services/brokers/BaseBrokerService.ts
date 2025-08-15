@@ -55,6 +55,10 @@ export abstract class BaseBrokerService implements IBrokerService {
           decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key);
         }
         
+        if (decryptedClientJson.secret_key && DecryptionUtil.isEncrypted(decryptedClientJson.secret_key)) {
+          decryptedClientJson.secret_key = await DecryptionUtil.decrypt(decryptedClientJson.secret_key);
+        }
+        
         if (decryptedTokenJson.secret_key && DecryptionUtil.isEncrypted(decryptedTokenJson.secret_key)) {
           decryptedTokenJson.secret_key = await DecryptionUtil.decrypt(decryptedTokenJson.secret_key);
         }

@@ -606,7 +606,7 @@ class CredentialManager {
       }
 
       const keyBuffer = await this.deriveUserKey(masterKey, userId, 'credentials');
-      if (keyBuffer.length !== 32) {
+      if (keyBuffer.byteLength !== 32) {
         throw new Error(
           `Invalid derived key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`
         );

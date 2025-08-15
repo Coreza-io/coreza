@@ -14,6 +14,216 @@ export type Database = {
   }
   public: {
     Tables: {
+      backtest_portfolio_snapshots: {
+        Row: {
+          backtest_id: string
+          cash_balance: number
+          created_at: string
+          daily_return: number | null
+          date: string
+          id: string
+          stock_value: number
+          total_value: number
+        }
+        Insert: {
+          backtest_id: string
+          cash_balance: number
+          created_at?: string
+          daily_return?: number | null
+          date: string
+          id?: string
+          stock_value: number
+          total_value: number
+        }
+        Update: {
+          backtest_id?: string
+          cash_balance?: number
+          created_at?: string
+          daily_return?: number | null
+          date?: string
+          id?: string
+          stock_value?: number
+          total_value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_backtest_portfolio_snapshots_backtest_id"
+            columns: ["backtest_id"]
+            isOneToOne: false
+            referencedRelation: "backtests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backtest_results: {
+        Row: {
+          annualized_return: number | null
+          average_trade_return: number | null
+          backtest_id: string
+          created_at: string
+          final_portfolio_value: number | null
+          id: string
+          largest_loss: number | null
+          largest_win: number | null
+          max_drawdown: number | null
+          profitable_trades: number | null
+          sharpe_ratio: number | null
+          total_return: number | null
+          total_trades: number | null
+          win_rate: number | null
+        }
+        Insert: {
+          annualized_return?: number | null
+          average_trade_return?: number | null
+          backtest_id: string
+          created_at?: string
+          final_portfolio_value?: number | null
+          id?: string
+          largest_loss?: number | null
+          largest_win?: number | null
+          max_drawdown?: number | null
+          profitable_trades?: number | null
+          sharpe_ratio?: number | null
+          total_return?: number | null
+          total_trades?: number | null
+          win_rate?: number | null
+        }
+        Update: {
+          annualized_return?: number | null
+          average_trade_return?: number | null
+          backtest_id?: string
+          created_at?: string
+          final_portfolio_value?: number | null
+          id?: string
+          largest_loss?: number | null
+          largest_win?: number | null
+          max_drawdown?: number | null
+          profitable_trades?: number | null
+          sharpe_ratio?: number | null
+          total_return?: number | null
+          total_trades?: number | null
+          win_rate?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_backtest_results_backtest_id"
+            columns: ["backtest_id"]
+            isOneToOne: false
+            referencedRelation: "backtests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backtest_trades: {
+        Row: {
+          action: string
+          backtest_id: string
+          commission: number | null
+          created_at: string
+          id: string
+          portfolio_value_after: number | null
+          portfolio_value_before: number | null
+          price: number
+          quantity: number
+          slippage: number | null
+          symbol: string
+          timestamp: string
+        }
+        Insert: {
+          action: string
+          backtest_id: string
+          commission?: number | null
+          created_at?: string
+          id?: string
+          portfolio_value_after?: number | null
+          portfolio_value_before?: number | null
+          price: number
+          quantity: number
+          slippage?: number | null
+          symbol: string
+          timestamp: string
+        }
+        Update: {
+          action?: string
+          backtest_id?: string
+          commission?: number | null
+          created_at?: string
+          id?: string
+          portfolio_value_after?: number | null
+          portfolio_value_before?: number | null
+          price?: number
+          quantity?: number
+          slippage?: number | null
+          symbol?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_backtest_trades_backtest_id"
+            columns: ["backtest_id"]
+            isOneToOne: false
+            referencedRelation: "backtests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backtests: {
+        Row: {
+          commission_rate: number | null
+          completed_at: string | null
+          created_at: string
+          data_frequency: string
+          description: string | null
+          end_date: string
+          error_message: string | null
+          id: string
+          initial_capital: number
+          name: string
+          slippage_rate: number | null
+          start_date: string
+          started_at: string | null
+          status: string
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          commission_rate?: number | null
+          completed_at?: string | null
+          created_at?: string
+          data_frequency?: string
+          description?: string | null
+          end_date: string
+          error_message?: string | null
+          id?: string
+          initial_capital?: number
+          name: string
+          slippage_rate?: number | null
+          start_date: string
+          started_at?: string | null
+          status?: string
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          commission_rate?: number | null
+          completed_at?: string | null
+          created_at?: string
+          data_frequency?: string
+          description?: string | null
+          end_date?: string
+          error_message?: string | null
+          id?: string
+          initial_capital?: number
+          name?: string
+          slippage_rate?: number | null
+          start_date?: string
+          started_at?: string | null
+          status?: string
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: []
+      }
       node_executions: {
         Row: {
           error_message: string | null

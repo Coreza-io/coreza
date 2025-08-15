@@ -27,12 +27,22 @@ class DecryptionUtil {
    * Import the encryption key (base64 string) for use with Web Crypto API
    */
   private static async importKey(keyString: string): Promise<CryptoKey> {
-    // Decode base64 key like N8N does
+    // Decode base64 key and ensure it's exactly 32 bytes (256 bits)
     const keyBuffer = Uint8Array.from(Buffer.from(keyString, 'base64'));
+    
+    // Ensure the key is exactly 32 bytes (256 bits) for AES-256
+    let processedKey: Uint8Array;
+    if (keyBuffer.length >= 32) {
+      processedKey = keyBuffer.slice(0, 32); // Take first 32 bytes
+    } else {
+      // Pad with zeros if key is too short
+      processedKey = new Uint8Array(32);
+      processedKey.set(keyBuffer);
+    }
     
     return await crypto.subtle.importKey(
       'raw',
-      keyBuffer,
+      processedKey,
       {
         name: this.ALGORITHM,
         length: this.KEY_LENGTH,

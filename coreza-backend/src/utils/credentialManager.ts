@@ -116,6 +116,13 @@ class CredentialManager {
           const encPayload = this.bufferToBase64(credential.enc_payload);
           const iv = this.bufferToBase64(credential.iv);
           const authTag = this.bufferToBase64(credential.auth_tag);
+          
+          console.log('🔍 Debug IV:', { 
+            original: credential.iv, 
+            converted: iv, 
+            length: iv.length,
+            decoded_length: Buffer.from(iv, 'base64').length 
+          });
 
           const decryptedCredentials = await this.decryptFrontendData(
             userId,

@@ -308,18 +308,17 @@ export default function Backtesting() {
                       </div>
                       <div className="flex items-center gap-2">
                         {getStatusBadge(backtest.status)}
-                        {backtest.status === 'pending' && (
-                          <Button
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRunBacktest(backtest.id);
-                            }}
-                          >
-                            <Play className="h-4 w-4 mr-1" />
-                            Run
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRunBacktest(backtest.id);
+                          }}
+                          disabled={backtest.status === 'running'}
+                        >
+                          <Play className="h-4 w-4 mr-1" />
+                          {backtest.status === 'running' ? 'Running...' : 'Run'}
+                        </Button>
                       </div>
                     </div>
                   </CardHeader>

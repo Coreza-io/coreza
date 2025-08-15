@@ -191,27 +191,37 @@ class YahooFinanceService extends BaseDataService {
       throw createError('symbol is required', 400);
     }
 
-    const options: any = {
-      period1: period1 ? new Date(period1) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-      period2: period2 ? new Date(period2) : new Date(),
-      interval
-    };
+    console.log(`Fetching Yahoo Finance historical data for ${symbol}`, { period1, period2, interval });
+
+    try {
+      const options: any = {
+        period1: period1 ? new Date(period1) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+        period2: period2 ? new Date(period2) : new Date(),
+        interval,
+        events: 'history'
+      };
+      
+      console.log('Yahoo Finance options:', options);
+      const history = await yahooFinance.historical(symbol, options);
+      console.log(`Retrieved ${history.length} historical records for ${symbol}`);
     
-    const history = await yahooFinance.historical(symbol, options);
-    
-    return {
-      symbol,
-      interval,
-      data: history.map(item => ({
-        date: item.date,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-        volume: item.volume,
-        adjClose: item.adjClose
-      }))
-    };
+      return {
+        symbol,
+        interval,
+        data: history.map(item => ({
+          date: item.date,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+          volume: item.volume,
+          adjClose: item.adjClose
+        }))
+      };
+    } catch (error) {
+      console.error(`Error fetching Yahoo Finance historical data for ${symbol}:`, error);
+      throw createError(`Failed to fetch historical data for ${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`, 500);
+    }
   }
   
   private async search(input: DataInput): Promise<any> {

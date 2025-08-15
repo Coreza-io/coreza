@@ -95,8 +95,13 @@ class CredentialManager {
           const encPayload = credential.enc_payload.toString('base64');
           const iv = credential.iv.toString('base64');
           const authTag = credential.auth_tag.toString('base64');
-          
-          const decryptedCredentials = await this.decryptFrontendData(encPayload, iv, authTag);
+
+          const decryptedCredentials = await this.decryptFrontendData(
+            userId,
+            encPayload,
+            iv,
+            authTag
+          );
           return { credentials: decryptedCredentials };
         } catch (frontendDecryptError) {
           console.error('Failed to decrypt frontend data:', frontendDecryptError);
@@ -584,57 +589,42 @@ class CredentialManager {
   /**
    * Decrypt frontend data (enc_version: 2) using the same method as frontend
    */
-  private static async decryptFrontendData(encPayload: string, iv: string, authTag: string): Promise<any> {
+  private static async decryptFrontendData(
+    userId: string,
+    encPayload: string,
+    iv: string,
+    authTag: string
+  ): Promise<any> {
     try {
-      // Get encryption key from environment
       const masterKey = process.env.COREZA_ENCRYPTION_KEY;
       if (!masterKey) {
         throw new Error('Encryption key not available');
       }
-      
-      // Convert base64 strings back to buffers
+
+      const keyBuffer = await this.deriveUserKey(masterKey, userId, 'credentials');
+      if (keyBuffer.length !== 32) {
+        throw new Error(
+          `Invalid derived key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`
+        );
+      }
+
       const ivBuffer = Buffer.from(iv, 'base64');
       const ciphertextBuffer = Buffer.from(encPayload, 'base64');
       const authTagBuffer = Buffer.from(authTag, 'base64');
-      
-      // For now, use the master key directly until we know which userId to derive for
-      // TODO: Pass userId to this method to properly derive user-specific key
-      let keyBuffer: Buffer;
-      
-      // Try to use the master key as a 32-byte key (simplified approach)
-      if (masterKey.length === 64) {
-        // Assume it's a hex string
-        keyBuffer = Buffer.from(masterKey, 'hex');
-      } else if (masterKey.length > 32) {
-        // Assume it's base64
-        keyBuffer = Buffer.from(masterKey, 'base64');
-      } else {
-        // Plain string - pad to 32 bytes
-        const tempBuffer = Buffer.from(masterKey, 'utf8');
-        keyBuffer = Buffer.alloc(32);
-        tempBuffer.copy(keyBuffer, 0, 0, Math.min(tempBuffer.length, 32));
-      }
-      
-      // Ensure the key is exactly 32 bytes for AES-256
-      if (keyBuffer.length !== 32) {
-        throw new Error(`Invalid key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`);
-      }
-      
-      // Use synchronous import and correct Node.js crypto API
+
       const crypto = require('crypto');
-      
-      // Create decipher for AES-256-GCM - correct Node.js method
       const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivBuffer);
       decipher.setAuthTag(authTagBuffer);
-      
-      // Decrypt
+
       let decrypted = decipher.update(ciphertextBuffer);
       decrypted = Buffer.concat([decrypted, decipher.final()]);
-      
+
       return JSON.parse(decrypted.toString('utf8'));
     } catch (error) {
       console.error('Frontend decryption error:', error);
-      throw new Error(`Failed to decrypt frontend data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to decrypt frontend data: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 }

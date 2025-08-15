@@ -18,8 +18,8 @@ enable_confirmations = false
 [edge_functions]
 enabled = true
 
-[functions.store-credentials]
+[functions.derive-encryption-key]
 verify_jwt = false
 
-[functions.get-encryption-key]
+[functions.http-request]
 verify_jwt = false

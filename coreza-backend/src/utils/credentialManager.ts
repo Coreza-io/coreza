@@ -568,24 +568,34 @@ class CredentialManager {
   private static bufferToBase64(buffer: any): string {
     if (!buffer) return '';
     
-    // Handle hex-encoded strings (both direct strings and Buffer objects)
-    let hexString = '';
+    // Handle different buffer formats
     if (typeof buffer === 'string') {
-      hexString = buffer;
-    } else if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
-      hexString = Buffer.from(buffer.data).toString('utf8');
-    } else {
-      return String(buffer);
+      // If it's already a string, check if it's hex-encoded
+      if (buffer.startsWith('\\x')) {
+        const hexData = buffer.slice(2);
+        const binaryData = Buffer.from(hexData, 'hex');
+        return binaryData.toString('base64');
+      }
+      return buffer; // Already base64 or plain string
     }
     
-    // Convert hex string to base64
-    if (hexString.startsWith('\\x')) {
-      const hexData = hexString.slice(2);
-      const binaryData = Buffer.from(hexData, 'hex');
-      return binaryData.toString('base64');
+    if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
+      // Convert buffer data back to string
+      const bytes = Buffer.from(buffer.data);
+      const stringValue = bytes.toString('utf8');
+      
+      // Check if it's hex-encoded
+      if (stringValue.startsWith('\\x')) {
+        const hexData = stringValue.slice(2);
+        const binaryData = Buffer.from(hexData, 'hex');
+        return binaryData.toString('base64');
+      }
+      
+      // It's already base64 encoded string from frontend
+      return stringValue;
     }
     
-    return hexString; // Fallback if not hex-encoded
+    return String(buffer);
   }
 
 

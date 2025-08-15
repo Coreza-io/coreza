@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 class ClientEncryption {
   private static async getEncryptionKey(): Promise<CryptoKey> {
     try {
-      const { data, error } = await supabase.functions.invoke('get-encryption-key');
+      const { data, error } = await supabase.functions.invoke('derive-encryption-key');
       if (error || !data?.key) {
         throw new Error('Failed to get encryption key');
       }
@@ -100,8 +100,17 @@ export class CredentialManager {
     credentials: any, 
     scopes?: string
   ): Promise<void> {
+    // Input validation
+    if (!userId || !serviceType || !credentialName || !credentials) {
+      throw new Error('Missing required parameters');
+    }
+    
+    // Sanitize inputs
+    const sanitizedServiceType = serviceType.replace(/[^a-zA-Z0-9_-]/g, '');
+    const sanitizedCredentialName = credentialName.substring(0, 100); // Limit length
+    
     try {
-      console.log(`🔐 Encrypting credentials for ${serviceType}:${credentialName}`);
+      console.log(`🔐 Encrypting credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`);
       
       const encryptedCredentials = await ClientEncryption.encrypt(credentials);
       
@@ -109,10 +118,10 @@ export class CredentialManager {
         .from('user_credentials')
         .upsert({
           user_id: userId,
-          service_type: serviceType,
-          name: credentialName,
+          service_type: sanitizedServiceType,
+          name: sanitizedCredentialName,
           client_json: encryptedCredentials,
-          scopes,
+          scopes: scopes?.substring(0, 255), // Limit scope length
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id,service_type,name'
@@ -123,7 +132,7 @@ export class CredentialManager {
         throw new Error(`Failed to store credentials: ${error.message}`);
       }
       
-      console.log(`✅ Successfully stored encrypted credentials for ${serviceType}:${credentialName}`);
+      console.log(`✅ Successfully stored encrypted credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`);
     } catch (error) {
       console.error('Error storing credentials:', error);
       throw error;
@@ -135,6 +144,17 @@ export class CredentialManager {
    * Delete a credential
    */
   static async deleteCredential(userId: string, credentialId: string): Promise<void> {
+    // Input validation
+    if (!userId || !credentialId) {
+      throw new Error('Missing required parameters');
+    }
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(credentialId)) {
+      throw new Error('Invalid credential ID format');
+    }
+    
     try {
       const { error } = await supabase
         .from('user_credentials')

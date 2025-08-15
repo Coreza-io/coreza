@@ -6,6 +6,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Security-focused key derivation function
+async function deriveUserKey(masterKey: string, userId: string, context: string): Promise<string> {
+  const encoder = new TextEncoder();
+  
+  // Import master key
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(masterKey),
+    { name: 'HKDF' },
+    false,
+    ['deriveKey']
+  );
+  
+  // Derive user-specific key using HKDF
+  const derivedKey = await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: encoder.encode(`coreza-salt-${userId}`),
+      info: encoder.encode(`coreza-${context}-v1`)
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  
+  // Export as raw bytes and return as base64
+  const exported = await crypto.subtle.exportKey('raw', derivedKey);
+  return btoa(String.fromCharCode(...new Uint8Array(exported)));
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -15,7 +47,7 @@ serve(async (req) => {
   try {
     // Verify user authentication
     const authHeader = req.headers.get('authorization')
-    if (!authHeader) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { 
@@ -43,10 +75,9 @@ serve(async (req) => {
       )
     }
 
-    // Get the encryption key from environment
-    const encryptionKey = Deno.env.get('COREZA_ENCRYPTION_KEY');
-    
-    if (!encryptionKey) {
+    // Get the master encryption key from environment
+    const masterKey = Deno.env.get('COREZA_ENCRYPTION_KEY');
+    if (!masterKey) {
       console.error('COREZA_ENCRYPTION_KEY not found in environment');
       return new Response(
         JSON.stringify({ error: 'Encryption key not configured' }),
@@ -57,20 +88,23 @@ serve(async (req) => {
       );
     }
 
-    // Log access for security monitoring
-    console.log(`🔑 Encryption key requested by user: ${user.id}`)
+    // Derive user-specific key
+    const userKey = await deriveUserKey(masterKey, user.id, 'credentials');
+
+    // Log access for security monitoring (without exposing key)
+    console.log(`🔑 User-specific encryption key derived for user: ${user.id}`)
 
     return new Response(
-      JSON.stringify({ key: encryptionKey }),
+      JSON.stringify({ key: userKey }),
       { 
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   } catch (error) {
-    console.error('Error getting encryption key:', error);
+    console.error('Error deriving encryption key:', error);
     return new Response(
-      JSON.stringify({ error: 'Failed to get encryption key' }),
+      JSON.stringify({ error: 'Failed to derive encryption key' }),
       { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -5,6 +5,7 @@
 
 import express from 'express';
 import { z } from 'zod';
+import { supabase } from '../config/supabase';
 import CredentialManager from '../utils/credentialManager';
 // Security monitoring integrated into EnhancedCredentialManager
 
@@ -34,14 +35,27 @@ const migrateCredentialSchema = z.object({
   name: z.string().min(1)
 });
 
-// Auth middleware
-const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const userId = req.headers['user-id'] as string || req.query.user_id as string;
-  if (!userId) {
-    return res.status(401).json({ error: 'user_id is required' });
+// Auth middleware with proper JWT validation
+const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    req.userId = user.id;
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
   }
-  req.userId = userId;
-  next();
 };
 
 // Note: Frontend now handles credential storage directly via Supabase client

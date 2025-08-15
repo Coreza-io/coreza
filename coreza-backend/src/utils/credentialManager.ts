@@ -576,13 +576,28 @@ class CredentialManager {
     if (!buffer) return '';
     
     if (typeof buffer === 'string') {
+      // Handle hex-encoded strings from database
+      if (buffer.startsWith('\\x')) {
+        const hexData = buffer.slice(2); // Remove \x prefix
+        const binaryData = Buffer.from(hexData, 'hex');
+        return binaryData.toString('base64');
+      }
       return buffer; // Already a string
     }
     
     if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
-      // Convert buffer data array back to the original base64 string
+      // Convert buffer data array back to string
       const bytes = Buffer.from(buffer.data);
-      return bytes.toString('utf8'); // This returns the original base64 string
+      const stringValue = bytes.toString('utf8');
+      
+      // Handle hex-encoded format
+      if (stringValue.startsWith('\\x')) {
+        const hexData = stringValue.slice(2); // Remove \x prefix  
+        const binaryData = Buffer.from(hexData, 'hex');
+        return binaryData.toString('base64');
+      }
+      
+      return stringValue; // Already base64 string
     }
     
     return String(buffer);

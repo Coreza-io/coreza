@@ -96,7 +96,7 @@ class DecryptionUtil {
     
     // Skip if it looks like a plain text API key or common patterns
     if (data.startsWith('pk_') || data.startsWith('sk_') || data.startsWith('test_') || 
-        data.startsWith('live_') || data.length < 20 || !data.includes('=')) {
+        data.startsWith('live_') || data.length < 20) {
       return false;
     }
     

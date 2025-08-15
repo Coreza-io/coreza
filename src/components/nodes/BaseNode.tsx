@@ -351,7 +351,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       // Use credentials API for security  
-      const url = `${BACKEND_URL}/credentials?service_type=${apiName}`;
+      const url = `${BACKEND_URL}/credentials/list?service_type=${apiName}`;
       console.log('Fetching credentials from:', url);
       console.log('API name:', apiName, 'User ID:', userId);
       

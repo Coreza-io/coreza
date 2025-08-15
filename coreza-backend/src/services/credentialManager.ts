@@ -104,11 +104,11 @@ export class CredentialManager {
       try {
         // Only decrypt if the data appears to be encrypted
         if (DecryptionUtil.isEncrypted(data.client_json.api_key)) {
-          decryptedApiKey = await DecryptionUtil.decrypt(data.client_json.api_key, userId);
+          decryptedApiKey = await DecryptionUtil.decrypt(data.client_json.api_key);
         }
         
         if (DecryptionUtil.isEncrypted(data.token_json.secret_key)) {
-          decryptedSecretKey = await DecryptionUtil.decrypt(data.token_json.secret_key, userId);
+          decryptedSecretKey = await DecryptionUtil.decrypt(data.token_json.secret_key);
         }
       } catch (decryptError) {
         console.error('Error decrypting credentials:', decryptError);

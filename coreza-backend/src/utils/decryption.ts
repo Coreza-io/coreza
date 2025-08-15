@@ -1,6 +1,6 @@
 /**
  * Server-side decryption utility for sensitive data
- * Compatible with frontend encryption using Web Crypto API
+ * Uses global encryption key like N8N's approach with AES-256-GCM
  */
 
 import { webcrypto } from 'crypto';
@@ -13,27 +13,25 @@ class DecryptionUtil {
   private static readonly KEY_LENGTH = 256;
 
   /**
-   * Derive a key from user ID for consistent decryption
-   * This must match the frontend encryption key derivation
+   * Get the global encryption key from environment
    */
-  private static async deriveKey(userId: string): Promise<CryptoKey> {
-    const encoder = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(userId.padEnd(32, '0')), // Ensure 32 bytes
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
+  private static getEncryptionKey(): string {
+    const key = process.env.COREZA_ENCRYPTION_KEY;
+    if (!key) {
+      throw new Error('COREZA_ENCRYPTION_KEY not found in environment');
+    }
+    return key;
+  }
 
-    return await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: encoder.encode('supabase-credentials-salt'),
-        iterations: 100000,
-        hash: 'SHA-256',
-      },
-      keyMaterial,
+  /**
+   * Import the global encryption key for use with Web Crypto API
+   */
+  private static async importKey(keyString: string): Promise<CryptoKey> {
+    const keyBuffer = new TextEncoder().encode(keyString.slice(0, 32).padEnd(32, '0'));
+    
+    return await crypto.subtle.importKey(
+      'raw',
+      keyBuffer,
       {
         name: this.ALGORITHM,
         length: this.KEY_LENGTH,
@@ -44,11 +42,12 @@ class DecryptionUtil {
   }
 
   /**
-   * Decrypt sensitive data that was encrypted by the frontend
+   * Decrypt sensitive data that was encrypted by the frontend using global key
    */
-  static async decrypt(encryptedData: string, userId: string): Promise<string> {
+  static async decrypt(encryptedData: string): Promise<string> {
     try {
-      const key = await this.deriveKey(userId);
+      const keyString = this.getEncryptionKey();
+      const key = await this.importKey(keyString);
       
       // Convert from base64
       const combined = new Uint8Array(

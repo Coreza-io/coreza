@@ -52,11 +52,11 @@ export abstract class BaseBrokerService implements IBrokerService {
       try {
         // Decrypt sensitive fields if they appear to be encrypted
         if (decryptedClientJson.api_key && DecryptionUtil.isEncrypted(decryptedClientJson.api_key)) {
-          decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key, userId);
+          decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key);
         }
         
         if (decryptedTokenJson.secret_key && DecryptionUtil.isEncrypted(decryptedTokenJson.secret_key)) {
-          decryptedTokenJson.secret_key = await DecryptionUtil.decrypt(decryptedTokenJson.secret_key, userId);
+          decryptedTokenJson.secret_key = await DecryptionUtil.decrypt(decryptedTokenJson.secret_key);
         }
       } catch (decryptError) {
         console.error(`Error decrypting ${this.brokerKey} credentials:`, decryptError);

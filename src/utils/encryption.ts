@@ -1,6 +1,6 @@
 /**
  * Client-side encryption utility for sensitive data
- * Uses Web Crypto API for secure encryption
+ * Uses global encryption key like N8N's approach with AES-256-GCM
  */
 
 class EncryptionUtil {
@@ -8,55 +8,54 @@ class EncryptionUtil {
   private static readonly KEY_LENGTH = 256;
 
   /**
-   * Generate a random encryption key
+   * Get the global encryption key from Supabase
    */
-  private static async generateKey(): Promise<CryptoKey> {
-    return await crypto.subtle.generateKey(
-      {
-        name: this.ALGORITHM,
-        length: this.KEY_LENGTH,
-      },
-      true,
-      ['encrypt', 'decrypt']
-    );
-  }
-
-  /**
-   * Derive a key from user ID for consistent encryption
-   */
-  private static async deriveKey(userId: string): Promise<CryptoKey> {
-    const encoder = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(userId.padEnd(32, '0')), // Ensure 32 bytes
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
-
-    return await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: encoder.encode('supabase-credentials-salt'),
-        iterations: 100000,
-        hash: 'SHA-256',
-      },
-      keyMaterial,
-      {
-        name: this.ALGORITHM,
-        length: this.KEY_LENGTH,
-      },
-      false,
-      ['encrypt', 'decrypt']
-    );
-  }
-
-  /**
-   * Encrypt sensitive data
-   */
-  static async encrypt(data: string, userId: string): Promise<string> {
+  private static async getEncryptionKey(): Promise<string> {
     try {
-      const key = await this.deriveKey(userId);
+      const response = await fetch(`https://tiitofotheupylvxivge.supabase.co/functions/v1/get-encryption-key`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXRvZm90aGV1cHlsdnhpdmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MjcyNDEsImV4cCI6MjA2NjUwMzI0MX0.J8ZZajbqKcr66HxAN_WJ1eG1Yd77fz57rDSYZsaZNRQ`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get encryption key');
+      }
+      
+      const { key } = await response.json();
+      return key;
+    } catch (error) {
+      console.error('Error getting encryption key:', error);
+      throw new Error('Failed to get encryption key');
+    }
+  }
+
+  /**
+   * Import the global encryption key for use with Web Crypto API
+   */
+  private static async importKey(keyString: string): Promise<CryptoKey> {
+    const keyBuffer = new TextEncoder().encode(keyString.slice(0, 32).padEnd(32, '0'));
+    
+    return await crypto.subtle.importKey(
+      'raw',
+      keyBuffer,
+      {
+        name: this.ALGORITHM,
+        length: this.KEY_LENGTH,
+      },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
+   * Encrypt sensitive data using global encryption key
+   */
+  static async encrypt(data: string): Promise<string> {
+    try {
+      const keyString = await this.getEncryptionKey();
+      const key = await this.importKey(keyString);
       const encoder = new TextEncoder();
       const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
 
@@ -83,11 +82,12 @@ class EncryptionUtil {
   }
 
   /**
-   * Decrypt sensitive data
+   * Decrypt sensitive data using global encryption key
    */
-  static async decrypt(encryptedData: string, userId: string): Promise<string> {
+  static async decrypt(encryptedData: string): Promise<string> {
     try {
-      const key = await this.deriveKey(userId);
+      const keyString = await this.getEncryptionKey();
+      const key = await this.importKey(keyString);
       
       // Convert from base64
       const combined = new Uint8Array(

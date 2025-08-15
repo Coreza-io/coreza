@@ -62,10 +62,8 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
       
       for (const f of definition.authFields || []) {
         if (f.type !== "static" && f.key !== "credential_name") {
-          // Encrypt each field individually
           encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
-            fields[f.key], 
-            user.id
+            fields[f.key]
           );
         }
       }

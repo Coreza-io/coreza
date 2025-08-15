@@ -66,7 +66,7 @@ class CredentialManager {
           for (const [fieldName, encryptedValue] of Object.entries(clientJson)) {
             if (typeof encryptedValue === 'string') {
               try {
-                credentials[fieldName] = await EncryptionUtil.decrypt(encryptedValue, userId);
+                credentials[fieldName] = await EncryptionUtil.decrypt(encryptedValue);
               } catch (fieldDecryptError) {
                 console.error(`Failed to decrypt field ${fieldName} for credential ${record.id}:`, fieldDecryptError);
                 // Skip this credential if any field fails to decrypt

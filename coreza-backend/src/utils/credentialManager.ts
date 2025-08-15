@@ -568,14 +568,27 @@ class CredentialManager {
     }
   }
 
+  private static async deriveUserKey(masterKey: string, userId: string, context: string): Promise<Buffer> {
+    const crypto = require('crypto');
+    
+    // Use HKDF to derive the same key as the frontend
+    const salt = Buffer.from(`coreza-salt-${userId}`, 'utf8');
+    const info = Buffer.from(`coreza-${context}-v1`, 'utf8');
+    const keyMaterial = Buffer.from(masterKey, 'utf8');
+    
+    // HKDF-SHA256 to derive 32-byte key
+    const derivedKey = crypto.hkdfSync('sha256', keyMaterial, salt, info, 32);
+    return derivedKey;
+  }
+
   /**
    * Decrypt frontend data (enc_version: 2) using the same method as frontend
    */
   private static async decryptFrontendData(encPayload: string, iv: string, authTag: string): Promise<any> {
     try {
       // Get encryption key from environment
-      const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
-      if (!encryptionKey) {
+      const masterKey = process.env.COREZA_ENCRYPTION_KEY;
+      if (!masterKey) {
         throw new Error('Encryption key not available');
       }
       
@@ -584,8 +597,28 @@ class CredentialManager {
       const ciphertextBuffer = Buffer.from(encPayload, 'base64');
       const authTagBuffer = Buffer.from(authTag, 'base64');
       
-      // Create key buffer - same derivation as frontend edge function
-      const keyBuffer = Buffer.from(encryptionKey, 'base64');
+      // For now, use the master key directly until we know which userId to derive for
+      // TODO: Pass userId to this method to properly derive user-specific key
+      let keyBuffer: Buffer;
+      
+      // Try to use the master key as a 32-byte key (simplified approach)
+      if (masterKey.length === 64) {
+        // Assume it's a hex string
+        keyBuffer = Buffer.from(masterKey, 'hex');
+      } else if (masterKey.length > 32) {
+        // Assume it's base64
+        keyBuffer = Buffer.from(masterKey, 'base64');
+      } else {
+        // Plain string - pad to 32 bytes
+        const tempBuffer = Buffer.from(masterKey, 'utf8');
+        keyBuffer = Buffer.alloc(32);
+        tempBuffer.copy(keyBuffer, 0, 0, Math.min(tempBuffer.length, 32));
+      }
+      
+      // Ensure the key is exactly 32 bytes for AES-256
+      if (keyBuffer.length !== 32) {
+        throw new Error(`Invalid key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`);
+      }
       
       // Use synchronous import and correct Node.js crypto API
       const crypto = require('crypto');

@@ -216,19 +216,33 @@ class YahooFinanceService extends BaseDataService {
       const options = {
         period1: startDate,
         period2: endDate,
-        interval: interval as '1d' | '1wk' | '1mo'
+        interval: interval as
+          | '1m'
+          | '2m'
+          | '5m'
+          | '15m'
+          | '30m'
+          | '60m'
+          | '90m'
+          | '1h'
+          | '1d'
+          | '5d'
+          | '1wk'
+          | '1mo'
+          | '3mo'
       };
-      
+
       console.log('Yahoo Finance options:', {
         symbol,
         period1: startDate.toISOString(),
         period2: endDate.toISOString(),
         interval
       });
-      
-      const history = await yahooFinance.historical(symbol, options);
+
+      const chart = await yahooFinance.chart(symbol, options);
+      const history = chart.quotes || [];
       console.log(`Retrieved ${history.length} historical records for ${symbol}`);
-    
+
       return {
         symbol,
         interval,
@@ -239,7 +253,7 @@ class YahooFinanceService extends BaseDataService {
           low: item.low,
           close: item.close,
           volume: item.volume,
-          adjClose: item.adjClose
+          adjClose: item.adjclose
         }))
       };
     } catch (error) {

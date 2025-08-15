@@ -1,23 +1,10 @@
 /**
- * Frontend Credential Manager with direct encryption and database storage
- * Handles encryption client-side and stores directly to Supabase
+ * Frontend Credential Manager - Encryption and Storage Only
+ * Handles client-side encryption and direct database storage
  */
 
 import { supabase } from '@/integrations/supabase/client';
 
-export interface UserCredential {
-  id: string;
-  user_id: string;
-  service_type: string;
-  name: string;
-  scopes?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DecryptedCredential extends UserCredential {
-  credentials: any;
-}
 
 // Client-side encryption utility using Web Crypto API
 class ClientEncryption {
@@ -129,101 +116,6 @@ export class CredentialManager {
     }
   }
 
-  /**
-   * Retrieve and decrypt credentials
-   */
-  static async getCredentials(
-    userId: string, 
-    serviceType: string, 
-    credentialName?: string
-  ): Promise<DecryptedCredential[]> {
-    try {
-      console.log(`🔓 Retrieving credentials for ${serviceType}${credentialName ? `:${credentialName}` : ''}`);
-      
-      let query = supabase
-        .from('user_credentials')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('service_type', serviceType);
-
-      if (credentialName) {
-        query = query.eq('name', credentialName);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        console.error('Error fetching credentials:', error);
-        throw new Error(`Failed to fetch credentials: ${error.message}`);
-      }
-
-      if (!data || data.length === 0) {
-        return [];
-      }
-
-      const decryptedCredentials = await Promise.all(
-        data.map(async (cred) => {
-          try {
-            const decryptedData = await ClientEncryption.decrypt(cred.client_json as string);
-            return {
-              id: cred.id,
-              user_id: cred.user_id,
-              service_type: cred.service_type,
-              name: cred.name,
-              scopes: cred.scopes,
-              created_at: cred.created_at || '',
-              updated_at: cred.updated_at || '',
-              credentials: decryptedData
-            };
-          } catch (decryptError) {
-            console.error(`Failed to decrypt credential ${cred.id}:`, decryptError);
-            throw new Error(`Failed to decrypt credentials for ${cred.name}`);
-          }
-        })
-      );
-
-      console.log(`✅ Successfully decrypted ${decryptedCredentials.length} credentials`);
-      return decryptedCredentials;
-    } catch (error) {
-      console.error('Error fetching credentials:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * List credentials metadata without decryption
-   */
-  static async listCredentials(userId: string, serviceType?: string): Promise<UserCredential[]> {
-    try {
-      let query = supabase
-        .from('user_credentials')
-        .select('id, user_id, service_type, name, scopes, created_at, updated_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (serviceType) {
-        query = query.eq('service_type', serviceType);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        console.error('Error listing credentials:', error);
-        throw new Error(`Failed to list credentials: ${error.message}`);
-      }
-
-      return (data || []).map(cred => ({
-        id: cred.id,
-        user_id: cred.user_id,
-        service_type: cred.service_type,
-        name: cred.name,
-        scopes: cred.scopes,
-        created_at: cred.created_at || '',
-        updated_at: cred.updated_at || ''
-      }));
-    } catch (error) {
-      console.error('Error listing credentials:', error);
-      throw error;
-    }
-  }
 
   /**
    * Delete a credential

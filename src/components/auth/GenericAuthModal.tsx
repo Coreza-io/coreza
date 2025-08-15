@@ -57,24 +57,16 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     setLoading(true);
     try {
-      // TEMPORARILY COMMENTED: Create encrypted credentials object with each field encrypted individually
-      // const encryptedCredentials: Record<string, string> = {};
+      // Create encrypted credentials object with each field encrypted individually
+      const encryptedCredentials: Record<string, string> = {};
       
-      // for (const f of definition.authFields || []) {
-      //   if (f.type !== "static" && f.key !== "credential_name") {
-      //     // Encrypt each field individually
-      //     encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
-      //       fields[f.key], 
-      //       user.id
-      //     );
-      //   }
-      // }
-
-      // TEMPORARY: Store credentials in plain text
-      const credentialData: Record<string, string> = {};
       for (const f of definition.authFields || []) {
         if (f.type !== "static" && f.key !== "credential_name") {
-          credentialData[f.key] = fields[f.key];
+          // Encrypt each field individually
+          encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
+            fields[f.key], 
+            user.id
+          );
         }
       }
 
@@ -84,7 +76,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
           name: fields.credential_name || `${definition.name} Account`,
-          encrypted_data: credentialData
+          encrypted_data: encryptedCredentials
         }
       });
 

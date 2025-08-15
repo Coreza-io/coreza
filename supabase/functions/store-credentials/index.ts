@@ -31,27 +31,12 @@ serve(async (req) => {
     }
 
     console.log(`Storing encrypted credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
-    // TEMPORARILY COMMENTED: Encryption validation
-    // console.log(`Encrypted data type: ${typeof encrypted_data}, fields: ${Object.keys(encrypted_data).join(', ')}`)
+    console.log(`Encrypted data type: ${typeof encrypted_data}, fields: ${Object.keys(encrypted_data).join(', ')}`)
     
-    // // Validate that encrypted_data is an object with encrypted fields
-    // if (typeof encrypted_data !== 'object' || encrypted_data === null) {
-    //   return new Response(
-    //     JSON.stringify({ error: 'Encrypted data must be an object with encrypted fields' }),
-    //     { 
-    //       status: 400, 
-    //       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    //     }
-    //   )
-    // }
-
-    // TEMPORARY: Store credentials in plain text
-    console.log(`Storing plain text credentials for user ${user_id}, service: ${service_type}, name: ${name}`)
-    console.log(`Credential data type: ${typeof encrypted_data}`)
-    
+    // Validate that encrypted_data is an object with encrypted fields
     if (typeof encrypted_data !== 'object' || encrypted_data === null) {
       return new Response(
-        JSON.stringify({ error: 'Credential data must be an object' }),
+        JSON.stringify({ error: 'Encrypted data must be an object with encrypted fields' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -67,7 +52,7 @@ serve(async (req) => {
         user_id,
         service_type,
         name,
-        client_json: encrypted_data, // TEMPORARY: Store credentials in plain text
+        client_json: encrypted_data, // Already encrypted from frontend
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'

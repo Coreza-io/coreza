@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import EncryptionUtil from '../utils/encryption';
 
 export interface UserCredential {
   id: string;
@@ -20,7 +21,7 @@ export interface AlpacaCredentials {
 
 export class CredentialManager {
   /**
-   * Store user credentials for a service
+   * Store user credentials for a service (encrypts before storing)
    */
   static async storeCredentials(
     userId: string,
@@ -30,19 +31,24 @@ export class CredentialManager {
     scopes?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      // Encrypt sensitive credentials
+      const encryptedClientJson = {
+        api_key: EncryptionUtil.encrypt(credentials.api_key, userId),
+        paper_trading: credentials.paper_trading // This is not sensitive
+      };
+
+      const encryptedTokenJson = {
+        secret_key: EncryptionUtil.encrypt(credentials.secret_key, userId)
+      };
+
       const { data, error } = await supabase
         .from('user_credentials')
         .upsert({
           user_id: userId,
           service_type: serviceType,
           name: name,
-          client_json: {
-            api_key: credentials.api_key,
-            paper_trading: credentials.paper_trading
-          },
-          token_json: {
-            secret_key: credentials.secret_key
-          },
+          client_json: encryptedClientJson,
+          token_json: encryptedTokenJson,
           scopes: scopes || null
         }, {
           onConflict: 'user_id,service_type,name'
@@ -63,7 +69,7 @@ export class CredentialManager {
   }
 
   /**
-   * Retrieve user credentials for a service
+   * Retrieve user credentials for a service (decrypts after retrieving)
    */
   static async getCredentials(
     userId: string,
@@ -91,9 +97,10 @@ export class CredentialManager {
         return { error: error.message };
       }
 
+      // Decrypt sensitive credentials
       const credentials: AlpacaCredentials = {
-        api_key: data.client_json.api_key,
-        secret_key: data.token_json.secret_key,
+        api_key: EncryptionUtil.decrypt(data.client_json.api_key, userId),
+        secret_key: EncryptionUtil.decrypt(data.token_json.secret_key, userId),
         paper_trading: data.client_json.paper_trading || true
       };
 

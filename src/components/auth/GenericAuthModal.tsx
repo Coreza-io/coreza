@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import EncryptionUtil from "@/utils/encryption";
+
 import type { NodeConfig } from "@/nodes/manifest";
 
 interface GenericAuthModalProps {
@@ -57,24 +57,23 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     setLoading(true);
     try {
-      // Create encrypted credentials object with each field encrypted individually
-      const encryptedCredentials: Record<string, string> = {};
+      // Create credentials object (backend will encrypt before storing)
+      const credentials: Record<string, string> = {};
       
       for (const f of definition.authFields || []) {
         if (f.type !== "static" && f.key !== "credential_name") {
-          encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
-            fields[f.key]
-          );
+          // Send in plain text - backend will encrypt
+          credentials[f.key] = fields[f.key];
         }
       }
 
-      // Store encrypted credentials in Supabase
+      // Store credentials in Supabase
       const { error } = await supabase.functions.invoke('store-credentials', {
         body: {
           user_id: user.id,
           service_type: definition.name.toLowerCase(),
           name: fields.credential_name || `${definition.name} Account`,
-          encrypted_data: encryptedCredentials
+          credentials: credentials
         }
       });
 

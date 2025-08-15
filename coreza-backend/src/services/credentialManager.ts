@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
-import EncryptionUtil from '../utils/encryption';
+// Note: For now, we'll store credentials without additional backend encryption
+// The frontend already encrypts them before sending to the database
 
 export interface UserCredential {
   id: string;
@@ -31,14 +32,14 @@ export class CredentialManager {
     scopes?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Encrypt sensitive credentials
-      const encryptedClientJson = {
-        api_key: EncryptionUtil.encrypt(credentials.api_key, userId),
+      // Store credentials - they're already encrypted from frontend
+      const clientJson = {
+        api_key: credentials.api_key, // Frontend already encrypted this
         paper_trading: credentials.paper_trading // This is not sensitive
       };
 
-      const encryptedTokenJson = {
-        secret_key: EncryptionUtil.encrypt(credentials.secret_key, userId)
+      const tokenJson = {
+        secret_key: credentials.secret_key // Frontend already encrypted this
       };
 
       const { data, error } = await supabase
@@ -47,8 +48,8 @@ export class CredentialManager {
           user_id: userId,
           service_type: serviceType,
           name: name,
-          client_json: encryptedClientJson,
-          token_json: encryptedTokenJson,
+          client_json: clientJson,
+          token_json: tokenJson,
           scopes: scopes || null
         }, {
           onConflict: 'user_id,service_type,name'
@@ -69,7 +70,7 @@ export class CredentialManager {
   }
 
   /**
-   * Retrieve user credentials for a service (decrypts after retrieving)
+   * Retrieve user credentials for a service (credentials are already encrypted from frontend)
    */
   static async getCredentials(
     userId: string,
@@ -97,10 +98,10 @@ export class CredentialManager {
         return { error: error.message };
       }
 
-      // Decrypt sensitive credentials
+      // Return credentials as stored (they're already encrypted from frontend)
       const credentials: AlpacaCredentials = {
-        api_key: EncryptionUtil.decrypt(data.client_json.api_key, userId),
-        secret_key: EncryptionUtil.decrypt(data.token_json.secret_key, userId),
+        api_key: data.client_json.api_key, // Still encrypted
+        secret_key: data.token_json.secret_key, // Still encrypted
         paper_trading: data.client_json.paper_trading || true
       };
 

@@ -53,6 +53,10 @@ serve(async (req) => {
         service_type,
         name,
         client_json: encrypted_data, // Already encrypted from frontend
+        is_encrypted: true,           // Mark as encrypted
+        enc_version: 2,              // Using new encryption version
+        key_ref: 'user:v2',         // User-specific key reference
+        key_algo: 'AES-256-GCM',    // Encryption algorithm
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,service_type,name'

@@ -563,12 +563,23 @@ class CredentialManager {
 
   /**
    * Convert Supabase bytea Buffer to base64 string
+   * Handles the hex-encoded format that Supabase uses for bytea fields
    */
   private static bufferToBase64(buffer: any): string {
     if (!buffer) return '';
     if (typeof buffer === 'string') return buffer;
     if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
-      return Buffer.from(buffer.data).toString('utf8'); // This is already base64 encoded
+      // Convert the numeric array back to a Buffer, then to string
+      const bytes = Buffer.from(buffer.data);
+      // The bytes represent hex-encoded data, so convert from hex
+      const hexString = bytes.toString('utf8');
+      if (hexString.startsWith('\\x')) {
+        // Remove \x prefix and convert from hex to base64
+        const hexData = hexString.slice(2);
+        const binaryData = Buffer.from(hexData, 'hex');
+        return binaryData.toString('utf8'); // This should be the base64 string
+      }
+      return hexString; // Fallback if not hex-encoded
     }
     return String(buffer);
   }

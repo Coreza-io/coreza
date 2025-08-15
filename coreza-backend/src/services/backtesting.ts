@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { ProfessionalBacktestEngine } from './backtesting/ProfessionalBacktestEngine';
+import { WorkflowBacktestEngine } from './backtesting/WorkflowBacktestEngine';
 import { PerformanceMetrics } from './backtesting/types';
 import { createError } from '../middleware/errorHandler';
 
@@ -73,8 +74,8 @@ export class BacktestingService {
         throw createError('Backtest not found', 404);
       }
 
-      // Create professional backtest engine
-      const engine = new ProfessionalBacktestEngine(backtest, backtestId);
+      // Create workflow-driven backtest engine
+      const engine = new WorkflowBacktestEngine(backtest, backtestId);
       
       // Run the backtest
       const metrics = await engine.run();

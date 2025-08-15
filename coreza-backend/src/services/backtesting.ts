@@ -74,8 +74,19 @@ export class BacktestingService {
         throw createError('Backtest not found', 404);
       }
 
-      // Create workflow-driven backtest engine
-      const engine = new WorkflowBacktestEngine(backtest, backtestId);
+      // Get workflow data (nodes and edges)
+      const { data: workflow, error: workflowError } = await supabase
+        .from('workflows')
+        .select('nodes, edges')
+        .eq('id', backtest.workflow_id)
+        .single();
+
+      if (workflowError || !workflow) {
+        throw createError('Failed to load workflow', 404);
+      }
+
+      // Create workflow-driven backtest engine with proper parameters
+      const engine = new WorkflowBacktestEngine(backtest, workflow.nodes, workflow.edges);
       
       // Run the backtest
       const metrics = await engine.run();

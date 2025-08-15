@@ -89,8 +89,8 @@ This project is open source and available under the [MIT License](LICENSE).
 ## 🆘 Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [GitHub Issues](https://github.com/your-username/coreza-trading-platform/issues)
-- 💬 [Community Discussions](https://github.com/your-username/coreza-trading-platform/discussions)
+- 🐛 [GitHub Issues](https://github.com/your-username/your-repo-name/issues)
+- 💬 [Community Discussions](https://github.com/your-username/your-repo-name/discussions)
 
 ## ⚠️ Disclaimer
 

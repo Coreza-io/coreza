@@ -15,8 +15,8 @@ Before you begin, ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/coreza-trading-platform.git
-cd coreza-trading-platform
+git clone https://github.com/your-username/your-repo-name.git
+cd your-repo-name
 ```
 
 ### 2. Run the Setup Script

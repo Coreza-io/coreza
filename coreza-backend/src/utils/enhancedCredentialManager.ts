@@ -39,92 +39,75 @@ export interface CredentialPayload {
 
 class EnhancedCredentialManager {
   /**
-   * Store credentials using envelope encryption
+   * Get decrypted credentials for backend API calls only
+   * Frontend stores credentials directly via Supabase client
    */
-  static async storeCredentials(
+  static async getDecryptedCredentials(
     userId: string,
     serviceType: string,
-    name: string,
-    clientData: Record<string, any>,
-    tokenData: Record<string, any> = {},
-    scopes?: string
-  ): Promise<{ success: boolean; credentialId?: string; error?: string }> {
+    credentialName?: string
+  ): Promise<{ credentials?: any; error?: string }> {
     try {
-      // Validate credentials before storing
-      const combinedCredentials = { ...clientData, ...tokenData };
-      const validation = CredentialValidator.validateCredentials(serviceType, combinedCredentials);
-      
-      if (!validation.isValid) {
-        console.warn(`Validation failed for ${serviceType}: ${validation.errors.join(', ')}`);
-        return {
-          success: false,
-          error: `Validation failed: ${validation.errors.join(', ')}`
-        };
-      }
-
-      // Create unified payload
-      const payload: CredentialPayload = {
-        service_type: serviceType,
-        name,
-        client: clientData,
-        token: tokenData,
-        scopes,
-        meta: {
-          created_with_envelope: true,
-          migrated_from_plaintext: false
-        }
-      };
-
-      // Generate credential ID for AAD binding
-      const credentialId = crypto.randomUUID();
-
-      // Encrypt using envelope encryption
-      const encryptionResult = EnvelopeEncryptionUtil.encrypt(
-        payload,
-        userId,
-        credentialId
-      );
-
-      // Store in database
-      const { data, error } = await supabase
+      // Fetch encrypted credentials from database
+      let query = supabase
         .from('user_credentials')
-        .upsert({
-          id: credentialId,
-          user_id: userId,
-          service_type: serviceType,
-          name,
-          is_encrypted: true,
-          enc_version: encryptionResult.encVersion,
-          key_ref: encryptionResult.keyRef,
-          key_algo: 'AES-256-GCM',
-          enc_payload: encryptionResult.encPayload,
-          iv: encryptionResult.iv,
-          auth_tag: encryptionResult.authTag,
-          dek_wrapped: encryptionResult.dekWrapped,
-          // Keep legacy fields null for new records
-          client_json: null,
-          token_json: null,
-          scopes: null
-        }, {
-          onConflict: 'user_id,service_type,name'
-        })
-        .select('id')
-        .single();
+        .select('*')
+        .eq('user_id', userId)
+        .eq('service_type', serviceType);
 
-      if (error) {
-        console.error('Error storing credentials:', error);
-        return { success: false, error: 'Failed to store credentials' };
+      if (credentialName) {
+        query = query.eq('name', credentialName);
       }
 
-      console.log(`✅ Stored encrypted credentials for ${serviceType}:${name}`);
-      return { success: true, credentialId: data.id };
+      const { data, error } = await query;
+      if (error) {
+        return { error: `Failed to fetch credentials: ${error.message}` };
+      }
 
+      if (!data || data.length === 0) {
+        return { error: 'Credentials not found' };
+      }
+
+      const credential = data[0];
+      
+      // Try client_json field first (frontend encrypted)
+      if (credential.client_json) {
+        try {
+          // Frontend stores simple encrypted JSON string
+          const decryptionUtil = new DecryptionUtil();
+          const decryptedCredentials = await decryptionUtil.decrypt(credential.client_json as string);
+          return { credentials: decryptedCredentials };
+        } catch (decryptError) {
+          console.error('Failed to decrypt client_json:', decryptError);
+          return { error: 'Failed to decrypt credentials' };
+        }
+      }
+
+      // Fallback to envelope decryption for backend-stored credentials
+      if (credential.is_encrypted && credential.enc_payload) {
+        try {
+          const decryptionInput = {
+            encPayload: credential.enc_payload,
+            iv: credential.iv,
+            authTag: credential.auth_tag,
+            dekWrapped: credential.dek_wrapped,
+            keyRef: credential.key_ref || 'env:v1',
+            userId,
+            credentialId: credential.id
+          };
+
+          const payload = EnvelopeEncryptionUtil.decrypt(decryptionInput);
+          return { credentials: { ...payload.client, ...payload.token } };
+        } catch (envelopeError) {
+          console.error('Failed envelope decryption:', envelopeError);
+          return { error: 'Failed to decrypt envelope credentials' };
+        }
+      }
+
+      return { error: 'No valid credential data found' };
     } catch (error) {
-      console.error('Error in storeCredentials:', error);
-      return {
-        success: false,
-        error: `Storage failed: ${error instanceof Error ? error.message : String(error)}`
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return { error: errorMessage };
     }
   }
 

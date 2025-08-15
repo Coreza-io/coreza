@@ -4,9 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import EncryptionUtil from "@/utils/encryption";
+import { CredentialManager } from "@/utils/credentialManager";
 import type { NodeConfig } from "@/nodes/manifest";
 
 interface GenericAuthModalProps {
@@ -57,48 +56,22 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     setLoading(true);
     try {
-      // Create encrypted credentials object with each field encrypted individually
-      const encryptedCredentials: Record<string, string> = {};
+      // Prepare credentials object (non-static fields only)
+      const credentials: Record<string, string> = {};
       
       for (const f of definition.authFields || []) {
         if (f.type !== "static" && f.key !== "credential_name") {
-          encryptedCredentials[f.key] = await EncryptionUtil.encrypt(
-            fields[f.key]
-          );
+          credentials[f.key] = fields[f.key];
         }
       }
 
-      // Store credentials using enhanced backend API
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-      const response = await fetch(`${backendUrl}/api/enhanced-credentials/store`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'user-id': user.id
-        },
-        body: JSON.stringify({
-          service_type: definition.name.toLowerCase(),
-          name: fields.credential_name || `${definition.name} Account`,
-          client_data: encryptedCredentials,
-          token_data: {}
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = errorData.error || "Failed to store credentials securely";
-        console.error('Error storing credentials:', errorData);
-        setStatus({ type: "error", message: errorMessage });
-        toast({
-          title: "Storage Error",
-          description: errorMessage,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const result = await response.json();
-      console.log('Credentials stored successfully:', result);
+      // Store credentials directly using CredentialManager (client-side encryption)
+      await CredentialManager.storeCredentials(
+        user.id,
+        definition.name.toLowerCase(),
+        fields.credential_name || `${definition.name} Account`,
+        credentials
+      );
 
       const successMessage = "Credentials stored securely!";
       setStatus({ type: "success", message: successMessage });
@@ -114,6 +87,11 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
           setFields(current => ({ ...current, [key]: "" }));
         }
       });
+
+      // Close modal after short delay
+      setTimeout(() => {
+        onClose();
+      }, 1500);
 
     } catch (e: any) {
       console.error('Connection error:', e);

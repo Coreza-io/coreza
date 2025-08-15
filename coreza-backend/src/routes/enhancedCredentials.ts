@@ -44,46 +44,8 @@ const requireAuth = (req: express.Request, res: express.Response, next: express.
   next();
 };
 
-// Store credentials with envelope encryption
-router.post('/store', requireAuth, async (req, res) => {
-  try {
-    const validation = storeCredentialsSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({
-        error: 'Invalid request',
-        details: validation.error.errors
-      });
-    }
-
-    const { service_type, name, client_data, token_data, scopes } = validation.data;
-
-    const result = await EnhancedCredentialManager.storeCredentials(
-      req.userId,
-      service_type,
-      name,
-      client_data,
-      token_data,
-      scopes
-    );
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json({
-      success: true,
-      credential_id: result.credentialId,
-      message: 'Credentials stored with envelope encryption'
-    });
-
-  } catch (error) {
-    console.error('Store credentials error:', error);
-    res.status(500).json({
-      error: 'Failed to store credentials',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+// Note: Frontend now handles credential storage directly via Supabase client
+// This route is deprecated in favor of client-side encryption and storage
 
 // Get credentials with dual-read capability
 router.get('/', requireAuth, async (req, res) => {

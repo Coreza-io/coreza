@@ -195,8 +195,8 @@ class YahooFinanceService extends BaseDataService {
 
     try {
       const options: any = {
-        period1: period1 ? new Date(period1) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-        period2: period2 ? new Date(period2) : new Date(),
+        period1: typeof period1 === 'number' ? new Date(period1 * 1000) : new Date(period1),
+        period2: typeof period2 === 'number' ? new Date(period2 * 1000) : new Date(period2),
         interval,
         events: 'history'
       };

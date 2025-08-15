@@ -126,8 +126,8 @@ export class ProfessionalBacktestEngine {
       try {
         const result = await DataService.execute('yahoofinance', 'get_history', {
           symbol,
-          period1: this.config.start_date,
-          period2: this.config.end_date,
+          period1: new Date(this.config.start_date).getTime() / 1000, // Convert to Unix timestamp
+          period2: new Date(this.config.end_date).getTime() / 1000,   // Convert to Unix timestamp
           interval: this.config.data_frequency
         });
         

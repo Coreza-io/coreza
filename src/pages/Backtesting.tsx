@@ -12,20 +12,7 @@ import { BacktestConfigModal } from '@/components/backtesting/BacktestConfigModa
 import { BacktestResults } from '@/components/backtesting/BacktestResults';
 
 interface Backtest {
-  id: string;
-  name: string;
-  description?: string;
-  status: string;
-  start_date: string;
-  end_date: string;
-  initial_capital: number;
-  created_at: string;
-  workflows?: { name: string } | null;
-  backtest_results?: {
-    total_return: number;
-    final_portfolio_value: number;
-  }[];
-  [key: string]: any;
+  [key: string]: any; // Allow any additional properties from Supabase
 }
 
 export default function Backtesting() {

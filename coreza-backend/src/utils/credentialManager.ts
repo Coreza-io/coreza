@@ -37,7 +37,7 @@ export interface CredentialPayload {
   };
 }
 
-class EnhancedCredentialManager {
+class CredentialManager {
   /**
    * Get decrypted credentials for backend API calls only
    * Frontend stores credentials directly via Supabase client
@@ -515,4 +515,4 @@ class EnhancedCredentialManager {
   }
 }
 
-export default EnhancedCredentialManager;
+export default CredentialManager;

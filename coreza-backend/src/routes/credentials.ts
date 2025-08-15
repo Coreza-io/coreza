@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { z } from 'zod';
-import EnhancedCredentialManager from '../utils/enhancedCredentialManager';
+import CredentialManager from '../utils/credentialManager';
 // Security monitoring integrated into EnhancedCredentialManager
 
 const router = express.Router();
@@ -60,7 +60,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     const { service_type, name } = validation.data;
 
-    const credentials = await EnhancedCredentialManager.getCredentials(
+    const credentials = await CredentialManager.getCredentials(
       req.userId,
       service_type,
       name
@@ -103,7 +103,7 @@ router.get('/list', requireAuth, async (req, res) => {
   try {
     const serviceType = req.query.service_type as string;
 
-    const credentials = await EnhancedCredentialManager.listCredentials(
+    const credentials = await CredentialManager.listCredentials(
       req.userId,
       serviceType
     );
@@ -135,7 +135,7 @@ router.delete('/', requireAuth, async (req, res) => {
 
     const { credential_id } = validation.data;
 
-    await EnhancedCredentialManager.deleteCredential(req.userId, credential_id);
+    await CredentialManager.deleteCredential(req.userId, credential_id);
 
     res.json({
       success: true,
@@ -164,7 +164,7 @@ router.post('/migrate', requireAuth, async (req, res) => {
 
     const { credential_id, service_type, name } = validation.data;
 
-    const result = await EnhancedCredentialManager.migrateCredential(
+    const result = await CredentialManager.migrateCredential(
       credential_id,
       req.userId,
       service_type,
@@ -192,7 +192,7 @@ router.post('/migrate', requireAuth, async (req, res) => {
 // Batch migrate all user credentials
 router.post('/migrate-all', requireAuth, async (req, res) => {
   try {
-    const result = await EnhancedCredentialManager.batchMigrateUser(req.userId);
+    const result = await CredentialManager.batchMigrateUser(req.userId);
 
     res.json({
       success: result.success,
@@ -214,7 +214,7 @@ router.post('/migrate-all', requireAuth, async (req, res) => {
 // Get migration status
 router.get('/migration-status', requireAuth, async (req, res) => {
   try {
-    const status = await EnhancedCredentialManager.getMigrationStatus(req.userId);
+    const status = await CredentialManager.getMigrationStatus(req.userId);
 
     res.json({
       ...status,

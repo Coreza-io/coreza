@@ -655,7 +655,7 @@ class CredentialManager {
         throw new Error(`Bad IV length: ${ivBuffer.length}`);
       }
       if (ivBuffer.length !== 12) {
-        console.warn(`Unexpected IV length: ${ivBuffer.length}, expected 12`);
+        throw new Error(`Invalid IV length: expected 12 bytes, got ${ivBuffer.length} bytes`);
       }
 
       let ciphertextBuffer: Buffer;
@@ -668,7 +668,7 @@ class CredentialManager {
         authTagBuffer = ctOrCtPlusTag.subarray(ctOrCtPlusTag.length - 16);
         ciphertextBuffer = ctOrCtPlusTag.subarray(0, ctOrCtPlusTag.length - 16);
       } else {
-        throw new Error(`Bad auth tag length: ${authTagBuffer.length}, expected 16`);
+        throw new Error(`Invalid auth tag length: expected 16 bytes, got ${authTagBuffer.length} bytes`);
       }
 
       if (ciphertextBuffer.length < 1) {

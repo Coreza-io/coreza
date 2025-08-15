@@ -350,11 +350,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         return;
       }
       
-      const url = `${BACKEND_URL}/${apiName}/credentials?user_id=${userId}`;
+      // Use enhanced credentials API for better security  
+      const url = `${BACKEND_URL}/api/enhanced-credentials?service_type=${apiName}`;
       console.log('Fetching credentials from:', url);
       console.log('API name:', apiName, 'User ID:', userId);
       
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': userId
+        }
+      });
       console.log('Response status:', res.status);
       
       if (!res.ok) {

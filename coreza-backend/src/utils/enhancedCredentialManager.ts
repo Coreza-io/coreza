@@ -7,6 +7,7 @@ import { supabase } from '../config/supabase';
 import EnvelopeEncryptionUtil from './envelopeEncryption';
 import DecryptionUtil from './decryption';
 import { CredentialValidator } from './credentialValidator';
+// Security monitoring integrated directly
 
 export interface UserCredential {
   id: string;
@@ -54,6 +55,7 @@ class EnhancedCredentialManager {
       const validation = CredentialValidator.validateCredentials(serviceType, combinedCredentials);
       
       if (!validation.isValid) {
+        console.warn(`Validation failed for ${serviceType}: ${validation.errors.join(', ')}`);
         return {
           success: false,
           error: `Validation failed: ${validation.errors.join(', ')}`

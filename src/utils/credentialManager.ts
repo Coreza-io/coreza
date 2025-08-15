@@ -1,9 +1,9 @@
 /**
  * Credential Manager for secure handling of encrypted user credentials
+ * Updated to work with enhanced envelope encryption backend
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import EncryptionUtil from './encryption';
 
 export interface UserCredential {
   id: string;
@@ -14,12 +14,12 @@ export interface UserCredential {
 }
 
 export interface DecryptedCredential extends UserCredential {
-  credentials: Record<string, string>;
+  credentials: Record<string, any>;
 }
 
 class CredentialManager {
   /**
-   * Retrieve and decrypt user credentials for a specific service
+   * Retrieve and decrypt user credentials for a specific service using enhanced backend
    */
   static async getCredentials(
     userId: string, 
@@ -27,70 +27,28 @@ class CredentialManager {
     credentialName?: string
   ): Promise<DecryptedCredential[]> {
     try {
-      let query = supabase
-        .from('user_credentials')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('service_type', serviceType);
-
+      // Use enhanced credentials API
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+      let url = `${backendUrl}/api/enhanced-credentials?service_type=${serviceType}`;
+      
       if (credentialName) {
-        query = query.eq('name', credentialName);
+        url += `&name=${encodeURIComponent(credentialName)}`;
       }
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Error fetching credentials:', error);
-        throw new Error('Failed to fetch credentials');
-      }
-
-      if (!data || data.length === 0) {
-        return [];
-      }
-
-      // Decrypt each credential
-      const decryptedCredentials: DecryptedCredential[] = [];
-
-      for (const record of data) {
-        try {
-          // The client_json should contain individual encrypted fields
-          const clientJson = record.client_json as Record<string, string> | null;
-          
-          if (!clientJson || typeof clientJson !== 'object') {
-            console.warn(`Invalid client_json data for credential ${record.id}`);
-            continue;
-          }
-
-          // Decrypt each field individually
-          const credentials: Record<string, string> = {};
-          for (const [fieldName, encryptedValue] of Object.entries(clientJson)) {
-            if (typeof encryptedValue === 'string') {
-              try {
-                credentials[fieldName] = await EncryptionUtil.decrypt(encryptedValue);
-              } catch (fieldDecryptError) {
-                console.error(`Failed to decrypt field ${fieldName} for credential ${record.id}:`, fieldDecryptError);
-                // Skip this credential if any field fails to decrypt
-                throw fieldDecryptError;
-              }
-            }
-          }
-
-          decryptedCredentials.push({
-            id: record.id,
-            name: record.name,
-            service_type: record.service_type,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-            credentials
-          });
-
-        } catch (decryptError) {
-          console.error(`Failed to decrypt credential ${record.id}:`, decryptError);
-          // Skip this credential but continue with others
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': userId
         }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch credentials: ${response.statusText}`);
       }
 
-      return decryptedCredentials;
+      const data = await response.json();
+      return data.credentials || [];
 
     } catch (error) {
       console.error('Error in getCredentials:', error);
@@ -99,22 +57,25 @@ class CredentialManager {
   }
 
   /**
-   * Get all available credentials for a user (without decrypting)
+   * Get all available credentials for a user (without decrypting) using enhanced backend
    */
   static async listCredentials(userId: string): Promise<UserCredential[]> {
     try {
-      const { data, error } = await supabase
-        .from('user_credentials')
-        .select('id, name, service_type, created_at, updated_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+      const response = await fetch(`${backendUrl}/api/enhanced-credentials/list`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': userId
+        }
+      });
 
-      if (error) {
-        console.error('Error listing credentials:', error);
-        throw new Error('Failed to list credentials');
+      if (!response.ok) {
+        throw new Error(`Failed to list credentials: ${response.statusText}`);
       }
 
-      return data || [];
+      const data = await response.json();
+      return data.credentials || [];
 
     } catch (error) {
       console.error('Error in listCredentials:', error);
@@ -123,19 +84,24 @@ class CredentialManager {
   }
 
   /**
-   * Delete a credential
+   * Delete a credential using enhanced backend
    */
   static async deleteCredential(userId: string, credentialId: string): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('user_credentials')
-        .delete()
-        .eq('user_id', userId)
-        .eq('id', credentialId);
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+      const response = await fetch(`${backendUrl}/api/enhanced-credentials`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': userId
+        },
+        body: JSON.stringify({
+          credential_id: credentialId
+        })
+      });
 
-      if (error) {
-        console.error('Error deleting credential:', error);
-        throw new Error('Failed to delete credential');
+      if (!response.ok) {
+        throw new Error(`Failed to delete credential: ${response.statusText}`);
       }
 
     } catch (error) {

@@ -68,19 +68,26 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         }
       }
 
-      // Store encrypted credentials in Supabase
-      const { error } = await supabase.functions.invoke('store-credentials', {
-        body: {
-          user_id: user.id,
+      // Store credentials using enhanced backend API
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+      const response = await fetch(`${backendUrl}/api/enhanced-credentials/store`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': user.id
+        },
+        body: JSON.stringify({
           service_type: definition.name.toLowerCase(),
           name: fields.credential_name || `${definition.name} Account`,
-          encrypted_data: encryptedCredentials
-        }
+          client_data: encryptedCredentials,
+          token_data: {}
+        })
       });
 
-      if (error) {
-        console.error('Error storing credentials:', error);
-        const errorMessage = "Failed to store credentials securely";
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = errorData.error || "Failed to store credentials securely";
+        console.error('Error storing credentials:', errorData);
         setStatus({ type: "error", message: errorMessage });
         toast({
           title: "Storage Error",
@@ -89,6 +96,9 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         });
         return;
       }
+
+      const result = await response.json();
+      console.log('Credentials stored successfully:', result);
 
       const successMessage = "Credentials stored securely!";
       setStatus({ type: "success", message: successMessage });

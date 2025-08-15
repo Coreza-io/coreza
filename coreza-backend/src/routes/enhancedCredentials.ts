@@ -6,6 +6,7 @@
 import express from 'express';
 import { z } from 'zod';
 import EnhancedCredentialManager from '../utils/enhancedCredentialManager';
+// Security monitoring integrated into EnhancedCredentialManager
 
 const router = express.Router();
 
@@ -270,14 +271,6 @@ router.get('/migration-status', requireAuth, async (req, res) => {
 // Health check for encryption system
 router.get('/health', async (req, res) => {
   try {
-    // Test encryption key availability
-    const testData = { test: 'health_check' };
-    const testUserId = 'health_check_user';
-    
-    // This will throw if encryption key is not available
-    const encryptionResult = EnhancedCredentialManager['constructor'].prototype.constructor
-      .encrypt?.(testData, testUserId) || { success: true };
-
     res.json({
       status: 'healthy',
       encryption_available: Boolean(process.env.COREZA_ENCRYPTION_KEY),

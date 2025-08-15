@@ -77,8 +77,25 @@ class CorezaSetup {
     if (!this.config.projectId) {
       throw new Error('Invalid Supabase URL format');
     }
+
+    // Validate credential formats
+    this.validateCredentials();
     
     console.log(`✅ Project ID extracted: ${this.config.projectId}`);
+  }
+
+  validateCredentials() {
+    if (!this.config.supabaseUrl.startsWith('https://') || !this.config.supabaseUrl.includes('.supabase.co')) {
+      throw new Error('Invalid Supabase URL format. Should be https://your-project.supabase.co');
+    }
+    
+    if (!this.config.supabaseAnonKey.startsWith('eyJ')) {
+      throw new Error('Invalid Anon Key format. Should start with "eyJ"');
+    }
+    
+    if (!this.config.supabaseServiceKey.startsWith('eyJ')) {
+      throw new Error('Invalid Service Role Key format. Should start with "eyJ"');
+    }
   }
 
   extractProjectId(url) {
@@ -186,11 +203,15 @@ verify_jwt = false
     console.log('\n🗄️  Running database migrations...');
     
     try {
+      // Push migrations to the linked project
       execSync('supabase db push', { stdio: 'inherit' });
       console.log('✅ Database migrations completed');
     } catch (error) {
       console.log('⚠️  Manual migration required');
-      console.log('Please run: supabase db push');
+      console.log('1. Apply the schema manually by running:');
+      console.log('   supabase db push');
+      console.log('2. Or apply the migration file directly in Supabase SQL editor');
+      console.log('3. Migration file location: supabase/migrations/001_initial_schema.sql');
     }
   }
 
@@ -202,6 +223,34 @@ verify_jwt = false
     for (const file of requiredFiles) {
       if (!fs.existsSync(file)) {
         throw new Error(`Required file missing: ${file}`);
+      }
+    }
+
+    // Check if edge functions exist
+    const requiredFunctions = ['derive-encryption-key', 'http-request'];
+    for (const func of requiredFunctions) {
+      const funcPath = `supabase/functions/${func}/index.ts`;
+      if (!fs.existsSync(funcPath)) {
+        throw new Error(`Edge function missing: ${funcPath}`);
+      }
+    }
+
+    // Validate environment files have required variables
+    const frontendEnv = fs.readFileSync('.env', 'utf8');
+    const backendEnv = fs.readFileSync('coreza-backend/.env', 'utf8');
+    
+    const requiredFrontendVars = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_COREZA_ENCRYPTION_KEY'];
+    const requiredBackendVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'COREZA_ENCRYPTION_KEY'];
+    
+    for (const varName of requiredFrontendVars) {
+      if (!frontendEnv.includes(`${varName}=`)) {
+        throw new Error(`Missing frontend environment variable: ${varName}`);
+      }
+    }
+    
+    for (const varName of requiredBackendVars) {
+      if (!backendEnv.includes(`${varName}=`)) {
+        throw new Error(`Missing backend environment variable: ${varName}`);
       }
     }
     

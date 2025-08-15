@@ -13,7 +13,7 @@ cd coreza-trading-platform
 
 # Run the automated setup
 npm install
-node setup/setup.js
+npm run setup
 
 # Start the application
 npm run dev

@@ -113,6 +113,8 @@ export default function Backtesting() {
 
   const handleRunBacktest = async (backtestId: string) => {
     try {
+      console.log('Starting backtest:', backtestId);
+      
       // Update status to running
       await supabase
         .from('backtests')
@@ -127,11 +129,13 @@ export default function Backtesting() {
 
       // Call the Supabase edge function to run the backtest
       try {
+        console.log('Calling run-backtest edge function...');
         const { data, error } = await supabase.functions.invoke('run-backtest', {
           body: { backtestId }
         });
 
         if (error) {
+          console.error('Edge function error:', error);
           throw error;
         }
 
@@ -142,6 +146,7 @@ export default function Backtesting() {
         
       } catch (apiError) {
         console.error('Failed to call edge function:', apiError);
+        toast.error('Failed to start backtest execution');
         
         // Update status back to pending on error
         await supabase

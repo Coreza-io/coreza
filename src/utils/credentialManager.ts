@@ -46,6 +46,7 @@ class ClientEncryption {
     try {
       const key = await this.getEncryptionKey();
       const iv = crypto.getRandomValues(new Uint8Array(12));
+      console.log('🔑 Generated IV:', { length: iv.length, bytes: Array.from(iv) });
       const encoder = new TextEncoder();
       const dataBuffer = encoder.encode(JSON.stringify(data));
       
@@ -60,11 +61,20 @@ class ClientEncryption {
       const ciphertext = encryptedArray.slice(0, -16); // All but last 16 bytes
       const authTag = encryptedArray.slice(-16); // Last 16 bytes are the auth tag
       
-      return {
+      const result = {
         enc_payload: btoa(String.fromCharCode(...ciphertext)),
         iv: btoa(String.fromCharCode(...iv)),
         auth_tag: btoa(String.fromCharCode(...authTag))
       };
+      
+      console.log('🔑 Encryption result:', { 
+        iv_length: iv.length,
+        iv_base64: result.iv,
+        iv_base64_length: result.iv.length,
+        decoded_iv_length: atob(result.iv).length
+      });
+      
+      return result;
     } catch (error) {
       console.error('Encryption error:', error);
       throw new Error('Failed to encrypt data');

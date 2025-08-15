@@ -1,6 +1,5 @@
 import { supabase } from '../config/supabase';
-// Note: For now, we'll store credentials without additional backend encryption
-// The frontend already encrypts them before sending to the database
+import DecryptionUtil from '../utils/decryption';
 
 export interface UserCredential {
   id: string;
@@ -70,7 +69,7 @@ export class CredentialManager {
   }
 
   /**
-   * Retrieve user credentials for a service (credentials are already encrypted from frontend)
+   * Retrieve user credentials for a service and decrypt them for use
    */
   static async getCredentials(
     userId: string,
@@ -98,10 +97,27 @@ export class CredentialManager {
         return { error: error.message };
       }
 
-      // Return credentials as stored (they're already encrypted from frontend)
+      // Decrypt sensitive credentials for use
+      let decryptedApiKey = data.client_json.api_key;
+      let decryptedSecretKey = data.token_json.secret_key;
+
+      try {
+        // Only decrypt if the data appears to be encrypted
+        if (DecryptionUtil.isEncrypted(data.client_json.api_key)) {
+          decryptedApiKey = await DecryptionUtil.decrypt(data.client_json.api_key, userId);
+        }
+        
+        if (DecryptionUtil.isEncrypted(data.token_json.secret_key)) {
+          decryptedSecretKey = await DecryptionUtil.decrypt(data.token_json.secret_key, userId);
+        }
+      } catch (decryptError) {
+        console.error('Error decrypting credentials:', decryptError);
+        return { error: 'Failed to decrypt credentials' };
+      }
+
       const credentials: AlpacaCredentials = {
-        api_key: data.client_json.api_key, // Still encrypted
-        secret_key: data.token_json.secret_key, // Still encrypted
+        api_key: decryptedApiKey,
+        secret_key: decryptedSecretKey,
         paper_trading: data.client_json.paper_trading || true
       };
 

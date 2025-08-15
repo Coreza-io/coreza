@@ -1,5 +1,6 @@
 import { supabase } from '../../config/supabase';
 import { IBrokerService, BrokerInput, BrokerResult } from './types';
+import DecryptionUtil from '../../utils/decryption';
 
 export abstract class BaseBrokerService implements IBrokerService {
   abstract readonly brokerKey: string;
@@ -37,16 +38,37 @@ export abstract class BaseBrokerService implements IBrokerService {
         .single();
 
       if (error) {
-        // handle or throw error as needed
-        return { credentials: null }; // or throw error
-      }
-
-      if (!data) {
-        // Not found
         return { credentials: null };
       }
 
-      return { credentials: { client_json: data.client_json, token_json: data.token_json } };
+      if (!data) {
+        return { credentials: null };
+      }
+
+      // Decrypt credentials before returning
+      const decryptedClientJson = { ...data.client_json };
+      const decryptedTokenJson = { ...data.token_json };
+
+      try {
+        // Decrypt sensitive fields if they appear to be encrypted
+        if (decryptedClientJson.api_key && DecryptionUtil.isEncrypted(decryptedClientJson.api_key)) {
+          decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key, userId);
+        }
+        
+        if (decryptedTokenJson.secret_key && DecryptionUtil.isEncrypted(decryptedTokenJson.secret_key)) {
+          decryptedTokenJson.secret_key = await DecryptionUtil.decrypt(decryptedTokenJson.secret_key, userId);
+        }
+      } catch (decryptError) {
+        console.error(`Error decrypting ${this.brokerKey} credentials:`, decryptError);
+        throw new Error(`Failed to decrypt ${this.brokerKey} credentials`);
+      }
+
+      return { 
+        credentials: { 
+          client_json: decryptedClientJson, 
+          token_json: decryptedTokenJson 
+        } 
+      };
     } catch (error) {
       throw new Error(`Failed to get ${this.brokerKey} credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

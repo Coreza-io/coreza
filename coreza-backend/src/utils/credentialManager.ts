@@ -627,7 +627,6 @@ class CredentialManager {
       const ivBuffer = Buffer.from(iv, 'base64');
       const ctOrCtPlusTag = Buffer.from(encPayload, 'base64');
       let authTagBuffer = Buffer.from(authTag ?? '', 'base64');
-
       if (ivBuffer.length < 1) {
         throw new Error(`Bad IV length: ${ivBuffer.length}`);
       }

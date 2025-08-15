@@ -10,10 +10,13 @@ const corsHeaders = {
 async function deriveUserKey(masterKey: string, userId: string, context: string): Promise<string> {
   const encoder = new TextEncoder();
   
+  // COREZA_ENCRYPTION_KEY is base64-encoded
+  const keyBytes = Uint8Array.from(atob(masterKey), c => c.charCodeAt(0));
+
   // Import master key
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(masterKey),
+    keyBytes,
     { name: 'HKDF' },
     false,
     ['deriveKey']

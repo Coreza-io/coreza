@@ -9,6 +9,18 @@ import DecryptionUtil from './decryption';
 import { CredentialValidator } from './credentialValidator';
 // Security monitoring integrated directly
 
+// Normalize potential Supabase bytea outputs into base64 strings without double encoding
+function toB64(x: any): string {
+  if (!x) return '';
+  if (typeof x === 'string') return x; // already base64
+  if (Buffer.isBuffer(x)) return x.toString('base64');
+  if (x instanceof ArrayBuffer) return Buffer.from(x).toString('base64');
+  if (x?.type === 'Buffer' && Array.isArray(x.data)) {
+    return Buffer.from(x.data).toString('base64');
+  }
+  return String(x);
+}
+
 export interface UserCredential {
   id: string;
   name: string;
@@ -90,11 +102,10 @@ class CredentialManager {
       // Handle new frontend encryption format (enc_version: 2, key_ref: 'user:v2')
       if (credential.is_encrypted && credential.enc_version === 2 && credential.key_ref === 'user:v2') {
         try {
-          // Frontend stores data as base64 strings but database returns as binary
-          // Convert binary data back to base64 strings
-          const encPayload = credential.enc_payload.toString('base64');
-          const iv = credential.iv.toString('base64');
-          const authTag = credential.auth_tag.toString('base64');
+          // Supabase may return bytea fields as strings or binary buffers
+          const encPayload = toB64(credential.enc_payload);
+          const iv = toB64(credential.iv);
+          const authTag = toB64(credential.auth_tag);
 
           const decryptedCredentials = await this.decryptFrontendData(
             userId,
@@ -583,7 +594,8 @@ class CredentialManager {
     // Use HKDF to derive the same key as the frontend
     const salt = Buffer.from(`coreza-salt-${userId}`, 'utf8');
     const info = Buffer.from(`coreza-${context}-v1`, 'utf8');
-    const keyMaterial = Buffer.from(masterKey, 'utf8');
+    // COREZA_ENCRYPTION_KEY is expected to be base64-encoded
+    const keyMaterial = Buffer.from(masterKey, 'base64');
     
     // HKDF-SHA256 to derive 32-byte key
     const derivedKey = crypto.hkdfSync('sha256', keyMaterial, salt, info, 32);
@@ -608,13 +620,34 @@ class CredentialManager {
       const keyBuffer = await this.deriveUserKey(masterKey, userId, 'credentials');
       if (keyBuffer.byteLength !== 32) {
         throw new Error(
-          `Invalid derived key length: ${keyBuffer.length} bytes, expected 32 bytes for AES-256`
+          `Invalid derived key length: ${keyBuffer.byteLength} bytes, expected 32`
         );
       }
 
       const ivBuffer = Buffer.from(iv, 'base64');
-      const ciphertextBuffer = Buffer.from(encPayload, 'base64');
-      const authTagBuffer = Buffer.from(authTag, 'base64');
+      const ctOrCtPlusTag = Buffer.from(encPayload, 'base64');
+      let authTagBuffer = Buffer.from(authTag ?? '', 'base64');
+
+      if (ivBuffer.length !== 12) {
+        throw new Error(`Bad IV length: ${ivBuffer.length}, expected 12`);
+      }
+
+      let ciphertextBuffer: Buffer;
+      if (authTagBuffer.length === 16) {
+        ciphertextBuffer = ctOrCtPlusTag;
+      } else if (!authTag || authTagBuffer.length === 0) {
+        if (ctOrCtPlusTag.length < 17) {
+          throw new Error('Combined payload too short');
+        }
+        authTagBuffer = ctOrCtPlusTag.subarray(ctOrCtPlusTag.length - 16);
+        ciphertextBuffer = ctOrCtPlusTag.subarray(0, ctOrCtPlusTag.length - 16);
+      } else {
+        throw new Error(`Bad auth tag length: ${authTagBuffer.length}, expected 16`);
+      }
+
+      if (ciphertextBuffer.length < 1) {
+        throw new Error('Ciphertext too short');
+      }
 
       const crypto = require('crypto');
       const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivBuffer);

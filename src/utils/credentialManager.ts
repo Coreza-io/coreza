@@ -56,10 +56,21 @@ class ClientEncryption {
         dataBuffer
       );
       
+      console.log('🔑 After encryption:', { 
+        encrypted_length: encrypted.byteLength,
+        iv_used_length: iv.length 
+      });
+      
       // Extract the actual encrypted data and auth tag
       const encryptedArray = new Uint8Array(encrypted);
       const ciphertext = encryptedArray.slice(0, -16); // All but last 16 bytes
       const authTag = encryptedArray.slice(-16); // Last 16 bytes are the auth tag
+      
+      console.log('🔑 Extracted components:', { 
+        ciphertext_length: ciphertext.length,
+        auth_tag_length: authTag.length,
+        iv_final_length: iv.length
+      });
       
       const result = {
         enc_payload: btoa(String.fromCharCode(...ciphertext)),

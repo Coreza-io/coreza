@@ -570,19 +570,19 @@ class CredentialManager {
 
   /**
    * Convert Supabase bytea Buffer to base64 string
-   * The frontend stores base64 strings, Supabase returns them as Buffer objects
+   * Handles both hex-encoded format (old data) and direct base64 strings (new data)
    */
   private static bufferToBase64(buffer: any): string {
     if (!buffer) return '';
     
     if (typeof buffer === 'string') {
-      // Handle hex-encoded strings from database
+      // Handle hex-encoded strings from old database entries
       if (buffer.startsWith('\\x')) {
         const hexData = buffer.slice(2); // Remove \x prefix
         const binaryData = Buffer.from(hexData, 'hex');
         return binaryData.toString('base64');
       }
-      return buffer; // Already a string
+      return buffer; // Already a base64 string
     }
     
     if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
@@ -590,14 +590,15 @@ class CredentialManager {
       const bytes = Buffer.from(buffer.data);
       const stringValue = bytes.toString('utf8');
       
-      // Handle hex-encoded format
+      // Handle hex-encoded format from old entries
       if (stringValue.startsWith('\\x')) {
         const hexData = stringValue.slice(2); // Remove \x prefix  
         const binaryData = Buffer.from(hexData, 'hex');
         return binaryData.toString('base64');
       }
       
-      return stringValue; // Already base64 string
+      // Direct base64 string from new frontend format
+      return stringValue;
     }
     
     return String(buffer);

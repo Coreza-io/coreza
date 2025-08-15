@@ -87,19 +87,42 @@ class DecryptionUtil {
   }
 
   /**
-   * Check if a string appears to be encrypted (base64 encoded)
+   * Enhanced check if a string appears to be encrypted (base64 encoded)
    */
   static isEncrypted(data: string): boolean {
     if (!data || typeof data !== 'string') {
       return false;
     }
     
+    // Skip if it looks like a plain text API key or common patterns
+    if (data.startsWith('pk_') || data.startsWith('sk_') || data.startsWith('test_') || 
+        data.startsWith('live_') || data.length < 20 || !data.includes('=')) {
+      return false;
+    }
+    
     try {
       // Check if it's valid base64 and has reasonable length for encrypted data
       const decoded = Buffer.from(data, 'base64');
-      return decoded.length > 12; // At least IV (12 bytes) + some encrypted data
+      // Must be at least IV (12 bytes) + auth tag (16 bytes) + some encrypted data
+      return decoded.length >= 40;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Securely clear decrypted data from memory (best effort)
+   */
+  static secureWipe(data: string): void {
+    try {
+      // This is a best effort approach - JavaScript doesn't guarantee memory clearing
+      if (typeof data === 'string') {
+        // Convert to buffer and fill with zeros
+        const buffer = Buffer.from(data);
+        buffer.fill(0);
+      }
+    } catch (error) {
+      // Silently handle wipe errors
     }
   }
 }

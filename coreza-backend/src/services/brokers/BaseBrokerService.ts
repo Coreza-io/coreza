@@ -1,6 +1,7 @@
 import { supabase } from '../../config/supabase';
 import { IBrokerService, BrokerInput, BrokerResult } from './types';
 import DecryptionUtil from '../../utils/decryption';
+import { CredentialValidator } from '../../utils/credentialValidator';
 
 export abstract class BaseBrokerService implements IBrokerService {
   abstract readonly brokerKey: string;
@@ -50,18 +51,32 @@ export abstract class BaseBrokerService implements IBrokerService {
       const decryptedTokenJson = { ...data.token_json };
 
       try {
-        // Decrypt sensitive fields if they appear to be encrypted
-        if (decryptedClientJson.api_key && DecryptionUtil.isEncrypted(decryptedClientJson.api_key)) {
-          decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key);
+        // Decrypt all sensitive fields if they appear to be encrypted
+        const sensitiveFields = ['api_key', 'secret_key', 'access_token', 'refresh_token', 'client_secret'];
+        
+        for (const field of sensitiveFields) {
+          if (decryptedClientJson[field] && DecryptionUtil.isEncrypted(decryptedClientJson[field])) {
+            decryptedClientJson[field] = await DecryptionUtil.decrypt(decryptedClientJson[field]);
+          }
+          
+          if (decryptedTokenJson[field] && DecryptionUtil.isEncrypted(decryptedTokenJson[field])) {
+            decryptedTokenJson[field] = await DecryptionUtil.decrypt(decryptedTokenJson[field]);
+          }
         }
         
-        if (decryptedClientJson.secret_key && DecryptionUtil.isEncrypted(decryptedClientJson.secret_key)) {
-          decryptedClientJson.secret_key = await DecryptionUtil.decrypt(decryptedClientJson.secret_key);
+        // Validate decrypted credentials
+        const combinedCredentials = { ...decryptedClientJson, ...decryptedTokenJson };
+        const validation = CredentialValidator.validateCredentials(this.brokerKey, combinedCredentials);
+        
+        if (!validation.isValid) {
+          console.error(`Invalid ${this.brokerKey} credentials:`, validation.errors);
+          throw new Error(`Invalid ${this.brokerKey} credentials: ${validation.errors.join(', ')}`);
         }
         
-        if (decryptedTokenJson.secret_key && DecryptionUtil.isEncrypted(decryptedTokenJson.secret_key)) {
-          decryptedTokenJson.secret_key = await DecryptionUtil.decrypt(decryptedTokenJson.secret_key);
+        if (validation.warnings.length > 0) {
+          console.warn(`${this.brokerKey} credential warnings:`, validation.warnings);
         }
+        
       } catch (decryptError) {
         console.error(`Error decrypting ${this.brokerKey} credentials:`, decryptError);
         throw new Error(`Failed to decrypt ${this.brokerKey} credentials`);

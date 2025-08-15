@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import axios from 'axios';
 import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
+import DecryptionUtil from '../utils/decryption';
 
 export interface CommunicationInput {
   user_id: string;
@@ -20,22 +21,56 @@ abstract class BaseCommunicationService {
   protected abstract serviceName: string;
   
   protected async getCredentials(userId: string, credentialId: string): Promise<any> {
-    const { data, error } = await supabase
-      .from('user_credentials')
-      .select('client_json, token_json')
-      .eq('user_id', userId)
-      .eq('name', credentialId)
-      .eq('service_type', this.serviceName)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('client_json, token_json')
+        .eq('user_id', userId)
+        .eq('name', credentialId)
+        .eq('service_type', this.serviceName)
+        .single();
+        
+      if (error || !data) {
+        throw createError(`${this.serviceName} credentials not found`, 404);
+      }
+
+      // Decrypt credentials before returning
+      const decryptedClientJson = { ...data.client_json };
+      const decryptedTokenJson = { ...data.token_json };
+
+      try {
+        // Decrypt sensitive fields if they appear to be encrypted
+        if (decryptedClientJson.client_id && DecryptionUtil.isEncrypted(decryptedClientJson.client_id)) {
+          decryptedClientJson.client_id = await DecryptionUtil.decrypt(decryptedClientJson.client_id);
+        }
+        
+        if (decryptedClientJson.client_secret && DecryptionUtil.isEncrypted(decryptedClientJson.client_secret)) {
+          decryptedClientJson.client_secret = await DecryptionUtil.decrypt(decryptedClientJson.client_secret);
+        }
+        
+        if (decryptedClientJson.api_key && DecryptionUtil.isEncrypted(decryptedClientJson.api_key)) {
+          decryptedClientJson.api_key = await DecryptionUtil.decrypt(decryptedClientJson.api_key);
+        }
+        
+        if (decryptedTokenJson.access_token && DecryptionUtil.isEncrypted(decryptedTokenJson.access_token)) {
+          decryptedTokenJson.access_token = await DecryptionUtil.decrypt(decryptedTokenJson.access_token);
+        }
+        
+        if (decryptedTokenJson.refresh_token && DecryptionUtil.isEncrypted(decryptedTokenJson.refresh_token)) {
+          decryptedTokenJson.refresh_token = await DecryptionUtil.decrypt(decryptedTokenJson.refresh_token);
+        }
+      } catch (decryptError) {
+        console.error(`Error decrypting ${this.serviceName} credentials:`, decryptError);
+        throw new Error(`Failed to decrypt ${this.serviceName} credentials`);
+      }
       
-    if (error || !data) {
-      throw createError(`${this.serviceName} credentials not found`, 404);
+      return {
+        ...decryptedClientJson,
+        ...decryptedTokenJson
+      };
+    } catch (error) {
+      throw new Error(`Failed to get ${this.serviceName} credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-    
-    return {
-      ...data.client_json,
-      ...data.token_json
-    };
   }
   
   abstract execute(operation: string, input: CommunicationInput): Promise<CommunicationResult>;
@@ -228,7 +263,8 @@ class WhatsAppService extends BaseCommunicationService {
   
   async execute(operation: string, input: CommunicationInput): Promise<CommunicationResult> {
     try {
-      const credentials = this.getWhatsAppCredentials();
+      const { user_id, credential_id } = input;
+      const credentials = await this.getCredentials(user_id, credential_id);
 
       let result;
       switch (operation) {
@@ -251,13 +287,6 @@ class WhatsAppService extends BaseCommunicationService {
     }
   }
   
-  private getWhatsAppCredentials(): any {
-    return {
-      phone_number_id: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-      access_token: process.env.WHATSAPP_ACCESS_TOKEN || '',
-      webhook_verify_token: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'your_verify_token'
-    };
-  }
   
   private async sendMessage(credentials: any, input: CommunicationInput): Promise<any> {
     const { to, message, type = 'text' } = input;

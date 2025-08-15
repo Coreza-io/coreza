@@ -2,6 +2,7 @@ import { supabase } from '../../config/supabase';
 import { IBrokerService, BrokerInput, BrokerResult } from './types';
 import DecryptionUtil from '../../utils/decryption';
 import EnvelopeEncryptionUtil from '../../utils/envelopeEncryption';
+import CredentialManager from '../../utils/credentialManager';
 import { CredentialValidator } from '../../utils/credentialValidator';
 
 export abstract class BaseBrokerService implements IBrokerService {
@@ -49,22 +50,35 @@ export abstract class BaseBrokerService implements IBrokerService {
 
       let decryptedCredentials: any = {};
 
-      if (data.is_encrypted && data.enc_payload) {
-        // New envelope encryption path
-        console.log(`🔓 Decrypting envelope credentials for broker ${this.brokerKey}`);
-        
-        const decryptionInput = {
-          encPayload: data.enc_payload,
-          iv: data.iv,
-          authTag: data.auth_tag,
-          dekWrapped: data.dek_wrapped,
-          keyRef: data.key_ref || 'env:v1',
-          userId,
-          credentialId: data.id
-        };
+      if (data.is_encrypted) {
+        // Check for new frontend encryption format (enc_version: 2, key_ref: 'user:v2')
+        if (data.enc_version === 2 && data.key_ref === 'user:v2') {
+          console.log(`🔓 Decrypting frontend credentials for broker ${this.brokerKey}`);
+          
+          // Use CredentialManager for frontend-encrypted data
+          const result = await CredentialManager.getDecryptedCredentials(userId, this.brokerKey, data.name);
+          if (result.error) {
+            throw new Error(`Failed to get ${this.brokerKey} credentials: ${result.error}`);
+          }
+          decryptedCredentials = result.credentials;
+          
+        } else if (data.enc_payload) {
+          // Legacy envelope encryption path
+          console.log(`🔓 Decrypting envelope credentials for broker ${this.brokerKey}`);
+          
+          const decryptionInput = {
+            encPayload: data.enc_payload,
+            iv: data.iv,
+            authTag: data.auth_tag,
+            dekWrapped: data.dek_wrapped,
+            keyRef: data.key_ref || 'env:v1',
+            userId,
+            credentialId: data.id
+          };
 
-        const payload = EnvelopeEncryptionUtil.decrypt(decryptionInput);
-        decryptedCredentials = { ...payload.client, ...payload.token };
+          const payload = EnvelopeEncryptionUtil.decrypt(decryptionInput);
+          decryptedCredentials = { ...payload.client, ...payload.token };
+        }
 
       } else {
         // Legacy decryption path for backward compatibility

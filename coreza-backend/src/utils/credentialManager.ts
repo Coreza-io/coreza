@@ -550,6 +550,8 @@ class CredentialManager {
       };
     }
   }
+
+
   /**
    * Decrypt client-side encrypted data using Node.js crypto
    */

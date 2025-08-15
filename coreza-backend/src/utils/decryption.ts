@@ -24,10 +24,11 @@ class DecryptionUtil {
   }
 
   /**
-   * Import the global encryption key for use with Web Crypto API
+   * Import the encryption key (base64 string) for use with Web Crypto API
    */
   private static async importKey(keyString: string): Promise<CryptoKey> {
-    const keyBuffer = new TextEncoder().encode(keyString.slice(0, 32).padEnd(32, '0'));
+    // Decode base64 key like N8N does
+    const keyBuffer = Uint8Array.from(Buffer.from(keyString, 'base64'));
     
     return await crypto.subtle.importKey(
       'raw',

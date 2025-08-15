@@ -74,7 +74,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const { setNodes } = useReactFlow();
   const { setEdges } = useReactFlow();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const executionStore = useExecutionStore();
   const isMounted = useRef(true);
 
@@ -359,7 +359,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.session?.access_token}`,
+          'Authorization': `Bearer ${session?.access_token}`,
           'user-id': userId
         }
       });

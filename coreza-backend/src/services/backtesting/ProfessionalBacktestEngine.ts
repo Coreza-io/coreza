@@ -91,17 +91,20 @@ export class ProfessionalBacktestEngine {
       throw new Error('Failed to load workflow');
     }
     
-    const nodes: WorkflowNode[] = workflow.nodes;
-    const edges: WorkflowEdge[] = workflow.edges;
+    // Filter out irrelevant nodes for backtesting
+    const allNodes: WorkflowNode[] = workflow.nodes;
+    const allEdges: WorkflowEdge[] = workflow.edges;
     
-    // Extract symbols from workflow
-    const symbols = this.extractSymbolsFromWorkflow(nodes);
+    const filteredNodes = this.filterBacktestingNodes(allNodes);
+    const filteredEdges = this.filterBacktestingEdges(allEdges, filteredNodes);
     
-    // Load historical data for each symbol
-    await this.loadHistoricalData(symbols);
+    console.log(`Filtered workflow: ${allNodes.length} → ${filteredNodes.length} nodes, ${allEdges.length} → ${filteredEdges.length} edges`);
     
-    // Initialize strategy
-    this.strategy = new WorkflowStrategy(nodes, edges);
+    // Find Alpaca nodes for historical data
+    await this.loadHistoricalDataFromAlpaca(filteredNodes);
+    
+    // Initialize strategy with filtered workflow
+    this.strategy = new WorkflowStrategy(filteredNodes, filteredEdges);
   }
   
   private extractSymbolsFromWorkflow(nodes: WorkflowNode[]): string[] {
@@ -119,15 +122,131 @@ export class ProfessionalBacktestEngine {
     return Array.from(symbols);
   }
   
-  private async loadHistoricalData(symbols: string[]): Promise<void> {
-    console.log(`Loading historical data for symbols: ${symbols.join(', ')}`);
+  private filterBacktestingNodes(nodes: WorkflowNode[]): WorkflowNode[] {
+    const irrelevantTypes = ['Scheduler', 'Trigger', 'Webhook', 'Chat', 'Gmail', 'WhatsApp'];
+    
+    return nodes.filter(node => {
+      const nodeType = node.type || (node.data?.definition as any)?.name;
+      
+      // Filter out irrelevant nodes for backtesting
+      if (irrelevantTypes.includes(nodeType)) {
+        console.log(`🚫 Filtering out ${nodeType} node: ${node.id}`);
+        return false;
+      }
+      
+      return true;
+    });
+  }
+  
+  private filterBacktestingEdges(edges: WorkflowEdge[], filteredNodes: WorkflowNode[]): WorkflowEdge[] {
+    const nodeIds = new Set(filteredNodes.map(n => n.id));
+    
+    return edges.filter(edge => {
+      const hasValidSource = nodeIds.has(edge.source);
+      const hasValidTarget = nodeIds.has(edge.target);
+      
+      if (!hasValidSource || !hasValidTarget) {
+        console.log(`🚫 Filtering out edge ${edge.id}: ${edge.source} → ${edge.target}`);
+        return false;
+      }
+      
+      return true;
+    });
+  }
+  
+  private async loadHistoricalDataFromAlpaca(nodes: WorkflowNode[]): Promise<void> {
+    console.log('🔍 Looking for Alpaca nodes to get historical data...');
+    
+    // Find Alpaca nodes that fetch historical data
+    const alpacaNodes = nodes.filter(node => {
+      const nodeType = node.type || (node.data?.definition as any)?.name;
+      return nodeType === 'Alpaca' && node.values?.operation === 'get_candle';
+    });
+    
+    if (alpacaNodes.length === 0) {
+      console.warn('⚠️ No Alpaca historical data nodes found, falling back to Yahoo Finance');
+      const symbols = this.extractSymbolsFromWorkflow(nodes);
+      await this.loadHistoricalDataFromYahoo(symbols);
+      return;
+    }
+    
+    // Use Alpaca nodes to get historical data
+    for (const alpacaNode of alpacaNodes) {
+      try {
+        const symbol = alpacaNode.values?.ticker || alpacaNode.values?.symbol;
+        if (!symbol) continue;
+        
+        console.log(`📈 Loading ${symbol} data from Alpaca node: ${alpacaNode.id}`);
+        
+        // Execute the Alpaca node to get historical data
+        const result = await this.executeAlpacaHistoricalNode(alpacaNode);
+        
+        if (result && result.data) {
+          const marketEvents = this.convertAlpacaToMarketEvents(symbol, result.data);
+          this.eventQueue.loadMarketData(symbol, marketEvents);
+          console.log(`✅ Loaded ${marketEvents.length} data points for ${symbol} from Alpaca`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to load Alpaca data for node ${alpacaNode.id}:`, error);
+      }
+    }
+  }
+  
+  private async executeAlpacaHistoricalNode(alpacaNode: WorkflowNode): Promise<any> {
+    // Import the BrokerService dynamically
+    const { BrokerService } = await import('../brokers');
+    
+    // Prepare parameters for historical data request
+    const params = {
+      ...alpacaNode.values,
+      user_id: this.config.user_id,
+      operation: 'get_candle',
+      start: this.config.start_date,
+      end: this.config.end_date,
+      timeframe: this.mapFrequencyToAlpacaTimeframe(this.config.data_frequency)
+    };
+    
+    return await BrokerService.execute('alpaca', params);
+  }
+  
+  private mapFrequencyToAlpacaTimeframe(frequency: string): string {
+    const mapping: Record<string, string> = {
+      '1m': '1Min',
+      '5m': '5Min', 
+      '15m': '15Min',
+      '30m': '30Min',
+      '1h': '1Hour',
+      '1d': '1Day',
+      '1w': '1Week',
+      '1mo': '1Month'
+    };
+    
+    return mapping[frequency] || '1Day';
+  }
+  
+  private convertAlpacaToMarketEvents(symbol: string, alpacaData: any[]): MarketDataEvent[] {
+    return alpacaData.map(candle => ({
+      type: 'MARKET_DATA' as const,
+      timestamp: new Date(candle.timestamp || candle.t),
+      symbol,
+      open: candle.open || candle.o,
+      high: candle.high || candle.h, 
+      low: candle.low || candle.l,
+      close: candle.close || candle.c,
+      volume: candle.volume || candle.v,
+      adj_close: candle.close || candle.c
+    }));
+  }
+  
+  private async loadHistoricalDataFromYahoo(symbols: string[]): Promise<void> {
+    console.log(`📊 Loading historical data from Yahoo Finance for: ${symbols.join(', ')}`);
     
     for (const symbol of symbols) {
       try {
         const result = await DataService.execute('yahoofinance', 'get_history', {
           symbol,
-          period1: this.config.start_date, // Keep as string dates
-          period2: this.config.end_date,   // Keep as string dates
+          period1: this.config.start_date,
+          period2: this.config.end_date,
           interval: this.config.data_frequency
         });
         
@@ -145,10 +264,10 @@ export class ProfessionalBacktestEngine {
           }));
           
           this.eventQueue.loadMarketData(symbol, marketEvents);
-          console.log(`Loaded ${marketEvents.length} data points for ${symbol}`);
+          console.log(`✅ Loaded ${marketEvents.length} data points for ${symbol} from Yahoo`);
         }
       } catch (error) {
-        console.error(`Failed to load data for ${symbol}:`, error);
+        console.error(`❌ Failed to load Yahoo data for ${symbol}:`, error);
       }
     }
   }

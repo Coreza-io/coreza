@@ -57,36 +57,149 @@ export class WorkflowStrategy extends BaseStrategy {
     const signals: SignalEvent[] = [];
     
     try {
-      // Update context
+      // Update context with current market data
       this.context.currentDate = event.timestamp;
+      this.context.customState.set('currentMarketData', event);
       
-      // Execute workflow nodes in topological order
-      const executionOrder = this.getExecutionOrder();
+      // Execute workflow step-by-step like autoexecute
+      const nodeResults = this.executeWorkflowStepByStep(event);
       
-      for (const nodeId of executionOrder) {
-        const node = this.nodes.find(n => n.id === nodeId);
-        if (!node) continue;
-        
-        const result = this.executeNode(node, event);
-        
-        // Check if node generated trading signals
-        if (result && result.signals) {
-          signals.push(...result.signals);
+      // Extract trading signals from node results
+      nodeResults.forEach(result => {
+        if (result && this.isSignalResult(result)) {
+          const signal = this.convertToSignal(result, event);
+          if (signal) signals.push(signal);
         }
-        
-        // Update indicators and state
-        if (result && result.indicators) {
-          result.indicators.forEach((value: any, key: string) => {
-            this.context.indicators.set(key, value);
-          });
-        }
-      }
+      });
       
     } catch (error) {
-      console.error('Error executing strategy:', error);
+      console.error('Error executing strategy workflow:', error);
     }
     
     return signals;
+  }
+  
+  private executeWorkflowStepByStep(marketData: MarketDataEvent): any[] {
+    const results: any[] = [];
+    const executed = new Set<string>();
+    
+    // Get execution order (topological sort)
+    const executionOrder = this.getExecutionOrder();
+    
+    for (const nodeId of executionOrder) {
+      const node = this.nodes.find(n => n.id === nodeId);
+      if (!node) continue;
+      
+      try {
+        // Prepare input data for the node
+        const nodeInput = this.prepareNodeInput(node, marketData, executed);
+        
+        // Execute the node
+        const result = this.executeNode(node, nodeInput);
+        
+        // Store result and mark as executed
+        results.push(result);
+        executed.add(nodeId);
+        
+        // Update context with node output
+        this.updateContextWithNodeResult(nodeId, result);
+        
+      } catch (error) {
+        console.error(`Failed to execute node ${nodeId}:`, error);
+      }
+    }
+    
+    return results;
+  }
+  
+  private prepareNodeInput(node: WorkflowNode, marketData: MarketDataEvent, executed: Set<string>): any {
+    // Get inputs from upstream nodes
+    const upstreamEdges = this.edges.filter(e => e.target === node.id);
+    const inputs: any = {};
+    
+    // Add market data
+    inputs.marketData = marketData;
+    inputs[marketData.symbol] = {
+      open: marketData.open,
+      high: marketData.high, 
+      low: marketData.low,
+      close: marketData.close,
+      volume: marketData.volume,
+      timestamp: marketData.timestamp
+    };
+    
+    // Collect outputs from upstream nodes
+    upstreamEdges.forEach(edge => {
+      if (executed.has(edge.source)) {
+        const upstreamResult = this.context.customState.get(`node_${edge.source}_output`);
+        if (upstreamResult) {
+          inputs[`upstream_${edge.source}`] = upstreamResult;
+        }
+      }
+    });
+    
+    return inputs;
+  }
+  
+  private updateContextWithNodeResult(nodeId: string, result: any): void {
+    // Store node output for downstream nodes
+    this.context.customState.set(`node_${nodeId}_output`, result);
+    
+    // Update indicators if the result contains indicator values
+    if (result && typeof result === 'object') {
+      Object.entries(result).forEach(([key, value]) => {
+        if (typeof value === 'number' && !isNaN(value)) {
+          this.context.indicators.set(`${nodeId}_${key}`, value);
+        }
+      });
+    }
+  }
+  
+  private isSignalResult(result: any): boolean {
+    if (!result || typeof result !== 'object') return false;
+    
+    // Check for common signal patterns
+    return (
+      result.action || result.signal || result.trade ||
+      result.buy || result.sell || 
+      (result.hasOwnProperty('true') && result.hasOwnProperty('false')) // If node result
+    );
+  }
+  
+  private convertToSignal(result: any, marketData: MarketDataEvent): SignalEvent | null {
+    let action: 'BUY' | 'SELL' | null = null;
+    
+    // Determine action from result
+    if (result.action) {
+      action = result.action.toUpperCase();
+    } else if (result.buy === true) {
+      action = 'BUY';
+    } else if (result.sell === true) {
+      action = 'SELL';
+    } else if (result.true === true) {
+      action = 'BUY'; // Assume true condition means buy
+    } else if (result.false === true) {
+      action = 'SELL'; // Assume false condition means sell
+    }
+    
+    if (!action || !['BUY', 'SELL'].includes(action)) {
+      return null;
+    }
+    
+    const quantity = result.quantity || result.size || 100; // Default quantity
+    
+    return {
+      type: 'SIGNAL',
+      timestamp: marketData.timestamp,
+      symbol: marketData.symbol,
+      action,
+      quantity,
+      price: marketData.close,
+      metadata: {
+        source: 'workflow_strategy',
+        rawResult: result
+      }
+    };
   }
   
   private executeNode(node: WorkflowNode, marketData: MarketDataEvent): any {

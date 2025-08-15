@@ -572,8 +572,6 @@ class CredentialManager {
    * Decrypt frontend data (enc_version: 2) using the same method as frontend
    */
   private static async decryptFrontendData(encPayload: string, iv: string, authTag: string): Promise<any> {
-    const crypto = await import('crypto');
-    
     try {
       // Get encryption key from environment
       const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
@@ -589,9 +587,11 @@ class CredentialManager {
       // Create key buffer - same derivation as frontend edge function
       const keyBuffer = Buffer.from(encryptionKey, 'base64');
       
-      // Create decipher
-      const decipher = crypto.createDecipherGCM('aes-256-gcm', keyBuffer);
-      decipher.setIV(ivBuffer);
+      // Use synchronous import and correct Node.js crypto API
+      const crypto = require('crypto');
+      
+      // Create decipher for AES-256-GCM - correct Node.js method
+      const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivBuffer);
       decipher.setAuthTag(authTagBuffer);
       
       // Decrypt

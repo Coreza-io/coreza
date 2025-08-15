@@ -21,6 +21,16 @@ function toB64(x: any): string {
   return String(x);
 }
 
+// Helper to properly convert Supabase bytea Buffer objects to base64 strings
+function bufferToString(buffer: any): string {
+  if (!buffer) return '';
+  if (typeof buffer === 'string') return buffer;
+  if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
+    return Buffer.from(buffer.data).toString('utf8');
+  }
+  return String(buffer);
+}
+
 export interface UserCredential {
   id: string;
   name: string;
@@ -102,10 +112,10 @@ class CredentialManager {
       // Handle new frontend encryption format (enc_version: 2, key_ref: 'user:v2')
       if (credential.is_encrypted && credential.enc_version === 2 && credential.key_ref === 'user:v2') {
         try {
-          // Supabase may return bytea fields as strings or binary buffers
-          const encPayload = toB64(credential.enc_payload);
-          const iv = toB64(credential.iv);
-          const authTag = toB64(credential.auth_tag);
+          // Supabase stores bytea fields as Buffer objects - convert to base64 strings
+          const encPayload = this.bufferToBase64(credential.enc_payload);
+          const iv = this.bufferToBase64(credential.iv);
+          const authTag = this.bufferToBase64(credential.auth_tag);
 
           const decryptedCredentials = await this.decryptFrontendData(
             userId,
@@ -549,6 +559,18 @@ class CredentialManager {
         errors: [error instanceof Error ? error.message : String(error)]
       };
     }
+  }
+
+  /**
+   * Convert Supabase bytea Buffer to base64 string
+   */
+  private static bufferToBase64(buffer: any): string {
+    if (!buffer) return '';
+    if (typeof buffer === 'string') return buffer;
+    if (buffer?.type === 'Buffer' && Array.isArray(buffer.data)) {
+      return Buffer.from(buffer.data).toString('utf8'); // This is already base64 encoded
+    }
+    return String(buffer);
   }
 
 

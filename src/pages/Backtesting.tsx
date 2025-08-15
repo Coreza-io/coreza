@@ -32,18 +32,32 @@ export default function Backtesting() {
 
   const loadBacktests = async () => {
     try {
-      const { data, error } = await supabase
+      // First get backtests
+      const { data: backtestsData, error: backtestsError } = await supabase
         .from('backtests')
-        .select(`
-          *,
-          workflows(name),
-          backtest_results(total_return, final_portfolio_value)
-        `)
+        .select('*')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setBacktests(data || []);
+      if (backtestsError) throw backtestsError;
+
+      // Then get backtest results separately
+      const { data: resultsData, error: resultsError } = await supabase
+        .from('backtest_results')
+        .select('backtest_id, total_return, final_portfolio_value');
+
+      if (resultsError) throw resultsError;
+
+      // Combine the data
+      const backtestsWithResults = (backtestsData || []).map(backtest => {
+        const results = resultsData?.filter(r => r.backtest_id === backtest.id) || [];
+        return {
+          ...backtest,
+          backtest_results: results
+        };
+      });
+
+      setBacktests(backtestsWithResults);
     } catch (error) {
       toast.error('Failed to load backtests');
       console.error('Error loading backtests:', error);
@@ -232,7 +246,7 @@ export default function Backtesting() {
                       <div>
                         <CardTitle className="text-lg">{backtest.name}</CardTitle>
                         <CardDescription>
-                          {backtest.workflows?.name || 'Unknown Workflow'}
+                          {workflows.find(w => w.id === backtest.workflow_id)?.name || 'Unknown Workflow'}
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-2">

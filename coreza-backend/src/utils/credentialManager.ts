@@ -648,26 +648,17 @@ class CredentialManager {
         );
       }
 
+      // Frontend ALWAYS sends enc_payload, iv, and auth_tag separately
+      // No need for complex fallback logic - just decode and use them directly
       const ivBuffer = Buffer.from(iv, 'base64');
-      const ctOrCtPlusTag = Buffer.from(encPayload, 'base64');
-      let authTagBuffer = Buffer.from(authTag ?? '', 'base64');
-      if (ivBuffer.length < 1) {
-        throw new Error(`Bad IV length: ${ivBuffer.length}`);
-      }
+      const ciphertextBuffer = Buffer.from(encPayload, 'base64');
+      const authTagBuffer = Buffer.from(authTag, 'base64');
+      
+      // Validate the decoded buffer lengths
       if (ivBuffer.length !== 12) {
         throw new Error(`Invalid IV length: expected 12 bytes, got ${ivBuffer.length} bytes`);
       }
-
-      let ciphertextBuffer: Buffer;
-      if (authTagBuffer.length === 16) {
-        ciphertextBuffer = ctOrCtPlusTag;
-      } else if (!authTag || authTagBuffer.length === 0) {
-        if (ctOrCtPlusTag.length < 17) {
-          throw new Error('Combined payload too short');
-        }
-        authTagBuffer = ctOrCtPlusTag.subarray(ctOrCtPlusTag.length - 16);
-        ciphertextBuffer = ctOrCtPlusTag.subarray(0, ctOrCtPlusTag.length - 16);
-      } else {
+      if (authTagBuffer.length !== 16) {
         throw new Error(`Invalid auth tag length: expected 16 bytes, got ${authTagBuffer.length} bytes`);
       }
 

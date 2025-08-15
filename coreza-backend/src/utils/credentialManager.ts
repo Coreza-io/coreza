@@ -577,7 +577,7 @@ class CredentialManager {
         // Remove \x prefix and convert from hex to base64
         const hexData = hexString.slice(2);
         const binaryData = Buffer.from(hexData, 'hex');
-        return binaryData.toString('utf8'); // This should be the base64 string
+        return binaryData.toString('base64'); // Convert to base64, not utf8
       }
       return hexString; // Fallback if not hex-encoded
     }

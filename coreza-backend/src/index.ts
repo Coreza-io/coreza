@@ -16,7 +16,6 @@ import indicatorRoutes from './routes/indicators';
 import alpacaRoutes from './routes/alpaca';
 import marketRoutes from './routes/market';
 import credentialsRoutes from './routes/credentials';
-import enhancedCredentialsRoutes from './routes/enhancedCredentials';
 import dhanRoutes from './routes/dhan';
 import gmailRoutes from './routes/gmail';
 import finnhubRoutes from './routes/finnhub';

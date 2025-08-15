@@ -1,18 +1,21 @@
-import { Router, Request, Response } from 'express';
+/**
+ * Enhanced credentials API routes with envelope encryption support
+ * Provides migration capabilities and dual-read functionality
+ */
+
+import express from 'express';
 import { z } from 'zod';
-import { CredentialManager, AlpacaCredentials } from '../services/credentialManager';
+import EnhancedCredentialManager from '../utils/enhancedCredentialManager';
+// Security monitoring integrated into EnhancedCredentialManager
 
-const router = Router();
+const router = express.Router();
 
-// Validation schemas
+// Request validation schemas
 const storeCredentialsSchema = z.object({
   service_type: z.string().min(1),
   name: z.string().min(1),
-  credentials: z.object({
-    api_key: z.string().min(1),
-    secret_key: z.string().min(1),
-    paper_trading: z.boolean().default(true)
-  }),
+  client_data: z.record(z.any()),
+  token_data: z.record(z.any()).optional().default({}),
   scopes: z.string().optional()
 });
 
@@ -21,251 +24,229 @@ const getCredentialsSchema = z.object({
   name: z.string().optional()
 });
 
-const deleteCredentialsSchema = z.object({
+const deleteCredentialSchema = z.object({
+  credential_id: z.string().uuid()
+});
+
+const migrateCredentialSchema = z.object({
+  credential_id: z.string().uuid(),
   service_type: z.string().min(1),
   name: z.string().min(1)
 });
 
-// Middleware to extract user ID from auth header or session
-const requireAuth = (req: Request, res: Response, next: any) => {
-  // In a real implementation, you'd extract user ID from JWT token
-  // For now, we'll use a header or query parameter
-  const userId = req.headers['x-user-id'] as string || req.query.user_id as string;
-  
+// Auth middleware
+const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const userId = req.headers['user-id'] as string || req.query.user_id as string;
   if (!userId) {
-    return res.status(401).json({
-      success: false,
-      error: 'User authentication required'
-    });
+    return res.status(401).json({ error: 'user_id is required' });
   }
-  
   req.userId = userId;
   next();
 };
 
-// Store credentials
-router.post('/store', requireAuth, async (req: Request, res: Response) => {
+// Note: Frontend now handles credential storage directly via Supabase client
+// This route is deprecated in favor of client-side encryption and storage
+
+// Get credentials with dual-read capability
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const validation = storeCredentialsSchema.safeParse(req.body);
-    
+    const validation = getCredentialsSchema.safeParse(req.query);
     if (!validation.success) {
       return res.status(400).json({
-        success: false,
-        error: 'Invalid request data',
+        error: 'Invalid request',
         details: validation.error.errors
       });
     }
 
-    const { service_type, name, credentials, scopes } = validation.data;
-    const userId = req.userId!;
+    const { service_type, name } = validation.data;
 
-    // Validate credentials if it's Alpaca
-    if (service_type === 'alpaca') {
-      const validationResult = await CredentialManager.validateAlpacaCredentials(credentials);
-      if (!validationResult.valid) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid Alpaca credentials',
-          details: validationResult.error
-        });
+    const credentials = await EnhancedCredentialManager.getCredentials(
+      req.userId,
+      service_type,
+      name
+    );
+
+    // Don't return sensitive data in response
+    const sanitizedCredentials = credentials.map(cred => ({
+      id: cred.id,
+      name: cred.name,
+      service_type: cred.service_type,
+      created_at: cred.created_at,
+      updated_at: cred.updated_at,
+      is_encrypted: cred.is_encrypted,
+      enc_version: cred.enc_version,
+      key_ref: cred.key_ref,
+      // Only return non-sensitive credential fields
+      credential_summary: {
+        has_api_key: Boolean(cred.credentials.api_key),
+        has_secret_key: Boolean(cred.credentials.secret_key),
+        fields: Object.keys(cred.credentials)
       }
+    }));
+
+    res.json({
+      credentials: sanitizedCredentials,
+      count: credentials.length
+    });
+
+  } catch (error) {
+    console.error('Get credentials error:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve credentials',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// List credentials metadata
+router.get('/list', requireAuth, async (req, res) => {
+  try {
+    const serviceType = req.query.service_type as string;
+
+    const credentials = await EnhancedCredentialManager.listCredentials(
+      req.userId,
+      serviceType
+    );
+
+    res.json({
+      credentials,
+      count: credentials.length
+    });
+
+  } catch (error) {
+    console.error('List credentials error:', error);
+    res.status(500).json({
+      error: 'Failed to list credentials',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Delete credential
+router.delete('/', requireAuth, async (req, res) => {
+  try {
+    const validation = deleteCredentialSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        details: validation.error.errors
+      });
     }
 
-    const result = await CredentialManager.storeCredentials(
-      userId,
+    const { credential_id } = validation.data;
+
+    await EnhancedCredentialManager.deleteCredential(req.userId, credential_id);
+
+    res.json({
+      success: true,
+      message: 'Credential deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete credential error:', error);
+    res.status(500).json({
+      error: 'Failed to delete credential',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Migrate single credential to envelope encryption
+router.post('/migrate', requireAuth, async (req, res) => {
+  try {
+    const validation = migrateCredentialSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        details: validation.error.errors
+      });
+    }
+
+    const { credential_id, service_type, name } = validation.data;
+
+    const result = await EnhancedCredentialManager.migrateCredential(
+      credential_id,
+      req.userId,
       service_type,
-      name,
-      credentials,
-      scopes
+      name
     );
 
     if (!result.success) {
-      return res.status(500).json({
-        success: false,
-        error: result.error
-      });
+      return res.status(400).json({ error: result.error });
     }
 
     res.json({
       success: true,
-      message: 'Credentials stored successfully'
+      message: 'Credential migrated to envelope encryption'
     });
 
   } catch (error) {
-    console.error('Error in store credentials route:', error);
+    console.error('Migrate credential error:', error);
     res.status(500).json({
-      success: false,
-      error: 'Internal server error'
+      error: 'Failed to migrate credential',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// Get credentials
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+// Batch migrate all user credentials
+router.post('/migrate-all', requireAuth, async (req, res) => {
   try {
-    const validation = getCredentialsSchema.safeParse(req.query);
-    
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request parameters',
-        details: validation.error.errors
-      });
-    }
-
-    const { service_type, name } = validation.data;
-    const userId = req.userId!;
-
-    const result = await CredentialManager.getCredentials(userId, service_type, name);
-
-    if (result.error) {
-      return res.status(404).json({
-        success: false,
-        error: result.error
-      });
-    }
-
-    // Don't return the secret key in the response for security
-    const safeCredentials = {
-      api_key: result.credentials!.api_key,
-      paper_trading: result.credentials!.paper_trading,
-      // secret_key is omitted for security
-    };
+    const result = await EnhancedCredentialManager.batchMigrateUser(req.userId);
 
     res.json({
-      success: true,
-      credentials: safeCredentials
+      success: result.success,
+      migrated: result.migrated,
+      failed: result.failed,
+      errors: result.errors,
+      message: `Migration completed: ${result.migrated} migrated, ${result.failed} failed`
     });
 
   } catch (error) {
-    console.error('Error in get credentials route:', error);
+    console.error('Batch migrate error:', error);
     res.status(500).json({
-      success: false,
-      error: 'Internal server error'
+      error: 'Failed to batch migrate credentials',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// List user credentials
-router.get('/list', requireAuth, async (req: Request, res: Response) => {
+// Get migration status
+router.get('/migration-status', requireAuth, async (req, res) => {
   try {
-    const userId = req.userId!;
-    const serviceType = req.query.service_type as string;
-
-    const result = await CredentialManager.listUserCredentials(userId, serviceType);
-
-    if (result.error) {
-      return res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
+    const status = await EnhancedCredentialManager.getMigrationStatus(req.userId);
 
     res.json({
-      success: true,
-      credentials: result.credentials
+      ...status,
+      message: `${status.encrypted}/${status.total} credentials encrypted (${status.migrationProgress}%)`
     });
 
   } catch (error) {
-    console.error('Error in list credentials route:', error);
+    console.error('Migration status error:', error);
     res.status(500).json({
-      success: false,
-      error: 'Internal server error'
+      error: 'Failed to get migration status',
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// Delete credentials
-router.delete('/', requireAuth, async (req: Request, res: Response) => {
+// Health check for encryption system
+router.get('/health', async (req, res) => {
   try {
-    const validation = deleteCredentialsSchema.safeParse(req.body);
-    
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request data',
-        details: validation.error.errors
-      });
-    }
-
-    const { service_type, name } = validation.data;
-    const userId = req.userId!;
-
-    const result = await CredentialManager.deleteCredentials(userId, service_type, name);
-
-    if (!result.success) {
-      return res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
     res.json({
-      success: true,
-      message: 'Credentials deleted successfully'
+      status: 'healthy',
+      encryption_available: Boolean(process.env.COREZA_ENCRYPTION_KEY),
+      envelope_encryption: true,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('Error in delete credentials route:', error);
     res.status(500).json({
-      success: false,
-      error: 'Internal server error'
+      status: 'unhealthy',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
     });
   }
 });
-
-// Validate credentials
-router.post('/validate', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const validation = z.object({
-      service_type: z.string(),
-      credentials: z.object({
-        api_key: z.string(),
-        secret_key: z.string(),
-        paper_trading: z.boolean().default(true)
-      })
-    }).safeParse(req.body);
-
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request data'
-      });
-    }
-
-    const { service_type, credentials } = validation.data;
-
-    if (service_type === 'alpaca') {
-      const result = await CredentialManager.validateAlpacaCredentials(credentials);
-      
-      res.json({
-        success: true,
-        valid: result.valid,
-        error: result.error
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: 'Unsupported service type'
-      });
-    }
-
-  } catch (error) {
-    console.error('Error in validate credentials route:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-// Add user_id to request type
-declare global {
-  namespace Express {
-    interface Request {
-      userId?: string;
-    }
-  }
-}
 
 export default router;

@@ -564,7 +564,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         // Cap the loopIndex so it doesn't exceed maxLoopIndex
         let finished = false;
         //const endIndex = Math.min(start + batchSize, arrayLength);
-        const start = loopIndex;
+        let startIndex = loopIndex;
         let currentIndex = loopIndex;
         if (aggregateMode) {
           startIndex = 0;

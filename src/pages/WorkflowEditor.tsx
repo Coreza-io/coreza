@@ -401,9 +401,18 @@ const WorkflowEditorContent = () => {
   const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
     const nodeDefinition = nodeManifest[nodeType];
     
-    // Generate human-readable ID by counting existing nodes of same type
-    const existingNodesOfType = nodes.filter(node => node.type === nodeType);
-    const nodeId = existingNodesOfType.length === 0 ? nodeType : `${nodeType}${existingNodesOfType.length}`;
+    // Generate human-readable ID by finding the next available number
+    const existingIds = new Set(nodes.map(node => node.id));
+    let nodeId = nodeType;
+    
+    // If base name exists, find next available number
+    if (existingIds.has(nodeId)) {
+      let counter = 1;
+      while (existingIds.has(`${nodeType}${counter}`)) {
+        counter++;
+      }
+      nodeId = `${nodeType}${counter}`;
+    }
     
     const newNode: Node = {
       id: nodeId,

@@ -127,7 +127,7 @@ export const useWorkflowExecution = (
       setState(prev => ({ ...prev, isExecuting: false, executingNode: null }));
       executionAbortRef.current = null;
     }
-  }, [workflowExecutorRef.current, state.isExecuting, nodes.length, toast]);
+  }, [state.isExecuting, nodes.length, toast]);
 
   const executeNode = useCallback(async (nodeId: string): Promise<any> => {
     if (!workflowExecutorRef.current) {
@@ -151,7 +151,7 @@ export const useWorkflowExecution = (
     } finally {
       setState(prev => ({ ...prev, executingNode: null }));
     }
-  }, [workflowExecutorRef.current, state.isExecuting]);
+  }, [state.isExecuting]);
 
   const stopExecution = useCallback(() => {
     if (executionAbortRef.current) {

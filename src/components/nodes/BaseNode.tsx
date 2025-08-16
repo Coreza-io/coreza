@@ -526,12 +526,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
         // 1) normalize input → loopItems
         let loopItems: any[];
-        if (Array.isArray(effectiveInput)) loopItems = effectiveInput;
-        else if (typeof effectiveInput === "string") {
-          const parsed = JSON.parse(effectiveInput as any);
+        if (Array.isArray(payload.inputArray )) loopItems = payload.inputArray;
+        else if (typeof payload.inputArray === "string") {
+          const parsed = JSON.parse(payload.inputArray as any);
           loopItems = Array.isArray(parsed) ? parsed : [parsed];
-        } else if (effectiveInput == null) loopItems = [];
-        else if (typeof effectiveInput === "object") loopItems = [effectiveInput];
+        } else if (payload.inputArray == null) loopItems = [];
+        else if (typeof payload.inputArray === "object") loopItems = [payload.inputArray];
         else throw new Error("Loop input must be an array or JSON string representing an array");
 
         // 2) decide aggregation mode based on graph

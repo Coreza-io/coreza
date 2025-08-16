@@ -151,37 +151,69 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         return;
       }
       
-      // Check for name uniqueness across all nodes
+      // Check for name uniqueness across all nodes (both IDs and displayNames)
       const existingNames = nodes
         .filter(n => n.id !== nodeId)
-        .map(n => n.data.displayName || getDisplayName(n, nodes))
-        .filter(Boolean);
-      
+        .map(n => n.data?.displayName || n.id)
+        .filter((name): name is string => typeof name === 'string')
+        .map(name => name.toLowerCase());
+
       let finalName = trimmedName;
-      if (existingNames.includes(trimmedName)) {
+      if (existingNames.includes(finalName.toLowerCase())) {
         let counter = 1;
-        while (existingNames.includes(`${trimmedName}${counter}`)) {
+        while (existingNames.includes(`${finalName}${counter}`.toLowerCase())) {
           counter++;
         }
-        finalName = `${trimmedName}${counter}`;
-        toast({
-          title: "Name adjusted",
-          description: `Name changed to "${finalName}" to avoid conflicts`,
-        });
+        finalName = `${finalName}${counter}`;
       }
-      
-      // Update node data with custom displayName
-      setNodes(nds =>
-        nds.map(n =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, displayName: finalName } }
-            : n
-        )
-      );
+
+      const oldNodeId = nodeId!;
+      const newNodeId = finalName;
+
+      // Update node with new ID and display name (N8N behavior)
+      setNodes(prevNodes => {
+        return prevNodes.map(node => {
+          if (node.id === oldNodeId) {
+            return {
+              ...node,
+              id: newNodeId,
+              data: {
+                ...node.data,
+                displayName: finalName
+              }
+            };
+          }
+          return node;
+        });
+      });
+
+      // Update all edges that reference the old node ID
+      setEdges(prevEdges => {
+        return prevEdges.map(edge => {
+          let updatedEdge = { ...edge };
+          if (edge.source === oldNodeId) {
+            updatedEdge.source = newNodeId;
+          }
+          if (edge.target === oldNodeId) {
+            updatedEdge.target = newNodeId;
+          }
+          // Update edge ID if it contains the old node ID
+          if (edge.id.includes(oldNodeId)) {
+            updatedEdge.id = edge.id.replace(oldNodeId, newNodeId);
+          }
+          return updatedEdge;
+        });
+      });
+
+      toast({
+        title: "Node renamed",
+        description: `Node renamed to "${finalName}"`,
+      });
     }
+    
     setIsEditing(false);
     setEditingName('');
-  }, [editingName, displayName, nodeId, nodes, setNodes, toast]);
+  }, [editingName, displayName, nodeId, nodes, setNodes, setEdges, toast]);
 
   // F2 key handler - scoped to only this node when selected
   useEffect(() => {
@@ -399,7 +431,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode?.data?.displayName || getDisplayName(sourceNode, nodes) || sourceNode?.id;
+      const sourceDisplayName = sourceNode?.data?.displayName || sourceNode?.id;
       const kp = (keyPath ?? "").trim();
       const suffix = kp ? `.${kp}` : "";
       const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -429,7 +461,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     // Build allNodeData for cross-node references
     const allNodeData: Record<string, any> = {};
     previousNodes.forEach(prevNode => {
-      const displayName = prevNode.id;
+      const displayName = prevNode.data?.displayName || prevNode.id;
       // Prefer execution store
       let nodeData = executionStore.getNodeData(prevNode.id).output;
       if (nodeData === undefined) {
@@ -437,7 +469,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         nodeData = prevNode.data?.output || prevNode.data || {};
       }
 
-      allNodeData[displayName] = nodeData;
+      if (typeof displayName === 'string') {
+        allNodeData[displayName] = nodeData;
+      }
     });
     try {
       const resolved = resolveReferences(expr, srcData, allNodeData, nodes);

@@ -158,7 +158,7 @@ export const useWorkflowState = (
     try {
       // Prepare clean data for saving
       const minimalNodes = state.nodes.map(node => ({
-        id: node.id,
+        id: node.id, // This will now be the renamed ID (e.g., "uptrend" instead of "If1")
         type: node.type,
         category: (node.data.definition as any)?.category,
         subCategory: (node.data.definition as any)?.subCategory,

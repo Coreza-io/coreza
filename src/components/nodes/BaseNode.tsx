@@ -521,6 +521,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       if (definition?.name === "Loop") {
         const batchSize       = parseInt(fieldState.batchSize) || 1;
         const parallel        = !!fieldState.parallel;
+        const aggregateMode   = !!fieldState.aggregate;
         const continueOnError = !!fieldState.continueOnError;
         const throttleMs      = parseInt(fieldState.throttleMs) || 200;
 
@@ -533,9 +534,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         } else if (payload.inputArray == null) loopItems = [];
         else if (typeof payload.inputArray === "object") loopItems = [payload.inputArray];
         else throw new Error("Loop input must be an array or JSON string representing an array");
-
-        // 2) decide aggregation mode based on graph
-        const aggregateMode = "items";
 
         // 3) init / resume state
         const loopSig = makeArraySignature(loopItems);
@@ -567,8 +565,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         let finished = false;
         //const endIndex = Math.min(start + batchSize, arrayLength);
         const start = loopIndex;
-        const batch = items.slice(start, start + batchSize);
-        const current  = batchSize === 1 ? batch[0] : batch;
+        let currentIndex = loopIndex;
+        if (aggregateMode) {
+          startIndex = 0;
+        }
+        let endIndex = currentIndex + batchSize;
+        const batch = items.slice(startIndex, endIndex);
+        let current  = batchSize === 1 ? batch[0] : batch;
+        current  = !aggregateMode? batch[0] : batch;
 
         const incomingToLoop = edges.filter(e => e.target === nodeId!);
         const loopDataNow = executionStore.getNodeData(nodeId!) || {};

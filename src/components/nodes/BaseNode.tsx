@@ -600,7 +600,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     if (definition?.name === "If") {
       // Use the logicalOp field directly from fieldState (now it's a proper field)
       // Default to "AND" if not set
-      payload.logicalOp = fieldState.logicalOp || "AND";
+      payload.logicalOp = fieldState.logicalOp;
       
       // Add inputData as the current available data
       payload.inputData = allNodeData;

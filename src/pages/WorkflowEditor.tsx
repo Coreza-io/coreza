@@ -520,6 +520,9 @@ const WorkflowEditorContent = () => {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
         
+        // Clear execution context when starting a new workflow
+        executionStore.clear();
+        
         setNodes(initialNodes);
         setEdges(initialEdges);
         setIsActive(false);
@@ -539,6 +542,9 @@ const WorkflowEditorContent = () => {
           if (data && !error) {
             setWorkflowName(data.name || "Untitled Workflow");
             setIsActive(!!data.is_active);
+            
+            // Clear execution context when loading a different workflow
+            executionStore.clear();
             
             // Load nodes and edges
             if (data.nodes && Array.isArray(data.nodes)) {

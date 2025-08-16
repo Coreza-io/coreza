@@ -168,6 +168,11 @@ export class ExecutionContext {
 
     this.setNodeData(loopId, patch);
   }
+
+  /** Clear all stored execution data (useful when switching workflows) */
+  clear() {
+    this.store.clear();
+  }
 }
 
 export default ExecutionContext;

@@ -29,6 +29,11 @@ export interface NodeExecutionData {
 
 export class ExecutionContext {
   private store = new Map<string, NodeExecutionData>();
+  
+  // CRITICAL FIX: Expose store for ID checking
+  get storeMap() {
+    return this.store;
+  }
 
   constructor(initial: Array<{ id: string; data?: NodeExecutionData }> = []) {
     initial.forEach(n => this.store.set(n.id, { ...(n.data || {}) }));

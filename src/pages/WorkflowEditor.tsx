@@ -328,9 +328,6 @@ const WorkflowEditorContent = () => {
         
         setWorkflowId(data.id);
         
-        // CRITICAL FIX: Set hasLoadedWorkflowId to prevent unnecessary reload
-        setHasLoadedWorkflowId(data.id);
-        
         // CRITICAL FIX: Use React Router's navigate instead of window.history
         // This ensures useParams() updates properly
         const newUrl = projectId 
@@ -404,8 +401,13 @@ const WorkflowEditorContent = () => {
   const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
     const nodeDefinition = nodeManifest[nodeType];
     
-    // Generate human-readable ID by finding the next available number
-    const existingIds = new Set(nodes.map(node => node.id));
+    // CRITICAL FIX: Check both current nodes AND execution context for existing IDs
+    const existingIds = new Set([
+      ...nodes.map(node => node.id),
+      // Also check execution context to avoid conflicts with previous workflow nodes
+      ...Array.from(executionStore.storeMap.keys())
+    ]);
+    
     let nodeId = nodeType;
     
     // If base name exists, find next available number
@@ -428,7 +430,7 @@ const WorkflowEditorContent = () => {
     };
     
     setNodes((nds) => nds.concat(newNode));
-  }, [setNodes, nodes]);
+  }, [setNodes, nodes, executionStore]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -523,10 +525,20 @@ const WorkflowEditorContent = () => {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
         
-        // Clear execution context when starting a new workflow
+        // CRITICAL FIX: Clear execution context when starting a new workflow
         executionStore.clear();
         
-        setNodes(initialNodes);
+        // CRITICAL FIX: Force a clean slate by creating fresh initial nodes with timestamp
+        const freshInitialNodes = initialNodes.map(node => ({
+          ...node,
+          id: `${node.type}_${Date.now()}`, // Ensure completely fresh IDs
+          data: {
+            ...node.data,
+            definition: nodeManifest[node.type as keyof typeof nodeManifest]
+          }
+        }));
+        
+        setNodes(freshInitialNodes);
         setEdges(initialEdges);
         setIsActive(false);
         setLoading(false);
@@ -546,7 +558,7 @@ const WorkflowEditorContent = () => {
             setWorkflowName(data.name || "Untitled Workflow");
             setIsActive(!!data.is_active);
             
-            // Clear execution context when loading a different workflow
+            // CRITICAL FIX: Clear execution context when loading a different workflow
             executionStore.clear();
             
             // Load nodes and edges

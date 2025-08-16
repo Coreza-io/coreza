@@ -120,7 +120,7 @@ export function resolveReferences(
     }
 
     const value = getValueByPath(targetData, cleanPath);
-    if (value === undefined) return full;
+    if (value === undefined) return null;
 
     return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
   });

@@ -8,7 +8,7 @@ const router = express.Router();
 // If/Then conditional logic with logicalOp support
 router.post('/if', async (req, res) => {
   try {
-    const { conditions, logicalOp = 'AND' } = req.body;
+    const { conditions, logicalOp } = req.body;
 
     // Validate presence and types
     if (!conditions || !Array.isArray(conditions)) {

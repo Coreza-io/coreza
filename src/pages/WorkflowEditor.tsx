@@ -328,6 +328,9 @@ const WorkflowEditorContent = () => {
         
         setWorkflowId(data.id);
         
+        // CRITICAL FIX: Set hasLoadedWorkflowId to prevent unnecessary reload
+        setHasLoadedWorkflowId(data.id);
+        
         // CRITICAL FIX: Use React Router's navigate instead of window.history
         // This ensures useParams() updates properly
         const newUrl = projectId 

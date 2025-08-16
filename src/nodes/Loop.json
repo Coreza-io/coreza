@@ -30,6 +30,13 @@
       "description": "Number of items to process per iteration."
     },
     {
+      "key": "aggregate",
+      "label": "Aggregate Output",
+      "type": "checkbox",
+      "default": false,
+      "description": "Accumulate results and emit all processed items each iteration"
+    },
+    {
       "key": "parallel",
       "label": "Parallel Execution",
       "type": "checkbox",

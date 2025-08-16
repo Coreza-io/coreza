@@ -52,12 +52,9 @@ export const useWorkflowState = (
     hasUnsavedChanges: false,
   });
 
-  // Generate unique node ID that doesn't conflict with existing nodes or execution context
+  // Generate unique node ID that doesn't conflict with existing nodes
   const generateUniqueNodeId = useCallback((nodeType: string) => {
-    const existingIds = new Set([
-      ...state.nodes.map(node => node.id),
-      ...Array.from(executionStore.storeMap.keys())
-    ]);
+    const existingIds = new Set(state.nodes.map(node => node.id));
     
     let nodeId = nodeType;
     if (existingIds.has(nodeId)) {
@@ -69,7 +66,7 @@ export const useWorkflowState = (
     }
     
     return nodeId;
-  }, [state.nodes, executionStore.storeMap]);
+  }, [state.nodes]);
 
   // Check if current state differs from last saved state
   const checkUnsavedChanges = useCallback(() => {
@@ -136,7 +133,8 @@ export const useWorkflowState = (
         label: nodeDefinition.name || `${nodeType} node`,
         definition: nodeDefinition,
         values: {},
-        fieldState: {}
+        fieldState: {},
+        displayName: undefined // Let BaseNode calculate proper displayName
       },
     };
 
@@ -321,7 +319,7 @@ export const useWorkflowState = (
           ...node.data,
           definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
           values: (node as any).values || node.data?.values || {},
-          displayName: node.id
+          displayName: undefined // Let BaseNode calculate proper displayName
         }
       }));
 

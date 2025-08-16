@@ -362,7 +362,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
           if (isSwitch && f.key === "defaultCase") return null; // Handle separately for switch
-          if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
           
           // --------- CONDITIONAL FIELD DISPLAY ---------
           let shouldShow = true;
@@ -698,36 +697,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           </div>
         )}
 
-        {/* --------- LOGICAL OPERATOR (If nodes only, after conditions) --------- */}
-        {isConditional && conditions.length > 1 && definition.fields?.map((f: any) => {
-          if (f.key !== "logicalOp") return null;
-          
-          return (
-            <div key={f.key}>
-              <Label>{f.label}</Label>
-              <Select
-                value={fieldState[f.key] || f.default}
-                onValueChange={(val) => handleChange(f.key, val)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={f.placeholder || "Select logical operator"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(f.options || []).map((opt: any) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {f.description && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  {f.description}
-                </div>
-              )}
-            </div>
-          );
-        })}
 
         {/* --------- SWITCH REPEATER (Cases) --------- */}
         {isSwitch && (

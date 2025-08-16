@@ -121,15 +121,35 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   }, [previousNodes, selectedPrevNodeId]);
 
-  // Node name editing functionality
+  // Node name editing functionality - with race condition protection
   const startEditing = useCallback(() => {
+    if (isEditing) return; // Prevent double activation
     setEditingName(displayName);
     setIsEditing(true);
-  }, [displayName]);
+  }, [displayName, isEditing]);
 
   const finishEditing = useCallback((save: boolean = true) => {
     if (save && editingName.trim() && editingName.trim() !== displayName) {
       const trimmedName = editingName.trim();
+      
+      // Validation: Check for invalid characters and length
+      if (trimmedName.length > 50) {
+        toast({
+          title: "Name too long",
+          description: "Node name must be 50 characters or less",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmedName)) {
+        toast({
+          title: "Invalid characters",
+          description: "Node name can only contain letters, numbers, spaces, hyphens, and underscores",
+          variant: "destructive",
+        });
+        return;
+      }
       
       // Check for name uniqueness across all nodes
       const existingNames = nodes
@@ -163,18 +183,28 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     setEditingName('');
   }, [editingName, displayName, nodeId, nodes, setNodes, toast]);
 
-  // F2 key handler
+  // F2 key handler - scoped to only this node when selected
   useEffect(() => {
+    if (!selected) return; // Only add listener when node is selected
+    
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F2' && selected && !isEditing) {
+      // Prevent conflicts with input fields and other editing states
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
+      if (e.key === 'F2' && !isEditing) {
         e.preventDefault();
+        e.stopPropagation();
         startEditing();
       } else if (isEditing) {
         if (e.key === 'Enter') {
           e.preventDefault();
+          e.stopPropagation();
           finishEditing(true);
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           finishEditing(false);
         }
       }

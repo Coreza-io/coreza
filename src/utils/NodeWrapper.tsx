@@ -160,20 +160,30 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   ref={editInputRef}
                   value={editingName}
                   onChange={(e) => setEditingName?.(e.target.value)}
-                  onBlur={() => finishEditing?.(true)}
+                  onBlur={(e) => {
+                    // Prevent blur from canceling edit if clicking on edit controls
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    if (!relatedTarget || !relatedTarget.closest('.node-edit-controls')) {
+                      finishEditing?.(true);
+                    }
+                  }}
                   onKeyDown={(e) => {
+                    e.stopPropagation(); // Prevent parent handlers
                     if (e.key === 'Enter') {
+                      e.preventDefault();
                       finishEditing?.(true);
                     } else if (e.key === 'Escape') {
+                      e.preventDefault();
                       finishEditing?.(false);
                     }
                   }}
-                  className="h-6 text-xs text-center px-1 nodrag"
+                  className="h-6 text-xs text-center px-1 nodrag bg-background border border-primary/50 focus:border-primary"
                   autoFocus
+                  onClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <div 
-                  className="flex items-center justify-center gap-1 cursor-pointer group" 
+                  className="flex items-center justify-center gap-1 cursor-pointer group relative" 
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     startEditing?.();

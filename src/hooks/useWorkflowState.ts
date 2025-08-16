@@ -166,6 +166,7 @@ export const useWorkflowState = (
         sourcePosition: node.sourcePosition,
         targetPosition: node.targetPosition,
         values: node.data.values || {},
+        displayName: node.data.displayName, // Save custom displayName
       }));
 
       // Get existing node IDs for edge validation
@@ -319,7 +320,7 @@ export const useWorkflowState = (
           ...node.data,
           definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
           values: (node as any).values || node.data?.values || {},
-          displayName: undefined // Let BaseNode calculate proper displayName
+          displayName: (node as any).displayName || node.data?.displayName, // Restore custom displayName
         }
       }));
 

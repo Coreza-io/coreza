@@ -401,7 +401,7 @@ const WorkflowEditorContent = () => {
   const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
     const nodeDefinition = nodeManifest[nodeType];
     
-    // CRITICAL FIX: Check both current nodes AND execution context for existing IDs
+    // CRITICAL FIX: More robust ID generation that finds the lowest available number
     const existingIds = new Set([
       ...nodes.map(node => node.id),
       // Also check execution context to avoid conflicts with previous workflow nodes
@@ -410,9 +410,10 @@ const WorkflowEditorContent = () => {
     
     let nodeId = nodeType;
     
-    // If base name exists, find next available number
+    // If base name exists, find the LOWEST available number (fill gaps)
     if (existingIds.has(nodeId)) {
       let counter = 1;
+      // Find the lowest available number, filling gaps (e.g., If1, If2, If4 -> next should be If3)
       while (existingIds.has(`${nodeType}${counter}`)) {
         counter++;
       }

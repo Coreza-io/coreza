@@ -18,7 +18,7 @@ export interface NodeExecutionData {
 
   // Runtime & aggregation
   loopSig?: string;                          // signature to detect input changes
-  aggregateMode?: "items" | "returns";       // aggregation semantics
+  aggregateMode?: boolean;                   // aggregation semantics
   returnSources?: string[];                  // node IDs that return to this Loop
   aggregated?: any[];                        // accumulated results (items or return payloads)
   finishedByLoop?: boolean;                  // Loop iterated the final batch
@@ -74,7 +74,7 @@ export class ExecutionContext {
       continueOnError?: boolean;
       throttleMs?: number;
       loopSig?: string;
-      aggregateMode?: "items" | "returns";
+      aggregateMode?: boolean;
       returnSources?: string[];
     } = {}
   ) {
@@ -93,7 +93,7 @@ export class ExecutionContext {
       continueOnError: opts.continueOnError,
       throttleMs: opts.throttleMs,
       loopSig: opts.loopSig,
-      aggregateMode: opts.aggregateMode ?? "items",
+      aggregateMode: opts.aggregateMode,
       returnSources: opts.returnSources ?? [],
     });
     return this.getNodeData(id);
@@ -129,15 +129,13 @@ export class ExecutionContext {
       loopItem: asArray(emitted)[0],
       aggregated: newAggregated,
       finishedByLoop: isFinalBatch,
-      done: isFinalBatch && prev.aggregateMode === "items", // in returns mode, done flips when returns are present
+      done: isFinalBatch,         
       // mid-run preview:
-      output: prev.aggregateMode === "items"
-        ? emitted
-        : (newAggregated.length ? newAggregated : emitted), // show returns if any, else show current batch
+      output: emitted,
     };
 
     // If items mode and final batch → expose full aggregate as output.
-    if (isFinalBatch && prev.aggregateMode === "items") {
+    if (isFinalBatch) {
       patch.output = newAggregated;
       patch.loopItems = undefined;
       patch.loopItem = undefined;
@@ -145,7 +143,7 @@ export class ExecutionContext {
 
     // If returns mode and loop already finished iterating,
     // make sure output mirrors aggregated when it has content.
-    if (prev.aggregateMode === "returns" && isFinalBatch && newAggregated.length > 0) {
+    if (isFinalBatch && newAggregated.length > 0) {
       patch.output = newAggregated;
       patch.done = true;
     }
@@ -157,7 +155,6 @@ export class ExecutionContext {
   /** Called by *returning* nodes to push their outputs into a Loop in 'returns' mode. */
   appendLoopReturn(loopId: string, sourceId: string, payload: any) {
     const st = this.getNodeData(loopId);
-    if (st.aggregateMode !== "returns") return;
 
     const prevAgg = Array.isArray(st.aggregated) ? st.aggregated : [];
     const asArray = (v: any) => (Array.isArray(v) ? v : [v]);

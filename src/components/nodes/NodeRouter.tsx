@@ -210,6 +210,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           minHeight={dynamicSize.height}
           handles={dynamicHandles}
           nodeType={definition.node_type}
+          // Node name editing props
+          isEditing={renderProps.isEditing}
+          editingName={renderProps.editingName}
+          editInputRef={renderProps.editInputRef}
+          startEditing={renderProps.startEditing}
+          finishEditing={renderProps.finishEditing}
+          setEditingName={renderProps.setEditingName}
         >
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />

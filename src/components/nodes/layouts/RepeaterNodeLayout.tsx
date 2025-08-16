@@ -11,6 +11,16 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
 
+// Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
+const getDisplayName = (node: any, allNodes: any[]) => {
+  const baseName = node.data.definition?.name;
+  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name) === baseName);
+  const idx = sameType.findIndex((n) => n.id === node.id);
+  const result = idx > 0 ? `${baseName}${idx}` : baseName;
+  
+  return result;
+};
+
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
 }
@@ -214,7 +224,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
       try {
         const { keyPath = "" } = JSON.parse(raw);
-        const sourceDisplayName = selectedPrevNodeId;
+        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceDisplayName = sourceNode?.data?.displayName || (sourceNode ? getDisplayName(sourceNode, previousNodes) : selectedPrevNodeId);
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
         const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -253,7 +264,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
       try {
         const { keyPath = "" } = JSON.parse(raw);
-        const sourceDisplayName = selectedPrevNodeId;
+        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceDisplayName = sourceNode?.data?.displayName || (sourceNode ? getDisplayName(sourceNode, previousNodes) : selectedPrevNodeId);
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
         const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;

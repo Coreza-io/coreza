@@ -4,7 +4,8 @@ import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { X, Edit2 } from "lucide-react";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -34,6 +35,13 @@ interface NodeWrapperProps {
   handles?: HandleConfig[];
   nodeType?: string;
   onDoubleClick?: (e: React.MouseEvent) => void;
+  // Node name editing props
+  isEditing?: boolean;
+  editingName?: string;
+  editInputRef?: React.RefObject<HTMLInputElement>;
+  startEditing?: () => void;
+  finishEditing?: (save?: boolean) => void;
+  setEditingName?: (name: string) => void;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -51,6 +59,13 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   handles = [],
   nodeType,
   onDoubleClick,
+  // Node name editing props
+  isEditing = false,
+  editingName = '',
+  editInputRef,
+  startEditing,
+  finishEditing,
+  setEditingName,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
 
@@ -140,7 +155,37 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               )}
             </div>
             <div className="font-semibold text-sm text-foreground text-center leading-tight">
-              {label}
+              {isEditing && selected ? (
+                <Input
+                  ref={editInputRef}
+                  value={editingName}
+                  onChange={(e) => setEditingName?.(e.target.value)}
+                  onBlur={() => finishEditing?.(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      finishEditing?.(true);
+                    } else if (e.key === 'Escape') {
+                      finishEditing?.(false);
+                    }
+                  }}
+                  className="h-6 text-xs text-center px-1 nodrag"
+                  autoFocus
+                />
+              ) : (
+                <div 
+                  className="flex items-center justify-center gap-1 cursor-pointer group" 
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startEditing?.();
+                  }}
+                  title={selected ? "Press F2 or double-click to rename" : ""}
+                >
+                  {label}
+                  {selected && startEditing && (
+                    <Edit2 className="w-3 h-3 opacity-30 group-hover:opacity-60 transition-opacity" />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Input } from "@/components/ui/input";
 import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
@@ -51,6 +52,13 @@ export interface BaseNodeRenderProps {
   selectedInputData: any;
   displayedData: any;
   isPinned: boolean;
+  // Node name editing
+  isEditing: boolean;
+  editingName: string;
+  editInputRef: React.RefObject<HTMLInputElement>;
+  startEditing: () => void;
+  finishEditing: (save?: boolean) => void;
+  setEditingName: (name: string) => void;
   // Event handlers
   handleChange: (key: string, value: any) => void;
   handleFieldStateBatch: (updates: Record<string, any>) => void;
@@ -85,14 +93,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const definition = data.definition;
   const displayName = useMemo(
     () => {
-      // Use stored displayName if available, otherwise generate with deduplication
-      if (data.displayName && data.displayName !== definition?.name) {
+      // Use custom displayName if available, otherwise generate with deduplication
+      if (data.displayName && data.displayName.trim()) {
         return data.displayName;
       }
       return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
     },
     [nodes, definition?.name, nodeId, data.displayName]
   );
+
+  // State for inline editing
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingName, setEditingName] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   const [showAuth, setShowAuth] = useState(false);
   const [selectedPrevNodeId, setSelectedPrevNodeId] = useState<string>("");
@@ -107,6 +120,77 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       setSelectedPrevNodeId(previousNodes[0].id);
     }
   }, [previousNodes, selectedPrevNodeId]);
+
+  // Node name editing functionality
+  const startEditing = useCallback(() => {
+    setEditingName(displayName);
+    setIsEditing(true);
+  }, [displayName]);
+
+  const finishEditing = useCallback((save: boolean = true) => {
+    if (save && editingName.trim() && editingName.trim() !== displayName) {
+      const trimmedName = editingName.trim();
+      
+      // Check for name uniqueness across all nodes
+      const existingNames = nodes
+        .filter(n => n.id !== nodeId)
+        .map(n => n.data.displayName || getDisplayName(n, nodes))
+        .filter(Boolean);
+      
+      let finalName = trimmedName;
+      if (existingNames.includes(trimmedName)) {
+        let counter = 1;
+        while (existingNames.includes(`${trimmedName}${counter}`)) {
+          counter++;
+        }
+        finalName = `${trimmedName}${counter}`;
+        toast({
+          title: "Name adjusted",
+          description: `Name changed to "${finalName}" to avoid conflicts`,
+        });
+      }
+      
+      // Update node data with custom displayName
+      setNodes(nds =>
+        nds.map(n =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, displayName: finalName } }
+            : n
+        )
+      );
+    }
+    setIsEditing(false);
+    setEditingName('');
+  }, [editingName, displayName, nodeId, nodes, setNodes, toast]);
+
+  // F2 key handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && selected && !isEditing) {
+        e.preventDefault();
+        startEditing();
+      } else if (isEditing) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finishEditing(true);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finishEditing(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selected, isEditing, startEditing, finishEditing]);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [isEditing]);
 
 
   const selectedPrevNode = previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
@@ -285,7 +369,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
       
       const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-      const sourceDisplayName = sourceNode.id;
+      const sourceDisplayName = sourceNode?.data?.displayName || getDisplayName(sourceNode, nodes) || sourceNode?.id;
       const kp = (keyPath ?? "").trim();
       const suffix = kp ? `.${kp}` : "";
       const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -783,6 +867,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData,
     displayedData,
     isPinned,
+    // Node name editing
+    isEditing,
+    editingName,
+    editInputRef,
+    startEditing,
+    finishEditing,
+    setEditingName,
+    // Event handlers
     handleChange,
     handleFieldStateBatch,
     handleSubmit,

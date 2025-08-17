@@ -40,6 +40,60 @@ export class WorkflowExecutor {
   private nodeStore: ExecutionContext;
   private isAutoExecuting = false;
   private conditionalMap = new Map<string, Record<string, string[]>>();
+  private edgePayload = new Map<string, any>();
+
+  private getIncomingEdges = (targetId: string) =>
+    this.context.edges.filter(e => e.target === targetId);
+
+  private markEdgePayload(edgeId: string, payload: any) {
+    this.edgePayload.set(edgeId, payload);
+  }
+
+  private clearIncomingEdgePayloads(nodeId: string) {
+    for (const e of this.getIncomingEdges(nodeId)) this.edgePayload.delete(e.id);
+  }
+
+  private isBranchNodeId(id: string) {
+    const n = this.context.nodes.find(x => x.id === id);
+    const name = (n?.data?.definition as any)?.name;
+    return name === 'If' || name === 'Switch';
+  }
+
+  private isLoopNodeId(id: string) {
+    const n = this.context.nodes.find(x => x.id === id);
+    const name = (n?.data?.definition as any)?.name;
+    return name === 'Loop';
+  }
+
+  private areDependenciesSatisfied(
+    nodeId: string,
+    executed: Set<string>,
+    failed: Set<string>
+  ): boolean {
+    if (this.isLoopNodeId(nodeId)) {
+      const n = this.context.nodes.find(x => x.id === nodeId);
+      const loopWaits: boolean = (n?.data?.loopWaits ?? false);
+      if (!loopWaits) return true;
+    }
+
+    const inEdges = this.getIncomingEdges(nodeId);
+    if (!inEdges.length) return true;
+
+    const requiredEdges = inEdges.filter(e => {
+      if (failed.has(e.source)) return false;
+
+      if (this.isBranchNodeId(e.source)) {
+        if (!executed.has(e.source) && !failed.has(e.source)) return true;
+        return this.edgePayload.has(e.id);
+      }
+
+      return true;
+    });
+
+    if (requiredEdges.length === 0) return false;
+
+    return requiredEdges.every(e => this.edgePayload.has(e.id));
+  }
 
   constructor(private context: ExecutorContext) {
     this.context.executeNode = this.executeNode.bind(this);
@@ -385,19 +439,8 @@ export class WorkflowExecutor {
 
     this.nodeStore.setNodeData(nodeId, { output: result });
 
-    // For non-branch nodes, propagate to all outgoing edges (including Loop nodes)
-    const isBranchNode = this.conditionalMap.has(nodeId);
-    if (!isBranchNode) {
-      const outgoing = this.context.edges.filter(e => e.source === nodeId);
-      outgoing.forEach(edge => {
-        // Deliver input payload to target node for completeness
-        this.nodeStore.setNodeData(edge.target, { input: result });
-        
-        // Aggregate to Loop if target is Loop
-        this.aggregateToLoop(nodeId, edge, result);
-      });
-    }
-    // Note: For branch nodes, Loop aggregation is handled in executeAllNodes after branch decision
+    // Downstream delivery and Loop aggregation are handled after execution
+    // when enqueueing downstream nodes.
 
     return result;
   }
@@ -416,6 +459,7 @@ export class WorkflowExecutor {
 
     this.isAutoExecuting = true;
     this.preCalculateConditionalBranches(); // Refresh conditional map
+    this.edgePayload.clear();
 
     // Initialize execution metrics
     const metrics: ExecutionMetrics = {
@@ -583,37 +627,26 @@ export class WorkflowExecutor {
             );
           }
 
+          // Deliver payloads, record them, and enqueue when dependencies are satisfied
+          console.log(`📝 [WORKFLOW EXECUTOR] About to deliver ${next.length} edges from node ${id}`);
+          for (const e of next) {
+            this.nodeStore.setNodeData(e.target, { input: result });
+            this.aggregateToLoop(id, e, result);
+            this.markEdgePayload(e.id, result);
 
-           // For branch nodes, aggregate to Loop nodes for firing edges only
-          if (isBranchNode) {
-            // Get the original input data for the branch node
-            //const branchNodeData = this.nodeStore.getNodeData(id);
-            //const originalInput = branchNodeData.input;
-            next.forEach(edge => {
-              // Deliver original input payload to target node (not the branch result)
-              this.nodeStore.setNodeData(edge.target, { input: result });
-              
-              // Aggregate to Loop if target is Loop (only for firing edges)
-              this.aggregateToLoop(id, edge, result);
-            });
-          }
-
-          // Add next nodes to queue
-          console.log(`📝 [WORKFLOW EXECUTOR] About to queue ${next.length} edges from node ${id}`);
-          next.forEach(e => {
-            console.log(`🔄 [WORKFLOW EXECUTOR] Checking if target ${e.target} should be queued (currently in queue: ${queue.includes(e.target)})`);
-            if (!queue.includes(e.target)) {
+            if (
+              !queue.includes(e.target) &&
+              !executed.has(e.target) &&
+              !failed.has(e.target) &&
+              this.areDependenciesSatisfied(e.target, executed, failed)
+            ) {
               queue.push(e.target);
-              console.log(`✅ [WORKFLOW EXECUTOR] Added ${e.target} to queue. Queue length now: ${queue.length}`);
-              // Mark conditional targets for explicit triggering
               if (isConditionalExecution) {
-                console.log(`🎯 [WORKFLOW EXECUTOR] Marking conditional target ${e.target} for explicit execution`);
-                retryCount.set(e.target + "_conditional", 1); // Use this as a flag
+                retryCount.set(e.target + "_conditional", 1);
               }
-            } else {
-              console.log(`⚠️ [WORKFLOW EXECUTOR] Target ${e.target} already in queue, skipping`);
             }
-          });
+          }
+          this.clearIncomingEdgePayloads(id);
           console.log(`📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`, queue);
         } catch (error) {
           const nodeTime = performance.now() - nodeStart;
@@ -621,11 +654,13 @@ export class WorkflowExecutor {
           failed.add(id);
           metrics.failedNodes.add(id);
           console.error(`❌ [WORKFLOW EXECUTOR] Node ${id} failed after ${nodeTime.toFixed(2)}ms:`, error);
-          
+
+          this.clearIncomingEdgePayloads(id);
+
           // Continue execution of non-dependent nodes
-          const independentNodes = this.context.nodes.filter(n => 
-            !executed.has(n.id) && 
-            !failed.has(n.id) && 
+          const independentNodes = this.context.nodes.filter(n =>
+            !executed.has(n.id) &&
+            !failed.has(n.id) &&
             !queue.includes(n.id) &&
             !this.context.edges.some(e => e.target === n.id && e.source === id)
           );

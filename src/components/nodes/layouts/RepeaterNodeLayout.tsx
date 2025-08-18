@@ -81,7 +81,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     if (!repeaterField || hasSeeded) return;
     const key = repeaterField.key;         // "conditions" or "cases"
     const current = fieldState[key] || [];
+    
+    // Check if we have existing data (from loaded fieldState) - if so, don't seed
     if (Array.isArray(current) && current.length > 0) {
+      setSourceMap(Array(current.length).fill({}));
       setHasSeeded(true);
       return; // already has data, don't seed
     }

@@ -166,6 +166,7 @@ export const useWorkflowState = (
         sourcePosition: node.sourcePosition,
         targetPosition: node.targetPosition,
         values: node.data.values || {},
+        fieldState: node.data.fieldState || {}, // Save fieldState to preserve UI state
         displayName: node.data.displayName, // Save custom displayName
       }));
 
@@ -320,6 +321,7 @@ export const useWorkflowState = (
           ...node.data,
           definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
           values: (node as any).values || node.data?.values || {},
+          fieldState: (node as any).fieldState || node.data?.fieldState || {}, // Restore fieldState to preserve UI state
           displayName: (node as any).displayName || node.data?.displayName, // Restore custom displayName
         }
       }));

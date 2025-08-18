@@ -139,12 +139,8 @@ export const useWorkflowState = (
 
   // Build the exact snapshot we persist & use for dirty-check
   const buildPersistableGraph = useCallback(() => {
-    console.log('🏗️ buildPersistableGraph called with state.nodes:', state.nodes.map(n => ({ id: n.id, type: n.type, values: n.data?.values, fieldState: n.data?.fieldState })));
-    
     // 1) create a materialized copy (fs → values) for nodes that need it
     const materialized = state.nodes.map(n => materializeValuesFromFieldState(n));
-    
-    console.log('🏗️ After materializeValuesFromFieldState:', materialized.map(n => ({ id: n.id, type: n.type, values: n.data?.values, fieldState: n.data?.fieldState })));
 
     // 2) minimal nodes that go to DB (keep values as truth, also store fieldState for future-proof)
     const minimalNodes = materialized.map((node: any) => ({
@@ -161,8 +157,6 @@ export const useWorkflowState = (
         displayName: node?.data?.displayName,
       },
     }));
-
-    console.log('🏗️ Final minimalNodes being saved:', JSON.stringify(minimalNodes, null, 2));
 
     const existingIds = new Set(minimalNodes.map(n => n.id));
 
@@ -243,8 +237,6 @@ export const useWorkflowState = (
         )
       : {};
     
-    console.log('🆕 Creating new node:', { nodeType, nodeId, definition: definition.name, initialFieldState });
-    
     const newNode: Node = {
       id: nodeId,
       type: nodeType,
@@ -258,7 +250,6 @@ export const useWorkflowState = (
       },
     };
     
-    console.log('🆕 New node created:', newNode);
     setNodes(prev => [...prev, newNode]);
   }, [generateUniqueNodeId, setNodes]);
 
@@ -275,8 +266,6 @@ export const useWorkflowState = (
     try {
       // Build persistable snapshot (same used for dirty-check)
       const graph = buildPersistableGraph();
-      
-      console.log('💾 saveWorkflow payload nodes:', JSON.stringify(graph.nodes, null, 2));
 
       const payload = {
         user_id: authUser.id,
@@ -287,8 +276,6 @@ export const useWorkflowState = (
         updated_at: new Date().toISOString(),
         ...(projectId && { project_id: projectId }),
       };
-      
-      console.log('💾 Full payload being sent to Supabase:', JSON.stringify(payload.nodes, null, 2));
 
       let result;
       if (state.workflowId) {
@@ -379,23 +366,13 @@ export const useWorkflowState = (
         .eq('user_id', authUser.id)
         .single();
 
-      if (error || !data) {
-        console.error('Workflow query error:', error);
-        throw new Error('Workflow not found or access denied');
-      }
+      if (error || !data) throw new Error('Workflow not found or access denied');
 
-      console.log('🔄 Loading workflow:', data.name, 'with nodes:', data.nodes);
-      
       executionStore.clear();
 
       // Rehydrate nodes with definitions + fieldState (hydrated from values if needed)
       const restoredNodes: Node[] = ((data.nodes as unknown) as any[] || []).map((node: any) => {
-        console.log('🔄 Processing node:', node.type, node.id);
-        
         const def = nodeManifest[node.type as keyof typeof nodeManifest];
-        if (!def) {
-          console.warn(`⚠️ No definition found for node type: ${node.type}`);
-        }
 
         const values = node.data?.values ?? node.values ?? {};
         let fieldState = node.data?.fieldState ?? node.fieldState ?? {};

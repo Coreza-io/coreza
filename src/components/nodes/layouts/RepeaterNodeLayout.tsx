@@ -62,15 +62,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     : [{ caseValue: "case1", caseName: "Case 1" }];
 
   // =========== STATE ===========
+  // Validate that this node type supports the repeater fields
+  const nodeSupportsConditional = definition.name === 'If' || repeaterField?.key === 'conditions';
+  const nodeSupportsSwitch = definition.name === 'Switch' || repeaterField?.key === 'cases';
+  const nodeSupportsFields = definition.name === 'Edit Fields' || repeaterField?.key === 'fields';
+  
   // make sure these are always arrays before you map/filter them
-  const conditions = Array.isArray(fieldState.conditions) 
+  const conditions = Array.isArray(fieldState.conditions) && nodeSupportsConditional
     ? fieldState.conditions 
     : [];
-  const logicalOps = Array.isArray(fieldState.logicalOps) 
-    ? fieldState.logicalOps 
+  const logicalOps = Array.isArray(fieldState.logicalOps) && nodeSupportsConditional
+    ? fieldState.logicalOps
     : [];
-  const cases = Array.isArray(fieldState.cases) 
-    ? fieldState.cases 
+  const cases = Array.isArray(fieldState.cases) && nodeSupportsSwitch
+    ? fieldState.cases
     : [];
   const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(conditions.map(() => ({})));
 

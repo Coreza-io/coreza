@@ -111,17 +111,23 @@ export const useWorkflowState = (
     }
 
     if (node.type === 'Edit Fields') {
-      const fields     = fs.fields     ?? v.fields     ?? [];
-      const logicalOp  = fs.logicalOp  ?? v.logicalOp  ?? undefined;
-      const persistent = fs.persistent ?? v.persistent ?? '';
+      // For Edit Fields, only preserve valid fields and merge with fieldState
+      const validFields = ['fields', 'persistent'];
+      const preservedValues = validFields.reduce((acc, field) => {
+        if (v[field] !== undefined) acc[field] = v[field];
+        return acc;
+      }, {} as any);
+      
+      const fields     = fs.fields     ?? preservedValues.fields     ?? [];
+      const persistent = fs.persistent ?? preservedValues.persistent ?? '';
+      
       return {
         ...node,
         data: {
           ...node.data,
           values: {
-            ...v,
+            ...preservedValues, // Only valid fields
             fields,
-            logicalOp,
             persistent,
           },
         },

@@ -304,24 +304,26 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   // Sync fieldState changes to node data.values for proper persistence
   useEffect(() => {
-  if (Object.keys(fieldState).length > 0) {
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                values: { ...fieldState },
-              },
-            }
-          : n
-      )
-    );
-    // Add this:
-    console.log('After setNodes from BaseNode', nodeId, fieldState);
-  }
-}, [fieldState, nodeId, setNodes]);
+    if (Object.keys(fieldState).length > 0) {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  values: { 
+                    ...((n.data?.values as Record<string, any>) || {}), // Preserve existing values
+                    ...fieldState // Merge in fieldState changes
+                  },
+                },
+              }
+            : n
+        )
+      );
+      console.log('🔄 BaseNode syncing fieldState to values for', nodeId, { fieldState, existingValues: data?.values });
+    }
+  }, [fieldState, nodeId, setNodes, data?.values]);
 
 
   const [error, setError] = useState("");

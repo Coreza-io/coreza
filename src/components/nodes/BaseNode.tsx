@@ -282,6 +282,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   useEffect(() => {
     if (!definition?.fields) return;
     
+    // Add debugging for Edit Fields node
+    if (definition.name === "Edit Fields") {
+      console.log('🔍 Edit Fields node initialization:', {
+        definitionName: definition.name,
+        definitionFields: definition.fields.map(f => f.key),
+        currentFieldState: Object.keys(fieldState),
+        dataFieldState: Object.keys(data.fieldState || {}),
+        dataValues: Object.keys(data.values || {})
+      });
+    }
+    
     // Build new field state from definition fields
     const newFieldStateFromDefinition = Object.fromEntries(
       definition.fields.map((f: any) => [
@@ -310,6 +321,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       ...existingExtraData,
       ...existingExtraValues
     };
+    
+    // Add debugging for Edit Fields final state
+    if (definition.name === "Edit Fields") {
+      console.log('🔍 Edit Fields final fieldState:', newFieldState);
+    }
     
     // Only update if we don't have fieldState initialized yet or if field definitions actually changed
     const isInitializing = Object.keys(fieldState).length === 0;

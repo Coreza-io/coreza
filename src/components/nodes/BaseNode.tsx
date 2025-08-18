@@ -282,19 +282,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   useEffect(() => {
     if (!definition?.fields) return;
     
-    // Add debugging for Edit Fields node
-    if (definition.name === "Edit Fields") {
-      console.log('🔍 Edit Fields node initialization:', {
-        definitionName: definition.name,
-        definitionFields: definition.fields.map(f => f.key),
-        currentFieldState: Object.keys(fieldState),
-        dataFieldState: Object.keys(data.fieldState || {}),
-        dataValues: Object.keys(data.values || {})
-      });
-    }
-    
-    // Build new field state from definition fields
-    const newFieldStateFromDefinition = Object.fromEntries(
+    const newFieldState = Object.fromEntries(
       definition.fields.map((f: any) => [
         f.key, 
         f.type === "repeater" 
@@ -302,30 +290,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || ""
       ])
     );
-    
-    // Preserve any existing data that's not in the definition (for backward compatibility)
-    const existingExtraData = Object.fromEntries(
-      Object.entries(data.fieldState || {}).filter(([key]) => 
-        !definition.fields.some((f: any) => f.key === key)
-      )
-    );
-    const existingExtraValues = Object.fromEntries(
-      Object.entries(data.values || {}).filter(([key]) => 
-        !definition.fields.some((f: any) => f.key === key) &&
-        !(key in existingExtraData)
-      )
-    );
-    
-    const newFieldState = {
-      ...newFieldStateFromDefinition,
-      ...existingExtraData,
-      ...existingExtraValues
-    };
-    
-    // Add debugging for Edit Fields final state
-    if (definition.name === "Edit Fields") {
-      console.log('🔍 Edit Fields final fieldState:', newFieldState);
-    }
     
     // Only update if we don't have fieldState initialized yet or if field definitions actually changed
     const isInitializing = Object.keys(fieldState).length === 0;
@@ -628,27 +592,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     console.log("🔧 All node data map:", allNodeData);
     
     const payload: Record<string, any> = {};
-    
-    // Only include fields that are defined in the current node's definition
-    // This prevents contamination from other node types
-    if (definition?.fields) {
-      const validFieldKeys = new Set(definition.fields.map((f: any) => f.key));
-      
-      for (const [key, value] of Object.entries(fieldState)) {
-        // Only include fields that are defined in this node's schema
-        if (validFieldKeys.has(key)) {
-          payload[key] = resolveDeep(value, selectedInputData, allNodeData);
-        }
-      }
-    }
-    
-    // Add debugging for Edit Fields specifically
-    if (definition?.name === "Edit Fields") {
-      console.log('🔍 Edit Fields buildPayload:', {
-        validFields: definition.fields?.map((f: any) => f.key),
-        fieldStateKeys: Object.keys(fieldState),
-        finalPayload: payload
-      });
+    for (const [key, value] of Object.entries(fieldState)) { 
+      payload[key] = resolveDeep(value, selectedInputData, allNodeData);
     }
     
     // Special handling for If node to add missing required fields

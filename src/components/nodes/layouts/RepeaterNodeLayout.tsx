@@ -75,11 +75,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(conditions.map(() => ({})));
 
   // ─── Seed the repeater on first render ────────────────────────────────────
+  const [hasSeeded, setHasSeeded] = useState(false);
+  
   useEffect(() => {
-    if (!repeaterField) return;
+    if (!repeaterField || hasSeeded) return;
     const key = repeaterField.key;         // "conditions" or "cases"
     const current = fieldState[key] || [];
-    if (Array.isArray(current) && current.length > 0) return; // already seeded
+    if (Array.isArray(current) && current.length > 0) {
+      setHasSeeded(true);
+      return; // already has data, don't seed
+    }
 
     // 1) build the seed rows array from your manifest
     const seedRows = Array.isArray(repeaterField.default)
@@ -101,7 +106,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
     // 3) keep your sourceMap in sync
     setSourceMap(Array(seedRows.length).fill({}));
-  }, []);  // <- only on mount
+    setHasSeeded(true);
+  }, [repeaterField, hasSeeded, fieldState, handleFieldStateBatch]);  // <- track seeding state
 
 
   // whenever conditions.length changes, ensure sourceMap has the same length

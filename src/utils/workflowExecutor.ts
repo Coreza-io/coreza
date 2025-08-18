@@ -72,7 +72,7 @@ export class WorkflowExecutor {
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
       const n = this.context.nodes.find(x => x.id === nodeId);
-      const loopWaits: boolean = (n?.data?.loopWaits ?? false);
+      const loopWaits = Boolean(n?.data?.loopWaits ?? false);
       if (!loopWaits) return true;
     }
 

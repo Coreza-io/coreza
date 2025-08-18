@@ -282,7 +282,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   useEffect(() => {
     if (!definition?.fields) return;
     
-    const newFieldState = Object.fromEntries(
+    // Build new field state from definition fields
+    const newFieldStateFromDefinition = Object.fromEntries(
       definition.fields.map((f: any) => [
         f.key, 
         f.type === "repeater" 
@@ -290,6 +291,25 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || ""
       ])
     );
+    
+    // Preserve any existing data that's not in the definition (for backward compatibility)
+    const existingExtraData = Object.fromEntries(
+      Object.entries(data.fieldState || {}).filter(([key]) => 
+        !definition.fields.some((f: any) => f.key === key)
+      )
+    );
+    const existingExtraValues = Object.fromEntries(
+      Object.entries(data.values || {}).filter(([key]) => 
+        !definition.fields.some((f: any) => f.key === key) &&
+        !(key in existingExtraData)
+      )
+    );
+    
+    const newFieldState = {
+      ...newFieldStateFromDefinition,
+      ...existingExtraData,
+      ...existingExtraValues
+    };
     
     // Only update if we don't have fieldState initialized yet or if field definitions actually changed
     const isInitializing = Object.keys(fieldState).length === 0;

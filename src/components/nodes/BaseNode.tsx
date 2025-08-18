@@ -592,8 +592,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     console.log("🔧 All node data map:", allNodeData);
     
     const payload: Record<string, any> = {};
-    for (const [key, value] of Object.entries(fieldState)) {
-      if (key === "logicalOps") continue; // legacy per-condition operator array
+    for (const [key, value] of Object.entries(fieldState)) { 
       payload[key] = resolveDeep(value, selectedInputData, allNodeData);
     }
     

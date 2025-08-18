@@ -1,869 +1,177 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  ReactFlow,
-  addEdge,
-  MiniMap,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  Connection,
-  Edge,
-  Node,
-  BackgroundVariant,
-  MarkerType,
-  useReactFlow,
-  ConnectionLineType,
-  ReactFlowProvider,
-} from '@xyflow/react';
+import { Connection, ReactFlowProvider } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Save, Play, Pause, ChevronLeft, ChevronRight, Loader2, Zap } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { NodePalette } from "@/components/workflow/NodePalette";
-import EdgeManager from "@/components/workflow/EdgeManager";
-import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-
-// Import node types
-import NodeRouter from "@/components/nodes/NodeRouter";
+import { ExecutionStoreProvider } from "@/contexts/ExecutionStoreContext";
+import { useWorkflowState } from "@/hooks/useWorkflowState";
+import { useWorkflowExecution } from "@/hooks/useWorkflowExecution";
+import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowCanvas } from "@/components/workflow/WorkflowCanvas";
 import { nodeManifest } from "@/nodes/manifest";
-import { WorkflowExecutor } from "@/utils/workflowExecutor";
-import { ExecutionStoreProvider, useExecutionStore } from "@/contexts/ExecutionStoreContext";
-
-// Base node type mapping (excluding custom Loop node)
-const baseNodeTypes = Object.fromEntries([
-  // Map by manifest keys (skip Loop; it'll use a custom component)
-  ...Object.keys(nodeManifest)
-    .filter((nodeKey) => nodeKey !== 'Loop')
-    .map((nodeKey) => [nodeKey, NodeRouter]),
-  // Map by node_type values (for proper type mapping)
-  ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
-]);
-
-//console.log("Available nodeTypes:", Object.keys(nodeTypes));
-//console.log("NodeManifest keys:", Object.keys(nodeManifest));
-
-const edgeTypes = {
-  default: EdgeManager.SelfLoopEdge,
-  loop: EdgeManager.LoopEdge,
-  removable: EdgeManager.DefaultEdge,
-};
-
-// Initial nodes for demonstration  
-const initialNodes: Node[] = [
-  {
-    id: 'hello-node',
-    type: 'FinnHub', // Use the manifest key, not node_type
-    position: { x: 100, y: 100 },
-    data: { 
-      label: 'Welcome to Coreza!',
-      definition: nodeManifest.FinnHub
-    },
-  },
-];
-
-const initialEdges: Edge[] = [];
 
 const WorkflowEditorContent = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { toast } = useToast();
   const { user: authUser, loading: authLoading } = useAuth();
-  const executionStore = useExecutionStore();
   
-  // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === 'new' || !id;
-  const projectId = searchParams.get('project'); // Get project ID from URL parameters
+  const projectId = searchParams.get('project');
   
-  const [workflowId, setWorkflowId] = useState<string | null>(isNewWorkflow ? null : id || null);
-  
-  // CRITICAL FIX: Sync workflowId with URL parameter changes
-  useEffect(() => {
-    if (!isNewWorkflow && id !== workflowId) {
-      //console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
-      setWorkflowId(id || null);
-    }
-  }, [id, isNewWorkflow, workflowId]);
-  const [workflowName, setWorkflowName] = useState(
-    isNewWorkflow ? "My workflow 1" : "Existing Workflow"
-  );
-  const [isActive, setIsActive] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
-  const [executingNode, setExecutingNode] = useState<string | null>(null);
-  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [isAutoExecuting, setIsAutoExecuting] = useState(false);
-  const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const rf = useReactFlow();
-
-  const removeEdge = useCallback(
-    (edgeId: string) =>
-      setEdges((es) => es.filter((e) => e.id !== edgeId)),
-    [setEdges]
+  // Use optimized workflow state management
+  const [workflowState, workflowActions] = useWorkflowState(
+    isNewWorkflow ? null : id || null,
+    projectId
+  );
+  
+  // Use optimized execution management
+  const [executionState, executionActions] = useWorkflowExecution(
+    workflowState.nodes,
+    workflowState.edges,
+    workflowActions.setNodes,
+    workflowActions.setEdges
   );
 
-  // Handle "+" click on Loop node to add a new downstream node
-  const handleAddNode = useCallback(
-    (loopNodeId: string) => {
-      const position = rf.getNode(loopNodeId)?.position || { x: 0, y: 0 };
-      const newNode: Node = {
-        id: `node_${Date.now()}`,
-        type: 'default',
-        position: { x: position.x + 200, y: position.y },
-        data: { label: 'New Node' },
-      };
-      setNodes((ns) => [...ns, newNode]);
-
-      const edgeId = `edge_${loopNodeId}_${newNode.id}`;
-      const newEdge: Edge = {
-        id: edgeId,
-        source: loopNodeId,
-        sourceHandle: 'done',
-        target: newNode.id,
-        type: 'removable',
-        data: { onRemoveEdge: () => removeEdge(edgeId) },
-      };
-      setEdges((es) => [...es, newEdge]);
-    },
-    [rf, setNodes, setEdges, removeEdge]
-  );
-
-  const handleRemoveLoop = useCallback(
-    (loopNodeId: string) => {
-      setEdges((es) =>
-        es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId)
-      );
-    },
-    [setEdges]
-  );
-
-  // Merge base node types with custom Loop node
-  const nodeTypes = useMemo(() => ({
-    ...baseNodeTypes,
-    Loop: (props: any) => (
-      <LoopNode
-        {...props}
-        data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
-      />
-    ),
-  }), [handleAddNode]);
-
-  const onConnect = useCallback(
-    (params: Connection) =>
-      setEdges((eds) => {
-        const id = `edge_${Date.now()}`;
-        const newEdge: Edge = {
-          id,
-          ...params,
-          type: 'removable',
-          data: { onRemoveEdge: () => removeEdge(id) },
-        };
-        return addEdge(newEdge, eds);
-      }),
-    [removeEdge, setEdges]
-  );
-
-  // Memoized WorkflowExecutor instance - only recreate when structure changes
-  const workflowExecutor = useMemo(() => {
-    if (nodes.length === 0) return null;
-
-    return new WorkflowExecutor({
-      nodes,
-      edges,
-      setNodes,
-      setEdges,
-      setExecutingNode,
-      toast,
-      executionStore
-    });
-  }, [nodes.length, edges.length, setNodes, setEdges, setExecutingNode, toast, executionStore]);
-
-  // Execute all nodes with the queue-based WorkflowExecutor
-  const executeAllNodes = useCallback(async () => {
-    if (!workflowExecutor) {
-      toast({
-        title: "Error",
-        description: "No workflow to execute",
-        variant: "destructive",
-      });
-      return;
-    }
+  // Load workflow on mount or ID change
+  useEffect(() => {
+    if (authLoading) return;
     
-    setIsAutoExecuting(true);
-    await workflowExecutor.executeAllNodes();
-    setIsAutoExecuting(false);
-  }, [workflowExecutor, toast]);
-
-  // Handle node double click to execute
-  // Double click to execute one node only (optional: show highlight/animation)
-  const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, node: Node) => {
-    event.preventDefault();
-    await workflowExecutor.executeNode(node.id, new Set());
-  }, [workflowExecutor]);
-
-  // Save workflow to Supabase
-  const handleSaveWorkflow = async (isAutosave = false) => {
     if (!authUser) {
-      if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: "Please log in to save workflows",
-          variant: "destructive",
-        });
-      }
+      navigate('/login');
       return;
     }
+
+    workflowActions.loadWorkflow(id, projectId);
+  }, [authUser, authLoading, id, projectId, navigate]);
+
+  // Handle activation toggle
+  const handleActivate = useCallback(async () => {
+    if (!authUser || !workflowState.workflowId) return;
     
-    if (isAutosave) {
-      setAutosaveStatus('saving');
-    } else {
-      setLoading(true);
-    }
+    workflowActions.setIsActive(!workflowState.isActive);
+    await workflowActions.saveWorkflow(true); // Autosave the activation state
+  }, [authUser, workflowState.workflowId, workflowState.isActive, workflowActions]);
 
-    // 1) Turn each node into a "minimal" version without its definition
-    const minimalNodes = nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      category: (n.data.definition as any)?.category,
-      subCategory: (n.data.definition as any)?.subCategory,
-      position: n.position,
-      sourcePosition: n.sourcePosition,
-      targetPosition: n.targetPosition,
-      // ONLY keep the user's inputs + last output (or whatever you actually need)
-      values: n.data.values,
-      // Save display name information for reference resolution
-      //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
-    }));
-
-    // Get existing node IDs
-    const existingNodeIds = new Set(minimalNodes.map(node => node.id));
-    
-    // Clean edges by removing execution-related properties and filter out edges to non-existent nodes
-    const cleanEdges = edges
-      .filter(edge => existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target))
-      .map(edge => {
-        const cleanEdge: any = {
-          id: edge.id,
-          type: edge.type,
-          source: edge.source,
-          target: edge.target,
-        };
-        
-        // Only include handles if they exist
-        if (edge.sourceHandle) cleanEdge.sourceHandle = edge.sourceHandle;
-        if (edge.targetHandle) cleanEdge.targetHandle = edge.targetHandle;
-        
-        // Only include basic style properties (no execution styling)
-        if (edge.style?.strokeLinecap || edge.style?.strokeLinejoin) {
-          cleanEdge.style = {
-            strokeLinecap: edge.style?.strokeLinecap || 'round',
-            strokeLinejoin: edge.style?.strokeLinejoin || 'round',
-          };
-        }
-        
-        return cleanEdge;
-      });
-
-    const payload = {
-      user_id: authUser.id,
-      name: workflowName,
-      nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
-      edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
-      updated_at: new Date().toISOString(),
-      ...(projectId && { project_id: projectId }), // Include project_id if available
+  // Handle connections
+  const onConnect = useCallback((params: Connection) => {
+    const id = `edge_${Date.now()}`;
+    const newEdge = {
+      id,
+      ...params,
+      type: 'removable',
     };
-    console.log("payload", payload);
+    workflowActions.setEdges(prev => [...prev, newEdge]);
+  }, [workflowActions]);
 
-    if (workflowId) {
-      const { error } = await supabase
-        .from("workflows")
-        .update(payload)
-        .eq("id", workflowId);
-      if (isAutosave) {
-        setAutosaveStatus(error ? 'idle' : 'saved');
-        if (!error) {
-          setTimeout(() => setAutosaveStatus('idle'), 2000); // Reset after 2 seconds
-        }
-      } else {
-        setLoading(false);
-        if (!error) {
-          toast({
-            title: "Success",
-            description: "Workflow updated!",
-          });
-        } else {
-          toast({
-            title: "Error",
-            description: "Error saving workflow: " + error.message,
-            variant: "destructive",
-          });
-        }
-      }
-    } else {
-      const { data, error } = await supabase
-        .from("workflows")
-        .insert([payload])
-        .select()
-        .single();
-      if (isAutosave) {
-        setAutosaveStatus(error ? 'idle' : 'saved');
-        if (!error && data) {
-          setTimeout(() => setAutosaveStatus('idle'), 2000); // Reset after 2 seconds
-        }
-      } else {
-        setLoading(false);
-      }
-      if (data) {
-        
-        setWorkflowId(data.id);
-        
-        // CRITICAL FIX: Use React Router's navigate instead of window.history
-        // This ensures useParams() updates properly
-        const newUrl = projectId 
-          ? `/workflow/${data.id}?project=${projectId}`
-          : `/workflow/${data.id}`;
-        
-        navigate(newUrl, { replace: true });
-        
-        toast({
-          title: "Success",
-          description: "Workflow saved!",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "Error saving: " + error.message,
-          variant: "destructive",
-        });
-      }
+  // Handle node double click for execution
+  const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, node: any) => {
+    event.preventDefault();
+    if (!executionState.isExecuting) {
+      await executionActions.executeNode(node.id);
     }
-  };
+  }, [executionState.isExecuting, executionActions]);
 
-  const handleActivate = async () => {
-    if (!authUser || !workflowId) return;
-    
-    try {
-      setIsActive(!isActive);
-      
-      // If workflow is saved, update the active status in database
-      const { error } = await supabase
-        .from('workflows')
-        .update({ is_active: !isActive })
-        .eq('id', workflowId);
-
-      if (error) {
-        console.error('Failed to update workflow status:', error);
-        // Revert the local state change
-        setIsActive(isActive);
-        toast({
-          title: "Error",
-          description: "Failed to update workflow status.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      toast({
-        title: "Success",
-        description: `Workflow ${!isActive ? 'activated' : 'deactivated'} successfully!`,
-      });
-
-      //console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
-    } catch (error) {
-      console.error("Failed to change workflow status:", error);
-      // Revert the local state change
-      setIsActive(isActive);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred.",
-        variant: "destructive",
-      });
-    }
-  };
-
+  // Handle drag and drop
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  // Function to create a new node
-  const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
-    const nodeDefinition = nodeManifest[nodeType];
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
     
-    // CRITICAL FIX: More robust ID generation that finds the lowest available number
-    const existingIds = new Set([
-      ...nodes.map(node => node.id),
-      // Also check execution context to avoid conflicts with previous workflow nodes
-      ...Array.from(executionStore.storeMap.keys())
-    ]);
-    
-    let nodeId = nodeType;
-    
-    // If base name exists, find the LOWEST available number (fill gaps)
-    if (existingIds.has(nodeId)) {
-      let counter = 1;
-      // Find the lowest available number, filling gaps (e.g., If1, If2, If4 -> next should be If3)
-      while (existingIds.has(`${nodeType}${counter}`)) {
-        counter++;
-      }
-      nodeId = `${nodeType}${counter}`;
-    }
-    
-    const newNode: Node = {
-      id: nodeId,
-      type: nodeType,
-      position,
-      data: { 
-        label: nodeDefinition?.name || `${nodeType} node`,
-        definition: nodeDefinition
-      },
+    const type = event.dataTransfer.getData('application/reactflow');
+    if (!type || !(type in nodeManifest)) return;
+
+    const reactFlowBounds = event.currentTarget.getBoundingClientRect();
+    const position = {
+      x: event.clientX - reactFlowBounds.left,
+      y: event.clientY - reactFlowBounds.top,
     };
-    
-    setNodes((nds) => nds.concat(newNode));
-  }, [setNodes, nodes, executionStore]);
 
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-
-      const type = event.dataTransfer.getData('application/reactflow');
-      // Only create a node when dropping a valid palette item
-      if (!type) return;
-      if (!(type in nodeManifest)) return;
-
-      // Get the ReactFlow wrapper element to calculate relative position
-      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
-      const position = {
-        x: event.clientX - reactFlowBounds.left,
-        y: event.clientY - reactFlowBounds.top,
-      };
-
-      createNode(type, position);
-    },
-    [createNode],
-  );
+    workflowActions.createNode(type, position);
+  }, [workflowActions]);
 
   // Handle node click from palette
   const handleNodeClick = useCallback((nodeType: string) => {
-    // Position new node at center of viewport
-    const position = {
-      x: 250,
-      y: 250,
-    };
-    
-    createNode(nodeType, position);
-    
-    // Optionally hide palette after adding node
+    const position = { x: 250, y: 250 };
+    workflowActions.createNode(nodeType, position);
     setIsPaletteVisible(false);
-  }, [createNode]);
+  }, [workflowActions]);
 
-  // Check for user authentication and load latest workflow
-  const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(null);
-  
-  useEffect(() => {
-    
-    if (authLoading) return; // Wait for auth to finish loading
-    
-    if (!authUser) {
-      // Redirect to login if no user found
-      navigate('/login');
-      return;
-    }
-
-    // Prevent reloading if we've already loaded this workflow
-    if (hasLoadedWorkflowId && workflowId === hasLoadedWorkflowId) {
-      //console.log("🚫 Skipping reload - workflow already loaded");
-      return;
-    }
-
-    const loadWorkflow = async () => {
-      // Load workflow - either start fresh for new workflow or load specific existing workflow
-      if (isNewWorkflow) {
-        // For ALL new workflows, start completely fresh
-        // Generate smart workflow name based on existing workflows
-        setLoading(true);
-        try {
-          // Get existing workflow names to determine next number
-          const { data: existingWorkflows, error } = await supabase
-            .from("workflows")
-            .select("name")
-            .eq("user_id", authUser.id);
-
-          let workflowName = "My workflow 1";
-          
-          if (!error && existingWorkflows) {
-            // Find the highest number in existing "My workflow X" names
-            const workflowNumbers = existingWorkflows
-              .map(w => w.name)
-              .filter(name => name.startsWith("My workflow "))
-              .map(name => {
-                const match = name.match(/My workflow (\d+)/);
-                return match ? parseInt(match[1]) : 0;
-              })
-              .filter(num => !isNaN(num));
-
-            const maxNumber = workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
-            const nextNumber = maxNumber + 1;
-            
-            workflowName = projectId ? `New Project Workflow ${nextNumber}` : `My workflow ${nextNumber}`;
-          }
-
-          setWorkflowName(workflowName);
-        } catch (error) {
-          console.error("Error generating workflow name:", error);
-          // Fallback to default names
-          setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
-        }
-        
-        // CRITICAL FIX: Clear execution context when starting a new workflow
-        executionStore.clear();
-        
-        // CRITICAL FIX: Force a clean slate by creating fresh initial nodes with timestamp
-        const freshInitialNodes = initialNodes.map(node => ({
-          ...node,
-          id: `${node.type}_${Date.now()}`, // Ensure completely fresh IDs
-          data: {
-            ...node.data,
-            definition: nodeManifest[node.type as keyof typeof nodeManifest]
-          }
-        }));
-        
-        setNodes(freshInitialNodes);
-        setEdges(initialEdges);
-        setIsActive(false);
-        setLoading(false);
-        setHasLoadedWorkflowId('new');
-      } else if (workflowId && workflowId !== hasLoadedWorkflowId) {
-        // Load specific existing workflow only if it's different from what we've loaded
-        setLoading(true);
-        try {
-          const { data, error } = await supabase
-            .from("workflows")
-            .select("*")
-            .eq("id", workflowId)
-            .eq("user_id", authUser.id)
-            .single();
-
-          if (data && !error) {
-            setWorkflowName(data.name || "Untitled Workflow");
-            setIsActive(!!data.is_active);
-            
-            // CRITICAL FIX: Clear execution context when loading a different workflow
-            executionStore.clear();
-            
-            // Load nodes and edges
-            if (data.nodes && Array.isArray(data.nodes)) {
-              // Restore node definitions from manifest when loading from database
-              const restoredNodes = (data.nodes as unknown as Node[]).map(node => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
-                  // Ensure values are properly mapped to data.values for BaseNode to use
-                  values: (node as any).values || node.data?.values || {},
-                  // Restore display name for backward compatibility
-                  displayName: node.id 
-                  //displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
-                }
-              }));
-              setNodes(restoredNodes);
-              
-              // Clean up invalid edges after nodes are set
-              if (data.edges && Array.isArray(data.edges)) {
-                const validEdges = (data.edges as unknown as Edge[]).filter(edge => {
-                  // Check if edge connects to a valid source handle
-                  const sourceNode = restoredNodes.find(n => n.id === edge.source);
-                  if (!sourceNode || !edge.sourceHandle) return true; // Keep non-handle edges
-                  
-                  // For Switch nodes, validate that the sourceHandle exists in cases
-                  const nodeDefinition = sourceNode.data?.definition as any;
-                  const nodeType = nodeDefinition?.name;
-                  if (nodeType === "Switch") {
-                    const cases = sourceNode.data?.values?.cases || (sourceNode as any).values?.cases || [];
-                    const validHandles = cases.map((c: any) => c.caseValue || `case${cases.indexOf(c) + 1}`);
-                    validHandles.push("default"); // Add default handle
-                    
-                    if (!validHandles.includes(edge.sourceHandle)) {
-                      console.log(`🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`);
-                      return false; // Remove invalid edge
-                    }
-                  }
-                  
-                  return true; // Keep valid edge
-                });
-                
-                setEdges(
-                  validEdges.map((e) => ({
-                    ...e,
-                    type: e.type || 'removable',
-                    data: { ...(e.data || {}), onRemoveEdge: () => removeEdge(e.id) },
-                  }))
-                );
-              }
-            } else if (data.edges && Array.isArray(data.edges)) {
-              // If no nodes but edges exist, just set edges directly
-              setEdges(
-                (data.edges as unknown as Edge[]).map((e) => ({
-                  ...e,
-                  type: e.type || 'removable',
-                  data: { ...(e.data || {}), onRemoveEdge: () => removeEdge(e.id) },
-                }))
-              );
-            }
-            setHasLoadedWorkflowId(workflowId);
-          } else {
-            console.error("Workflow not found or access denied");
-            navigate('/workflows');
-          }
-        } catch (error) {
-          console.error("Error loading workflow:", error);
-          navigate('/workflows');
-        }
-        setLoading(false);
-      }
-    };
-    
-    loadWorkflow();
-  }, [authUser, authLoading, navigate, isNewWorkflow, workflowId, hasLoadedWorkflowId]); // Added hasLoadedWorkflowId to prevent unnecessary reloads
-
-
-  // Auto-hide palette when clicking outside or on editor
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!isPaletteVisible) return;
-      
-      const target = event.target as Element;
-      const palette = document.querySelector('.node-palette-container');
-      const toggleButton = document.querySelector('.palette-toggle-button');
-      
-      if (palette && toggleButton && 
-          !palette.contains(target) && 
-          !toggleButton.contains(target)) {
-        setIsPaletteVisible(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isPaletteVisible]);
-
-  // Handle ReactFlow clicks specifically
-  const onPaneClick = useCallback(() => {
-    if (isPaletteVisible) {
-      setIsPaletteVisible(false);
-    }
-  }, [isPaletteVisible]);
-
-  // Handle delete key to remove selected nodes
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === 'Delete') {
-        //console.log("Delete key pressed - removing selected nodes");
-        setNodes((nds) => nds.filter((node) => !node.selected));
-        setEdges((eds) => eds.filter((edge) => !edge.selected));
-      }
-      if (event.key === 'Backspace') {
-        //console.log("Backspace key pressed but should NOT delete nodes");
+        const selectedNodes = workflowState.nodes.filter(node => node.selected);
+        const selectedEdges = workflowState.edges.filter(edge => edge.selected);
+        
+        if (selectedNodes.length > 0) {
+          workflowActions.setNodes(prev => prev.filter(node => !node.selected));
+        }
+        if (selectedEdges.length > 0) {
+          workflowActions.setEdges(prev => prev.filter(edge => !edge.selected));
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [setNodes, setEdges]);
+  }, [workflowState.nodes, workflowState.edges, workflowActions]);
 
-  // Add visibility change handler to prevent state loss on tab switching
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // Auto-save when tab becomes hidden to preserve unsaved changes
-        if (nodes.length > 0 && authUser) {
-          console.log('🔄 Tab hidden - preserving workflow state');
-          handleSaveWorkflow(true); // Autosave
-        }
-      }
-    };
+  // Auto-save on changes
+  //useEffect(() => {
+  //  if (workflowState.hasUnsavedChanges && !isNewWorkflow) {
+  //    const timeout = setTimeout(() => {
+  //      workflowActions.saveWorkflow(true);
+  //    }, 2000);
+  //    
+  //    return () => clearTimeout(timeout);
+  //  }
+  //}, [workflowState.hasUnsavedChanges, isNewWorkflow, workflowActions]);
 
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Warn user if they have unsaved changes in a new workflow
-      if (isNewWorkflow && nodes.length > 1) { // More than just initial node
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [nodes, authUser, isNewWorkflow, handleSaveWorkflow]);
+  const isDisabled = executionState.isExecuting || workflowState.loading;
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] w-full">
-      {/* Workflow Header - Fixed at top */}
-      <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col gap-1">
-            <Input
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              className="text-xl font-bold bg-transparent border-none p-0 h-auto focus-visible:ring-0 hover:bg-muted/30 rounded px-2 py-1 transition-colors"
-              placeholder="Workflow name"
-            />
-            <div className="flex items-center gap-2 px-2">
-              <Badge 
-                variant={isActive ? "default" : "secondary"}
-                className="text-xs font-medium"
-              >
-                {isActive ? "Active" : "Draft"}
-              </Badge>
-              {autosaveStatus !== 'idle' && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {autosaveStatus === 'saving' && (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Autosaving...</span>
-                    </>
-                  )}
-                  {autosaveStatus === 'saved' && (
-                    <span className="text-success">Saved</span>
-                  )}
-                </div>
-              )}
-              {autosaveStatus === 'idle' && !isNewWorkflow && (
-                <span className="text-xs text-muted-foreground">
-                  Auto-saved
-                </span>
-              )}
-              {autosaveStatus === 'idle' && isNewWorkflow && (
-                <span className="text-xs text-muted-foreground">
-                  Unsaved
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => handleSaveWorkflow(false)}
-            disabled={loading}
-            variant="outline"
-            className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {loading ? "Saving..." : "Save"}
-          </Button>
-          
-          <Button
-            onClick={executeAllNodes}
-            disabled={loading || isAutoExecuting || nodes.length === 0}
-            variant="secondary"
-            className="h-10 px-4 font-medium bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 transition-all duration-200"
-          >
-            {isAutoExecuting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              <>
-                <Zap className="h-4 w-4 mr-2" />
-                Execute All
-              </>
-            )}
-          </Button>
-          
-          <Button
-            onClick={handleActivate}
-            disabled={loading}
-            className="h-10 px-6 font-medium bg-success hover:bg-success/90 text-success-foreground shadow-sm transition-all duration-200"
-          >
-            <Play className="h-4 w-4 mr-2" />
-            {isActive ? "Deactivate" : "Activate"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Main Content Area - Canvas + Palette */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ReactFlow Canvas */}
-        <div className="flex-1 bg-trading-grid">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onNodeDoubleClick={onNodeDoubleClick}
-            onPaneClick={onPaneClick}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            connectionLineType={ConnectionLineType.SmoothStep}
-            fitView
-            className="workflow-canvas"
-            style={{ backgroundColor: 'hsl(var(--trading-grid))' }}
-          >
-            <Background 
-              variant={BackgroundVariant.Dots} 
-              gap={16} 
-              size={0.8}
-              color="hsl(var(--muted-foreground) / 0.60)"
-            />
-            <MiniMap 
-              className="!bg-card !border-border"
-              maskColor="hsl(var(--muted) / 0.6)"
-            />
-            <Controls 
-              className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted"
-            />
-          </ReactFlow>
-        </div>
-
-        {/* Right Sidebar - Node Palette */}
-        {isPaletteVisible && (
-          <div className="w-80 border-l border-border bg-sidebar node-palette-container flex-shrink-0">
-            <NodePalette onNodeClick={handleNodeClick} />
-          </div>
-        )}
-      </div>
+      <WorkflowHeader
+        workflowName={workflowState.workflowName}
+        onWorkflowNameChange={workflowActions.setWorkflowName}
+        isActive={workflowState.isActive}
+        onActivate={handleActivate}
+        onSave={() => workflowActions.saveWorkflow(false)}
+        onExecute={executionActions.executeAllNodes}
+        onStopExecution={executionActions.stopExecution}
+        loading={workflowState.loading}
+        saving={workflowState.saving}
+        isExecuting={executionState.isExecuting}
+        hasUnsavedChanges={workflowState.hasUnsavedChanges}
+        nodeCount={workflowState.nodes.length}
+        disabled={isDisabled}
+      />
       
-      {/* Toggle Arrow - positioned relative to main content area */}
-      <button
-        onClick={() => setIsPaletteVisible(!isPaletteVisible)}
-        className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${
-          isPaletteVisible ? 'right-80' : 'right-0'
-        }`}
-      >
-        {isPaletteVisible ? (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+      <WorkflowCanvas
+        nodes={workflowState.nodes}
+        edges={workflowState.edges}
+        onNodesChange={workflowActions.setNodes}
+        onEdgesChange={workflowActions.setEdges}
+        onConnect={onConnect}
+        onNodeDoubleClick={onNodeDoubleClick}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+        onNodeClick={handleNodeClick}
+        isPaletteVisible={isPaletteVisible}
+        onTogglePalette={() => setIsPaletteVisible(!isPaletteVisible)}
+        disabled={isDisabled}
+      />
     </div>
   );
 };
 
-const WorkflowEditor = () => (
+const WorkflowEditorOptimized = () => (
   <ReactFlowProvider>
     <ExecutionStoreProvider>
       <WorkflowEditorContent />
@@ -871,4 +179,4 @@ const WorkflowEditor = () => (
   </ReactFlowProvider>
 );
 
-export default WorkflowEditor;
+export default WorkflowEditorOptimized;

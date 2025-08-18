@@ -36,10 +36,13 @@ export const useWorkflowState = (
   const { toast } = useToast();
   const { user: authUser } = useAuth();
   const executionStore = useExecutionStore();
+
   const debounceTimeoutRef = useRef<NodeJS.Timeout>();
   const lastSavedStateRef = useRef<string>('');
 
-  // Core state
+  // DB uses values as the canonical config for these nodes; UI edits live in fieldState.
+  const REPEATER_NODES_USING_VALUES = useRef(new Set(['If', 'Switch', 'Edit Fields']));
+
   const [state, setState] = useState<WorkflowState>({
     workflowId: initialWorkflowId,
     workflowName: initialWorkflowId ? 'Loading...' : 'My workflow 1',
@@ -52,49 +55,140 @@ export const useWorkflowState = (
     hasUnsavedChanges: false,
   });
 
-  // Generate unique node ID that doesn't conflict with existing nodes
+  // ------- helpers -------
   const generateUniqueNodeId = useCallback((nodeType: string) => {
-    const existingIds = new Set(state.nodes.map(node => node.id));
-    
+    const existingIds = new Set(state.nodes.map(n => n.id));
     let nodeId = nodeType;
     if (existingIds.has(nodeId)) {
       let counter = 1;
-      while (existingIds.has(`${nodeType}${counter}`)) {
-        counter++;
-      }
+      while (existingIds.has(`${nodeType}${counter}`)) counter++;
       nodeId = `${nodeType}${counter}`;
     }
-    
     return nodeId;
   }, [state.nodes]);
 
-  // Check if current state differs from last saved state
+  // Copy fieldState into values for nodes where DB expects values (If/Switch/Edit Fields)
+  const materializeValuesFromFieldState = useCallback((node: any) => {
+    if (!REPEATER_NODES_USING_VALUES.current.has(node.type)) return node;
+
+    const fs = node?.data?.fieldState ?? {};
+    const v  = node?.data?.values ?? {};
+
+    if (node.type === 'If') {
+      const conditions = fs.conditions ?? v.conditions ?? [];
+      const logicalOps = fs.logicalOps ?? v.logicalOps ?? [];
+      const logicalOp  = fs.logicalOp  ?? v.logicalOp  ?? undefined;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          values: {
+            ...v,
+            conditions,
+            ...(logicalOps?.length ? { logicalOps } : {}),
+            ...(logicalOp ? { logicalOp } : {}),
+          },
+        },
+      };
+    }
+
+    if (node.type === 'Switch') {
+      const inputValue  = fs.inputValue   ?? v.inputValue   ?? '';
+      const cases       = fs.cases        ?? v.cases        ?? [];
+      const defaultCase = fs.defaultCase  ?? v.defaultCase  ?? '';
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          values: {
+            ...v,
+            inputValue,
+            cases,
+            defaultCase,
+          },
+        },
+      };
+    }
+
+    if (node.type === 'Edit Fields') {
+      const fields     = fs.fields     ?? v.fields     ?? [];
+      const logicalOp  = fs.logicalOp  ?? v.logicalOp  ?? undefined;
+      const persistent = fs.persistent ?? v.persistent ?? '';
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          values: {
+            ...v,
+            fields,
+            logicalOp,
+            persistent,
+          },
+        },
+      };
+    }
+
+    return node;
+  }, []);
+
+  // Build the exact snapshot we persist & use for dirty-check
+  const buildPersistableGraph = useCallback(() => {
+    // 1) create a materialized copy (fs → values) for nodes that need it
+    const materialized = state.nodes.map(n => materializeValuesFromFieldState(n));
+
+    // 2) minimal nodes that go to DB (keep values as truth, also store fieldState for future-proof)
+    const minimalNodes = materialized.map((node: any) => ({
+      id: node.id,
+      type: node.type,
+      category: node?.data?.definition?.category,
+      subCategory: node?.data?.definition?.subCategory,
+      position: node.position,
+      sourcePosition: node.sourcePosition,
+      targetPosition: node.targetPosition,
+      values: node?.data?.values || {},
+      fieldState: node?.data?.fieldState || {},   // stored too (for future)
+      displayName: node?.data?.displayName,
+    }));
+
+    const existingIds = new Set(minimalNodes.map(n => n.id));
+
+    const cleanEdges = state.edges
+      .filter(e => existingIds.has(e.source) && existingIds.has(e.target))
+      .map((edge) => {
+        const clean: any = {
+          id: edge.id,
+          type: edge.type || 'removable',
+          source: edge.source,
+          target: edge.target,
+        };
+        if (edge.sourceHandle) clean.sourceHandle = edge.sourceHandle;
+        if (edge.targetHandle) clean.targetHandle = edge.targetHandle;
+        return clean;
+      });
+
+    return {
+      name: state.workflowName,
+      isActive: state.isActive,
+      nodes: minimalNodes,
+      edges: cleanEdges,
+    };
+  }, [state.nodes, state.edges, state.workflowName, state.isActive, materializeValuesFromFieldState]);
+
   const checkUnsavedChanges = useCallback(() => {
-    const currentState = JSON.stringify({
-      name: state.workflowName,
-      nodes: state.nodes,
-      edges: state.edges,
-      isActive: state.isActive
-    });
-    
-    const hasChanges = currentState !== lastSavedStateRef.current;
+    const snapshot = buildPersistableGraph();
+    const current = JSON.stringify(snapshot);
+    const hasChanges = current !== lastSavedStateRef.current;
     setState(prev => ({ ...prev, hasUnsavedChanges: hasChanges }));
-    
     return hasChanges;
-  }, [state.workflowName, state.nodes, state.edges, state.isActive]);
+  }, [buildPersistableGraph]);
 
-  // Update last saved state reference
   const updateLastSavedState = useCallback(() => {
-    lastSavedStateRef.current = JSON.stringify({
-      name: state.workflowName,
-      nodes: state.nodes,
-      edges: state.edges,
-      isActive: state.isActive
-    });
+    const snapshot = buildPersistableGraph();
+    lastSavedStateRef.current = JSON.stringify(snapshot);
     setState(prev => ({ ...prev, hasUnsavedChanges: false }));
-  }, [state.workflowName, state.nodes, state.edges, state.isActive]);
+  }, [buildPersistableGraph]);
 
-  // Actions
+  // ------- actions -------
   const setWorkflowName = useCallback((name: string) => {
     setState(prev => ({ ...prev, workflowName: name }));
   }, []);
@@ -106,49 +200,43 @@ export const useWorkflowState = (
   const setNodes = useCallback((nodes: Node[] | ((prev: Node[]) => Node[])) => {
     setState(prev => ({
       ...prev,
-      nodes: typeof nodes === 'function' ? nodes(prev.nodes) : nodes
+      nodes: typeof nodes === 'function' ? (nodes as (p: Node[]) => Node[])(prev.nodes) : nodes
     }));
   }, []);
 
   const setEdges = useCallback((edges: Edge[] | ((prev: Edge[]) => Edge[])) => {
     setState(prev => ({
       ...prev,
-      edges: typeof edges === 'function' ? edges(prev.edges) : edges
+      edges: typeof edges === 'function' ? (edges as (p: Edge[]) => Edge[])(prev.edges) : edges
     }));
   }, []);
 
   const createNode = useCallback((nodeType: string, position: { x: number; y: number }) => {
-    const nodeDefinition = nodeManifest[nodeType];
-    if (!nodeDefinition) {
+    const definition = nodeManifest[nodeType];
+    if (!definition) {
       console.error(`Unknown node type: ${nodeType}`);
       return;
     }
-
     const nodeId = generateUniqueNodeId(nodeType);
     const newNode: Node = {
       id: nodeId,
       type: nodeType,
       position,
       data: {
-        label: nodeDefinition.name || `${nodeType} node`,
-        definition: nodeDefinition,
+        label: definition.name || `${nodeType} node`,
+        definition,
         values: {},
         fieldState: {},
-        displayName: undefined // Let BaseNode calculate proper displayName
+        displayName: undefined, // BaseNode computes a friendly display name
       },
     };
-
     setNodes(prev => [...prev, newNode]);
   }, [generateUniqueNodeId, setNodes]);
 
   const saveWorkflow = useCallback(async (isAutosave = false): Promise<boolean> => {
     if (!authUser) {
       if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: "Please log in to save workflows",
-          variant: "destructive",
-        });
+        toast({ title: 'Error', description: 'Please log in to save workflows', variant: 'destructive' });
       }
       return false;
     }
@@ -156,71 +244,36 @@ export const useWorkflowState = (
     setState(prev => ({ ...prev, saving: true, error: null }));
 
     try {
-      // Prepare clean data for saving
-      const minimalNodes = state.nodes.map(node => ({
-        id: node.id, // This will now be the renamed ID (e.g., "uptrend" instead of "If1")
-        type: node.type,
-        category: (node.data.definition as any)?.category,
-        subCategory: (node.data.definition as any)?.subCategory,
-        position: node.position,
-        sourcePosition: node.sourcePosition,
-        targetPosition: node.targetPosition,
-        values: node.data.values || {},
-        displayName: node.data.displayName, // Save custom displayName
-      }));
-
-      // Get existing node IDs for edge validation
-      const existingNodeIds = new Set(minimalNodes.map(node => node.id));
-      
-      // Clean edges by removing execution-related properties and filtering invalid edges
-      const cleanEdges = state.edges
-        .filter(edge => existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target))
-        .map(edge => {
-          const cleanEdge: any = {
-            id: edge.id,
-            type: edge.type || 'removable',
-            source: edge.source,
-            target: edge.target,
-          };
-          
-          if (edge.sourceHandle) cleanEdge.sourceHandle = edge.sourceHandle;
-          if (edge.targetHandle) cleanEdge.targetHandle = edge.targetHandle;
-          
-          return cleanEdge;
-        });
+      // Build persistable snapshot (same used for dirty-check)
+      const graph = buildPersistableGraph();
 
       const payload = {
         user_id: authUser.id,
-        name: state.workflowName,
-        nodes: JSON.parse(JSON.stringify(minimalNodes)),
-        edges: JSON.parse(JSON.stringify(cleanEdges)),
-        is_active: state.isActive,
+        name: graph.name,
+        nodes: JSON.parse(JSON.stringify(graph.nodes)),
+        edges: JSON.parse(JSON.stringify(graph.edges)),
+        is_active: graph.isActive,
         updated_at: new Date().toISOString(),
         ...(projectId && { project_id: projectId }),
       };
 
       let result;
       if (state.workflowId) {
-        // Update existing workflow
         result = await supabase
-          .from("workflows")
+          .from('workflows')
           .update(payload)
-          .eq("id", state.workflowId)
-          .eq("user_id", authUser.id);
+          .eq('id', state.workflowId)
+          .eq('user_id', authUser.id);
       } else {
-        // Create new workflow
         result = await supabase
-          .from("workflows")
+          .from('workflows')
           .insert([payload])
           .select()
           .single();
       }
 
-      if (result.error) {
-        throw result.error;
-      }
+      if (result.error) throw result.error;
 
-      // Update workflow ID if creating new workflow
       if (!state.workflowId && result.data) {
         setState(prev => ({ ...prev, workflowId: result.data.id }));
       }
@@ -228,54 +281,42 @@ export const useWorkflowState = (
       updateLastSavedState();
 
       if (!isAutosave) {
-        toast({
-          title: "Success",
-          description: state.workflowId ? "Workflow updated!" : "Workflow saved!",
-        });
+        toast({ title: 'Success', description: state.workflowId ? 'Workflow updated!' : 'Workflow saved!' });
       }
 
       return true;
-    } catch (error: any) {
-      const errorMessage = error.message || 'Unknown error occurred';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      
+    } catch (err: any) {
+      const msg = err?.message || 'Unknown error occurred';
+      setState(prev => ({ ...prev, error: msg }));
       if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: `Failed to save workflow: ${errorMessage}`,
-          variant: "destructive",
-        });
+        toast({ title: 'Error', description: `Failed to save workflow: ${msg}`, variant: 'destructive' });
       }
-      
       return false;
     } finally {
       setState(prev => ({ ...prev, saving: false }));
     }
-  }, [authUser, state, projectId, toast, updateLastSavedState]);
+  }, [authUser, state.workflowId, projectId, toast, buildPersistableGraph, updateLastSavedState]);
 
-  const loadWorkflow = useCallback(async (id: string | null, projectId?: string | null): Promise<boolean> => {
+  const loadWorkflow = useCallback(async (id: string | null, projectIdParam?: string | null): Promise<boolean> => {
     if (!authUser || !id || id === 'new') {
-      // Generate smart workflow name for new workflows
+      // Generate smart name for new workflow
       try {
-        const { data: existingWorkflows, error } = await supabase
-          .from("workflows")
-          .select("name")
-          .eq("user_id", authUser?.id || '');
+        const { data: existing, error } = await supabase
+          .from('workflows')
+          .select('name')
+          .eq('user_id', authUser?.id || '');
 
-        if (!error && existingWorkflows) {
-          const workflowNumbers = existingWorkflows
+        if (!error && existing) {
+          const nums = existing
             .map(w => w.name)
-            .filter(name => name.startsWith("My workflow "))
-            .map(name => {
-              const match = name.match(/My workflow (\d+)/);
-              return match ? parseInt(match[1]) : 0;
+            .filter(n => n?.startsWith('My workflow '))
+            .map(n => {
+              const m = n.match(/My workflow (\d+)/);
+              return m ? parseInt(m[1]) : 0;
             })
-            .filter(num => !isNaN(num));
-
-          const maxNumber = workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
-          const nextNumber = maxNumber + 1;
-          const workflowName = projectId ? `New Project Workflow ${nextNumber}` : `My workflow ${nextNumber}`;
-          
+            .filter(n => !isNaN(n));
+          const next = (nums.length ? Math.max(...nums) : 0) + 1;
+          const workflowName = projectId ? `New Project Workflow ${next}` : `My workflow ${next}`;
           setState(prev => ({
             ...prev,
             workflowId: null,
@@ -286,11 +327,10 @@ export const useWorkflowState = (
             error: null,
           }));
         }
-      } catch (error) {
-        console.error("Error generating workflow name:", error);
+      } catch (e) {
+        console.error('Error generating workflow name:', e);
       }
 
-      // Clear execution context for new workflow
       executionStore.clear();
       updateLastSavedState();
       return true;
@@ -300,41 +340,67 @@ export const useWorkflowState = (
 
     try {
       const { data, error } = await supabase
-        .from("workflows")
-        .select("*")
-        .eq("id", id)
-        .eq("user_id", authUser.id)
+        .from('workflows')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', authUser.id)
         .single();
 
-      if (error || !data) {
-        throw new Error("Workflow not found or access denied");
-      }
+      if (error || !data) throw new Error('Workflow not found or access denied');
 
-      // Clear execution context when loading different workflow
       executionStore.clear();
 
-      // Restore nodes with definitions
-      const restoredNodes = ((data.nodes as unknown) as Node[] || []).map(node => ({
-        ...node,
-        data: {
-          ...node.data,
-          definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
-          values: (node as any).values || node.data?.values || {},
-          displayName: (node as any).displayName || node.data?.displayName, // Restore custom displayName
-        }
-      }));
+      // Rehydrate nodes with definitions + fieldState (hydrated from values if needed)
+      const restoredNodes: Node[] = ((data.nodes as unknown) as any[] || []).map((node: any) => {
+        const def = nodeManifest[node.type as keyof typeof nodeManifest];
 
-      // Restore edges with validation
-      const restoredEdges = ((data.edges as unknown) as Edge[] || []).map(edge => ({
+        const values = node.values ?? node.data?.values ?? {};
+        let fieldState = node.fieldState ?? node.data?.fieldState ?? {};
+
+        if (REPEATER_NODES_USING_VALUES.current.has(node.type) && (!fieldState || Object.keys(fieldState).length === 0)) {
+          if (node.type === 'If') {
+            fieldState = {
+              ...values,
+              conditions: Array.isArray(values.conditions) ? values.conditions : [],
+              logicalOps: Array.isArray(values.logicalOps) ? values.logicalOps : [],
+            };
+          } else if (node.type === 'Switch') {
+            fieldState = {
+              ...values,
+              cases: Array.isArray(values.cases) ? values.cases : [],
+            };
+          } else if (node.type === 'Edit Fields') {
+            fieldState = {
+              ...values,
+              fields: Array.isArray(values.fields) ? values.fields : [],
+              logicalOps: Array.isArray(values.logicalOps) ? values.logicalOps : [],
+            };
+          }
+        }
+
+        return {
+          ...node,
+          data: {
+            ...(node.data || {}),
+            definition: node.data?.definition || def,
+            values,
+            fieldState,
+            displayName: node.displayName ?? node.data?.displayName,
+          },
+        };
+      });
+
+      // Edges cleanup
+      const restoredEdges: Edge[] = ((data.edges as unknown) as Edge[] || []).map(edge => ({
         ...edge,
         type: edge.type || 'removable',
-        data: { ...edge.data }
+        data: { ...(edge as any).data },
       }));
 
       setState(prev => ({
         ...prev,
         workflowId: id,
-        workflowName: data.name || "Untitled Workflow",
+        workflowName: data.name || 'Untitled Workflow',
         isActive: !!data.is_active,
         nodes: restoredNodes,
         edges: restoredEdges,
@@ -342,21 +408,15 @@ export const useWorkflowState = (
 
       updateLastSavedState();
       return true;
-    } catch (error: any) {
-      const errorMessage = error.message || 'Failed to load workflow';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-      
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to load workflow';
+      setState(prev => ({ ...prev, error: msg }));
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
       return false;
     } finally {
       setState(prev => ({ ...prev, loading: false }));
     }
-  }, [authUser, executionStore, updateLastSavedState, toast]);
+  }, [authUser, executionStore, updateLastSavedState, toast, projectId]);
 
   const resetWorkflow = useCallback(() => {
     executionStore.clear();
@@ -374,29 +434,21 @@ export const useWorkflowState = (
     lastSavedStateRef.current = '';
   }, [executionStore]);
 
-  // Check for unsaved changes when state changes
+  // ------ dirty check debounce ------
   useEffect(() => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     debounceTimeoutRef.current = setTimeout(() => {
       checkUnsavedChanges();
-    }, 100);
-
+    }, 120); // small debounce for UX
     return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
   }, [checkUnsavedChanges]);
 
-  // Cleanup
+  // cleanup
   useEffect(() => {
     return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
   }, []);
 
@@ -411,6 +463,6 @@ export const useWorkflowState = (
       loadWorkflow,
       resetWorkflow,
       createNode,
-    }
+    },
   ];
 };

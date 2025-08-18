@@ -145,9 +145,11 @@ export const useWorkflowState = (
       position: node.position,
       sourcePosition: node.sourcePosition,
       targetPosition: node.targetPosition,
-      values: node?.data?.values || {},
-      fieldState: node?.data?.fieldState || {},   // stored too (for future)
-      displayName: node?.data?.displayName,
+      data: {
+        values: node?.data?.values || {},
+        fieldState: node?.data?.fieldState || {}, // stored too (for future)
+        displayName: node?.data?.displayName,
+      },
     }));
 
     const existingIds = new Set(minimalNodes.map(n => n.id));
@@ -354,8 +356,10 @@ export const useWorkflowState = (
       const restoredNodes: Node[] = ((data.nodes as unknown) as any[] || []).map((node: any) => {
         const def = nodeManifest[node.type as keyof typeof nodeManifest];
 
-        const values = node.values ?? node.data?.values ?? {};
-        let fieldState = node.fieldState ?? node.data?.fieldState ?? {};
+        const values = node.data?.values ?? node.values ?? {};
+        let fieldState = node.data?.fieldState ?? node.fieldState ?? {};
+        const displayName = node.data?.displayName ?? node.displayName;
+        const { values: _v, fieldState: _fs, displayName: _dn, ...rest } = node;
 
         if (REPEATER_NODES_USING_VALUES.current.has(node.type) && (!fieldState || Object.keys(fieldState).length === 0)) {
           if (node.type === 'If') {
@@ -379,13 +383,13 @@ export const useWorkflowState = (
         }
 
         return {
-          ...node,
+          ...rest,
           data: {
             ...(node.data || {}),
             definition: node.data?.definition || def,
             values,
             fieldState,
-            displayName: node.displayName ?? node.data?.displayName,
+            displayName,
           },
         };
       });

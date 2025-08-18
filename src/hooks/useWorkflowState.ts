@@ -379,13 +379,23 @@ export const useWorkflowState = (
         .eq('user_id', authUser.id)
         .single();
 
-      if (error || !data) throw new Error('Workflow not found or access denied');
+      if (error || !data) {
+        console.error('Workflow query error:', error);
+        throw new Error('Workflow not found or access denied');
+      }
 
+      console.log('🔄 Loading workflow:', data.name, 'with nodes:', data.nodes);
+      
       executionStore.clear();
 
       // Rehydrate nodes with definitions + fieldState (hydrated from values if needed)
       const restoredNodes: Node[] = ((data.nodes as unknown) as any[] || []).map((node: any) => {
+        console.log('🔄 Processing node:', node.type, node.id);
+        
         const def = nodeManifest[node.type as keyof typeof nodeManifest];
+        if (!def) {
+          console.warn(`⚠️ No definition found for node type: ${node.type}`);
+        }
 
         const values = node.data?.values ?? node.values ?? {};
         let fieldState = node.data?.fieldState ?? node.fieldState ?? {};

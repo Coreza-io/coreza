@@ -79,9 +79,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
-  const { setNodes } = useReactFlow();
+  const { setNodes: reactFlowSetNodes } = useReactFlow();
   const { setEdges } = useReactFlow();
   const { toast } = useToast();
+  
+  // Use the onNodesChange callback from data if available, otherwise fallback to React Flow
+  const setNodes = data.onNodesChange || reactFlowSetNodes;
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
   const isMounted = useRef(true);
@@ -171,8 +174,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       const newNodeId = finalName;
 
       // Update node with new ID and display name (N8N behavior)
-      setNodes(prevNodes => {
-        return prevNodes.map(node => {
+      if (data.onNodesChange) {
+        const updatedNodes = nodes.map(node => {
           if (node.id === oldNodeId) {
             return {
               ...node,
@@ -185,7 +188,24 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           }
           return node;
         });
-      });
+        data.onNodesChange(updatedNodes);
+      } else {
+        reactFlowSetNodes(prevNodes => {
+          return prevNodes.map(node => {
+            if (node.id === oldNodeId) {
+              return {
+                ...node,
+                id: newNodeId,
+                data: {
+                  ...node.data,
+                  displayName: finalName
+                }
+              };
+            }
+            return node;
+          });
+        });
+      }
 
       // Update all edges that reference the old node ID
       setEdges(prevEdges => {
@@ -312,8 +332,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   // Sync fieldState changes to node data.values for proper persistence
   useEffect(() => {
     if (Object.keys(fieldState).length > 0) {
-      setNodes((nds) =>
-        nds.map((n) =>
+      // Check if we have the callback from useWorkflowState
+      if (data.onNodesChange) {
+        // Use the callback from useWorkflowState (expects full nodes array)
+        const updatedNodes = nodes.map((n) =>
           n.id === nodeId
             ? {
                 ...n,
@@ -326,11 +348,30 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                 },
               }
             : n
-        )
-      );
+        );
+        data.onNodesChange(updatedNodes);
+      } else {
+        // Fallback to React Flow's setNodes (expects function)
+        reactFlowSetNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    values: { 
+                      ...((n.data?.values as Record<string, any>) || {}), // Preserve existing values
+                      ...fieldState // Merge in fieldState changes
+                    },
+                  },
+                }
+              : n
+          )
+        );
+      }
       console.log('🔄 BaseNode syncing fieldState to values for', nodeId, { fieldState, existingValues: data?.values });
     }
-  }, [fieldState, nodeId, setNodes, data?.values]);
+  }, [fieldState, nodeId, nodes, data.onNodesChange, reactFlowSetNodes, data?.values]);
 
 
   const [error, setError] = useState("");
@@ -377,8 +418,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     
     console.log('🔄 BaseNode setting newFieldState:', newFieldState);
     
-    setNodes((nds) =>
-      nds.map((n) =>
+    // Check if we have the callback from useWorkflowState
+    if (data.onNodesChange) {
+      // Use the callback from useWorkflowState (expects full nodes array)
+      const updatedNodes = nodes.map((n) =>
         n.id === nodeId
           ? {
               ...n,
@@ -389,23 +432,52 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
               },
             }
           : n
-      )
-    );
+      );
+      data.onNodesChange(updatedNodes);
+    } else {
+      // Fallback to React Flow's setNodes (expects function)
+      reactFlowSetNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  values: { ...((n.data as any)?.values || {}), [key]: value },
+                  fieldState: newFieldState,
+                },
+              }
+            : n
+        )
+      );
+    }
     
     console.log('🔄 BaseNode after setNodes call for handleChange');
-  }, [fieldState, nodeId, setNodes]);
+  }, [fieldState, nodeId, nodes, data.onNodesChange, reactFlowSetNodes]);
 
    // ========== New batch updater ===========
   const handleFieldStateBatch = useCallback((updates: Record<string, any>) => {
     const newFS = { ...fieldState, ...updates };
     setFieldState(newFS);
-    setNodes(nds =>
-      nds.map(n => n.id === nodeId
+    
+    // Check if we have the callback from useWorkflowState
+    if (data.onNodesChange) {
+      // Use the callback from useWorkflowState (expects full nodes array)
+      const updatedNodes = nodes.map(n => n.id === nodeId
         ? { ...n, data: { ...n.data, values: newFS, fieldState: newFS } }
         : n
-      )
-    );
-  }, [fieldState, nodeId, setNodes]);
+      );
+      data.onNodesChange(updatedNodes);
+    } else {
+      // Fallback to React Flow's setNodes (expects function)
+      reactFlowSetNodes(nds =>
+        nds.map(n => n.id === nodeId
+          ? { ...n, data: { ...n.data, values: newFS, fieldState: newFS } }
+          : n
+        )
+      );
+    }
+  }, [fieldState, nodeId, nodes, data.onNodesChange, reactFlowSetNodes]);
 
   const handleDrop = (
     fieldKey: string,
@@ -756,9 +828,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           });
           setLastOutput(finalOut);
           data.output = finalOut;
-          setNodes(nds => nds.map(n =>
-            n.id === nodeId ? ({ ...n, data: { ...n.data, output: finalOut } }) : n
-          ));
+          if (data.onNodesChange) {
+            const updatedNodes = nodes.map(n =>
+              n.id === nodeId ? ({ ...n, data: { ...n.data, output: finalOut } }) : n
+            );
+            data.onNodesChange(updatedNodes);
+          } else {
+            reactFlowSetNodes(nds => nds.map(n =>
+              n.id === nodeId ? ({ ...n, data: { ...n.data, output: finalOut } }) : n
+            ));
+          }
           outputData = finalOut;
           return;
         }
@@ -768,9 +847,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const uiOut = next.output; // current batch until final, then full aggregate
         setLastOutput(uiOut);
         data.output = uiOut;
-        setNodes(nds => nds.map(n =>
-          n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
-        ));
+        if (data.onNodesChange) {
+          const updatedNodes = nodes.map(n =>
+            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
+          );
+          data.onNodesChange(updatedNodes);
+        } else {
+          reactFlowSetNodes(nds => nds.map(n =>
+            n.id === nodeId ? ({ ...n, data: { ...n.data, output: uiOut } }) : n
+          ));
+        }
 
         executionStore.setNodeData(nodeId!, { input: effectiveInput, output: uiOut, _edgeBuf: {} });
 
@@ -839,13 +925,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       data.output = finalOutput;
       executionStore.setNodeData(nodeId!, { input: effectiveInput, output: finalOutput });
       //executionStore.setNodeData(nodeId!, { output: finalOutput });
-      setNodes(nds =>
-        nds.map(n =>
+      if (data.onNodesChange) {
+        const updatedNodes = nodes.map(n =>
           n.id === nodeId
             ? { ...n, data: { ...n.data, output: finalOutput } }
             : n
-        )
-      );
+        );
+        data.onNodesChange(updatedNodes);
+      } else {
+        reactFlowSetNodes(nds =>
+          nds.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, output: finalOutput } }
+              : n
+          )
+        );
+      }
     } catch (err: any) {
       setError(err.message || "Action failed");
       setLastOutput({

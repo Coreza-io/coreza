@@ -48,8 +48,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find((f: any) => f.type === "repeater");
-  const isConditional = repeaterField?.key === "conditions" || repeaterField?.key === "fields";
-  const isSwitch = repeaterField?.key === "cases";
+  const repeaterKey = repeaterField?.key;
+  const isConditional = repeaterKey === "conditions";
+  const isFieldRepeater = repeaterKey === "fields";
+  const isSwitch = repeaterKey === "cases";
 
   // =========== CONDITIONAL LOGIC ===========
   const defaultCond = Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
@@ -62,19 +64,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     : [{ caseValue: "case1", caseName: "Case 1" }];
 
   // =========== STATE ===========
-  // Validate that this node type supports the repeater fields
-  const nodeSupportsConditional = definition.name === 'If' || repeaterField?.key === 'conditions';
-  const nodeSupportsSwitch = definition.name === 'Switch' || repeaterField?.key === 'cases';
-  const nodeSupportsFields = definition.name === 'Edit Fields' || repeaterField?.key === 'fields';
-  
   // make sure these are always arrays before you map/filter them
-  const conditions = Array.isArray(fieldState.conditions) && nodeSupportsConditional
-    ? fieldState.conditions 
+  const conditions = repeaterKey && Array.isArray(fieldState[repeaterKey])
+    ? fieldState[repeaterKey]
     : [];
-  const logicalOps = Array.isArray(fieldState.logicalOps) && nodeSupportsConditional
+  const logicalOps = isConditional && Array.isArray(fieldState.logicalOps)
     ? fieldState.logicalOps
     : [];
-  const cases = Array.isArray(fieldState.cases) && nodeSupportsSwitch
+  const cases = Array.isArray(fieldState.cases)
     ? fieldState.cases
     : [];
   const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(conditions.map(() => ({})));
@@ -82,7 +79,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   // ─── Seed the repeater on first render ────────────────────────────────────
   useEffect(() => {
     if (!repeaterField) return;
-    const key = repeaterField.key;         // "conditions" or "cases"
+    const key = repeaterField.key;         // "conditions", "fields" or "cases"
     const current = fieldState[key] || [];
     if (Array.isArray(current) && current.length > 0) return; // already seeded
 
@@ -99,9 +96,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         conditions:  seedRows,
         logicalOps:  []        // no logic dropdown when only one condition
       });
-    } else {
+    } else if (key === "cases") {
       // for Switch: just seed the cases array
       handleFieldStateBatch({ cases: seedRows });
+    } else if (key === "fields") {
+      handleFieldStateBatch({ fields: seedRows });
     }
 
     // 3) keep your sourceMap in sync
@@ -123,11 +122,15 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {
     const newConds    = [...conditions, { ...defaultCond }];
-    const newLogOps   = [...logicalOps, "AND"];
-    handleFieldStateBatch({
-      conditions:  newConds,
-      logicalOps:  newLogOps
-    });
+    if (isConditional) {
+      const newLogOps   = [...logicalOps, "AND"];
+      handleFieldStateBatch({
+        conditions:  newConds,
+        logicalOps:  newLogOps
+      });
+    } else {
+      handleFieldStateBatch({ [repeaterKey!]: newConds });
+    }
     // sourceMap still needs to grow
     setSourceMap(sm => Array.isArray(sm) ? [...sm, {}] : [{}]);
   };
@@ -136,16 +139,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     // 1) compute new conditions array
     const newConds = conditions.filter((_, i) => i !== idx);
 
-    // 2) compute new logicalOps—drop the op immediately before the removed condition,
-    //    or if idx===0 then drop the first op.
-    const removeOpIndex = idx > 0 ? idx - 1 : 0;
-    const newLogOps = logicalOps.filter((_, i) => i !== removeOpIndex);
+    if (isConditional) {
+      // 2) compute new logicalOps—drop the op immediately before the removed condition,
+      //    or if idx===0 then drop the first op.
+      const removeOpIndex = idx > 0 ? idx - 1 : 0;
+      const newLogOps = logicalOps.filter((_, i) => i !== removeOpIndex);
 
-    // 3) batch-update both fields
-    handleFieldStateBatch({
-      conditions: newConds,
-      logicalOps: newLogOps,
-    });
+      // 3) batch-update both fields
+      handleFieldStateBatch({
+        conditions: newConds,
+        logicalOps: newLogOps,
+      });
+    } else {
+      handleFieldStateBatch({ [repeaterKey!]: newConds });
+    }
 
     // 4) trim your sourceMap too
     setSourceMap((sm) => Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : []);
@@ -154,11 +161,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const updateCondition = useCallback(
     (idx: number, field: string, value: any) => {
       handleChange(
-        "conditions",
+        repeaterKey!,
         conditions.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
       );
     },
-    [conditions, handleChange]
+    [conditions, handleChange, repeaterKey]
   );
 
   const updateLogicalOp = useCallback(
@@ -556,8 +563,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           );
         })}
 
-        {/* --------- CONDITIONAL REPEATER (Conditions) --------- */}
-        {isConditional && repeaterField && (
+        {/* --------- CONDITIONAL/FIELDS REPEATER --------- */}
+        {(isConditional || isFieldRepeater) && repeaterField && (
           <div className="space-y-3">
             <h4 className="font-semibold">
               {repeaterField?.key === "conditions" || repeaterField?.type === "conditions"

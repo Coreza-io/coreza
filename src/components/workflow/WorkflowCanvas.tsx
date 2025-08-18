@@ -114,27 +114,14 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
 
   // Merge base node types with custom Loop node
   const nodeTypes = React.useMemo(() => ({
-    ...Object.fromEntries(
-      Object.keys(nodeManifest).map(key => [
-        key, 
-        (props: any) => (
-          <NodeRouter 
-            {...props} 
-            data={{ 
-              ...props.data, 
-              onNodesChange 
-            }} 
-          />
-        )
-      ])
-    ),
+    ...baseNodeTypes,
     Loop: (props: any) => (
       <LoopNode
         {...props}
         data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
       />
     ),
-  }), [handleAddNode, onNodesChange]);
+  }), [handleAddNode]);
 
   const handleConnect = useCallback((params: Connection) => {
     const id = `edge_${Date.now()}`;

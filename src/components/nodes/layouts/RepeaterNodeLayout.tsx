@@ -68,9 +68,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const conditions = repeaterKey && Array.isArray(fieldState[repeaterKey])
     ? fieldState[repeaterKey]
     : [];
-  const logicalOps = isConditional && Array.isArray(fieldState.logicalOps)
-    ? fieldState.logicalOps
-    : [];
+  // per-condition logical operators are no longer used
   const cases = Array.isArray(fieldState.cases)
     ? fieldState.cases
     : [];
@@ -90,11 +88,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         ? [repeaterField.default]
         : [{}];
 
-    // 2) batch-set both fields: repeater + logicalOps (for If nodes)
+    // 2) batch-set the repeater field
     if (key === "conditions") {
       handleFieldStateBatch({
-        conditions:  seedRows,
-        logicalOps:  []        // no logic dropdown when only one condition
+        conditions: seedRows
       });
     } else if (key === "cases") {
       // for Switch: just seed the cases array
@@ -123,10 +120,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const addCondition = () => {
     const newConds    = [...conditions, { ...defaultCond }];
     if (isConditional) {
-      const newLogOps   = [...logicalOps, "AND"];
       handleFieldStateBatch({
-        conditions:  newConds,
-        logicalOps:  newLogOps
+        conditions: newConds
       });
     } else {
       handleFieldStateBatch({ [repeaterKey!]: newConds });
@@ -140,15 +135,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const newConds = conditions.filter((_, i) => i !== idx);
 
     if (isConditional) {
-      // 2) compute new logicalOps—drop the op immediately before the removed condition,
-      //    or if idx===0 then drop the first op.
-      const removeOpIndex = idx > 0 ? idx - 1 : 0;
-      const newLogOps = logicalOps.filter((_, i) => i !== removeOpIndex);
-
-      // 3) batch-update both fields
       handleFieldStateBatch({
         conditions: newConds,
-        logicalOps: newLogOps,
       });
     } else {
       handleFieldStateBatch({ [repeaterKey!]: newConds });
@@ -168,15 +156,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [conditions, handleChange, repeaterKey]
   );
 
-  const updateLogicalOp = useCallback(
-    (idx: number, op: string) => {
-      handleChange(
-        "logicalOps",
-        logicalOps.map((v, i) => (i === idx ? op : v))
-      );
-    },
-    [logicalOps, handleChange]
-  );
+  // no per-condition logical operators anymore
 
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
@@ -580,24 +560,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
               return (
                 <div key={i} className="space-y-2">
-                  {repeaterField?.key === "conditions" && i > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={logicalOps[i - 1]}
-                        onValueChange={(v) => updateLogicalOp(i - 1, v)}
-                      >
-                        <SelectTrigger className="w-20 h-8 text-xs">
-                          <SelectValue placeholder="Logic" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AND">AND</SelectItem>
-                          <SelectItem value="OR">OR</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <hr className="flex-1 border-t" />
-                    </div>
-                  )}
-
                   <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
                     {/* Left */}
                     {leftField && (leftField.options && leftField.options.length > 0) ? (

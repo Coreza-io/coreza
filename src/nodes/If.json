@@ -19,6 +19,17 @@
   },
   "fields": [
     {
+      "key": "logicalOp",
+      "type": "string",
+      "label": "Logical operator",
+      "options": [
+        { "label": "AND", "value": "AND" },
+        { "label": "OR", "value": "OR" }
+      ],
+      "default": "AND",
+      "placeholder": "Select logical operator"
+    },
+    {
       "key": "conditions",
       "label": "conditions",
       "type": "repeater",

@@ -628,8 +628,27 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     console.log("🔧 All node data map:", allNodeData);
     
     const payload: Record<string, any> = {};
-    for (const [key, value] of Object.entries(fieldState)) { 
-      payload[key] = resolveDeep(value, selectedInputData, allNodeData);
+    
+    // Only include fields that are defined in the current node's definition
+    // This prevents contamination from other node types
+    if (definition?.fields) {
+      const validFieldKeys = new Set(definition.fields.map((f: any) => f.key));
+      
+      for (const [key, value] of Object.entries(fieldState)) {
+        // Only include fields that are defined in this node's schema
+        if (validFieldKeys.has(key)) {
+          payload[key] = resolveDeep(value, selectedInputData, allNodeData);
+        }
+      }
+    }
+    
+    // Add debugging for Edit Fields specifically
+    if (definition?.name === "Edit Fields") {
+      console.log('🔍 Edit Fields buildPayload:', {
+        validFields: definition.fields?.map((f: any) => f.key),
+        fieldStateKeys: Object.keys(fieldState),
+        finalPayload: payload
+      });
     }
     
     // Special handling for If node to add missing required fields

@@ -38,17 +38,6 @@
         { "key": "right", "type": "string", "placeholder": "stocks" }
       ],
       "default": { "left": "", "operator": "===", "right": "" }
-    },
-    {
-      "key": "logicalOp",
-      "label": "Logical Operator",
-      "type": "select",
-      "options": [
-        { "label": "AND", "value": "AND" },
-        { "label": "OR", "value": "OR" }
-      ],
-      "default": "AND",
-      "description": "How to combine multiple conditions"
     }
   ]
 }

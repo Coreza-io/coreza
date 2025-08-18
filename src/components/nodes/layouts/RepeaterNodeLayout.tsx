@@ -107,7 +107,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     // 3) keep your sourceMap in sync
     setSourceMap(Array(seedRows.length).fill({}));
     setHasSeeded(true);
-  }, [repeaterField, hasSeeded, fieldState, handleFieldStateBatch]);  // <- track seeding state
+  }, [repeaterField, hasSeeded]);  // <- removed fieldState and handleFieldStateBatch to prevent re-running when fields change
 
 
   // whenever conditions.length changes, ensure sourceMap has the same length

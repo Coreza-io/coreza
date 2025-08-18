@@ -76,19 +76,19 @@ export class WorkflowExecutor {
       if (!loopWaits) return true;
     }
 
-    const inEdges = this.getIncomingEdges(nodeId);
-    if (!inEdges.length) return true;
+    const requiredEdges = this.getIncomingEdges(nodeId);
+    //if (!inEdges.length) return true;
 
-    const requiredEdges = inEdges.filter(e => {
-      if (failed.has(e.source)) return false;
+    //const requiredEdges = inEdges.filter(e => {
+      //if (failed.has(e.source)) return false;
 
-      if (this.isBranchNodeId(e.source)) {
-        if (!executed.has(e.source) && !failed.has(e.source)) return true;
-        return this.edgePayload.has(e.id);
-      }
+      //if (this.isBranchNodeId(e.source)) {
+        //if (!executed.has(e.source) && !failed.has(e.source)) return true;
+        //return this.edgePayload.has(e.id);
+      //}
 
-      return true;
-    });
+      //return true;
+    //});
 
     if (requiredEdges.length === 0) return false;
 
@@ -636,8 +636,8 @@ export class WorkflowExecutor {
 
             if (
               !queue.includes(e.target) &&
-              !executed.has(e.target) &&
-              !failed.has(e.target) &&
+              //!executed.has(e.target) &&
+              //!failed.has(e.target) &&
               this.areDependenciesSatisfied(e.target, executed, failed)
             ) {
               queue.push(e.target);

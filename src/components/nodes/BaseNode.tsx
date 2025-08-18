@@ -297,10 +297,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       definition.fields.some((f: any) => !(f.key in fieldState));
     
     if (isInitializing || fieldKeysChanged) {
-      console.log('🔄 BaseNode initializing fieldState for', definition.name);
+      console.log('🔄 BaseNode initializing fieldState for', definition.name, {
+        isInitializing,
+        fieldKeysChanged,
+        newFieldState,
+        currentFieldState: fieldState,
+        dataValues: data?.values,
+        dataFieldState: data?.fieldState
+      });
       setFieldState(newFieldState);
     }
-  }, [definition?.fields?.length, definition?.name]); // Stable dependencies
+  }, [definition?.fields?.length, definition?.name, data?.values, data?.fieldState]); // Add data dependencies
 
   // Sync fieldState changes to node data.values for proper persistence
   useEffect(() => {
@@ -363,8 +370,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   const handleChange = useCallback((key: string, value: any) => {
+    console.log('🔄 BaseNode handleChange called:', { nodeId, key, value, currentFieldState: fieldState });
+    
     const newFieldState = { ...fieldState, [key]: value };
     setFieldState(newFieldState);
+    
+    console.log('🔄 BaseNode setting newFieldState:', newFieldState);
+    
     setNodes((nds) =>
       nds.map((n) =>
         n.id === nodeId
@@ -379,6 +391,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : n
       )
     );
+    
+    console.log('🔄 BaseNode after setNodes call for handleChange');
   }, [fieldState, nodeId, setNodes]);
 
    // ========== New batch updater ===========

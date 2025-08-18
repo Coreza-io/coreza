@@ -139,8 +139,12 @@ export const useWorkflowState = (
 
   // Build the exact snapshot we persist & use for dirty-check
   const buildPersistableGraph = useCallback(() => {
+    console.log('🏗️ buildPersistableGraph called with state.nodes:', state.nodes.map(n => ({ id: n.id, type: n.type, values: n.data?.values, fieldState: n.data?.fieldState })));
+    
     // 1) create a materialized copy (fs → values) for nodes that need it
     const materialized = state.nodes.map(n => materializeValuesFromFieldState(n));
+    
+    console.log('🏗️ After materializeValuesFromFieldState:', materialized.map(n => ({ id: n.id, type: n.type, values: n.data?.values, fieldState: n.data?.fieldState })));
 
     // 2) minimal nodes that go to DB (keep values as truth, also store fieldState for future-proof)
     const minimalNodes = materialized.map((node: any) => ({
@@ -157,6 +161,8 @@ export const useWorkflowState = (
         displayName: node?.data?.displayName,
       },
     }));
+
+    console.log('🏗️ Final minimalNodes being saved:', JSON.stringify(minimalNodes, null, 2));
 
     const existingIds = new Set(minimalNodes.map(n => n.id));
 
@@ -226,6 +232,19 @@ export const useWorkflowState = (
       return;
     }
     const nodeId = generateUniqueNodeId(nodeType);
+    
+    // Initialize fieldState with default values from definition
+    const initialFieldState = definition.fields 
+      ? Object.fromEntries(
+          definition.fields.map((f: any) => [
+            f.key, 
+            f.type === "repeater" ? f.default || [] : f.default || ""
+          ])
+        )
+      : {};
+    
+    console.log('🆕 Creating new node:', { nodeType, nodeId, definition: definition.name, initialFieldState });
+    
     const newNode: Node = {
       id: nodeId,
       type: nodeType,
@@ -234,10 +253,12 @@ export const useWorkflowState = (
         label: definition.name || `${nodeType} node`,
         definition,
         values: {},
-        fieldState: {},
+        fieldState: initialFieldState,
         displayName: undefined, // BaseNode computes a friendly display name
       },
     };
+    
+    console.log('🆕 New node created:', newNode);
     setNodes(prev => [...prev, newNode]);
   }, [generateUniqueNodeId, setNodes]);
 
@@ -254,6 +275,8 @@ export const useWorkflowState = (
     try {
       // Build persistable snapshot (same used for dirty-check)
       const graph = buildPersistableGraph();
+      
+      console.log('💾 saveWorkflow payload nodes:', JSON.stringify(graph.nodes, null, 2));
 
       const payload = {
         user_id: authUser.id,
@@ -264,6 +287,8 @@ export const useWorkflowState = (
         updated_at: new Date().toISOString(),
         ...(projectId && { project_id: projectId }),
       };
+      
+      console.log('💾 Full payload being sent to Supabase:', JSON.stringify(payload.nodes, null, 2));
 
       let result;
       if (state.workflowId) {

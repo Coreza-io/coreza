@@ -91,10 +91,22 @@ export class BacktestingService {
       // Run the backtest
       const metrics = await engine.run();
       
+      // Save backtest results to database
+      await this.saveBacktestResults(backtestId, metrics);
+
+      // Update status to completed
+      await supabase
+        .from('backtests')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', backtestId);
+      
       console.log(`Backtest ${backtestId} completed successfully:`, {
-        total_return: (metrics.total_return * 100).toFixed(2) + '%',
+        total_return: metrics.total_return.toFixed(2) + '%',
         sharpe_ratio: metrics.sharpe_ratio.toFixed(2),
-        max_drawdown: (metrics.max_drawdown * 100).toFixed(2) + '%',
+        max_drawdown: metrics.max_drawdown.toFixed(2) + '%',
         total_trades: metrics.total_trades
       });
 
@@ -111,6 +123,89 @@ export class BacktestingService {
         })
         .eq('id', backtestId);
       
+      throw error;
+    }
+  }
+
+  private async saveBacktestResults(backtestId: string, metrics: any): Promise<void> {
+    try {
+      // Save main results
+      await supabase
+        .from('backtest_results')
+        .upsert({
+          backtest_id: backtestId,
+          total_return: metrics.total_return,
+          annualized_return: metrics.annualized_return,
+          final_portfolio_value: metrics.final_portfolio_value,
+          total_trades: metrics.total_trades,
+          profitable_trades: metrics.profitable_trades,
+          win_rate: metrics.win_rate,
+          max_drawdown: metrics.max_drawdown,
+          sharpe_ratio: metrics.sharpe_ratio,
+          largest_win: metrics.largest_win,
+          largest_loss: metrics.largest_loss,
+          average_trade_return: metrics.average_trade_return
+        });
+
+      // Save trades
+      if (metrics.trades && metrics.trades.length > 0) {
+        const trades = metrics.trades.map((trade: any) => ({
+          backtest_id: backtestId,
+          timestamp: trade.timestamp,
+          symbol: trade.symbol,
+          action: trade.action,
+          quantity: trade.quantity,
+          price: trade.price,
+          commission: trade.commission,
+          slippage: trade.slippage,
+          portfolio_value_before: trade.portfolio_value_before,
+          portfolio_value_after: trade.portfolio_value_after
+        }));
+
+        // Delete existing trades first
+        await supabase
+          .from('backtest_trades')
+          .delete()
+          .eq('backtest_id', backtestId);
+
+        // Insert new trades in batches
+        const batchSize = 100;
+        for (let i = 0; i < trades.length; i += batchSize) {
+          const batch = trades.slice(i, i + batchSize);
+          await supabase
+            .from('backtest_trades')
+            .insert(batch);
+        }
+      }
+
+      // Save portfolio snapshots
+      if (metrics.portfolio_history && metrics.portfolio_history.length > 0) {
+        const snapshots = metrics.portfolio_history.map((snapshot: any) => ({
+          backtest_id: backtestId,
+          date: snapshot.date,
+          portfolio_value: snapshot.value,
+          daily_return: snapshot.daily_return
+        }));
+
+        // Delete existing snapshots first
+        await supabase
+          .from('backtest_portfolio_snapshots')
+          .delete()
+          .eq('backtest_id', backtestId);
+
+        // Insert new snapshots in batches
+        const batchSize = 100;
+        for (let i = 0; i < snapshots.length; i += batchSize) {
+          const batch = snapshots.slice(i, i + batchSize);
+          await supabase
+            .from('backtest_portfolio_snapshots')
+            .insert(batch);
+        }
+      }
+
+      console.log(`✅ Saved backtest results for ${backtestId}`);
+    } catch (error) {
+      console.error(`❌ Failed to save backtest results for ${backtestId}:`, error);
       throw error;
     }
   }

@@ -2,9 +2,10 @@ import { BacktestConfig, BacktestResult } from './types';
 import { WorkflowEngine } from '../workflowEngine';
 import { WorkflowNode, WorkflowEdge } from '../../nodes/types';
 import { DataService } from '../data';
+import { BacktestContextManager } from './BacktestExecutionContext';
 
 export class WorkflowBacktestEngine {
-  private portfolio: { cash: number; positions: Map<string, { quantity: number; avgPrice: number }> };
+  private backtestContext: BacktestContextManager;
   private trades: any[] = [];
   private portfolioHistory: Array<{ date: string; value: number; daily_return: number }> = [];
 
@@ -13,10 +14,7 @@ export class WorkflowBacktestEngine {
     private nodes: WorkflowNode[],
     private edges: WorkflowEdge[]
   ) {
-    this.portfolio = {
-      cash: config.initial_capital,
-      positions: new Map()
-    };
+    this.backtestContext = new BacktestContextManager(config);
   }
 
   async run(): Promise<BacktestResult> {
@@ -127,43 +125,72 @@ export class WorkflowBacktestEngine {
   }
 
   private async loadHistoricalData(symbols: string[]): Promise<Map<string, any[]>> {
-    console.log('📈 Loading historical data...');
+    console.log('📈 Loading historical data via workflow nodes...');
     const marketData = new Map<string, any[]>();
     
+    // Find broker or data source nodes in the workflow
+    const dataNodes = this.nodes.filter(n => 
+      ['Alpaca', 'Dhan', 'AlpacaTrade', 'DhanTrade', 'FinnHub', 'YahooFinance', 'Market'].includes(n.type)
+    );
+
+    if (dataNodes.length === 0) {
+      console.warn('⚠️ No data source nodes found in workflow, using default YahooFinance');
+      // Fallback to YahooFinance
+      for (const symbol of symbols) {
+        try {
+          const result = await DataService.execute('yahoofinance', 'get_historical_data', {
+            symbol,
+            start_date: this.config.start_date,
+            end_date: this.config.end_date,
+            interval: this.config.data_frequency || '1d'
+          });
+
+          if (result.success && result.data && Array.isArray(result.data)) {
+            marketData.set(symbol, result.data);
+            console.log(`✅ Loaded ${result.data.length} candles for ${symbol} via YahooFinance`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to load data for ${symbol}:`, error);
+        }
+      }
+      return marketData;
+    }
+
+    // Execute data nodes with backtest context to get historical data
     for (const symbol of symbols) {
-      try {
-        // Use whatever data source is in the workflow (prefer broker nodes)
-        const brokerNode = this.nodes.find(n => 
-          ['Alpaca', 'Dhan', 'Broker'].includes(n.category) || 
-          ['Alpaca', 'Dhan'].includes(n.type)
-        );
+      for (const dataNode of dataNodes) {
+        try {
+          console.log(`📊 Loading ${symbol} data via ${dataNode.type} node`);
+          
+          // Create workflow engine with backtest context
+          const engine = new WorkflowEngine(
+            `data-load-${symbol}`,
+            this.config.workflow_id,
+            this.config.user_id,
+            [dataNode], // Only execute the data node
+            []
+          );
 
-        let result;
-        if (brokerNode) {
-          console.log(`📊 Using ${brokerNode.type} for ${symbol} historical data`);
-          // TODO: Use broker service for historical data
-          result = await DataService.execute(brokerNode.type, 'get_historical', {
+          // Prepare input with symbol and backtest context
+          const input = {
             symbol,
-            start_date: this.config.start_date,
-            end_date: this.config.end_date,
-            interval: this.config.data_frequency || '1d'
-          });
-        } else {
-          console.log(`📊 Using YahooFinance for ${symbol} historical data`);
-          result = await DataService.execute('yahoofinance', 'get_historical', {
-            symbol,
-            start_date: this.config.start_date,
-            end_date: this.config.end_date,
-            interval: this.config.data_frequency || '1d'
-          });
-        }
+            ...this.backtestContext.resolveNodeParameters(dataNode, { symbol })
+          };
 
-        if (result.success && result.data && Array.isArray(result.data)) {
-          marketData.set(symbol, result.data);
-          console.log(`✅ Loaded ${result.data.length} candles for ${symbol}`);
+          const result = await engine.execute(input);
+          
+          if (result.success && result.result && Array.isArray(result.result)) {
+            marketData.set(symbol, result.result);
+            console.log(`✅ Loaded ${result.result.length} candles for ${symbol} via ${dataNode.type}`);
+            break; // Successfully loaded data for this symbol
+          } else if (result.success && result.result && result.result.data && Array.isArray(result.result.data)) {
+            marketData.set(symbol, result.result.data);
+            console.log(`✅ Loaded ${result.result.data.length} candles for ${symbol} via ${dataNode.type}`);
+            break;
+          }
+        } catch (error) {
+          console.error(`❌ Failed to load data for ${symbol} via ${dataNode.type}:`, error);
         }
-      } catch (error) {
-        console.error(`❌ Failed to load data for ${symbol}:`, error);
       }
     }
 
@@ -202,7 +229,10 @@ export class WorkflowBacktestEngine {
       console.log(`⏰ [${i + 1}/${sortedTimestamps.length}] Processing ${timestamp}`);
 
       try {
-        // Create fresh workflow engine for this candle (like autoexecute does)
+        // Update backtest context with current market data
+        this.backtestContext.updateMarketData(timestamp, currentCandles);
+
+        // Create fresh workflow engine for this candle with backtest context
         const engine = new WorkflowEngine(
           `backtest-${timestamp}-${i}`,
           this.config.workflow_id,
@@ -211,8 +241,8 @@ export class WorkflowBacktestEngine {
           edges
         );
 
-        // Execute workflow with current candle data
-        const result = await engine.execute(currentCandles);
+        // Execute workflow with backtest context for parameter resolution
+        const result = await engine.execute(currentCandles, this.backtestContext);
 
         if (result.success && result.result) {
           // Process any trading signals from the workflow
@@ -220,7 +250,7 @@ export class WorkflowBacktestEngine {
         }
 
         // Record portfolio value
-        const currentValue = this.calculatePortfolioValue(currentCandles);
+        const currentValue = this.backtestContext.getPortfolioValue();
         const dailyReturn = ((currentValue - previousValue) / previousValue) * 100;
         
         this.portfolioHistory.push({
@@ -266,9 +296,51 @@ export class WorkflowBacktestEngine {
     if (Array.isArray(data)) {
       data.forEach(item => this.scanForTradingSignals(item, timestamp, marketData));
     } else if (data && typeof data === 'object') {
-      // Check if this object represents a trading signal
-      if (data.action && data.symbol && ['buy', 'sell'].includes(data.action)) {
-        this.executeTrade(timestamp, data, marketData);
+      // Enhanced signal detection patterns
+      
+      // Pattern 1: Direct action signals
+      if (data.action && data.symbol && ['buy', 'sell', 'BUY', 'SELL'].includes(data.action.toUpperCase())) {
+        this.executeTrade(timestamp, {
+          action: data.action.toLowerCase(),
+          symbol: data.symbol,
+          quantity: data.quantity || data.size || 100
+        }, marketData);
+        return;
+      }
+      
+      // Pattern 2: Trading signals with direction
+      if (data.signal && data.symbol && ['LONG', 'SHORT', 'EXIT', 'BUY', 'SELL'].includes(data.signal.toUpperCase())) {
+        const action = data.signal.toUpperCase() === 'LONG' ? 'buy' : 
+                     data.signal.toUpperCase() === 'SHORT' ? 'sell' : 
+                     data.signal.toLowerCase();
+        this.executeTrade(timestamp, {
+          action,
+          symbol: data.symbol,
+          quantity: data.quantity || data.size || 100
+        }, marketData);
+        return;
+      }
+      
+      // Pattern 3: Boolean buy/sell flags
+      if (data.symbol && (data.buy === true || data.sell === true)) {
+        const action = data.buy ? 'buy' : 'sell';
+        this.executeTrade(timestamp, {
+          action,
+          symbol: data.symbol,
+          quantity: data.quantity || 100
+        }, marketData);
+        return;
+      }
+      
+      // Pattern 4: Numeric buy/sell indicators (positive = buy, negative = sell)
+      if (data.symbol && typeof data.position === 'number' && data.position !== 0) {
+        const action = data.position > 0 ? 'buy' : 'sell';
+        this.executeTrade(timestamp, {
+          action,
+          symbol: data.symbol,
+          quantity: Math.abs(data.position)
+        }, marketData);
+        return;
       }
       
       // Recursively scan nested objects
@@ -295,17 +367,17 @@ export class WorkflowBacktestEngine {
     const portfolioValueBefore = this.calculatePortfolioValue(marketData);
 
     if (action === 'buy') {
-      const totalCost = effectivePrice * quantity + commission;
-      if (this.portfolio.cash >= totalCost) {
-        this.portfolio.cash -= totalCost;
+    const totalCost = effectivePrice * quantity + commission;
+      if (this.backtestContext.portfolio.cash >= totalCost) {
+        this.backtestContext.portfolio.cash -= totalCost;
         
-        const currentPosition = this.portfolio.positions.get(symbol) || { quantity: 0, avgPrice: 0 };
+        const currentPosition = this.backtestContext.portfolio.positions.get(symbol) || { quantity: 0, avgPrice: 0 };
         const newQuantity = currentPosition.quantity + quantity;
         const newAvgPrice = newQuantity > 0 
           ? ((currentPosition.avgPrice * currentPosition.quantity) + (effectivePrice * quantity)) / newQuantity
           : effectivePrice;
         
-        this.portfolio.positions.set(symbol, { quantity: newQuantity, avgPrice: newAvgPrice });
+        this.backtestContext.portfolio.positions.set(symbol, { quantity: newQuantity, avgPrice: newAvgPrice });
         
         this.trades.push({
           timestamp,
@@ -316,22 +388,22 @@ export class WorkflowBacktestEngine {
           commission,
           slippage: slippage * quantity,
           portfolio_value_before: portfolioValueBefore,
-          portfolio_value_after: this.calculatePortfolioValue(marketData)
+          portfolio_value_after: this.backtestContext.getPortfolioValue()
         });
         
         console.log(`💰 BUY ${quantity} ${symbol} @ $${effectivePrice.toFixed(2)}`);
       }
     } else if (action === 'sell') {
-      const position = this.portfolio.positions.get(symbol);
+      const position = this.backtestContext.portfolio.positions.get(symbol);
       if (position && position.quantity >= quantity) {
         const totalReceived = effectivePrice * quantity - commission;
-        this.portfolio.cash += totalReceived;
+        this.backtestContext.portfolio.cash += totalReceived;
         
         const newQuantity = position.quantity - quantity;
         if (newQuantity === 0) {
-          this.portfolio.positions.delete(symbol);
+          this.backtestContext.portfolio.positions.delete(symbol);
         } else {
-          this.portfolio.positions.set(symbol, { ...position, quantity: newQuantity });
+          this.backtestContext.portfolio.positions.set(symbol, { ...position, quantity: newQuantity });
         }
         
         this.trades.push({
@@ -343,7 +415,7 @@ export class WorkflowBacktestEngine {
           commission,
           slippage: slippage * quantity,
           portfolio_value_before: portfolioValueBefore,
-          portfolio_value_after: this.calculatePortfolioValue(marketData)
+          portfolio_value_after: this.backtestContext.getPortfolioValue()
         });
         
         console.log(`💸 SELL ${quantity} ${symbol} @ $${effectivePrice.toFixed(2)}`);
@@ -352,18 +424,11 @@ export class WorkflowBacktestEngine {
   }
 
   private calculatePortfolioValue(marketData?: Record<string, any>): number {
-    let value = this.portfolio.cash;
-    
-    for (const [symbol, position] of this.portfolio.positions) {
-      const currentPrice = marketData?.[symbol]?.close || position.avgPrice;
-      value += position.quantity * currentPrice;
-    }
-    
-    return value;
+    return this.backtestContext.getPortfolioValue();
   }
 
   private calculateResults(): BacktestResult {
-    const finalValue = this.calculatePortfolioValue();
+    const finalValue = this.backtestContext.getPortfolioValue();
     const totalReturn = ((finalValue - this.config.initial_capital) / this.config.initial_capital) * 100;
     
     // Calculate win rate

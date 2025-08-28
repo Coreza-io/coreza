@@ -109,31 +109,34 @@ export class WorkflowBacktestEngine {
     }
   }
 
-  private extractSymbolsFromResults(results: any, symbols: Set<string>, visited = new WeakSet(), depth = 0): void {
-    // Prevent stack overflow with max depth limit
-    if (depth > 10) {
-      console.warn('⚠️ Max recursion depth reached in symbol extraction');
-      return;
-    }
-
-    // Prevent circular references
-    if (results && typeof results === 'object' && visited.has(results)) {
-      return;
-    }
-
-    if (typeof results === 'string' && results.match(/^[A-Z]{1,5}$/)) {
-      symbols.add(results);
-    } else if (Array.isArray(results)) {
-      visited.add(results);
-      results.forEach(item => this.extractSymbolsFromResults(item, symbols, visited, depth + 1));
-    } else if (results && typeof results === 'object') {
-      visited.add(results);
-      Object.entries(results).forEach(([key, value]) => {
-        if (key.toLowerCase().includes('symbol') && typeof value === 'string') {
-          symbols.add(value);
+  private extractSymbolsFromResults(results: any, symbols: Set<string>): void {
+    // Use iterative approach to avoid recursion stack overflow
+    const queue = [results];
+    const visited = new WeakSet();
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      
+      if (!current) continue;
+      
+      if (typeof current === 'string' && current.match(/^[A-Z]{1,5}$/)) {
+        symbols.add(current);
+      } else if (Array.isArray(current)) {
+        if (!visited.has(current)) {
+          visited.add(current);
+          queue.push(...current);
         }
-        this.extractSymbolsFromResults(value, symbols, visited, depth + 1);
-      });
+      } else if (current && typeof current === 'object') {
+        if (!visited.has(current)) {
+          visited.add(current);
+          Object.entries(current).forEach(([key, value]) => {
+            if (key.toLowerCase().includes('symbol') && typeof value === 'string') {
+              symbols.add(value);
+            }
+            queue.push(value);
+          });
+        }
+      }
     }
   }
 
@@ -230,6 +233,15 @@ export class WorkflowBacktestEngine {
 
     let previousValue = this.config.initial_capital;
 
+    // Create ONE workflow engine and reuse it instead of creating new ones
+    const engine = new WorkflowEngine(
+      `backtest-simulation`,
+      this.config.workflow_id,
+      this.config.user_id,
+      nodes,
+      edges
+    );
+
     // Process each candle/timestamp
     for (let i = 0; i < sortedTimestamps.length; i++) {
       const timestamp = sortedTimestamps[i];
@@ -245,21 +257,7 @@ export class WorkflowBacktestEngine {
         // Update backtest context with current market data
         this.backtestContext.updateMarketData(timestamp, currentCandles);
 
-        // Create fresh workflow engine for this candle with backtest context
-        const engine = new WorkflowEngine(
-          `backtest-${timestamp}-${i}`,
-          this.config.workflow_id,
-          this.config.user_id,
-          nodes,
-          edges
-        );
-
-        // Force garbage collection every 100 iterations to prevent memory buildup
-        if (i % 100 === 0 && global.gc) {
-          global.gc();
-        }
-
-        // Execute workflow with backtest context for parameter resolution
+        // Execute workflow with backtest context - reusing same engine
         const result = await engine.execute(currentCandles, this.backtestContext);
 
         if (result.success && result.result) {
@@ -310,75 +308,75 @@ export class WorkflowBacktestEngine {
     this.scanForTradingSignals(results, timestamp, marketData);
   }
 
-  private scanForTradingSignals(data: any, timestamp: string, marketData: Record<string, any>, visited = new WeakSet(), depth = 0): void {
-    // Prevent stack overflow with max depth limit
-    if (depth > 15) {
-      console.warn('⚠️ Max recursion depth reached in signal scanning');
-      return;
-    }
-
-    // Prevent circular references
-    if (data && typeof data === 'object' && visited.has(data)) {
-      return;
-    }
-
-    if (Array.isArray(data)) {
-      visited.add(data);
-      data.forEach(item => this.scanForTradingSignals(item, timestamp, marketData, visited, depth + 1));
-    } else if (data && typeof data === 'object') {
-      visited.add(data);
+  private scanForTradingSignals(data: any, timestamp: string, marketData: Record<string, any>): void {
+    // Use iterative approach to avoid recursion stack overflow
+    const queue = [data];
+    const visited = new WeakSet();
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
       
-      // Enhanced signal detection patterns
+      if (!current) continue;
       
-      // Pattern 1: Direct action signals
-      if (data.action && data.symbol && ['buy', 'sell', 'BUY', 'SELL'].includes(data.action.toUpperCase())) {
-        this.executeTrade(timestamp, {
-          action: data.action.toLowerCase(),
-          symbol: data.symbol,
-          quantity: data.quantity || data.size || 100
-        }, marketData);
-        return;
+      if (Array.isArray(current)) {
+        if (!visited.has(current)) {
+          visited.add(current);
+          queue.push(...current);
+        }
+      } else if (current && typeof current === 'object') {
+        if (visited.has(current)) continue;
+        visited.add(current);
+        
+        // Enhanced signal detection patterns
+        
+        // Pattern 1: Direct action signals
+        if (current.action && current.symbol && ['buy', 'sell', 'BUY', 'SELL'].includes(current.action.toUpperCase())) {
+          this.executeTrade(timestamp, {
+            action: current.action.toLowerCase(),
+            symbol: current.symbol,
+            quantity: current.quantity || current.size || 100
+          }, marketData);
+          continue;
+        }
+        
+        // Pattern 2: Trading signals with direction
+        if (current.signal && current.symbol && ['LONG', 'SHORT', 'EXIT', 'BUY', 'SELL'].includes(current.signal.toUpperCase())) {
+          const action = current.signal.toUpperCase() === 'LONG' ? 'buy' : 
+                       current.signal.toUpperCase() === 'SHORT' ? 'sell' : 
+                       current.signal.toLowerCase();
+          this.executeTrade(timestamp, {
+            action,
+            symbol: current.symbol,
+            quantity: current.quantity || current.size || 100
+          }, marketData);
+          continue;
+        }
+        
+        // Pattern 3: Boolean buy/sell flags
+        if (current.symbol && (current.buy === true || current.sell === true)) {
+          const action = current.buy ? 'buy' : 'sell';
+          this.executeTrade(timestamp, {
+            action,
+            symbol: current.symbol,
+            quantity: current.quantity || 100
+          }, marketData);
+          continue;
+        }
+        
+        // Pattern 4: Numeric buy/sell indicators (positive = buy, negative = sell)
+        if (current.symbol && typeof current.position === 'number' && current.position !== 0) {
+          const action = current.position > 0 ? 'buy' : 'sell';
+          this.executeTrade(timestamp, {
+            action,
+            symbol: current.symbol,
+            quantity: Math.abs(current.position)
+          }, marketData);
+          continue;
+        }
+        
+        // Add nested objects to queue for processing
+        queue.push(...Object.values(current));
       }
-      
-      // Pattern 2: Trading signals with direction
-      if (data.signal && data.symbol && ['LONG', 'SHORT', 'EXIT', 'BUY', 'SELL'].includes(data.signal.toUpperCase())) {
-        const action = data.signal.toUpperCase() === 'LONG' ? 'buy' : 
-                     data.signal.toUpperCase() === 'SHORT' ? 'sell' : 
-                     data.signal.toLowerCase();
-        this.executeTrade(timestamp, {
-          action,
-          symbol: data.symbol,
-          quantity: data.quantity || data.size || 100
-        }, marketData);
-        return;
-      }
-      
-      // Pattern 3: Boolean buy/sell flags
-      if (data.symbol && (data.buy === true || data.sell === true)) {
-        const action = data.buy ? 'buy' : 'sell';
-        this.executeTrade(timestamp, {
-          action,
-          symbol: data.symbol,
-          quantity: data.quantity || 100
-        }, marketData);
-        return;
-      }
-      
-      // Pattern 4: Numeric buy/sell indicators (positive = buy, negative = sell)
-      if (data.symbol && typeof data.position === 'number' && data.position !== 0) {
-        const action = data.position > 0 ? 'buy' : 'sell';
-        this.executeTrade(timestamp, {
-          action,
-          symbol: data.symbol,
-          quantity: Math.abs(data.position)
-        }, marketData);
-        return;
-      }
-      
-      // Recursively scan nested objects with protection
-      Object.values(data).forEach(value => 
-        this.scanForTradingSignals(value, timestamp, marketData, visited, depth + 1)
-      );
     }
   }
 

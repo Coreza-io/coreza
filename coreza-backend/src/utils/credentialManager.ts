@@ -92,17 +92,21 @@ class CredentialManager {
 
       const credential = data[0];
       
-      // Try client_json field first (frontend encrypted with simple AES-GCM)
-      if (credential.client_json && typeof credential.client_json === 'string') {
+      // Try client_json field for legacy plaintext/encrypted credentials
+      if (credential.client_json && typeof credential.client_json === 'object') {
         try {
-          // Frontend uses simple base64 encoded encrypted data (iv + encrypted)
-          const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
-          if (!encryptionKey) {
-            throw new Error('Encryption key not available');
+          const clientData: Record<string, any> = {};
+          
+          // Decrypt each field in client_json if encrypted
+          for (const [key, value] of Object.entries(credential.client_json as Record<string, string>)) {
+            if (typeof value === 'string' && DecryptionUtil.isEncrypted(value)) {
+              clientData[key] = await DecryptionUtil.decrypt(value);
+            } else {
+              clientData[key] = value;
+            }
           }
           
-          const decryptedCredentials = await this.decryptClientData(credential.client_json, encryptionKey);
-          return { credentials: decryptedCredentials };
+          return { credentials: clientData };
         } catch (decryptError) {
           console.error('Failed to decrypt client_json:', decryptError);
           return { error: 'Failed to decrypt credentials' };

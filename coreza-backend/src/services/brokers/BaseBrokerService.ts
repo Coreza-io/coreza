@@ -36,7 +36,7 @@ export abstract class BaseBrokerService implements IBrokerService {
         .from('user_credentials')
         .select('*')
         .eq('user_id', userId)
-        .eq('name', credentialId)
+        .eq('id', credentialId)
         .eq('service_type', this.brokerKey)
         .single();
 
@@ -116,10 +116,7 @@ export abstract class BaseBrokerService implements IBrokerService {
       }
 
       return { 
-        credentials: { 
-          client_json: decryptedCredentials, 
-          token_json: {} 
-        } 
+        credentials: decryptedCredentials 
       };
     } catch (error) {
       throw new Error(`Failed to get ${this.brokerKey} credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);

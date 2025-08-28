@@ -44,11 +44,12 @@ export class RestBrokerService
 
     try {
       // 1. fetch credentials
-      const { credentials } = await this.getCredentials(input.user_id, input.credential_id);
-      
-      // Credentials are returned as flat object with api keys
-      const client_json = credentials;
-      const token_json = {};
+      const {
+        credentials: {
+          client_json,
+          token_json
+        }
+      } = await this.getCredentials(input.user_id, input.credential_id);
 
       // 2. build request
       const baseUrl = typeof this.config.baseUrl === 'function'

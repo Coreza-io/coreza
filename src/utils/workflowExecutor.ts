@@ -72,8 +72,8 @@ export class WorkflowExecutor {
     failed: Set<string>
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
-    const n = this.context.nodes.find((x) => x.id === nodeId);
-    const loopWaits: boolean = Boolean(n?.data?.loopWaits) ?? false;
+      const n = this.context.nodes.find((x) => x.id === nodeId);
+      const loopWaits: boolean = n?.data?.loopWaits ?? false;
       if (!loopWaits) return true;
     }
 

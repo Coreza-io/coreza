@@ -1,4 +1,4 @@
-// Enhanced Professional Event-Driven Backtesting Engine Core Types
+// Professional Event-Driven Backtesting Engine Core Types
 
 export interface MarketDataEvent {
   type: 'MARKET_DATA';
@@ -106,35 +106,4 @@ export interface PerformanceMetrics {
   alpha?: number;
   information_ratio?: number;
   tracking_error?: number;
-}
-
-export interface BacktestConfig {
-  id?: string;
-  user_id: string;
-  workflow_id: string;
-  name: string;
-  description?: string;
-  start_date: string;
-  end_date: string;
-  initial_capital: number;
-  commission_rate: number;
-  slippage_rate: number;
-  data_frequency: string;
-}
-
-export interface BacktestResult {
-  backtest_id: string;
-  total_return: number;
-  annualized_return: number;
-  final_portfolio_value: number;
-  total_trades: number;
-  profitable_trades: number;
-  win_rate: number;
-  max_drawdown: number;
-  sharpe_ratio: number;
-  largest_win: number;
-  largest_loss: number;
-  average_trade_return: number;
-  trades: any[];
-  portfolio_history: Array<{ date: string; value: number; daily_return: number }>;
 }

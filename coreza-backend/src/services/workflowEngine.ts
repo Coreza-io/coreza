@@ -48,6 +48,7 @@ export class WorkflowEngine {
   ): any {
     if (typeof val === 'string' && val.includes('{{')) {
       const resolved = resolveReferences(val, input, allNodeData, this.nodes);
+      // If resolveReferences returned non-string, return it directly
       return resolved;
     }
     if (Array.isArray(val)) {
@@ -60,7 +61,7 @@ export class WorkflowEngine {
         )
       );
     }
-    return val;
+    return val; // number, boolean, null, undefined
   }
 
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
@@ -85,11 +86,11 @@ export class WorkflowEngine {
     this.executors.set(category, executor);
   }
 
-  async execute(initialInput?: any, backtestContext?: any): Promise<{ success: boolean; result?: any; error?: string }> {
+  async execute(initialInput?: any): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
       console.log(`🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`);
       
-      await this.run(initialInput, backtestContext);
+      await this.run(initialInput);
       
       console.log(`✅ Workflow execution completed successfully`);
       return { success: true, result: this.store.getAllResults() };
@@ -100,7 +101,7 @@ export class WorkflowEngine {
     }
   }
 
-  async run(initialInput: any = [], backtestContext?: any): Promise<void> {
+  async run(initialInput: any = []): Promise<void> {
     // Find entry nodes (no incoming edges)
     const entryNodes = this.nodes.filter(n => !this.edges.some(e => e.target === n.id));
     
@@ -113,18 +114,18 @@ export class WorkflowEngine {
     while (this.queue.length > 0) {
       const item = this.queue.dequeue();
       if (!item) break;
-      await this.executeOnce(item, backtestContext);
+      await this.executeOnce(item);
     }
   }
 
-  private async executeOnce(item: QueueItem, backtestContext?: any): Promise<void> {
+  private async executeOnce(item: QueueItem): Promise<void> {
     const { nodeId, input, meta } = item;
     const node = this.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
     try {
-      // Execute the node with backtest context
-      const fullResult = await this.executeNode(node, input, backtestContext);
+      // Execute the node
+      const fullResult = await this.executeNode(node, input);
        // Extract data for downstream routing
       const result = fullResult?.data || fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
@@ -211,7 +212,7 @@ export class WorkflowEngine {
     }
   }
 
-  private async executeNode(node: WorkflowNode, input: any, backtestContext?: any): Promise<any> {
+  private async executeNode(node: WorkflowNode, input: any): Promise<any> {
     console.log(`🔧 Executing node ${node.id} (${node.type})`);
 
     // Map node categories for compatibility
@@ -236,18 +237,17 @@ export class WorkflowEngine {
       throw new Error(`Unsupported node category: ${category} for node type: ${node.type}`);
     }
 
-    // Create execution context with backtest support
+    // Create execution context
     const context: ExecutionContext = {
       nodeId: node.id,
       runId: this.runId,
       workflowId: this.workflowId,
       userId: this.userId,
-      getState: (key: string) => this.store.getState(key),
-      setState: (key: string, value: any) => this.store.setState(key, value),
-      getPersistentValue: (key: string) => Promise.resolve(this.store.getNode(key)),
-      setPersistentValue: (key: string, value: any) => Promise.resolve(this.store.setResult(key, value, false)),
-      resolveNodeParameters: backtestContext?.resolveNodeParameters?.bind(backtestContext) || 
-        ((node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input))
+      getState: (key: string) => this.store.getNodeState(node.id, key),
+      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
+      getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
+      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
+      resolveNodeParameters: (node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input)
     };
 
     // Execute node

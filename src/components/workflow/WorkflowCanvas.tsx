@@ -150,8 +150,6 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           onNodesChange={(changes) => {
             // Convert React Flow changes to direct node updates
             let updatedNodes = [...nodes];
-            const removedNodeIds: string[] = [];
-            
             changes.forEach(change => {
               if (change.type === 'position' && change.position) {
                 const index = updatedNodes.findIndex(n => n.id === change.id);
@@ -164,19 +162,9 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
                   updatedNodes[index] = { ...updatedNodes[index], selected: change.selected };
                 }
               } else if (change.type === 'remove') {
-                removedNodeIds.push(change.id);
                 updatedNodes = updatedNodes.filter(n => n.id !== change.id);
               }
             });
-            
-            // Clean up edges connected to removed nodes
-            if (removedNodeIds.length > 0) {
-              const filteredEdges = edges.filter(edge => 
-                !removedNodeIds.includes(edge.source) && !removedNodeIds.includes(edge.target)
-              );
-              onEdgesChange(filteredEdges);
-            }
-            
             onNodesChange(updatedNodes);
           }}
           onEdgesChange={(changes) => {

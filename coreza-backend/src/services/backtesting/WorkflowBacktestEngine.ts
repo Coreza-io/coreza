@@ -109,17 +109,30 @@ export class WorkflowBacktestEngine {
     }
   }
 
-  private extractSymbolsFromResults(results: any, symbols: Set<string>): void {
+  private extractSymbolsFromResults(results: any, symbols: Set<string>, visited = new WeakSet(), depth = 0): void {
+    // Prevent stack overflow with max depth limit
+    if (depth > 10) {
+      console.warn('⚠️ Max recursion depth reached in symbol extraction');
+      return;
+    }
+
+    // Prevent circular references
+    if (results && typeof results === 'object' && visited.has(results)) {
+      return;
+    }
+
     if (typeof results === 'string' && results.match(/^[A-Z]{1,5}$/)) {
       symbols.add(results);
     } else if (Array.isArray(results)) {
-      results.forEach(item => this.extractSymbolsFromResults(item, symbols));
+      visited.add(results);
+      results.forEach(item => this.extractSymbolsFromResults(item, symbols, visited, depth + 1));
     } else if (results && typeof results === 'object') {
+      visited.add(results);
       Object.entries(results).forEach(([key, value]) => {
         if (key.toLowerCase().includes('symbol') && typeof value === 'string') {
           symbols.add(value);
         }
-        this.extractSymbolsFromResults(value, symbols);
+        this.extractSymbolsFromResults(value, symbols, visited, depth + 1);
       });
     }
   }
@@ -241,6 +254,11 @@ export class WorkflowBacktestEngine {
           edges
         );
 
+        // Force garbage collection every 100 iterations to prevent memory buildup
+        if (i % 100 === 0 && global.gc) {
+          global.gc();
+        }
+
         // Execute workflow with backtest context for parameter resolution
         const result = await engine.execute(currentCandles, this.backtestContext);
 
@@ -292,10 +310,24 @@ export class WorkflowBacktestEngine {
     this.scanForTradingSignals(results, timestamp, marketData);
   }
 
-  private scanForTradingSignals(data: any, timestamp: string, marketData: Record<string, any>): void {
+  private scanForTradingSignals(data: any, timestamp: string, marketData: Record<string, any>, visited = new WeakSet(), depth = 0): void {
+    // Prevent stack overflow with max depth limit
+    if (depth > 15) {
+      console.warn('⚠️ Max recursion depth reached in signal scanning');
+      return;
+    }
+
+    // Prevent circular references
+    if (data && typeof data === 'object' && visited.has(data)) {
+      return;
+    }
+
     if (Array.isArray(data)) {
-      data.forEach(item => this.scanForTradingSignals(item, timestamp, marketData));
+      visited.add(data);
+      data.forEach(item => this.scanForTradingSignals(item, timestamp, marketData, visited, depth + 1));
     } else if (data && typeof data === 'object') {
+      visited.add(data);
+      
       // Enhanced signal detection patterns
       
       // Pattern 1: Direct action signals
@@ -343,9 +375,9 @@ export class WorkflowBacktestEngine {
         return;
       }
       
-      // Recursively scan nested objects
+      // Recursively scan nested objects with protection
       Object.values(data).forEach(value => 
-        this.scanForTradingSignals(value, timestamp, marketData)
+        this.scanForTradingSignals(value, timestamp, marketData, visited, depth + 1)
       );
     }
   }

@@ -44,20 +44,35 @@ export class WorkflowEngine {
   private resolveDeep(
     val: any,
     input: any,
-    allNodeData: Record<string, any>
+    allNodeData: Record<string, any>,
+    visited = new WeakSet(),
+    depth = 0
   ): any {
+    // Prevent stack overflow with max depth limit
+    if (depth > 20) {
+      console.warn('⚠️ Max recursion depth reached in parameter resolution');
+      return val;
+    }
+
+    // Prevent circular references
+    if (val && typeof val === 'object' && visited.has(val)) {
+      return val;
+    }
+
     if (typeof val === 'string' && val.includes('{{')) {
       const resolved = resolveReferences(val, input, allNodeData, this.nodes);
       // If resolveReferences returned non-string, return it directly
       return resolved;
     }
     if (Array.isArray(val)) {
-      return val.map(item => this.resolveDeep(item, input, allNodeData));
+      visited.add(val);
+      return val.map(item => this.resolveDeep(item, input, allNodeData, visited, depth + 1));
     }
     if (val !== null && typeof val === 'object') {
+      visited.add(val);
       return Object.fromEntries(
         Object.entries(val).map(
-          ([k, v]) => [k, this.resolveDeep(v, input, allNodeData)]
+          ([k, v]) => [k, this.resolveDeep(v, input, allNodeData, visited, depth + 1)]
         )
       );
     }

@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
-const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = "/api";
 
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {

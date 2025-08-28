@@ -159,7 +159,7 @@ export default function Backtesting() {
       // Call the Express backend API to run the backtest
       try {
         console.log('Calling Express backend API...');
-        const response = await fetch(`http://localhost:8000/backtesting/${backtestId}/run`, {
+        const response = await fetch(`/api/backtesting/${backtestId}/run`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

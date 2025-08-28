@@ -131,7 +131,7 @@ const Workflows = () => {
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
-      const API_URL = "http://localhost:8000";
+      const API_URL = "/api";
       
       // Check backend health first for both activation and deactivation
       try {
@@ -145,7 +145,7 @@ const Workflows = () => {
         }
       } catch (healthError: any) {
         console.error("Backend health check failed:", healthError);
-        throw new Error("Backend server is not available. Please ensure your backend is running on http://localhost:8000");
+        throw new Error("Backend server is not available. Please ensure your backend is running.");
       }
 
       const newStatus = !currentStatus;

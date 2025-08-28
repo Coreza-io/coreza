@@ -722,8 +722,19 @@ const WorkflowEditorContent = () => {
       //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === "Delete") {
         //console.log("Delete key pressed - removing selected nodes");
+        
+        // Get IDs of nodes being deleted
+        const selectedNodeIds = nodes.filter((node) => node.selected).map(node => node.id);
+        
+        // Remove selected nodes
         setNodes((nds) => nds.filter((node) => !node.selected));
-        setEdges((eds) => eds.filter((edge) => !edge.selected));
+        
+        // Remove selected edges AND edges connected to deleted nodes
+        setEdges((eds) => eds.filter((edge) => 
+          !edge.selected && 
+          !selectedNodeIds.includes(edge.source) && 
+          !selectedNodeIds.includes(edge.target)
+        ));
       }
       if (event.key === "Backspace") {
         //console.log("Backspace key pressed but should NOT delete nodes");
@@ -732,7 +743,7 @@ const WorkflowEditorContent = () => {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, nodes]);
 
   // Add visibility change handler to prevent state loss on tab switching
   useEffect(() => {

@@ -14,18 +14,25 @@ export class DataSourceExecutor implements INodeExecutor {
         context.resolveNodeParameters(node, input) : 
         { ...node.values, ...input };
 
+      // Special handling for backtesting - ensure historical data operations
+      if (resolvedParams.historical || resolvedParams.start_date || resolvedParams.end_date) {
+        resolvedParams.operation = 'get_historical_data';
+      }
+
       const combinedInput = {
         ...input,
         ...resolvedParams
       };
 
+      console.log(`🔍 [DataSource] Executing ${nodeType} with params:`, combinedInput);
+
       let result;
       switch (nodeType) {
         case 'FinnHub':
-          result = await DataService.execute('finnhub', operation, combinedInput);
+          result = await DataService.execute('finnhub', resolvedParams.operation, combinedInput);
           break;
         case 'YahooFinance':
-          result = await DataService.execute('yahoofinance', operation, combinedInput);
+          result = await DataService.execute('yahoofinance', resolvedParams.operation, combinedInput);
           break;
         default:
           return {
@@ -37,7 +44,7 @@ export class DataSourceExecutor implements INodeExecutor {
       if (!result.success) {
         return {
           success: false,
-          error: result.error || `${nodeType} ${operation} operation failed`
+          error: result.error || `${nodeType} ${resolvedParams.operation} operation failed`
         };
       }
 

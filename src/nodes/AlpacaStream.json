@@ -1,0 +1,65 @@
+{
+  "name": "AlpacaStream",
+  "def": "Alpaca Stream",
+  "node_type": "main",
+  "icon": "/assets/icons/alpaca.svg",
+  "category": "Broker",
+  "subCategory": "Alpaca",
+  "description": "Subscribe to Alpaca market data via WebSocket",
+  "color": "text-yellow-500",
+  "size": { "width": 340, "height": 300 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Alpaca"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "Your Alpaca API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "placeholder": "Your Alpaca Secret Key"
+    }
+  ],
+  "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
+  "action": { "url": "/alpaca-stream/{{operation}}", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        { "id": "start_stream", "name": "Start Stream", "method": "POST" },
+        { "id": "stop_stream", "name": "Stop Stream", "method": "POST" }
+      ],
+      "required": true
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
+      "placeholder": "e.g. AAPL,MSFT",
+      "required": true
+    }
+  ]
+}

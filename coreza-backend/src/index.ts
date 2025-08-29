@@ -14,6 +14,7 @@ import { workflowScheduler } from './services/scheduler';
 // Import routes
 import indicatorRoutes from './routes/indicators';
 import alpacaRoutes from './routes/alpaca';
+import alpacaStreamRoutes from './routes/alpacastream';
 import marketRoutes from './routes/market';
 import credentialsRoutes from './routes/credentials';
 import dhanRoutes from './routes/dhan';
@@ -60,6 +61,8 @@ app.use('/indicators', indicatorRoutes);
 console.log('✅ Indicators route mounted');
 app.use('/alpaca', alpacaRoutes);
 console.log('✅ Alpaca route mounted');
+app.use('/alpaca-stream', alpacaStreamRoutes);
+console.log('✅ AlpacaStream route mounted');
 app.use('/market', marketRoutes);
 console.log('✅ Market route mounted');
 app.use('/credentials', credentialsRoutes);

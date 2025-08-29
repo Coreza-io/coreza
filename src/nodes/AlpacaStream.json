@@ -4,7 +4,8 @@
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
-  "subCategory": "AlpacaStream",
+  "subCategory": "Alpaca",
+
   "description": "Subscribe to Alpaca market data via WebSocket",
   "color": "text-yellow-500",
   "size": { "width": 340, "height": 300 },

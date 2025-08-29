@@ -2,6 +2,7 @@ import { registerBroker } from './registry';
 import { RestBrokerService } from './RestBrokerService';
 import { alpacaConfig } from './configs/alpaca';
 import { dhanConfig } from './configs/dhan';
+import { AlpacaStreamService } from './AlpacaStreamService';
 
 export function initializeBrokerServices() {
   console.log('🚀 Initializing broker services...');
@@ -9,6 +10,7 @@ export function initializeBrokerServices() {
   // Register REST-based broker services with their configurations
   registerBroker(new RestBrokerService('alpaca', alpacaConfig));
   registerBroker(new RestBrokerService('dhan', dhanConfig));
+  registerBroker(new AlpacaStreamService());
   
   console.log('✅ All broker services initialized');
 }

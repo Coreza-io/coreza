@@ -1,6 +1,7 @@
 import GmailDef from './Gmail.json'
 import AlpacaDef from './Alpaca.json'
 import AlpacaTradeDef from './AlpacaTrade.json'
+import AlpacaStreamDef from './AlpacaStream.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
 import IfDef from './If.json'
@@ -101,6 +102,7 @@ export const nodeManifest = {
   [VisualizeDef.name]: VisualizeDef,
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaTradeDef.name]: AlpacaTradeDef,
+  [AlpacaStreamDef.name]: AlpacaStreamDef,
   [DhanTradeDef.name]: DhanTradeDef,
   [MarketDef.name]: MarketDef,
   [HttpRequestDef.name]: HttpRequestDef,

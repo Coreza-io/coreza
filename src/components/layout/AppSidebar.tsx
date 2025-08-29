@@ -25,6 +25,7 @@ const menuItems = [
   { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
   { title: "Projects", url: "/projects", icon: FolderOpen },
   { title: "Workflows", url: "/workflows", icon: Activity },
+  { title: "WebSocket Test", url: "/websocket-test", icon: Activity },
   
 ];
 

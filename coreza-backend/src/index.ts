@@ -28,6 +28,7 @@ import schedulerRoutes from './routes/scheduler';
 import comparatorRoutes from './routes/comparator';
 import riskRoutes from './routes/risk';
 import controlRoutes from './routes/control';
+import websocketRoutes from './routes/websocket';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -87,6 +88,8 @@ app.use('/control', controlRoutes);
 console.log('✅ Control route mounted');
 app.use('/risk', riskRoutes);
 console.log('✅ Risk route mounted');
+app.use('/websocket', websocketRoutes);
+console.log('✅ WebSocket route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

@@ -11,6 +11,7 @@ import Workflows from "./Workflows";
 import WorkflowEditor from "./WorkflowEditor";
 import Profile from "./Profile";
 import Settings from "./Settings";
+import WebSocketTest from "./WebSocketTest";
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -49,6 +50,7 @@ const Interface = () => {
               <Route path="/workflows" element={<Workflows />} />
               <Route path="/workflow/:id" element={<WorkflowEditor />} />
               <Route path="/workflow/new" element={<WorkflowEditor />} />
+              <Route path="/websocket-test" element={<WebSocketTest />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

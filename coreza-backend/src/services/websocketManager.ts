@@ -69,12 +69,12 @@ export class WebSocketManager {
   }
 
   private verifyJWT(token: string): { userId: string } {
-    // TODO: Implement JWT verification with your secret
-    // For now, this is a placeholder
     try {
+      // Verify Supabase JWT token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret') as any;
-      return { userId: decoded.sub || decoded.userId };
-    } catch {
+      return { userId: decoded.sub || decoded.user_id || decoded.userId };
+    } catch (error) {
+      console.error('JWT verification failed:', error);
       throw new Error('Invalid token');
     }
   }
@@ -145,6 +145,14 @@ export class WebSocketManager {
           this.handleAgentMessage(ws, message.payload);
           break;
 
+        case 'broker_subscribe':
+          this.handleBrokerSubscription(ws, message.payload);
+          break;
+
+        case 'alpaca_stream':
+          this.handleAlpacaStream(ws, message.payload);
+          break;
+
         default:
           console.warn(`Unknown message type: ${message.type}`);
       }
@@ -177,6 +185,64 @@ export class WebSocketManager {
   private handleAgentMessage(ws: AuthenticatedWebSocket, payload: any): void {
     // TODO: Queue agent processing
     console.log(`User ${ws.userId} sent agent message:`, payload);
+  }
+
+  private handleBrokerSubscription(ws: AuthenticatedWebSocket, payload: any): void {
+    console.log(`User ${ws.userId} subscribed to broker ${payload.broker} events`);
+    
+    this.sendMessage(ws, {
+      type: 'broker_subscribed',
+      payload: { broker: payload.broker, success: true },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  private async handleAlpacaStream(ws: AuthenticatedWebSocket, payload: any): Promise<void> {
+    console.log(`User ${ws.userId} requested Alpaca stream:`, payload);
+    
+    try {
+      // Import dynamically to avoid circular dependencies
+      const { default: AlpacaWebSocketService } = await import('./brokers/AlpacaWebSocketService');
+      
+      if (payload.action === 'subscribe' && payload.symbols) {
+        const success = AlpacaWebSocketService.subscribeToSymbols(ws.userId!, payload.symbols);
+        
+        this.sendMessage(ws, {
+          type: 'alpaca_stream_started',
+          payload: { 
+            symbols: payload.symbols, 
+            success,
+            message: success ? 'Subscribed to symbols' : 'Failed to subscribe - WebSocket not connected'
+          }
+        });
+      } else if (payload.action === 'unsubscribe' && payload.symbols) {
+        const success = AlpacaWebSocketService.unsubscribeFromSymbols(ws.userId!, payload.symbols);
+        
+        this.sendMessage(ws, {
+          type: 'alpaca_stream_stopped',
+          payload: { 
+            symbols: payload.symbols, 
+            success,
+            message: success ? 'Unsubscribed from symbols' : 'Failed to unsubscribe'
+          }
+        });
+      } else {
+        this.sendMessage(ws, {
+          type: 'alpaca_stream_error',
+          payload: { 
+            error: 'Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.'
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error handling Alpaca stream:', error);
+      this.sendMessage(ws, {
+        type: 'alpaca_stream_error',
+        payload: { 
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
   }
 
   private handleDisconnection(ws: AuthenticatedWebSocket): void {

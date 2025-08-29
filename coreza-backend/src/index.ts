@@ -28,7 +28,7 @@ import schedulerRoutes from './routes/scheduler';
 import comparatorRoutes from './routes/comparator';
 import riskRoutes from './routes/risk';
 import controlRoutes from './routes/control';
-import backtestingRoutes from './routes/backtesting';
+
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeBrokerServices } from './services/brokers/index';
@@ -87,8 +87,6 @@ app.use('/control', controlRoutes);
 console.log('✅ Control route mounted');
 app.use('/risk', riskRoutes);
 console.log('✅ Risk route mounted');
-app.use('/backtesting', backtestingRoutes);
-console.log('✅ Backtesting route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

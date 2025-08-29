@@ -11,7 +11,6 @@ import Workflows from "./Workflows";
 import WorkflowEditor from "./WorkflowEditor";
 import Profile from "./Profile";
 import Settings from "./Settings";
-import Backtesting from "./Backtesting";
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -50,7 +49,6 @@ const Interface = () => {
               <Route path="/workflows" element={<Workflows />} />
               <Route path="/workflow/:id" element={<WorkflowEditor />} />
               <Route path="/workflow/new" element={<WorkflowEditor />} />
-              <Route path="/backtesting" element={<Backtesting />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

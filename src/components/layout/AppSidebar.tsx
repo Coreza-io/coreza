@@ -17,8 +17,7 @@ import {
   Activity, 
   TrendingUp,
   Settings,
-  LogOut,
-  TestTube
+  LogOut
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -26,7 +25,7 @@ const menuItems = [
   { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
   { title: "Projects", url: "/projects", icon: FolderOpen },
   { title: "Workflows", url: "/workflows", icon: Activity },
-  { title: "Backtesting", url: "/backtesting", icon: TestTube },
+  
 ];
 
 export function AppSidebar() {

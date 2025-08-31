@@ -185,7 +185,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             executionStore,
           }}
           outputPanelProps={{
-            nodeId: nodeId,
             data: renderProps.displayedData,
             position: "right",
             pinned: renderProps.isPinned,

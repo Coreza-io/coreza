@@ -70,7 +70,9 @@ export class WebSocketManager {
 
   private verifyJWT(token: string): { userId: string } {
     try {
-      // Verify Supabase JWT token
+      // For Supabase JWT, we need to verify using the Supabase endpoint
+      // In production, use proper JWT verification with the public key
+      // For development, decode and extract user info
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret') as any;
       return { userId: decoded.sub || decoded.user_id || decoded.userId };
     } catch (error) {
@@ -151,6 +153,15 @@ export class WebSocketManager {
 
         case 'alpaca_stream':
           this.handleAlpacaStream(ws, message.payload);
+          break;
+
+        case 'stream_data':
+          // Handle generic stream data broadcast
+          this.sendToUser(ws.userId, {
+            type: 'stream_data',
+            payload: message.payload,
+            timestamp: new Date().toISOString()
+          });
           break;
 
         default:

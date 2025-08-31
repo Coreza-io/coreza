@@ -62,6 +62,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
               executionStore,
             }}
             outputPanelProps={{
+              nodeId: id,
               data: renderProps.displayedData,
               position: "right",
               pinned: renderProps.isPinned,

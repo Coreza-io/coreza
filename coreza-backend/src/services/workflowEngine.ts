@@ -22,13 +22,22 @@ export class WorkflowEngine {
   private queue: QueueManager;
   private store: NodeStoreV2;
   private executors: Map<string, any> = new Map();
+  private edgePayload = new Map<string, any>();
+  private executed = new Set<string>();
+  private failed = new Set<string>();
+  private enqueuedKeys = new Set<string>();
+  private retryCount = new Map<string, number>();
+  private MAX_RETRIES = 0;
+  private conditionalMap = new Map<string, Record<string, string[]>>();
+  private mode: 'best-effort' | 'fail-fast';
 
   constructor(
     private runId: string,
     private workflowId: string,
     private userId: string,
     private nodes: WorkflowNode[],
-    private edges: WorkflowEdge[]
+    private edges: WorkflowEdge[],
+    mode: 'best-effort' | 'fail-fast' = 'best-effort'
   ) {
     this.router = new NodeRouter(edges);
     // Add node type lookup to router
@@ -38,6 +47,7 @@ export class WorkflowEngine {
     };
     this.queue = new QueueManager();
     this.store = new NodeStoreV2(runId, nodes);
+    this.mode = mode;
   }
 
   // Deep resolve helper for resolving template expressions recursively
@@ -86,12 +96,113 @@ export class WorkflowEngine {
     this.executors.set(category, executor);
   }
 
+  // -----------------------------
+  // Queue + graph helpers
+  // -----------------------------
+
+  private keyFor(item: QueueItem): string {
+    const iterPart = item.meta?.originLoopId
+      ? `@loop:${item.meta.originLoopId}:${item.meta.iterIndex ?? 'na'}`
+      : '';
+    return `${item.nodeId}${iterPart}`;
+  }
+
+  private enqueue(item: QueueItem) {
+    const key = this.keyFor(item);
+    if (this.enqueuedKeys.has(key)) return false;
+    this.queue.enqueue(item);
+    this.enqueuedKeys.add(key);
+    return true;
+  }
+
+  private dequeue(): QueueItem | undefined {
+    const item = this.queue.dequeue();
+    if (!item) return undefined;
+    const key = this.keyFor(item);
+    this.enqueuedKeys.delete(key);
+    return item;
+  }
+
+  private getIncomingEdges = (targetId: string) =>
+    this.edges.filter(e => e.target === targetId);
+
+  private isLoopNode = (nodeId: string) => {
+    const n = this.nodes.find(x => x.id === nodeId);
+    return n?.type === 'Loop';
+  };
+
+  private isBranchNode = (nodeId: string) => {
+    const n = this.nodes.find(x => x.id === nodeId);
+    return n?.type === 'If' || n?.type === 'Switch';
+  };
+
+  private areDependenciesSatisfied(nodeId: string): boolean {
+    if (this.isLoopNode(nodeId)) {
+      const loopNode = this.nodes.find(n => n.id === nodeId);
+      const loopWaits = Boolean((loopNode as any)?.values?.loopWaits);
+      if (!loopWaits) return true;
+    }
+
+    const required = this.getIncomingEdges(nodeId);
+    if (required.length === 0) return false;
+    return required.every(e => this.edgePayload.has(e.id));
+  }
+
+  private markEdgePayload(edgeId: string, payload: any) {
+    this.edgePayload.set(edgeId, payload);
+  }
+
+  private clearIncomingEdgePayloads(nodeId: string) {
+    for (const e of this.getIncomingEdges(nodeId)) this.edgePayload.delete(e.id);
+  }
+
+  private preCalculateConditionalBranches() {
+    this.conditionalMap.clear();
+    for (const e of this.edges) {
+      const src = this.nodes.find(n => n.id === e.source);
+      if (!src) continue;
+      if (!(src.type === 'If' || src.type === 'Switch')) continue;
+      if (!e.sourceHandle) continue;
+
+      const entry = this.conditionalMap.get(e.source) || {};
+      entry[e.sourceHandle] = [...(entry[e.sourceHandle] || []), e.target];
+      this.conditionalMap.set(e.source, entry);
+    }
+  }
+
+  private detectCycles(): boolean {
+    const visited = new Set<string>();
+    const inPath = new Set<string>();
+    const nexts = (id: string) =>
+      this.edges.filter(e => e.source === id).map(e => e.target);
+
+    const hasCycle = (id: string): boolean => {
+      if (inPath.has(id)) return true;
+      if (visited.has(id)) return false;
+      visited.add(id);
+      inPath.add(id);
+      for (const t of nexts(id)) if (hasCycle(t)) return true;
+      inPath.delete(id);
+      return false;
+    };
+
+    for (const n of this.nodes) {
+      if (!visited.has(n.id) && hasCycle(n.id)) return true;
+    }
+    return false;
+  }
+
   async execute(initialInput?: any, backtestContext?: any): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
       console.log(`🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`);
-      
+      this.MAX_RETRIES = this.nodes.length * 2;
+      this.preCalculateConditionalBranches();
+      if (this.detectCycles()) {
+        return { success: false, error: 'Cycle detected in workflow graph' };
+      }
+
       await this.run(initialInput, backtestContext);
-      
+
       console.log(`✅ Workflow execution completed successfully`);
       return { success: true, result: this.store.getAllResults() };
     } catch (error) {
@@ -104,15 +215,15 @@ export class WorkflowEngine {
   async run(initialInput: any = [], backtestContext?: any): Promise<void> {
     // Find entry nodes (no incoming edges)
     const entryNodes = this.nodes.filter(n => !this.edges.some(e => e.target === n.id));
-    
+
     // Seed queue with entry nodes
     for (const node of entryNodes) {
-      this.queue.enqueue({ nodeId: node.id, input: initialInput });
+      this.enqueue({ nodeId: node.id, input: initialInput });
     }
 
     // Process queue until empty
     while (this.queue.length > 0) {
-      const item = this.queue.dequeue();
+      const item = this.dequeue();
       if (!item) break;
       await this.executeOnce(item, backtestContext);
     }
@@ -123,60 +234,62 @@ export class WorkflowEngine {
     const node = this.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
+    // FE-style retry guard when dependencies are missing
+    const incoming = this.getIncomingEdges(nodeId);
+    if (incoming.length > 0 && !this.areDependenciesSatisfied(nodeId)) {
+      const tries = this.retryCount.get(nodeId) || 0;
+      if (tries >= this.MAX_RETRIES) {
+        this.failed.add(nodeId);
+        this.store.setNodeError(nodeId, new Error(`Dependency not satisfied after ${this.MAX_RETRIES} retries`));
+        return;
+      }
+      this.retryCount.set(nodeId, tries + 1);
+      this.enqueue(item);
+      return;
+    }
+
     try {
-      // Execute the node with backtest context
       const fullResult = await this.executeNode(node, input, backtestContext);
-       // Extract data for downstream routing
       const result = fullResult?.data || fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
 
-      // Store full result (with metadata)
       this.store.setNodeResult(nodeId, result);
+      this.executed.add(nodeId);
 
-      // Handle Loop node routing based on result metadata
       if (node.type === 'Loop' && fullResult && typeof fullResult === 'object') {
         if (fullResult.meta?.isLoopCompleted) {
-          // Loop is completed, route to 'done' edges
-          console.log(`🏁 [LOOP] Node ${nodeId} completed, routing to 'done' edges`);
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
-            console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with final result`);
-            this.queue.enqueue({ nodeId: edge.target, input: result, meta });
+            this.markEdgePayload(edge.id, result);
+            if (this.areDependenciesSatisfied(edge.target)) {
+              this.enqueue({ nodeId: edge.target, input: result, meta });
+            }
           }
         } else if (fullResult.meta?.isLoopIteration) {
-          // Loop iteration, route to 'loop' edges (body execution)
-          console.log(`🔄 [LOOP] Node ${nodeId} iteration, routing to 'loop' edges`);
           const loopEdges = this.router.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
-            console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with loop item`);
-            this.queue.enqueue({ 
-              nodeId: edge.target, 
-              input: result, 
-              meta: { 
-                ...meta, 
-                originLoopId: nodeId,
-                iterIndex: fullResult.meta.currentIndex
-              }
-            });
+            const iterMeta: IterMeta = {
+              ...(meta || {}),
+              originLoopId: nodeId,
+              iterIndex: fullResult.meta.currentIndex
+            };
+            this.markEdgePayload(edge.id, result);
+            if (this.areDependenciesSatisfied(edge.target)) {
+              this.enqueue({ nodeId: edge.target, input: result, meta: iterMeta });
+            }
           }
         }
-        return; // Exit early for Loop nodes
+        return; // don't clear loop node payloads
       }
 
-      // Regular node routing
       const edges = this.router.select(nodeId, result);
       console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
 
-      // Handle feedback to Loop nodes (from downstream nodes back to loop)
       if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodes.find(n => n.id === loopNodeId);
         const hasActiveEdgeToLoop = edges.some(e => e.target === loopNodeId);
-
         if (loopNode?.type === 'Loop' && hasActiveEdgeToLoop) {
-          console.log(`🔄 [LOOP] Node ${nodeId} feeding back to loop ${loopNodeId}`);
-
-          // Aggregate result to loop with node context
           const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
           currentResults.push(result);
           this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
@@ -184,31 +297,34 @@ export class WorkflowEngine {
       }
 
       for (const edge of edges) {
-        console.log(`➡️ [QUEUE] Enqueuing ${edge.target} with input:`, result);
-        this.queue.enqueue({ nodeId: edge.target, input: result, meta });
+        this.markEdgePayload(edge.id, result);
+        if (this.areDependenciesSatisfied(edge.target)) {
+          this.enqueue({ nodeId: edge.target, input: result, meta });
+        }
       }
-      
+
+      this.clearIncomingEdgePayloads(nodeId);
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
+      this.failed.add(nodeId);
       this.store.setNodeError(nodeId, error);
-      
-      // For loop iterations with continueOnError, aggregate the error instead of crashing
+
       if (meta?.originLoopId) {
         const loopNode = this.nodes.find(n => n.id === meta.originLoopId);
         const config = loopNode?.values || {};
         if (config.continueOnError) {
           const currentResults = this.store.getNodeState(meta.originLoopId, 'aggregatedResults') || [];
-          currentResults.push({ error: error.message });
+          currentResults.push({ error: (error as any).message });
           this.store.setNodeState(meta.originLoopId, 'aggregatedResults', currentResults);
-          
-          // Re-queue the loop to continue processing
-          this.queue.enqueue({ nodeId: meta.originLoopId, input: {}, meta: {} });
-          return; // Don't propagate error in continue-on-error mode
+          this.enqueue({ nodeId: meta.originLoopId, input: {}, meta: {} });
+          return;
         }
       }
-      
-      // Normal error handling - stop execution
-      throw error;
+
+      if (this.mode === 'fail-fast') {
+        throw error;
+      }
+      // best-effort: swallow error
     }
   }
 
@@ -270,7 +386,18 @@ export class WorkflowEngine {
 /**
  * Factory function to execute a workflow
  */
-export async function executeWorkflow(runId: string, workflowId: string, userId: string, nodes: any[], edges: any[]): Promise<{ success: boolean; result?: any; error?: string }> {
-  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges);
+export type ExecutionOptions = {
+  mode?: 'best-effort' | 'fail-fast';
+};
+
+export async function executeWorkflow(
+  runId: string,
+  workflowId: string,
+  userId: string,
+  nodes: any[],
+  edges: any[],
+  opts?: ExecutionOptions
+): Promise<{ success: boolean; result?: any; error?: string }> {
+  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges, opts?.mode);
   return await workflowEngine.execute();
 }

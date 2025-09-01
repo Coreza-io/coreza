@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
 import { executeWorkflow } from '../services/workflowEngine';
 import { workflowScheduler } from '../services/scheduler';
+import parser from 'cron-parser';
 
 const router = express.Router();
 
@@ -215,6 +216,107 @@ router.post('/:userId/:workflowId/execute', async (req, res, next) => {
   }
 });
 
+type SchedulerValues = {
+  mode?: 'every'|'daily'|'weekly'|'monthly'|'cron';
+  interval?: 'Minutes'|'Hours'|'Days'|'Weeks'|'Months'|'Cron';
+  count?: string | number;
+  minute?: string | number;
+  hour?: string | number;
+  dom?: string | number;
+  dow?: Array<string|number>;
+  cron?: string;
+  timezone?: string;
+};
+
+function computeCronFromSchedulerNodes(nodes: any[]) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  const schedulers = list.filter(n =>
+    (n?.type === 'Scheduler') || n?.data?.kind === 'scheduler'
+  );
+
+  if (schedulers.length === 0) {
+    throw createError('No Scheduler node found in the workflow.', 400);
+  }
+  if (schedulers.length > 1) {
+    throw createError('Multiple Scheduler nodes found. Support one per workflow or aggregate externally.', 400);
+  }
+
+  const node = schedulers[0];
+  const v: SchedulerValues = (node.values ?? node.data?.values ?? {}) as any;
+
+  const cron = toCronFromValues(v);
+  const tz = v.timezone || 'UTC';
+
+  // Validate cron & ensure a future run
+  const it = parser.parseExpression(cron, { tz });
+  const next = it.next().toDate();
+  if (next <= new Date()) {
+    throw createError('Computed schedule does not yield a future run. Adjust time or interval.', 400);
+  }
+
+  return { cron, timezone: tz, next };
+}
+
+function toCronFromValues(v: SchedulerValues): string {
+  const interval = (v.interval || v.mode || 'Minutes').toString().toLowerCase();
+
+  const count = clampInt(v.count, 1, 1, 10000);
+  const minute = clampInt(v.minute, 0, 0, 59);
+  const hour   = clampInt(v.hour,   0, 0, 23);
+
+  if (interval === 'cron' && v.cron) return v.cron;
+
+  switch (interval) {
+    case 'minutes':
+      // every N minutes
+      return `*/${count} * * * *`;
+
+    case 'hours':
+      // at :minute, every N hours
+      return `${minute} */${count} * * *`;
+
+    case 'days':
+      // at hour:minute, every N days
+      return `${minute} ${hour} */${count} * *`;
+
+    case 'weeks': {
+      // at hour:minute on selected days of week (cron has no "every N weeks" → enforce count===1)
+      if (count !== 1) throw createError('Standard cron does not support "every N weeks". Set specific weekdays.', 400);
+      const dowList = Array.isArray(v.dow) && v.dow.length
+        ? v.dow.map(mapDOW).join(',')
+        : '*';
+      return `${minute} ${hour} * * ${dowList}`;
+    }
+
+    case 'months': {
+      // at hour:minute on day-of-month, every N months
+      const dom = clampInt(v.dom, 1, 1, 31);
+      return `${minute} ${hour} ${dom} */${count} *`;
+    }
+
+    // Friendly aliases
+    case 'daily':    return `${minute} ${hour} * * *`;
+    case 'weekly':   return `${minute} ${hour} * * ${Array.isArray(v.dow)&&v.dow.length?v.dow.map(mapDOW).join(','):'*'}`;
+    case 'monthly':  return `${minute} ${hour} ${clampInt(v.dom,1,1,31)} * *`;
+
+    default:
+      throw createError(`Unknown scheduler interval/mode: ${v.interval || v.mode}`, 400);
+  }
+}
+
+function clampInt(x: any, fallback: number, min: number, max: number) {
+  const n = Number.parseInt(String(x ?? ''), 10);
+  if (Number.isFinite(n)) return Math.min(max, Math.max(min, n));
+  return fallback;
+}
+
+function mapDOW(s: string|number) {
+  if (typeof s === 'number') return String(s);
+  const m = String(s).slice(0,3).toLowerCase();
+  const idx = ['sun','mon','tue','wed','thu','fri','sat'].indexOf(m);
+  return idx >= 0 ? String(idx) : '*';
+}
+
 // Helper function to validate if workflow has Scheduler/Trigger nodes
 function hasSchedulerOrTriggerNodes(nodes: any[]): boolean {
   return nodes.some(node => 
@@ -271,70 +373,75 @@ function validateCronForFutureExecution(cronExpression: string): { valid: boolea
 router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
   try {
     const { userId, workflowId } = req.params;
-    const { is_active, schedule_cron } = req.body;
-    
-    // Get workflow to validate nodes
+    const { is_active } = req.body ?? {}; // <-- no schedule_cron from client
+
+    // Fetch workflow
     const { data: workflow, error: fetchError } = await supabase
       .from('workflows')
-      .select('*')
+      .select('id,user_id,nodes,edges,is_active,schedule_cron')
       .eq('id', workflowId)
       .eq('user_id', userId)
       .single();
-    
-    if (fetchError || !workflow) {
-      throw createError('Workflow not found', 404);
+
+    if (fetchError || !workflow) throw createError('Workflow not found', 404);
+
+    // If activating, compute cron from Scheduler node
+    let cronToSave: string | null = null;
+    let tzToUse = 'UTC';
+    let nextRun: Date | null = null;
+
+    if (is_active === true) {
+      const { cron, timezone, next } = computeCronFromSchedulerNodes(workflow.nodes);
+      cronToSave = cron;
+      tzToUse = timezone ?? 'UTC';
+      nextRun = next;
     }
-    
-    // Validate activation requirements
-    if (is_active && schedule_cron) {
-      // Check if workflow has Scheduler/Trigger nodes
-      if (!hasSchedulerOrTriggerNodes(workflow.nodes)) {
-        throw createError('Cannot activate workflow: No Scheduler or Trigger nodes found. Add a Scheduler node to enable workflow scheduling.', 400);
-      }
-      
-      // Validate cron expression for future execution
-      const cronValidation = validateCronForFutureExecution(schedule_cron);
-      if (!cronValidation.valid) {
-        throw createError(`Invalid schedule: ${cronValidation.message || 'Schedule must be set for future execution'}`, 400);
-      }
-    }
-    
-    // Update workflow
-    const { data: updatedWorkflow, error } = await supabase
+
+    // Persist (null out cron when deactivating)
+    const { data: updated, error: updateError } = await supabase
       .from('workflows')
       .update({
-        is_active,
-        schedule_cron,
-        updated_at: new Date().toISOString()
+        is_active: !!is_active,
+        schedule_cron: is_active ? cronToSave : null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', workflowId)
       .eq('user_id', userId)
       .select()
       .single();
-    
-    if (error || !updatedWorkflow) {
-      throw createError('Failed to update workflow', 500);
+
+    if (updateError || !updated) throw createError('Failed to update workflow', 500);
+
+    // Apply side effect with compensation
+    try {
+      if (is_active) {
+        await workflowScheduler.scheduleWorkflow(
+          workflowId,
+          userId,
+          cronToSave!,
+          updated.nodes,
+          updated.edges
+        );
+      } else {
+        await workflowScheduler.unscheduleWorkflow(workflowId);
+      }
+    } catch (e: any) {
+      // rollback active flag if scheduler failed
+      await supabase
+        .from('workflows')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('id', workflowId)
+        .eq('user_id', userId);
+      throw createError(`Scheduling operation failed: ${e.message}`, 502);
     }
-    
-    // Update scheduler
-    if (is_active && schedule_cron) {
-      await workflowScheduler.scheduleWorkflow(
-        workflowId,
-        userId,
-        schedule_cron,
-        updatedWorkflow.nodes,
-        updatedWorkflow.edges
-      );
-    } else {
-      await workflowScheduler.unscheduleWorkflow(workflowId);
-    }
-    
+
     res.json({
-      workflow: updatedWorkflow,
-      message: is_active ? 'Workflow scheduled successfully' : 'Workflow unscheduled successfully'
+      workflow: updated,
+      next_run_at: is_active ? nextRun : null,
+      message: is_active ? 'Workflow scheduled from Scheduler node' : 'Workflow unscheduled',
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 });
 

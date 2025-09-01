@@ -155,8 +155,7 @@ const Workflows = () => {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          is_active: newStatus,
-          schedule_cron: "*/5 * * * *" // Default cron schedule for activation
+          is_active: newStatus
         }),
       });
 

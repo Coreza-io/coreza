@@ -215,14 +215,92 @@ router.post('/:userId/:workflowId/execute', async (req, res, next) => {
   }
 });
 
+// Helper function to validate if workflow has Scheduler/Trigger nodes
+function hasSchedulerOrTriggerNodes(nodes: any[]): boolean {
+  return nodes.some(node => 
+    node.type === 'Scheduler' || 
+    node.type === 'trigger' || 
+    (node.node_type && (node.node_type === 'trigger' || node.node_type === 'Scheduler'))
+  );
+}
+
+// Helper function to validate cron expression for future scheduling
+function validateCronForFutureExecution(cronExpression: string): { valid: boolean; message?: string } {
+  try {
+    // Parse cron expression to check if it's valid
+    const cronParts = cronExpression.split(' ');
+    if (cronParts.length !== 5) {
+      return { valid: false, message: 'Invalid cron expression format. Expected 5 parts (minute hour day month dayofweek)' };
+    }
+
+    // For basic validation, we'll check if the cron would execute in the future
+    // This is a simplified check - for production, consider using a cron parsing library
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const currentHour = now.getHours();
+    const currentDay = now.getDate();
+    
+    const [minute, hour, day, month, dayOfWeek] = cronParts;
+    
+    // Check if it's scheduled for a specific future time
+    if (hour !== '*' && minute !== '*') {
+      const scheduledHour = parseInt(hour);
+      const scheduledMinute = parseInt(minute);
+      
+      if (!isNaN(scheduledHour) && !isNaN(scheduledMinute)) {
+        const scheduledTime = new Date(now);
+        scheduledTime.setHours(scheduledHour, scheduledMinute, 0, 0);
+        
+        // If scheduled time is in the past today, it should run tomorrow
+        if (scheduledTime <= now) {
+          scheduledTime.setDate(scheduledTime.getDate() + 1);
+        }
+        
+        // The scheduled time should be in the future
+        return { valid: scheduledTime > now };
+      }
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, message: `Invalid cron expression: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+}
+
 // Activate/Deactivate workflow scheduling
 router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
   try {
     const { userId, workflowId } = req.params;
     const { is_active, schedule_cron } = req.body;
     
+    // Get workflow to validate nodes
+    const { data: workflow, error: fetchError } = await supabase
+      .from('workflows')
+      .select('*')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (fetchError || !workflow) {
+      throw createError('Workflow not found', 404);
+    }
+    
+    // Validate activation requirements
+    if (is_active && schedule_cron) {
+      // Check if workflow has Scheduler/Trigger nodes
+      if (!hasSchedulerOrTriggerNodes(workflow.nodes)) {
+        throw createError('Cannot activate workflow: No Scheduler or Trigger nodes found. Add a Scheduler node to enable workflow scheduling.', 400);
+      }
+      
+      // Validate cron expression for future execution
+      const cronValidation = validateCronForFutureExecution(schedule_cron);
+      if (!cronValidation.valid) {
+        throw createError(`Invalid schedule: ${cronValidation.message || 'Schedule must be set for future execution'}`, 400);
+      }
+    }
+    
     // Update workflow
-    const { data: workflow, error } = await supabase
+    const { data: updatedWorkflow, error } = await supabase
       .from('workflows')
       .update({
         is_active,
@@ -234,8 +312,8 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
       .select()
       .single();
     
-    if (error || !workflow) {
-      throw createError('Workflow not found', 404);
+    if (error || !updatedWorkflow) {
+      throw createError('Failed to update workflow', 500);
     }
     
     // Update scheduler
@@ -244,15 +322,15 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
         workflowId,
         userId,
         schedule_cron,
-        workflow.nodes,
-        workflow.edges
+        updatedWorkflow.nodes,
+        updatedWorkflow.edges
       );
     } else {
       await workflowScheduler.unscheduleWorkflow(workflowId);
     }
     
     res.json({
-      workflow,
+      workflow: updatedWorkflow,
       message: is_active ? 'Workflow scheduled successfully' : 'Workflow unscheduled successfully'
     });
   } catch (error) {

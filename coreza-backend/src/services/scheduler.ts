@@ -53,6 +53,40 @@ class WorkflowScheduler {
     }
   }
 
+  // Helper function to validate cron expression and ensure it's for future execution
+  private validateCronExpression(cronExpression: string): { valid: boolean; nextRun?: Date; error?: string } {
+    try {
+      // Create a test job to validate the cron expression
+      const testJob = schedule.scheduleJob('test-validation', cronExpression, () => {});
+      
+      if (!testJob) {
+        return { valid: false, error: 'Invalid cron expression format' };
+      }
+      
+      const nextRun = testJob.nextInvocation();
+      testJob.cancel(); // Clean up test job
+      
+      if (!nextRun) {
+        return { valid: false, error: 'Cron expression will not execute in the future' };
+      }
+      
+      // Ensure the next run is in the future (at least 1 minute from now)
+      const now = new Date();
+      const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000);
+      
+      if (nextRun <= oneMinuteFromNow) {
+        return { valid: false, error: 'Schedule must be set for at least 1 minute in the future' };
+      }
+      
+      return { valid: true, nextRun };
+    } catch (error) {
+      return { 
+        valid: false, 
+        error: `Invalid cron expression: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      };
+    }
+  }
+
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
@@ -65,6 +99,14 @@ class WorkflowScheduler {
 
     try {
       console.log(`📅 [SCHEDULER] Creating schedule for workflow ${workflowId} with cron: ${cronExpression}`);
+      
+      // Validate cron expression
+      const validation = this.validateCronExpression(cronExpression);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Invalid cron expression');
+      }
+      
+      console.log(`⏰ [SCHEDULER] Validated cron expression. Next execution: ${validation.nextRun?.toISOString()}`);
       
       const job = schedule.scheduleJob(cronExpression, async () => {
         const executionId = `${workflowId}_${Date.now()}`;

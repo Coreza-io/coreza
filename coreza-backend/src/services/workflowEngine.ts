@@ -30,8 +30,6 @@ export class WorkflowEngine {
   private MAX_RETRIES = 0;
   private conditionalMap = new Map<string, Record<string, string[]>>();
   private mode: 'best-effort' | 'fail-fast';
-  private conditionalDepth = 0;
-  private MAX_CONDITIONAL_DEPTH = 50;
 
   constructor(
     private runId: string,
@@ -158,47 +156,6 @@ export class WorkflowEngine {
     for (const e of this.getIncomingEdges(nodeId)) this.edgePayload.delete(e.id);
   }
 
-  private async executeConditionalChain(
-    nodeId: string,
-    input: any,
-    meta?: IterMeta,
-    backtestContext?: any
-  ): Promise<void> {
-    if (this.conditionalDepth >= this.MAX_CONDITIONAL_DEPTH) {
-      console.warn(`⚠️ Max conditional depth reached (${this.MAX_CONDITIONAL_DEPTH}) for node ${nodeId}`);
-      return;
-    }
-
-    this.conditionalDepth++;
-    try {
-      await this.executeOnce({ nodeId, input, meta }, backtestContext);
-    } finally {
-      this.conditionalDepth--;
-    }
-  }
-
-  private async routeEdge(
-    edge: WorkflowEdge,
-    payload: any,
-    meta?: IterMeta,
-    backtestContext?: any
-  ): Promise<void> {
-    this.markEdgePayload(edge.id, payload);
-    
-    if (!this.areDependenciesSatisfied(edge.target)) {
-      return;
-    }
-
-    const target = this.nodes.find(n => n.id === edge.target);
-    if (target && this.isBranchNode(edge.target)) {
-      // Execute conditional nodes immediately to maintain sequential execution
-      await this.executeConditionalChain(edge.target, payload, meta, backtestContext);
-    } else {
-      // Queue non-conditional nodes for later execution
-      this.enqueue({ nodeId: edge.target, input: payload, meta });
-    }
-  }
-
   private preCalculateConditionalBranches() {
     this.conditionalMap.clear();
     for (const e of this.edges) {
@@ -303,7 +260,10 @@ export class WorkflowEngine {
         if (fullResult.meta?.isLoopCompleted) {
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
-            await this.routeEdge(edge, result, meta, backtestContext);
+            this.markEdgePayload(edge.id, result);
+            if (this.areDependenciesSatisfied(edge.target)) {
+              this.enqueue({ nodeId: edge.target, input: result, meta });
+            }
           }
         } else if (fullResult.meta?.isLoopIteration) {
           const loopEdges = this.router.loopBodyEdges(nodeId);
@@ -313,7 +273,10 @@ export class WorkflowEngine {
               originLoopId: nodeId,
               iterIndex: fullResult.meta.currentIndex
             };
-            await this.routeEdge(edge, result, iterMeta, backtestContext);
+            this.markEdgePayload(edge.id, result);
+            if (this.areDependenciesSatisfied(edge.target)) {
+              this.enqueue({ nodeId: edge.target, input: result, meta: iterMeta });
+            }
           }
         }
         return; // don't clear loop node payloads
@@ -334,7 +297,10 @@ export class WorkflowEngine {
       }
 
       for (const edge of edges) {
-        await this.routeEdge(edge, result, meta, backtestContext);
+        this.markEdgePayload(edge.id, result);
+        if (this.areDependenciesSatisfied(edge.target)) {
+          this.enqueue({ nodeId: edge.target, input: result, meta });
+        }
       }
 
       this.clearIncomingEdgePayloads(nodeId);

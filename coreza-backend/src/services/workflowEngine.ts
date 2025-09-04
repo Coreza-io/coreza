@@ -33,7 +33,6 @@ export class WorkflowEngine {
   private enqueuedKeys = new Set<string>();
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
-  private conditionalMap = new Map<string, Record<string, string[]>>();
   private mode: "best-effort" | "fail-fast";
 
   constructor(
@@ -137,11 +136,6 @@ export class WorkflowEngine {
     return n?.type === "Loop";
   };
 
-  private isBranchNode = (nodeId: string) => {
-    const n = this.nodes.find((x) => x.id === nodeId);
-    return n?.type === "If" || n?.type === "Switch";
-  };
-
   private areDependenciesSatisfied(nodeId: string): boolean {
     if (this.isLoopNode(nodeId)) {
       const loopNode = this.nodes.find((n) => n.id === nodeId);
@@ -163,14 +157,6 @@ export class WorkflowEngine {
       this.edgePayload.delete(e.id);
   }
 
-  private async executeConditionalChain(
-    nodeId: string,
-    input: any,
-    meta?: IterMeta
-  ): Promise<void> {
-    await this.executeOnce({ nodeId, input, meta });
-  }
-
   private async routeEdge(
     edge: WorkflowEdge,
     payload: any,
@@ -183,42 +169,6 @@ export class WorkflowEngine {
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
-  private preCalculateConditionalBranches() {
-    this.conditionalMap.clear();
-    for (const e of this.edges) {
-      const src = this.nodes.find((n) => n.id === e.source);
-      if (!src) continue;
-      if (!(src.type === "If" || src.type === "Switch")) continue;
-      if (!e.sourceHandle) continue;
-
-      const entry = this.conditionalMap.get(e.source) || {};
-      entry[e.sourceHandle] = [...(entry[e.sourceHandle] || []), e.target];
-      this.conditionalMap.set(e.source, entry);
-    }
-  }
-
-  private detectCycles(): boolean {
-    const visited = new Set<string>();
-    const inPath = new Set<string>();
-    const nexts = (id: string) =>
-      this.edges.filter((e) => e.source === id).map((e) => e.target);
-
-    const hasCycle = (id: string): boolean => {
-      if (inPath.has(id)) return true;
-      if (visited.has(id)) return false;
-      visited.add(id);
-      inPath.add(id);
-      for (const t of nexts(id)) if (hasCycle(t)) return true;
-      inPath.delete(id);
-      return false;
-    };
-
-    for (const n of this.nodes) {
-      if (!visited.has(n.id) && hasCycle(n.id)) return true;
-    }
-    return false;
-  }
-
   async execute(
     initialInput?: any
   ): Promise<{ success: boolean; result?: any; error?: string }> {
@@ -227,7 +177,6 @@ export class WorkflowEngine {
         `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`
       );
       this.MAX_RETRIES = this.nodes.length * 2;
-      this.preCalculateConditionalBranches();
 
       await this.run(initialInput);
 
@@ -414,7 +363,6 @@ export class WorkflowEngine {
       workflowId: this.workflowId,
       userId: this.userId,
       getState: (key: string) => this.store.getNodeState(node.id, key),
-<<<<<<< HEAD
       setState: (key: string, value: any) =>
         this.store.setNodeState(node.id, key, value),
       getPersistentValue: (key: string) =>
@@ -423,13 +371,6 @@ export class WorkflowEngine {
         this.store.setPersistentValue(this.workflowId, key, value),
       resolveNodeParameters: (node: WorkflowNode, input: any) =>
         this.resolveNodeParameters(node, input),
-=======
-      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
-      getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
-      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
-      resolveNodeParameters: backtestContext?.resolveNodeParameters?.bind(backtestContext) || 
-        ((node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input))
->>>>>>> 1892fd0de6ebe90cb41ab78fcb411d6ad6b27272
     };
 
     // Execute node

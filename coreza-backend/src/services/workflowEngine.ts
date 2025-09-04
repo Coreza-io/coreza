@@ -414,6 +414,7 @@ export class WorkflowEngine {
       workflowId: this.workflowId,
       userId: this.userId,
       getState: (key: string) => this.store.getNodeState(node.id, key),
+<<<<<<< HEAD
       setState: (key: string, value: any) =>
         this.store.setNodeState(node.id, key, value),
       getPersistentValue: (key: string) =>
@@ -422,6 +423,13 @@ export class WorkflowEngine {
         this.store.setPersistentValue(this.workflowId, key, value),
       resolveNodeParameters: (node: WorkflowNode, input: any) =>
         this.resolveNodeParameters(node, input),
+=======
+      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
+      getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
+      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
+      resolveNodeParameters: backtestContext?.resolveNodeParameters?.bind(backtestContext) || 
+        ((node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input))
+>>>>>>> 1892fd0de6ebe90cb41ab78fcb411d6ad6b27272
     };
 
     // Execute node

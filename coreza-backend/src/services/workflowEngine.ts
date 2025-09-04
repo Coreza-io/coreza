@@ -156,6 +156,30 @@ export class WorkflowEngine {
     for (const e of this.getIncomingEdges(nodeId)) this.edgePayload.delete(e.id);
   }
 
+  private async executeConditionalChain(
+    nodeId: string,
+    input: any,
+    meta?: IterMeta
+  ): Promise<void> {
+    await this.executeOnce({ nodeId, input, meta });
+  }
+
+  private async routeEdge(
+    edge: WorkflowEdge,
+    payload: any,
+    meta?: IterMeta
+  ): Promise<void> {
+    this.markEdgePayload(edge.id, payload);
+    if (!this.areDependenciesSatisfied(edge.target)) return;
+
+    const target = this.nodes.find(n => n.id === edge.target);
+    if (target && this.isBranchNode(edge.target)) {
+      await this.executeConditionalChain(edge.target, payload, meta);
+    } else {
+      this.enqueue({ nodeId: edge.target, input: payload, meta });
+    }
+  }
+
   private preCalculateConditionalBranches() {
     this.conditionalMap.clear();
     for (const e of this.edges) {
@@ -260,10 +284,7 @@ export class WorkflowEngine {
         if (fullResult.meta?.isLoopCompleted) {
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
-            this.markEdgePayload(edge.id, result);
-            if (this.areDependenciesSatisfied(edge.target)) {
-              this.enqueue({ nodeId: edge.target, input: result, meta });
-            }
+            await this.routeEdge(edge, result, meta);
           }
         } else if (fullResult.meta?.isLoopIteration) {
           const loopEdges = this.router.loopBodyEdges(nodeId);
@@ -273,10 +294,7 @@ export class WorkflowEngine {
               originLoopId: nodeId,
               iterIndex: fullResult.meta.currentIndex
             };
-            this.markEdgePayload(edge.id, result);
-            if (this.areDependenciesSatisfied(edge.target)) {
-              this.enqueue({ nodeId: edge.target, input: result, meta: iterMeta });
-            }
+            await this.routeEdge(edge, result, iterMeta);
           }
         }
         return; // don't clear loop node payloads
@@ -297,10 +315,7 @@ export class WorkflowEngine {
       }
 
       for (const edge of edges) {
-        this.markEdgePayload(edge.id, result);
-        if (this.areDependenciesSatisfied(edge.target)) {
-          this.enqueue({ nodeId: edge.target, input: result, meta });
-        }
+        await this.routeEdge(edge, result, meta);
       }
 
       this.clearIncomingEdgePayloads(nodeId);

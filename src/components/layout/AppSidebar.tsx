@@ -11,13 +11,13 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { 
-  BarChart3, 
-  FolderOpen, 
-  Activity, 
+import {
+  BarChart3,
+  FolderOpen,
+  Activity,
   TrendingUp,
   Settings,
-  LogOut
+  LogOut,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -25,18 +25,19 @@ const menuItems = [
   { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
   { title: "Projects", url: "/projects", icon: FolderOpen },
   { title: "Workflows", url: "/workflows", icon: Activity },
-  
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const collapsed = state === 'collapsed';
+  const collapsed = state === "collapsed";
   const location = useLocation();
-  
+
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <Sidebar className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300`}>
+    <Sidebar
+      className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300`}
+    >
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-4 py-4">
           <div className="p-2 bg-gradient-primary rounded-lg shadow-glow">
@@ -49,12 +50,14 @@ export function AppSidebar() {
               transition={{ duration: 0.2 }}
             >
               <h2 className="text-xl font-bold">Coreza</h2>
-              <p className="text-xs text-sidebar-foreground/70">Trading Platform</p>
+              <p className="text-xs text-sidebar-foreground/70">
+                Trading Platform
+              </p>
             </motion.div>
           )}
         </div>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
@@ -84,14 +87,6 @@ export function AppSidebar() {
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <button className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all w-full">
-                    <Settings className="h-5 w-5" />
-                    {!collapsed && <span>Settings</span>}
-                  </button>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <Link

@@ -115,9 +115,6 @@ const WorkflowEditorContent = () => {
   const [loading, setLoading] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   const [executingNode, setExecutingNode] = useState<string | null>(null);
-  const [autosaveStatus, setAutosaveStatus] = useState<
-    "idle" | "saving" | "saved"
-  >("idle");
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
 
@@ -244,22 +241,9 @@ const WorkflowEditorContent = () => {
   );
 
   // Save workflow to Supabase
-  const handleSaveWorkflow = async (isAutosave = false) => {
+  const handleSaveWorkflow = async () => {
     if (!authUser) {
-      if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: "Please log in to save workflows",
-          variant: "destructive",
-        });
-      }
       return;
-    }
-
-    if (isAutosave) {
-      setAutosaveStatus("saving");
-    } else {
-      setLoading(true);
     }
 
     // 1) Turn each node into a "minimal" version without its definition
@@ -324,40 +308,12 @@ const WorkflowEditorContent = () => {
         .from("workflows")
         .update(payload)
         .eq("id", workflowId);
-      if (isAutosave) {
-        setAutosaveStatus(error ? "idle" : "saved");
-        if (!error) {
-          setTimeout(() => setAutosaveStatus("idle"), 2000); // Reset after 2 seconds
-        }
-      } else {
-        setLoading(false);
-        if (!error) {
-          toast({
-            title: "Success",
-            description: "Workflow updated!",
-          });
-        } else {
-          toast({
-            title: "Error",
-            description: "Error saving workflow: " + error.message,
-            variant: "destructive",
-          });
-        }
-      }
     } else {
       const { data, error } = await supabase
         .from("workflows")
         .insert([payload])
         .select()
         .single();
-      if (isAutosave) {
-        setAutosaveStatus(error ? "idle" : "saved");
-        if (!error && data) {
-          setTimeout(() => setAutosaveStatus("idle"), 2000); // Reset after 2 seconds
-        }
-      } else {
-        setLoading(false);
-      }
       if (data) {
         setWorkflowId(data.id);
 
@@ -722,19 +678,24 @@ const WorkflowEditorContent = () => {
       //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
       if (event.key === "Delete") {
         //console.log("Delete key pressed - removing selected nodes");
-        
+
         // Get IDs of nodes being deleted
-        const selectedNodeIds = nodes.filter((node) => node.selected).map(node => node.id);
-        
+        const selectedNodeIds = nodes
+          .filter((node) => node.selected)
+          .map((node) => node.id);
+
         // Remove selected nodes
         setNodes((nds) => nds.filter((node) => !node.selected));
-        
+
         // Remove selected edges AND edges connected to deleted nodes
-        setEdges((eds) => eds.filter((edge) => 
-          !edge.selected && 
-          !selectedNodeIds.includes(edge.source) && 
-          !selectedNodeIds.includes(edge.target)
-        ));
+        setEdges((eds) =>
+          eds.filter(
+            (edge) =>
+              !edge.selected &&
+              !selectedNodeIds.includes(edge.source) &&
+              !selectedNodeIds.includes(edge.target)
+          )
+        );
       }
       if (event.key === "Backspace") {
         //console.log("Backspace key pressed but should NOT delete nodes");
@@ -752,7 +713,7 @@ const WorkflowEditorContent = () => {
         // Auto-save when tab becomes hidden to preserve unsaved changes
         if (nodes.length > 0 && authUser) {
           console.log("🔄 Tab hidden - preserving workflow state");
-          handleSaveWorkflow(true); // Autosave
+          handleSaveWorkflow(); // Autosave
         }
       }
     };
@@ -787,41 +748,12 @@ const WorkflowEditorContent = () => {
               className="text-xl font-bold bg-transparent border-none p-0 h-auto focus-visible:ring-0 hover:bg-muted/30 rounded px-2 py-1 transition-colors"
               placeholder="Workflow name"
             />
-            <div className="flex items-center gap-2 px-2">
-              <Badge
-                variant={isActive ? "default" : "secondary"}
-                className="text-xs font-medium"
-              >
-                {isActive ? "Active" : "Draft"}
-              </Badge>
-              {autosaveStatus !== "idle" && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {autosaveStatus === "saving" && (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Autosaving...</span>
-                    </>
-                  )}
-                  {autosaveStatus === "saved" && (
-                    <span className="text-success">Saved</span>
-                  )}
-                </div>
-              )}
-              {autosaveStatus === "idle" && !isNewWorkflow && (
-                <span className="text-xs text-muted-foreground">
-                  Auto-saved
-                </span>
-              )}
-              {autosaveStatus === "idle" && isNewWorkflow && (
-                <span className="text-xs text-muted-foreground">Unsaved</span>
-              )}
-            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <Button
-            onClick={() => handleSaveWorkflow(false)}
+            onClick={() => handleSaveWorkflow()}
             disabled={loading}
             variant="outline"
             className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"

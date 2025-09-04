@@ -1,9 +1,14 @@
-import { WorkflowNode, WorkflowEdge, QueueItem, IterMeta } from '../nodes/types';
-import { QueueManager } from './queueManagerV2';
-import { NodeRouter } from './router';
-import { NodeStoreV2 } from './nodeStoreV2';
-import { getNodeExecutor } from '../nodes/registry';
-import { resolveReferences } from '../utils/resolveReferences';
+import {
+  WorkflowNode,
+  WorkflowEdge,
+  QueueItem,
+  IterMeta,
+} from "../nodes/types";
+import { QueueManager } from "./queueManagerV2";
+import { NodeRouter } from "./router";
+import { NodeStoreV2 } from "./nodeStoreV2";
+import { getNodeExecutor } from "../nodes/registry";
+import { resolveReferences } from "../utils/resolveReferences";
 
 interface ExecutionContext {
   nodeId: string;
@@ -29,7 +34,7 @@ export class WorkflowEngine {
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
   private conditionalMap = new Map<string, Record<string, string[]>>();
-  private mode: 'best-effort' | 'fail-fast';
+  private mode: "best-effort" | "fail-fast";
 
   constructor(
     private runId: string,
@@ -37,12 +42,12 @@ export class WorkflowEngine {
     private userId: string,
     private nodes: WorkflowNode[],
     private edges: WorkflowEdge[],
-    mode: 'best-effort' | 'fail-fast' = 'best-effort'
+    mode: "best-effort" | "fail-fast" = "best-effort"
   ) {
     this.router = new NodeRouter(edges);
     // Add node type lookup to router
     (this.router as any).getSourceNodeType = (nodeId: string) => {
-      const node = this.nodes.find(n => n.id === nodeId);
+      const node = this.nodes.find((n) => n.id === nodeId);
       return node?.type;
     };
     this.queue = new QueueManager();
@@ -56,19 +61,20 @@ export class WorkflowEngine {
     input: any,
     allNodeData: Record<string, any>
   ): any {
-    if (typeof val === 'string' && val.includes('{{')) {
+    if (typeof val === "string" && val.includes("{{")) {
       const resolved = resolveReferences(val, input, allNodeData, this.nodes);
       // If resolveReferences returned non-string, return it directly
       return resolved;
     }
     if (Array.isArray(val)) {
-      return val.map(item => this.resolveDeep(item, input, allNodeData));
+      return val.map((item) => this.resolveDeep(item, input, allNodeData));
     }
-    if (val !== null && typeof val === 'object') {
+    if (val !== null && typeof val === "object") {
       return Object.fromEntries(
-        Object.entries(val).map(
-          ([k, v]) => [k, this.resolveDeep(v, input, allNodeData)]
-        )
+        Object.entries(val).map(([k, v]) => [
+          k,
+          this.resolveDeep(v, input, allNodeData),
+        ])
       );
     }
     return val; // number, boolean, null, undefined
@@ -77,18 +83,18 @@ export class WorkflowEngine {
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
     const nodeParams = node.values || {};
     const resolvedParams: any = {};
-    
+
     // Get all node data for cross-references
     const allNodeData = this.store.getAllResults();
-    
+
     // Resolve all node.values parameters with reference resolution
     for (const [key, value] of Object.entries(nodeParams)) {
       // Skip operational fields that are handled separately
-      if (key === 'credential_id' || key === 'operation') continue;
+      if (key === "credential_id" || key === "operation") continue;
       // Deeply resolve strings/arrays/objects
       resolvedParams[key] = this.resolveDeep(value, input, allNodeData);
     }
-    
+
     return resolvedParams;
   }
 
@@ -102,8 +108,8 @@ export class WorkflowEngine {
 
   private keyFor(item: QueueItem): string {
     const iterPart = item.meta?.originLoopId
-      ? `@loop:${item.meta.originLoopId}:${item.meta.iterIndex ?? 'na'}`
-      : '';
+      ? `@loop:${item.meta.originLoopId}:${item.meta.iterIndex ?? "na"}`
+      : "";
     return `${item.nodeId}${iterPart}`;
   }
 
@@ -124,28 +130,28 @@ export class WorkflowEngine {
   }
 
   private getIncomingEdges = (targetId: string) =>
-    this.edges.filter(e => e.target === targetId);
+    this.edges.filter((e) => e.target === targetId);
 
   private isLoopNode = (nodeId: string) => {
-    const n = this.nodes.find(x => x.id === nodeId);
-    return n?.type === 'Loop';
+    const n = this.nodes.find((x) => x.id === nodeId);
+    return n?.type === "Loop";
   };
 
   private isBranchNode = (nodeId: string) => {
-    const n = this.nodes.find(x => x.id === nodeId);
-    return n?.type === 'If' || n?.type === 'Switch';
+    const n = this.nodes.find((x) => x.id === nodeId);
+    return n?.type === "If" || n?.type === "Switch";
   };
 
   private areDependenciesSatisfied(nodeId: string): boolean {
     if (this.isLoopNode(nodeId)) {
-      const loopNode = this.nodes.find(n => n.id === nodeId);
+      const loopNode = this.nodes.find((n) => n.id === nodeId);
       const loopWaits = Boolean((loopNode as any)?.values?.loopWaits);
       if (!loopWaits) return true;
     }
 
     const required = this.getIncomingEdges(nodeId);
     if (required.length === 0) return false;
-    return required.every(e => this.edgePayload.has(e.id));
+    return required.every((e) => this.edgePayload.has(e.id));
   }
 
   private markEdgePayload(edgeId: string, payload: any) {
@@ -153,7 +159,8 @@ export class WorkflowEngine {
   }
 
   private clearIncomingEdgePayloads(nodeId: string) {
-    for (const e of this.getIncomingEdges(nodeId)) this.edgePayload.delete(e.id);
+    for (const e of this.getIncomingEdges(nodeId))
+      this.edgePayload.delete(e.id);
   }
 
   private async executeConditionalChain(
@@ -172,20 +179,16 @@ export class WorkflowEngine {
     this.markEdgePayload(edge.id, payload);
     if (!this.areDependenciesSatisfied(edge.target)) return;
 
-    const target = this.nodes.find(n => n.id === edge.target);
-    if (target && this.isBranchNode(edge.target)) {
-      await this.executeConditionalChain(edge.target, payload, meta);
-    } else {
-      this.enqueue({ nodeId: edge.target, input: payload, meta });
-    }
+    const target = this.nodes.find((n) => n.id === edge.target);
+    this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
   private preCalculateConditionalBranches() {
     this.conditionalMap.clear();
     for (const e of this.edges) {
-      const src = this.nodes.find(n => n.id === e.source);
+      const src = this.nodes.find((n) => n.id === e.source);
       if (!src) continue;
-      if (!(src.type === 'If' || src.type === 'Switch')) continue;
+      if (!(src.type === "If" || src.type === "Switch")) continue;
       if (!e.sourceHandle) continue;
 
       const entry = this.conditionalMap.get(e.source) || {};
@@ -198,7 +201,7 @@ export class WorkflowEngine {
     const visited = new Set<string>();
     const inPath = new Set<string>();
     const nexts = (id: string) =>
-      this.edges.filter(e => e.source === id).map(e => e.target);
+      this.edges.filter((e) => e.source === id).map((e) => e.target);
 
     const hasCycle = (id: string): boolean => {
       if (inPath.has(id)) return true;
@@ -216,29 +219,32 @@ export class WorkflowEngine {
     return false;
   }
 
-  async execute(initialInput?: any, backtestContext?: any): Promise<{ success: boolean; result?: any; error?: string }> {
+  async execute(
+    initialInput?: any
+  ): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
-      console.log(`🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`);
+      console.log(
+        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`
+      );
       this.MAX_RETRIES = this.nodes.length * 2;
       this.preCalculateConditionalBranches();
-      if (this.detectCycles()) {
-        return { success: false, error: 'Cycle detected in workflow graph' };
-      }
 
-      await this.run(initialInput, backtestContext);
+      await this.run(initialInput);
 
       console.log(`✅ Workflow execution completed successfully`);
       return { success: true, result: this.store.getAllResults() };
     } catch (error) {
-      console.error('❌ Workflow execution failed:', error);
+      console.error("❌ Workflow execution failed:", error);
       const message = (error as Error).message;
       return { success: false, error: message };
     }
   }
 
-  async run(initialInput: any = [], backtestContext?: any): Promise<void> {
+  async run(initialInput: any = []): Promise<void> {
     // Find entry nodes (no incoming edges)
-    const entryNodes = this.nodes.filter(n => !this.edges.some(e => e.target === n.id));
+    const entryNodes = this.nodes.filter(
+      (n) => !this.edges.some((e) => e.target === n.id)
+    );
 
     // Seed queue with entry nodes
     for (const node of entryNodes) {
@@ -249,13 +255,13 @@ export class WorkflowEngine {
     while (this.queue.length > 0) {
       const item = this.dequeue();
       if (!item) break;
-      await this.executeOnce(item, backtestContext);
+      await this.executeOnce(item);
     }
   }
 
-  private async executeOnce(item: QueueItem, backtestContext?: any): Promise<void> {
+  private async executeOnce(item: QueueItem): Promise<void> {
     const { nodeId, input, meta } = item;
-    const node = this.nodes.find(n => n.id === nodeId);
+    const node = this.nodes.find((n) => n.id === nodeId);
     if (!node) return;
 
     // FE-style retry guard when dependencies are missing
@@ -264,7 +270,12 @@ export class WorkflowEngine {
       const tries = this.retryCount.get(nodeId) || 0;
       if (tries >= this.MAX_RETRIES) {
         this.failed.add(nodeId);
-        this.store.setNodeError(nodeId, new Error(`Dependency not satisfied after ${this.MAX_RETRIES} retries`));
+        this.store.setNodeError(
+          nodeId,
+          new Error(
+            `Dependency not satisfied after ${this.MAX_RETRIES} retries`
+          )
+        );
         return;
       }
       this.retryCount.set(nodeId, tries + 1);
@@ -273,14 +284,18 @@ export class WorkflowEngine {
     }
 
     try {
-      const fullResult = await this.executeNode(node, input, backtestContext);
+      const fullResult = await this.executeNode(node, input);
       const result = fullResult?.data || fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
 
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
 
-      if (node.type === 'Loop' && fullResult && typeof fullResult === 'object') {
+      if (
+        node.type === "Loop" &&
+        fullResult &&
+        typeof fullResult === "object"
+      ) {
         if (fullResult.meta?.isLoopCompleted) {
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
@@ -292,7 +307,7 @@ export class WorkflowEngine {
             const iterMeta: IterMeta = {
               ...(meta || {}),
               originLoopId: nodeId,
-              iterIndex: fullResult.meta.currentIndex
+              iterIndex: fullResult.meta.currentIndex,
             };
             await this.routeEdge(edge, result, iterMeta);
           }
@@ -305,12 +320,17 @@ export class WorkflowEngine {
 
       if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
-        const loopNode = this.nodes.find(n => n.id === loopNodeId);
-        const hasActiveEdgeToLoop = edges.some(e => e.target === loopNodeId);
-        if (loopNode?.type === 'Loop' && hasActiveEdgeToLoop) {
-          const currentResults = this.store.getNodeState(loopNodeId, 'aggregatedResults') || [];
+        const loopNode = this.nodes.find((n) => n.id === loopNodeId);
+        const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
+        if (loopNode?.type === "Loop" && hasActiveEdgeToLoop) {
+          const currentResults =
+            this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
           currentResults.push(result);
-          this.store.setNodeState(loopNodeId, 'aggregatedResults', currentResults);
+          this.store.setNodeState(
+            loopNodeId,
+            "aggregatedResults",
+            currentResults
+          );
         }
       }
 
@@ -325,37 +345,54 @@ export class WorkflowEngine {
       this.store.setNodeError(nodeId, error);
 
       if (meta?.originLoopId) {
-        const loopNode = this.nodes.find(n => n.id === meta.originLoopId);
+        const loopNode = this.nodes.find((n) => n.id === meta.originLoopId);
         const config = loopNode?.values || {};
         if (config.continueOnError) {
-          const currentResults = this.store.getNodeState(meta.originLoopId, 'aggregatedResults') || [];
+          const currentResults =
+            this.store.getNodeState(meta.originLoopId, "aggregatedResults") ||
+            [];
           currentResults.push({ error: (error as any).message });
-          this.store.setNodeState(meta.originLoopId, 'aggregatedResults', currentResults);
+          this.store.setNodeState(
+            meta.originLoopId,
+            "aggregatedResults",
+            currentResults
+          );
           this.enqueue({ nodeId: meta.originLoopId, input: {}, meta: {} });
           return;
         }
       }
 
-      if (this.mode === 'fail-fast') {
+      if (this.mode === "fail-fast") {
         throw error;
       }
       // best-effort: swallow error
     }
   }
 
-  private async executeNode(node: WorkflowNode, input: any, backtestContext?: any): Promise<any> {
+  private async executeNode(node: WorkflowNode, input: any): Promise<any> {
     console.log(`🔧 Executing node ${node.id} (${node.type})`);
 
     // Map node categories for compatibility
     let category = node.category;
-    if (node.type === 'If' || node.type === 'Switch' || node.type === 'Edit Fields' || node.type === 'Math' || node.type === 'Transform' || node.type === 'Loop') {
-      category = 'ControlFlow';
-    } else if (['Scheduler', 'trigger', 'Visualize', 'webhook', 'httprequest'].includes(node.type)) {
-      category = 'Utility';
-    } else if (['Gmail', 'WhatsApp'].includes(node.type)) {
-      category = 'Communication';
-    } else if (['FinnHub', 'YahooFinance'].includes(node.type)) {
-      category = 'DataSource';
+    if (
+      node.type === "If" ||
+      node.type === "Switch" ||
+      node.type === "Edit Fields" ||
+      node.type === "Math" ||
+      node.type === "Transform" ||
+      node.type === "Loop"
+    ) {
+      category = "ControlFlow";
+    } else if (
+      ["Scheduler", "trigger", "Visualize", "webhook", "httprequest"].includes(
+        node.type
+      )
+    ) {
+      category = "Utility";
+    } else if (["Gmail", "WhatsApp"].includes(node.type)) {
+      category = "Communication";
+    } else if (["FinnHub", "YahooFinance"].includes(node.type)) {
+      category = "DataSource";
     }
 
     // Use custom executor if registered, otherwise get from registry
@@ -365,7 +402,9 @@ export class WorkflowEngine {
     }
 
     if (!executor) {
-      throw new Error(`Unsupported node category: ${category} for node type: ${node.type}`);
+      throw new Error(
+        `Unsupported node category: ${category} for node type: ${node.type}`
+      );
     }
 
     // Create execution context with backtest support
@@ -374,18 +413,21 @@ export class WorkflowEngine {
       runId: this.runId,
       workflowId: this.workflowId,
       userId: this.userId,
-      getState: (key: string) => this.store.getState(key),
-      setState: (key: string, value: any) => this.store.setState(key, value),
-      getPersistentValue: (key: string) => Promise.resolve(this.store.getNode(key)),
-      setPersistentValue: (key: string, value: any) => Promise.resolve(this.store.setResult(key, value, false)),
-      resolveNodeParameters: backtestContext?.resolveNodeParameters?.bind(backtestContext) || 
-        ((node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input))
+      getState: (key: string) => this.store.getNodeState(node.id, key),
+      setState: (key: string, value: any) =>
+        this.store.setNodeState(node.id, key, value),
+      getPersistentValue: (key: string) =>
+        this.store.getPersistentValue(this.workflowId, key),
+      setPersistentValue: (key: string, value: any) =>
+        this.store.setPersistentValue(this.workflowId, key, value),
+      resolveNodeParameters: (node: WorkflowNode, input: any) =>
+        this.resolveNodeParameters(node, input),
     };
 
     // Execute node
     const result = await executor.execute(node, input, context);
-    
-    if (result && typeof result === 'object' && 'success' in result) {
+
+    if (result && typeof result === "object" && "success" in result) {
       if (!result.success) {
         throw new Error(result.error || `Node execution failed: ${category}`);
       }
@@ -402,7 +444,7 @@ export class WorkflowEngine {
  * Factory function to execute a workflow
  */
 export type ExecutionOptions = {
-  mode?: 'best-effort' | 'fail-fast';
+  mode?: "best-effort" | "fail-fast";
 };
 
 export async function executeWorkflow(
@@ -413,6 +455,13 @@ export async function executeWorkflow(
   edges: any[],
   opts?: ExecutionOptions
 ): Promise<{ success: boolean; result?: any; error?: string }> {
-  const workflowEngine = new WorkflowEngine(runId, workflowId, userId, nodes, edges, opts?.mode);
+  const workflowEngine = new WorkflowEngine(
+    runId,
+    workflowId,
+    userId,
+    nodes,
+    edges,
+    opts?.mode
+  );
   return await workflowEngine.execute();
 }

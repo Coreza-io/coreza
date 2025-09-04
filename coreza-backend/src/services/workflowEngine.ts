@@ -374,10 +374,10 @@ export class WorkflowEngine {
       runId: this.runId,
       workflowId: this.workflowId,
       userId: this.userId,
-      getState: (key: string) => this.store.getState(key),
-      setState: (key: string, value: any) => this.store.setState(key, value),
-      getPersistentValue: (key: string) => Promise.resolve(this.store.getNode(key)),
-      setPersistentValue: (key: string, value: any) => Promise.resolve(this.store.setResult(key, value, false)),
+      getState: (key: string) => this.store.getNodeState(node.id, key),
+      setState: (key: string, value: any) => this.store.setNodeState(node.id, key, value),
+      getPersistentValue: (key: string) => this.store.getPersistentValue(this.workflowId, key),
+      setPersistentValue: (key: string, value: any) => this.store.setPersistentValue(this.workflowId, key, value),
       resolveNodeParameters: backtestContext?.resolveNodeParameters?.bind(backtestContext) || 
         ((node: WorkflowNode, input: any) => this.resolveNodeParameters(node, input))
     };

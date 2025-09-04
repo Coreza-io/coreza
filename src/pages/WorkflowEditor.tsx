@@ -343,41 +343,65 @@ const WorkflowEditorContent = () => {
     if (!authUser || !workflowId) return;
 
     try {
-      setIsActive(!isActive);
-
-      // If workflow is saved, update the active status in database
-      const { error } = await supabase
-        .from("workflows")
-        .update({ is_active: !isActive })
-        .eq("id", workflowId);
-
-      if (error) {
-        console.error("Failed to update workflow status:", error);
-        // Revert the local state change
-        setIsActive(isActive);
+      const API_URL = "http://localhost:8000";
+      
+      // Check backend health first for both activation and deactivation
+      try {
+        const healthCheck = await fetch(`${API_URL}/health`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+        
+        if (!healthCheck.ok) {
+          throw new Error("Backend server is not responding");
+        }
+      } catch (healthError: any) {
+        console.error("Backend health check failed:", healthError);
         toast({
           title: "Error",
-          description: "Failed to update workflow status.",
+          description: "Backend server is not available. Please ensure your backend is running on http://localhost:8000",
           variant: "destructive",
         });
         return;
       }
 
-      toast({
-        title: "Success",
-        description: `Workflow ${
-          !isActive ? "activated" : "deactivated"
-        } successfully!`,
+      const newStatus = !isActive;
+      
+      // Call the correct backend endpoint
+      const res = await fetch(`${API_URL}/workflows/${authUser.id}/${workflowId}/schedule`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          is_active: newStatus
+        }),
       });
 
-      //console.log("Workflow status changed:", !isActive ? "activated" : "deactivated");
-    } catch (error) {
-      console.error("Failed to change workflow status:", error);
-      // Revert the local state change
-      setIsActive(isActive);
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText);
+      }
+
+      // Update database to reflect the change
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_active: newStatus })
+        .eq('id', workflowId);
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
+      setIsActive(newStatus);
+
+      toast({
+        title: "Success",
+        description: `Workflow ${newStatus ? 'activated' : 'deactivated'} successfully`,
+      });
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "An unexpected error occurred.",
+        description: `Failed to ${!isActive ? 'activate' : 'deactivate'} workflow: ${error.message}`,
         variant: "destructive",
       });
     }

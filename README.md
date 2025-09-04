@@ -39,8 +39,6 @@ The setup script will:
 - **Database**: Supabase (PostgreSQL)
 - **Authentication**: Supabase Auth with RLS
 - **Encryption**: AES-256-GCM for credentials
-- **Real-time**: WebSocket connections
-- **Deployment**: Edge functions + static hosting
 
 ## 🔐 Security Features
 
@@ -55,9 +53,7 @@ The setup script will:
 - **Multi-broker support** (Alpaca, Dhan, more coming)
 - **Technical indicators** (RSI, MACD, Bollinger Bands, etc.)
 - **Workflow automation** with visual editor
-- **Real-time market data** integration
 - **Risk management** tools
-- **Backtesting** capabilities
 
 ## 🛠️ Manual Setup
 

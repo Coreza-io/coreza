@@ -8,8 +8,8 @@ Get your own instance running in minutes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/Coreza-io/coreza.git
+cd coreza
 
 # Run the automated setup
 npm install

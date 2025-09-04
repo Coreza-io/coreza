@@ -1,6 +1,6 @@
 # Coreza Trading Platform
 
-An advanced, open-source trading platform with workflow automation, real-time market data, and secure credential management.
+An advanced, open-source trading platform with workflow automation and secure credential management.
 
 ## 🚀 Quick Start
 

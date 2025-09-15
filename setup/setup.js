@@ -19,6 +19,7 @@ class CorezaSetup {
   constructor() {
     this.config = {};
     this.setupComplete = false;
+    this.projectRoot = path.resolve(__dirname, '..');
   }
 
   async run() {
@@ -50,11 +51,11 @@ class CorezaSetup {
     try {
       // Install frontend dependencies
       console.log('Installing frontend dependencies...');
-      execSync('npm install', { stdio: 'inherit' });
+      execSync('npm install', { stdio: 'inherit', cwd: this.projectRoot });
       
       // Install backend dependencies
       console.log('Installing backend dependencies...');
-      execSync('cd coreza-backend && npm install', { stdio: 'inherit' });
+      execSync('npm install', { stdio: 'inherit', cwd: path.join(this.projectRoot, 'coreza-backend') });
       
       console.log('✅ Dependencies installed successfully');
     } catch (error) {
@@ -157,8 +158,8 @@ PORT=3001
 NODE_ENV=development
 `;
     
-    fs.writeFileSync('.env', frontendEnv);
-    fs.writeFileSync('coreza-backend/.env', backendEnv);
+    fs.writeFileSync(path.join(this.projectRoot, '.env'), frontendEnv);
+    fs.writeFileSync(path.join(this.projectRoot, 'coreza-backend', '.env'), backendEnv);
     
     console.log('✅ Environment files created');
   }
@@ -194,7 +195,7 @@ verify_jwt = false
 verify_jwt = false
 `;
     
-    fs.writeFileSync('supabase/config.toml', configContent);
+    fs.writeFileSync(path.join(this.projectRoot, 'supabase', 'config.toml'), configContent);
     console.log('✅ Supabase config updated');
   }
 
@@ -203,13 +204,13 @@ verify_jwt = false
     
     try {
       // Link to Supabase project
-      execSync(`supabase link --project-ref ${this.config.projectId}`, { stdio: 'inherit' });
+      execSync(`supabase link --project-ref ${this.config.projectId}`, { stdio: 'inherit', cwd: this.projectRoot });
       
       // Deploy functions
-      execSync('supabase functions deploy', { stdio: 'inherit' });
+      execSync('supabase functions deploy', { stdio: 'inherit', cwd: this.projectRoot });
       
       // Set secrets
-      execSync(`supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`, { stdio: 'inherit' });
+      execSync(`supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`, { stdio: 'inherit', cwd: this.projectRoot });
       
       console.log('✅ Edge functions deployed and secrets configured');
     } catch (error) {
@@ -244,25 +245,27 @@ verify_jwt = false
     // Check if files exist
     const requiredFiles = ['.env', 'coreza-backend/.env', 'supabase/config.toml'];
     for (const file of requiredFiles) {
-      if (!fs.existsSync(file)) {
-        throw new Error(`Required file missing: ${file}`);
+      const fullPath = path.join(this.projectRoot, file);
+      if (!fs.existsSync(fullPath)) {
+        throw new Error(`Required file missing: ${fullPath}`);
       }
     }
 
     // Check if edge functions exist
     const requiredFunctions = ['derive-encryption-key', 'http-request'];
     for (const func of requiredFunctions) {
-      const funcPath = `supabase/functions/${func}/index.ts`;
+      const funcPath = path.join(this.projectRoot, 'supabase', 'functions', func, 'index.ts');
       if (!fs.existsSync(funcPath)) {
         throw new Error(`Edge function missing: ${funcPath}`);
       }
+    
     }
 
     // Validate environment files have required variables
-    const frontendEnv = fs.readFileSync('.env', 'utf8');
-    const backendEnv = fs.readFileSync('coreza-backend/.env', 'utf8');
+    const frontendEnv = fs.readFileSync(path.join(this.projectRoot, '.env'), 'utf8');
+    const backendEnv = fs.readFileSync(path.join(this.projectRoot, 'coreza-backend', '.env'), 'utf8');
     
-    const requiredFrontendVars = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_COREZA_ENCRYPTION_KEY'];
+    const requiredFrontendVars = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_COREZA_ENCRYPTION_KEY'];
     const requiredBackendVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'COREZA_ENCRYPTION_KEY'];
     
     for (const varName of requiredFrontendVars) {

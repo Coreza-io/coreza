@@ -1,0 +1,9 @@
+{
+  "name": "coreza-setup",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "node setup.js",
+    "start": "npm run setup"
+  }
+}

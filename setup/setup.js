@@ -27,6 +27,7 @@ class CorezaSetup {
     
     try {
       await this.checkPrerequisites();
+      await this.installDependencies();
       await this.collectSupabaseCredentials();
       await this.generateEncryptionKey();
       await this.setupEnvironmentFiles();
@@ -40,6 +41,27 @@ class CorezaSetup {
       process.exit(1);
     } finally {
       rl.close();
+    }
+  }
+
+  async installDependencies() {
+    console.log('\n📦 Installing dependencies...');
+    
+    try {
+      // Install frontend dependencies
+      console.log('Installing frontend dependencies...');
+      execSync('npm install', { stdio: 'inherit' });
+      
+      // Install backend dependencies
+      console.log('Installing backend dependencies...');
+      execSync('cd coreza-backend && npm install', { stdio: 'inherit' });
+      
+      console.log('✅ Dependencies installed successfully');
+    } catch (error) {
+      console.log('⚠️  Manual dependency installation required');
+      console.log('Please run:');
+      console.log('1. npm install');
+      console.log('2. cd coreza-backend && npm install');
     }
   }
 
@@ -113,12 +135,12 @@ class CorezaSetup {
     console.log('\n📝 Setting up environment files...');
     
     // Frontend .env
-    const frontendEnv = `# Supabase Configuration
-VITE_SUPABASE_URL=${this.config.supabaseUrl}
-VITE_SUPABASE_ANON_KEY=${this.config.supabaseAnonKey}
-
-# Encryption Configuration
-VITE_COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
+    const frontendEnv = `# ="== React App Config ==="
+# VITE_API_URL="https://coreza-backend.onrender.com"
+VITE_COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"
+VITE_SUPABASE_PROJECT_ID="${this.config.projectId}"
+VITE_SUPABASE_PUBLISHABLE_KEY="${this.config.supabaseAnonKey}"
+VITE_SUPABASE_URL="${this.config.supabaseUrl}"
 `;
     
     // Backend .env
@@ -260,13 +282,14 @@ verify_jwt = false
   async showCompletionMessage() {
     console.log('\n🎉 Setup Complete!');
     console.log('==================');
-    console.log('\nNext steps:');
-    console.log('1. Install dependencies: npm install');
-    console.log('2. Install backend dependencies: cd coreza-backend && npm install');
-    console.log('3. Start the frontend: npm run dev');
-    console.log('4. Start the backend: cd coreza-backend && npm run dev');
     console.log('\nYour Coreza Trading Platform is ready to use!');
+    console.log('\nTo start the application:');
+    console.log('1. Start the frontend: npm run dev');
+    console.log('2. Start the backend: cd coreza-backend && npm run dev');
+    console.log('\nOpen http://localhost:5173 in your browser to access the platform.');
     console.log('\n📚 For more information, see docs/SETUP.md');
+    console.log('\n🔐 Security Note: Your encryption key and Supabase credentials');
+    console.log('   have been securely configured. Keep your .env files private!');
   }
 }
 

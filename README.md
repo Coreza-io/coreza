@@ -1,6 +1,6 @@
 # Coreza Trading Platform
 
-An advanced, open-source trading platform with workflow automation, real-time market data, and secure credential management.
+An advanced, open-source trading platform with workflow automation and secure credential management.
 
 ## 🚀 Quick Start
 
@@ -8,8 +8,8 @@ Get your own instance running in minutes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/Coreza-io/coreza.git
+cd coreza
 
 # Run the automated setup
 npm install
@@ -39,8 +39,6 @@ The setup script will:
 - **Database**: Supabase (PostgreSQL)
 - **Authentication**: Supabase Auth with RLS
 - **Encryption**: AES-256-GCM for credentials
-- **Real-time**: WebSocket connections
-- **Deployment**: Edge functions + static hosting
 
 ## 🔐 Security Features
 
@@ -55,9 +53,7 @@ The setup script will:
 - **Multi-broker support** (Alpaca, Dhan, more coming)
 - **Technical indicators** (RSI, MACD, Bollinger Bands, etc.)
 - **Workflow automation** with visual editor
-- **Real-time market data** integration
 - **Risk management** tools
-- **Backtesting** capabilities
 
 ## 🛠️ Manual Setup
 

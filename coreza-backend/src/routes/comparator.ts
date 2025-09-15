@@ -8,13 +8,13 @@ const router = express.Router();
 // If/Then conditional logic with logicalOp support
 router.post("/if", async (req, res) => {
   try {
-    const { conditions, logicalOp } = req.body;
+    const { conditions, logicalOps } = req.body;
 
     // Validate presence and types
     if (!conditions || !Array.isArray(conditions)) {
       return res.status(400).json({
         error: "conditions array is required",
-        received: { conditions, logicalOp },
+        received: { conditions, logicalOps },
       });
     }
 
@@ -44,10 +44,14 @@ router.post("/if", async (req, res) => {
     }
 
     // Combine results based on logicalOp
-    const passed =
-      logicalOp === "AND" ? results.every((r) => r) : results.some((r) => r);
+    const passed = results.reduce((acc, cur, i) => {
+      if (i === 0) return cur; // seed with the first result
+      const op = logicalOps[i - 1];
+      if (op === "AND") return acc && cur;
+      if (op === "OR") return acc || cur;
+      throw new Error(`Unsupported logical operator: ${op}`);
+    }, undefined as unknown as boolean);
 
-    // Return same shape as Python version
     res.json({
       true: passed,
       false: !passed,

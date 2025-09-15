@@ -1,7 +1,19 @@
-import React, { Suspense, useCallback, useState, useEffect, useMemo } from "react";
+import React, {
+  Suspense,
+  useCallback,
+  useState,
+  useEffect,
+  useMemo,
+} from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, X, Plus } from "lucide-react";
@@ -14,10 +26,12 @@ import { useReactFlow } from "@xyflow/react";
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: any, allNodes: any[]) => {
   const baseName = node.data.definition?.name;
-  const sameType = allNodes.filter((n) => n && n.data && (n.data.definition?.name) === baseName);
+  const sameType = allNodes.filter(
+    (n) => n && n.data && n.data.definition?.name === baseName
+  );
   const idx = sameType.findIndex((n) => n.id === node.id);
   const result = idx > 0 ? `${baseName}${idx}` : baseName;
-  
+
   return result;
 };
 
@@ -47,39 +61,47 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const { setNodes, setEdges, getNodes } = useReactFlow();
 
   // =========== DETERMINE REPEATER TYPE ===========
-  const repeaterField = definition.fields?.find((f: any) => f.type === "repeater");
+  const repeaterField = definition.fields?.find(
+    (f: any) => f.type === "repeater"
+  );
   const repeaterKey = repeaterField?.key;
   const isConditional = repeaterKey === "conditions";
   const isFieldRepeater = repeaterKey === "fields";
   const isSwitch = repeaterKey === "cases";
 
   // =========== CONDITIONAL LOGIC ===========
-  const defaultCond = Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
-    ? repeaterField.default[0]
-    : (repeaterField?.default ?? { left: "", operator: "===", right: "" });
+  const defaultCond =
+    Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
+      ? repeaterField.default[0]
+      : repeaterField?.default ?? { left: "", operator: "===", right: "" };
 
   // =========== SWITCH LOGIC ===========
-  const defaultCase = isSwitch && Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
-    ? repeaterField.default
-    : [{ caseValue: "case1", caseName: "Case 1" }];
+  const defaultCase =
+    isSwitch &&
+    Array.isArray(repeaterField?.default) &&
+    repeaterField.default.length > 0
+      ? repeaterField.default
+      : [{ caseValue: "case1", caseName: "Case 1" }];
 
   // =========== STATE ===========
   // make sure these are always arrays before you map/filter them
-  const conditions = repeaterKey && Array.isArray(fieldState[repeaterKey])
-    ? fieldState[repeaterKey]
-    : [];
-  const logicalOps = isConditional && Array.isArray(fieldState.logicalOps)
-    ? fieldState.logicalOps
-    : [];
-  const cases = Array.isArray(fieldState.cases)
-    ? fieldState.cases
-    : [];
-  const [sourceMap, setSourceMap] = useState<{ left?: string; right?: string }[]>(conditions.map(() => ({})));
+  const conditions =
+    repeaterKey && Array.isArray(fieldState[repeaterKey])
+      ? fieldState[repeaterKey]
+      : [];
+  const logicalOps =
+    isConditional && Array.isArray(fieldState.logicalOps)
+      ? fieldState.logicalOps
+      : [];
+  const cases = Array.isArray(fieldState.cases) ? fieldState.cases : [];
+  const [sourceMap, setSourceMap] = useState<
+    { left?: string; right?: string }[]
+  >(conditions.map(() => ({})));
 
   // ─── Seed the repeater on first render ────────────────────────────────────
   useEffect(() => {
     if (!repeaterField) return;
-    const key = repeaterField.key;         // "conditions", "fields" or "cases"
+    const key = repeaterField.key; // "conditions", "fields" or "cases"
     const current = fieldState[key] || [];
     if (Array.isArray(current) && current.length > 0) return; // already seeded
 
@@ -87,14 +109,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const seedRows = Array.isArray(repeaterField.default)
       ? repeaterField.default
       : repeaterField.default
-        ? [repeaterField.default]
-        : [{}];
+      ? [repeaterField.default]
+      : [{}];
 
     // 2) batch-set both fields: repeater + logicalOps (for If nodes)
     if (key === "conditions") {
       handleFieldStateBatch({
-        conditions:  seedRows,
-        logicalOps:  []        // no logic dropdown when only one condition
+        conditions: seedRows,
+        logicalOps: [], // no logic dropdown when only one condition
       });
     } else if (key === "cases") {
       // for Switch: just seed the cases array
@@ -105,14 +127,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
     // 3) keep your sourceMap in sync
     setSourceMap(Array(seedRows.length).fill({}));
-  }, []);  // <- only on mount
-
+  }, []); // <- only on mount
 
   // whenever conditions.length changes, ensure sourceMap has the same length
   useEffect(() => {
     setSourceMap((sm) => {
       if (sm.length === conditions.length) return sm;
-      if (sm.length <  conditions.length) {
+      if (sm.length < conditions.length) {
         return [...sm, ...Array(conditions.length - sm.length).fill({})];
       }
       return sm.slice(0, conditions.length);
@@ -121,18 +142,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {
-    const newConds    = [...conditions, { ...defaultCond }];
+    const newConds = [...conditions, { ...defaultCond }];
     if (isConditional) {
-      const newLogOps   = [...logicalOps, "AND"];
+      const newLogOps = [...logicalOps, "AND"];
       handleFieldStateBatch({
-        conditions:  newConds,
-        logicalOps:  newLogOps
+        conditions: newConds,
+        logicalOps: newLogOps,
       });
     } else {
       handleFieldStateBatch({ [repeaterKey!]: newConds });
     }
     // sourceMap still needs to grow
-    setSourceMap(sm => Array.isArray(sm) ? [...sm, {}] : [{}]);
+    setSourceMap((sm) => (Array.isArray(sm) ? [...sm, {}] : [{}]));
   };
 
   const removeCondition = (idx: number) => {
@@ -155,14 +176,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     }
 
     // 4) trim your sourceMap too
-    setSourceMap((sm) => Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : []);
+    setSourceMap((sm) =>
+      Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : []
+    );
   };
 
   const updateCondition = useCallback(
     (idx: number, field: string, value: any) => {
       handleChange(
         repeaterKey!,
-        conditions.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+        conditions.map((row, i) =>
+          i === idx ? { ...row, [field]: value } : row
+        )
       );
     },
     [conditions, handleChange, repeaterKey]
@@ -170,10 +195,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const updateLogicalOp = useCallback(
     (idx: number, op: string) => {
-      handleChange(
-        "logicalOps",
-        logicalOps.map((v, i) => (i === idx ? op : v))
-      );
+      if (!logicalOps || logicalOps.length === 0) {
+        // nothing yet → just seed with this op
+        handleChange("logicalOps", [op]);
+      } else {
+        // update in place
+        handleChange(
+          "logicalOps",
+          logicalOps.map((v, i) => (i === idx ? op : v))
+        );
+      }
     },
     [logicalOps, handleChange]
   );
@@ -181,11 +212,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
     const newIndex = cases.length + 1;
-    handleChange("cases", [...cases, { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` }]);
+    handleChange("cases", [
+      ...cases,
+      { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` },
+    ]);
   };
 
   const removeCase = (idx: number) => {
-    handleChange("cases", cases.filter((_, i) => i !== idx));
+    handleChange(
+      "cases",
+      cases.filter((_, i) => i !== idx)
+    );
   };
 
   const updateCase = useCallback(
@@ -198,7 +235,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [cases, handleChange]
   );
 
-
   // =========== SHARED HELPERS ===========
   function resolveDeep(val, selectedInputData, allNodeData) {
     if (typeof val === "string") {
@@ -206,13 +242,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       return resolveReferences(val, selectedInputData, allNodeData, allNodes);
     }
     if (Array.isArray(val)) {
-      return val.map(v => resolveDeep(v, selectedInputData, allNodeData));
+      return val.map((v) => resolveDeep(v, selectedInputData, allNodeData));
     }
     if (typeof val === "object" && val !== null) {
       return Object.fromEntries(
-        Object.entries(val).map(([k, v]) =>
-          [k, resolveDeep(v, selectedInputData, allNodeData)]
-        )
+        Object.entries(val).map(([k, v]) => [
+          k,
+          resolveDeep(v, selectedInputData, allNodeData),
+        ])
       );
     }
     return val;
@@ -220,12 +257,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // Drag helper for repeater (conditional)
   const handleRepeaterDrop = useCallback(
-    (
-      idx: number,
-      field: string,
-      e: React.DragEvent,
-      currentValue: string
-    ) => {
+    (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -236,8 +268,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
       try {
         const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode?.data?.displayName || (sourceNode ? getDisplayName(sourceNode, previousNodes) : selectedPrevNodeId);
+        const sourceNode = previousNodes.find(
+          (n) => n.id === selectedPrevNodeId
+        );
+        const sourceDisplayName =
+          sourceNode?.data?.displayName ||
+          (sourceNode
+            ? getDisplayName(sourceNode, previousNodes)
+            : selectedPrevNodeId);
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
         const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -261,11 +299,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // Drag helper for switch
   const handleSwitchDrop = useCallback(
-    (
-      field: string,
-      e: React.DragEvent,
-      currentValue: string
-    ) => {
+    (field: string, e: React.DragEvent, currentValue: string) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -276,8 +310,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
       try {
         const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode?.data?.displayName || (sourceNode ? getDisplayName(sourceNode, previousNodes) : selectedPrevNodeId);
+        const sourceNode = previousNodes.find(
+          (n) => n.id === selectedPrevNodeId
+        );
+        const sourceDisplayName =
+          sourceNode?.data?.displayName ||
+          (sourceNode
+            ? getDisplayName(sourceNode, previousNodes)
+            : selectedPrevNodeId);
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
         const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -307,7 +347,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       let srcData = srcNode.data?.output || {};
 
       const allNodeData = {} as Record<string, any>;
-      previousNodes.forEach(prevNode => {
+      previousNodes.forEach((prevNode) => {
         const displayName = prevNode.id;
         const nodeData = prevNode.data?.output || prevNode.data || {};
         allNodeData[displayName] = nodeData;
@@ -336,10 +376,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
 
-      let srcData = srcNode.data?.output || srcNode.data?.input || srcNode.data?.values || {};
+      let srcData =
+        srcNode.data?.output ||
+        srcNode.data?.input ||
+        srcNode.data?.values ||
+        {};
 
       const allNodeData = {} as Record<string, any>;
-      previousNodes.forEach(prevNode => {
+      previousNodes.forEach((prevNode) => {
         const displayName = prevNode.id;
         const nodeData = prevNode.data?.output || prevNode.data || {};
         allNodeData[displayName] = nodeData;
@@ -364,7 +408,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             <img src={definition.icon} alt="icon" className="w-6 h-6" />
           )}
           <h2 className="font-semibold text-base text-foreground flex-1">
-            {definition?.def || definition?.name || 'Node'}
+            {definition?.def || definition?.name || "Node"}
           </h2>
         </div>
       </div>
@@ -375,11 +419,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           if (f.type === "repeater") return null;
           if (isSwitch && f.key === "defaultCase") return null; // Handle separately for switch
           if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
-          
+
           // --------- CONDITIONAL FIELD DISPLAY ---------
           let shouldShow = true;
           if (f.displayOptions && f.displayOptions.show) {
-            for (const [depKey, allowedValuesRaw] of Object.entries(f.displayOptions.show)) {
+            for (const [depKey, allowedValuesRaw] of Object.entries(
+              f.displayOptions.show
+            )) {
               const allowedValues = allowedValuesRaw as string[];
               if (!allowedValues.includes(fieldState[depKey])) {
                 shouldShow = false;
@@ -416,19 +462,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     }
                   }}
                 >
-                <Input
-                  value={fieldState[f.key] || ""}
-                  onChange={(e) => handleChange(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                  className="nodrag"
-                  style={typeof fieldState[f.key] === "string" && fieldState[f.key].includes("{{") ? referenceStyle : undefined}
-                  onFocus={(e) => e.target.select()}
-                />
-                  {typeof fieldState[f.key] === "string" && fieldState[f.key].includes("{{") && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Preview: {isSwitch ? getSwitchPreviewFor(fieldState[f.key]) : getFieldPreview(f.key)}
-                    </div>
-                  )}
+                  <Input
+                    value={fieldState[f.key] || ""}
+                    onChange={(e) => handleChange(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    className="nodrag"
+                    style={
+                      typeof fieldState[f.key] === "string" &&
+                      fieldState[f.key].includes("{{")
+                        ? referenceStyle
+                        : undefined
+                    }
+                    onFocus={(e) => e.target.select()}
+                  />
+                  {typeof fieldState[f.key] === "string" &&
+                    fieldState[f.key].includes("{{") && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Preview:{" "}
+                        {isSwitch
+                          ? getSwitchPreviewFor(fieldState[f.key])
+                          : getFieldPreview(f.key)}
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -482,7 +537,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     handleChange(f.key, val);
                     // Clear dependent field when parent changes
                     if (f.conditionalOptions) {
-                      const dependentFields = definition.fields?.filter((field: any) => field.dependsOn === f.key);
+                      const dependentFields = definition.fields?.filter(
+                        (field: any) => field.dependsOn === f.key
+                      );
                       dependentFields?.forEach((depField: any) => {
                         handleChange(depField.key, "");
                       });
@@ -490,29 +547,40 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   }}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={f.placeholder || "Select option"} />
+                    <SelectValue
+                      placeholder={f.placeholder || "Select option"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {(() => {
                       // Handle conditional options
                       if (f.dependsOn && f.conditionalOptions) {
                         const parentValue = fieldState[f.dependsOn];
-                        const conditionalOptions = f.conditionalOptions[parentValue] || [];
+                        const conditionalOptions =
+                          f.conditionalOptions[parentValue] || [];
                         return conditionalOptions.map((option: any) => (
-                          <SelectItem key={option.id || option.value} value={option.id || option.value}>
-                            {option.name || option.label || option.id || option.value}
+                          <SelectItem
+                            key={option.id || option.value}
+                            value={option.id || option.value}
+                          >
+                            {option.name ||
+                              option.label ||
+                              option.id ||
+                              option.value}
                           </SelectItem>
                         ));
                       }
                       // Handle regular options
-                      return (selectOptions[f.key] || f.options || []).map((opt: any) => (
-                        <SelectItem
-                          key={opt.id || opt.value}
-                          value={opt.id || opt.value}
-                        >
-                          {opt.name || opt.label || opt.id || opt.value}
-                        </SelectItem>
-                      ));
+                      return (selectOptions[f.key] || f.options || []).map(
+                        (opt: any) => (
+                          <SelectItem
+                            key={opt.id || opt.value}
+                            value={opt.id || opt.value}
+                          >
+                            {opt.name || opt.label || opt.id || opt.value}
+                          </SelectItem>
+                        )
+                      );
                     })()}
                   </SelectContent>
                 </Select>
@@ -521,24 +589,38 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               {/* --------- Multiselect Field --------- */}
               {f.type === "multiselect" && (
                 <div className="space-y-3">
-                  {((selectOptions[f.key] || f.options || [])).map((opt: any) => {
+                  {(selectOptions[f.key] || f.options || []).map((opt: any) => {
                     const optionId = opt.id || opt.value;
-                    const optionLabel = opt.name || opt.label || opt.id || opt.value;
-                    const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                    const optionLabel =
+                      opt.name || opt.label || opt.id || opt.value;
+                    const selectedValues = Array.isArray(fieldState[f.key])
+                      ? fieldState[f.key]
+                      : f.default || [];
                     const isSelected = selectedValues.includes(optionId);
-                    
+
                     return (
-                      <div key={optionId} className="flex items-center justify-between">
-                        <span className="text-sm text-foreground">{optionLabel}</span>
+                      <div
+                        key={optionId}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm text-foreground">
+                          {optionLabel}
+                        </span>
                         <Switch
                           checked={isSelected}
                           onCheckedChange={(checked) => {
-                            const currentValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+                            const currentValues = Array.isArray(
+                              fieldState[f.key]
+                            )
+                              ? fieldState[f.key]
+                              : f.default || [];
                             let newValues;
                             if (checked) {
                               newValues = [...currentValues, optionId];
                             } else {
-                              newValues = currentValues.filter((v: string) => v !== optionId);
+                              newValues = currentValues.filter(
+                                (v: string) => v !== optionId
+                              );
                             }
                             handleChange(f.key, newValues);
                           }}
@@ -567,16 +649,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {(isConditional || isFieldRepeater) && repeaterField && (
           <div className="space-y-3">
             <h4 className="font-semibold">
-              {repeaterField?.key === "conditions" || repeaterField?.type === "conditions"
+              {repeaterField?.key === "conditions" ||
+              repeaterField?.type === "conditions"
                 ? "Conditions"
                 : "Fields"}
             </h4>
 
             {conditions.map((cond, i) => {
-              const leftField = repeaterField.subFields?.find((sf: any) => sf.key === "left");
-              const operatorField = repeaterField.subFields?.find((sf: any) => sf.key === "operator");
-              const rightField = repeaterField.subFields?.find((sf: any) => sf.key === "right");
-              const persistentField = repeaterField.subFields?.find((sf: any) => sf.key === "persistent");
+              const leftField = repeaterField.subFields?.find(
+                (sf: any) => sf.key === "left"
+              );
+              const operatorField = repeaterField.subFields?.find(
+                (sf: any) => sf.key === "operator"
+              );
+              const rightField = repeaterField.subFields?.find(
+                (sf: any) => sf.key === "right"
+              );
+              const persistentField = repeaterField.subFields?.find(
+                (sf: any) => sf.key === "persistent"
+              );
 
               return (
                 <div key={i} className="space-y-2">
@@ -600,7 +691,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
                   <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
                     {/* Left */}
-                    {leftField && (leftField.options && leftField.options.length > 0) ? (
+                    {leftField &&
+                    leftField.options &&
+                    leftField.options.length > 0 ? (
                       <Select
                         value={cond.left}
                         onValueChange={(v) => updateCondition(i, "left", v)}
@@ -610,32 +703,41 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         </SelectTrigger>
                         <SelectContent>
                           {(leftField.options || []).map((opt: any) => (
-                            <SelectItem key={opt.id || opt.value} value={opt.id || opt.value}>
+                            <SelectItem
+                              key={opt.id || opt.value}
+                              value={opt.id || opt.value}
+                            >
                               {opt.name || opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                       <Input
-                         className="flex-1 h-8 text-xs nodrag"
-                         placeholder={leftField?.placeholder || "Left value"}
-                         value={cond.left || ""}
-                         onChange={(e) => updateCondition(i, "left", e.target.value)}
-                         onDragOver={(e) => {
-                           e.preventDefault();
-                           e.stopPropagation();
-                           e.dataTransfer.dropEffect = "copy";
-                         }}
-                         onDrop={(e) => handleRepeaterDrop(i, "left", e, cond.left || "")}
-                         style={cond.left?.includes("{{") ? referenceStyle : undefined}
-                         onFocus={(e) => e.target.select()}
-                       />
+                      <Input
+                        className="flex-1 h-8 text-xs nodrag"
+                        placeholder={leftField?.placeholder || "Left value"}
+                        value={cond.left || ""}
+                        onChange={(e) =>
+                          updateCondition(i, "left", e.target.value)
+                        }
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = "copy";
+                        }}
+                        onDrop={(e) =>
+                          handleRepeaterDrop(i, "left", e, cond.left || "")
+                        }
+                        style={
+                          cond.left?.includes("{{") ? referenceStyle : undefined
+                        }
+                        onFocus={(e) => e.target.select()}
+                      />
                     )}
 
                     {/* Operator */}
                     {operatorField && (
-                     <Select
+                      <Select
                         value={cond.operator}
                         onValueChange={(v) => updateCondition(i, "operator", v)}
                       >
@@ -649,26 +751,34 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             </SelectItem>
                           ))}
                         </SelectContent>
-                     </Select>
+                      </Select>
                     )}
 
-                     {/* Right */}
-                     {rightField && (
-                       <Input
-                         className="flex-1 h-8 text-xs nodrag"
-                         placeholder={rightField.placeholder || "Right value"}
-                         value={cond.right || ""}
-                         onChange={(e) => updateCondition(i, "right", e.target.value)}
-                         onDragOver={(e) => {
-                           e.preventDefault();
-                           e.stopPropagation();
-                           e.dataTransfer.dropEffect = "copy";
-                         }}
-                         onDrop={(e) => handleRepeaterDrop(i, "right", e, cond.right || "")}
-                         style={cond.right?.includes("{{") ? referenceStyle : undefined}
-                       onFocus={(e) => e.target.select()}
-                       />
-                     )}
+                    {/* Right */}
+                    {rightField && (
+                      <Input
+                        className="flex-1 h-8 text-xs nodrag"
+                        placeholder={rightField.placeholder || "Right value"}
+                        value={cond.right || ""}
+                        onChange={(e) =>
+                          updateCondition(i, "right", e.target.value)
+                        }
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = "copy";
+                        }}
+                        onDrop={(e) =>
+                          handleRepeaterDrop(i, "right", e, cond.right || "")
+                        }
+                        style={
+                          cond.right?.includes("{{")
+                            ? referenceStyle
+                            : undefined
+                        }
+                        onFocus={(e) => e.target.select()}
+                      />
+                    )}
 
                     {conditions.length > 1 && (
                       <Button
@@ -683,13 +793,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   </div>
 
                   {/* Previews */}
-                  {(cond.left?.includes("{{") || cond.right?.includes("{{")) && (
+                  {(cond.left?.includes("{{") ||
+                    cond.right?.includes("{{")) && (
                     <div className="text-xs text-gray-500 space-y-1 ml-2">
                       {cond.left?.includes("{{") && (
-                        <div>Left preview: {getPreviewFor(i, "left", cond.left)}</div>
+                        <div>
+                          Left preview: {getPreviewFor(i, "left", cond.left)}
+                        </div>
                       )}
                       {cond.right?.includes("{{") && (
-                        <div>Right preview: {getPreviewFor(i, "right", cond.right)}</div>
+                        <div>
+                          Right preview: {getPreviewFor(i, "right", cond.right)}
+                        </div>
                       )}
                     </div>
                   )}
@@ -705,42 +820,49 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               className="h-7 px-2"
             >
               <Plus className="w-3 h-3 mr-1" />
-              {repeaterField?.key === "conditions" ? "Add Condition" : "Add Field"}
+              {repeaterField?.key === "conditions"
+                ? "Add Condition"
+                : "Add Field"}
             </Button>
 
             {/* --------- LOGICAL OPERATOR (If nodes only, after conditions) --------- */}
-            {isConditional && conditions.length > 1 && definition.fields?.map((f: any) => {
-              if (f.key !== "logicalOp") return null;
-              
-              return (
-                <div key={f.key} className="mt-3">
-                  <Label>{f.label}</Label>
-                  <Select
-                    value={fieldState[f.key] || f.default}
-                    onValueChange={(val) => handleChange(f.key, val)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={f.placeholder || "Select logical operator"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(f.options || []).map((opt: any) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {f.description && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {f.description}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {isConditional &&
+              conditions.length > 1 &&
+              definition.fields?.map((f: any) => {
+                if (f.key !== "logicalOp") return null;
+
+                return (
+                  <div key={f.key} className="mt-3">
+                    <Label>{f.label}</Label>
+                    <Select
+                      value={fieldState[f.key] || f.default}
+                      onValueChange={(val) => handleChange(f.key, val)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue
+                          placeholder={
+                            f.placeholder || "Select logical operator"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(f.options || []).map((opt: any) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {f.description && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {f.description}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
-
 
         {/* --------- SWITCH REPEATER (Cases) --------- */}
         {isSwitch && (
@@ -760,7 +882,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             </div>
 
             {cases.map((caseItem, i) => (
-              <div key={i} className="flex items-center gap-2 p-2 border rounded bg-muted/10">
+              <div
+                key={i}
+                className="flex items-center gap-2 p-2 border rounded bg-muted/10"
+              >
                 <Input
                   className="flex-1 h-8 text-xs nodrag"
                   placeholder="case value (e.g., case1)"
@@ -792,22 +917,23 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         )}
 
         {/* Default Case Field (Switch only) */}
-        {isSwitch && definition.fields?.map((f: any) => {
-          if (f.key !== "defaultCase") return null;
-          
-          return (
-            <div key={f.key}>
-              <Label>{f.label}</Label>
-              <Input
-                value={fieldState[f.key] || f.default || ""}
-                onChange={(e) => handleChange(f.key, e.target.value)}
-                placeholder={f.placeholder}
-                className="nodrag"
-                onFocus={(e) => e.target.select()}
-              />
-            </div>
-          );
-        })}
+        {isSwitch &&
+          definition.fields?.map((f: any) => {
+            if (f.key !== "defaultCase") return null;
+
+            return (
+              <div key={f.key}>
+                <Label>{f.label}</Label>
+                <Input
+                  value={fieldState[f.key] || f.default || ""}
+                  onChange={(e) => handleChange(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                  className="nodrag"
+                  onFocus={(e) => e.target.select()}
+                />
+              </div>
+            );
+          })}
 
         {/* Submit Button */}
         <div className="pt-2">

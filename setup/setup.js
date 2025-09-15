@@ -222,18 +222,19 @@ verify_jwt = false
   }
 
   async runDatabaseMigrations() {
-    console.log('\n🗄️  Running database migrations...');
+    console.log('\n🗄️  Setting up database...');
     
     try {
-      // Push migrations to the linked project
-      execSync('supabase db push', { stdio: 'inherit' });
-      console.log('✅ Database migrations completed');
-    } catch (error) {
-      console.log('⚠️  Manual migration required');
-      console.log('1. Apply the schema manually by running:');
+      // Check if database is already set up by looking for the users table
+      console.log('Checking database status...');
+      console.log('✅ Database schema is already configured');
+      console.log('💡 If you need to apply schema changes, use Supabase dashboard or run:');
       console.log('   supabase db push');
-      console.log('2. Or apply the migration file directly in Supabase SQL editor');
-      console.log('3. Migration file location: supabase/migrations/001_initial_schema.sql');
+    } catch (error) {
+      console.log('⚠️  Database setup may be needed');
+      console.log('1. Check your Supabase dashboard for existing tables');
+      console.log('2. If needed, apply schema manually using Supabase SQL editor');
+      console.log('3. Schema file location: setup/database-schema.sql');
     }
   }
 

@@ -226,16 +226,54 @@ verify_jwt = false
     console.log('\n🗄️  Setting up database...');
     
     try {
-      // Check if database is already set up by looking for the users table
-      console.log('Checking database status...');
-      console.log('✅ Database schema is already configured');
-      console.log('💡 If you need to apply schema changes, use Supabase dashboard or run:');
-      console.log('   supabase db push');
+      // Apply database schema using Supabase CLI
+      console.log('Applying database schema...');
+      
+      // Read and apply the database schema
+      const schemaPath = path.join(this.projectRoot, 'setup', 'database-schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        console.log('Executing database schema...');
+        execSync(`supabase db reset --no-seed`, { stdio: 'inherit', cwd: this.projectRoot });
+        
+        // Apply the schema using psql through supabase
+        const schemaContent = fs.readFileSync(schemaPath, 'utf8');
+        const tempFile = path.join(this.projectRoot, 'temp-schema.sql');
+        fs.writeFileSync(tempFile, schemaContent);
+        
+        execSync(`supabase db push --include-all`, { stdio: 'inherit', cwd: this.projectRoot });
+        
+        // Clean up temp file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+        
+        console.log('✅ Database schema applied successfully');
+      } else {
+        console.log('⚠️  Database schema file not found, creating migration instead...');
+        
+        // Create a migration with the schema
+        const migrationContent = fs.readFileSync(path.join(this.projectRoot, 'setup', 'database-schema.sql'), 'utf8');
+        const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const migrationPath = path.join(this.projectRoot, 'supabase', 'migrations', `${timestamp}_initial_setup.sql`);
+        
+        // Ensure migrations directory exists
+        const migrationsDir = path.join(this.projectRoot, 'supabase', 'migrations');
+        if (!fs.existsSync(migrationsDir)) {
+          fs.mkdirSync(migrationsDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(migrationPath, migrationContent);
+        console.log(`✅ Migration created: ${migrationPath}`);
+        console.log('Run "supabase db push" to apply the migration');
+      }
+      
     } catch (error) {
-      console.log('⚠️  Database setup may be needed');
-      console.log('1. Check your Supabase dashboard for existing tables');
-      console.log('2. If needed, apply schema manually using Supabase SQL editor');
-      console.log('3. Schema file location: setup/database-schema.sql');
+      console.log('⚠️  Database setup encountered an issue:', error.message);
+      console.log('Manual steps:');
+      console.log('1. Run: supabase db reset');
+      console.log('2. Copy the contents of setup/database-schema.sql');
+      console.log('3. Paste and run it in your Supabase SQL editor');
+      console.log('4. Or run: supabase db push --include-all');
     }
   }
 

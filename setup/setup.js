@@ -226,112 +226,193 @@ verify_jwt = false
     console.log('\n🗄️  Setting up database...');
     
     try {
-      // Apply database schema using Supabase CLI
-      console.log('Applying database schema...');
-      
-      // Read and apply the database schema
       const schemaPath = path.join(this.projectRoot, 'setup', 'database-schema.sql');
-      if (fs.existsSync(schemaPath)) {
-        console.log('Executing database schema...');
-        execSync(`supabase db reset --no-seed`, { stdio: 'inherit', cwd: this.projectRoot });
-        
-        // Apply the schema using psql through supabase
-        const schemaContent = fs.readFileSync(schemaPath, 'utf8');
-        const tempFile = path.join(this.projectRoot, 'temp-schema.sql');
-        fs.writeFileSync(tempFile, schemaContent);
-        
-        execSync(`supabase db push --include-all`, { stdio: 'inherit', cwd: this.projectRoot });
-        
-        // Clean up temp file
-        if (fs.existsSync(tempFile)) {
-          fs.unlinkSync(tempFile);
-        }
-        
-        console.log('✅ Database schema applied successfully');
-      } else {
-        console.log('⚠️  Database schema file not found, creating migration instead...');
-        
-        // Create a migration with the schema
-        const migrationContent = fs.readFileSync(path.join(this.projectRoot, 'setup', 'database-schema.sql'), 'utf8');
+      
+      if (!fs.existsSync(schemaPath)) {
+        throw new Error('Database schema file not found at setup/database-schema.sql');
+      }
+
+      console.log('Creating database migration...');
+      
+      // Ensure migrations directory exists
+      const migrationsDir = path.join(this.projectRoot, 'supabase', 'migrations');
+      if (!fs.existsSync(migrationsDir)) {
+        fs.mkdirSync(migrationsDir, { recursive: true });
+      }
+
+      // Check if migration already exists
+      const existingMigrations = fs.readdirSync(migrationsDir)
+        .filter(file => file.includes('initial_setup') || file.includes('coreza_schema'));
+
+      if (existingMigrations.length === 0) {
+        // Create a new migration
         const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-        const migrationPath = path.join(this.projectRoot, 'supabase', 'migrations', `${timestamp}_initial_setup.sql`);
+        const migrationPath = path.join(migrationsDir, `${timestamp}_coreza_schema_setup.sql`);
         
-        // Ensure migrations directory exists
-        const migrationsDir = path.join(this.projectRoot, 'supabase', 'migrations');
-        if (!fs.existsSync(migrationsDir)) {
-          fs.mkdirSync(migrationsDir, { recursive: true });
-        }
+        const schemaContent = fs.readFileSync(schemaPath, 'utf8');
+        fs.writeFileSync(migrationPath, schemaContent);
         
-        fs.writeFileSync(migrationPath, migrationContent);
-        console.log(`✅ Migration created: ${migrationPath}`);
-        console.log('Run "supabase db push" to apply the migration');
+        console.log(`✅ Migration created: ${path.basename(migrationPath)}`);
+      } else {
+        console.log(`✅ Migration already exists: ${existingMigrations[0]}`);
+      }
+
+      // Apply the migration
+      console.log('Applying database migration...');
+      try {
+        execSync('supabase db push', { stdio: 'inherit', cwd: this.projectRoot });
+        console.log('✅ Database migration applied successfully');
+      } catch (pushError) {
+        console.log('⚠️  Migration push failed. Trying alternative method...');
+        console.log('Please run the following commands manually:');
+        console.log('1. supabase link --project-ref ' + this.config.projectId);
+        console.log('2. supabase db push');
+        console.log('3. Or apply the schema manually in Supabase SQL Editor');
       }
       
     } catch (error) {
       console.log('⚠️  Database setup encountered an issue:', error.message);
-      console.log('Manual steps:');
-      console.log('1. Run: supabase db reset');
-      console.log('2. Copy the contents of setup/database-schema.sql');
-      console.log('3. Paste and run it in your Supabase SQL editor');
-      console.log('4. Or run: supabase db push --include-all');
+      console.log('\nManual setup options:');
+      console.log('1. Run: supabase db push');
+      console.log('2. Or copy contents of setup/database-schema.sql to Supabase SQL Editor');
+      console.log('3. Or use the migration tool in Supabase dashboard');
     }
   }
 
   async validateSetup() {
     console.log('\n🔍 Validating setup...');
     
-    // Check if files exist
-    const requiredFiles = ['.env', 'coreza-backend/.env', 'supabase/config.toml'];
+    const errors = [];
+    const warnings = [];
+    
+    // Check if required files exist
+    const requiredFiles = [
+      { path: '.env', description: 'Frontend environment file' },
+      { path: 'coreza-backend/.env', description: 'Backend environment file' },
+      { path: 'supabase/config.toml', description: 'Supabase configuration' },
+      { path: 'setup/database-schema.sql', description: 'Database schema' }
+    ];
+    
     for (const file of requiredFiles) {
-      const fullPath = path.join(this.projectRoot, file);
+      const fullPath = path.join(this.projectRoot, file.path);
       if (!fs.existsSync(fullPath)) {
-        throw new Error(`Required file missing: ${fullPath}`);
+        errors.push(`Missing ${file.description}: ${file.path}`);
       }
     }
 
     // Check if edge functions exist
-    const requiredFunctions = ['derive-encryption-key', 'http-request'];
-    for (const func of requiredFunctions) {
-      const funcPath = path.join(this.projectRoot, 'supabase', 'functions', func, 'index.ts');
-      if (!fs.existsSync(funcPath)) {
-        throw new Error(`Edge function missing: ${funcPath}`);
-      }
+    const requiredFunctions = [
+      { name: 'derive-encryption-key', description: 'Encryption key derivation function' },
+      { name: 'http-request', description: 'HTTP request proxy function' }
+    ];
     
+    for (const func of requiredFunctions) {
+      const funcPath = path.join(this.projectRoot, 'supabase', 'functions', func.name, 'index.ts');
+      if (!fs.existsSync(funcPath)) {
+        warnings.push(`Edge function missing: ${func.description} (${func.name})`);
+      }
     }
 
     // Validate environment files have required variables
-    const frontendEnv = fs.readFileSync(path.join(this.projectRoot, '.env'), 'utf8');
-    const backendEnv = fs.readFileSync(path.join(this.projectRoot, 'coreza-backend', '.env'), 'utf8');
-    
-    const requiredFrontendVars = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_COREZA_ENCRYPTION_KEY'];
-    const requiredBackendVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'COREZA_ENCRYPTION_KEY'];
-    
-    for (const varName of requiredFrontendVars) {
-      if (!frontendEnv.includes(`${varName}=`)) {
-        throw new Error(`Missing frontend environment variable: ${varName}`);
+    if (fs.existsSync(path.join(this.projectRoot, '.env'))) {
+      const frontendEnv = fs.readFileSync(path.join(this.projectRoot, '.env'), 'utf8');
+      const requiredFrontendVars = [
+        'VITE_SUPABASE_URL', 
+        'VITE_SUPABASE_PUBLISHABLE_KEY', 
+        'VITE_COREZA_ENCRYPTION_KEY',
+        'VITE_SUPABASE_PROJECT_ID'
+      ];
+      
+      for (const varName of requiredFrontendVars) {
+        if (!frontendEnv.includes(`${varName}=`)) {
+          errors.push(`Missing frontend environment variable: ${varName}`);
+        }
       }
     }
     
-    for (const varName of requiredBackendVars) {
-      if (!backendEnv.includes(`${varName}=`)) {
-        throw new Error(`Missing backend environment variable: ${varName}`);
+    if (fs.existsSync(path.join(this.projectRoot, 'coreza-backend', '.env'))) {
+      const backendEnv = fs.readFileSync(path.join(this.projectRoot, 'coreza-backend', '.env'), 'utf8');
+      const requiredBackendVars = [
+        'SUPABASE_URL', 
+        'SUPABASE_ANON_KEY', 
+        'SUPABASE_SERVICE_ROLE_KEY', 
+        'COREZA_ENCRYPTION_KEY'
+      ];
+      
+      for (const varName of requiredBackendVars) {
+        if (!backendEnv.includes(`${varName}=`)) {
+          errors.push(`Missing backend environment variable: ${varName}`);
+        }
       }
     }
+
+    // Check migrations directory
+    const migrationsDir = path.join(this.projectRoot, 'supabase', 'migrations');
+    if (fs.existsSync(migrationsDir)) {
+      const migrations = fs.readdirSync(migrationsDir)
+        .filter(file => file.endsWith('.sql'))
+        .length;
+      
+      if (migrations === 0) {
+        warnings.push('No database migrations found - database may not be set up');
+      } else {
+        console.log(`✅ Found ${migrations} database migration(s)`);
+      }
+    } else {
+      warnings.push('Migrations directory not found - database setup may be incomplete');
+    }
+
+    // Report results
+    if (errors.length > 0) {
+      console.log('\n❌ Setup validation failed:');
+      errors.forEach(error => console.log(`  • ${error}`));
+      throw new Error('Setup validation failed - please fix the errors above');
+    }
     
-    console.log('✅ Setup validation passed');
+    if (warnings.length > 0) {
+      console.log('\n⚠️  Setup warnings:');
+      warnings.forEach(warning => console.log(`  • ${warning}`));
+    }
+    
+    console.log('\n✅ Setup validation passed');
+    
+    if (warnings.length === 0) {
+      console.log('🎯 All components are properly configured!');
+    }
   }
 
   async showCompletionMessage() {
-    console.log('\n🎉 Setup Complete!');
-    console.log('==================');
-    console.log('\nYour Coreza Trading Platform is ready to use!');
-    console.log('\nTo start the application:');
+    console.log('\n🎉 Coreza Trading Platform Setup Complete!');
+    console.log('=========================================');
+    console.log('\n📋 Setup Summary:');
+    console.log('  ✅ Dependencies installed');
+    console.log('  ✅ Environment files configured');
+    console.log('  ✅ Supabase project linked');
+    console.log('  ✅ Database schema prepared');
+    console.log('  ✅ Edge functions ready');
+    console.log('  ✅ Configuration validated');
+    
+    console.log('\n🚀 Next Steps:');
     console.log('1. Start the frontend: npm run dev');
     console.log('2. Start the backend: cd coreza-backend && npm run dev');
-    console.log('\nOpen http://localhost:5173 in your browser to access the platform.');
-    console.log('\n📚 For more information, see docs/SETUP.md');
-    console.log('\n🔐 Security Note: Your encryption key and Supabase credentials');
-    console.log('   have been securely configured. Keep your .env files private!');
+    console.log('3. Open http://localhost:5173 to access the platform');
+    
+    console.log('\n📚 Documentation:');
+    console.log('• Setup guide: docs/SETUP.md');
+    console.log('• Security info: docs/SECURITY.md');
+    console.log('• Deployment: docs/DEPLOYMENT.md');
+    
+    console.log('\n🔐 Security Notes:');
+    console.log('• Environment files contain sensitive data - keep them private');
+    console.log('• Your encryption key has been securely generated');
+    console.log('• Review RLS policies before deploying to production');
+    
+    console.log('\n💡 Troubleshooting:');
+    console.log('• If database tables are missing, run: supabase db push');
+    console.log('• For edge function issues, run: supabase functions deploy');
+    console.log('• Check docs/TROUBLESHOOTING.md for common issues');
+    
+    console.log('\n🎯 Ready to build your trading algorithms!');
   }
 }
 

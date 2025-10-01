@@ -15,7 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
-const BACKEND_URL = "http://localhost:8000";
+//const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_API_URL as string;
 
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
 const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {

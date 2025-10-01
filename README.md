@@ -1,6 +1,18 @@
 # Coreza Trading Platform
 
-An advanced, open-source trading platform with workflow automation and secure credential management.
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)
+
+An advanced, enterprise-grade open-source trading platform that combines powerful workflow automation with institutional-level security. Built for traders, by traders - featuring multi-broker integration, real-time market data, technical analysis, and visual workflow orchestration.
+
+## 🌟 What Makes Coreza Different
+
+- **Visual Workflow Builder**: Design complex trading strategies without code using our intuitive node-based editor
+- **Multi-Broker Support**: Trade seamlessly across Alpaca, Dhan, and more brokers from a single platform
+- **Enterprise Security**: Bank-grade AES-256-GCM encryption and Row Level Security for credential management
+- **Real-Time Analytics**: Live market data, technical indicators, and risk management in one unified interface
+- **100% Open Source**: Fully transparent codebase under Apache 2.0 license - audit, customize, and extend freely
 
 ## 🚀 Quick Start
 
@@ -136,7 +148,23 @@ npm run build
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+```
+Copyright 2024 Coreza Trading Platform
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
 
 ## 🆘 Support
 

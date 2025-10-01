@@ -118,19 +118,6 @@ coreza/
 └── tests/                 # Test suites
 ```
 
-## 🔧 Development
-
-```bash
-# Validate your setup
-node setup/validate.js
-
-# Run tests
-npm test
-
-# Build for production
-npm run build
-```
-
 ## 📖 Documentation
 
 - [Setup Guide](docs/SETUP.md) - Detailed setup instructions

@@ -44,9 +44,9 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: SUPABASE_URL
-        value: "https://tiitofotheupylvxivge.supabase.co"
+        value: ""
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXRvZm90aGV1cHlsdnhpdmdlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MDkyNzI0MSwiZXhwIjoyMDY2NTAzMjQxfQ.azjdmYIYlqd9-CBTuHoPHux_PUs97Tk4jpP_2RX9_n8"
+        value: ""
       - key: ENVIRONMENT
         value: "production"
 

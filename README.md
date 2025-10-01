@@ -14,6 +14,9 @@ An advanced, open-source trading platform that combines powerful workflow automa
 - **Real-Time Analytics**: Live market data, technical indicators, and risk management in one unified interface
 - **100% Open Source**: Fully transparent codebase under Apache 2.0 license - audit, customize, and extend freely
 
+<img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
+
+
 ## 🚀 Quick Start
 
 Get up and running in minutes with our automated setup:

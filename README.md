@@ -26,13 +26,6 @@ cd coreza
 # Run the automated setup
 node setup/setup.js
 
-# Clone the repository
-git clone https://github.com/Coreza-io/coreza.git
-cd coreza
-
-# Run the automated setup
-node setup/setup.js
-
 # ⚠️ IMPORTANT: Start Redis server manually in a separate (cmd/shell)
 
 # On Windows (cmd or PowerShell):

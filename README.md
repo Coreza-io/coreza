@@ -25,6 +25,33 @@ cd coreza
 
 # Run the automated setup
 node setup/setup.js
+
+# Clone the repository
+git clone https://github.com/Coreza-io/coreza.git
+cd coreza
+
+# Run the automated setup
+node setup/setup.js
+
+# ⚠️ IMPORTANT: Start Redis server manually in a separate (cmd/shell)
+
+# On Windows (cmd or PowerShell):
+redis-server.exe
+
+# On Linux:
+sudo service redis-server start
+# OR
+redis-server --daemonize yes
+
+# On macOS:
+brew services start redis
+
+# Once Redis is running, start the frontend:
+npm run dev
+
+# In another terminal, start the backend:
+cd coreza-backend
+npm run dev
 ```
 
 The setup script will:

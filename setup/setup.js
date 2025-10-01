@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const { execSync, spawnSync } = require("child_process");
 const crypto = require("crypto");
+const https = require("https");
+const os = require("os");
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -35,6 +37,7 @@ class CorezaSetup {
       await this.setupSupabaseProject(); // init + link
       await this.deployEdgeFunctions(); // link (safe) + deploy + secrets
       await this.runDatabaseMigrations(); // link (safe) + db push
+      await this.checkAndStartRedis();
       await this.validateSetup();
       await this.showCompletionMessage();
     } catch (error) {
@@ -335,7 +338,7 @@ class CorezaSetup {
 
     // Frontend .env
     const frontendEnv = `# ="== React App Config ==="
-# VITE_API_URL="https://coreza-backend.onrender.com"
+VITE_API_URL="http://localhost:8000"
 VITE_COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"
 VITE_SUPABASE_PROJECT_ID="${this.config.projectId}"
 VITE_SUPABASE_PUBLISHABLE_KEY="${this.config.supabaseAnonKey}"
@@ -352,10 +355,6 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 
 # Encryption Configuration
 COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
-
-# Server Configuration
-PORT=3001
-NODE_ENV=development
 `;
 
     fs.writeFileSync(path.join(this.projectRoot, ".env"), frontendEnv);
@@ -497,9 +496,7 @@ NODE_ENV=development
       }
 
       try {
-        console.log(
-          `?? Repairing migration history for version ${version}...`
-        );
+        console.log(`?? Repairing migration history for version ${version}...`);
         const repairResult = spawnSync(
           `npx supabase migration repair --status reverted ${version}`,
           {
@@ -527,9 +524,7 @@ NODE_ENV=development
 
       const retry = this.runSupabaseDbPush();
       if (retry.success) {
-        console.log(
-          "? Migration applied successfully after repair."
-        );
+        console.log("? Migration applied successfully after repair.");
         return true;
       }
 
@@ -540,7 +535,6 @@ NODE_ENV=development
 
     return false;
   }
-
 
   removeLocalMigrationVersion(version) {
     try {
@@ -608,23 +602,6 @@ NODE_ENV=development
           (file) =>
             file.includes("initial_setup") || file.includes("coreza_schema")
         );
-
-      if (existingMigrations.length > 0) {
-        console.log(
-          "Removing existing Coreza migrations before creating a fresh one..."
-        );
-        for (const file of existingMigrations) {
-          const filePath = path.join(migrationsDir, file);
-          try {
-            fs.unlinkSync(filePath);
-            console.log(`Removed migration: ${file}`);
-          } catch (removeError) {
-            console.log(
-              `Could not remove migration ${file}: ${removeError.message}`
-            );
-          }
-        }
-      }
 
       // Create a new migration
       const timestamp = new Date()
@@ -902,7 +879,56 @@ NODE_ENV=development
 
     console.log("\n🎯 Ready to build your trading algorithms!");
   }
-}
+
+  async checkAndStartRedis() {
+    console.log("\n🟥 Checking for Redis...");
+
+    const check = spawnSync("redis-server", ["--version"], {
+      shell: true,
+      encoding: "utf8",
+    });
+
+    if (check.status === 0 && /Redis/i.test(check.stdout)) {
+      console.log("✅ Redis is installed.");
+
+      try {
+        this.startRedis("redis-server");
+        return; // stop here if start was successful
+      } catch (err) {
+        console.log(
+          "⚠️ Failed to start Redis automatically. Please start it manually."
+        );
+        return;
+      }
+    }
+
+    // Only prints if not installed
+    console.log("⚠️ Redis is not installed on this system.");
+    if (os.platform() === "win32") {
+      console.log("👉 Windows: https://github.com/tporadowski/redis/releases");
+    } else if (os.platform() === "linux") {
+      console.log("👉 Linux (Debian/Ubuntu): sudo apt install redis-server -y");
+    } else if (os.platform() === "darwin") {
+      console.log("👉 macOS: brew install redis");
+    }
+  }
+
+  startRedis(binaryPath) {
+    console.log("🚀 Starting Redis server in background...");
+
+    const { spawn } = require("child_process");
+
+    const redis = spawn(binaryPath, {
+      detached: true,
+      stdio: "ignore", // don’t keep logs open
+      shell: true,
+    });
+
+    redis.unref(); // allow parent (setup) to exit independently
+
+    console.log("✅ Redis server started (detached)");
+  }
+} // <-- closes the class properly!
 
 // Run setup if called directly
 if (require.main === module) {

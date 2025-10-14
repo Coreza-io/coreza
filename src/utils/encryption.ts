@@ -26,13 +26,11 @@ class EncryptionUtil {
     const keyBuffer = Uint8Array.from(atob(keyString), c => c.charCodeAt(0));
     
     // Ensure the key is exactly 32 bytes (256 bits) for AES-256
-    let processedKey: Uint8Array;
+    const processedKey = new Uint8Array(32);
     if (keyBuffer.length >= 32) {
-      processedKey = keyBuffer.slice(0, 32); // Take first 32 bytes
+      processedKey.set(keyBuffer.slice(0, 32)); // Take first 32 bytes
     } else {
-      // Pad with zeros if key is too short
-      processedKey = new Uint8Array(32);
-      processedKey.set(keyBuffer);
+      processedKey.set(keyBuffer); // Pad with zeros if key is too short
     }
     
     return await crypto.subtle.importKey(

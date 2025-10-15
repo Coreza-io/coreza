@@ -202,10 +202,11 @@ export class WebSocketManager {
     
     try {
       // Import dynamically to avoid circular dependencies
-      const { default: AlpacaWebSocketService } = await import('./brokers/AlpacaWebSocketService');
+      const { AlpacaWebSocketClient } = await import('./websockets/AlpacaWebSocketClient');
+      const client = AlpacaWebSocketClient.getInstance();
       
       if (payload.action === 'subscribe' && payload.symbols) {
-        const success = AlpacaWebSocketService.subscribeToSymbols(ws.userId!, payload.symbols);
+        const success = await client.subscribe(ws.userId!, payload.symbols);
         
         this.sendMessage(ws, {
           type: 'alpaca_stream_started',
@@ -216,7 +217,7 @@ export class WebSocketManager {
           }
         });
       } else if (payload.action === 'unsubscribe' && payload.symbols) {
-        const success = AlpacaWebSocketService.unsubscribeFromSymbols(ws.userId!, payload.symbols);
+        const success = await client.unsubscribe(ws.userId!, payload.symbols);
         
         this.sendMessage(ws, {
           type: 'alpaca_stream_stopped',

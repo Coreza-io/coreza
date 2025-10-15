@@ -1,12 +1,12 @@
 import { BaseBrokerService } from "./BaseBrokerService";
 import { BrokerInput } from "./types";
-import AlpacaWebSocketService from "./AlpacaWebSocketService";
+import { AlpacaWebSocketClient } from "../websockets/AlpacaWebSocketClient";
 import { getBrokerService } from "./registry";
 
 /**
  * Broker service that manages Alpaca market data streaming over WebSocket.
  * Uses the existing Alpaca REST service to resolve user credentials and
- * delegates streaming functionality to AlpacaWebSocketService.
+ * delegates streaming functionality to AlpacaWebSocketClient.
  */
 export class AlpacaStreamService extends BaseBrokerService {
   readonly brokerKey = "alpacastream";
@@ -32,9 +32,11 @@ export class AlpacaStreamService extends BaseBrokerService {
       credential_id
     );
 
+    const client = AlpacaWebSocketClient.getInstance();
+
     // Connect to Alpaca stream if not already connected
-    if (!AlpacaWebSocketService.isConnected()) {
-      await AlpacaWebSocketService.connect(credentials.client_json);
+    if (!client.isReady()) {
+      await client.connect(credentials.client_json);
     }
 
     const symbolArray = Array.isArray(symbols)
@@ -47,7 +49,7 @@ export class AlpacaStreamService extends BaseBrokerService {
       : [];
 
     if (symbolArray.length > 0) {
-      AlpacaWebSocketService.subscribeToSymbols(user_id, symbolArray);
+      await client.subscribe(user_id, symbolArray);
     }
 
     return {
@@ -58,6 +60,9 @@ export class AlpacaStreamService extends BaseBrokerService {
 
   private async stopStream(input: BrokerInput) {
     const { user_id, symbols } = input;
+    
+    const client = AlpacaWebSocketClient.getInstance();
+    
     const symbolArray = Array.isArray(symbols)
       ? symbols
       : typeof symbols === "string"
@@ -68,7 +73,7 @@ export class AlpacaStreamService extends BaseBrokerService {
       : [];
 
     if (symbolArray.length > 0) {
-      AlpacaWebSocketService.unsubscribeFromSymbols(user_id, symbolArray);
+      await client.unsubscribe(user_id, symbolArray);
     }
 
     return {

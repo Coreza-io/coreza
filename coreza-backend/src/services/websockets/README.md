@@ -1,5 +1,7 @@
 # WebSocket Services
 
+✅ **Status: Fully Integrated** - The new WebSocket architecture is fully connected to the backend execution flow.
+
 This directory contains WebSocket client implementations for connecting to external APIs (brokers, news feeds, data providers, etc.).
 
 ## Architecture
@@ -126,21 +128,46 @@ client.disconnect();
 
 ### AlpacaWebSocketClient
 
+✅ **Fully Implemented & Integrated**
+
 Connects to Alpaca's market data WebSocket API for real-time:
-- Trades
-- Quotes  
-- Bars (OHLCV)
+- **Trades** - Real-time trade executions
+- **Quotes** - Bid/ask prices and sizes
+- **Bars** - OHLCV candlestick data
+- **News** - Market news updates
 
 **File**: `AlpacaWebSocketClient.ts`
+
+**Integration Points**:
+- Used by `AlpacaStreamService` for broker operations
+- Connected to `WebSocketManager` for client notifications
+- Broadcasts to subscribed users via `WebSocketManager.sendToUser()`
 
 **Usage**:
 ```typescript
 import { AlpacaWebSocketClient } from './websockets';
 
 const client = AlpacaWebSocketClient.getInstance();
+
+// Connect with credentials
 await client.connect({ api_key: 'xxx', secret_key: 'yyy' });
+
+// Subscribe user to symbols (includes trades, quotes, bars, news)
 await client.subscribe('user123', ['AAPL', 'MSFT']);
+
+// Check status
+console.log(client.isReady()); // true if authenticated
+console.log(client.isConnected()); // true if connected
+
+// Unsubscribe
+await client.unsubscribe('user123', ['AAPL']);
 ```
+
+**Message Types Broadcast**:
+- `alpaca_trade` - Trade data with symbol, price, size, timestamp
+- `alpaca_quote` - Quote data with bid/ask prices and sizes
+- `alpaca_bar` - OHLCV bar data with open, high, low, close, volume
+- `alpaca_news` - News articles with headline, summary, symbols, source
 
 ## Future Implementations
 
@@ -158,17 +185,33 @@ Connects to Finnhub for additional market data streams.
 
 ## Message Flow
 
-1. **Client subscribes** via frontend WebSocket connection to WebSocketManager
-2. **WebSocketManager** routes subscription request to appropriate client (e.g., AlpacaWebSocketClient)
-3. **WebSocketClient** manages subscription with external API
-4. **External API** sends data to WebSocketClient
-5. **WebSocketClient** broadcasts data to subscribed users via WebSocketManager
-6. **WebSocketManager** sends data to connected client WebSocket connections
+1. **Client subscribes** via frontend WebSocket to WebSocketManager (port 8081)
+2. **WebSocketManager** receives subscription request and routes to appropriate client
+3. **WebSocketClient** (e.g., AlpacaWebSocketClient) manages subscription with external API
+4. **External API** (e.g., Alpaca) sends real-time data to WebSocketClient
+5. **WebSocketClient** broadcasts data to subscribed users via `WebSocketManager.sendToUser()`
+6. **WebSocketManager** delivers data to connected client WebSocket connections
+
+### Example Flow for Alpaca Stream
 
 ```
+Frontend Client → WebSocket (port 8081)
+    ↓ { type: "alpaca_stream", action: "subscribe", symbols: ["AAPL"] }
+WebSocketManager.handleAlpacaStream()
+    ↓ AlpacaWebSocketClient.subscribe(userId, ["AAPL"])
+AlpacaWebSocketClient → Alpaca API (wss://stream.data.alpaca.markets)
+    ↓ { T: "t", S: "AAPL", p: 150.25, s: 100 }
+AlpacaWebSocketClient.broadcastToSubscribers("alpaca_trade", data)
+    ↓ WebSocketManager.sendToUser(userId, { type: "alpaca_trade", ... })
+Frontend Client ← Receives real-time trade data
+```
+
+**Architecture Diagram**:
+```
 Frontend WS ←→ WebSocketManager ←→ AlpacaWebSocketClient ←→ Alpaca API
-                     ↓
-              Other Clients (Dhan, News, etc.)
+  (Port 8081)   (Singleton)          (Singleton)           (External)
+                      ↓
+               Other Clients (Dhan, News, Finnhub - Planned)
 ```
 
 ## Configuration Options

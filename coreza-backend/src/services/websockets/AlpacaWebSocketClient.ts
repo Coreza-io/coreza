@@ -17,6 +17,7 @@ interface AlpacaSubscription {
   trades?: string[];
   quotes?: string[];
   bars?: string[];
+  news?: string[];
 }
 
 /**
@@ -26,6 +27,7 @@ interface AlpacaSubscription {
  * - Trades
  * - Quotes
  * - Bars (OHLCV data)
+ * - News
  * 
  * @example
  * ```typescript
@@ -158,6 +160,24 @@ export class AlpacaWebSocketClient extends BaseWebSocketClient<string> {
         );
         break;
 
+      case "n": // News
+        this.broadcastToSubscribers(
+          "alpaca_news",
+          {
+            id: message.id,
+            headline: message.headline,
+            summary: message.summary,
+            author: message.author,
+            created_at: message.created_at,
+            updated_at: message.updated_at,
+            url: message.url,
+            symbols: message.symbols,
+            source: message.source,
+          },
+          "symbols"
+        );
+        break;
+
       case "error":
         console.error("❌ Alpaca error:", message);
         this.broadcastToSubscribers(
@@ -196,6 +216,7 @@ export class AlpacaWebSocketClient extends BaseWebSocketClient<string> {
       trades: symbols,
       quotes: symbols,
       bars: symbols,
+      news: symbols,
     };
   }
 
@@ -208,6 +229,7 @@ export class AlpacaWebSocketClient extends BaseWebSocketClient<string> {
       trades: symbols,
       quotes: symbols,
       bars: symbols,
+      news: symbols,
     };
   }
 

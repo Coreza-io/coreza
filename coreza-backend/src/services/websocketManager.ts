@@ -149,7 +149,7 @@ export class WebSocketManager {
           this.handleBrokerSubscription(ws, message.payload);
           break;
 
-        case 'alpaca_stream':
+        case 'alpaca_news':
           this.handleAlpacaStream(ws, message.payload);
           break;
 
@@ -198,47 +198,47 @@ export class WebSocketManager {
   }
 
   private async handleAlpacaStream(ws: AuthenticatedWebSocket, payload: any): Promise<void> {
-    console.log(`User ${ws.userId} requested Alpaca stream:`, payload);
+    console.log(`User ${ws.userId} requested Alpaca news:`, payload);
     
     try {
       // Import dynamically to avoid circular dependencies
-      const { AlpacaWebSocketClient } = await import('./websockets/AlpacaWebSocketClient');
-      const client = AlpacaWebSocketClient.getInstance();
+      const { AlpacaNewsWebSocketClient } = await import('./websockets/AlpacaNewsWebSocketClient');
+      const client = AlpacaNewsWebSocketClient.getInstance();
       
       if (payload.action === 'subscribe' && payload.symbols) {
         const success = await client.subscribe(ws.userId!, payload.symbols);
         
         this.sendMessage(ws, {
-          type: 'alpaca_stream_started',
+          type: 'alpaca_news_started',
           payload: { 
             symbols: payload.symbols, 
             success,
-            message: success ? 'Subscribed to symbols' : 'Failed to subscribe - WebSocket not connected'
+            message: success ? 'Subscribed to news' : 'Failed to subscribe - WebSocket not connected'
           }
         });
       } else if (payload.action === 'unsubscribe' && payload.symbols) {
         const success = await client.unsubscribe(ws.userId!, payload.symbols);
         
         this.sendMessage(ws, {
-          type: 'alpaca_stream_stopped',
+          type: 'alpaca_news_stopped',
           payload: { 
             symbols: payload.symbols, 
             success,
-            message: success ? 'Unsubscribed from symbols' : 'Failed to unsubscribe'
+            message: success ? 'Unsubscribed from news' : 'Failed to unsubscribe'
           }
         });
       } else {
         this.sendMessage(ws, {
-          type: 'alpaca_stream_error',
+          type: 'alpaca_news_error',
           payload: { 
             error: 'Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.'
           }
         });
       }
     } catch (error) {
-      console.error('Error handling Alpaca stream:', error);
+      console.error('Error handling Alpaca news:', error);
       this.sendMessage(ws, {
-        type: 'alpaca_stream_error',
+        type: 'alpaca_news_error',
         payload: { 
           error: error instanceof Error ? error.message : 'Unknown error'
         }

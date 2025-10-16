@@ -1,253 +1,170 @@
 # WebSocket Services
 
-✅ **Status: Fully Integrated** - The new WebSocket architecture is fully connected to the backend execution flow.
-
-This directory contains WebSocket client implementations for connecting to external APIs (brokers, news feeds, data providers, etc.).
+This module provides a simplified WebSocket client for connecting to the Alpaca News API.
 
 ## Architecture
 
-All WebSocket clients extend `BaseWebSocketClient`, which provides:
+### AlpacaNewsWebSocketClient
 
-- **Connection Management**: Connect, disconnect, reconnect with exponential backoff
-- **Authentication**: Flexible authentication mechanism per service
-- **Subscription Management**: User-based subscription tracking
-- **Message Routing**: Type-based message handling and broadcasting
-- **Heartbeat**: Automatic keepalive mechanism
-- **Error Handling**: Robust error recovery and logging
-- **Integration**: Seamless integration with WebSocketManager for client notifications
+A standalone WebSocket client for streaming real-time news from Alpaca Markets.
 
-## Usage
+**Features:**
+- Header-based authentication (APCA-API-KEY-ID, APCA-API-SECRET-KEY)
+- Automatic reconnection with exponential backoff
+- User-based subscription management
+- Symbol-specific and wildcard ("*") subscriptions
+- Message broadcasting to WebSocketManager
 
-### Creating a New WebSocket Client
+**Endpoint:** `wss://stream.data.alpaca.markets/v1beta1/news`
 
-```typescript
-import { BaseWebSocketClient, WebSocketClientConfig } from './BaseWebSocketClient';
-
-export class MyBrokerWebSocketClient extends BaseWebSocketClient<string> {
-  private static instance: MyBrokerWebSocketClient;
-
-  private constructor() {
-    super({
-      url: "wss://api.mybroker.com/stream",
-      maxReconnectAttempts: 5,
-      initialReconnectDelay: 1000,
-      maxReconnectDelay: 30000,
-      heartbeatInterval: 15000,
-      debug: true,
-    });
-  }
-
-  static getInstance(): MyBrokerWebSocketClient {
-    if (!MyBrokerWebSocketClient.instance) {
-      MyBrokerWebSocketClient.instance = new MyBrokerWebSocketClient();
-    }
-    return MyBrokerWebSocketClient.instance;
-  }
-
-  protected getServiceName(): string {
-    return "MyBroker";
-  }
-
-  protected authenticate(): void {
-    this.send({
-      action: "authenticate",
-      api_key: this.credentials.api_key,
-    });
-  }
-
-  protected handleAuthSuccess(): void {
-    console.log("MyBroker authenticated successfully");
-  }
-
-  protected parseMessage(message: any): void {
-    switch (message.type) {
-      case "trade":
-        this.broadcastToSubscribers("broker_trade", {
-          symbol: message.symbol,
-          price: message.price,
-          volume: message.volume,
-        }, "symbol");
-        break;
-      
-      case "quote":
-        this.broadcastToSubscribers("broker_quote", message, "symbol");
-        break;
-    }
-  }
-
-  protected buildSubscribeMessage(symbols: string[]): any {
-    return {
-      action: "subscribe",
-      symbols: symbols,
-    };
-  }
-
-  protected buildUnsubscribeMessage(symbols: string[]): any {
-    return {
-      action: "unsubscribe",
-      symbols: symbols,
-    };
-  }
-
-  protected normalizeItems(symbols: string[]): string[] {
-    return symbols.map(s => s.toUpperCase());
-  }
-}
-
-export default MyBrokerWebSocketClient.getInstance();
-```
-
-### Using a WebSocket Client
+## Usage Example
 
 ```typescript
-import { MyBrokerWebSocketClient } from './websockets/MyBrokerWebSocketClient';
+import { AlpacaNewsWebSocketClient } from './websockets/AlpacaNewsWebSocketClient';
 
-// Get client instance
-const client = MyBrokerWebSocketClient.getInstance();
+// Get singleton instance
+const client = AlpacaNewsWebSocketClient.getInstance();
 
 // Connect with credentials
 await client.connect({
-  api_key: 'your_api_key',
-  secret_key: 'your_secret',
+  api_key: 'YOUR_API_KEY',
+  secret_key: 'YOUR_SECRET_KEY'
 });
 
-// Subscribe user to symbols
-await client.subscribe('user123', ['AAPL', 'MSFT', 'GOOGL']);
-
-// Unsubscribe
-client.unsubscribe('user123', ['GOOGL']);
-
-// Check status
-console.log(client.isReady()); // true if connected and authenticated
-
-// Disconnect
-client.disconnect();
-```
-
-## Existing Implementations
-
-### AlpacaWebSocketClient
-
-✅ **Fully Implemented & Integrated**
-
-Connects to Alpaca's market data WebSocket API for real-time:
-- **Trades** - Real-time trade executions
-- **Quotes** - Bid/ask prices and sizes
-- **Bars** - OHLCV candlestick data
-- **News** - Market news updates
-
-**File**: `AlpacaWebSocketClient.ts`
-
-**Integration Points**:
-- Used by `AlpacaStreamService` for broker operations
-- Connected to `WebSocketManager` for client notifications
-- Broadcasts to subscribed users via `WebSocketManager.sendToUser()`
-
-**Usage**:
-```typescript
-import { AlpacaWebSocketClient } from './websockets';
-
-const client = AlpacaWebSocketClient.getInstance();
-
-// Connect with credentials
-await client.connect({ api_key: 'xxx', secret_key: 'yyy' });
-
-// Subscribe user to symbols (includes trades, quotes, bars, news)
+// Subscribe to news for specific symbols
 await client.subscribe('user123', ['AAPL', 'MSFT']);
 
-// Check status
-console.log(client.isReady()); // true if authenticated
-console.log(client.isConnected()); // true if connected
+// Subscribe to all news
+await client.subscribe('user456', ['*']);
 
 // Unsubscribe
 await client.unsubscribe('user123', ['AAPL']);
+
+// Get stats
+const stats = client.getStats();
+console.log(stats);
 ```
-
-**Message Types Broadcast**:
-- `alpaca_trade` - Trade data with symbol, price, size, timestamp
-- `alpaca_quote` - Quote data with bid/ask prices and sizes
-- `alpaca_bar` - OHLCV bar data with open, high, low, close, volume
-- `alpaca_news` - News articles with headline, summary, symbols, source
-
-## Future Implementations
-
-### DhanWebSocketClient (Planned)
-
-Connects to Dhan broker for Indian market data.
-
-### NewsWebSocketClient (Planned)
-
-Connects to news feed APIs for real-time news updates.
-
-### FinnhubWebSocketClient (Planned)
-
-Connects to Finnhub for additional market data streams.
 
 ## Message Flow
 
-1. **Client subscribes** via frontend WebSocket to WebSocketManager (port 8081)
-2. **WebSocketManager** receives subscription request and routes to appropriate client
-3. **WebSocketClient** (e.g., AlpacaWebSocketClient) manages subscription with external API
-4. **External API** (e.g., Alpaca) sends real-time data to WebSocketClient
-5. **WebSocketClient** broadcasts data to subscribed users via `WebSocketManager.sendToUser()`
-6. **WebSocketManager** delivers data to connected client WebSocket connections
-
-### Example Flow for Alpaca Stream
-
 ```
-Frontend Client → WebSocket (port 8081)
-    ↓ { type: "alpaca_stream", action: "subscribe", symbols: ["AAPL"] }
+Frontend Client
+    ↓
+WebSocket Connection (port 8081)
+    ↓
 WebSocketManager.handleAlpacaStream()
-    ↓ AlpacaWebSocketClient.subscribe(userId, ["AAPL"])
-AlpacaWebSocketClient → Alpaca API (wss://stream.data.alpaca.markets)
-    ↓ { T: "t", S: "AAPL", p: 150.25, s: 100 }
-AlpacaWebSocketClient.broadcastToSubscribers("alpaca_trade", data)
-    ↓ WebSocketManager.sendToUser(userId, { type: "alpaca_trade", ... })
-Frontend Client ← Receives real-time trade data
+    ↓
+AlpacaNewsWebSocketClient.subscribe(userId, symbols)
+    ↓
+Alpaca News API (wss://stream.data.alpaca.markets/v1beta1/news)
+    ↓
+News Message { T: "n", headline, symbols, ... }
+    ↓
+AlpacaNewsWebSocketClient.handleNews()
+    ↓
+WebSocketManager.sendToUser(userId, newsData)
+    ↓
+Frontend Client receives news
 ```
 
-**Architecture Diagram**:
-```
-Frontend WS ←→ WebSocketManager ←→ AlpacaWebSocketClient ←→ Alpaca API
-  (Port 8081)   (Singleton)          (Singleton)           (External)
-                      ↓
-               Other Clients (Dhan, News, Finnhub - Planned)
+## Message Types
+
+### Subscribe (Frontend → Backend)
+```json
+{
+  "type": "alpaca_news",
+  "payload": {
+    "action": "subscribe",
+    "symbols": ["AAPL", "MSFT"],
+    "credential_id": "cred-123"
+  }
+}
 ```
 
-## Configuration Options
+### News Event (Backend → Frontend)
+```json
+{
+  "type": "alpaca_news",
+  "payload": {
+    "id": 123,
+    "headline": "Apple announces new product",
+    "summary": "Apple Inc. today announced...",
+    "symbols": ["AAPL"],
+    "source": "Bloomberg",
+    "created_at": "2025-10-16T10:00:00Z",
+    "updated_at": "2025-10-16T10:00:00Z",
+    "url": "https://...",
+    "content": "Full article content...",
+    "author": "John Doe"
+  },
+  "timestamp": "2025-10-16T10:00:01Z"
+}
+```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `url` | string | required | WebSocket URL to connect to |
-| `maxReconnectAttempts` | number | 5 | Maximum reconnection attempts |
-| `initialReconnectDelay` | number | 1000 | Initial reconnection delay (ms) |
-| `maxReconnectDelay` | number | 30000 | Maximum reconnection delay (ms) |
-| `heartbeatInterval` | number | 15000 | Heartbeat ping interval (ms) |
-| `debug` | boolean | false | Enable debug logging |
+## Alpaca Message Types
+
+The Alpaca News WebSocket API sends these message types:
+
+| Type | T Value | Description |
+|------|---------|-------------|
+| Success | "success" | Handshake confirmation (connected, authenticated) |
+| Subscription | "subscription" | Subscription confirmation |
+| News | "n" | News article with headline, summary, symbols, etc. |
+| Error | "error" | Error message with code and msg |
+
+## Subscription Management
+
+The client maintains two mappings:
+- **userSubscriptions**: `Map<userId, Set<symbols>>`
+- **symbolSubscribers**: `Map<symbol, Set<userIds>>`
+
+This allows:
+1. Efficient broadcasting to users subscribed to specific symbols
+2. Automatic unsubscription when no users are listening
+3. Wildcard support for "all news" subscriptions
+
+## Reconnection Strategy
+
+- **Max attempts**: 5
+- **Initial delay**: 1000ms
+- **Backoff**: Exponential (2^n)
+- **Max delay**: 30 seconds
+
+When reconnecting:
+1. All pending subscriptions are processed
+2. All existing symbols are resubscribed
+3. Users receive no duplicate messages
+
+## API Endpoints
+
+### Backend REST API
+
+- `POST /alpaca-news/subscribe` - Subscribe to news
+- `POST /alpaca-news/unsubscribe` - Unsubscribe from news
+- `GET /alpaca-news/status` - Get connection status
+- `GET /alpaca-news/subscriptions/:userId` - Get user's subscriptions
+
+### Frontend Node
+
+The `AlpacaNews` node in the workflow editor allows users to:
+- Select Alpaca credentials
+- Choose subscribe/unsubscribe operation
+- Specify symbols (comma-separated or "*" for all)
 
 ## Best Practices
 
-1. **Singleton Pattern**: Always use singleton pattern for WebSocket clients
-2. **Error Handling**: Implement robust error handling in message parsing
-3. **Normalization**: Normalize subscription items (e.g., uppercase symbols)
-4. **Logging**: Use the built-in `log()` method for consistent logging
-5. **Broadcasting**: Use `broadcastToSubscribers()` for targeted user notifications
-6. **Resource Cleanup**: Always call `disconnect()` when shutting down
+1. **Singleton Pattern**: Use `getInstance()` to ensure one connection per server
+2. **Error Handling**: Always wrap operations in try-catch blocks
+3. **Cleanup**: Unsubscribe users when they disconnect
+4. **Logging**: Enable debug mode during development
+5. **Credentials**: Never hardcode API keys; use credential manager
+6. **Wildcard**: Use "*" sparingly to avoid overwhelming clients
 
-## Testing
+## Future Enhancements
 
-```typescript
-// Test connection
-const client = MyBrokerWebSocketClient.getInstance();
-await client.connect(credentials);
-console.log(client.isReady()); // Should be true
-
-// Test subscription
-await client.subscribe('testuser', ['AAPL']);
-const subs = client.getSubscriptions();
-console.log(subs.get('testuser')); // Should contain 'AAPL'
-
-// Test disconnection
-client.disconnect();
-console.log(client.isConnected()); // Should be false
-```
+Potential additions to this module:
+- Support for other data providers (Dhan, Finnhub, etc.)
+- Rate limiting and throttling
+- Message filtering and transformation
+- Historical news lookup
+- Sentiment analysis integration

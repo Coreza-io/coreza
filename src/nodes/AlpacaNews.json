@@ -1,12 +1,12 @@
 {
-  "name": "AlpacaStream",
-  "def": "Alpaca Stream",
+  "name": "AlpacaNews",
+  "def": "Alpaca News",
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
   "subCategory": "Alpaca",
 
-  "description": "Subscribe to Alpaca market data via WebSocket",
+  "description": "Subscribe to real-time news from Alpaca News API",
   "color": "text-yellow-500",
   "size": { "width": 340, "height": 300 },
   "handles": [
@@ -35,7 +35,7 @@
     }
   ],
   "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
-  "action": { "url": "/alpaca-stream/{{operation}}", "method": "POST" },
+  "action": { "url": "/alpaca-news/{{operation}}", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",
@@ -50,8 +50,8 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "start_stream", "name": "Start Stream", "method": "POST" },
-        { "id": "stop_stream", "name": "Stop Stream", "method": "POST" }
+        { "id": "subscribe", "name": "Subscribe", "method": "POST" },
+        { "id": "unsubscribe", "name": "Unsubscribe", "method": "POST" }
       ],
       "required": true
     },
@@ -59,7 +59,8 @@
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
-      "placeholder": "e.g. AAPL,MSFT",
+      "placeholder": "e.g. AAPL,MSFT or * for all",
+      "description": "Comma-separated symbols or * for all news",
       "required": true
     }
   ]

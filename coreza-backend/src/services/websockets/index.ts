@@ -7,8 +7,7 @@
  * @module websockets
  */
 
-export { BaseWebSocketClient, WebSocketClientConfig, SubscriptionManager } from './BaseWebSocketClient';
-export { AlpacaWebSocketClient } from './AlpacaWebSocketClient';
+export { AlpacaNewsWebSocketClient } from './AlpacaNewsWebSocketClient';
 
 // Future exports:
 // export { DhanWebSocketClient } from './DhanWebSocketClient';

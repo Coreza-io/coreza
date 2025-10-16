@@ -74,7 +74,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     const { service_type, name } = validation.data;
 
-    const credentials = await CredentialManager.getCredentials(
+    const credentials = await CredentialManager.getCredentialRecords(
       req.userId,
       service_type,
       name

@@ -160,8 +160,9 @@ class CredentialManager {
 
   /**
    * Retrieve and decrypt credentials with dual-read capability
+   * Returns full credential records for management workflows.
    */
-  static async getCredentials(
+  static async getCredentialRecords(
     userId: string,
     serviceType: string,
     credentialName?: string
@@ -276,8 +277,108 @@ class CredentialManager {
       return decryptedCredentials;
 
     } catch (error) {
-      console.error('Error in getCredentials:', error);
+      console.error('Error in getCredentialRecords:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Retrieve credentials for a specific service/credential combo using broker-grade logic.
+   * Returns decrypted client_json for service execution while preserving legacy formats.
+   */
+  static async getCredentials(
+    userId: string,
+    serviceType: string,
+    credentialName: string
+  ): Promise<{ credentials: { client_json: Record<string, any>; token_json: Record<string, any> } | null }> {
+    try {
+      const { data, error } = await supabase
+        .from('user_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('name', credentialName)
+        .eq('service_type', serviceType)
+        .single();
+
+      if (error || !data) {
+        return { credentials: null };
+      }
+
+      let decryptedCredentials: Record<string, any> = {};
+
+      if (data.is_encrypted) {
+        if (data.enc_version === 2 && data.key_ref === 'user:v2') {
+          console.log(`dY"" Decrypting frontend credentials for broker ${serviceType}`);
+
+          const result = await this.getDecryptedCredentials(userId, serviceType, data.name);
+          if (result.error) {
+            throw new Error(`Failed to get ${serviceType} credentials: ${result.error}`);
+          }
+          if (!result.credentials) {
+            throw new Error('Decrypted credentials not available');
+          }
+          decryptedCredentials = result.credentials;
+
+        } else if (data.enc_payload) {
+          console.log(`dY"" Decrypting envelope credentials for broker ${serviceType}`);
+
+          const decryptionInput = {
+            encPayload: data.enc_payload,
+            iv: data.iv,
+            authTag: data.auth_tag,
+            dekWrapped: data.dek_wrapped,
+            keyRef: data.key_ref || 'env:v1',
+            userId,
+            credentialId: data.id
+          };
+
+          const payload = EnvelopeEncryptionUtil.decrypt(decryptionInput);
+          decryptedCredentials = { ...payload.client, ...payload.token };
+        }
+      } else {
+        console.log(`dY"" Decrypting legacy credentials for broker ${serviceType}`);
+
+        const decryptedClientJson = { ...data.client_json };
+        const decryptedTokenJson = { ...data.token_json };
+
+        const sensitiveFields = ['api_key', 'secret_key', 'access_token', 'refresh_token', 'client_secret'];
+
+        for (const field of sensitiveFields) {
+          if (decryptedClientJson[field] && DecryptionUtil.isEncrypted(decryptedClientJson[field])) {
+            decryptedClientJson[field] = await DecryptionUtil.decrypt(decryptedClientJson[field]);
+          }
+
+          if (decryptedTokenJson[field] && DecryptionUtil.isEncrypted(decryptedTokenJson[field])) {
+            decryptedTokenJson[field] = await DecryptionUtil.decrypt(decryptedTokenJson[field]);
+          }
+        }
+
+        decryptedCredentials = { ...decryptedClientJson, ...decryptedTokenJson };
+      }
+
+      const validation = CredentialValidator.validateCredentials(serviceType, decryptedCredentials);
+
+      if (!validation.isValid) {
+        console.error(`Invalid ${serviceType} credentials:`, validation.errors);
+        throw new Error(`Invalid ${serviceType} credentials: ${validation.errors.join(', ')}`);
+      }
+
+      if (validation.warnings.length > 0) {
+        console.warn(`${serviceType} credential warnings:`, validation.warnings);
+      }
+
+      return {
+        credentials: {
+          client_json: decryptedCredentials,
+          token_json: {}
+        }
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to get ${serviceType} credentials: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
     }
   }
 

@@ -1,4 +1,6 @@
 import WebSocket from 'ws';
+import { supabase } from '../../config/supabase';
+import { executeWorkflow } from '../workflowEngine';
 import WebSocketManager from '../websocketManager';
 
 /**
@@ -58,7 +60,9 @@ export class AlpacaNewsWebSocketClient {
   // Subscription management
   private userSubscriptions: Map<string, Set<string>> = new Map(); // userId -> symbols
   private symbolSubscribers: Map<string, Set<string>> = new Map(); // symbol -> userIds
-  private pendingSubscriptions: Array<{ userId: string; symbols: string[] }> = [];
+  private pendingSubscriptions: Array<{ userId: string; symbols: string[]; workflowId?: string }> = [];
+  private symbolWorkflowSubscribers: Map<string, Set<string>> = new Map(); // symbol -> workflowIds
+  private workflowMetadata: Map<string, { userId: string; symbols: Set<string> }> = new Map();
   
   // Reconnection
   private reconnectAttempts: number = 0;
@@ -201,7 +205,9 @@ export class AlpacaNewsWebSocketClient {
         break;
 
       case 'n': // News
-        this.handleNews(msg);
+        this.handleNews(msg).catch(error => {
+          console.error('❌ Failed to process Alpaca news event:', error);
+        });
         break;
 
       case 'error':
@@ -216,7 +222,7 @@ export class AlpacaNewsWebSocketClient {
   /**
    * Handle news message and broadcast to subscribers
    */
-  private handleNews(msg: AlpacaNewsMessage): void {
+  private async handleNews(msg: AlpacaNewsMessage): Promise<void> {
     const symbols = msg.symbols || [];
     const tickers = symbols.join(',');
     
@@ -258,19 +264,21 @@ export class AlpacaNewsWebSocketClient {
         timestamp: new Date().toISOString(),
       });
     });
+
+    await this.triggerWorkflowsForNews(symbols, newsData);
   }
 
   /**
    * Subscribe user to news for specific symbols
    */
-  async subscribe(userId: string, symbols: string[]): Promise<void> {
+  async subscribe(userId: string, symbols: string[], options: { workflowId?: string } = {}): Promise<boolean> {
     if (!this.credentials) {
       throw new Error('Not connected. Call connect() first.');
     }
 
     // Normalize symbols
     const normalizedSymbols = symbols.map(s => s.toUpperCase()).filter(Boolean);
-    
+
     if (!normalizedSymbols.length) {
       throw new Error('No symbols provided');
     }
@@ -278,13 +286,13 @@ export class AlpacaNewsWebSocketClient {
     // If not authenticated, queue the subscription
     if (!this.isAuthenticated) {
       this.log(`⏳ Queueing subscription for user ${userId}`);
-      this.pendingSubscriptions.push({ userId, symbols: normalizedSymbols });
-      
+      this.pendingSubscriptions.push({ userId, symbols: normalizedSymbols, workflowId: options.workflowId });
+
       // Try to connect if not already connecting
       if (!this.isConnecting && !this.ws) {
         await this.connect(this.credentials);
       }
-      return;
+      return true;
     }
 
     // Update user subscriptions
@@ -298,7 +306,7 @@ export class AlpacaNewsWebSocketClient {
     
     normalizedSymbols.forEach(symbol => {
       userSymbols.add(symbol);
-      
+
       // Update reverse mapping
       if (!this.symbolSubscribers.has(symbol)) {
         this.symbolSubscribers.set(symbol, new Set());
@@ -307,38 +315,56 @@ export class AlpacaNewsWebSocketClient {
       this.symbolSubscribers.get(symbol)!.add(userId);
     });
 
+    if (options.workflowId) {
+      const workflowId = options.workflowId;
+      let metadata = this.workflowMetadata.get(workflowId);
+      if (!metadata) {
+        metadata = { userId, symbols: new Set() };
+        this.workflowMetadata.set(workflowId, metadata);
+      }
+
+      normalizedSymbols.forEach(symbol => {
+        metadata!.symbols.add(symbol);
+        if (!this.symbolWorkflowSubscribers.has(symbol)) {
+          this.symbolWorkflowSubscribers.set(symbol, new Set());
+        }
+        this.symbolWorkflowSubscribers.get(symbol)!.add(workflowId);
+      });
+    }
+
     // Send subscription to Alpaca if there are new symbols
     if (newSymbols.length > 0) {
       this.sendSubscription('subscribe', newSymbols);
     }
 
     this.log(`✅ User ${userId} subscribed to: ${normalizedSymbols.join(', ')}`);
+    return true;
   }
 
   /**
    * Unsubscribe user from specific symbols
    */
-  async unsubscribe(userId: string, symbols: string[]): Promise<void> {
+  async unsubscribe(userId: string, symbols: string[], options: { workflowId?: string } = {}): Promise<boolean> {
     const normalizedSymbols = symbols.map(s => s.toUpperCase()).filter(Boolean);
-    
+
     if (!normalizedSymbols.length) {
-      return;
+      return true;
     }
 
     const userSymbols = this.userSubscriptions.get(userId);
     if (!userSymbols) {
-      return;
+      return true;
     }
 
     const symbolsToUnsubscribe: string[] = [];
 
     normalizedSymbols.forEach(symbol => {
       userSymbols.delete(symbol);
-      
+
       const subscribers = this.symbolSubscribers.get(symbol);
       if (subscribers) {
         subscribers.delete(userId);
-        
+
         // If no more subscribers for this symbol, unsubscribe from Alpaca
         if (subscribers.size === 0) {
           this.symbolSubscribers.delete(symbol);
@@ -346,6 +372,27 @@ export class AlpacaNewsWebSocketClient {
         }
       }
     });
+
+    if (options.workflowId) {
+      const workflowId = options.workflowId;
+      const metadata = this.workflowMetadata.get(workflowId);
+      if (metadata && metadata.userId === userId) {
+        normalizedSymbols.forEach(symbol => {
+          metadata.symbols.delete(symbol);
+          const workflows = this.symbolWorkflowSubscribers.get(symbol);
+          if (workflows) {
+            workflows.delete(workflowId);
+            if (workflows.size === 0) {
+              this.symbolWorkflowSubscribers.delete(symbol);
+            }
+          }
+        });
+
+        if (metadata.symbols.size === 0) {
+          this.workflowMetadata.delete(workflowId);
+        }
+      }
+    }
 
     // Clean up if user has no more subscriptions
     if (userSymbols.size === 0) {
@@ -358,6 +405,7 @@ export class AlpacaNewsWebSocketClient {
     }
 
     this.log(`✅ User ${userId} unsubscribed from: ${normalizedSymbols.join(', ')}`);
+    return true;
   }
 
   /**
@@ -386,8 +434,8 @@ export class AlpacaNewsWebSocketClient {
     const pending = [...this.pendingSubscriptions];
     this.pendingSubscriptions = [];
     
-    pending.forEach(({ userId, symbols }) => {
-      this.subscribe(userId, symbols).catch(err => {
+    pending.forEach(({ userId, symbols, workflowId }) => {
+      this.subscribe(userId, symbols, { workflowId }).catch(err => {
         console.error('Failed to process pending subscription:', err);
       });
     });
@@ -431,9 +479,98 @@ export class AlpacaNewsWebSocketClient {
    * Check if connected and authenticated
    */
   isReady(): boolean {
-    return this.ws !== null && 
-           this.ws.readyState === WebSocket.OPEN && 
+    return this.ws !== null &&
+           this.ws.readyState === WebSocket.OPEN &&
            this.isAuthenticated;
+  }
+
+  private async triggerWorkflowsForNews(symbols: string[], newsData: any): Promise<void> {
+    const normalizedSymbols = symbols.map(s => s.toUpperCase());
+    const workflowIds = new Set<string>();
+
+    const wildcard = this.symbolWorkflowSubscribers.get('*');
+    if (wildcard) {
+      wildcard.forEach(id => workflowIds.add(id));
+    }
+
+    normalizedSymbols.forEach(symbol => {
+      const workflows = this.symbolWorkflowSubscribers.get(symbol);
+      if (workflows) {
+        workflows.forEach(id => workflowIds.add(id));
+      }
+    });
+
+    if (workflowIds.size === 0) {
+      return;
+    }
+
+    workflowIds.forEach(workflowId => {
+      const metadata = this.workflowMetadata.get(workflowId);
+      if (!metadata) {
+        return;
+      }
+
+      this.runWorkflowForNews(workflowId, metadata.userId, newsData).catch(error => {
+        console.error(`❌ Failed to trigger workflow ${workflowId} for news event:`, error);
+      });
+    });
+  }
+
+  private async runWorkflowForNews(workflowId: string, userId: string, newsData: any): Promise<void> {
+    const { data: workflow, error: workflowError } = await supabase
+      .from('workflows')
+      .select('id, nodes, edges, is_active')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+
+    if (workflowError || !workflow) {
+      console.error(`❌ Workflow ${workflowId} for user ${userId} not found when handling news`);
+      return;
+    }
+
+    if (!workflow.is_active) {
+      this.log(`⚠️  Workflow ${workflowId} ignored news event because it is inactive`);
+      return;
+    }
+
+    const { data: run, error: runError } = await supabase
+      .from('workflow_runs')
+      .insert({
+        workflow_id: workflowId,
+        status: 'running',
+        initiated_by: userId
+      })
+      .select()
+      .single();
+
+    if (runError || !run) {
+      console.error(`❌ Failed to create workflow run for ${workflowId}:`, runError);
+      return;
+    }
+
+    this.log(`🚀 Triggering workflow ${workflowId} for user ${userId} due to Alpaca news`);
+
+    executeWorkflow(run.id, workflowId, userId, workflow.nodes, workflow.edges, {
+      initialInput: { news: newsData }
+    })
+      .then(result => {
+        if (!result.success) {
+          console.error(`❌ Workflow ${workflowId} triggered by news failed:`, result.error);
+        }
+      })
+      .catch(async error => {
+        console.error(`💥 Workflow ${workflowId} execution error for news trigger:`, error);
+
+        await supabase
+          .from('workflow_runs')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            error_message: error.message
+          })
+          .eq('id', run.id);
+      });
   }
 
   /**

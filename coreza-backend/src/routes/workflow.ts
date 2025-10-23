@@ -3,6 +3,8 @@ import { supabase } from '../config/supabase';
 import { createError } from '../middleware/errorHandler';
 import { executeWorkflow } from '../services/workflowEngine';
 import { workflowScheduler } from '../services/scheduler';
+import { AlpacaNewsWebSocketClient } from '../services/websockets';
+import CredentialManager from '../utils/credentialManager';
 import parser from 'cron-parser';
 
 const router = express.Router();
@@ -98,8 +100,37 @@ router.delete('/:userId/:workflowId', async (req, res, next) => {
   try {
     const { userId, workflowId } = req.params;
     
-    // Unschedule workflow first
-    await workflowScheduler.unscheduleWorkflow(workflowId);
+    // Fetch workflow to check for active subscriptions
+    const { data: workflow } = await supabase
+      .from('workflows')
+      .select('nodes, is_active')
+      .eq('id', workflowId)
+      .eq('user_id', userId)
+      .single();
+
+    // Clean up active subscriptions before deletion
+    if (workflow) {
+      // Unschedule if has Scheduler node
+      await workflowScheduler.unscheduleWorkflow(workflowId);
+
+      // Unsubscribe from news if has AlpacaNews node
+      const alpacaNewsNode = workflow.nodes?.find((n: any) => n.type === 'AlpacaNews');
+      if (alpacaNewsNode && workflow.is_active) {
+        const nodeValues = alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
+        const symbols = nodeValues.symbols;
+        
+        if (symbols) {
+          const symbolArray = typeof symbols === 'string'
+            ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : Array.isArray(symbols) ? symbols : [];
+
+          if (symbolArray.length > 0) {
+            const newsClient = AlpacaNewsWebSocketClient.getInstance();
+            await newsClient.unsubscribe(userId, symbolArray);
+          }
+        }
+      }
+    }
     
     const { error } = await supabase
       .from('workflows')
@@ -369,11 +400,11 @@ function validateCronForFutureExecution(cronExpression: string): { valid: boolea
   }
 }
 
-// Activate/Deactivate workflow scheduling
+// Activate/Deactivate workflow scheduling and triggers
 router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
   try {
     const { userId, workflowId } = req.params;
-    const { is_active } = req.body ?? {}; // <-- no schedule_cron from client
+    const { is_active } = req.body ?? {};
 
     // Fetch workflow
     const { data: workflow, error: fetchError } = await supabase
@@ -385,61 +416,146 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
 
     if (fetchError || !workflow) throw createError('Workflow not found', 404);
 
-    // If activating, compute cron from Scheduler node
+    // Detect trigger nodes
+    const schedulerNode = workflow.nodes.find((n: any) => n.type === 'Scheduler' || n.data?.kind === 'scheduler');
+    const alpacaNewsNode = workflow.nodes.find((n: any) => n.type === 'AlpacaNews');
+
+    if (!schedulerNode && !alpacaNewsNode) {
+      throw createError('No trigger node (Scheduler or AlpacaNews) found in workflow', 400);
+    }
+
     let cronToSave: string | null = null;
     let tzToUse = 'UTC';
     let nextRun: Date | null = null;
+    let newsSubscription: { symbols: string[] } | null = null;
 
-    if (is_active === true) {
-      const { cron, timezone, next } = computeCronFromSchedulerNodes(workflow.nodes);
-      cronToSave = cron;
-      tzToUse = timezone ?? 'UTC';
-      nextRun = next;
-    }
-
-    // Persist (null out cron when deactivating)
-    const { data: updated, error: updateError } = await supabase
-      .from('workflows')
-      .update({
-        is_active: !!is_active,
-        schedule_cron: is_active ? cronToSave : null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', workflowId)
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (updateError || !updated) throw createError('Failed to update workflow', 500);
-
-    // Apply side effect with compensation
     try {
       if (is_active) {
-        await workflowScheduler.scheduleWorkflow(
-          workflowId,
-          userId,
-          cronToSave!,
-          updated.nodes,
-          updated.edges
-        );
+        // Handle Scheduler activation
+        if (schedulerNode) {
+          const { cron, timezone, next } = computeCronFromSchedulerNodes(workflow.nodes);
+          cronToSave = cron;
+          tzToUse = timezone ?? 'UTC';
+          nextRun = next;
+          
+          await workflowScheduler.scheduleWorkflow(
+            workflowId,
+            userId,
+            cronToSave,
+            workflow.nodes,
+            workflow.edges
+          );
+        }
+
+        // Handle AlpacaNews activation
+        if (alpacaNewsNode) {
+          const nodeValues = alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
+          const credentialId = nodeValues.credential_id;
+          const symbols = nodeValues.symbols;
+
+          if (!credentialId) {
+            throw createError('AlpacaNews node missing credential_id', 400);
+          }
+          if (!symbols) {
+            throw createError('AlpacaNews node missing symbols', 400);
+          }
+
+          // Parse symbols
+          const symbolArray = typeof symbols === 'string'
+            ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : Array.isArray(symbols) ? symbols : [];
+
+          if (symbolArray.length === 0) {
+            throw createError('At least one symbol is required for AlpacaNews', 400);
+          }
+
+          // Get credentials
+          const credential = await CredentialManager.getCredentials(userId, 'alpaca', credentialId);
+          if (!credential) {
+            throw createError('Alpaca credentials not found', 404);
+          }
+
+          const { credentials: { client_json } } = credential;
+          const { api_key, secret_key } = client_json;
+
+          if (!api_key || !secret_key) {
+            throw createError('Invalid Alpaca credentials', 400);
+          }
+
+          // Get or connect WebSocket client
+          const newsClient = AlpacaNewsWebSocketClient.getInstance();
+          if (!newsClient.isReady()) {
+            await newsClient.connect({ api_key, secret_key });
+          }
+
+          // Subscribe to news for this workflow
+          await newsClient.subscribe(userId, symbolArray);
+          newsSubscription = { symbols: symbolArray };
+        }
       } else {
-        await workflowScheduler.unscheduleWorkflow(workflowId);
+        // Deactivate - unschedule and unsubscribe
+        if (schedulerNode) {
+          await workflowScheduler.unscheduleWorkflow(workflowId);
+        }
+
+        if (alpacaNewsNode) {
+          const nodeValues = alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
+          const symbols = nodeValues.symbols;
+          
+          if (symbols) {
+            const symbolArray = typeof symbols === 'string'
+              ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+              : Array.isArray(symbols) ? symbols : [];
+
+            if (symbolArray.length > 0) {
+              const newsClient = AlpacaNewsWebSocketClient.getInstance();
+              await newsClient.unsubscribe(userId, symbolArray);
+            }
+          }
+        }
       }
+
+      // Persist workflow state
+      const { data: updated, error: updateError } = await supabase
+        .from('workflows')
+        .update({
+          is_active: !!is_active,
+          schedule_cron: is_active ? cronToSave : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', workflowId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (updateError || !updated) throw createError('Failed to update workflow', 500);
+
+      // Build response message
+      let message = '';
+      if (is_active) {
+        const parts = [];
+        if (schedulerNode) parts.push('scheduled');
+        if (alpacaNewsNode) parts.push(`subscribed to news for ${newsSubscription?.symbols.join(', ')}`);
+        message = `Workflow ${parts.join(' and ')}`;
+      } else {
+        message = 'Workflow deactivated';
+      }
+
+      res.json({
+        workflow: updated,
+        next_run_at: is_active && nextRun ? nextRun : null,
+        news_subscription: is_active ? newsSubscription : null,
+        message,
+      });
     } catch (e: any) {
-      // rollback active flag if scheduler failed
+      // Rollback on error
       await supabase
         .from('workflows')
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq('id', workflowId)
         .eq('user_id', userId);
-      throw createError(`Scheduling operation failed: ${e.message}`, 502);
+      throw createError(`Activation failed: ${e.message}`, 502);
     }
-
-    res.json({
-      workflow: updated,
-      next_run_at: is_active ? nextRun : null,
-      message: is_active ? 'Workflow scheduled from Scheduler node' : 'Workflow unscheduled',
-    });
   } catch (err) {
     next(err);
   }

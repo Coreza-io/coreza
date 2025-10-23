@@ -394,6 +394,7 @@ export class WorkflowEngine {
  */
 export type ExecutionOptions = {
   mode?: "best-effort" | "fail-fast";
+  initialInput?: any;
 };
 
 export async function executeWorkflow(
@@ -412,5 +413,5 @@ export async function executeWorkflow(
     edges,
     opts?.mode
   );
-  return await workflowEngine.execute();
+  return await workflowEngine.execute(opts?.initialInput);
 }

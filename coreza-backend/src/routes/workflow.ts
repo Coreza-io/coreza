@@ -424,6 +424,10 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
       throw createError('No trigger node (Scheduler or AlpacaNews) found in workflow', 400);
     }
 
+    if (schedulerNode && alpacaNewsNode) {
+      throw createError('Workflow can only have one trigger type: either Scheduler or AlpacaNews, not both', 400);
+    }
+
     let cronToSave: string | null = null;
     let tzToUse = 'UTC';
     let nextRun: Date | null = null;

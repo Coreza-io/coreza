@@ -85,12 +85,22 @@ export const SwitchIcon: React.FC<{ className?: string }> = ({ className = "w-10
   </svg>
 );
 
+// OpenAI SVG as React component for instant rendering
+export const OpenAIIcon: React.FC<{ className?: string }> = ({ className = "w-10 h-10" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="15" fill="#10A37F" stroke="#0D8C6B" strokeWidth="2"/>
+    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073z" 
+          fill="#FFFFFF" transform="translate(4, 4) scale(0.8)"/>
+  </svg>
+);
+
 // Icon registry for easy access
 export const IconRegistry = {
   'Alpaca': AlpacaIcon,
   'EMA': EMAIcon,
   'If': IfIcon,
   'Switch': SwitchIcon,
+  'OpenAI': OpenAIIcon,
 } as const;
 
 export type IconName = keyof typeof IconRegistry;

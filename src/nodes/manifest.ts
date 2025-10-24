@@ -26,6 +26,7 @@ import FieldDef from './Field.json'
 import MathDef from './Math.json'
 import TransformDef from './Transform.json'
 import LoopDef from './Loop.json'
+import OpenAIDef from './OpenAI.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -47,8 +48,8 @@ export interface NodeConfig {
     placeholder?: string;
   }[]; 
   authAction?: { url: string; method: string };  
-  icon: string;
-  size: { width: number; height: number };
+  icon?: string;
+  size?: { width: number; height: number };
   action?: { url: string; method: string };
   fields: {
     key: string;
@@ -110,7 +111,8 @@ export const nodeManifest = {
   [FieldDef.name]: FieldDef,
   [MathDef.name]: MathDef,
   [TransformDef.name]: TransformDef,
-  [LoopDef.name]: LoopDef
+  [LoopDef.name]: LoopDef,
+  [OpenAIDef.name]: OpenAIDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

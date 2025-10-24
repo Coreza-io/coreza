@@ -1,5 +1,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
 import { CommunicationService } from '../../services/communications';
+import axios from 'axios';
+import { resolveReferences } from '../../utils/resolveReferences';
 
 export class CommunicationExecutor implements INodeExecutor {
   readonly category = 'Communication';
@@ -27,6 +29,8 @@ export class CommunicationExecutor implements INodeExecutor {
         case 'WhatsApp':
           result = await CommunicationService.execute('whatsapp', operation, combinedInput);
           break;
+        case 'OpenAI':
+          return this.executeOpenAI(node, combinedInput, context);
         default:
           return {
             success: false,
@@ -49,6 +53,42 @@ export class CommunicationExecutor implements INodeExecutor {
       return {
         success: false,
         error: `Communication execution failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  private async executeOpenAI(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+    try {
+      const values = node.data?.values || node.values || {};
+      const resolvedValues = resolveReferences(values, input);
+
+      const payload = {
+        model: resolvedValues.model || 'gpt-4o-mini',
+        prompt: resolvedValues.prompt || 'You are a helpful assistant.',
+        userMessage: resolvedValues.userMessage,
+        temperature: resolvedValues.temperature || 0.7,
+        maxTokens: resolvedValues.maxTokens || 1000,
+        apiKey: resolvedValues.apiKey
+      };
+
+      const response = await axios.post(`${process.env.API_URL || 'http://localhost:8000'}/openai/chat`, payload);
+
+      if (response.data.success) {
+        return {
+          success: true,
+          data: response.data.data
+        };
+      } else {
+        return {
+          success: false,
+          error: response.data.error || 'OpenAI execution failed'
+        };
+      }
+    } catch (error: any) {
+      console.error('OpenAI execution error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message || 'OpenAI execution failed'
       };
     }
   }

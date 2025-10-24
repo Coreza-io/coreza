@@ -30,6 +30,7 @@ import comparatorRoutes from './routes/comparator';
 import riskRoutes from './routes/risk';
 import controlRoutes from './routes/control';
 import websocketRoutes from './routes/websocket';
+import openaiRoutes from './routes/openai';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -93,6 +94,8 @@ app.use('/risk', riskRoutes);
 console.log('✅ Risk route mounted');
 app.use('/websocket', websocketRoutes);
 console.log('✅ WebSocket route mounted');
+app.use('/openai', openaiRoutes);
+console.log('✅ OpenAI route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

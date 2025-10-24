@@ -11,7 +11,29 @@ class ClientEncryption {
   private static async getEncryptionKey(): Promise<CryptoKey> {
     try {
       console.log('🔑 Requesting encryption key from edge function...');
-      const { data, error } = await supabase.functions.invoke('derive-encryption-key');
+
+      // Ensure we have a valid session token before invoking the edge function.
+      const {
+        data: sessionData,
+        error: sessionError
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Failed to fetch Supabase session:', sessionError);
+        throw new Error('Unable to verify authentication. Please try signing in again.');
+      }
+
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        console.error('No active session found when requesting encryption key.');
+        throw new Error('Authentication is required to derive an encryption key.');
+      }
+
+      const { data, error } = await supabase.functions.invoke('derive-encryption-key', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
       
       if (error) {
         console.error('Edge function error:', error);

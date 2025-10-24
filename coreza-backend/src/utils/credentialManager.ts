@@ -61,8 +61,73 @@ export interface CredentialPayload {
 
 class CredentialManager {
   /**
+   * Store credentials with server-side encryption using COREZA_ENCRYPTION_KEY
+   */
+  static async storeCredentials(
+    userId: string,
+    serviceType: string,
+    name: string,
+    clientData: Record<string, any>,
+    tokenData: Record<string, any> = {},
+    scopes?: string
+  ): Promise<void> {
+    try {
+      console.log(`🔐 Encrypting credentials for ${serviceType}:${name}`);
+
+      // Use envelope encryption
+      const payload = {
+        service_type: serviceType,
+        name,
+        client: clientData,
+        token: tokenData,
+        scopes,
+        meta: {
+          created_with_envelope: true
+        }
+      };
+
+      const encrypted = EnvelopeEncryptionUtil.encrypt(payload, userId, undefined, 'env:v1');
+
+      // Convert to hex format for Postgres bytea
+      const toHex = (base64: string) => {
+        const bytes = Buffer.from(base64, 'base64');
+        return `\\x${bytes.toString('hex')}`;
+      };
+
+      const { error } = await supabase
+        .from('user_credentials')
+        .upsert({
+          user_id: userId,
+          service_type: serviceType,
+          name,
+          enc_payload: toHex(encrypted.encPayload),
+          iv: toHex(encrypted.iv),
+          auth_tag: toHex(encrypted.authTag),
+          dek_wrapped: toHex(encrypted.dekWrapped),
+          key_ref: encrypted.keyRef,
+          key_algo: 'AES-256-GCM',
+          enc_version: parseInt(encrypted.encVersion),
+          is_encrypted: true,
+          scopes,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,service_type,name'
+        });
+
+      if (error) {
+        console.error('Error storing credentials:', error);
+        throw new Error(`Failed to store credentials: ${error.message}`);
+      }
+
+      console.log(`✅ Successfully stored encrypted credentials for ${serviceType}:${name}`);
+    } catch (error) {
+      console.error('Error in storeCredentials:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get decrypted credentials for backend API calls only
-   * Frontend stores credentials directly via Supabase client
    */
   static async getDecryptedCredentials(
     userId: string,

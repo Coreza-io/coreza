@@ -58,8 +58,41 @@ const requireAuth = async (req: express.Request, res: express.Response, next: ex
   }
 };
 
-// Note: Frontend now handles credential storage directly via Supabase client
-// This route is deprecated in favor of client-side encryption and storage
+// Store credentials with server-side encryption
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const validation = storeCredentialsSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        details: validation.error.errors
+      });
+    }
+
+    const { service_type, name, client_data, token_data, scopes } = validation.data;
+
+    await CredentialManager.storeCredentials(
+      req.userId,
+      service_type,
+      name,
+      client_data,
+      token_data,
+      scopes
+    );
+
+    res.json({
+      success: true,
+      message: 'Credentials stored successfully'
+    });
+
+  } catch (error) {
+    console.error('Store credentials error:', error);
+    res.status(500).json({
+      error: 'Failed to store credentials',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
 // Get credentials with dual-read capability
 router.get('/', requireAuth, async (req, res) => {

@@ -1,8 +1,7 @@
 import WebSocket from "ws";
 import { supabase } from "../../config/supabase";
 import { executeWorkflow } from "../workflowEngine";
-import WebSocketManager from "../websocketManager";
-
+import { WebSocketManager } from "../WebSocketManager";
 /**
  * Alpaca News WebSocket Message Types
  */
@@ -306,13 +305,12 @@ export class AlpacaNewsWebSocketClient {
     });
 
     // Send to all subscribed users
-    //notifiedUsers.forEach((userId) => {
-    //  WebSocketManager.sendToUser(userId, {
-    //    type: "alpaca_news",
-    //    payload: newsData,
-    //    timestamp: new Date().toISOString(),
-    //  });
-    //});
+    notifiedUsers.forEach((userId) => {
+      WebSocketManager.sendToUser(userId, {
+        type: "alpaca_news",
+        payload: newsData,
+      });
+    });
 
     await this.triggerWorkflowsForNews(symbols, newsData);
   }

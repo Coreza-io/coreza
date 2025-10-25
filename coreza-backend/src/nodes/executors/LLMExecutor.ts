@@ -1,6 +1,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { resolveReferences } from "../../utils/resolveReferences";
+import CredentialManager from "../../utils/credentialManager";
 
 export class LLMExecutor implements INodeExecutor {
   readonly category = "LLM";
@@ -54,7 +55,7 @@ export class LLMExecutor implements INodeExecutor {
     try {
       const values = node.data?.values || node.values || {};
       const resolvedValues = resolveReferences(values, input);
-      
+
       // Get user_id from context
       const user_id = context?.user_id || context?.userId;
       if (!user_id) {
@@ -72,32 +73,48 @@ export class LLMExecutor implements INodeExecutor {
         };
       }
 
-      const payload = {
+      const {
+        credentials: { client_json, token_json },
+      } = await CredentialManager.getCredentials(
         user_id,
-        credential_id,
+        "openai",
+        credential_id
+      );
+
+      const { apiKey } = client_json;
+
+      const payload = {
         model: resolvedValues.model || "gpt-4o-mini",
-        prompt: resolvedValues.prompt || "You are a helpful assistant.",
-        userMessage: resolvedValues.userMessage,
+        messages: [
+          {
+            role: "system",
+            content: resolvedValues.prompt || "You are a helpful assistant.",
+          },
+          {
+            role: "user",
+            content: resolvedValues.userMessage || "Hello!",
+          },
+        ],
         temperature: resolvedValues.temperature || 0.7,
-        maxTokens: resolvedValues.maxTokens || 1000,
+        max_tokens: resolvedValues.maxTokens || 1000,
       };
 
-      // Call the backend OpenAI route
-      const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
       const response = await axios.post(
-        `${backendUrl}/openai/chat`,
+        "https://api.openai.com/v1/chat/completions",
         payload,
         {
           headers: {
+            Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
         }
       );
+      const completion = response.data.choices[0].message.content;
 
-      if (response.data.success) {
+      if (response.data) {
         return {
           success: true,
-          data: response.data.data,
+          data: completion,
         };
       } else {
         return {

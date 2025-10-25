@@ -200,9 +200,12 @@ export class WorkflowEngine {
       // Skip Alpaca or any external listener node if it’s already active
       if (node.type === "AlpacaNews" || node.category === "external") {
         console.log(`🟡 Skipping re-run for ${node.type} node`);
-        continue;
+        const edges = this.router.select(node.id, initialInput);
+        for (const edge of edges) {
+          await this.routeEdge(edge, initialInput);
+        }
       }
-      this.enqueue({ nodeId: node.id, input: initialInput });
+      //this.enqueue({ nodeId: node.id, input: initialInput });
     }
 
     // Process queue until empty

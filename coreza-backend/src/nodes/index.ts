@@ -8,6 +8,7 @@ import { UtilityExecutor } from './executors/UtilityExecutor';
 import { CommunicationExecutor } from './executors/CommunicationExecutor';
 import { DataSourceExecutor } from './executors/DataSourceExecutor';
 import { RiskExecutor } from './executors/RiskExecutor';
+import { LLMExecutor } from './executors/LLMExecutor';
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -21,6 +22,7 @@ export function initializeNodeExecutors() {
     new CommunicationExecutor(),
     new DataSourceExecutor(),
     new RiskExecutor(),
+    new LLMExecutor(),
   ];
 
   executors.forEach(executor => {

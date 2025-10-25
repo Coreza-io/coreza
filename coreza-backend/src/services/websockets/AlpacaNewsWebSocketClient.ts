@@ -1,7 +1,7 @@
-import WebSocket from 'ws';
-import { supabase } from '../../config/supabase';
-import { executeWorkflow } from '../workflowEngine';
-import WebSocketManager from '../websocketManager';
+import WebSocket from "ws";
+import { supabase } from "../../config/supabase";
+import { executeWorkflow } from "../workflowEngine";
+import WebSocketManager from "../websocketManager";
 
 /**
  * Alpaca News WebSocket Message Types
@@ -27,7 +27,7 @@ interface AlpacaNewsMessage {
  * Alpaca News Subscription Message
  */
 interface AlpacaSubscription {
-  action: 'subscribe' | 'unsubscribe';
+  action: "subscribe" | "unsubscribe";
   news: string[];
 }
 
@@ -42,7 +42,7 @@ interface UserSubscription {
 /**
  * Alpaca News WebSocket Client
  * Connects to Alpaca's News API and streams news in real-time
- * 
+ *
  * @example
  * ```typescript
  * const client = AlpacaNewsWebSocketClient.getInstance();
@@ -56,21 +56,28 @@ export class AlpacaNewsWebSocketClient {
   private credentials: { api_key: string; secret_key: string } | null = null;
   private isAuthenticated: boolean = false;
   private isConnecting: boolean = false;
-  
+
   // Subscription management
   private userSubscriptions: Map<string, Set<string>> = new Map(); // userId -> symbols
   private symbolSubscribers: Map<string, Set<string>> = new Map(); // symbol -> userIds
-  private pendingSubscriptions: Array<{ userId: string; symbols: string[]; workflowId?: string }> = [];
+  private pendingSubscriptions: Array<{
+    userId: string;
+    symbols: string[];
+    workflowId?: string;
+  }> = [];
   private symbolWorkflowSubscribers: Map<string, Set<string>> = new Map(); // symbol -> workflowIds
-  private workflowMetadata: Map<string, { userId: string; symbols: Set<string> }> = new Map();
-  
+  private workflowMetadata: Map<
+    string,
+    { userId: string; symbols: Set<string> }
+  > = new Map();
+
   // Reconnection
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
   private reconnectTimeout: NodeJS.Timeout | null = null;
 
-  private readonly URL = 'wss://stream.data.alpaca.markets/v1beta1/news';
+  private readonly URL = "wss://stream.data.alpaca.markets/v1beta1/news";
   private readonly debug = true;
 
   private constructor() {}
@@ -84,21 +91,24 @@ export class AlpacaNewsWebSocketClient {
 
   private log(...args: any[]): void {
     if (this.debug) {
-      console.log('[AlpacaNews]', ...args);
+      console.log("[AlpacaNews]", ...args);
     }
   }
 
   /**
    * Connect to Alpaca News WebSocket
    */
-  async connect(credentials: { api_key: string; secret_key: string }): Promise<void> {
+  async connect(credentials: {
+    api_key: string;
+    secret_key: string;
+  }): Promise<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.log('Already connected');
+      this.log("Already connected");
       return;
     }
 
     if (this.isConnecting) {
-      this.log('Connection already in progress');
+      this.log("Connection already in progress");
       return;
     }
 
@@ -108,35 +118,35 @@ export class AlpacaNewsWebSocketClient {
 
     return new Promise((resolve, reject) => {
       try {
-        this.log('🔌 Connecting to Alpaca News...');
-        
+        this.log("🔌 Connecting to Alpaca News...");
+
         // Authenticate via headers
         this.ws = new WebSocket(this.URL, {
           headers: {
-            'APCA-API-KEY-ID': credentials.api_key,
-            'APCA-API-SECRET-KEY': credentials.secret_key,
+            "APCA-API-KEY-ID": credentials.api_key,
+            "APCA-API-SECRET-KEY": credentials.secret_key,
           },
         });
 
-        this.ws.on('open', () => {
-          this.log('🔌 Connected to Alpaca News stream');
+        this.ws.on("open", () => {
+          this.log("🔌 Connected to Alpaca News stream");
           this.isConnecting = false;
           this.reconnectAttempts = 0;
         });
 
-        this.ws.on('message', (data: Buffer) => {
+        this.ws.on("message", (data: Buffer) => {
           this.handleMessage(data);
         });
 
-        this.ws.on('close', (code: number, reason: Buffer) => {
-          this.log('🔒 Connection closed', code, reason.toString());
+        this.ws.on("close", (code: number, reason: Buffer) => {
+          this.log("🔒 Connection closed", code, reason.toString());
           this.isAuthenticated = false;
           this.isConnecting = false;
           this.handleReconnect();
         });
 
-        this.ws.on('error', (error: Error) => {
-          console.error('❌ Alpaca News WebSocket error:', error);
+        this.ws.on("error", (error: Error) => {
+          console.error("❌ Alpaca News WebSocket error:", error);
           this.isConnecting = false;
           reject(error);
         });
@@ -153,10 +163,9 @@ export class AlpacaNewsWebSocketClient {
         setTimeout(() => {
           if (!this.isAuthenticated) {
             clearInterval(authCheckInterval);
-            reject(new Error('Authentication timeout'));
+            reject(new Error("Authentication timeout"));
           }
         }, 10000);
-
       } catch (error) {
         this.isConnecting = false;
         reject(error);
@@ -169,14 +178,14 @@ export class AlpacaNewsWebSocketClient {
    */
   private handleMessage(buffer: Buffer): void {
     let messages: AlpacaNewsMessage[];
-    
+
     try {
       messages = JSON.parse(buffer.toString());
       if (!Array.isArray(messages)) {
         messages = [messages];
       }
     } catch (error) {
-      console.error('❌ Failed to parse message:', buffer.toString());
+      console.error("❌ Failed to parse message:", buffer.toString());
       return;
     }
 
@@ -185,37 +194,76 @@ export class AlpacaNewsWebSocketClient {
     }
   }
 
+  public startDebugIngressServer(port = 9090) {
+    // use the same 'ws' package already imported at top
+    const { WebSocketServer } = require("ws");
+    if ((this as any)._debugWSS) {
+      this.log(
+        `🧪 Debug WS ingress already running on ws://localhost:${
+          (this as any)._debugWSS._server.address().port
+        }`
+      );
+      return;
+    }
+
+    const wss = new WebSocketServer({ port });
+    (this as any)._debugWSS = wss;
+
+    this.log(`🧪 Debug WS ingress listening on ws://localhost:${port}`);
+
+    wss.on("connection", (sock: any) => {
+      this.log("🧪 Debug WS client connected");
+
+      sock.on("message", (data: Buffer) => {
+        try {
+          const text = data.toString();
+          const parsed = JSON.parse(text);
+          const messages = Array.isArray(parsed) ? parsed : [parsed];
+
+          // Reuse your normal flow
+          for (const m of messages) {
+            this.processMessage(m);
+          }
+        } catch (e) {
+          console.error("🧪 Invalid debug message", e);
+        }
+      });
+
+      sock.on("close", () => this.log("🧪 Debug WS client disconnected"));
+    });
+  }
+
   /**
    * Process individual message
    */
   private processMessage(msg: AlpacaNewsMessage): void {
     switch (msg.T) {
-      case 'success':
-        if (msg.msg === 'connected') {
-          this.log('🤝 Handshake OK');
-        } else if (msg.msg === 'authenticated') {
-          this.log('✅ Authenticated');
+      case "success":
+        if (msg.msg === "connected") {
+          this.log("🤝 Handshake OK");
+        } else if (msg.msg === "authenticated") {
+          this.log("✅ Authenticated");
           this.isAuthenticated = true;
           this.resubscribeAll();
         }
         break;
 
-      case 'subscription':
-        this.log('🔗 Subscription confirmed:', msg);
+      case "subscription":
+        this.log("🔗 Subscription confirmed:", msg);
         break;
 
-      case 'n': // News
-        this.handleNews(msg).catch(error => {
-          console.error('❌ Failed to process Alpaca news event:', error);
+      case "n": // News
+        this.handleNews(msg).catch((error) => {
+          console.error("❌ Failed to process Alpaca news event:", error);
         });
         break;
 
-      case 'error':
-        console.error('⛔ Alpaca error:', msg.code, msg.msg);
+      case "error":
+        console.error("⛔ Alpaca error:", msg.code, msg.msg);
         break;
 
       default:
-        this.log('📩 Unknown message type:', msg);
+        this.log("📩 Unknown message type:", msg);
     }
   }
 
@@ -224,8 +272,8 @@ export class AlpacaNewsWebSocketClient {
    */
   private async handleNews(msg: AlpacaNewsMessage): Promise<void> {
     const symbols = msg.symbols || [];
-    const tickers = symbols.join(',');
-    
+    const tickers = symbols.join(",");
+
     this.log(
       `📰 [${msg.source}] ${msg.created_at} ${tickers} — ${msg.headline}`
     );
@@ -247,23 +295,24 @@ export class AlpacaNewsWebSocketClient {
     const notifiedUsers = new Set<string>();
 
     // Check wildcard subscribers
-    const wildcardSubs = this.symbolSubscribers.get('*') || new Set();
-    wildcardSubs.forEach(userId => notifiedUsers.add(userId));
+    const wildcardSubs = this.symbolSubscribers.get("*") || new Set();
+    wildcardSubs.forEach((userId) => notifiedUsers.add(userId));
 
     // Check symbol-specific subscribers
     symbols.forEach((symbol: string) => {
-      const subs = this.symbolSubscribers.get(symbol.toUpperCase()) || new Set();
-      subs.forEach(userId => notifiedUsers.add(userId));
+      const subs =
+        this.symbolSubscribers.get(symbol.toUpperCase()) || new Set();
+      subs.forEach((userId) => notifiedUsers.add(userId));
     });
 
     // Send to all subscribed users
-    notifiedUsers.forEach(userId => {
-      WebSocketManager.sendToUser(userId, {
-        type: 'alpaca_news',
-        payload: newsData,
-        timestamp: new Date().toISOString(),
-      });
-    });
+    //notifiedUsers.forEach((userId) => {
+    //  WebSocketManager.sendToUser(userId, {
+    //    type: "alpaca_news",
+    //    payload: newsData,
+    //    timestamp: new Date().toISOString(),
+    //  });
+    //});
 
     await this.triggerWorkflowsForNews(symbols, newsData);
   }
@@ -271,22 +320,32 @@ export class AlpacaNewsWebSocketClient {
   /**
    * Subscribe user to news for specific symbols
    */
-  async subscribe(userId: string, symbols: string[], options: { workflowId?: string } = {}): Promise<boolean> {
+  async subscribe(
+    userId: string,
+    symbols: string[],
+    options: { workflowId?: string } = {}
+  ): Promise<boolean> {
     if (!this.credentials) {
-      throw new Error('Not connected. Call connect() first.');
+      throw new Error("Not connected. Call connect() first.");
     }
 
     // Normalize symbols
-    const normalizedSymbols = symbols.map(s => s.toUpperCase()).filter(Boolean);
+    const normalizedSymbols = symbols
+      .map((s) => s.toUpperCase())
+      .filter(Boolean);
 
     if (!normalizedSymbols.length) {
-      throw new Error('No symbols provided');
+      throw new Error("No symbols provided");
     }
 
     // If not authenticated, queue the subscription
     if (!this.isAuthenticated) {
       this.log(`⏳ Queueing subscription for user ${userId}`);
-      this.pendingSubscriptions.push({ userId, symbols: normalizedSymbols, workflowId: options.workflowId });
+      this.pendingSubscriptions.push({
+        userId,
+        symbols: normalizedSymbols,
+        workflowId: options.workflowId,
+      });
 
       // Try to connect if not already connecting
       if (!this.isConnecting && !this.ws) {
@@ -300,11 +359,11 @@ export class AlpacaNewsWebSocketClient {
       this.userSubscriptions.set(userId, new Set());
     }
     const userSymbols = this.userSubscriptions.get(userId)!;
-    
+
     // Track new symbols to subscribe
     const newSymbols: string[] = [];
-    
-    normalizedSymbols.forEach(symbol => {
+
+    normalizedSymbols.forEach((symbol) => {
       userSymbols.add(symbol);
 
       // Update reverse mapping
@@ -323,7 +382,7 @@ export class AlpacaNewsWebSocketClient {
         this.workflowMetadata.set(workflowId, metadata);
       }
 
-      normalizedSymbols.forEach(symbol => {
+      normalizedSymbols.forEach((symbol) => {
         metadata!.symbols.add(symbol);
         if (!this.symbolWorkflowSubscribers.has(symbol)) {
           this.symbolWorkflowSubscribers.set(symbol, new Set());
@@ -334,18 +393,26 @@ export class AlpacaNewsWebSocketClient {
 
     // Send subscription to Alpaca if there are new symbols
     if (newSymbols.length > 0) {
-      this.sendSubscription('subscribe', newSymbols);
+      this.sendSubscription("subscribe", newSymbols);
     }
 
-    this.log(`✅ User ${userId} subscribed to: ${normalizedSymbols.join(', ')}`);
+    this.log(
+      `✅ User ${userId} subscribed to: ${normalizedSymbols.join(", ")}`
+    );
     return true;
   }
 
   /**
    * Unsubscribe user from specific symbols
    */
-  async unsubscribe(userId: string, symbols: string[], options: { workflowId?: string } = {}): Promise<boolean> {
-    const normalizedSymbols = symbols.map(s => s.toUpperCase()).filter(Boolean);
+  async unsubscribe(
+    userId: string,
+    symbols: string[],
+    options: { workflowId?: string } = {}
+  ): Promise<boolean> {
+    const normalizedSymbols = symbols
+      .map((s) => s.toUpperCase())
+      .filter(Boolean);
 
     if (!normalizedSymbols.length) {
       return true;
@@ -358,7 +425,7 @@ export class AlpacaNewsWebSocketClient {
 
     const symbolsToUnsubscribe: string[] = [];
 
-    normalizedSymbols.forEach(symbol => {
+    normalizedSymbols.forEach((symbol) => {
       userSymbols.delete(symbol);
 
       const subscribers = this.symbolSubscribers.get(symbol);
@@ -377,7 +444,7 @@ export class AlpacaNewsWebSocketClient {
       const workflowId = options.workflowId;
       const metadata = this.workflowMetadata.get(workflowId);
       if (metadata && metadata.userId === userId) {
-        normalizedSymbols.forEach(symbol => {
+        normalizedSymbols.forEach((symbol) => {
           metadata.symbols.delete(symbol);
           const workflows = this.symbolWorkflowSubscribers.get(symbol);
           if (workflows) {
@@ -401,19 +468,24 @@ export class AlpacaNewsWebSocketClient {
 
     // Send unsubscription to Alpaca
     if (symbolsToUnsubscribe.length > 0 && this.isAuthenticated) {
-      this.sendSubscription('unsubscribe', symbolsToUnsubscribe);
+      this.sendSubscription("unsubscribe", symbolsToUnsubscribe);
     }
 
-    this.log(`✅ User ${userId} unsubscribed from: ${normalizedSymbols.join(', ')}`);
+    this.log(
+      `✅ User ${userId} unsubscribed from: ${normalizedSymbols.join(", ")}`
+    );
     return true;
   }
 
   /**
    * Send subscription message to Alpaca
    */
-  private sendSubscription(action: 'subscribe' | 'unsubscribe', symbols: string[]): void {
+  private sendSubscription(
+    action: "subscribe" | "unsubscribe",
+    symbols: string[]
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('⚠️  Cannot send subscription: not connected');
+      this.log("⚠️  Cannot send subscription: not connected");
       return;
     }
 
@@ -423,7 +495,7 @@ export class AlpacaNewsWebSocketClient {
     };
 
     this.ws.send(JSON.stringify(message));
-    this.log(`📤 Sent ${action} for: ${symbols.join(', ')}`);
+    this.log(`📤 Sent ${action} for: ${symbols.join(", ")}`);
   }
 
   /**
@@ -433,18 +505,18 @@ export class AlpacaNewsWebSocketClient {
     // Process pending subscriptions
     const pending = [...this.pendingSubscriptions];
     this.pendingSubscriptions = [];
-    
+
     pending.forEach(({ userId, symbols, workflowId }) => {
-      this.subscribe(userId, symbols, { workflowId }).catch(err => {
-        console.error('Failed to process pending subscription:', err);
+      this.subscribe(userId, symbols, { workflowId }).catch((err) => {
+        console.error("Failed to process pending subscription:", err);
       });
     });
 
     // Resubscribe existing symbols
     const allSymbols = Array.from(this.symbolSubscribers.keys());
     if (allSymbols.length > 0) {
-      this.log('🔄 Resubscribing to all symbols...');
-      this.sendSubscription('subscribe', allSymbols);
+      this.log("🔄 Resubscribing to all symbols...");
+      this.sendSubscription("subscribe", allSymbols);
     }
   }
 
@@ -453,7 +525,7 @@ export class AlpacaNewsWebSocketClient {
    */
   private handleReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('❌ Max reconnection attempts reached');
+      console.error("❌ Max reconnection attempts reached");
       return;
     }
 
@@ -464,12 +536,14 @@ export class AlpacaNewsWebSocketClient {
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
     this.reconnectAttempts++;
 
-    this.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    this.log(
+      `🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
 
     this.reconnectTimeout = setTimeout(() => {
       if (this.credentials) {
-        this.connect(this.credentials).catch(err => {
-          console.error('Reconnection failed:', err);
+        this.connect(this.credentials).catch((err) => {
+          console.error("Reconnection failed:", err);
         });
       }
     }, delay);
@@ -479,24 +553,29 @@ export class AlpacaNewsWebSocketClient {
    * Check if connected and authenticated
    */
   isReady(): boolean {
-    return this.ws !== null &&
-           this.ws.readyState === WebSocket.OPEN &&
-           this.isAuthenticated;
+    return (
+      this.ws !== null &&
+      this.ws.readyState === WebSocket.OPEN &&
+      this.isAuthenticated
+    );
   }
 
-  private async triggerWorkflowsForNews(symbols: string[], newsData: any): Promise<void> {
-    const normalizedSymbols = symbols.map(s => s.toUpperCase());
+  private async triggerWorkflowsForNews(
+    symbols: string[],
+    newsData: any
+  ): Promise<void> {
+    const normalizedSymbols = symbols.map((s) => s.toUpperCase());
     const workflowIds = new Set<string>();
 
-    const wildcard = this.symbolWorkflowSubscribers.get('*');
+    const wildcard = this.symbolWorkflowSubscribers.get("*");
     if (wildcard) {
-      wildcard.forEach(id => workflowIds.add(id));
+      wildcard.forEach((id) => workflowIds.add(id));
     }
 
-    normalizedSymbols.forEach(symbol => {
+    normalizedSymbols.forEach((symbol) => {
       const workflows = this.symbolWorkflowSubscribers.get(symbol);
       if (workflows) {
-        workflows.forEach(id => workflowIds.add(id));
+        workflows.forEach((id) => workflowIds.add(id));
       }
     });
 
@@ -504,72 +583,103 @@ export class AlpacaNewsWebSocketClient {
       return;
     }
 
-    workflowIds.forEach(workflowId => {
+    workflowIds.forEach((workflowId) => {
       const metadata = this.workflowMetadata.get(workflowId);
       if (!metadata) {
         return;
       }
 
-      this.runWorkflowForNews(workflowId, metadata.userId, newsData).catch(error => {
-        console.error(`❌ Failed to trigger workflow ${workflowId} for news event:`, error);
-      });
+      this.runWorkflowForNews(workflowId, metadata.userId, newsData).catch(
+        (error) => {
+          console.error(
+            `❌ Failed to trigger workflow ${workflowId} for news event:`,
+            error
+          );
+        }
+      );
     });
   }
 
-  private async runWorkflowForNews(workflowId: string, userId: string, newsData: any): Promise<void> {
+  private async runWorkflowForNews(
+    workflowId: string,
+    userId: string,
+    newsData: any
+  ): Promise<void> {
     const { data: workflow, error: workflowError } = await supabase
-      .from('workflows')
-      .select('id, nodes, edges, is_active')
-      .eq('id', workflowId)
-      .eq('user_id', userId)
+      .from("workflows")
+      .select("id, nodes, edges, is_active")
+      .eq("id", workflowId)
+      .eq("user_id", userId)
       .single();
 
     if (workflowError || !workflow) {
-      console.error(`❌ Workflow ${workflowId} for user ${userId} not found when handling news`);
+      console.error(
+        `❌ Workflow ${workflowId} for user ${userId} not found when handling news`
+      );
       return;
     }
 
     if (!workflow.is_active) {
-      this.log(`⚠️  Workflow ${workflowId} ignored news event because it is inactive`);
+      this.log(
+        `⚠️  Workflow ${workflowId} ignored news event because it is inactive`
+      );
       return;
     }
 
     const { data: run, error: runError } = await supabase
-      .from('workflow_runs')
+      .from("workflow_runs")
       .insert({
         workflow_id: workflowId,
-        status: 'running',
-        initiated_by: userId
+        status: "running",
+        initiated_by: userId,
       })
       .select()
       .single();
 
     if (runError || !run) {
-      console.error(`❌ Failed to create workflow run for ${workflowId}:`, runError);
+      console.error(
+        `❌ Failed to create workflow run for ${workflowId}:`,
+        runError
+      );
       return;
     }
 
-    this.log(`🚀 Triggering workflow ${workflowId} for user ${userId} due to Alpaca news`);
+    this.log(
+      `🚀 Triggering workflow ${workflowId} for user ${userId} due to Alpaca news`
+    );
 
-    executeWorkflow(run.id, workflowId, userId, workflow.nodes, workflow.edges, {
-      initialInput: { news: newsData }
-    })
-      .then(result => {
+    executeWorkflow(
+      run.id,
+      workflowId,
+      userId,
+      workflow.nodes,
+      workflow.edges,
+      {
+        initialInput: { news: newsData },
+      }
+    )
+      .then((result) => {
         if (!result.success) {
-          console.error(`❌ Workflow ${workflowId} triggered by news failed:`, result.error);
+          console.error(
+            `❌ Workflow ${workflowId} triggered by news failed:`,
+            result.error
+          );
         }
       })
-      .catch(async error => {
-        console.error(`💥 Workflow ${workflowId} execution error for news trigger:`, error);
+      .catch(async (error) => {
+        console.error(
+          `💥 Workflow ${workflowId} execution error for news trigger:`,
+          error
+        );
 
         await supabase
-          .from('workflow_runs')
+          .from("workflow_runs")
           .update({
-            status: 'failed',
+            status: "failed",
             completed_at: new Date().toISOString(),
-            error_message: error.message
+            error_message: error.message,
           })
-          .eq('id', run.id);
+          .eq("id", run.id);
       });
   }
 
@@ -617,7 +727,7 @@ export class AlpacaNewsWebSocketClient {
     this.isAuthenticated = false;
     this.isConnecting = false;
     this.reconnectAttempts = 0;
-    this.log('🔌 Disconnected');
+    this.log("🔌 Disconnected");
   }
 }
 

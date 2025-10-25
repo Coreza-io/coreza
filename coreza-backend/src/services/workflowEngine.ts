@@ -197,6 +197,11 @@ export class WorkflowEngine {
 
     // Seed queue with entry nodes
     for (const node of entryNodes) {
+      // Skip Alpaca or any external listener node if it’s already active
+      if (node.type === "AlpacaNews" || node.category === "external") {
+        console.log(`🟡 Skipping re-run for ${node.type} node`);
+        continue;
+      }
       this.enqueue({ nodeId: node.id, input: initialInput });
     }
 

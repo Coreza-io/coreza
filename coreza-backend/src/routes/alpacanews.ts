@@ -4,6 +4,22 @@ import CredentialManager from "../utils/credentialManager";
 
 const router = express.Router();
 
+// ✅ Start the debug ingress ONCE when this module loads (safe no-op if restarted)
+try {
+  AlpacaNewsWebSocketClient.getInstance().startDebugIngressServer(9090);
+} catch (e) {
+  // If already started (hot-reload), ignore
+  console.warn(
+    "Debug ingress server already running or failed to start:",
+    (e as Error).message
+  );
+}
+
+/**
+ * Subscribe to Alpaca news for specific symbols
+ * POST /alpaca-news/subscribe
+ */
+
 /**
  * Subscribe to Alpaca news for specific symbols
  * POST /alpaca-news/subscribe

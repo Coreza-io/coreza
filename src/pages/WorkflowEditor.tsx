@@ -239,11 +239,12 @@ const WorkflowEditorContent = () => {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
           if (removedNode?.type === "AlpacaNews") {
+            const nodeData = executionStore.getNodeData(id) as any;
             const candidateSymbols =
-              executionStore.getNodeData(id)?.output?.symbols ??
-              removedNode.data?.output?.symbols ??
-              removedNode.data?.values?.symbols ??
-              removedNode.data?.fieldState?.symbols;
+              nodeData?.output?.symbols ??
+              (removedNode.data as any)?.output?.symbols ??
+              (removedNode.data as any)?.values?.symbols ??
+              (removedNode.data as any)?.fieldState?.symbols;
             cleanupAlpacaSubscription(
               id,
               parseSymbolsValue(candidateSymbols),
@@ -646,13 +647,14 @@ const WorkflowEditorContent = () => {
 
       if (!newStatus) {
         nodes
-          .filter((node) => node.type === "AlpacaNews")
+        .filter((node) => node.type === "AlpacaNews")
           .forEach((node) => {
+            const nodeData = executionStore.getNodeData(node.id) as any;
             const candidateSymbols =
-              executionStore.getNodeData(node.id)?.output?.symbols ??
-              node.data?.output?.symbols ??
-              node.data?.values?.symbols ??
-              node.data?.fieldState?.symbols;
+              nodeData?.output?.symbols ??
+              (node.data as any)?.output?.symbols ??
+              (node.data as any)?.values?.symbols ??
+              (node.data as any)?.fieldState?.symbols;
             cleanupAlpacaSubscription(
               node.id,
               parseSymbolsValue(candidateSymbols)

@@ -345,6 +345,27 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           </div>
         );
       
+      case "button":
+        return (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={isSending}
+            onClick={() => handleChange(f.key, "clicked")}
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              f.buttonText || f.label
+            )}
+          </Button>
+        );
+      
       default:
         return null;
     }

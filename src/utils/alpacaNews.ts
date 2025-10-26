@@ -28,7 +28,7 @@ export const createWaitingNewsOutput = (
   overrides: Partial<AlpacaNewsOutput> = {}
 ): AlpacaNewsOutput => ({
   status: 'waiting',
-  message: 'Waiting for news…',
+  message: overrides.message || 'Waiting for news… Activate workflow or test connection.',
   items: [],
   ...overrides,
 });

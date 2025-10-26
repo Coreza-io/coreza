@@ -35,7 +35,7 @@
     }
   ],
   "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
-  "action": { "url": "/alpaca-news/{{operation}}", "method": "POST" },
+  "testAction": { "url": "/alpaca-news/test-subscribe", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",
@@ -46,22 +46,19 @@
       "required": true
     },
     {
-      "key": "operation",
-      "label": "Operation",
-      "type": "select",
-      "options": [
-        { "id": "subscribe", "name": "Subscribe", "method": "POST" },
-        { "id": "unsubscribe", "name": "Unsubscribe", "method": "POST" }
-      ],
-      "required": true
-    },
-    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
       "placeholder": "e.g. AAPL,MSFT or * for all",
-      "description": "Comma-separated symbols or * for all news",
+      "description": "Comma-separated symbols. Activate workflow to start streaming.",
       "required": true
+    },
+    {
+      "key": "test_connection",
+      "label": "Test Connection",
+      "type": "button",
+      "buttonText": "Test Stream (5 min)",
+      "description": "Test news stream before activating workflow"
     }
   ]
 }

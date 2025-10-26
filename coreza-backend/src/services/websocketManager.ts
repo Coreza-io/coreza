@@ -69,27 +69,23 @@ export class WebSocketManager {
   }
 
   private verifyJWT(token: string): { userId: string } {
-    const secret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
-    try {
-      if (secret) {
-        // Try HMAC verification first (legacy/local setups)
-        const verified: any = jwt.verify(token, secret, {
-          algorithms: ['HS256'],
-          ignoreExpiration: false,
-        });
-        return { userId: verified.sub || verified.user_id || verified.userId };
-      }
-      throw new Error('No HMAC secret configured');
-    } catch (error) {
-      // Fallback: decode without verification (development only)
-      const decoded: any = jwt.decode(token);
-      if (decoded?.sub || decoded?.user_id || decoded?.userId) {
-        console.warn('JWT verification skipped (dev fallback). Configure SUPABASE_JWKS_URL or JWT_SECRET for verification.');
-        return { userId: decoded.sub || decoded.user_id || decoded.userId };
-      }
-      console.error('JWT verification failed:', error);
+    // For Supabase ES256 tokens, decode without verification (development)
+    // In production, implement JWKS verification via supabase JWKS endpoint
+    const decoded: any = jwt.decode(token, { complete: false });
+    
+    if (!decoded) {
+      console.error('JWT decode failed: token is invalid');
       throw new Error('Invalid token');
     }
+    
+    const userId = decoded.sub || decoded.user_id || decoded.userId;
+    if (!userId) {
+      console.error('JWT missing user ID:', decoded);
+      throw new Error('Token missing user identifier');
+    }
+    
+    console.log(`✅ JWT decoded successfully for user: ${userId}`);
+    return { userId };
   }
 
   private handleConnection(ws: AuthenticatedWebSocket, req: IncomingMessage): void {

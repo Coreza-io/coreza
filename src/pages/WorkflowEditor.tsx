@@ -142,6 +142,8 @@ const WorkflowEditorContent = () => {
   const { user: authUser, session, loading: authLoading } = useAuth();
   const executionStore = useExecutionStore();
   const wsRef = useRef<WebSocket | null>(null);
+  const messageHandlerRef = useRef<(rawPayload: any, timestamp?: string) => void>(() => {});
+
 
   // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === "new" || !id;
@@ -302,6 +304,11 @@ const WorkflowEditorContent = () => {
     [executionStore, setNodes]
   );
 
+  useEffect(() => {
+    // Keep the message handler stable without forcing WS reconnections
+    messageHandlerRef.current = handleNodeOutputMessage;
+  }, [handleNodeOutputMessage]);
+
   const removeEdge = useCallback(
     (edgeId: string) => setEdges((es) => es.filter((e) => e.id !== edgeId)),
     [setEdges]
@@ -344,7 +351,12 @@ const WorkflowEditorContent = () => {
 
   useEffect(() => {
     const wsUrl = resolveWebSocketUrl();
-    if (!authUser || !session?.access_token || !wsUrl) {
+    if (!authUser?.id || !session?.access_token || !wsUrl) {
+      return;
+    }
+
+    // Prevent duplicate connections on rapid re-renders
+    if (wsRef.current) {
       return;
     }
 
@@ -367,10 +379,10 @@ const WorkflowEditorContent = () => {
           }
 
           if (message.type === "node_output") {
-            handleNodeOutputMessage(message.payload, message.timestamp);
+            messageHandlerRef.current(message.payload, message.timestamp);
           } else if (message.type === "alpaca_news") {
             const payload = message.payload || {};
-            handleNodeOutputMessage(
+            messageHandlerRef.current(
               {
                 nodeId: payload.nodeId || payload.node_id,
                 data: payload.news ?? payload,
@@ -407,11 +419,13 @@ const WorkflowEditorContent = () => {
         clearTimeout(reconnectTimeout);
       }
       if (wsRef.current) {
-        wsRef.current.close();
+        try {
+          wsRef.current.close(1000, "navigate/cleanup");
+        } catch {}
         wsRef.current = null;
       }
     };
-  }, [authUser, session?.access_token, handleNodeOutputMessage]);
+  }, [authUser?.id, session?.access_token]);
 
   // Merge base node types with custom Loop node
   const nodeTypes = useMemo(

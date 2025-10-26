@@ -71,7 +71,7 @@ export interface BaseNodeRenderProps {
   finishEditing: (save?: boolean) => void;
   setEditingName: (name: string) => void;
   // Event handlers
-  handleChange: (key: string, value: any) => Promise<void>;
+  handleChange: (key: string, value: any) => void;
   handleFieldStateBatch: (updates: Record<string, any>) => void;
   handleSubmit: (e: React.FormEvent) => void;
   handleDrop: (
@@ -415,86 +415,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   };
 
   const handleChange = useCallback(
-    async (key: string, value: any) => {
-      // Handle test button click for AlpacaNews
-      if (definition?.name === "AlpacaNews" && key === "test_connection" && value === "clicked") {
-        if (!user?.id) {
-          toast({
-            title: "Error",
-            description: "User not authenticated",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const credentialId = fieldState.credential_id;
-        const symbols = fieldState.symbols;
-
-        if (!credentialId) {
-          toast({
-            title: "Missing Credential",
-            description: "Please select a credential first",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (!symbols) {
-          toast({
-            title: "Missing Symbols",
-            description: "Please enter symbols to test",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        setIsSending(true);
-        try {
-          const response = await fetch(`${BACKEND_URL}/alpaca-news/test-subscribe`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: user.id,
-              credential_id: credentialId,
-              symbols,
-              node_id: nodeId,
-            }),
-          });
-
-          const result = await response.json();
-
-          if (result.success) {
-            toast({
-              title: "Test Started",
-              description: result.message || "News stream active for 5 minutes",
-            });
-            
-            // Initialize node with waiting status
-            if (nodeId) {
-              const waitingOutput = createWaitingNewsOutput({
-                nodeId,
-                symbols: result.symbols,
-                message: "Testing... Waiting for news (5 min)",
-              });
-              executionStore.setNodeData(nodeId, { output: waitingOutput });
-              setLastOutput(waitingOutput);
-            }
-          } else {
-            throw new Error(result.error || "Test failed");
-          }
-        } catch (error) {
-          toast({
-            title: "Test Failed",
-            description: error instanceof Error ? error.message : "Failed to start test",
-            variant: "destructive",
-          });
-        } finally {
-          setIsSending(false);
-        }
-        return;
-      }
-
-      // Regular field update
+    (key: string, value: any) => {
       const newFieldState = { ...fieldState, [key]: value };
       setFieldState(newFieldState);
       setNodes((nds) =>
@@ -512,7 +433,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         )
       );
     },
-    [fieldState, nodeId, setNodes, definition?.name, user, toast, executionStore, setIsSending, setLastOutput]
+    [fieldState, nodeId, setNodes]
   );
 
   // ========== New batch updater ===========

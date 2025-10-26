@@ -83,18 +83,23 @@ export class WebSocketManager {
     const userId = (req as any).userId;
     const sessionId = this.generateSessionId();
     
+    console.log(`🔌 New WebSocket connection - userId: ${userId}, sessionId: ${sessionId}`);
+    
     ws.userId = userId;
     ws.sessionId = sessionId;
     ws.isAlive = true;
 
     // Add to user clients
     if (!this.clients.has(userId)) {
+      console.log(`📝 Creating new client set for user ${userId}`);
       this.clients.set(userId, new Set());
     }
     this.clients.get(userId)!.add(ws);
     this.sessions.set(sessionId, ws);
 
     console.log(`👤 User ${userId} connected (session: ${sessionId})`);
+    console.log(`📊 Total clients for user ${userId}: ${this.clients.get(userId)?.size}`);
+    console.log(`📊 Total connected users: ${this.clients.size}`);
 
     // Send welcome message
     this.sendMessage(ws, {
@@ -317,7 +322,11 @@ export class WebSocketManager {
     const instance = WebSocketManager.getInstance();
     const userClients = instance.clients.get(userId);
     
-    if (userClients) {
+    console.log(`🔍 Attempting to send to user ${userId}`);
+    console.log(`📊 Current clients map:`, Array.from(instance.clients.keys()));
+    console.log(`👥 User clients found:`, userClients ? userClients.size : 'undefined');
+    
+    if (userClients && userClients.size > 0) {
       const messageWithTimestamp = {
         ...message,
         timestamp: new Date().toISOString()
@@ -328,6 +337,8 @@ export class WebSocketManager {
       });
       
       console.log(`📤 Sent message to user ${userId} (${userClients.size} clients)`);
+    } else {
+      console.warn(`⚠️ No clients found for user ${userId}`);
     }
   }
 

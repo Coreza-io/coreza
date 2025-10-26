@@ -239,11 +239,12 @@ const WorkflowEditorContent = () => {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
           if (removedNode?.type === "AlpacaNews") {
+            const nodeData = removedNode.data as any;
             const candidateSymbols =
               executionStore.getNodeData(id)?.output?.symbols ??
-              removedNode.data?.output?.symbols ??
-              removedNode.data?.values?.symbols ??
-              removedNode.data?.fieldState?.symbols;
+              nodeData?.output?.symbols ??
+              nodeData?.values?.symbols ??
+              nodeData?.fieldState?.symbols;
             cleanupAlpacaSubscription(
               id,
               parseSymbolsValue(candidateSymbols),
@@ -648,11 +649,12 @@ const WorkflowEditorContent = () => {
         nodes
           .filter((node) => node.type === "AlpacaNews")
           .forEach((node) => {
+            const nodeData = node.data as any;
             const candidateSymbols =
               executionStore.getNodeData(node.id)?.output?.symbols ??
-              node.data?.output?.symbols ??
-              node.data?.values?.symbols ??
-              node.data?.fieldState?.symbols;
+              nodeData?.output?.symbols ??
+              nodeData?.values?.symbols ??
+              nodeData?.fieldState?.symbols;
             cleanupAlpacaSubscription(
               node.id,
               parseSymbolsValue(candidateSymbols)

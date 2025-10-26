@@ -14,6 +14,9 @@ import { summarizePreview } from "@/utils/summarizePreview";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import {
+  createWaitingNewsOutput,
+} from "@/utils/alpacaNews";
 
 //const BACKEND_URL = "http://localhost:8000";
 const BACKEND_URL = import.meta.env.VITE_API_URL as string;
@@ -349,7 +352,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   );
   const [selectOptions, setSelectOptions] = useState<Record<string, any[]>>({});
   const [isSending, setIsSending] = useState(false);
-  const [lastOutput, setLastOutput] = useState<any>({ status: "pending" });
+  const [lastOutput, setLastOutput] = useState<any>(() =>
+    definition?.name === "AlpacaNews"
+      ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined })
+      : { status: "pending" }
+  );
   const [overrideOutput, setOverrideOutput] = useState<any | null>(null);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
@@ -373,6 +380,26 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   const displayedData = overrideOutput !== null ? overrideOutput : lastOutput;
   const isPinned = overrideOutput !== null;
+
+  useEffect(() => {
+    if (isPinned) return;
+
+    if (definition?.name === "AlpacaNews") {
+      if (data.output) {
+        setLastOutput(data.output);
+      } else if (nodeId && lastOutput?.status !== "waiting") {
+        setLastOutput(createWaitingNewsOutput({ nodeId }));
+      }
+    } else if (data.output) {
+      setLastOutput(data.output);
+    }
+  }, [
+    data.output,
+    definition?.name,
+    isPinned,
+    lastOutput?.status,
+    nodeId,
+  ]);
 
   const handleDragStart = (
     e: React.DragEvent,
@@ -715,6 +742,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         userId
       );
       payload.user_id = userId;
+      if (definition?.name === "AlpacaNews" && nodeId) {
+        payload.node_id = nodeId;
+      }
+
+      const parsedSymbols: string[] = Array.isArray(payload.symbols)
+        ? payload.symbols
+        : typeof payload.symbols === "string"
+        ? payload.symbols
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [];
 
       let outputData: any;
 
@@ -908,7 +947,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const res = await fetch(fullUrl, fetchOptions);
         const responseData = await res.json();
         if (!res.ok) throw new Error(responseData.detail || "Action failed");
-        outputData = responseData;
+        if (definition?.name === "AlpacaNews") {
+          const waitingOutput = createWaitingNewsOutput({
+            nodeId: nodeId ?? undefined,
+            symbols: parsedSymbols,
+          });
+          outputData = {
+            ...waitingOutput,
+            subscriptions: responseData?.subscriptions,
+            lastActionMessage: responseData?.message,
+          };
+        } else {
+          outputData = responseData;
+        }
       } else {
         outputData = payload;
       }

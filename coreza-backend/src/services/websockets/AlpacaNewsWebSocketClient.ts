@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { supabase } from "../../config/supabase";
 import { executeWorkflow } from "../workflowEngine";
-import { WebSocketManager } from "../WebSocketManager";
+import { WebSocketManager } from "../websocketManager";
 /**
  * Alpaca News WebSocket Message Types
  */
@@ -330,10 +330,10 @@ export class AlpacaNewsWebSocketClient {
         receivedAt: new Date().toISOString(),
       };
 
-      WebSocketManager.sendToUser(info.userId, {
-        type: "node_output",
-        payload,
-      });
+      //WebSocketManager.sendToUser(info.userId, {
+      //  type: "node_output",
+      //  newsData,
+      //});
 
       // Legacy message for backward compatibility
       WebSocketManager.sendToUser(info.userId, {
@@ -534,7 +534,10 @@ export class AlpacaNewsWebSocketClient {
     }
 
     if (symbolsToUnsubscribe.length > 0 && this.isAuthenticated) {
-      this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)));
+      this.sendSubscription(
+        "unsubscribe",
+        Array.from(new Set(symbolsToUnsubscribe))
+      );
     }
 
     this.log(

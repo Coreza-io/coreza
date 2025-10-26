@@ -53,9 +53,7 @@ export class LLMExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const values = node.data?.values || node.values || {};
-      const resolvedValues = resolveReferences(values, input);
-
+      const resolvedValues = input;
       // Get user_id from context
       const user_id = context?.user_id || context?.userId;
       if (!user_id) {
@@ -65,7 +63,7 @@ export class LLMExecutor implements INodeExecutor {
         };
       }
 
-      const credential_id = resolvedValues.credential_id;
+      const credential_id = node.values.credential_id;
       if (!credential_id) {
         return {
           success: false,

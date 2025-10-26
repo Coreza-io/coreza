@@ -202,6 +202,8 @@ export class WorkflowEngine {
         console.log(`🟡 Skipping re-run for ${node.type} node`);
         const edges = this.router.select(node.id, initialInput);
         for (const edge of edges) {
+          this.store.setNodeResult(node.id, initialInput);
+          this.executed.add(node.id);
           await this.routeEdge(edge, initialInput);
         }
       }

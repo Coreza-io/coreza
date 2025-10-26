@@ -31,14 +31,14 @@ await client.connect({
   secret_key: 'YOUR_SECRET_KEY'
 });
 
-// Subscribe to news for specific symbols (nodeId required)
-await client.subscribe('user123', ['AAPL', 'MSFT'], { nodeId: 'alpaca-node-1' });
+// Subscribe to news for specific symbols
+await client.subscribe('user123', ['AAPL', 'MSFT']);
 
-// Subscribe to all news from another node
-await client.subscribe('user123', ['*'], { nodeId: 'alpaca-node-2' });
+// Subscribe to all news
+await client.subscribe('user456', ['*']);
 
 // Unsubscribe
-await client.unsubscribe('user123', ['AAPL'], { nodeId: 'alpaca-node-1' });
+await client.unsubscribe('user123', ['AAPL']);
 
 // Get stats
 const stats = client.getStats();
@@ -54,7 +54,7 @@ WebSocket Connection (port 8081)
     ↓
 WebSocketManager.handleAlpacaStream()
     ↓
-AlpacaNewsWebSocketClient.subscribe(userId, symbols, { nodeId })
+AlpacaNewsWebSocketClient.subscribe(userId, symbols)
     ↓
 Alpaca News API (wss://stream.data.alpaca.markets/v1beta1/news)
     ↓
@@ -62,7 +62,7 @@ News Message { T: "n", headline, symbols, ... }
     ↓
 AlpacaNewsWebSocketClient.handleNews()
     ↓
-WebSocketManager.sendToUser(userId, { type: "node_output", payload: { nodeId, data } })
+WebSocketManager.sendToUser(userId, newsData)
     ↓
 Frontend Client receives news
 ```
@@ -76,8 +76,7 @@ Frontend Client receives news
   "payload": {
     "action": "subscribe",
     "symbols": ["AAPL", "MSFT"],
-    "credential_id": "cred-123",
-    "node_id": "alpaca-node-1"
+    "credential_id": "cred-123"
   }
 }
 ```
@@ -85,24 +84,18 @@ Frontend Client receives news
 ### News Event (Backend → Frontend)
 ```json
 {
-  "type": "node_output",
+  "type": "alpaca_news",
   "payload": {
-    "nodeId": "alpaca-node-1",
-    "nodeType": "AlpacaNews",
-    "source": "alpaca_news",
-    "data": {
-      "id": 123,
-      "headline": "Apple announces new product",
-      "summary": "Apple Inc. today announced...",
-      "symbols": ["AAPL"],
-      "source": "Bloomberg",
-      "created_at": "2025-10-16T10:00:00Z",
-      "updated_at": "2025-10-16T10:00:00Z",
-      "url": "https://...",
-      "content": "Full article content...",
-      "author": "John Doe"
-    },
-    "receivedAt": "2025-10-16T10:00:01Z"
+    "id": 123,
+    "headline": "Apple announces new product",
+    "summary": "Apple Inc. today announced...",
+    "symbols": ["AAPL"],
+    "source": "Bloomberg",
+    "created_at": "2025-10-16T10:00:00Z",
+    "updated_at": "2025-10-16T10:00:00Z",
+    "url": "https://...",
+    "content": "Full article content...",
+    "author": "John Doe"
   },
   "timestamp": "2025-10-16T10:00:01Z"
 }
@@ -122,8 +115,8 @@ The Alpaca News WebSocket API sends these message types:
 ## Subscription Management
 
 The client maintains two mappings:
-- **userSubscriptions**: `Map<userId, Map<nodeId, Set<symbols>>>`
-- **symbolSubscribers**: `Map<symbol, Set<subscriberKey>>` where `subscriberKey = "${userId}::${nodeId}"`
+- **userSubscriptions**: `Map<userId, Set<symbols>>`
+- **symbolSubscribers**: `Map<symbol, Set<userIds>>`
 
 This allows:
 1. Efficient broadcasting to users subscribed to specific symbols

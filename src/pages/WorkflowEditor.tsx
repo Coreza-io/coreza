@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -11,7 +11,6 @@ import {
   Connection,
   Edge,
   Node,
-  NodeChange,
   BackgroundVariant,
   MarkerType,
   useReactFlow,
@@ -48,54 +47,6 @@ import {
   ExecutionStoreProvider,
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
-import {
-  appendNewsItem,
-  createWaitingNewsOutput,
-} from "@/utils/alpacaNews";
-
-const API_BASE_URL =
-  (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:8000";
-
-const resolveWebSocketUrl = (): string | null => {
-  const explicit = import.meta.env.VITE_WS_URL as string | undefined;
-  if (explicit) {
-    return explicit;
-  }
-
-  try {
-    const api = new URL(API_BASE_URL);
-    const configuredPort = import.meta.env.VITE_WS_PORT as string | undefined;
-    const wsProtocol = api.protocol === "https:" ? "wss:" : "ws:";
-    const port =
-      configuredPort ??
-      (api.port
-        ? api.port === "8000"
-          ? "8081"
-          : api.port
-        : "8081");
-    return `${wsProtocol}//${api.hostname}:${port}`;
-  } catch (error) {
-    console.error("Failed to derive WebSocket URL", error);
-    return null;
-  }
-};
-
-const parseSymbolsValue = (value: any): string[] => {
-  if (Array.isArray(value)) {
-    return value
-      .map((s) => (typeof s === "string" ? s.trim() : ""))
-      .filter((s): s is string => Boolean(s));
-  }
-
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-};
 
 // Base node type mapping (excluding custom Loop node)
 const baseNodeTypes = Object.fromEntries([
@@ -139,9 +90,8 @@ const WorkflowEditorContent = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user: authUser, session, loading: authLoading } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   const executionStore = useExecutionStore();
-  const wsRef = useRef<WebSocket | null>(null);
 
   // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === "new" || !id;
@@ -168,138 +118,9 @@ const WorkflowEditorContent = () => {
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
 
-  const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const rf = useReactFlow();
-
-  const cleanupAlpacaSubscription = useCallback(
-    async (
-      nodeId: string,
-      fallbackSymbols: string[] = [],
-      updateNodeState: boolean = true
-    ) => {
-      if (!authUser) {
-        return;
-      }
-
-      const storeData = executionStore.getNodeData(nodeId) as any;
-      const storedSymbols = Array.isArray(storeData?.output?.symbols)
-        ? storeData.output.symbols
-        : [];
-      const symbols = storedSymbols.length
-        ? storedSymbols
-        : fallbackSymbols;
-
-      if (symbols.length) {
-        try {
-          await fetch(`${API_BASE_URL}/alpaca-news/unsubscribe`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: authUser.id,
-              symbols,
-              node_id: nodeId,
-            }),
-          });
-        } catch (error) {
-          console.error(
-            "Failed to unsubscribe Alpaca news for node",
-            nodeId,
-            error
-          );
-        }
-      }
-
-      const waitingOutput = createWaitingNewsOutput({
-        nodeId,
-        symbols: [],
-      });
-      executionStore.setNodeData(nodeId, { output: waitingOutput });
-
-      if (updateNodeState) {
-        setNodes((prev) =>
-          prev.map((node) =>
-            node.id === nodeId
-              ? { ...node, data: { ...node.data, output: waitingOutput } }
-              : node
-          )
-        );
-      }
-    },
-    [authUser, executionStore, setNodes]
-  );
-
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      const removedNodeIds = changes
-        .filter((change) => change.type === "remove")
-        .map((change) => change.id);
-
-      if (removedNodeIds.length) {
-        removedNodeIds.forEach((id) => {
-          const removedNode = nodes.find((node) => node.id === id);
-          if (removedNode?.type === "AlpacaNews") {
-            const candidateSymbols =
-              executionStore.getNodeData(id)?.output?.symbols ??
-              removedNode.data?.output?.symbols ??
-              removedNode.data?.values?.symbols ??
-              removedNode.data?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
-              id,
-              parseSymbolsValue(candidateSymbols),
-              false
-            );
-          }
-        });
-      }
-
-      applyNodeChanges(changes);
-    },
-    [applyNodeChanges, cleanupAlpacaSubscription, executionStore, nodes]
-  );
-
-  const handleNodeOutputMessage = useCallback(
-    (rawPayload: any, timestamp?: string) => {
-      if (!rawPayload) {
-        return;
-      }
-
-      const nodeId = rawPayload.nodeId || rawPayload.node_id;
-      const newsData =
-        rawPayload.data ||
-        rawPayload.news ||
-        rawPayload.payload?.data ||
-        rawPayload.payload ||
-        rawPayload;
-
-      if (!nodeId || !newsData) {
-        return;
-      }
-
-      const receivedAt =
-        rawPayload.receivedAt || timestamp || new Date().toISOString();
-      const symbols = parseSymbolsValue(
-        rawPayload.symbols ?? newsData.symbols ?? []
-      );
-
-      const currentData = executionStore.getNodeData(nodeId) as any;
-      const nextOutput = appendNewsItem(currentData?.output, newsData, {
-        nodeId,
-        symbols,
-        receivedAt,
-      });
-
-      executionStore.setNodeData(nodeId, { output: nextOutput });
-      setNodes((prev) =>
-        prev.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, output: nextOutput } }
-            : node
-        )
-      );
-    },
-    [executionStore, setNodes]
-  );
 
   const removeEdge = useCallback(
     (edgeId: string) => setEdges((es) => es.filter((e) => e.id !== edgeId)),
@@ -340,77 +161,6 @@ const WorkflowEditorContent = () => {
     },
     [setEdges]
   );
-
-  useEffect(() => {
-    const wsUrl = resolveWebSocketUrl();
-    if (!authUser || !session?.access_token || !wsUrl) {
-      return;
-    }
-
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let closedByEffect = false;
-
-    const connect = () => {
-      const socket = new WebSocket(`${wsUrl}?token=${session.access_token}`);
-      wsRef.current = socket;
-
-      socket.onopen = () => {
-        console.log("🔌 Alpaca news WebSocket connected");
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (!message?.type) {
-            return;
-          }
-
-          if (message.type === "node_output") {
-            handleNodeOutputMessage(message.payload, message.timestamp);
-          } else if (message.type === "alpaca_news") {
-            const payload = message.payload || {};
-            handleNodeOutputMessage(
-              {
-                nodeId: payload.nodeId || payload.node_id,
-                data: payload.news ?? payload,
-                symbols:
-                  payload.news?.symbols ?? payload.symbols ?? payload.data?.symbols,
-                receivedAt: message.timestamp,
-              },
-              message.timestamp
-            );
-          }
-        } catch (error) {
-          console.error("Failed to parse WebSocket message", error);
-        }
-      };
-
-      socket.onerror = (event) => {
-        console.error("Alpaca news WebSocket error", event);
-        socket.close();
-      };
-
-      socket.onclose = () => {
-        wsRef.current = null;
-        if (!closedByEffect) {
-          reconnectTimeout = setTimeout(connect, 3000);
-        }
-      };
-    };
-
-    connect();
-
-    return () => {
-      closedByEffect = true;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, [authUser, session?.access_token, handleNodeOutputMessage]);
 
   // Merge base node types with custom Loop node
   const nodeTypes = useMemo(
@@ -593,7 +343,7 @@ const WorkflowEditorContent = () => {
     if (!authUser || !workflowId) return;
 
     try {
-      const API_URL = API_BASE_URL;
+      const API_URL = "http://localhost:8000";
       
       // Check backend health first for both activation and deactivation
       try {
@@ -609,7 +359,7 @@ const WorkflowEditorContent = () => {
         console.error("Backend health check failed:", healthError);
         toast({
           title: "Error",
-          description: `Backend server is not available. Please ensure your backend is running on ${API_BASE_URL}`,
+          description: "Backend server is not available. Please ensure your backend is running on http://localhost:8000",
           variant: "destructive",
         });
         return;
@@ -643,22 +393,6 @@ const WorkflowEditorContent = () => {
 
       // Update local state
       setIsActive(newStatus);
-
-      if (!newStatus) {
-        nodes
-          .filter((node) => node.type === "AlpacaNews")
-          .forEach((node) => {
-            const candidateSymbols =
-              executionStore.getNodeData(node.id)?.output?.symbols ??
-              node.data?.output?.symbols ??
-              node.data?.values?.symbols ??
-              node.data?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
-              node.id,
-              parseSymbolsValue(candidateSymbols)
-            );
-          });
-      }
 
       toast({
         title: "Success",

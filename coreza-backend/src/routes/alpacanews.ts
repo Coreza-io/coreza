@@ -26,7 +26,7 @@ try {
  */
 router.post("/subscribe", async (req, res) => {
   try {
-    const { user_id, credential_id, symbols } = req.body;
+    const { user_id, credential_id, symbols, node_id } = req.body;
 
     if (!user_id) {
       return res.status(400).json({ error: "user_id is required" });
@@ -38,6 +38,10 @@ router.post("/subscribe", async (req, res) => {
 
     if (!symbols) {
       return res.status(400).json({ error: "symbols is required" });
+    }
+
+    if (!node_id) {
+      return res.status(400).json({ error: "node_id is required" });
     }
 
     // Parse symbols (comma-separated string or array)
@@ -88,12 +92,13 @@ router.post("/subscribe", async (req, res) => {
     }
 
     // Subscribe to symbols
-    await client.subscribe(user_id, symbolArray);
+    await client.subscribe(user_id, symbolArray, { nodeId: node_id });
 
     res.json({
       success: true,
       message: `Subscribed to news for: ${symbolArray.join(", ")}`,
       symbols: symbolArray,
+      node_id,
       subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {
@@ -111,7 +116,7 @@ router.post("/subscribe", async (req, res) => {
  */
 router.post("/unsubscribe", async (req, res) => {
   try {
-    const { user_id, symbols } = req.body;
+    const { user_id, symbols, node_id } = req.body;
 
     if (!user_id) {
       return res.status(400).json({ error: "user_id is required" });
@@ -137,12 +142,15 @@ router.post("/unsubscribe", async (req, res) => {
     }
 
     const client = AlpacaNewsWebSocketClient.getInstance();
-    await client.unsubscribe(user_id, symbolArray);
+    await client.unsubscribe(user_id, symbolArray, {
+      nodeId: node_id,
+    });
 
     res.json({
       success: true,
       message: `Unsubscribed from news for: ${symbolArray.join(", ")}`,
       symbols: symbolArray,
+      node_id: node_id ?? null,
       subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {

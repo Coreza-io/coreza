@@ -33,10 +33,12 @@ interface AlpacaSubscription {
 /**
  * User subscription tracking
  */
-interface UserSubscription {
+interface SubscriberInfo {
   userId: string;
-  symbols: Set<string>;
+  nodeId: string;
 }
+
+type UserNodeSubscriptions = Map<string, Set<string>>; // nodeId -> symbols
 
 /**
  * Alpaca News WebSocket Client
@@ -57,17 +59,19 @@ export class AlpacaNewsWebSocketClient {
   private isConnecting: boolean = false;
 
   // Subscription management
-  private userSubscriptions: Map<string, Set<string>> = new Map(); // userId -> symbols
-  private symbolSubscribers: Map<string, Set<string>> = new Map(); // symbol -> userIds
+  private userSubscriptions: Map<string, UserNodeSubscriptions> = new Map(); // userId -> (nodeId -> symbols)
+  private symbolSubscribers: Map<string, Set<string>> = new Map(); // symbol -> subscriberKeys
+  private subscriberDirectory: Map<string, SubscriberInfo> = new Map();
   private pendingSubscriptions: Array<{
     userId: string;
     symbols: string[];
     workflowId?: string;
+    nodeId: string;
   }> = [];
   private symbolWorkflowSubscribers: Map<string, Set<string>> = new Map(); // symbol -> workflowIds
   private workflowMetadata: Map<
     string,
-    { userId: string; symbols: Set<string> }
+    { userId: string; nodeId?: string; symbols: Set<string> }
   > = new Map();
 
   // Reconnection
@@ -92,6 +96,13 @@ export class AlpacaNewsWebSocketClient {
     if (this.debug) {
       console.log("[AlpacaNews]", ...args);
     }
+  }
+
+  /**
+   * Generate deterministic key for subscriber lookup
+   */
+  private getSubscriberKey(userId: string, nodeId: string): string {
+    return `${userId}::${nodeId}`;
   }
 
   /**
@@ -291,24 +302,46 @@ export class AlpacaNewsWebSocketClient {
     };
 
     // Broadcast to all subscribers of these symbols or wildcard
-    const notifiedUsers = new Set<string>();
+    const notifiedSubscribers = new Set<string>();
 
-    // Check wildcard subscribers
     const wildcardSubs = this.symbolSubscribers.get("*") || new Set();
-    wildcardSubs.forEach((userId) => notifiedUsers.add(userId));
+    wildcardSubs.forEach((key) => notifiedSubscribers.add(key));
 
-    // Check symbol-specific subscribers
-    symbols.forEach((symbol: string) => {
-      const subs =
-        this.symbolSubscribers.get(symbol.toUpperCase()) || new Set();
-      subs.forEach((userId) => notifiedUsers.add(userId));
+    const normalizedSymbols = symbols.map((symbol: string) =>
+      symbol === "*" ? "*" : symbol.toUpperCase()
+    );
+    normalizedSymbols.forEach((symbol) => {
+      const subs = this.symbolSubscribers.get(symbol) || new Set();
+      subs.forEach((key) => notifiedSubscribers.add(key));
     });
 
-    // Send to all subscribed users
-    notifiedUsers.forEach((userId) => {
-      WebSocketManager.sendToUser(userId, {
+    notifiedSubscribers.forEach((subscriberKey) => {
+      const info = this.subscriberDirectory.get(subscriberKey);
+      if (!info) {
+        return;
+      }
+
+      const payload = {
+        nodeId: info.nodeId,
+        nodeType: "AlpacaNews",
+        source: "alpaca_news",
+        data: newsData,
+        symbols: normalizedSymbols.length ? normalizedSymbols : ["*"],
+        receivedAt: new Date().toISOString(),
+      };
+
+      WebSocketManager.sendToUser(info.userId, {
+        type: "node_output",
+        payload,
+      });
+
+      // Legacy message for backward compatibility
+      WebSocketManager.sendToUser(info.userId, {
         type: "alpaca_news",
-        payload: newsData,
+        payload: {
+          nodeId: info.nodeId,
+          news: newsData,
+        },
       });
     });
 
@@ -321,15 +354,20 @@ export class AlpacaNewsWebSocketClient {
   async subscribe(
     userId: string,
     symbols: string[],
-    options: { workflowId?: string } = {}
+    options: { workflowId?: string; nodeId?: string } = {}
   ): Promise<boolean> {
     if (!this.credentials) {
       throw new Error("Not connected. Call connect() first.");
     }
 
+    const nodeId = options.nodeId;
+    if (!nodeId) {
+      throw new Error("nodeId is required to subscribe to Alpaca news");
+    }
+
     // Normalize symbols
     const normalizedSymbols = symbols
-      .map((s) => s.toUpperCase())
+      .map((s) => (s === "*" ? "*" : s.toUpperCase()))
       .filter(Boolean);
 
     if (!normalizedSymbols.length) {
@@ -343,6 +381,7 @@ export class AlpacaNewsWebSocketClient {
         userId,
         symbols: normalizedSymbols,
         workflowId: options.workflowId,
+        nodeId,
       });
 
       // Try to connect if not already connecting
@@ -354,31 +393,43 @@ export class AlpacaNewsWebSocketClient {
 
     // Update user subscriptions
     if (!this.userSubscriptions.has(userId)) {
-      this.userSubscriptions.set(userId, new Set());
+      this.userSubscriptions.set(userId, new Map());
     }
-    const userSymbols = this.userSubscriptions.get(userId)!;
+    const userNodes = this.userSubscriptions.get(userId)!;
+    if (!userNodes.has(nodeId)) {
+      userNodes.set(nodeId, new Set());
+    }
+    const nodeSymbols = userNodes.get(nodeId)!;
+    const subscriberKey = this.getSubscriberKey(userId, nodeId);
+    this.subscriberDirectory.set(subscriberKey, { userId, nodeId });
 
     // Track new symbols to subscribe
     const newSymbols: string[] = [];
 
     normalizedSymbols.forEach((symbol) => {
-      userSymbols.add(symbol);
+      if (!nodeSymbols.has(symbol)) {
+        nodeSymbols.add(symbol);
 
-      // Update reverse mapping
-      if (!this.symbolSubscribers.has(symbol)) {
-        this.symbolSubscribers.set(symbol, new Set());
-        newSymbols.push(symbol);
+        if (!this.symbolSubscribers.has(symbol)) {
+          this.symbolSubscribers.set(symbol, new Set());
+        }
+        const subscribers = this.symbolSubscribers.get(symbol)!;
+        const wasEmpty = subscribers.size === 0;
+        subscribers.add(subscriberKey);
+        if (wasEmpty) {
+          newSymbols.push(symbol);
+        }
       }
-      this.symbolSubscribers.get(symbol)!.add(userId);
     });
 
     if (options.workflowId) {
       const workflowId = options.workflowId;
       let metadata = this.workflowMetadata.get(workflowId);
       if (!metadata) {
-        metadata = { userId, symbols: new Set() };
+        metadata = { userId, nodeId, symbols: new Set() };
         this.workflowMetadata.set(workflowId, metadata);
       }
+      metadata.nodeId = nodeId;
 
       normalizedSymbols.forEach((symbol) => {
         metadata!.symbols.add(symbol);
@@ -406,35 +457,54 @@ export class AlpacaNewsWebSocketClient {
   async unsubscribe(
     userId: string,
     symbols: string[],
-    options: { workflowId?: string } = {}
+    options: { workflowId?: string; nodeId?: string } = {}
   ): Promise<boolean> {
     const normalizedSymbols = symbols
-      .map((s) => s.toUpperCase())
+      .map((s) => (s === "*" ? "*" : s.toUpperCase()))
       .filter(Boolean);
 
     if (!normalizedSymbols.length) {
       return true;
     }
 
-    const userSymbols = this.userSubscriptions.get(userId);
-    if (!userSymbols) {
+    const userNodes = this.userSubscriptions.get(userId);
+    if (!userNodes) {
       return true;
     }
 
+    const targetNodeIds = options.nodeId
+      ? [options.nodeId]
+      : Array.from(userNodes.keys());
+
     const symbolsToUnsubscribe: string[] = [];
 
-    normalizedSymbols.forEach((symbol) => {
-      userSymbols.delete(symbol);
+    targetNodeIds.forEach((nodeId) => {
+      const nodeSymbols = userNodes.get(nodeId);
+      if (!nodeSymbols) {
+        return;
+      }
 
-      const subscribers = this.symbolSubscribers.get(symbol);
-      if (subscribers) {
-        subscribers.delete(userId);
+      const subscriberKey = this.getSubscriberKey(userId, nodeId);
 
-        // If no more subscribers for this symbol, unsubscribe from Alpaca
-        if (subscribers.size === 0) {
-          this.symbolSubscribers.delete(symbol);
-          symbolsToUnsubscribe.push(symbol);
+      normalizedSymbols.forEach((symbol) => {
+        if (!nodeSymbols.has(symbol)) {
+          return;
         }
+        nodeSymbols.delete(symbol);
+
+        const subscribers = this.symbolSubscribers.get(symbol);
+        if (subscribers) {
+          subscribers.delete(subscriberKey);
+          if (subscribers.size === 0) {
+            this.symbolSubscribers.delete(symbol);
+            symbolsToUnsubscribe.push(symbol);
+          }
+        }
+      });
+
+      if (nodeSymbols.size === 0) {
+        userNodes.delete(nodeId);
+        this.subscriberDirectory.delete(subscriberKey);
       }
     });
 
@@ -459,14 +529,12 @@ export class AlpacaNewsWebSocketClient {
       }
     }
 
-    // Clean up if user has no more subscriptions
-    if (userSymbols.size === 0) {
+    if (userNodes.size === 0) {
       this.userSubscriptions.delete(userId);
     }
 
-    // Send unsubscription to Alpaca
     if (symbolsToUnsubscribe.length > 0 && this.isAuthenticated) {
-      this.sendSubscription("unsubscribe", symbolsToUnsubscribe);
+      this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)));
     }
 
     this.log(
@@ -504,8 +572,8 @@ export class AlpacaNewsWebSocketClient {
     const pending = [...this.pendingSubscriptions];
     this.pendingSubscriptions = [];
 
-    pending.forEach(({ userId, symbols, workflowId }) => {
-      this.subscribe(userId, symbols, { workflowId }).catch((err) => {
+    pending.forEach(({ userId, symbols, workflowId, nodeId }) => {
+      this.subscribe(userId, symbols, { workflowId, nodeId }).catch((err) => {
         console.error("Failed to process pending subscription:", err);
       });
     });
@@ -684,8 +752,17 @@ export class AlpacaNewsWebSocketClient {
   /**
    * Get current subscriptions for a user
    */
-  getUserSubscriptions(userId: string): string[] {
-    return Array.from(this.userSubscriptions.get(userId) || []);
+  getUserSubscriptions(userId: string): Record<string, string[]> {
+    const userNodes = this.userSubscriptions.get(userId);
+    if (!userNodes) {
+      return {};
+    }
+
+    const result: Record<string, string[]> = {};
+    userNodes.forEach((symbols, nodeId) => {
+      result[nodeId] = Array.from(symbols);
+    });
+    return result;
   }
 
   /**

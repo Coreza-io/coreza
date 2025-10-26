@@ -70,8 +70,17 @@ export class WebSocketManager {
 
   private verifyJWT(token: string): { userId: string } {
     try {
-      // Verify Supabase JWT token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret') as any;
+      const jwtSecret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+      
+      if (!jwtSecret) {
+        throw new Error('JWT_SECRET or SUPABASE_JWT_SECRET environment variable is not set');
+      }
+
+      // Verify Supabase JWT token with HS256 algorithm
+      const decoded = jwt.verify(token, jwtSecret, {
+        algorithms: ['HS256']
+      }) as any;
+      
       return { userId: decoded.sub || decoded.user_id || decoded.userId };
     } catch (error) {
       console.error('JWT verification failed:', error);

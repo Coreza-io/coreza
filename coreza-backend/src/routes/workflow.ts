@@ -126,7 +126,10 @@ router.delete('/:userId/:workflowId', async (req, res, next) => {
 
           if (symbolArray.length > 0) {
             const newsClient = AlpacaNewsWebSocketClient.getInstance();
-            await newsClient.unsubscribe(userId, symbolArray, { workflowId });
+            await newsClient.unsubscribe(userId, symbolArray, {
+              workflowId,
+              nodeId: alpacaNewsNode.id,
+            });
           }
         }
       }
@@ -493,7 +496,10 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
           }
 
           // Subscribe to news for this workflow
-          await newsClient.subscribe(userId, symbolArray, { workflowId });
+          await newsClient.subscribe(userId, symbolArray, {
+            workflowId,
+            nodeId: alpacaNewsNode.id,
+          });
           newsSubscription = { symbols: symbolArray };
         }
       } else {
@@ -513,7 +519,10 @@ router.put('/:userId/:workflowId/schedule', async (req, res, next) => {
 
             if (symbolArray.length > 0) {
               const newsClient = AlpacaNewsWebSocketClient.getInstance();
-              await newsClient.unsubscribe(userId, symbolArray, { workflowId });
+              await newsClient.unsubscribe(userId, symbolArray, {
+                workflowId,
+                nodeId: alpacaNewsNode.id,
+              });
             }
           }
         }

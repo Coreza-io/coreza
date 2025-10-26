@@ -205,24 +205,42 @@ export class WebSocketManager {
       const { AlpacaNewsWebSocketClient } = await import('./websockets/AlpacaNewsWebSocketClient');
       const client = AlpacaNewsWebSocketClient.getInstance();
       
+      const nodeId = payload.node_id || payload.nodeId;
+
       if (payload.action === 'subscribe' && payload.symbols) {
-        const success = await client.subscribe(ws.userId!, payload.symbols);
-        
+        if (!nodeId) {
+          this.sendMessage(ws, {
+            type: 'alpaca_news_error',
+            payload: {
+              error: 'node_id is required to subscribe to Alpaca news',
+            }
+          });
+          return;
+        }
+
+        const success = await client.subscribe(ws.userId!, payload.symbols, {
+          nodeId,
+        });
+
         this.sendMessage(ws, {
           type: 'alpaca_news_started',
-          payload: { 
-            symbols: payload.symbols, 
+          payload: {
+            symbols: payload.symbols,
+            node_id: nodeId,
             success,
             message: success ? 'Subscribed to news' : 'Failed to subscribe - WebSocket not connected'
           }
         });
       } else if (payload.action === 'unsubscribe' && payload.symbols) {
-        const success = await client.unsubscribe(ws.userId!, payload.symbols);
-        
+        const success = await client.unsubscribe(ws.userId!, payload.symbols, {
+          nodeId,
+        });
+
         this.sendMessage(ws, {
           type: 'alpaca_news_stopped',
-          payload: { 
-            symbols: payload.symbols, 
+          payload: {
+            symbols: payload.symbols,
+            node_id: nodeId ?? null,
             success,
             message: success ? 'Unsubscribed from news' : 'Failed to unsubscribe'
           }

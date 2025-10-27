@@ -1,0 +1,46 @@
+{
+  "name": "YahooFinance",
+  "def": "YahooFinance Data",
+  "node_type": "main",
+  "category": "Data",
+  "icon": "/assets/icons/YahooFinance.svg",
+  "size": { "width": 340, "height": 340 },
+  "handles": [
+    { "type": "target", "position": "left",  "id": "input"  },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/yahoofinance/get-candle",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "ticker",
+      "label": "Ticker Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "interval",
+      "label": "Interval",
+      "type": "select",
+      "options": [
+        { "id": "1m",  "name": "1 min"  },
+        { "id": "5m",  "name": "5 min"  },
+        { "id": "15m", "name": "15 min" },
+        { "id": "60m", "name": "1 hour" },
+        { "id": "1d",  "name": "1 day"  }
+      ],
+      "placeholder": "Select interval",
+      "required": true
+    },
+    {
+      "key": "lookback",
+      "label": "Bars to Fetch",
+      "type": "text",
+      "placeholder": "e.g. 100",
+      "required": true
+    }
+  ]
+}

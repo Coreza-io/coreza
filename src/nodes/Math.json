@@ -1,0 +1,36 @@
+{
+  "name": "Math",
+  "label": "Math",
+  "def": "Basic arithmetic operations",
+  "node_type": "main",
+  "icon": "/assets/icons/if.svg",
+  "category": "Logic",
+  "description": "Perform simple math calculations",
+  "color": "text-yellow-500",
+  "size": { "width": 280, "height": 200 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/comparator/math",
+    "method": "POST"
+  },
+  "fields": [
+    { "key": "left", "label": "Left", "type": "text", "required": true },
+    {
+      "key": "operator",
+      "label": "Operator",
+      "type": "select",
+      "options": [
+        { "label": "Add", "value": "add" },
+        { "label": "Subtract", "value": "subtract" },
+        { "label": "Multiply", "value": "multiply" },
+        { "label": "Divide", "value": "divide" }
+      ],
+      "default": "add",
+      "required": true
+    },
+    { "key": "right", "label": "Right", "type": "text", "required": true }
+  ]
+}

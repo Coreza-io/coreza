@@ -1,0 +1,11 @@
+user_id,symbol,period
+test-user-1,AAPL,14
+test-user-2,GOOGL,14
+test-user-3,MSFT,21
+test-user-4,TSLA,14
+test-user-5,AMZN,20
+test-user-6,META,14
+test-user-7,NVDA,14
+test-user-8,BRK.B,21
+test-user-9,V,14
+test-user-10,UNH,20

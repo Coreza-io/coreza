@@ -1,0 +1,34 @@
+{
+  "name": "ADX",
+  "def": "Average Directional Index",
+  "node_type": "main",
+  "icon": "/assets/icons/adx.svg",
+  "category": "Indicators",
+  "description": "ADX indicator to evaluate trend strength using DI+/DI- lines",
+  "color": "text-yellow-500",
+  "size": { "width": 320, "height": 240 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/adx",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "period",
+      "label": "ADX Period",
+      "type": "text",
+      "placeholder": "e.g. 14",
+      "default": "14",
+      "required": true
+    }
+  ]
+}

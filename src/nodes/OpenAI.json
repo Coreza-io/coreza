@@ -1,0 +1,81 @@
+{
+  "name": "OpenAI",
+  "def": "LLM",
+  "node_type": "main",
+  "category": "LLM",
+  "icon": "/assets/icons/openai.svg",
+  "size": { "width": 340, "height": 420 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "OpenAI API"
+    },
+    {
+      "key": "apiKey",
+      "label": "OpenAI API Key",
+      "type": "password",
+      "placeholder": "sk-..."
+    }
+  ],
+  "authAction": {"url": "/openai/auth-url", "method": "POST"},
+  "action": {"url": "/openai/chat", "method": "POST"},
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "model",
+      "label": "Model",
+      "type": "select",
+      "default": "gpt-4o-mini",
+      "options": [
+        { "label": "GPT-4o", "value": "gpt-4o" },
+        { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
+        { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" },
+        { "label": "GPT-3.5 Turbo", "value": "gpt-3.5-turbo" }
+      ],
+      "required": true
+    },
+    {
+      "key": "prompt",
+      "label": "System Prompt",
+      "type": "textarea",
+      "placeholder": "You are a helpful assistant...",
+      "default": "You are a helpful assistant.",
+      "required": true
+    },
+    {
+      "key": "userMessage",
+      "label": "User Message",
+      "type": "textarea",
+      "placeholder": "Enter message or use {{variable}}",
+      "required": true
+    },
+    {
+      "key": "temperature",
+      "label": "Temperature",
+      "type": "number",
+      "default": 0.7,
+      "required": false
+    },
+    {
+      "key": "maxTokens",
+      "label": "Max Tokens",
+      "type": "number",
+      "default": 1000,
+      "required": false
+    }
+  ]
+}

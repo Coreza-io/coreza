@@ -1,0 +1,122 @@
+{
+  "name": "DhanTrade",
+  "def": "Dhan Trade",
+  "node_type": "main",
+  "icon": "/assets/icons/dhan.svg",
+  "category": "Broker",
+  "subCategory": "Dhan",
+  "description": "Execute trades through Dhan",
+  "color": "text-blue-500",
+  "size": { "width": 340, "height": 360 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Dhan"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "Your Dhan API Key"
+    },
+    {
+      "key": "client_id",
+      "label": "Client ID",
+      "type": "text",
+      "placeholder": "Your Dhan Client ID"
+    }
+  ],
+  "authAction": { "url": "/dhan/auth-url", "method": "POST" },
+
+  "action": { "url": "/dhan/place_order", "method": "POST" },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "hidden",
+      "default": "place_order"
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Ticker Symbol",
+      "type": "text",
+      "placeholder": "e.g. RELIANCE",
+      "required": true
+    },
+    {
+      "key": "exchange_segment",
+      "label": "Exchange Segment",
+      "type": "select",
+      "options": [
+        { "id": "NSE_EQ", "name": "NSE Equity" },
+        { "id": "BSE_EQ", "name": "BSE Equity" },
+        { "id": "NSE_FNO", "name": "NSE F&O" },
+        { "id": "BSE_FNO", "name": "BSE F&O" }
+      ],
+      "default": "NSE_EQ",
+      "required": true
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        { "id": "buy", "name": "Buy" },
+        { "id": "sell", "name": "Sell" }
+      ],
+      "default": "buy",
+      "required": true
+    },
+    {
+      "key": "qty",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 1",
+      "required": true
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        { "id": "market", "name": "Market" },
+        { "id": "limit", "name": "Limit" }
+      ],
+      "default": "market",
+      "required": true
+    },
+    {
+      "key": "validity",
+      "label": "Validity",
+      "type": "select",
+      "options": [
+        { "id": "day", "name": "Day" },
+        { "id": "ioc", "name": "Immediate Or Cancel" }
+      ],
+      "default": "day",
+      "required": true
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "text",
+      "placeholder": "Required for limit orders",
+      "required": false
+    }
+  ]
+}

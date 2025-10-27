@@ -243,16 +243,7 @@ export class WorkflowEngine {
     }
 
     try {
-      // Build execution context with all necessary functions and data
-      const executionContext = {
-        user_id: this.userId,
-        userId: this.userId,
-        runId: this.runId,
-        workflowId: this.workflowId,
-        resolveNodeParameters: this.resolveNodeParameters.bind(this),
-      };
-
-      const fullResult = await this.executeNode(node, input, executionContext);
+      const fullResult = await this.executeNode(node, input);
       const result = fullResult?.data || fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
 

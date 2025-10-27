@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "name": "OBV",
   "def": "On-Balance Volume",
@@ -24,3 +25,31 @@
     }
   ]
 }
+=======
+{
+  "name": "OBV",
+  "def": "On-Balance Volume",
+  "node_type": "main",
+  "icon": "/assets/icons/obv.svg",
+  "category": "Indicators",
+  "description": "On-Balance Volume indicator to detect volume-driven momentum trends",
+  "color": "text-orange-500",
+  "size": { "width": 300, "height": 220 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/obv",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    }
+  ]
+}
+>>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc

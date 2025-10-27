@@ -27,6 +27,7 @@ import MathDef from './Math.json'
 import TransformDef from './Transform.json'
 import LoopDef from './Loop.json'
 import OpenAIDef from './OpenAI.json'
+import OpenAIChatModelDef from './OpenAIChatModel.json'
 import AIAgentDef from './AIAgent.json'
 
 // Node configuration interface
@@ -114,6 +115,7 @@ export const nodeManifest = {
   [TransformDef.name]: TransformDef,
   [LoopDef.name]: LoopDef,
   [OpenAIDef.name]: OpenAIDef,
+  [OpenAIChatModelDef.name]: OpenAIChatModelDef,
   [AIAgentDef.name]: AIAgentDef
 } as const;
 

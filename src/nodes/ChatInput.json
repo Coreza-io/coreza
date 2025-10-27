@@ -1,12 +1,9 @@
-<<<<<<< HEAD
 {
   "name": "ChatInput",
   "def": "Chat Input Node",
   "node_type": "main",
   "category": "Input",
-  "handles": [
-    { "type": "source", "position": "right", "id": "output" }
-  ],
+  "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "icon": "/assets/icons/chat.svg",
   "size": { "width": 340, "height": 160 },
   "fields": [
@@ -19,25 +16,3 @@
     }
   ]
 }
-=======
-{
-  "name": "ChatInput",
-  "def": "Chat Input Node",
-  "node_type": "main",
-  "category": "Input",
-  "handles": [
-    { "type": "source", "position": "right", "id": "output" }
-  ],
-  "icon": "/assets/icons/chat.svg",
-  "size": { "width": 340, "height": 160 },
-  "fields": [
-    {
-      "key": "input",
-      "label": "Message",
-      "type": "text",
-      "placeholder": "Type your message...",
-      "required": true
-    }
-  ]
-}
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc

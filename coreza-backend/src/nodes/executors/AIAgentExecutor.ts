@@ -1,17 +1,12 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { ChatOpenAI } from "@langchain/openai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
-<<<<<<< HEAD
 
 import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-=======
-import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents";
-import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
 import CredentialManager from "../../utils/credentialManager";
 import { z } from "zod";
 
@@ -24,13 +19,9 @@ export class AIAgentExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-<<<<<<< HEAD
       console.log(
         `🤖 [AIAgent] Starting AI Agent execution for node ${node.id}`
       );
-=======
-      console.log(`🤖 [AIAgent] Starting AI Agent execution for node ${node.id}`);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
 
       // Get user_id from context
       const user_id = context?.user_id || context?.userId;
@@ -49,11 +40,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const chatModelEdge = edges.find(
         (e: any) => e.target === node.id && e.targetHandle === "chatModel"
       );
-<<<<<<< HEAD
 
-=======
-      
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
       if (!chatModelEdge) {
         return {
           success: false,
@@ -61,13 +48,9 @@ export class AIAgentExecutor implements INodeExecutor {
         };
       }
 
-<<<<<<< HEAD
       const chatModelNode = allNodes.find(
         (n: WorkflowNode) => n.id === chatModelEdge.source
       );
-=======
-      const chatModelNode = allNodes.find((n: WorkflowNode) => n.id === chatModelEdge.source);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
       if (!chatModelNode) {
         return {
           success: false,
@@ -88,11 +71,7 @@ export class AIAgentExecutor implements INodeExecutor {
         credentials: { client_json },
       } = await CredentialManager.getCredentials(
         user_id,
-<<<<<<< HEAD
         "openaichatmodel",
-=======
-        "openai",
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
         credential_id
       );
 
@@ -106,7 +85,6 @@ export class AIAgentExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-<<<<<<< HEAD
       const systemPrompt =
         resolvedParams.systemPrompt ||
         node.values.systemPrompt ||
@@ -120,15 +98,6 @@ export class AIAgentExecutor implements INodeExecutor {
         resolvedParams.returnIntermediateSteps ||
         node.values.returnIntermediateSteps ||
         false;
-=======
-      const systemPrompt = resolvedParams.systemPrompt || node.values.systemPrompt || 
-        "You are a helpful AI assistant. Use the available tools to help answer the user's questions.";
-      const userPrompt = resolvedParams.userPrompt || node.values.userPrompt;
-      const maxIterations = resolvedParams.maxIterations || node.values.maxIterations || 10;
-      const temperature = resolvedParams.temperature || node.values.temperature || 0.7;
-      const returnIntermediateSteps = resolvedParams.returnIntermediateSteps || 
-        node.values.returnIntermediateSteps || false;
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
 
       if (!userPrompt) {
         return {
@@ -141,7 +110,6 @@ export class AIAgentExecutor implements INodeExecutor {
       const llm = new ChatOpenAI({
         modelName: model,
         temperature: temperature,
-<<<<<<< HEAD
         apiKey: apiKey,
       });
 
@@ -152,13 +120,6 @@ export class AIAgentExecutor implements INodeExecutor {
         allNodes,
         context
       );
-=======
-        openAIApiKey: apiKey,
-      });
-
-      // Create tools from connected tool nodes
-      const tools = await this.createToolsFromEdges(node, edges, allNodes, context);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
 
@@ -170,21 +131,10 @@ export class AIAgentExecutor implements INodeExecutor {
       ]);
 
       // Create agent
-<<<<<<< HEAD
       const agent = await createToolCallingAgent({ llm, tools, prompt });
 
       // Create agent executor
       const agentExecutor = await AgentExecutor.fromAgentAndTools({
-=======
-      const agent = await createOpenAIFunctionsAgent({
-        llm,
-        tools,
-        prompt,
-      });
-
-      // Create agent executor
-      const agentExecutor = new AgentExecutor({
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
         agent,
         tools,
         maxIterations,
@@ -204,13 +154,9 @@ export class AIAgentExecutor implements INodeExecutor {
         success: true,
         data: {
           output: result.output,
-<<<<<<< HEAD
           intermediateSteps: returnIntermediateSteps
             ? result.intermediateSteps
             : undefined,
-=======
-          intermediateSteps: returnIntermediateSteps ? result.intermediateSteps : undefined,
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
           input: userPrompt,
         },
       };
@@ -218,13 +164,7 @@ export class AIAgentExecutor implements INodeExecutor {
       console.error("❌ [AIAgent] Agent execution error:", error);
       return {
         success: false,
-<<<<<<< HEAD
         error: error.message || "AI Agent execution failed",
-=======
-        error:
-          error.message ||
-          "AI Agent execution failed",
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
       };
     }
   }
@@ -253,13 +193,9 @@ export class AIAgentExecutor implements INodeExecutor {
     console.log(`🔍 [AIAgent] Found ${toolEdges.length} tool connections`);
 
     for (const toolEdge of toolEdges) {
-<<<<<<< HEAD
       const toolNode = allNodes.find(
         (n: WorkflowNode) => n.id === toolEdge.source
       );
-=======
-      const toolNode = allNodes.find((n: WorkflowNode) => n.id === toolEdge.source);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
       if (!toolNode) {
         console.warn(`⚠️  [AIAgent] Tool node ${toolEdge.source} not found`);
         continue;
@@ -291,27 +227,19 @@ export class AIAgentExecutor implements INodeExecutor {
       schema: toolSchema,
       func: async (input: any) => {
         try {
-<<<<<<< HEAD
           console.log(
             `🔧 [AIAgent] Executing tool: ${toolName} with input:`,
             input
           );
-=======
-          console.log(`🔧 [AIAgent] Executing tool: ${toolName} with input:`, input);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
 
           // Get the executor for this node category
           const { getNodeExecutor } = await import("../registry");
           const executor = getNodeExecutor(node.category);
 
           if (!executor) {
-<<<<<<< HEAD
             throw new Error(
               `No executor found for node category: ${node.category}`
             );
-=======
-            throw new Error(`No executor found for node category: ${node.category}`);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
           }
 
           // Execute the node
@@ -326,14 +254,10 @@ export class AIAgentExecutor implements INodeExecutor {
           // Return the result as a string for the agent
           return JSON.stringify(result.data);
         } catch (error: any) {
-<<<<<<< HEAD
           console.error(
             `❌ [AIAgent] Tool ${toolName} execution error:`,
             error
           );
-=======
-          console.error(`❌ [AIAgent] Tool ${toolName} execution error:`, error);
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc
           return `Error executing tool ${toolName}: ${error.message}`;
         }
       },

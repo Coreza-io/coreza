@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {
   "name": "Visualize",
   "def": "Visualize Candles & Signals",
@@ -7,7 +6,7 @@
   "icon": "/assets/icons/visualize.svg",
   "size": { "width": 580, "height": 540 },
   "handles": [
-    { "type": "target", "position": "left",  "id": "input"  },
+    { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
   "fields": [
@@ -29,35 +28,3 @@
     }
   ]
 }
-=======
-{
-  "name": "Visualize",
-  "def": "Visualize Candles & Signals",
-  "node_type": "main",
-  "category": "Visualization",
-  "icon": "/assets/icons/visualize.svg",
-  "size": { "width": 580, "height": 540 },
-  "handles": [
-    { "type": "target", "position": "left",  "id": "input"  },
-    { "type": "source", "position": "right", "id": "output" }
-  ],
-  "fields": [
-    {
-      "key": "candles",
-      "label": "Candle Data",
-      "type": "json",
-      "optionsSource": "inputData",
-      "hidden": true,
-      "required": false
-    },
-    {
-      "key": "signals",
-      "label": "Signals",
-      "type": "json",
-      "optionsSource": "inputData",
-      "hidden": true,
-      "required": false
-    }
-  ]
-}
->>>>>>> 6df1250820a730c93a4dd0885f6f356ab3fc22cc

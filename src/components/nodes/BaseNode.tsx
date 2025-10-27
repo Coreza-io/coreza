@@ -675,6 +675,31 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
       console.log("🔧 If node special payload:", payload);
     }
+
+    // Special handling for AIAgent node to include nodes and edges for tool discovery
+    if (definition?.name === "AIAgent") {
+      // Serialize nodes and edges for backend
+      payload.nodes = nodes.map(n => ({
+        id: n.id,
+        type: n.type,
+        category: (n.data?.definition as any)?.category,
+        values: n.data?.fieldState || n.data?.values || {},
+        position: n.position
+      }));
+      payload.edges = edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle
+      }));
+
+      console.log("🤖 AIAgent special payload with nodes/edges:", {
+        nodesCount: payload.nodes.length,
+        edgesCount: payload.edges.length
+      });
+    }
+
     return {
       ...payload,
       ...(Array.isArray(supportData) ? supportData[0] || {} : supportData),

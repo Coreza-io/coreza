@@ -12,7 +12,7 @@
     { "type": "target", "position": "bottom", "id": "tool" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": {"url": "/ai-agent/execute", "method": "POST"},
+  "action": {"url": "/aiagent/execute", "method": "POST"},
   "fields": [
     {
       "key": "systemPrompt",

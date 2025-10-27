@@ -31,6 +31,7 @@ import riskRoutes from './routes/risk';
 import controlRoutes from './routes/control';
 import websocketRoutes from './routes/websocket';
 import openaiRoutes from './routes/openai';
+import aiAgentRoutes from './routes/aiagent';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -96,6 +97,8 @@ app.use('/websocket', websocketRoutes);
 console.log('✅ WebSocket route mounted');
 app.use('/openai', openaiRoutes);
 console.log('✅ OpenAI route mounted');
+app.use('/aiagent', aiAgentRoutes);
+console.log('✅ AI Agent route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

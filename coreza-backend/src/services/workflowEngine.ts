@@ -360,10 +360,11 @@ export class WorkflowEngine {
       category = "LLM";  // AIAgent uses LLM category
     }
 
-    // Pass nodes array to context for AIAgent to access tool nodes
+    // Pass nodes and edges to context for AIAgent to access tool nodes
     const enhancedContext = {
       ...context,
       nodes: this.nodes,
+      edges: this.edges,
     };
 
     // Use custom executor if registered, otherwise get from registry

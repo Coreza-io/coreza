@@ -1,52 +1,20 @@
 {
   "name": "AIAgent",
-  "def": "LLM",
+  "def": "AI Agent",
   "node_type": "main",
   "category": "LLM",
   "icon": "/assets/icons/openai.svg",
-  "size": { "width": 380, "height": 520 },
+  "size": { "width": 400, "height": 450 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
+    { "type": "target", "position": "bottom", "id": "chatModel" },
+    { "type": "target", "position": "bottom", "id": "memory" },
+    { "type": "target", "position": "bottom", "id": "tool" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": "GenericAuthModal",
-  "authFields": [
-    {
-      "key": "credential_name",
-      "label": "Credential Label",
-      "type": "text",
-      "default": "OpenAI API"
-    },
-    {
-      "key": "apiKey",
-      "label": "OpenAI API Key",
-      "type": "password",
-      "placeholder": "sk-..."
-    }
-  ],
-  "authAction": {"url": "/openai/auth-url", "method": "POST"},
+  "customLayout": "AIAgentLayout",
   "action": {"url": "/ai-agent/execute", "method": "POST"},
   "fields": [
-    {
-      "key": "credential_id",
-      "label": "Credential",
-      "type": "select",
-      "optionsSource": "credentialsApi",
-      "placeholder": "Select credential",
-      "required": true
-    },
-    {
-      "key": "model",
-      "label": "Model",
-      "type": "select",
-      "default": "gpt-4o-mini",
-      "options": [
-        { "label": "GPT-4o", "value": "gpt-4o" },
-        { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
-        { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" }
-      ],
-      "required": true
-    },
     {
       "key": "systemPrompt",
       "label": "System Prompt",
@@ -81,13 +49,6 @@
       "label": "Return Intermediate Steps",
       "type": "checkbox",
       "default": false,
-      "required": false
-    },
-    {
-      "key": "toolNodes",
-      "label": "Tool Nodes (comma-separated node IDs)",
-      "type": "textarea",
-      "placeholder": "node_1, node_2, node_3",
       "required": false
     }
   ]

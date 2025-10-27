@@ -26,15 +26,39 @@ export class AIAgentExecutor implements INodeExecutor {
         };
       }
 
-      const credential_id = node.values.credential_id;
-      if (!credential_id) {
+      // Get edges and nodes from context
+      const edges = context?.edges || [];
+      const allNodes = context?.nodes || [];
+
+      // Find connected Chat Model node
+      const chatModelEdge = edges.find(
+        (e: any) => e.target === node.id && e.targetHandle === "chatModel"
+      );
+      
+      if (!chatModelEdge) {
         return {
           success: false,
-          error: "credential_id is required",
+          error: "Chat Model node must be connected to the 'Chat Model' handle",
         };
       }
 
-      // Get OpenAI credentials
+      const chatModelNode = allNodes.find((n: WorkflowNode) => n.id === chatModelEdge.source);
+      if (!chatModelNode) {
+        return {
+          success: false,
+          error: "Connected Chat Model node not found",
+        };
+      }
+
+      // Get credentials from the connected Chat Model node
+      const credential_id = chatModelNode.values?.credential_id;
+      if (!credential_id) {
+        return {
+          success: false,
+          error: "Chat Model node must have credentials configured",
+        };
+      }
+
       const {
         credentials: { client_json },
       } = await CredentialManager.getCredentials(
@@ -45,7 +69,10 @@ export class AIAgentExecutor implements INodeExecutor {
 
       const { apiKey } = client_json;
 
-      // Resolve parameters
+      // Get model from Chat Model node
+      const model = chatModelNode.values?.model || "gpt-4o-mini";
+
+      // Resolve parameters from AI Agent node
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
@@ -57,7 +84,6 @@ export class AIAgentExecutor implements INodeExecutor {
       const temperature = resolvedParams.temperature || node.values.temperature || 0.7;
       const returnIntermediateSteps = resolvedParams.returnIntermediateSteps || 
         node.values.returnIntermediateSteps || false;
-      const model = resolvedParams.model || node.values.model || "gpt-4o-mini";
 
       if (!userPrompt) {
         return {
@@ -73,8 +99,8 @@ export class AIAgentExecutor implements INodeExecutor {
         openAIApiKey: apiKey,
       });
 
-      // Create tools from available nodes
-      const tools = await this.createToolsFromNodes(node, context);
+      // Create tools from connected tool nodes
+      const tools = await this.createToolsFromEdges(node, edges, allNodes, context);
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
 
@@ -129,39 +155,39 @@ export class AIAgentExecutor implements INodeExecutor {
   }
 
   /**
-   * Create LangChain tools from connected workflow nodes
+   * Create LangChain tools from nodes connected to the "tool" handle
    */
-  private async createToolsFromNodes(
+  private async createToolsFromEdges(
     agentNode: WorkflowNode,
+    edges: any[],
+    allNodes: WorkflowNode[],
     context?: any
   ): Promise<DynamicStructuredTool[]> {
     const tools: DynamicStructuredTool[] = [];
 
-    // Get tool node IDs from the agent configuration
-    const toolNodesStr = agentNode.values.toolNodes || "";
-    const toolNodeIds = toolNodesStr
-      .split(",")
-      .map((id: string) => id.trim())
-      .filter((id: string) => id.length > 0);
+    // Find all edges connected to the "tool" handle
+    const toolEdges = edges.filter(
+      (e: any) => e.target === agentNode.id && e.targetHandle === "tool"
+    );
 
-    if (toolNodeIds.length === 0) {
-      console.log("⚠️  [AIAgent] No tool nodes specified");
+    if (toolEdges.length === 0) {
+      console.log("⚠️  [AIAgent] No tool nodes connected");
       return tools;
     }
 
-    // Get all nodes from context
-    const allNodes = context?.nodes || [];
+    console.log(`🔍 [AIAgent] Found ${toolEdges.length} tool connections`);
 
-    for (const toolNodeId of toolNodeIds) {
-      const toolNode = allNodes.find((n: WorkflowNode) => n.id === toolNodeId);
+    for (const toolEdge of toolEdges) {
+      const toolNode = allNodes.find((n: WorkflowNode) => n.id === toolEdge.source);
       if (!toolNode) {
-        console.warn(`⚠️  [AIAgent] Tool node ${toolNodeId} not found`);
+        console.warn(`⚠️  [AIAgent] Tool node ${toolEdge.source} not found`);
         continue;
       }
 
       // Create tool wrapper for this node
       const tool = this.createToolFromNode(toolNode, context);
       tools.push(tool);
+      console.log(`✅ [AIAgent] Added tool: ${tool.name}`);
     }
 
     return tools;

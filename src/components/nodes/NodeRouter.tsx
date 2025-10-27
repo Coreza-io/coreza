@@ -3,6 +3,7 @@ import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layouts/BasicNodeLayout";
 import RepeaterNodeLayout from "./layouts/RepeaterNodeLayout";
+import AIAgentLayout from "./layouts/AIAgentLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -23,6 +24,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
+    // Check for custom layout first
+    if (definition.customLayout) {
+      return definition.customLayout.toLowerCase();
+    }
+
     // Check if node has repeater fields (conditional logic or switch cases)
     const hasRepeaterFields = definition.fields?.some(
       (f: any) => f.type === "repeater"
@@ -236,7 +242,9 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           finishEditing={renderProps.finishEditing}
           setEditingName={renderProps.setEditingName}
         >
-          {layoutType === "repeater" ? (
+          {layoutType === "aiagentlayout" ? (
+            <AIAgentLayout {...renderProps} />
+          ) : layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />
           ) : (
             <BasicNodeLayout {...renderProps} />

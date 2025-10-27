@@ -282,6 +282,7 @@ export class AIAgentExecutor implements INodeExecutor {
       Market: "Get market data and stock prices",
       YahooFinance: "Get financial data from Yahoo Finance",
       FinnHub: "Get financial news and data from FinnHub",
+      GoogleWebSearch: "Search the web using Google to find current information, news, and web pages",
       Math: "Perform mathematical calculations",
       Transform: "Transform and manipulate data",
       Gmail: "Send emails via Gmail",
@@ -302,11 +303,25 @@ export class AIAgentExecutor implements INodeExecutor {
    * Generate a Zod schema for tool input based on node definition
    */
   private getToolSchema(node: WorkflowNode): z.ZodObject<any> {
-    // For now, use a generic schema that accepts any input
-    // In a more advanced implementation, you would parse the node's field definitions
-    // and create a schema that matches the expected inputs
-    return z.object({
-      input: z.any().optional().describe("Input data for the tool"),
-    });
+    // Create schemas based on node type
+    const schemaMap: Record<string, z.ZodObject<any>> = {
+      GoogleWebSearch: z.object({
+        query: z.string().describe("The search query to execute"),
+        numResults: z.number().optional().describe("Number of search results to return (default: 10)"),
+      }),
+      HttpRequest: z.object({
+        input: z.any().optional().describe("Input data for HTTP request"),
+      }),
+      Math: z.object({
+        input: z.any().optional().describe("Input data for mathematical operation"),
+      }),
+    };
+
+    return (
+      schemaMap[node.type] ||
+      z.object({
+        input: z.any().optional().describe("Input data for the tool"),
+      })
+    );
   }
 }

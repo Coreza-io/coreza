@@ -32,6 +32,7 @@ import controlRoutes from './routes/control';
 import websocketRoutes from './routes/websocket';
 import openaiRoutes from './routes/openai';
 import aiAgentRoutes from './routes/aiagent';
+import googleSearchRoutes from './routes/googlesearch';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -99,6 +100,8 @@ app.use('/openai', openaiRoutes);
 console.log('✅ OpenAI route mounted');
 app.use('/aiagent', aiAgentRoutes);
 console.log('✅ AI Agent route mounted');
+app.use('/googlesearch', googleSearchRoutes);
+console.log('✅ Google Search route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

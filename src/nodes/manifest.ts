@@ -29,6 +29,7 @@ import LoopDef from './Loop.json'
 import OpenAIDef from './OpenAI.json'
 import OpenAIChatModelDef from './OpenAIChatModel.json'
 import AIAgentDef from './AIAgent.json'
+import GoogleWebSearchDef from './GoogleWebSearch.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -116,7 +117,8 @@ export const nodeManifest = {
   [LoopDef.name]: LoopDef,
   [OpenAIDef.name]: OpenAIDef,
   [OpenAIChatModelDef.name]: OpenAIChatModelDef,
-  [AIAgentDef.name]: AIAgentDef
+  [AIAgentDef.name]: AIAgentDef,
+  [GoogleWebSearchDef.name]: GoogleWebSearchDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

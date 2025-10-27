@@ -1,0 +1,62 @@
+{
+  "name": "GoogleWebSearch",
+  "def": "Google Web Search",
+  "node_type": "main",
+  "category": "DataSource",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Personal Google Search"
+    },
+    {
+      "key": "api_key",
+      "label": "Google API Key",
+      "type": "password",
+      "placeholder": "Google Custom Search API Key"
+    },
+    {
+      "key": "search_engine_id",
+      "label": "Search Engine ID",
+      "type": "password",
+      "placeholder": "Custom Search Engine ID (cx)"
+    }
+  ],
+  "authAction": { "url": "/googlesearch/auth-url", "method": "POST" },
+  "icon": "/assets/icons/openai.svg",
+  "size": { "width": 340, "height": 320 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/googlesearch/execute",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "query",
+      "label": "Search Query",
+      "type": "textarea",
+      "placeholder": "Enter search query or use {{variable}}",
+      "required": true
+    },
+    {
+      "key": "numResults",
+      "label": "Number of Results",
+      "type": "number",
+      "default": 10,
+      "required": false
+    }
+  ]
+}

@@ -18,6 +18,7 @@ export interface AlpacaNewsOutput {
   symbols?: string[];
   news: AlpacaNewsPayload; // <-- single object
   lastReceivedAt?: string;
+  nodeId?: string;
 }
 
 export const createWaitingNewsOutput = (
@@ -28,6 +29,7 @@ export const createWaitingNewsOutput = (
   symbols: overrides.symbols ?? [],
   news: (overrides.news as AlpacaNewsPayload) ?? {}, // start empty object
   lastReceivedAt: overrides.lastReceivedAt,
+  nodeId: overrides.nodeId,
 });
 
 export const appendNewsItem = (

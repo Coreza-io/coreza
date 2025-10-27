@@ -328,10 +328,14 @@ export class WorkflowEngine {
     }
   }
 
-  private async executeNode(node: WorkflowNode, input: any): Promise<any> {
+  async executeNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     console.log(`🔧 Executing node ${node.id} (${node.type})`);
 
-    // Map node categories for compatibility
+    // Map node categories for compatibility - include AIAgent
     let category = node.category;
     if (
       node.type === "If" ||
@@ -352,7 +356,15 @@ export class WorkflowEngine {
       category = "Communication";
     } else if (["FinnHub", "YahooFinance"].includes(node.type)) {
       category = "DataSource";
+    } else if (node.type === "AIAgent") {
+      category = "LLM";  // AIAgent uses LLM category
     }
+
+    // Pass nodes array to context for AIAgent to access tool nodes
+    const enhancedContext = {
+      ...context,
+      nodes: this.nodes,
+    };
 
     // Use custom executor if registered, otherwise get from registry
     let executor = this.executors.get(category);
@@ -366,25 +378,8 @@ export class WorkflowEngine {
       );
     }
 
-    // Create execution context with backtest support
-    const context: ExecutionContext = {
-      nodeId: node.id,
-      runId: this.runId,
-      workflowId: this.workflowId,
-      userId: this.userId,
-      getState: (key: string) => this.store.getNodeState(node.id, key),
-      setState: (key: string, value: any) =>
-        this.store.setNodeState(node.id, key, value),
-      getPersistentValue: (key: string) =>
-        this.store.getPersistentValue(this.workflowId, key),
-      setPersistentValue: (key: string, value: any) =>
-        this.store.setPersistentValue(this.workflowId, key, value),
-      resolveNodeParameters: (node: WorkflowNode, input: any) =>
-        this.resolveNodeParameters(node, input),
-    };
-
-    // Execute node
-    const result = await executor.execute(node, input, context);
+    // Execute node with enhanced context
+    const result = await executor.execute(node, input, enhancedContext);
 
     if (result && typeof result === "object" && "success" in result) {
       if (!result.success) {

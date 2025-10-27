@@ -1,0 +1,94 @@
+{
+  "name": "AIAgent",
+  "def": "LLM",
+  "node_type": "main",
+  "category": "LLM",
+  "icon": "/assets/icons/openai.svg",
+  "size": { "width": 380, "height": 520 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "OpenAI API"
+    },
+    {
+      "key": "apiKey",
+      "label": "OpenAI API Key",
+      "type": "password",
+      "placeholder": "sk-..."
+    }
+  ],
+  "authAction": {"url": "/openai/auth-url", "method": "POST"},
+  "action": {"url": "/ai-agent/execute", "method": "POST"},
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "model",
+      "label": "Model",
+      "type": "select",
+      "default": "gpt-4o-mini",
+      "options": [
+        { "label": "GPT-4o", "value": "gpt-4o" },
+        { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
+        { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" }
+      ],
+      "required": true
+    },
+    {
+      "key": "systemPrompt",
+      "label": "System Prompt",
+      "type": "textarea",
+      "placeholder": "You are a helpful AI assistant...",
+      "default": "You are a helpful AI assistant. Use the available tools to help answer the user's questions.",
+      "required": true
+    },
+    {
+      "key": "userPrompt",
+      "label": "User Prompt",
+      "type": "textarea",
+      "placeholder": "Enter user message or use {{variable}}",
+      "required": true
+    },
+    {
+      "key": "maxIterations",
+      "label": "Max Iterations",
+      "type": "number",
+      "default": 10,
+      "required": false
+    },
+    {
+      "key": "temperature",
+      "label": "Temperature",
+      "type": "number",
+      "default": 0.7,
+      "required": false
+    },
+    {
+      "key": "returnIntermediateSteps",
+      "label": "Return Intermediate Steps",
+      "type": "checkbox",
+      "default": false,
+      "required": false
+    },
+    {
+      "key": "toolNodes",
+      "label": "Tool Nodes (comma-separated node IDs)",
+      "type": "textarea",
+      "placeholder": "node_1, node_2, node_3",
+      "required": false
+    }
+  ]
+}

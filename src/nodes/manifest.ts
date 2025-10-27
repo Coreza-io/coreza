@@ -27,6 +27,7 @@ import MathDef from './Math.json'
 import TransformDef from './Transform.json'
 import LoopDef from './Loop.json'
 import OpenAIDef from './OpenAI.json'
+import AIAgentDef from './AIAgent.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -112,7 +113,8 @@ export const nodeManifest = {
   [MathDef.name]: MathDef,
   [TransformDef.name]: TransformDef,
   [LoopDef.name]: LoopDef,
-  [OpenAIDef.name]: OpenAIDef
+  [OpenAIDef.name]: OpenAIDef,
+  [AIAgentDef.name]: AIAgentDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

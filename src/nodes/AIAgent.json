@@ -4,7 +4,7 @@
   "node_type": "main",
   "category": "LLM",
   "icon": "/assets/icons/openai.svg",
-  "size": { "width": 400, "height": 450 },
+  "size": { "width": 380, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "target", "position": "bottom", "id": "chatModel" },
@@ -12,7 +12,6 @@
     { "type": "target", "position": "bottom", "id": "tool" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "customLayout": "AIAgentLayout",
   "action": {"url": "/ai-agent/execute", "method": "POST"},
   "fields": [
     {

@@ -61,13 +61,11 @@ router.post("/execute", async (req: Request, res: Response) => {
       });
     }
 
-    // Construct the node with values from request
+    // Use the node from request and merge with execution values
     const node: WorkflowNode = {
-      id: aiAgentNode.id,
-      name: "AIAgent",
-      node_type: "main",
-      category: "LLM",
+      ...aiAgentNode,
       values: {
+        ...aiAgentNode.values,
         systemPrompt,
         userPrompt,
         temperature,

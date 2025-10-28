@@ -242,15 +242,8 @@ export class AIAgentExecutor implements INodeExecutor {
             );
           }
 
-          // Prepare enriched context with user_id and node values
-          const enrichedContext = {
-            ...context,
-            user_id: context?.user_id || context?.userId,
-            credential_id: node.values?.credential_id,
-          };
-
-          // Execute the node with enriched input and context
-          const result = await executor.execute(node, input, enrichedContext);
+          // Execute the node
+          const result = await executor.execute(node, input, context);
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");

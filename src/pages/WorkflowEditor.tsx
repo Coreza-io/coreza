@@ -233,7 +233,8 @@ const WorkflowEditorContent = () => {
       if (removedNodeIds.length) {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
-          if (removedNode?.type === "AlpacaNews") {
+          const nodeName = (removedNode?.data?.definition as any)?.name;
+          if (nodeName === "AlpacaNews") {
             const nodeData = removedNode.data as any;
             const candidateSymbols =
               executionStore.getNodeData(id)?.output?.symbols ??
@@ -660,7 +661,10 @@ const WorkflowEditorContent = () => {
 
       if (!newStatus) {
         nodes
-          .filter((node) => node.type === "AlpacaNews")
+          .filter((node) => {
+            const nodeName = (node.data?.definition as any)?.name;
+            return nodeName === "AlpacaNews";
+          })
           .forEach((node) => {
             const nodeData = node.data as any;
             const candidateSymbols =

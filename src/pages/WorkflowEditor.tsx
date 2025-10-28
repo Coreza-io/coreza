@@ -855,8 +855,8 @@ const WorkflowEditorContent = () => {
               // Restore node definitions from manifest when loading from database
               const restoredNodes = (data.nodes as unknown as Node[]).map(
                 (node) => {
-                  // Use node.name to look up the definition in the manifest
-                  const nodeName = (node as any).name || node.type;
+                  // Use node.name (new format) or node.id (old format) to look up the definition
+                  const nodeName = (node as any).name || node.id;
                   const definition = node.data?.definition || nodeManifest[nodeName as keyof typeof nodeManifest];
                   
                   return {

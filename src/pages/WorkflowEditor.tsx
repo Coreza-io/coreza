@@ -97,9 +97,9 @@ const baseNodeTypes = Object.fromEntries([
   ...Object.keys(nodeManifest)
     .filter((nodeKey) => nodeKey !== "Loop")
     .map((nodeKey) => [nodeKey, NodeRouter]),
-  // Map by node_type values (for proper type mapping)
+  // Map by node name values (for proper type mapping)
   ...Object.values(nodeManifest).map((nodeDef: any) => [
-    nodeDef.node_type,
+    nodeDef.name,
     NodeRouter,
   ]),
 ]);

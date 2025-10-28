@@ -6,7 +6,8 @@ export class DataSourceExecutor implements INodeExecutor {
 
   async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
     try {
-      const nodeType = node.type;
+      // Check both node.type and node.name since JSON definitions use 'name'
+      const nodeType = node.type || node.name;
       const operation = node.values?.operation || 'get_quote';
 
       // Resolve and merge node parameters with input data

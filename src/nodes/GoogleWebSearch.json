@@ -1,7 +1,7 @@
 {
   "name": "GoogleWebSearch",
   "def": "Google Web Search",
-  "node_type": "main",
+  "node_type": "sub",
   "category": "DataSource",
   "auth": "GenericAuthModal",
   "authFields": [

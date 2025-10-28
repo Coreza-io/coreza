@@ -136,6 +136,11 @@ export class WorkflowEngine {
     return n?.type === "Loop";
   };
 
+  private isSubNode = (nodeId: string) => {
+    const n = this.nodes.find((x) => x.id === nodeId);
+    return (n as any)?.node_type === "sub";
+  };
+
   private areDependenciesSatisfied(nodeId: string): boolean {
     if (this.isLoopNode(nodeId)) {
       const loopNode = this.nodes.find((n) => n.id === nodeId);
@@ -143,7 +148,10 @@ export class WorkflowEngine {
       if (!loopWaits) return true;
     }
 
-    const required = this.getIncomingEdges(nodeId);
+    // Filter out edges from "sub" nodes (support nodes like tools/chat models)
+    const allIncoming = this.getIncomingEdges(nodeId);
+    const required = allIncoming.filter(e => !this.isSubNode(e.source));
+    
     if (required.length === 0) return false;
     return required.every((e) => this.edgePayload.has(e.id));
   }
@@ -162,6 +170,12 @@ export class WorkflowEngine {
     payload: any,
     meta?: IterMeta
   ): Promise<void> {
+    // Sub nodes don't produce workflow output, they just provide config
+    if (this.isSubNode(edge.source)) {
+      console.log(`⏭️ Skipping edge routing from sub node ${edge.source}`);
+      return;
+    }
+    
     this.markEdgePayload(edge.id, payload);
     if (!this.areDependenciesSatisfied(edge.target)) return;
 

@@ -66,6 +66,12 @@ export class WorkflowExecutor {
     return name === "Loop";
   }
 
+  private isSubNode(id: string) {
+    const n = this.context.nodes.find((x) => x.id === id);
+    const nodeType = (n?.data?.definition as any)?.node_type;
+    return nodeType === "sub";
+  }
+
   private areDependenciesSatisfied(
     nodeId: string,
     executed: Set<string>,
@@ -77,19 +83,9 @@ export class WorkflowExecutor {
       if (!loopWaits) return true;
     }
 
-    const requiredEdges = this.getIncomingEdges(nodeId);
-    //if (!inEdges.length) return true;
-
-    //const requiredEdges = inEdges.filter(e => {
-    //if (failed.has(e.source)) return false;
-
-    //if (this.isBranchNodeId(e.source)) {
-    //if (!executed.has(e.source) && !failed.has(e.source)) return true;
-    //return this.edgePayload.has(e.id);
-    //}
-
-    //return true;
-    //});
+    // Filter out edges from "sub" nodes (support nodes like tools/chat models)
+    const allIncoming = this.getIncomingEdges(nodeId);
+    const requiredEdges = allIncoming.filter(e => !this.isSubNode(e.source));
 
     if (requiredEdges.length === 0) return false;
 

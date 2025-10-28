@@ -59,6 +59,18 @@ export class ToolExecutor implements INodeExecutor {
 
       // Merge node values with input (input from AI Agent has priority)
       const params = { ...node.values, ...input, ...context };
+      
+      console.log(
+        "🔍 [GoogleWebSearch] Debug - Raw inputs:",
+        {
+          node_values: node.values,
+          input_keys: Object.keys(input || {}),
+          input_data: input,
+          context_keys: Object.keys(context || {}),
+          merged_params: params
+        }
+      );
+
       const { user_id, credential_id, query, numResults = 10 } = params;
 
       if (!user_id) {
@@ -70,6 +82,7 @@ export class ToolExecutor implements INodeExecutor {
       }
 
       if (!query) {
+        console.error("❌ [GoogleWebSearch] Missing query parameter. Params:", params);
         return { success: false, error: "query is required" };
       }
 
@@ -80,7 +93,7 @@ export class ToolExecutor implements INodeExecutor {
       // Get credentials
       const { credentials } = await CredentialManager.getCredentials(
         user_id,
-        "googlewebsearch",
+        "googlesearch",
         credential_id
       );
 

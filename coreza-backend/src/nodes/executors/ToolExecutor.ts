@@ -61,6 +61,8 @@ export class ToolExecutor implements INodeExecutor {
       const params = { ...node.values, ...input, ...context };
       const { user_id, credential_id, query, numResults = 10 } = params;
 
+      console.log('🔍 [GoogleWebSearch] Params received:', { user_id, credential_id, query, numResults });
+
       if (!user_id) {
         return { success: false, error: "user_id is required" };
       }
@@ -77,10 +79,10 @@ export class ToolExecutor implements INodeExecutor {
         `🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`
       );
 
-      // Get credentials
+      // Get credentials - using correct service type "googlesearch"
       const { credentials } = await CredentialManager.getCredentials(
         user_id,
-        "googlewebsearch",
+        "googlesearch",
         credential_id
       );
 

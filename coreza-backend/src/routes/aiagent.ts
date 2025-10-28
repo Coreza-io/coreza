@@ -27,44 +27,44 @@ router.post("/execute", async (req: Request, res: Response) => {
     if (!user_id) {
       return res.status(400).json({
         success: false,
-        error: "user_id is required"
+        error: "user_id is required",
       });
     }
 
     if (!userPrompt) {
       return res.status(400).json({
         success: false,
-        error: "userPrompt is required"
+        error: "userPrompt is required",
       });
     }
 
     if (!workflowNodes || !Array.isArray(workflowNodes)) {
       return res.status(400).json({
         success: false,
-        error: "nodes array is required for AI Agent to discover tool nodes"
+        error: "nodes array is required for AI Agent to discover tool nodes",
       });
     }
 
     if (!workflowEdges || !Array.isArray(workflowEdges)) {
       return res.status(400).json({
         success: false,
-        error: "edges array is required for AI Agent to discover tool nodes"
+        error: "edges array is required for AI Agent to discover tool nodes",
       });
     }
 
     // Find the AIAgent node from the workflow nodes
-    const aiAgentNode = workflowNodes.find(n => n.type === "AIAgent");
+    const aiAgentNode = workflowNodes.find((n) => n.type === "AIAgent");
     if (!aiAgentNode) {
       return res.status(400).json({
         success: false,
-        error: "AIAgent node not found in workflow nodes"
+        error: "AIAgent node not found in workflow nodes",
       });
     }
 
     // Construct the node with values from request
     const node: WorkflowNode = {
-      id: aiAgentNode.id || "AIAgent",
-      type: "AIAgent",
+      id: aiAgentNode.id,
+      node_type: "AIAgent",
       category: "LLM",
       values: {
         systemPrompt,
@@ -72,8 +72,8 @@ router.post("/execute", async (req: Request, res: Response) => {
         temperature,
         maxIterations,
         returnIntermediateSteps,
-        ...restFields
-      }
+        ...restFields,
+      },
     };
 
     // Create execution context with all necessary data
@@ -85,30 +85,33 @@ router.post("/execute", async (req: Request, res: Response) => {
       // Add a simple resolver function
       resolveNodeParameters: (node: WorkflowNode, input: any) => {
         return { ...node.values, ...input };
-      }
+      },
     };
 
     console.log("🤖 [AI AGENT ROUTE] Executing AI Agent...");
     const result = await aiAgentExecutor.execute(node, {}, context);
 
-    console.log("🤖 [AI AGENT ROUTE] Execution completed:", result.success ? "✅" : "❌");
+    console.log(
+      "🤖 [AI AGENT ROUTE] Execution completed:",
+      result.success ? "✅" : "❌"
+    );
 
     if (!result.success) {
       return res.status(500).json({
         success: false,
-        error: result.error || "AI Agent execution failed"
+        error: result.error || "AI Agent execution failed",
       });
     }
 
     res.json({
       success: true,
-      data: result.data
+      data: result.data,
     });
   } catch (error: any) {
     console.error("❌ [AI AGENT ROUTE] Error:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "AI Agent execution failed"
+      error: error.message || "AI Agent execution failed",
     });
   }
 });

@@ -854,20 +854,25 @@ const WorkflowEditorContent = () => {
             if (data.nodes && Array.isArray(data.nodes)) {
               // Restore node definitions from manifest when loading from database
               const restoredNodes = (data.nodes as unknown as Node[]).map(
-                (node) => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    definition:
-                      node.data?.definition ||
-                      nodeManifest[node.type as keyof typeof nodeManifest],
-                    // Ensure values are properly mapped to data.values for BaseNode to use
-                    values: (node as any).values || node.data?.values || {},
-                    // Restore display name for backward compatibility
-                    displayName: node.id,
-                    //displayName: (node as any).displayName || (node.data?.values as any)?.label || nodeManifest[node.type as keyof typeof nodeManifest]?.name || node.type
-                  },
-                })
+                (node) => {
+                  // Use node.name to look up the definition in the manifest
+                  const nodeName = (node as any).name || node.type;
+                  const definition = node.data?.definition || nodeManifest[nodeName as keyof typeof nodeManifest];
+                  
+                  return {
+                    ...node,
+                    // Set React Flow's type to the manifest key for proper rendering
+                    type: nodeName,
+                    data: {
+                      ...node.data,
+                      definition,
+                      // Ensure values are properly mapped to data.values for BaseNode to use
+                      values: (node as any).values || node.data?.values || {},
+                      // Restore display name for backward compatibility
+                      displayName: node.id,
+                    },
+                  };
+                }
               );
               setNodes(restoredNodes);
 

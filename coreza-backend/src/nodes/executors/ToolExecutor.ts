@@ -1,9 +1,13 @@
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
+import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 
 export class ToolExecutor implements INodeExecutor {
-  readonly category = 'Tool';
+  readonly category = "Tool";
 
-  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  async execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
       const nodeType = node.type || node.name;
@@ -12,70 +16,83 @@ export class ToolExecutor implements INodeExecutor {
 
       let result;
       switch (nodeType) {
-        case 'GoogleWebSearch':
+        case "GoogleWebSearch":
           result = await this.executeGoogleWebSearch(node, input, context);
           break;
         default:
           return {
             success: false,
-            error: `Unsupported tool node type: ${nodeType}`
+            error: `Unsupported tool node type: ${nodeType}`,
           };
       }
 
       if (!result.success) {
         return {
           success: false,
-          error: result.error || `${nodeType} tool execution failed`
+          error: result.error || `${nodeType} tool execution failed`,
         };
       }
 
       return {
         success: true,
-        data: result.data
+        data: result.data,
       };
     } catch (error) {
       return {
         success: false,
-        error: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Tool execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
 
-  private async executeGoogleWebSearch(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  private async executeGoogleWebSearch(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     try {
-      const CredentialManager = (await import('../../utils/credentialManager')).default;
-      const axios = (await import('axios')).default;
+      const CredentialManager = (await import("../../utils/credentialManager"))
+        .default;
+      const axios = (await import("axios")).default;
 
       // Merge node values with input (input from AI Agent has priority)
-      const params = { ...node.values, ...input };
+      const params = { ...node.values, ...input, ...context };
       const { user_id, credential_id, query, numResults = 10 } = params;
 
       if (!user_id) {
-        return { success: false, error: 'user_id is required' };
+        return { success: false, error: "user_id is required" };
       }
 
       if (!credential_id) {
-        return { success: false, error: 'credential_id is required' };
+        return { success: false, error: "credential_id is required" };
       }
 
       if (!query) {
-        return { success: false, error: 'query is required' };
+        return { success: false, error: "query is required" };
       }
 
-      console.log(`🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`);
+      console.log(
+        `🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`
+      );
 
       // Get credentials
       const { credentials } = await CredentialManager.getCredentials(
         user_id,
-        'googlesearch',
+        "googlewebsearch",
         credential_id
       );
 
       const { api_key, search_engine_id } = credentials.client_json;
 
       // Execute search
-      const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(api_key)}&cx=${encodeURIComponent(search_engine_id)}&q=${encodeURIComponent(query)}&num=${numResults}`;
-      
+      const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(
+        api_key
+      )}&cx=${encodeURIComponent(search_engine_id)}&q=${encodeURIComponent(
+        query
+      )}&num=${numResults}`;
+
       const response = await axios.get(searchUrl);
 
       if (!response.data || !response.data.items) {
@@ -84,8 +101,8 @@ export class ToolExecutor implements INodeExecutor {
           data: {
             query,
             results: [],
-            searchInformation: response.data.searchInformation || {}
-          }
+            searchInformation: response.data.searchInformation || {},
+          },
         };
       }
 
@@ -94,7 +111,7 @@ export class ToolExecutor implements INodeExecutor {
         title: item.title,
         link: item.link,
         snippet: item.snippet,
-        displayLink: item.displayLink
+        displayLink: item.displayLink,
       }));
 
       console.log(`✅ [GoogleWebSearch] Found ${results.length} results`);
@@ -104,14 +121,20 @@ export class ToolExecutor implements INodeExecutor {
         data: {
           query,
           results,
-          searchInformation: response.data.searchInformation
-        }
+          searchInformation: response.data.searchInformation,
+        },
       };
     } catch (error: any) {
-      console.error('❌ [GoogleWebSearch] Error:', error.response?.data || error.message);
+      console.error(
+        "❌ [GoogleWebSearch] Error:",
+        error.response?.data || error.message
+      );
       return {
         success: false,
-        error: error.response?.data?.error?.message || error.message || 'Google Search execution failed'
+        error:
+          error.response?.data?.error?.message ||
+          error.message ||
+          "Google Search execution failed",
       };
     }
   }

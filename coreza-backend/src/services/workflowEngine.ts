@@ -133,7 +133,7 @@ export class WorkflowEngine {
 
   private isLoopNode = (nodeId: string) => {
     const n = this.nodes.find((x) => x.id === nodeId);
-    return n?.type === "Loop";
+    return n?.name === "Loop";
   };
 
   private isSubNode = (nodeId: string) => {
@@ -215,7 +215,7 @@ export class WorkflowEngine {
     for (const node of entryNodes) {
       // Skip Alpaca or any external listener node if it’s already active
       if (node.name === "AlpacaNews") {
-        console.log(`🟡 Skipping re-run for ${node.type} node`);
+        console.log(`🟡 Skipping re-run for ${node.name || node.node_type} node`);
         const edges = this.router.select(node.id, initialInput);
         for (const edge of edges) {
           this.store.setNodeResult(node.id, initialInput);
@@ -281,7 +281,7 @@ export class WorkflowEngine {
       this.executed.add(nodeId);
 
       if (
-        node.type === "Loop" &&
+        node.name === "Loop" &&
         fullResult &&
         typeof fullResult === "object"
       ) {
@@ -311,7 +311,7 @@ export class WorkflowEngine {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodes.find((n) => n.id === loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
-        if (loopNode?.type === "Loop" && hasActiveEdgeToLoop) {
+        if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
           const currentResults =
             this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
           currentResults.push(result);

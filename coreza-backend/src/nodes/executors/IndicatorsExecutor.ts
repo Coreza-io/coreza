@@ -6,7 +6,7 @@ export class IndicatorsExecutor implements INodeExecutor {
 
   async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
     try {
-      const indicatorType = node.type?.toLowerCase();
+      const indicatorType = (node.name || node.node_type)?.toLowerCase();
       const resolvedParams = context?.resolveNodeParameters ? 
         context.resolveNodeParameters(node, input) : 
         { ...node.values, ...input };

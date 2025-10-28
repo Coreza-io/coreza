@@ -11,7 +11,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.type;
+      const nodeType = node.name || node.node_type;
       switch (nodeType) {
         case "If":
           return this.executeIfNode(node, input, context);

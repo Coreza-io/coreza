@@ -50,8 +50,8 @@ function generateDisplayName(node: any): string {
     return node.data.definition.name;
   }
   
-  // Fallback to node type
-  return node.type || 'Unknown';
+  // Fallback to node name or type
+  return node.name || node.type || 'Unknown';
 }
 
 /**

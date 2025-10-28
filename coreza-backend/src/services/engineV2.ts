@@ -72,9 +72,9 @@ export class EngineV2 {
         Object.entries(result.control.setState).forEach(([k, v]) => this.nodeState.set(`${node.id}:${k}`, v));
       }
 
-      if (node.type === 'If') {
+      if (node.name === 'If' || node.type === 'If') {
         await this.propagate(node.id, result.control?.branch ?? 'true', result);
-      } else if (node.type === 'Loop') {
+      } else if (node.name === 'Loop' || node.type === 'Loop') {
         const handle = result.control?.requeueSelf ? 'loop' : 'done';
         await this.propagate(node.id, handle, result);
         if (result.control?.requeueSelf) {

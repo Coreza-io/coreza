@@ -115,7 +115,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
 
       // Unsubscribe from news if has AlpacaNews node
       const alpacaNewsNode = workflow.nodes?.find(
-        (n: any) => n.type === "AlpacaNews"
+        (n: any) => n.name === "AlpacaNews" || n.type === "AlpacaNews"
       );
       if (alpacaNewsNode && workflow.is_active) {
         const nodeValues =
@@ -274,7 +274,7 @@ type SchedulerValues = {
 function computeCronFromSchedulerNodes(nodes: any[]) {
   const list = Array.isArray(nodes) ? nodes : [];
   const schedulers = list.filter(
-    (n) => n?.type === "Scheduler" || n?.data?.kind === "scheduler"
+    (n) => n?.name === "Scheduler" || n?.type === "Scheduler" || n?.data?.kind === "scheduler"
   );
 
   if (schedulers.length === 0) {
@@ -383,10 +383,10 @@ function mapDOW(s: string | number) {
 function hasSchedulerOrTriggerNodes(nodes: any[]): boolean {
   return nodes.some(
     (node) =>
+      node.name === "Scheduler" ||
+      node.name === "trigger" ||
       node.type === "Scheduler" ||
-      node.type === "trigger" ||
-      (node.node_type &&
-        (node.node_type === "trigger" || node.node_type === "Scheduler"))
+      node.type === "trigger"
   );
 }
 

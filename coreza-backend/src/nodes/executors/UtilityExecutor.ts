@@ -5,7 +5,7 @@ export class UtilityExecutor implements INodeExecutor {
 
   async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
     try {
-      const nodeType = node.type;
+      const nodeType = node.name || node.node_type;
       
       switch (nodeType) {
         case 'Scheduler':

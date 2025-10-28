@@ -13,7 +13,7 @@ export class CommunicationExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.type;
+      const nodeType = node.name || node.node_type;
       const operation = node.values?.operation || "send";
 
       // Resolve and merge node parameters with input data

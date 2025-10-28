@@ -53,7 +53,7 @@ router.post("/execute", async (req: Request, res: Response) => {
     }
 
     // Find the AIAgent node from the workflow nodes
-    const aiAgentNode = workflowNodes.find((n) => n.type === "AIAgent");
+    const aiAgentNode = workflowNodes.find((n) => n.name === "AIAgent" || n.type === "AIAgent");
     if (!aiAgentNode) {
       return res.status(400).json({
         success: false,
@@ -64,7 +64,8 @@ router.post("/execute", async (req: Request, res: Response) => {
     // Construct the node with values from request
     const node: WorkflowNode = {
       id: aiAgentNode.id,
-      node_type: "AIAgent",
+      name: "AIAgent",
+      node_type: "main",
       category: "LLM",
       values: {
         systemPrompt,

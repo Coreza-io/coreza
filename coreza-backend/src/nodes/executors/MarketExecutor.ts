@@ -10,7 +10,7 @@ export class MarketExecutor implements INodeExecutor {
         context.resolveNodeParameters(node, input) : 
         { ...node.values, ...input };
 
-      console.log('🏪 Executing Market node with params:', resolvedParams);
+      console.log(`🏪 Executing ${node.name || node.node_type} node with params:`, resolvedParams);
 
       const result = await DataService.getMarketData(resolvedParams);
       

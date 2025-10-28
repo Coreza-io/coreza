@@ -6,7 +6,7 @@ export class IOExecutor implements INodeExecutor {
   async execute(node: WorkflowNode, input: NodeInput): Promise<NodeResult> {
     try {
       // Handle different IO node types
-      const nodeType = node.type;
+      const nodeType = node.name || node.node_type;
       
       switch (nodeType) {
         case 'ChatInput':

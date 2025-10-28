@@ -16,7 +16,8 @@ export interface INodeExecutor {
 // Type for workflow node structure
 export interface WorkflowNode {
   id: string;
-  node_type: string;
+  name?: string;        // Actual node type (e.g., "GoogleWebSearch", "AIAgent", "Loop")
+  node_type: string;    // Classification ("main" or "sub")
   category: string;
   values?: { [key: string]: any };
   data?: {

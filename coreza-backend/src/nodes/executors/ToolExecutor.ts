@@ -10,26 +10,26 @@ export class ToolExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
-      const nodeType = node.type || node.name;
+      const nodename = node.name;
 
-      console.log(`🔧 [Tool] Executing ${nodeType} with input:`, input);
+      console.log(`🔧 [Tool] Executing ${nodename} with input:`, input);
 
       let result;
-      switch (nodeType) {
+      switch (nodename) {
         case "GoogleWebSearch":
           result = await this.executeGoogleWebSearch(node, input, context);
           break;
         default:
           return {
             success: false,
-            error: `Unsupported tool node type: ${nodeType}`,
+            error: `Unsupported tool node type: ${nodename}`,
           };
       }
 
       if (!result.success) {
         return {
           success: false,
-          error: result.error || `${nodeType} tool execution failed`,
+          error: result.error || `${nodename} tool execution failed`,
         };
       }
 

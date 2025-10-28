@@ -1,11 +1,11 @@
-export interface NodeInput { 
-  [key: string]: any; 
+export interface NodeInput {
+  [key: string]: any;
 }
 
-export interface NodeResult { 
-  success?: boolean; 
-  data?: any; 
-  error?: string; 
+export interface NodeResult {
+  success?: boolean;
+  data?: any;
+  error?: string;
 }
 
 export interface INodeExecutor {
@@ -16,7 +16,7 @@ export interface INodeExecutor {
 // Type for workflow node structure
 export interface WorkflowNode {
   id: string;
-  type: string;
+  node_type: string;
   category: string;
   values?: { [key: string]: any };
   data?: {
@@ -56,7 +56,7 @@ export interface ControlFlags {
   /** Persist arbitrary node local state. */
   setState?: Record<string, any>;
   /** Convenience branch decision for conditional nodes. */
-  branch?: 'true' | 'false';
+  branch?: "true" | "false";
 }
 
 /**
@@ -95,8 +95,8 @@ export interface INodeExecutorV2 {
  * Iteration metadata that flows with every queued node execution
  */
 export type IterMeta = {
-  originLoopId?: string;   // which Loop spawned this subtree
-  iterIndex?: number;      // iteration index of that Loop
+  originLoopId?: string; // which Loop spawned this subtree
+  iterIndex?: number; // iteration index of that Loop
 };
 
 /**
@@ -104,6 +104,6 @@ export type IterMeta = {
  */
 export type QueueItem = {
   nodeId: string;
-  input?: any;             // resolved "input" for this node
-  meta?: IterMeta;         // iteration scope marker
+  input?: any; // resolved "input" for this node
+  meta?: IterMeta; // iteration scope marker
 };

@@ -150,8 +150,8 @@ export class WorkflowEngine {
 
     // Filter out edges from "sub" nodes (support nodes like tools/chat models)
     const allIncoming = this.getIncomingEdges(nodeId);
-    const required = allIncoming.filter(e => !this.isSubNode(e.source));
-    
+    const required = allIncoming.filter((e) => !this.isSubNode(e.source));
+
     if (required.length === 0) return false;
     return required.every((e) => this.edgePayload.has(e.id));
   }
@@ -175,7 +175,7 @@ export class WorkflowEngine {
       console.log(`⏭️ Skipping edge routing from sub node ${edge.source}`);
       return;
     }
-    
+
     this.markEdgePayload(edge.id, payload);
     if (!this.areDependenciesSatisfied(edge.target)) return;
 
@@ -206,13 +206,15 @@ export class WorkflowEngine {
   async run(initialInput: any = []): Promise<void> {
     // Find entry nodes (no incoming edges)
     const entryNodes = this.nodes.filter(
-      (n) => !this.edges.some((e) => e.target === n.id)
+      (n) =>
+        n.node_type === "main" && // ✅ only include main nodes
+        !this.edges.some((e) => e.target === n.id)
     );
 
     // Seed queue with entry nodes
     for (const node of entryNodes) {
       // Skip Alpaca or any external listener node if it’s already active
-      if (node.type === "AlpacaNews" || node.category === "external") {
+      if (node.name === "AlpacaNews") {
         console.log(`🟡 Skipping re-run for ${node.type} node`);
         const edges = this.router.select(node.id, initialInput);
         for (const edge of edges) {
@@ -267,7 +269,8 @@ export class WorkflowEngine {
         edges: this.edges,
         resolveNodeParameters: this.resolveNodeParameters.bind(this),
         getState: (key: string) => this.store.getNodeState(nodeId, key),
-        setState: (key: string, value: any) => this.store.setNodeState(nodeId, key, value),
+        setState: (key: string, value: any) =>
+          this.store.setNodeState(nodeId, key, value),
       };
 
       const fullResult = await this.executeNode(node, input, executionContext);
@@ -360,31 +363,33 @@ export class WorkflowEngine {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    console.log(`🔧 Executing node ${node.id} (${node.type})`);
+    console.log(`🔧 Executing node ${node.id} (${node.name})`);
 
     // Map node categories for compatibility - include AIAgent
     let category = node.category;
     if (
-      node.type === "If" ||
-      node.type === "Switch" ||
-      node.type === "Edit Fields" ||
-      node.type === "Math" ||
-      node.type === "Transform" ||
-      node.type === "Loop"
+      node.name === "If" ||
+      node.name === "Switch" ||
+      node.name === "Edit Fields" ||
+      node.name === "Math" ||
+      node.name === "Transform" ||
+      node.name === "Loop"
     ) {
       category = "ControlFlow";
     } else if (
       ["Scheduler", "trigger", "Visualize", "webhook", "httprequest"].includes(
-        node.type
+        node.name
       )
     ) {
       category = "Utility";
-    } else if (["Gmail", "WhatsApp"].includes(node.type)) {
+    } else if (["Gmail", "WhatsApp"].includes(node.name)) {
       category = "Communication";
-    } else if (["FinnHub", "YahooFinance"].includes(node.type)) {
+    } else if (["FinnHub", "YahooFinance"].includes(node.name)) {
       category = "DataSource";
-    } else if (node.type === "AIAgent") {
-      category = "LLM";  // AIAgent uses LLM category
+    } else if (node.name === "LLM") {
+      category = "LLM";
+    } else if (node.name === "AIAgent") {
+      category = "AIAgent"; // AIAgent
     }
 
     // Pass nodes and edges to context for AIAgent to access tool nodes
@@ -402,7 +407,7 @@ export class WorkflowEngine {
 
     if (!executor) {
       throw new Error(
-        `Unsupported node category: ${category} for node type: ${node.type}`
+        `Unsupported node category: ${category} for node type: ${node.name}`
       );
     }
 

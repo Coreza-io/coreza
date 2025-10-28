@@ -5,9 +5,7 @@
   "category": "ChatModel",
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 300, "height": 280 },
-  "handles": [
-    { "type": "source", "position": "top", "id": "chatModel" }
-  ],
+  "handles": [{ "type": "source", "position": "top", "id": "chatModel" }],
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -23,7 +21,7 @@
       "placeholder": "sk-..."
     }
   ],
-  "authAction": {"url": "/openai/auth-url", "method": "POST"},
+  "authAction": { "url": "/openai/auth-url", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

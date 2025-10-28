@@ -2,7 +2,7 @@
   "name": "AIAgent",
   "def": "AI Agent",
   "node_type": "main",
-  "category": "LLM",
+  "category": "AIAgent",
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 380, "height": 420 },
   "handles": [
@@ -12,7 +12,7 @@
     { "type": "target", "position": "bottom", "id": "tool" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": {"url": "/aiagent/execute", "method": "POST"},
+  "action": { "url": "/aiagent/execute", "method": "POST" },
   "fields": [
     {
       "key": "systemPrompt",

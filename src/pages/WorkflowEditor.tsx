@@ -48,13 +48,11 @@ import {
   ExecutionStoreProvider,
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
-import {
-  appendNewsItem,
-  createWaitingNewsOutput,
-} from "@/utils/alpacaNews";
+import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 
 const API_BASE_URL =
-  (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:8000";
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  "http://localhost:8000";
 
 const resolveWebSocketUrl = (): string | null => {
   const explicit = import.meta.env.VITE_WS_URL as string | undefined;
@@ -68,11 +66,7 @@ const resolveWebSocketUrl = (): string | null => {
     const wsProtocol = api.protocol === "https:" ? "wss:" : "ws:";
     const port =
       configuredPort ??
-      (api.port
-        ? api.port === "8000"
-          ? "8081"
-          : api.port
-        : "8081");
+      (api.port ? (api.port === "8000" ? "8081" : api.port) : "8081");
     return `${wsProtocol}//${api.hostname}:${port}`;
   } catch (error) {
     console.error("Failed to derive WebSocket URL", error);
@@ -142,8 +136,9 @@ const WorkflowEditorContent = () => {
   const { user: authUser, session, loading: authLoading } = useAuth();
   const executionStore = useExecutionStore();
   const wsRef = useRef<WebSocket | null>(null);
-  const messageHandlerRef = useRef<(rawPayload: any, timestamp?: string) => void>(() => {});
-
+  const messageHandlerRef = useRef<
+    (rawPayload: any, timestamp?: string) => void
+  >(() => {});
 
   // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === "new" || !id;
@@ -188,9 +183,7 @@ const WorkflowEditorContent = () => {
       const storedSymbols = Array.isArray(storeData?.output?.symbols)
         ? storeData.output.symbols
         : [];
-      const symbols = storedSymbols.length
-        ? storedSymbols
-        : fallbackSymbols;
+      const symbols = storedSymbols.length ? storedSymbols : fallbackSymbols;
 
       if (symbols.length) {
         try {
@@ -387,7 +380,9 @@ const WorkflowEditorContent = () => {
                 nodeId: payload.nodeId || payload.node_id,
                 data: payload.news ?? payload,
                 symbols:
-                  payload.news?.symbols ?? payload.symbols ?? payload.data?.symbols,
+                  payload.news?.symbols ??
+                  payload.symbols ??
+                  payload.data?.symbols,
                 receivedAt: message.timestamp,
               },
               message.timestamp
@@ -514,7 +509,8 @@ const WorkflowEditorContent = () => {
     // 1) Turn each node into a "minimal" version without its definition
     const minimalNodes = nodes.map((n) => ({
       id: n.id,
-      type: n.type,
+      name: (n.data.definition as any)?.name,
+      node_type: (n.data.definition as any)?.node_type,
       category: (n.data.definition as any)?.category,
       subCategory: (n.data.definition as any)?.subCategory,
       position: n.position,
@@ -609,14 +605,14 @@ const WorkflowEditorContent = () => {
 
     try {
       const API_URL = API_BASE_URL;
-      
+
       // Check backend health first for both activation and deactivation
       try {
         const healthCheck = await fetch(`${API_URL}/health`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         });
-        
+
         if (!healthCheck.ok) {
           throw new Error("Backend server is not responding");
         }
@@ -631,15 +627,18 @@ const WorkflowEditorContent = () => {
       }
 
       const newStatus = !isActive;
-      
+
       // Call the correct backend endpoint
-      const res = await fetch(`${API_URL}/workflows/${authUser.id}/${workflowId}/schedule`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          is_active: newStatus
-        }),
-      });
+      const res = await fetch(
+        `${API_URL}/workflows/${authUser.id}/${workflowId}/schedule`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            is_active: newStatus,
+          }),
+        }
+      );
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -648,9 +647,9 @@ const WorkflowEditorContent = () => {
 
       // Update database to reflect the change
       const { error } = await supabase
-        .from('workflows')
+        .from("workflows")
         .update({ is_active: newStatus })
-        .eq('id', workflowId);
+        .eq("id", workflowId);
 
       if (error) {
         throw error;
@@ -678,12 +677,16 @@ const WorkflowEditorContent = () => {
 
       toast({
         title: "Success",
-        description: `Workflow ${newStatus ? 'activated' : 'deactivated'} successfully`,
+        description: `Workflow ${
+          newStatus ? "activated" : "deactivated"
+        } successfully`,
       });
     } catch (error: any) {
       toast({
         title: "Error",
-        description: `Failed to ${!isActive ? 'activate' : 'deactivate'} workflow: ${error.message}`,
+        description: `Failed to ${
+          !isActive ? "activate" : "deactivate"
+        } workflow: ${error.message}`,
         variant: "destructive",
       });
     }

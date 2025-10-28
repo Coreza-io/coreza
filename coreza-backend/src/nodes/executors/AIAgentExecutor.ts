@@ -11,7 +11,7 @@ import CredentialManager from "../../utils/credentialManager";
 import { z } from "zod";
 
 export class AIAgentExecutor implements INodeExecutor {
-  readonly category = "LLM";
+  readonly category = "AIAgent";
 
   async execute(
     node: WorkflowNode,
@@ -269,7 +269,7 @@ export class AIAgentExecutor implements INodeExecutor {
    */
   private getToolName(node: WorkflowNode): string {
     // Use node type as tool name, sanitized
-    return node.type.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    return node.name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
   }
 
   /**
@@ -282,7 +282,8 @@ export class AIAgentExecutor implements INodeExecutor {
       Market: "Get market data and stock prices",
       YahooFinance: "Get financial data from Yahoo Finance",
       FinnHub: "Get financial news and data from FinnHub",
-      GoogleWebSearch: "Search the web using Google to find current information, news, and web pages",
+      GoogleWebSearch:
+        "Search the web using Google to find current information, news, and web pages",
       Math: "Perform mathematical calculations",
       Transform: "Transform and manipulate data",
       Gmail: "Send emails via Gmail",
@@ -294,8 +295,8 @@ export class AIAgentExecutor implements INodeExecutor {
     };
 
     return (
-      descriptionMap[node.type] ||
-      `Execute ${node.type} node to perform its configured action`
+      descriptionMap[node.name] ||
+      `Execute ${node.name} node to perform its configured action`
     );
   }
 
@@ -307,18 +308,24 @@ export class AIAgentExecutor implements INodeExecutor {
     const schemaMap: Record<string, z.ZodObject<any>> = {
       GoogleWebSearch: z.object({
         query: z.string().describe("The search query to execute"),
-        numResults: z.number().optional().describe("Number of search results to return (default: 10)"),
+        numResults: z
+          .number()
+          .optional()
+          .describe("Number of search results to return (default: 10)"),
       }),
       HttpRequest: z.object({
         input: z.any().optional().describe("Input data for HTTP request"),
       }),
       Math: z.object({
-        input: z.any().optional().describe("Input data for mathematical operation"),
+        input: z
+          .any()
+          .optional()
+          .describe("Input data for mathematical operation"),
       }),
     };
 
     return (
-      schemaMap[node.type] ||
+      schemaMap[node.name] ||
       z.object({
         input: z.any().optional().describe("Input data for the tool"),
       })

@@ -12,7 +12,7 @@ export class LLMExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.type;
+      const nodeType = node.name;
 
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters

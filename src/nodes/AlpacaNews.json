@@ -5,7 +5,11 @@
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
   "subCategory": "Alpaca",
-
+  "executionMode": "streaming",
+  "streamingConfig": {
+    "waitForFirstEvent": true,
+    "timeout": 30000
+  },
   "description": "Subscribe to real-time news from Alpaca News API",
   "color": "text-yellow-500",
   "size": { "width": 340, "height": 300 },

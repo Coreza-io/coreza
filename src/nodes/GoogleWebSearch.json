@@ -2,7 +2,7 @@
   "name": "GoogleWebSearch",
   "def": "Google Web Search",
   "node_type": "sub",
-  "category": "DataSource",
+  "category": "Tool",
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -39,13 +39,6 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
-    },
-    {
-      "key": "query",
-      "label": "Search Query",
-      "type": "textarea",
-      "placeholder": "Enter search query or use {{variable}}",
       "required": true
     },
     {

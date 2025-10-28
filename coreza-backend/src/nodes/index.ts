@@ -10,6 +10,7 @@ import { DataSourceExecutor } from './executors/DataSourceExecutor';
 import { RiskExecutor } from './executors/RiskExecutor';
 import { LLMExecutor } from './executors/LLMExecutor';
 import { AIAgentExecutor } from './executors/AIAgentExecutor';
+import { ToolExecutor } from './executors/ToolExecutor';
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -25,6 +26,7 @@ export function initializeNodeExecutors() {
     new RiskExecutor(),
     new LLMExecutor(),
     new AIAgentExecutor(),
+    new ToolExecutor(),
   ];
 
   executors.forEach(executor => {

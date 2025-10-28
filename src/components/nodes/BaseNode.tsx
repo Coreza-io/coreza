@@ -681,7 +681,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       // Serialize nodes and edges for backend
       payload.nodes = nodes.map(n => ({
         id: n.id,
-        type: n.type,
+        name: (n.data?.definition as any)?.name || n.type,
+        node_type: (n.data?.definition as any)?.node_type || 'main',
         category: (n.data?.definition as any)?.category,
         values: n.data?.fieldState || n.data?.values || {},
         position: n.position

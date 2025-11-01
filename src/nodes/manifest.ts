@@ -31,6 +31,7 @@ import OpenAIChatModelDef from './OpenAIChatModel.json'
 import AIAgentDef from './AIAgent.json'
 import GoogleWebSearchDef from './GoogleWebSearch.json'
 import AlpacaScreenerDef from './AlpacaScreener.json'
+import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -120,7 +121,8 @@ export const nodeManifest = {
   [OpenAIChatModelDef.name]: OpenAIChatModelDef,
   [AIAgentDef.name]: AIAgentDef,
   [GoogleWebSearchDef.name]: GoogleWebSearchDef,
-  [AlpacaScreenerDef.name]: AlpacaScreenerDef
+  [AlpacaScreenerDef.name]: AlpacaScreenerDef,
+  [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

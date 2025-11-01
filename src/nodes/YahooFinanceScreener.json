@@ -1,0 +1,81 @@
+{
+  "name": "YahooFinanceScreener",
+  "def": "Yahoo Finance Screener",
+  "node_type": "main",
+  "icon": "/assets/icons/YahooFinance.svg",
+  "category": "Screener",
+  "subCategory": "YahooFinance",
+  "description": "Screen stocks using Yahoo Finance predefined screeners (day gainers, most actives, etc.)",
+  "color": "text-purple-500",
+  "size": { "width": 340, "height": 300 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/screener/yahoofinance/{{operation}}",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Screener Type",
+      "type": "select",
+      "options": [
+        { "id": "day_gainers", "name": "Day Gainers" },
+        { "id": "day_losers", "name": "Day Losers" },
+        { "id": "most_actives", "name": "Most Actives" },
+        { "id": "small_cap_gainers", "name": "Small Cap Gainers" },
+        { "id": "undervalued_large_caps", "name": "Undervalued Large Caps" },
+        { "id": "growth_technology_stocks", "name": "Growth Technology Stocks" },
+        { "id": "aggressive_small_caps", "name": "Aggressive Small Caps" },
+        { "id": "undervalued_growth_stocks", "name": "Undervalued Growth Stocks" }
+      ],
+      "default": "day_gainers",
+      "required": true
+    },
+    {
+      "key": "count",
+      "label": "Number of Results",
+      "type": "text",
+      "placeholder": "100",
+      "default": "100"
+    },
+    {
+      "key": "min_gap_percent",
+      "label": "Min Gap %",
+      "type": "text",
+      "placeholder": "3.0",
+      "default": "0",
+      "displayOptions": {
+        "show": {
+          "operation": ["day_gainers"]
+        }
+      }
+    },
+    {
+      "key": "min_change_percent",
+      "label": "Min Change %",
+      "type": "text",
+      "placeholder": "1.0",
+      "default": "1.0",
+      "displayOptions": {
+        "show": {
+          "operation": ["most_actives"]
+        }
+      }
+    },
+    {
+      "key": "min_loss_percent",
+      "label": "Min Loss %",
+      "type": "text",
+      "placeholder": "0",
+      "default": "0",
+      "displayOptions": {
+        "show": {
+          "operation": ["day_losers"]
+        }
+      }
+    }
+  ]
+}

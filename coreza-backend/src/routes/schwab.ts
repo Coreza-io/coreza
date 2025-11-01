@@ -90,7 +90,7 @@ router.post('/exchange-token', async (req, res) => {
     }
 
     // Extract authorization code from redirect URL
-    const codeMatch = redirect_url.match(/code=([^&%]+)/);
+    const codeMatch = redirect_url.match(/code=([^&]+)/);
     if (!codeMatch) {
       return res.status(400).json({ 
         success: false, 
@@ -98,12 +98,8 @@ router.post('/exchange-token', async (req, res) => {
       });
     }
 
-    let code = codeMatch[1];
-    
-    // Handle URL encoding issues - decode the code if it contains %40
-    if (code.includes('%40')) {
-      code = decodeURIComponent(code);
-    }
+    // Always URL-decode and trim the authorization code
+    let code = decodeURIComponent(codeMatch[1]).trim();
 
     console.log('🔑 [SCHWAB-AUTH] Exchanging authorization code for tokens...');
 

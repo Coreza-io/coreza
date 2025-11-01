@@ -28,7 +28,19 @@ export class YahooFinanceScreenerService
           count: filtered.length,
           source: 'yahoo_finance_day_gainers'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          const filtered = error.result.quotes.filter((q: any) => 
+            (q.regularMarketChangePercent || 0) >= minGap
+          );
+          return {
+            gainers: filtered.map(this.transformQuote),
+            count: filtered.length,
+            source: 'yahoo_finance_day_gainers'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] day_gainers error:', error);
         throw error;
       }
@@ -48,7 +60,16 @@ export class YahooFinanceScreenerService
           count: result.quotes.length,
           source: 'yahoo_finance_small_cap_gainers'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          return {
+            gainers: error.result.quotes.map(this.transformQuote),
+            count: error.result.quotes.length,
+            source: 'yahoo_finance_small_cap_gainers'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] small_cap_gainers error:', error);
         throw error;
       }
@@ -73,7 +94,19 @@ export class YahooFinanceScreenerService
           count: filtered.length,
           source: 'yahoo_finance_most_actives'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          const filtered = error.result.quotes.filter((q: any) => 
+            Math.abs(q.regularMarketChangePercent || 0) >= minChange
+          );
+          return {
+            actives: filtered.map(this.transformQuote),
+            count: filtered.length,
+            source: 'yahoo_finance_most_actives'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] most_actives error:', error);
         throw error;
       }
@@ -98,7 +131,19 @@ export class YahooFinanceScreenerService
           count: filtered.length,
           source: 'yahoo_finance_day_losers'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          const filtered = error.result.quotes.filter((q: any) => 
+            (q.regularMarketChangePercent || 0) <= -minLoss
+          );
+          return {
+            losers: filtered.map(this.transformQuote),
+            count: filtered.length,
+            source: 'yahoo_finance_day_losers'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] day_losers error:', error);
         throw error;
       }
@@ -118,7 +163,16 @@ export class YahooFinanceScreenerService
           count: result.quotes.length,
           source: 'yahoo_finance_undervalued_large_caps'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          return {
+            stocks: error.result.quotes.map(this.transformQuote),
+            count: error.result.quotes.length,
+            source: 'yahoo_finance_undervalued_large_caps'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] undervalued_large_caps error:', error);
         throw error;
       }
@@ -138,7 +192,16 @@ export class YahooFinanceScreenerService
           count: result.quotes.length,
           source: 'yahoo_finance_growth_technology_stocks'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          return {
+            stocks: error.result.quotes.map(this.transformQuote),
+            count: error.result.quotes.length,
+            source: 'yahoo_finance_growth_technology_stocks'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] growth_technology_stocks error:', error);
         throw error;
       }
@@ -158,7 +221,16 @@ export class YahooFinanceScreenerService
           count: result.quotes.length,
           source: 'yahoo_finance_aggressive_small_caps'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          return {
+            stocks: error.result.quotes.map(this.transformQuote),
+            count: error.result.quotes.length,
+            source: 'yahoo_finance_aggressive_small_caps'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] aggressive_small_caps error:', error);
         throw error;
       }
@@ -178,7 +250,16 @@ export class YahooFinanceScreenerService
           count: result.quotes.length,
           source: 'yahoo_finance_undervalued_growth_stocks'
         };
-      } catch (error) {
+      } catch (error: any) {
+        // Handle Yahoo Finance validation errors - data is still usable
+        if (error.name === 'FailedYahooValidationError' && error.result?.quotes) {
+          console.log('[YAHOOFINANCE-SCREENER] Validation error caught, using raw data');
+          return {
+            stocks: error.result.quotes.map(this.transformQuote),
+            count: error.result.quotes.length,
+            source: 'yahoo_finance_undervalued_growth_stocks'
+          };
+        }
         console.error('[YAHOOFINANCE-SCREENER] undervalued_growth_stocks error:', error);
         throw error;
       }

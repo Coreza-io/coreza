@@ -14,9 +14,8 @@ import { summarizePreview } from "@/utils/summarizePreview";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
-import {
-  createWaitingNewsOutput,
-} from "@/utils/alpacaNews";
+import { createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { Key } from "lucide-react";
 
 //const BACKEND_URL = "http://localhost:8000";
 const BACKEND_URL = import.meta.env.VITE_API_URL as string;
@@ -393,13 +392,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     } else if (data.output) {
       setLastOutput(data.output);
     }
-  }, [
-    data.output,
-    definition?.name,
-    isPinned,
-    lastOutput?.status,
-    nodeId,
-  ]);
+  }, [data.output, definition?.name, isPinned, lastOutput?.status, nodeId]);
 
   const handleDragStart = (
     e: React.DragEvent,
@@ -679,25 +672,25 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     // Special handling for AIAgent node to include nodes and edges for tool discovery
     if (definition?.name === "AIAgent") {
       // Serialize nodes and edges for backend
-      payload.nodes = nodes.map(n => ({
+      payload.nodes = nodes.map((n) => ({
         id: n.id,
         name: (n.data?.definition as any)?.name || n.type,
-        node_type: (n.data?.definition as any)?.node_type || 'main',
+        node_type: (n.data?.definition as any)?.node_type || "main",
         category: (n.data?.definition as any)?.category,
         values: n.data?.fieldState || n.data?.values || {},
-        position: n.position
+        position: n.position,
       }));
-      payload.edges = edges.map(e => ({
+      payload.edges = edges.map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
         sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle
+        targetHandle: e.targetHandle,
       }));
 
       console.log("🤖 AIAgent special payload with nodes/edges:", {
         nodesCount: payload.nodes.length,
-        edgesCount: payload.edges.length
+        edgesCount: payload.edges.length,
       });
     }
 
@@ -743,7 +736,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
 
     // Guard for GoogleWebSearch: require query field
-    if (definition?.name === "GoogleWebSearch" && !fieldState.query?.toString().trim()) {
+    if (
+      definition?.name === "GoogleWebSearch" &&
+      !fieldState.query?.toString().trim()
+    ) {
       setError("Search Query is required");
       return;
     }
@@ -979,8 +975,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const res = await fetch(fullUrl, fetchOptions);
         const responseData = await res.json();
         if (!res.ok) throw new Error(responseData.detail || "Action failed");
-        
-        if (definition?.name === "AlpacaNews") {
+
+        if (
+          definition?.name === "AlpacaNews" &&
+          fieldState.operation == "subscribe"
+        ) {
           const waitingOutput = createWaitingNewsOutput({
             nodeId: nodeId ?? undefined,
             symbols: parsedSymbols,
@@ -990,45 +989,59 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             subscriptions: responseData?.subscriptions,
             lastActionMessage: responseData?.message,
           };
-          
+
           // Set initial waiting output
           setLastOutput(outputData);
           executionStore.setNodeData(nodeId!, { output: outputData });
           setNodes((nds) =>
             nds.map((n) =>
               n.id === nodeId
-                ? { ...n, data: { ...n.data, output: outputData, isStreamingWaiting: true } }
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      output: outputData,
+                      isStreamingWaiting: true,
+                    },
+                  }
                 : n
             )
           );
-          
+
           // NOW WAIT for first streaming data
           const timeout = definition?.streamingConfig?.timeout || 30000;
           const startTime = Date.now();
-          
+
           try {
             await new Promise<void>((resolve, reject) => {
               const checkInterval = setInterval(() => {
                 const nodeData = executionStore.getNodeData(nodeId!);
                 const output = nodeData?.output as any;
-                
+
                 // Check if we received actual streaming data
-                if (output && output.status === "streaming" && output.news && Object.keys(output.news).length > 0) {
+                if (
+                  output &&
+                  output.status === "streaming" &&
+                  output.news &&
+                  Object.keys(output.news).length > 0
+                ) {
                   clearInterval(checkInterval);
                   console.log("✅ Received first streaming data:", output);
                   outputData = output;
                   resolve();
                   return;
                 }
-                
+
                 // Check timeout
                 if (Date.now() - startTime > timeout) {
                   clearInterval(checkInterval);
-                  reject(new Error(`Timeout waiting for news after ${timeout}ms`));
+                  reject(
+                    new Error(`Timeout waiting for news after ${timeout}ms`)
+                  );
                 }
               }, 100);
             });
-            
+
             // Clear streaming waiting state
             setNodes((nds) =>
               nds.map((n) =>
@@ -1037,14 +1050,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
                   : n
               )
             );
-            
           } catch (error: any) {
             console.error("Streaming wait error:", error);
             setError(error.message || "Failed to receive streaming data");
             outputData = {
               ...outputData,
               status: "error",
-              message: error.message
+              message: error.message,
             };
             setNodes((nds) =>
               nds.map((n) =>

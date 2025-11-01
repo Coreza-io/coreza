@@ -33,10 +33,12 @@ import websocketRoutes from './routes/websocket';
 import openaiRoutes from './routes/openai';
 import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
+import screenerRoutes from './routes/screener';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeBrokerServices } from './services/brokers/index';
+import { initializeScreenerServices } from './services/screeners';
 
 
 const app = express();
@@ -102,6 +104,8 @@ app.use('/aiagent', aiAgentRoutes);
 console.log('✅ AI Agent route mounted');
 app.use('/googlesearch', googleSearchRoutes);
 console.log('✅ Google Search route mounted');
+app.use('/screener', screenerRoutes);
+console.log('✅ Screener route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling
@@ -123,8 +127,9 @@ async function startServer() {
     }
 
     // Initialize node executors and broker services
-    initializeNodeExecutors();
+    initializeScreenerServices();
     initializeBrokerServices();
+    initializeNodeExecutors();
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();

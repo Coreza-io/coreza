@@ -5,15 +5,16 @@ import { BrokerInput } from "../types";
 export const alpacaConfig: RestConfig = {
   // 1. Dynamic baseUrl: trading vs market‑data
   baseUrl: (creds: any, input?: BrokerInput) => {
-    if (input?.operation === "get_candle") {
-      return input?.asset_type === "crypto"
-        ? "https://data.alpaca.markets"
-        : "https://data.alpaca.markets";
+    // Route data and screener operations to data.alpaca.markets
+    if (input?.operation === "get_candle" || 
+        input?.operation === "most_actives" || 
+        input?.operation === "market_movers") {
+      return "https://data.alpaca.markets";
     }
+    // Trading operations use paper or live trading API
     return creds.paper_trading
       ? "https://paper-api.alpaca.markets"
-      : //: 'https://api.alpaca.markets';
-        "https://paper-api.alpaca.markets";
+      : "https://paper-api.alpaca.markets";
   },
 
   // 2. Auth headers remain the same
@@ -194,6 +195,49 @@ export const alpacaConfig: RestConfig = {
 
         return body;
       },
+    },
+
+    // Alpaca Screener: Most Actives
+    most_actives: {
+      method: "get",
+      path: "/v1beta1/screener/stocks/most-actives",
+      makeParams: (input: BrokerInput) => {
+        const params: any = {};
+        if (input.top) {
+          params.top = Number(input.top);
+        }
+        return params;
+      },
+      transformResult: (raw: any) => {
+        return {
+          most_actives: raw.most_actives || [],
+          count: raw.most_actives?.length || 0
+        };
+      }
+    },
+
+    // Alpaca Screener: Market Movers
+    market_movers: {
+      method: "get",
+      path: (input: BrokerInput) => {
+        const marketType = input.market_type || "stocks";
+        return `/v1beta1/screener/${marketType}/movers`;
+      },
+      makeParams: (input: BrokerInput) => {
+        const params: any = {};
+        if (input.top) {
+          params.top = Number(input.top);
+        }
+        return params;
+      },
+      transformResult: (raw: any) => {
+        return {
+          gainers: raw.gainers || [],
+          losers: raw.losers || [],
+          gainers_count: raw.gainers?.length || 0,
+          losers_count: raw.losers?.length || 0
+        };
+      }
     },
   },
 };

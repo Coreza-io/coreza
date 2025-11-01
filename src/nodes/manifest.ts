@@ -2,6 +2,7 @@ import GmailDef from './Gmail.json'
 import AlpacaDef from './Alpaca.json'
 import AlpacaTradeDef from './AlpacaTrade.json'
 import AlpacaNewsDef from './AlpacaNews.json'
+import AlpacaScreenerDef from './AlpacaScreener.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
 import IfDef from './If.json'
@@ -88,6 +89,7 @@ export interface NodeConfig {
 
 export const nodeManifest = {
   [AlpacaDef.name]: AlpacaDef,
+  [AlpacaScreenerDef.name]: AlpacaScreenerDef,
   [DhanDef.name]: DhanDef,
   [GmailDef.name]: GmailDef,
   [ChatInputDef.name]: ChatInputDef,

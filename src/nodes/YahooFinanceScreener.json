@@ -8,10 +8,7 @@
   "description": "Screen stocks using Yahoo Finance predefined screeners (day gainers, most actives, etc.)",
   "color": "text-purple-500",
   "size": { "width": 340, "height": 300 },
-  "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
-  ],
+  "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "action": {
     "url": "/screener/yahoofinance/{{operation}}",
     "method": "POST"
@@ -27,9 +24,15 @@
         { "id": "most_actives", "name": "Most Actives" },
         { "id": "small_cap_gainers", "name": "Small Cap Gainers" },
         { "id": "undervalued_large_caps", "name": "Undervalued Large Caps" },
-        { "id": "growth_technology_stocks", "name": "Growth Technology Stocks" },
+        {
+          "id": "growth_technology_stocks",
+          "name": "Growth Technology Stocks"
+        },
         { "id": "aggressive_small_caps", "name": "Aggressive Small Caps" },
-        { "id": "undervalued_growth_stocks", "name": "Undervalued Growth Stocks" }
+        {
+          "id": "undervalued_growth_stocks",
+          "name": "Undervalued Growth Stocks"
+        }
       ],
       "default": "day_gainers",
       "required": true

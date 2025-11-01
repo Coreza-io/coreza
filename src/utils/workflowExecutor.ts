@@ -700,7 +700,7 @@ export class WorkflowExecutor {
     const roots = this.context.nodes
       .filter(
         (n) =>
-          n.data?.node_type === "main" &&
+          n.node_type === "main" &&
           !this.context.edges.some((e) => e.target === n.id)
       )
       .map((n) => n.id);
@@ -719,7 +719,7 @@ export class WorkflowExecutor {
 
         const inc = this.context.edges.filter((e) => e.target === id);
         const missing =
-          node?.data?.node_type == "main" || node?.type === "Loop"
+          node?.node_type == "main" || node?.type === "Loop"
             ? []
             : inc.filter(
                 (e) => !executed.has(e.source) && !failed.has(e.source)

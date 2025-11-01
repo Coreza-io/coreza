@@ -979,6 +979,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         const res = await fetch(fullUrl, fetchOptions);
         const responseData = await res.json();
         if (!res.ok) throw new Error(responseData.detail || "Action failed");
+        
         if (definition?.name === "AlpacaNews") {
           const waitingOutput = createWaitingNewsOutput({
             nodeId: nodeId ?? undefined,
@@ -989,6 +990,70 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             subscriptions: responseData?.subscriptions,
             lastActionMessage: responseData?.message,
           };
+          
+          // Set initial waiting output
+          setLastOutput(outputData);
+          executionStore.setNodeData(nodeId!, { output: outputData });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: outputData, isStreamingWaiting: true } }
+                : n
+            )
+          );
+          
+          // NOW WAIT for first streaming data
+          const timeout = definition?.streamingConfig?.timeout || 30000;
+          const startTime = Date.now();
+          
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const checkInterval = setInterval(() => {
+                const nodeData = executionStore.getNodeData(nodeId!);
+                const output = nodeData?.output as any;
+                
+                // Check if we received actual streaming data
+                if (output && output.status === "streaming" && output.news && Object.keys(output.news).length > 0) {
+                  clearInterval(checkInterval);
+                  console.log("✅ Received first streaming data:", output);
+                  outputData = output;
+                  resolve();
+                  return;
+                }
+                
+                // Check timeout
+                if (Date.now() - startTime > timeout) {
+                  clearInterval(checkInterval);
+                  reject(new Error(`Timeout waiting for news after ${timeout}ms`));
+                }
+              }, 100);
+            });
+            
+            // Clear streaming waiting state
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
+                  : n
+              )
+            );
+            
+          } catch (error: any) {
+            console.error("Streaming wait error:", error);
+            setError(error.message || "Failed to receive streaming data");
+            outputData = {
+              ...outputData,
+              status: "error",
+              message: error.message
+            };
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
+                  : n
+              )
+            );
+          }
         } else {
           outputData = responseData;
         }
@@ -1003,7 +1068,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         input: effectiveInput,
         output: finalOutput,
       });
-      //executionStore.setNodeData(nodeId!, { output: finalOutput });
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId

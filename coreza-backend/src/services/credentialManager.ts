@@ -21,26 +21,16 @@ export interface AlpacaCredentials {
 
 export class CredentialManager {
   /**
-   * Store user credentials for a service (encrypts before storing)
+   * Store user credentials for a service (credentials are already encrypted from frontend or will be stored as-is)
    */
   static async storeCredentials(
     userId: string,
     serviceType: string,
     name: string,
-    credentials: AlpacaCredentials,
+    credentials: Record<string, any>,
     scopes?: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; credential_id?: string; error?: string }> {
     try {
-      // Store credentials - they're already encrypted from frontend
-      const clientJson = {
-        api_key: credentials.api_key, // Frontend already encrypted this
-        paper_trading: credentials.paper_trading, // This is not sensitive
-      };
-
-      const tokenJson = {
-        secret_key: credentials.secret_key, // Frontend already encrypted this
-      };
-
       const { data, error } = await supabase
         .from("user_credentials")
         .upsert(
@@ -48,8 +38,8 @@ export class CredentialManager {
             user_id: userId,
             service_type: serviceType,
             name: name,
-            client_json: clientJson,
-            token_json: tokenJson,
+            client_json: credentials,
+            token_json: {},
             scopes: scopes || null,
           },
           {
@@ -64,7 +54,7 @@ export class CredentialManager {
         return { success: false, error: error.message };
       }
 
-      return { success: true };
+      return { success: true, credential_id: data.id };
     } catch (err) {
       console.error("Unexpected error storing credentials:", err);
       return { success: false, error: "Failed to store credentials" };

@@ -1,6 +1,6 @@
 import express from 'express';
 import axios from 'axios';
-import CredentialManager from '../utils/credentialManager';
+import { CredentialManager } from '../services/credentialManager';
 
 const router = express.Router();
 
@@ -129,8 +129,8 @@ router.post('/exchange-token', async (req, res) => {
     // Calculate token expiry timestamp
     const token_expires_at = Math.floor(Date.now() / 1000) + expires_in;
 
-    // Save credentials using CredentialManager with envelope encryption
-    const credential_id = await CredentialManager.saveCredentials(
+    // Save credentials using CredentialManager
+    const result = await CredentialManager.storeCredentials(
       user_id,
       'schwab',
       credential_name,
@@ -144,6 +144,13 @@ router.post('/exchange-token', async (req, res) => {
       'api'
     );
 
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to store credentials'
+      });
+    }
+
     // Clean up temporary session
     tempAuthSessions.delete(temp_id);
 
@@ -151,7 +158,7 @@ router.post('/exchange-token', async (req, res) => {
 
     res.json({ 
       success: true, 
-      credential_id,
+      credential_id: result.credential_id,
       message: 'Schwab account connected successfully!' 
     });
   } catch (error: any) {
@@ -224,7 +231,7 @@ router.post('/refresh-token', async (req, res) => {
     console.log('✅ [SCHWAB-AUTH] Token refreshed successfully');
 
     // Update stored credentials with new access token using CredentialManager
-    await CredentialManager.saveCredentials(
+    const updateResult = await CredentialManager.storeCredentials(
       user_id,
       'schwab',
       credential_id,
@@ -237,6 +244,13 @@ router.post('/refresh-token', async (req, res) => {
       },
       'api'
     );
+
+    if (!updateResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: updateResult.error || 'Failed to update credentials'
+      });
+    }
 
     res.json({ 
       success: true, 

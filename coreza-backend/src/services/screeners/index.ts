@@ -2,6 +2,7 @@ import { registerScreener } from './registry';
 import { RestScreenerService } from './RestScreenerService';
 import { alpacaScreenerConfig } from './configs/alpaca';
 import { YahooFinanceScreenerService } from './YahooFinanceScreenerService';
+import { SchwabScreenerService } from './SchwabScreenerService';
 
 export function initializeScreenerServices() {
   console.log('📊 Initializing screener services...');
@@ -11,6 +12,9 @@ export function initializeScreenerServices() {
 
   // Register YahooFinance screener
   registerScreener(new YahooFinanceScreenerService());
+
+  // Register Schwab screener
+  registerScreener(new SchwabScreenerService());
 
   // Future: Register Binance, Manual, etc.
   // registerScreener(new RestScreenerService('binance', binanceScreenerConfig));

@@ -18,7 +18,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, X, Plus } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
+import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
+import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
@@ -59,6 +61,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   selectedPrevNodeId,
 }) => {
   const { setNodes, setEdges, getNodes } = useReactFlow();
+  const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find(
@@ -965,10 +968,40 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       {/* Auth Modal */}
       <Suspense fallback={<div>Loading modal...</div>}>
         {showAuth && (
-          <GenericAuthModal
-            definition={definition}
-            onClose={() => setShowAuth(false)}
-          />
+          definition.auth === 'SchwabAuthModal' ? (
+            <SchwabAuthModal
+              isOpen={showAuth}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              onSuccess={(credentialId) => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              userId={user?.id || ''}
+            />
+          ) : (
+            <GenericAuthModal
+              definition={definition}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+            />
+          )
         )}
       </Suspense>
     </>

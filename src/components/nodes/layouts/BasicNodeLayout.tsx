@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
+import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
+import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import type { BaseNodeRenderProps } from "../BaseNode";
@@ -30,6 +32,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   fetchCredentials,
   referenceStyle,
 }) => {
+  const { user } = useAuth();
   const isVisualize = definition?.name === "Visualize";
   
   // Memoized visualization data processing
@@ -463,19 +466,42 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         </form>
       )}
 
-      {showAuth && GenericAuthModal && (
+      {showAuth && (
         <Suspense fallback={<div>Loading...</div>}>
-          <GenericAuthModal
-            definition={definition}
-            onClose={() => {
-              setShowAuth(false);
-              (definition.fields || []).forEach((f: any) => {
-                if (f.type === "select" && f.optionsSource === "credentialsApi") {
-                  fetchCredentials(f.key);
-                }
-              });
-            }}
-          />
+          {definition.auth === 'SchwabAuthModal' ? (
+            <SchwabAuthModal
+              isOpen={showAuth}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              onSuccess={(credentialId) => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              userId={user?.id || ''}
+            />
+          ) : (
+            <GenericAuthModal
+              definition={definition}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+            />
+          )}
         </Suspense>
       )}
     </>

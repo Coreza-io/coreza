@@ -34,6 +34,7 @@ import openaiRoutes from './routes/openai';
 import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
 import screenerRoutes from './routes/screener';
+import schwabRoutes from './routes/schwab';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -50,6 +51,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
+
+// Store supabase instance in app.locals for route access
+app.locals.supabase = supabase;
 
 // Health check
 app.get('/health', (req, res) => {
@@ -106,6 +110,8 @@ app.use('/googlesearch', googleSearchRoutes);
 console.log('✅ Google Search route mounted');
 app.use('/screener', screenerRoutes);
 console.log('✅ Screener route mounted');
+app.use('/schwab', schwabRoutes);
+console.log('✅ Schwab route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

@@ -12,41 +12,7 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": "GenericAuthModal",
-  "authFields": [
-    {
-      "key": "credential_name",
-      "label": "Credential Label",
-      "type": "text",
-      "default": "My Schwab"
-    },
-    {
-      "key": "app_key",
-      "label": "App Key",
-      "type": "password",
-      "placeholder": "Your Schwab App Key"
-    },
-    {
-      "key": "app_secret",
-      "label": "App Secret",
-      "type": "password",
-      "placeholder": "Your Schwab App Secret"
-    },
-    {
-      "key": "access_token",
-      "label": "Access Token",
-      "type": "password",
-      "placeholder": "OAuth 2.0 Access Token",
-      "required": true
-    },
-    {
-      "key": "refresh_token",
-      "label": "Refresh Token",
-      "type": "password",
-      "placeholder": "OAuth 2.0 Refresh Token"
-    }
-  ],
-  "authAction": { "url": "/schwab/auth-url", "method": "POST" },
+  "auth": "SchwabAuthModal",
   "action": {
     "url": "/screener/schwab/{{operation}}",
     "method": "POST"

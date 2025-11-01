@@ -3,7 +3,7 @@
  * Uses AES-256-GCM with per-row DEKs wrapped by a global KEK
  */
 
-import { randomBytes, createCipherGCM, createDecipherGCM } from 'crypto';
+import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 
 export interface EnvelopeData {
   v: number;        // version
@@ -73,8 +73,7 @@ class EnvelopeEncryptionUtil {
     const kek = this.getKEK(keyRef);
     const iv = randomBytes(this.IV_LENGTH);
     
-    const cipher = createCipherGCM(this.ALGORITHM, kek);
-    cipher.setIV(iv);
+    const cipher = createCipheriv(this.ALGORITHM, kek, iv);
     
     const encrypted = Buffer.concat([
       cipher.update(dek),
@@ -98,8 +97,7 @@ class EnvelopeEncryptionUtil {
     const authTag = wrappedDEK.slice(-this.TAG_LENGTH);
     const encrypted = wrappedDEK.slice(this.IV_LENGTH, -this.TAG_LENGTH);
     
-    const decipher = createDecipherGCM(this.ALGORITHM, kek);
-    decipher.setIV(iv);
+    const decipher = createDecipheriv(this.ALGORITHM, kek, iv);
     decipher.setAuthTag(authTag);
     
     return Buffer.concat([
@@ -132,8 +130,7 @@ class EnvelopeEncryptionUtil {
       const aad = this.createAAD(userId, credentialId);
 
       // Encrypt payload with DEK
-      const cipher = createCipherGCM(this.ALGORITHM, dek);
-      cipher.setIV(iv);
+      const cipher = createCipheriv(this.ALGORITHM, dek, iv);
       cipher.setAAD(aad);
 
       const payloadBuffer = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -202,8 +199,7 @@ class EnvelopeEncryptionUtil {
       const aad = this.createAAD(input.userId, input.credentialId);
 
       // Decrypt payload
-      const decipher = createDecipherGCM(this.ALGORITHM, dek);
-      decipher.setIV(iv);
+      const decipher = createDecipheriv(this.ALGORITHM, dek, iv);
       decipher.setAAD(aad);
       decipher.setAuthTag(authTag);
 

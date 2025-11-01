@@ -75,7 +75,7 @@ export class WorkflowExecutor {
   private isStreamingNode(nodeId: string): boolean {
     const node = this.context.nodes.find((n) => n.id === nodeId);
     const definition = node?.data?.definition as any;
-    return definition?.executionMode === 'streaming';
+    return definition?.executionMode === "streaming";
   }
 
   private areDependenciesSatisfied(
@@ -84,14 +84,14 @@ export class WorkflowExecutor {
     failed: Set<string>
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
-    const n = this.context.nodes.find((x) => x.id === nodeId);
-    const loopWaits: boolean = Boolean(n?.data?.loopWaits) ?? false;
+      const n = this.context.nodes.find((x) => x.id === nodeId);
+      const loopWaits: boolean = Boolean(n?.data?.loopWaits) ?? false;
       if (!loopWaits) return true;
     }
 
     // Filter out edges from "sub" nodes (support nodes like tools/chat models)
     const allIncoming = this.getIncomingEdges(nodeId);
-    const requiredEdges = allIncoming.filter(e => !this.isSubNode(e.source));
+    const requiredEdges = allIncoming.filter((e) => !this.isSubNode(e.source));
 
     if (requiredEdges.length === 0) return false;
 
@@ -419,7 +419,9 @@ export class WorkflowExecutor {
     const definition = node?.data?.definition as any;
     const timeout = definition?.streamingConfig?.timeout || 30000;
 
-    console.log(`🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`);
+    console.log(
+      `🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`
+    );
 
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
@@ -447,16 +449,23 @@ export class WorkflowExecutor {
       await subscribePromise;
       console.log(`✅ [STREAMING] Node ${nodeId} subscription successful`);
     } catch (error) {
-      console.error(`❌ [STREAMING] Node ${nodeId} subscription failed:`, error);
+      console.error(
+        `❌ [STREAMING] Node ${nodeId} subscription failed:`,
+        error
+      );
       throw error;
     }
 
     // Step 2: Wait for first real data from WebSocket
     console.log(`⏳ [STREAMING] Waiting for first data from ${nodeId}...`);
-    
+
     const dataPromise = new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error(`Streaming node ${nodeId} timed out waiting for data after ${timeout}ms`));
+        reject(
+          new Error(
+            `Streaming node ${nodeId} timed out waiting for data after ${timeout}ms`
+          )
+        );
       }, timeout);
 
       const checkData = () => {
@@ -464,9 +473,16 @@ export class WorkflowExecutor {
         const output = nodeData?.output;
 
         // Check if we have actual streaming data (not just "subscribed" status)
-        if (output && output.status === 'streaming' && (output.news || output.data)) {
+        if (
+          output &&
+          output.status === "streaming" &&
+          (output.news || output.data)
+        ) {
           clearTimeout(timeoutId);
-          console.log(`📨 [STREAMING] Node ${nodeId} received first data:`, output);
+          console.log(
+            `📨 [STREAMING] Node ${nodeId} received first data:`,
+            output
+          );
           resolve(output);
         } else {
           // Poll every 100ms
@@ -479,7 +495,7 @@ export class WorkflowExecutor {
     });
 
     const result = await dataPromise;
-    
+
     // Clear streaming visual state
     this.context.setNodes((nodes) =>
       nodes.map((n) =>
@@ -497,7 +513,7 @@ export class WorkflowExecutor {
 
     this.nodeStore.setNodeData(nodeId, { output: result });
     console.log(`🎉 [STREAMING] Node ${nodeId} completed with data`);
-    
+
     return result;
   }
 
@@ -603,7 +619,11 @@ export class WorkflowExecutor {
     // Check if this is a streaming node
     if (this.isStreamingNode(nodeId)) {
       console.log(`🌊 [WORKFLOW EXECUTOR] Detected streaming node: ${nodeId}`);
-      return this.executeStreamingNode(nodeId, executedSet, explicitlyTriggered);
+      return this.executeStreamingNode(
+        nodeId,
+        executedSet,
+        explicitlyTriggered
+      );
     }
 
     const execData = this.nodeStore.getNodeData(nodeId);
@@ -678,7 +698,11 @@ export class WorkflowExecutor {
     const MAX_RETRIES = this.context.nodes.length * 2;
 
     const roots = this.context.nodes
-      .filter((n) => !this.context.edges.some((e) => e.target === n.id))
+      .filter(
+        (n) =>
+          n.node_type === "main" &&
+          !this.context.edges.some((e) => e.target === n.id)
+      )
       .map((n) => n.id);
     const queue: string[] = [...roots];
 
@@ -695,7 +719,7 @@ export class WorkflowExecutor {
 
         const inc = this.context.edges.filter((e) => e.target === id);
         const missing =
-          node.type === "Loop"
+          node.node_type == "main" || node.type === "Loop"
             ? []
             : inc.filter(
                 (e) => !executed.has(e.source) && !failed.has(e.source)

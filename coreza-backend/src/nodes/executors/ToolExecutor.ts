@@ -80,7 +80,7 @@ export class ToolExecutor implements INodeExecutor {
       // Get credentials
       const { credentials } = await CredentialManager.getCredentials(
         user_id,
-        "googlesearch",
+        "googlewebsearch",
         credential_id
       );
 

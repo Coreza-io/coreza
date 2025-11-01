@@ -742,6 +742,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
     }
 
+    // Guard for GoogleWebSearch: require query field
+    if (definition?.name === "GoogleWebSearch" && !fieldState.query?.toString().trim()) {
+      setError("Search Query is required");
+      return;
+    }
+
     setError("");
     setIsSending(true);
 

@@ -86,7 +86,7 @@ router.post("/auth-url", async (req, res, next) => {
     // Save credentials
     const credential_id = await CredentialManager.saveCredentials(
       user_id,
-      "GoogleWebSearch",
+      "googlesearch",
       credential_name,
       {
         api_key: validatedCreds.api_key,
@@ -124,7 +124,7 @@ router.post("/execute", async (req, res, next) => {
     // Get credentials
     const { credentials } = await CredentialManager.getCredentials(
       user_id,
-      "GoogleWebSearch",
+      "googlesearch",
       credential_id
     );
 

@@ -413,6 +413,112 @@ class CredentialManager {
   }
 
   /**
+   * Save credentials with envelope encryption
+   */
+  static async saveCredentials(
+    userId: string,
+    serviceType: string,
+    credentialName: string,
+    credentials: Record<string, any>,
+    scopes?: string
+  ): Promise<string> {
+    try {
+      // Create payload for envelope encryption
+      const payload: CredentialPayload = {
+        service_type: serviceType,
+        name: credentialName,
+        client: credentials,
+        token: {},
+        scopes,
+        meta: {
+          created_with_envelope: true
+        }
+      };
+
+      // Encrypt using envelope encryption
+      const encryptionResult = EnvelopeEncryptionUtil.encrypt(
+        payload,
+        userId,
+        undefined // No credential ID yet for new credentials
+      );
+
+      // Check if credential with same name already exists
+      const { data: existing } = await supabase
+        .from('user_credentials')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('service_type', serviceType)
+        .eq('name', credentialName)
+        .maybeSingle();
+
+      let credentialId: string;
+
+      if (existing) {
+        // Update existing credential
+        const { error: updateError } = await supabase
+          .from('user_credentials')
+          .update({
+            is_encrypted: true,
+            enc_version: encryptionResult.encVersion,
+            key_ref: encryptionResult.keyRef,
+            key_algo: 'AES-256-GCM',
+            enc_payload: encryptionResult.encPayload,
+            iv: encryptionResult.iv,
+            auth_tag: encryptionResult.authTag,
+            dek_wrapped: encryptionResult.dekWrapped,
+            updated_at: new Date().toISOString(),
+            // Clear legacy fields
+            client_json: null,
+            token_json: null
+          })
+          .eq('id', existing.id);
+
+        if (updateError) {
+          console.error('Error updating credential:', updateError);
+          throw new Error('Failed to update credential');
+        }
+
+        credentialId = existing.id;
+        console.log(`✅ Updated credential ${credentialId} with envelope encryption`);
+      } else {
+        // Create new credential
+        const { data, error: insertError } = await supabase
+          .from('user_credentials')
+          .insert({
+            user_id: userId,
+            service_type: serviceType,
+            name: credentialName,
+            is_encrypted: true,
+            enc_version: encryptionResult.encVersion,
+            key_ref: encryptionResult.keyRef,
+            key_algo: 'AES-256-GCM',
+            enc_payload: encryptionResult.encPayload,
+            iv: encryptionResult.iv,
+            auth_tag: encryptionResult.authTag,
+            dek_wrapped: encryptionResult.dekWrapped,
+            scopes
+          })
+          .select('id')
+          .single();
+
+        if (insertError || !data) {
+          console.error('Error inserting credential:', insertError);
+          throw new Error('Failed to save credential');
+        }
+
+        credentialId = data.id;
+        console.log(`✅ Saved new credential ${credentialId} with envelope encryption`);
+      }
+
+      return credentialId;
+
+    } catch (error) {
+      console.error('Error in saveCredentials:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Delete a credential
    */
   static async deleteCredential(userId: string, credentialId: string): Promise<void> {

@@ -1,7 +1,6 @@
 import express from 'express';
 import axios from 'axios';
 import CredentialManager from '../utils/credentialManager';
-import EnvelopeEncryptionUtil from '../utils/envelopeEncryption';
 
 const router = express.Router();
 
@@ -130,49 +129,20 @@ router.post('/exchange-token', async (req, res) => {
     // Calculate token expiry timestamp
     const token_expires_at = Math.floor(Date.now() / 1000) + expires_in;
 
-    // Store credentials in database using envelope encryption
-    const payload = {
-      service_type: 'schwab',
-      name: credential_name,
-      client: {
+    // Save credentials using CredentialManager with envelope encryption
+    const credential_id = await CredentialManager.saveCredentials(
+      user_id,
+      'schwab',
+      credential_name,
+      {
         app_key: session.app_key,
-        app_secret: session.app_secret
-      },
-      token: {
+        app_secret: session.app_secret,
         access_token,
         refresh_token,
         token_expires_at
       },
-      meta: {
-        created_with_envelope: true,
-        oauth_completed_at: new Date().toISOString()
-      }
-    };
-
-    const encrypted = EnvelopeEncryptionUtil.encrypt(payload, user_id);
-
-    const { data: insertData, error: insertError } = await req.app.locals.supabase
-      .from('user_credentials')
-      .insert({
-        user_id,
-        service_type: 'schwab',
-        name: credential_name,
-        is_encrypted: true,
-        enc_version: 1,
-        key_ref: encrypted.keyRef,
-        enc_payload: encrypted.encPayload,
-        iv: encrypted.iv,
-        auth_tag: encrypted.authTag,
-        dek_wrapped: encrypted.dekWrapped,
-        scopes: 'api'
-      })
-      .select('id')
-      .single();
-
-    if (insertError) {
-      console.error('[SCHWAB-AUTH] Database error:', insertError);
-      throw new Error(`Failed to store credentials: ${insertError.message}`);
-    }
+      'api'
+    );
 
     // Clean up temporary session
     tempAuthSessions.delete(temp_id);
@@ -181,7 +151,7 @@ router.post('/exchange-token', async (req, res) => {
 
     res.json({ 
       success: true, 
-      credential_id: insertData.id,
+      credential_id,
       message: 'Schwab account connected successfully!' 
     });
   } catch (error: any) {
@@ -253,41 +223,20 @@ router.post('/refresh-token', async (req, res) => {
 
     console.log('✅ [SCHWAB-AUTH] Token refreshed successfully');
 
-    // Update stored credentials with new access token
-    const payload = {
-      service_type: 'schwab',
-      name: credential_id,
-      client: {
+    // Update stored credentials with new access token using CredentialManager
+    await CredentialManager.saveCredentials(
+      user_id,
+      'schwab',
+      credential_id,
+      {
         app_key: creds.app_key,
-        app_secret: creds.app_secret
-      },
-      token: {
+        app_secret: creds.app_secret,
         access_token,
         refresh_token: creds.refresh_token, // Keep existing refresh token
         token_expires_at
       },
-      meta: {
-        last_token_refresh: new Date().toISOString()
-      }
-    };
-
-    const encrypted = EnvelopeEncryptionUtil.encrypt(payload, user_id);
-
-    const { error: updateError } = await req.app.locals.supabase
-      .from('user_credentials')
-      .update({
-        enc_payload: encrypted.encPayload,
-        iv: encrypted.iv,
-        auth_tag: encrypted.authTag,
-        dek_wrapped: encrypted.dekWrapped,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', credential_id)
-      .eq('user_id', user_id);
-
-    if (updateError) {
-      throw new Error(`Failed to update credentials: ${updateError.message}`);
-    }
+      'api'
+    );
 
     res.json({ 
       success: true, 

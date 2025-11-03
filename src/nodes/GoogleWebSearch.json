@@ -24,7 +24,7 @@
       "placeholder": "Custom Search Engine ID (cx)"
     }
   ],
-  "authAction": { "url": "/googlesearch/auth-url", "method": "POST" },
+  "authAction": { "url": "/googlesearch/auth", "method": "POST" },
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 340, "height": 320 },
   "handles": [{ "type": "source", "position": "top", "id": "tool" }],

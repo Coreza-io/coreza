@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
-  "subCategory":"Alpaca",
+  "subCategory": "Alpaca",
   "description": "Execute trades through Alpaca Markets",
   "color": "text-red-500",
   "size": { "width": 340, "height": 360 },
@@ -33,7 +33,7 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
+  "authAction": { "url": "/alpaca/auth", "method": "POST" },
 
   "action": { "url": "/alpaca/place_order", "method": "POST" },
   "fields": [
@@ -129,7 +129,7 @@
       "key": "limit_price",
       "label": "Limit Price",
       "type": "text",
-      "required": false, 
+      "required": false,
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
@@ -141,7 +141,7 @@
       "key": "stop_price",
       "label": "Stop Price",
       "type": "text",
-      "required": false, 
+      "required": false,
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
@@ -153,7 +153,7 @@
       "key": "trail_price",
       "label": "Trailing Price",
       "type": "text",
-      "required": false, 
+      "required": false,
       "placeholder": "e.g. 0.20",
       "displayOptions": {
         "show": {
@@ -165,7 +165,7 @@
       "key": "trail_percent",
       "label": "Trailing Percentage",
       "type": "text",
-      "required": false, 
+      "required": false,
       "placeholder": "e.g. 0.20",
       "displayOptions": {
         "show": {

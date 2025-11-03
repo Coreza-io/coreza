@@ -38,7 +38,7 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/alpaca/auth-url", "method": "POST" },
+  "authAction": { "url": "/alpaca/auth", "method": "POST" },
   "action": { "url": "/alpaca-news/{{operation}}", "method": "POST" },
   "fields": [
     {

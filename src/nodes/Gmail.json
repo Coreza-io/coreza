@@ -34,7 +34,7 @@
       "value": "http://localhost:8000/gmail/oauth2callback"
     }
   ],
-  "authAction": { "url": "/gmail/auth-url", "method": "POST" },
+  "authAction": { "url": "/gmail/auth", "method": "POST" },
 
   "icon": "/assets/icons/gmail.svg",
   "size": { "width": 340, "height": 340 },

@@ -1,26 +1,28 @@
-import express from 'express';
-import { DataService } from '../services/data';
+import express from "express";
+import { DataService } from "../services/data";
 
 const router = express.Router();
 
 // Get user credentials list for FinnHub
-router.get('/credentials', async (req, res, next) => {
+router.get("/credentials", async (req, res, next) => {
   try {
     const { user_id } = req.query;
-    
+
     if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
+      return res.status(400).json({ error: "user_id is required" });
     }
-    
-    const result = await DataService.execute('finnhub', 'list_credentials', { userId: user_id as string });
-    
+
+    const result = await DataService.execute("finnhub", "list_credentials", {
+      userId: user_id as string,
+    });
+
     if (!result.success) {
       return res.status(500).json({ error: result.error });
     }
-    
+
     res.json({
       success: true,
-      credentials: result.data || []
+      credentials: result.data || [],
     });
   } catch (error) {
     next(error);
@@ -28,18 +30,18 @@ router.get('/credentials', async (req, res, next) => {
 });
 
 // Save and validate credentials (authAction)
-router.post('/auth-url', async (req, res, next) => {
+router.post("/auth", async (req, res, next) => {
   try {
     const { user_id, credential_name, api_key } = req.body;
-    
+
     if (!user_id || !credential_name || !api_key) {
-      return res.status(400).json({ error: 'Missing required parameters' });
+      return res.status(400).json({ error: "Missing required parameters" });
     }
 
-    const result = await DataService.execute('finnhub', 'save_credentials', {
+    const result = await DataService.execute("finnhub", "save_credentials", {
       userId: user_id,
       credentialName: credential_name,
-      apiKey: api_key
+      apiKey: api_key,
     });
 
     if (!result.success) {
@@ -53,18 +55,20 @@ router.post('/auth-url', async (req, res, next) => {
 });
 
 // Get quote data (main action)
-router.post('/get-quote', async (req, res, next) => {
+router.post("/get-quote", async (req, res, next) => {
   try {
     const { user_id, credential_id, ticker } = req.body;
-    
+
     if (!user_id || !credential_id || !ticker) {
-      return res.status(400).json({ error: 'user_id, credential_id, and ticker are required' });
+      return res
+        .status(400)
+        .json({ error: "user_id, credential_id, and ticker are required" });
     }
 
-    const result = await DataService.execute('finnhub', 'get_quote', {
+    const result = await DataService.execute("finnhub", "get_quote", {
       userId: user_id,
       credentialId: credential_id,
-      ticker
+      ticker,
     });
 
     if (!result.success) {

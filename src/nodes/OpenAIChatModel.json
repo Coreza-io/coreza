@@ -21,7 +21,7 @@
       "placeholder": "sk-..."
     }
   ],
-  "authAction": { "url": "/openai/auth-url", "method": "POST" },
+  "authAction": { "url": "/openai/auth", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

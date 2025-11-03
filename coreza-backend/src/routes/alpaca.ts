@@ -27,7 +27,7 @@ router.get("/credentials", async (req, res, next) => {
 });
 
 // Add auth-url endpoint for authAction
-router.post("/auth-url", async (req, res, next) => {
+router.post("/auth", async (req, res, next) => {
   try {
     const { user_id, credential_name, api_key, secret_key } = req.body;
     if (!user_id || !credential_name || !api_key || !secret_key) {

@@ -6,12 +6,17 @@ import { supabase } from "../config/supabase";
 const router = Router();
 
 // POST /auth-url - Store OpenAI credentials securely
-router.post("/auth-url", async (req: Request, res: Response, next) => {
+router.post("/auth", async (req: Request, res: Response, next) => {
   try {
     const { user_id, credential_name, apiKey } = req.body;
 
     if (!user_id || !credential_name || !apiKey) {
-      return res.status(400).json({ error: "Missing required parameters: user_id, credential_name, apiKey" });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing required parameters: user_id, credential_name, apiKey",
+        });
     }
 
     // Store credentials using CredentialManager (v2 encryption)

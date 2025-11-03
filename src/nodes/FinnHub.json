@@ -18,7 +18,7 @@
       "placeholder": "API Secret key"
     }
   ],
-  "authAction": { "url": "/finnhub/auth-url", "method": "POST" },
+  "authAction": { "url": "/finnhub/auth", "method": "POST" },
   "icon": "/assets/icons/FinnHub.svg",
   "size": { "width": 340, "height": 340 },
   "handles": [

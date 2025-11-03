@@ -44,7 +44,7 @@ router.get("/credentials", async (req, res, next) => {
 });
 
 // Save and validate credentials
-router.post("/auth-url", async (req, res, next) => {
+router.post("/auth", async (req, res, next) => {
   try {
     const { user_id, credential_name, api_key, search_engine_id } = req.body;
 

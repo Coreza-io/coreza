@@ -24,8 +24,8 @@
       "placeholder": "sk-..."
     }
   ],
-  "authAction": {"url": "/openai/auth-url", "method": "POST"},
-  "action": {"url": "/openai/chat", "method": "POST"},
+  "authAction": { "url": "/openai/auth", "method": "POST" },
+  "action": { "url": "/openai/chat", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

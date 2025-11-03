@@ -1,8 +1,48 @@
 import { Router, Request, Response } from "express";
 import axios from "axios";
 import CredentialManager from "../utils/credentialManager";
+import { supabase } from "../config/supabase";
 
 const router = Router();
+
+// POST /auth-url - Store OpenAI credentials securely
+router.post("/auth-url", async (req: Request, res: Response, next) => {
+  try {
+    const { user_id, credential_name, apiKey } = req.body;
+
+    if (!user_id || !credential_name || !apiKey) {
+      return res.status(400).json({ error: "Missing required parameters: user_id, credential_name, apiKey" });
+    }
+
+    // Store credentials using CredentialManager (v2 encryption)
+    await CredentialManager.storeCredentials(
+      user_id,
+      "openai",
+      credential_name,
+      { apiKey }
+    );
+
+    // Get the credential_id for reference
+    const { data, error } = await supabase
+      .from("user_credentials")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("service_type", "openai")
+      .eq("name", credential_name)
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: "OpenAI credentials saved successfully",
+      credential_id: data.id,
+    });
+  } catch (error) {
+    console.error("Error storing OpenAI credentials:", error);
+    next(error);
+  }
+});
 
 router.post("/chat", async (req: Request, res: Response) => {
   try {

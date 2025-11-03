@@ -40,45 +40,29 @@ export class BrokerService {
     credentials: any
   ): Promise<any> {
     try {
-      // Check if credential with same name already exists
-      const { data: existing } = await supabase
+      // Import CredentialManager for secure v2 encryption
+      const CredentialManager = (await import("../utils/credentialManager")).default;
+      
+      // Use CredentialManager which handles v2 encryption with HKDF user-scoped keys
+      await CredentialManager.storeCredentials(
+        userId,
+        broker,
+        credentialName,
+        credentials
+      );
+
+      // Return credential_id for compatibility
+      const { data, error } = await supabase
         .from("user_credentials")
         .select("id")
         .eq("user_id", userId)
         .eq("service_type", broker)
-        .eq("credential_name", credentialName)
+        .eq("name", credentialName)
         .single();
 
-      if (existing) {
-        // Update existing credential
-        const { data, error } = await supabase
-          .from("user_credentials")
-          .update({
-            credentials,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        return { success: true, data };
-      } else {
-        // Create new credential
-        const { data, error } = await supabase
-          .from("user_credentials")
-          .insert({
-            user_id: userId,
-            service_type: broker,
-            credential_name: credentialName,
-            credentials,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        return { success: true, data };
-      }
+      if (error) throw error;
+      
+      return { success: true, id: data.id, credential_id: data.id };
     } catch (error) {
       console.error(`Error saving ${broker} credentials:`, error);
       return {

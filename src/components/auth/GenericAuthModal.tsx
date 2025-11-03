@@ -5,7 +5,6 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { CredentialManager } from "@/utils/credentialManager";
 import type { NodeConfig } from "@/nodes/manifest";
 
 interface GenericAuthModalProps {
@@ -65,13 +64,35 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         }
       }
 
-      // Store credentials directly using CredentialManager (client-side encryption)
-      await CredentialManager.storeCredentials(
-        user.id,
-        definition.name.toLowerCase(),
-        fields.credential_name || `${definition.name} Account`,
-        credentials
-      );
+      // Get the backend URL from authAction
+      const backendUrl = definition.authAction?.url;
+      if (!backendUrl) {
+        throw new Error("Backend authentication endpoint not configured for this service");
+      }
+
+      // Send plaintext credentials to backend over HTTPS (backend will encrypt)
+      const response = await fetch(backendUrl, {
+        method: definition.authAction?.method || 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          credential_name: fields.credential_name || `${definition.name} Account`,
+          ...credentials // spread individual credential fields
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to store credentials`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to store credentials');
+      }
 
       const successMessage = "Credentials stored securely!";
       setStatus({ type: "success", message: successMessage });

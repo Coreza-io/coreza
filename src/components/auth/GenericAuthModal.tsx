@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import type { NodeConfig } from "@/nodes/manifest";
 
+const BACKEND_URL = import.meta.env.VITE_API_URL as string;
+
 interface GenericAuthModalProps {
   definition: NodeConfig;
   onClose: () => void;
@@ -65,10 +67,13 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
       }
 
       // Get the backend URL from authAction
-      const backendUrl = definition.authAction?.url;
-      if (!backendUrl) {
+      const backendPath = definition.authAction?.url;
+      if (!backendPath) {
         throw new Error("Backend authentication endpoint not configured for this service");
       }
+
+      // Build full backend URL
+      const backendUrl = `${BACKEND_URL}${backendPath}`;
 
       // Send plaintext credentials to backend over HTTPS (backend will encrypt)
       const response = await fetch(backendUrl, {

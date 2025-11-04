@@ -93,66 +93,13 @@ export const alpacaConfig: RestConfig = {
 
         return params;
       },
-      
-      // Enable pagination for multi-symbol requests
-      pagination: {
-        pageParam: "page_token",
-        nextTokenPath: "next_page_token",
-        maxPages: 100,
-        
-        /**
-         * Merge strategy: Combine bars from all pages by symbol
-         * Alpaca returns: { bars: { AAPL: [...], AMZN: [...] }, next_page_token: "..." }
-         */
-        mergePages: (accumulated: any, newPage: any, input: BrokerInput) => {
-          if (!accumulated.bars) {
-            accumulated.bars = {};
-          }
-          
-          // Merge bars from newPage into accumulated
-          if (newPage.bars) {
-            for (const symbol in newPage.bars) {
-              if (!accumulated.bars[symbol]) {
-                accumulated.bars[symbol] = [];
-              }
-              // Append new candles to existing symbol data
-              accumulated.bars[symbol].push(...newPage.bars[symbol]);
-            }
-          }
-          
-          // Update metadata (keep latest)
-          if (newPage.next_page_token) {
-            accumulated.next_page_token = newPage.next_page_token;
-          } else {
-            delete accumulated.next_page_token;
-          }
-          
-          return accumulated;
-        }
-      },
-      
       transformResult: (raw: any, input: BrokerInput) => {
-        // When multiple symbols, return all symbols' candles
-        if (input.symbol?.includes(',')) {
-          const symbols = input.symbol.split(',').map((s: string) => s.trim());
-          const result: any = {};
-          
-          for (const sym of symbols) {
-            result[sym] = raw.bars?.[sym] ?? [];
-          }
-          
-          return {
-            symbols: input.symbol,
-            data: result,
-            total_bars: Object.values(result).reduce((sum: number, candles: any) => sum + candles.length, 0)
-          };
-        } else {
-          // Single symbol - maintain backward compatibility
-          return {
-            symbol: input.symbol,
-            candles: raw.bars?.[input.symbol] ?? [],
-          };
-        }
+        // Normalize Alpaca bars response into Candle[]
+        const arr = {
+          symbol: input.symbol,
+          candles: raw.bars?.[input.symbol] ?? [],
+        };
+        return arr;
       },
     },
 

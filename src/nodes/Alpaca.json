@@ -96,7 +96,20 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar"],
+          "operation": ["get_candle"],
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Stock Symbols",
+      "type": "text",
+      "placeholder": "e.g. AAPL,TSLA,MSFT",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_latest_bar"],
           "asset_type": ["stock"]
         }
       }
@@ -109,7 +122,20 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar"],
+          "operation": ["get_candle"],
+          "asset_type": ["crypto"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Crypto Pairs",
+      "type": "text",
+      "placeholder": "e.g. BTC/USD,ETH/USD",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_latest_bar"],
           "asset_type": ["crypto"]
         }
       }
@@ -142,6 +168,40 @@
       "displayOptions": {
         "show": {
           "operation": ["get_candle"]
+        }
+      }
+    },
+    {
+      "key": "feed",
+      "label": "Data Feed",
+      "type": "select",
+      "options": [
+        { "id": "sip", "name": "SIP - All US Exchanges" },
+        { "id": "iex", "name": "IEX - Investors Exchange" },
+        { "id": "delayed_sip", "name": "Delayed SIP (15 min)" },
+        { "id": "otc", "name": "OTC - Over-the-counter" },
+        { "id": "boats", "name": "BOATS - Blue Ocean" },
+        { "id": "overnight", "name": "Overnight Data" }
+      ],
+      "default": "sip",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_latest_bar"],
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "currency",
+      "label": "Currency",
+      "type": "text",
+      "placeholder": "e.g. USD",
+      "default": "USD",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_latest_bar"]
         }
       }
     }

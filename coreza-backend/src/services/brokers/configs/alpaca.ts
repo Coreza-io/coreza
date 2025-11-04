@@ -111,19 +111,24 @@ export const alpacaConfig: RestConfig = {
           : "/v2/stocks/bars/latest";
       },
       makeParams: (input: BrokerInput) => {
-        const { symbol } = input;
+        const { symbol, feed, currency } = input;
 
         if (!symbol) {
           throw new Error("Symbol is required for get_latest_bar operation");
         }
 
         const params: any = {
-          symbols: symbol,
+          symbols: symbol, // Can be comma-separated list
         };
 
-        // Use SIP feed for stocks (premium data)
-        if (input.asset_type !== "crypto") {
-          params.feed = "sip";
+        // Add feed parameter for stocks (optional - defaults to sip/iex based on subscription)
+        if (input.asset_type !== "crypto" && feed) {
+          params.feed = feed;
+        }
+
+        // Add currency if specified (defaults to USD on API side)
+        if (currency) {
+          params.currency = currency;
         }
 
         return params;

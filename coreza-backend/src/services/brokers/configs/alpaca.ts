@@ -76,28 +76,28 @@ export const alpacaConfig: RestConfig = {
         let startDate = inputStart;
         let endDate = inputEnd;
         let timeframe = interval;
-        if ((!startDate || !endDate) && lb) {
-          const now = new Date();
-          const sd = new Date(now);
+        //if ((!startDate || !endDate) && lb) {
+        //const now = new Date();
+        //const sd = new Date(now);
 
-          sd.setDate(now.getDate() - lb);
+        //sd.setDate(now.getDate() - lb);
 
-          startDate = startDate || sd.toISOString();
-          endDate = endDate || now.toISOString();
-        }
+        //startDate = startDate || sd.toISOString();
+        //endDate = endDate || now.toISOString();
+        //}
 
-        if (!startDate || !endDate) {
-          throw new Error(
-            "Either lookback or both start and end must be provided"
-          );
-        }
+        //if (!startDate || !endDate) {
+        //throw new Error(
+        //"Either lookback or both start and end must be provided"
+        //);
+        //}
 
         const params: any = {
           symbols: symbol,
           timeframe,
           start: startDate,
           end: endDate,
-          //limit: String(lb),
+          limit: String(lb),
         };
 
         // Only add feed parameter for stocks (free IEX data)

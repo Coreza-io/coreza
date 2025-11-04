@@ -5,13 +5,15 @@ import { BrokerInput } from "../types";
 export const alpacaConfig: RestConfig = {
   // 1. Dynamic baseUrl: trading vs market‑data
   baseUrl: (creds: any, input?: BrokerInput) => {
+    // Market data operations always use data.alpaca.markets
     if (input?.operation === "get_candle" || input?.operation === "get_latest_bar") {
       return "https://data.alpaca.markets";
     }
-    return creds.paper_trading
-      ? "https://paper-api.alpaca.markets"
-      : //: 'https://api.alpaca.markets';
-        "https://paper-api.alpaca.markets";
+    
+    // Trading operations check environment selection
+    return input?.environment === "live"
+      ? "https://api.alpaca.markets"           // Production
+      : "https://paper-api.alpaca.markets";    // Sandbox (default)
   },
 
   // 2. Auth headers remain the same

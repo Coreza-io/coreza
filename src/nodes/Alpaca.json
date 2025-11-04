@@ -47,6 +47,22 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "id": "paper", "name": "Paper Trading (Sandbox)" },
+        { "id": "live", "name": "Live Trading (Production)" }
+      ],
+      "default": "paper",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_account", "get_positions", "get_orders", "cancel_order", "place_order"]
+        }
+      }
+    },
+    {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",

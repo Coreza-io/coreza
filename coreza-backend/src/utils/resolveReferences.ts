@@ -1,18 +1,30 @@
+type SliceObject = { type: 'slice'; start: number | null; end: number | null };
+type PathKey = string | number | SliceObject;
+
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
- * Now supports negative numbers (e.g. -1, -2).
+ * Now supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
  */
-function parsePath(path: string): Array<string|number> {
-  const parts: Array<string|number> = [];
-  const regex = /([^[.\]]+)|\[(\-?\d+|["'][^"']+["'])\]/g;
+function parsePath(path: string): PathKey[] {
+  const parts: PathKey[] = [];
+  // Match slice patterns [start:end] before single indices
+  const regex = /([^[.\]]+)|\[(-?\d+)?:(-?\d+)?\]|\[(-?\d+|["'][^"']+["'])\]/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(path))) {
-    const [ , dotKey, bracketKey ] = match;
+    const [, dotKey, sliceStart, sliceEnd, bracketKey] = match;
+    
     if (dotKey !== undefined) {
       parts.push(dotKey);
+    } else if (sliceStart !== undefined || sliceEnd !== undefined) {
+      // Slice pattern detected: [start:end], [:end], [start:], or [:]
+      parts.push({
+        type: 'slice',
+        start: sliceStart ? parseInt(sliceStart, 10) : null,
+        end: sliceEnd ? parseInt(sliceEnd, 10) : null
+      });
     } else {
-      // bracketKey is either a quoted string or a number (possibly negative)
+      // Single index or quoted key
       if (/^-?\d+$/.test(bracketKey!)) {
         parts.push(Number(bracketKey));      // e.g. "-1" → -1
       } else {
@@ -120,15 +132,48 @@ export function resolveReferences(
     console.log("🔍 Parsed keys:", keys);
 
     let result: any = targetData;
-    for (const key of keys) {
-      //console.log("🔍 Accessing key:", key, "in:", result);
-      if (result == null) { 
-        result = undefined; 
-        break; 
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      
+      if (result == null) {
+        result = undefined;
+        break;
       }
 
-      // If we're indexing into an array with a number...
-      if (Array.isArray(result) && typeof key === 'number') {
+      // Handle slice object
+      if (typeof key === 'object' && key.type === 'slice') {
+        if (!Array.isArray(result)) {
+          console.warn('Cannot slice non-array:', result);
+          result = undefined;
+          break;
+        }
+        
+        const len = result.length;
+        const start = key.start === null ? 0 : (key.start < 0 ? len + key.start : key.start);
+        const end = key.end === null ? len : (key.end < 0 ? len + key.end : key.end);
+        
+        result = result.slice(start, end);
+        
+        // If there are more keys after the slice, map over sliced array
+        const remainingKeys = keys.slice(i + 1);
+        if (remainingKeys.length > 0) {
+          result = result.map((item: any) => {
+            let temp = item;
+            for (const rKey of remainingKeys) {
+              if (temp == null) return undefined;
+              if (typeof rKey === 'number') {
+                temp = Array.isArray(temp) ? temp[rKey >= 0 ? rKey : temp.length + rKey] : temp[rKey];
+              } else if (typeof rKey === 'string') {
+                temp = temp[rKey];
+              }
+            }
+            return temp;
+          });
+          break; // Exit loop after mapping
+        }
+      }
+      // Handle regular index/key
+      else if (Array.isArray(result) && typeof key === 'number') {
         // handle negative indexes
         const idx = key >= 0 ? key : result.length + key;
         result = result[idx];

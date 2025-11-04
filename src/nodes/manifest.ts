@@ -33,6 +33,7 @@ import GoogleWebSearchDef from './GoogleWebSearch.json'
 import AlpacaScreenerDef from './AlpacaScreener.json'
 import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
 import SchwabScreenerDef from './SchwabScreener.json'
+import SupportResistanceDef from './SupportResistance.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -124,7 +125,8 @@ export const nodeManifest = {
   [GoogleWebSearchDef.name]: GoogleWebSearchDef,
   [AlpacaScreenerDef.name]: AlpacaScreenerDef,
   [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef,
-  [SchwabScreenerDef.name]: SchwabScreenerDef
+  [SchwabScreenerDef.name]: SchwabScreenerDef,
+  [SupportResistanceDef.name]: SupportResistanceDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

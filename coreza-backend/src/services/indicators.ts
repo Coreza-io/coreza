@@ -21,6 +21,10 @@ export interface IndicatorInput {
   displacement?: String;
   session_type?: string;
   custom_start_time?: string;
+  method?: string;
+  lookback_period?: string;
+  sensitivity?: string;
+  num_levels?: string;
 }
 
 export interface IndicatorResult {
@@ -33,6 +37,7 @@ export interface IndicatorResult {
   sessionType?: string;
   stdDev?: String;
   count?: String;
+  method?: string;
 }
 
 // Helper to parse JSON string arrays
@@ -407,6 +412,172 @@ export class IndicatorService {
     };
   }
 
+  static async calculateSupportResistancePivot(input: IndicatorInput): Promise<IndicatorResult> {
+    const { candle_data: rawCandles, num_levels = '3' } = input;
+    const candles = parseArray<any>(rawCandles, 'candle_data');
+    
+    if (candles.length === 0) throw createError('No candle data provided', 400);
+    
+    const lastCandle = candles[candles.length - 1];
+    const high = Number(lastCandle.h ?? lastCandle.high);
+    const low = Number(lastCandle.l ?? lastCandle.low);
+    const close = Number(lastCandle.c ?? lastCandle.close);
+    
+    if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+      throw createError('Invalid OHLC data in last candle', 400);
+    }
+    
+    const PP = (high + low + close) / 3;
+    
+    const levels = {
+      pivot: PP,
+      resistance: [] as number[],
+      support: [] as number[]
+    };
+    
+    const numLevels = Math.min(Number(num_levels), 5);
+    
+    if (numLevels >= 1) {
+      levels.resistance.push(2 * PP - low);
+      levels.support.push(2 * PP - high);
+    }
+    if (numLevels >= 2) {
+      levels.resistance.push(PP + (high - low));
+      levels.support.push(PP - (high - low));
+    }
+    if (numLevels >= 3) {
+      levels.resistance.push(high + 2 * (PP - low));
+      levels.support.push(low - 2 * (high - PP));
+    }
+    
+    return {
+      success: true,
+      indicator: 'Support & Resistance',
+      values: [levels],
+      latest: levels,
+      method: 'pivot',
+      count: String(numLevels)
+    };
+  }
+
+  static async calculateSupportResistanceSwing(input: IndicatorInput): Promise<IndicatorResult> {
+    const { 
+      candle_data: rawCandles, 
+      lookback_period = '20',
+      sensitivity = '1.0',
+      num_levels = '3' 
+    } = input;
+    
+    const candles = parseArray<any>(rawCandles, 'candle_data');
+    const lookback = Number(lookback_period);
+    const sens = Number(sensitivity) / 100;
+    const numLevels = Math.min(Number(num_levels), 5);
+    
+    if (candles.length < lookback) {
+      throw createError(`Need at least ${lookback} candles`, 400);
+    }
+    
+    const recentCandles = candles.slice(-lookback);
+    const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
+    const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
+    
+    const swingHighs: number[] = [];
+    for (let i = 2; i < highs.length - 2; i++) {
+      if (highs[i] > highs[i-1] && highs[i] > highs[i-2] &&
+          highs[i] > highs[i+1] && highs[i] > highs[i+2]) {
+        swingHighs.push(highs[i]);
+      }
+    }
+    
+    const swingLows: number[] = [];
+    for (let i = 2; i < lows.length - 2; i++) {
+      if (lows[i] < lows[i-1] && lows[i] < lows[i-2] &&
+          lows[i] < lows[i+1] && lows[i] < lows[i+2]) {
+        swingLows.push(lows[i]);
+      }
+    }
+    
+    const clusterLevels = (prices: number[]): number[] => {
+      if (prices.length === 0) return [];
+      
+      prices.sort((a, b) => a - b);
+      const clusters: number[][] = [[prices[0]]];
+      
+      for (let i = 1; i < prices.length; i++) {
+        const lastCluster = clusters[clusters.length - 1];
+        const lastPrice = lastCluster[lastCluster.length - 1];
+        
+        if (Math.abs(prices[i] - lastPrice) / lastPrice <= sens) {
+          lastCluster.push(prices[i]);
+        } else {
+          clusters.push([prices[i]]);
+        }
+      }
+      
+      return clusters
+        .sort((a, b) => b.length - a.length)
+        .slice(0, numLevels)
+        .map(cluster => cluster.reduce((sum, p) => sum + p, 0) / cluster.length)
+        .sort((a, b) => b - a);
+    };
+    
+    const resistanceLevels = clusterLevels(swingHighs);
+    const supportLevels = clusterLevels(swingLows).reverse();
+    
+    const levels = {
+      resistance: resistanceLevels,
+      support: supportLevels,
+      swing_highs_count: swingHighs.length,
+      swing_lows_count: swingLows.length
+    };
+    
+    return {
+      success: true,
+      indicator: 'Support & Resistance',
+      values: [levels],
+      latest: levels,
+      method: 'swing',
+      count: String(resistanceLevels.length + supportLevels.length)
+    };
+  }
+
+  static async calculateSupportResistanceHistorical(input: IndicatorInput): Promise<IndicatorResult> {
+    const { candle_data: rawCandles, lookback_period = '20', num_levels = '3' } = input;
+    const candles = parseArray<any>(rawCandles, 'candle_data');
+    const lookback = Number(lookback_period);
+    const numLevels = Math.min(Number(num_levels), 5);
+    
+    if (candles.length < lookback) {
+      throw createError(`Need at least ${lookback} candles`, 400);
+    }
+    
+    const recentCandles = candles.slice(-lookback);
+    const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
+    const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
+    
+    const sortedHighs = [...highs].sort((a, b) => b - a);
+    const sortedLows = [...lows].sort((a, b) => a - b);
+    
+    const resistanceLevels = sortedHighs.slice(0, numLevels);
+    const supportLevels = sortedLows.slice(0, numLevels);
+    
+    const levels = {
+      resistance: resistanceLevels,
+      support: supportLevels,
+      highest_high: Math.max(...highs),
+      lowest_low: Math.min(...lows)
+    };
+    
+    return {
+      success: true,
+      indicator: 'Support & Resistance',
+      values: [levels],
+      latest: levels,
+      method: 'historical',
+      count: String(resistanceLevels.length + supportLevels.length)
+    };
+  }
+
   static async calculate(indicatorType: string, input: IndicatorInput): Promise<IndicatorResult> {
     switch (indicatorType.toLowerCase()) {
       case 'rsi':
@@ -429,6 +600,20 @@ export class IndicatorService {
         return this.calculateOBV(input);
       case 'vwap':
         return this.calculateVWAP(input);
+      case 'support-resistance':
+      case 'supportresistance':
+      case 'sr':
+        const method = (input.method || 'pivot').toLowerCase();
+        switch (method) {
+          case 'pivot':
+            return this.calculateSupportResistancePivot(input);
+          case 'swing':
+            return this.calculateSupportResistanceSwing(input);
+          case 'historical':
+            return this.calculateSupportResistanceHistorical(input);
+          default:
+            throw createError(`Unsupported S&R method: ${method}`, 400);
+        }
       default:
         throw createError(`Unsupported indicator: ${indicatorType}`, 400);
     }

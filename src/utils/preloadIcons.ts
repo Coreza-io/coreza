@@ -3,11 +3,16 @@ import { nodeManifest } from "@/nodes/manifest";
 
 // Extract all SVG icon paths from the manifest
 const getIconPaths = (): string[] => {
-  return Object.values(nodeManifest)
+  const iconPaths = Object.values(nodeManifest)
     .map(node => node.icon)
     .filter((icon): icon is string => 
       typeof icon === 'string' && icon.startsWith('/assets/')
     );
+  
+  // Add any additional icons not in manifest
+  iconPaths.push('/assets/icons/support-resistance.svg');
+  
+  return iconPaths;
 };
 
 // Preload images by creating image elements

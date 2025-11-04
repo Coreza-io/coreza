@@ -103,4 +103,14 @@ router.post('/vwap', async (req, res, next) => {
   }
 });
 
+// Support & Resistance endpoint
+router.post('/support-resistance', async (req, res, next) => {
+  try {
+    const result = await IndicatorService.calculate('support-resistance', req.body);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

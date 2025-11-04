@@ -207,13 +207,24 @@ router.post("/field", async (req, res) => {
   }
 });
 
-// Simple math operations
+// Math operations - binary and statistical
 router.post("/math", async (req, res) => {
   try {
     const { left, operator, right } = req.body;
-    if (left === undefined || operator == null || right === undefined) {
+    
+    // Validate required fields
+    if (left === undefined || operator == null) {
       return res.status(400).json({
-        error: "left, operator and right are required",
+        error: "left and operator are required",
+        received: { left, operator, right },
+      });
+    }
+    
+    // For binary operators, right is required
+    const binaryOps = ['add', 'subtract', 'multiply', 'divide'];
+    if (binaryOps.includes(operator) && right === undefined) {
+      return res.status(400).json({
+        error: `right operand is required for ${operator}`,
         received: { left, operator, right },
       });
     }

@@ -5,16 +5,16 @@ import { BrokerInput, BrokerResult, IBrokerService } from "./types";
 export type HttpMethod = "get" | "post" | "put" | "delete";
 
 export interface PaginationConfig {
-  /** Query param name for the page token (e.g., 'page_token') */
-  pageParam: string;
+  /** Query param name for the page token (default: 'page_token') */
+  pageParam?: string;
   
-  /** JSON path to next token in response (e.g., 'next_page_token') */
-  nextTokenPath: string;
+  /** JSON path to next token in response (default: 'next_page_token') */
+  nextTokenPath?: string;
   
-  /** Function to merge accumulated data with new page */
-  mergePages: (accumulated: any, newPage: any, input: BrokerInput) => any;
+  /** Function to merge accumulated data with new page (default: replace) */
+  mergePages?: (accumulated: any, newPage: any, input: BrokerInput) => any;
   
-  /** Optional: Max pages to prevent infinite loops (default: 50) */
+  /** Max pages to prevent infinite loops (default: 50) */
   maxPages?: number;
 }
 
@@ -67,20 +67,15 @@ export class RestBrokerService
     }
 
     try {
-      // 1. fetch credentials
+      // Fetch credentials
       const {
         credentials: { client_json, token_json },
       } = await this.getCredentials(input.user_id, input.credential_id);
 
-      // 2. Check if pagination is enabled for this operation
-      if (op.pagination) {
-        return await this.executePaginated(op, input, client_json);
-      } else {
-        return await this.executeSingle(op, input, client_json);
-      }
+      // Execute request (always uses pagination-aware logic)
+      return await this.executeRequest(op, input, client_json);
     } catch (err: any) {
-      // --- Enhanced error handling ---
-      // Axios error shape
+      // Enhanced error handling
       const status = err.response?.status;
       let message =
         err.response?.data?.errorMessage ||
@@ -93,7 +88,6 @@ export class RestBrokerService
         message =
           "API service is temporarily unavailable (HTTP 503). Please try again later.";
       } else if (status === 400) {
-        // Dhan returns errorType, errorCode, errorMessage
         if (err.response?.data?.errorMessage || err.response?.data?.errorCode) {
           message = `API Error [${err.response.data.errorCode || "400"}]: ${
             err.response.data.errorMessage || message
@@ -116,24 +110,47 @@ export class RestBrokerService
   }
 
   /**
-   * Execute single request (non-paginated)
+   * Get default pagination config for operations without explicit config
    */
-  private async executeSingle(
+  private getDefaultPaginationConfig(): PaginationConfig {
+    return {
+      pageParam: "page_token",
+      nextTokenPath: "next_page_token",
+      maxPages: 50,
+      mergePages: (accumulated: any, newPage: any) => newPage // Simple: last page wins
+    };
+  }
+
+  /**
+   * Construct full request URL from operation config
+   */
+  private buildRequestUrl(
     op: RestOperation,
     input: BrokerInput,
     creds: any
-  ): Promise<BrokerResult> {
+  ): string {
     const baseUrl =
       typeof this.config.baseUrl === "function"
         ? this.config.baseUrl(creds, input)
         : this.config.baseUrl;
     const path = typeof op.path === "function" ? op.path(input) : op.path;
-    const url = `${baseUrl}${path}`;
-    const headers = this.config.makeAuthHeaders(creds);
-    const params = op.makeParams?.(input) ?? {};
-    const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
+    return `${baseUrl}${path}`;
+  }
 
-    const axiosConfig: AxiosRequestConfig = {
+  /**
+   * Build axios request configuration
+   */
+  private buildAxiosConfig(
+    op: RestOperation,
+    input: BrokerInput,
+    creds: any,
+    url: string,
+    params: Record<string, string>,
+    body?: any
+  ): AxiosRequestConfig {
+    const headers = this.config.makeAuthHeaders(creds);
+    
+    const config: AxiosRequestConfig = {
       method: op.method,
       url,
       headers,
@@ -142,36 +159,61 @@ export class RestBrokerService
     };
 
     if (["post", "put", "patch", "delete"].includes(op.method.toLowerCase())) {
-      axiosConfig.data = body;
+      config.data = body;
     }
 
-    const res = await axios.request(axiosConfig);
-    const rawData = res.data;
-    const data = op.transformResult
-      ? op.transformResult(rawData, input)
-      : rawData;
-
-    return { success: true, data };
+    return config;
   }
 
   /**
-   * Execute paginated request (fetch all pages automatically)
+   * Fetch a single page of data
    */
-  private async executePaginated(
+  private async fetchPage(config: AxiosRequestConfig): Promise<any> {
+    const res = await axios.request(config);
+    return res.data;
+  }
+
+  /**
+   * Determine if pagination should continue
+   */
+  private shouldContinuePagination(
+    nextToken: string | null,
+    pageCount: number,
+    maxPages: number
+  ): boolean {
+    if (!nextToken) {
+      return false;
+    }
+    
+    if (pageCount >= maxPages) {
+      console.warn(
+        `[RestBrokerService] Max pages (${maxPages}) reached, stopping pagination`
+      );
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * Execute request with automatic pagination support
+   */
+  private async executeRequest(
     op: RestOperation,
     input: BrokerInput,
     creds: any
   ): Promise<BrokerResult> {
-    const pagination = op.pagination!;
-    const maxPages = pagination.maxPages || 50;
+    // Get pagination config (use defaults if not provided)
+    const paginationConfig = op.pagination || this.getDefaultPaginationConfig();
+    const pagination = {
+      pageParam: paginationConfig.pageParam || "page_token",
+      nextTokenPath: paginationConfig.nextTokenPath || "next_page_token",
+      maxPages: paginationConfig.maxPages || 50,
+      mergePages: paginationConfig.mergePages || ((acc: any, page: any) => page)
+    };
     
-    const baseUrl =
-      typeof this.config.baseUrl === "function"
-        ? this.config.baseUrl(creds, input)
-        : this.config.baseUrl;
-    const path = typeof op.path === "function" ? op.path(input) : op.path;
-    const url = `${baseUrl}${path}`;
-    const headers = this.config.makeAuthHeaders(creds);
+    // Build request components
+    const url = this.buildRequestUrl(op, input, creds);
     const baseParams = op.makeParams?.(input) ?? {};
     const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
 
@@ -179,59 +221,52 @@ export class RestBrokerService
     let nextPageToken: string | null = null;
     let pageCount = 0;
 
-    console.log(`[RestBrokerService] Starting paginated request for ${this.brokerKey}.${input.operation}`);
+    console.log(
+      `[RestBrokerService] Starting request for ${this.brokerKey}.${input.operation}`
+    );
 
+    // Pagination loop
     do {
       pageCount++;
-      
-      if (pageCount > maxPages) {
-        console.warn(`[RestBrokerService] Max pages (${maxPages}) reached, stopping pagination`);
-        break;
-      }
 
-      // Build params with page token if present
+      // Build params with page token
       const params = { ...baseParams };
       if (nextPageToken) {
         params[pagination.pageParam] = nextPageToken;
       }
 
-      const axiosConfig: AxiosRequestConfig = {
-        method: op.method,
-        url,
-        headers,
-        params,
-        timeout: 30_000,
-      };
+      // Build axios config
+      const axiosConfig = this.buildAxiosConfig(op, input, creds, url, params, body);
 
-      if (["post", "put", "patch", "delete"].includes(op.method.toLowerCase())) {
-        axiosConfig.data = body;
-      }
-
-      console.log(`[RestBrokerService] Fetching page ${pageCount}${nextPageToken ? ` with token: ${nextPageToken.substring(0, 20)}...` : ''}`);
+      console.log(
+        `[RestBrokerService] Fetching page ${pageCount}${
+          nextPageToken ? ` with token: ${nextPageToken.substring(0, 20)}...` : ""
+        }`
+      );
 
       // Fetch page
-      const res = await axios.request(axiosConfig);
-      const pageData = res.data;
+      const pageData = await this.fetchPage(axiosConfig);
 
       // Extract next page token
       nextPageToken = this.getNestedValue(pageData, pagination.nextTokenPath);
 
-      // Merge this page into accumulated data
+      // Merge data
       if (accumulatedData === null) {
-        // First page - initialize
         accumulatedData = pageData;
       } else {
-        // Subsequent pages - merge
         accumulatedData = pagination.mergePages(accumulatedData, pageData, input);
       }
 
-      console.log(`[RestBrokerService] Page ${pageCount} fetched. Next token: ${nextPageToken ? 'exists' : 'none'}`);
+      console.log(
+        `[RestBrokerService] Page ${pageCount} fetched. Next token: ${
+          nextPageToken ? "exists" : "none"
+        }`
+      );
+    } while (this.shouldContinuePagination(nextPageToken, pageCount, pagination.maxPages));
 
-    } while (nextPageToken);
+    console.log(`[RestBrokerService] Request complete. Total pages: ${pageCount}`);
 
-    console.log(`[RestBrokerService] Pagination complete. Total pages: ${pageCount}`);
-
-    // Apply transformResult to final accumulated data
+    // Apply final transformation
     const data = op.transformResult
       ? op.transformResult(accumulatedData, input)
       : accumulatedData;

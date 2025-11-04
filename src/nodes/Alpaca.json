@@ -66,7 +66,8 @@
         { "id": "get_positions", "name": "Get Positions", "method": "POST" },
         { "id": "get_orders", "name": "Get Orders", "method": "POST" },
         { "id": "cancel_order", "name": "Cancel Orders", "method": "POST" },
-        { "id": "get_candle", "name": "Get Historical Bars", "method": "POST" }
+        { "id": "get_candle", "name": "Get Historical Bars", "method": "POST" },
+        { "id": "get_latest_bar", "name": "Get Latest Bar", "method": "POST" }
       ],
       "placeholder": "Select operation",
       "required": true
@@ -79,7 +80,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"],
+          "operation": ["get_candle", "get_latest_bar"],
           "asset_type": ["stock"]
         }
       }
@@ -92,7 +93,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"],
+          "operation": ["get_candle", "get_latest_bar"],
           "asset_type": ["crypto"]
         }
       }

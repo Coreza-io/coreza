@@ -69,28 +69,12 @@ export const alpacaConfig: RestConfig = {
         }
 
         // parse lookback/limit
-        const lb = Number(lookback) || undefined;
-        //const lim   = Number(inputLimit) || lb || 100;
+        const lb = Number(lookback) || 1000;
 
         // calculate start/end if needed
         let startDate = inputStart;
         let endDate = inputEnd;
         let timeframe = interval;
-        //if ((!startDate || !endDate) && lb) {
-        //const now = new Date();
-        //const sd = new Date(now);
-
-        //sd.setDate(now.getDate() - lb);
-
-        //startDate = startDate || sd.toISOString();
-        //endDate = endDate || now.toISOString();
-        //}
-
-        //if (!startDate || !endDate) {
-        //throw new Error(
-        //"Either lookback or both start and end must be provided"
-        //);
-        //}
 
         const params: any = {
           symbols: symbol,
@@ -98,11 +82,13 @@ export const alpacaConfig: RestConfig = {
           start: startDate,
           end: endDate,
           limit: String(lb),
+          adjustment: "raw",
+          sort: "asc"
         };
 
-        // Only add feed parameter for stocks (free IEX data)
+        // Use SIP feed for stocks (premium data)
         if (input.asset_type !== "crypto") {
-          params.feed = "iex";
+          params.feed = "sip";
         }
 
         return params;

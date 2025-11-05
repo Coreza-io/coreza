@@ -6,14 +6,17 @@ export const alpacaConfig: RestConfig = {
   // 1. Dynamic baseUrl: trading vs market‑data
   baseUrl: (creds: any, input?: BrokerInput) => {
     // Market data operations always use data.alpaca.markets
-    if (input?.operation === "get_candle" || input?.operation === "get_latest_bar") {
+    if (
+      input?.operation === "get_candle" ||
+      input?.operation === "get_latest_bar"
+    ) {
       return "https://data.alpaca.markets";
     }
-    
+
     // Trading operations check environment selection
     return input?.environment === "live"
-      ? "https://api.alpaca.markets"           // Production
-      : "https://paper-api.alpaca.markets";    // Sandbox (default)
+      ? "https://api.alpaca.markets" // Production
+      : "https://paper-api.alpaca.markets"; // Sandbox (default)
   },
 
   // 2. Auth headers remain the same
@@ -62,6 +65,8 @@ export const alpacaConfig: RestConfig = {
           lookback,
           start: inputStart,
           end: inputEnd,
+          sort,
+          feed,
         } = input;
 
         if (!symbol) {
@@ -83,13 +88,9 @@ export const alpacaConfig: RestConfig = {
           end: endDate,
           limit: String(lb),
           adjustment: "raw",
-          sort: "asc"
+          feed: feed,
+          sort: sort,
         };
-
-        // Use SIP feed for stocks (premium data)
-        if (input.asset_type !== "crypto") {
-          params.feed = "sip";
-        }
 
         return params;
       },
@@ -137,7 +138,7 @@ export const alpacaConfig: RestConfig = {
         // Normalize latest bar response
         return {
           symbol: input.symbol,
-          bar: raw.bars?.[input.symbol] || null,
+          bar: raw.bars?.[input.symbol] ? [raw.bars[input.symbol]] : [],
         };
       },
     },

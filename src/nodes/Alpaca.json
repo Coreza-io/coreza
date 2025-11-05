@@ -58,7 +58,13 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_account", "get_positions", "get_orders", "cancel_order", "place_order"]
+          "operation": [
+            "get_account",
+            "get_positions",
+            "get_orders",
+            "cancel_order",
+            "place_order"
+          ]
         }
       }
     },
@@ -96,47 +102,8 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"],
-          "asset_type": ["stock"]
-        }
-      }
-    },
-    {
-      "key": "symbol",
-      "label": "Stock Symbols",
-      "type": "text",
-      "placeholder": "e.g. AAPL,TSLA,MSFT",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "operation": ["get_latest_bar"],
-          "asset_type": ["stock"]
-        }
-      }
-    },
-    {
-      "key": "symbol",
-      "label": "Crypto Pair",
-      "type": "text",
-      "placeholder": "e.g. BTC/USD",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "operation": ["get_candle"],
-          "asset_type": ["crypto"]
-        }
-      }
-    },
-    {
-      "key": "symbol",
-      "label": "Crypto Pairs",
-      "type": "text",
-      "placeholder": "e.g. BTC/USD,ETH/USD",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "operation": ["get_latest_bar"],
-          "asset_type": ["crypto"]
+          "operation": ["get_candle", "get_latest_bar"],
+          "asset_type": ["stock", "crypto"]
         }
       }
     },
@@ -187,7 +154,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_latest_bar"],
+          "operation": ["get_latest_bar", "get_candle"],
           "asset_type": ["stock"]
         }
       }
@@ -202,6 +169,19 @@
       "displayOptions": {
         "show": {
           "operation": ["get_latest_bar"]
+        }
+      }
+    },
+    {
+      "key": "sort",
+      "label": "Sort",
+      "type": "text",
+      "placeholder": "desc",
+      "default": "desc",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
         }
       }
     }

@@ -184,6 +184,30 @@
           "operation": ["get_candle"]
         }
       }
+    },
+    {
+      "key": "start",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2024-01-03T00:00:00Z or 2024-01-03",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      }
+    },
+    {
+      "key": "end",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2024-01-04T00:00:00Z or 2024-01-04",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      }
     }
   ]
 }

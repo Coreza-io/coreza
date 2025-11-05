@@ -232,7 +232,12 @@ export class IndicatorService {
     }
 
     const bb = new BollingerBands(period, stdDev);
-    const results: { upper: number; middle: number; lower: number }[] = [];
+    const results: {
+      upper: number;
+      middle: number;
+      lower: number;
+      bb_width: number;
+    }[] = [];
     for (const price of prices) {
       bb.update(price);
       if (bb.isStable) {
@@ -241,6 +246,9 @@ export class IndicatorService {
           upper: toNumber(r.upper),
           middle: toNumber(r.middle),
           lower: toNumber(r.lower),
+          bb_width:
+            ((toNumber(r.upper) - toNumber(r.lower)) / toNumber(r.middle)) *
+            100,
         });
       }
     }
@@ -474,7 +482,7 @@ export class IndicatorService {
       candle_data: rawCandles,
       short_period: rawShort = 12,
       long_period: rawLong = 26,
-      type = "percentage"
+      type = "percentage",
     } = input;
 
     const candles = parseArray<any>(rawCandles, "candle_data");
@@ -509,7 +517,7 @@ export class IndicatorService {
       if (shortEMA.isStable && longEMA.isStable) {
         const shortValue = toNumber(shortEMA.getResult());
         const longValue = toNumber(longEMA.getResult());
-        
+
         let oscillatorValue: number;
         if (type === "percentage") {
           // Percentage Volume Oscillator (PVO)
@@ -522,19 +530,19 @@ export class IndicatorService {
         results.push({
           value: oscillatorValue,
           shortEMA: shortValue,
-          longEMA: longValue
+          longEMA: longValue,
         });
       }
     }
 
     const latest = results.length > 0 ? results[results.length - 1] : null;
-    
+
     return {
       success: true,
       indicator: type === "percentage" ? "PVO" : "VolumeOscillator",
       periods: { short: shortPeriod, long: longPeriod },
       values: results,
-      latest
+      latest,
     };
   }
 

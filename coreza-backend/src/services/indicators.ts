@@ -25,6 +25,9 @@ export interface IndicatorInput {
   lookback_period?: string;
   sensitivity?: string;
   num_levels?: string;
+  short_period?: String;
+  long_period?: String;
+  type?: string;
 }
 
 export interface IndicatorResult {
@@ -464,6 +467,77 @@ export class IndicatorService {
     };
   }
 
+  static async calculateVolumeOscillator(
+    input: IndicatorInput
+  ): Promise<IndicatorResult> {
+    const {
+      candle_data: rawCandles,
+      short_period: rawShort = 12,
+      long_period: rawLong = 26,
+      type = "percentage"
+    } = input;
+
+    const candles = parseArray<any>(rawCandles, "candle_data");
+    const shortPeriod = Number(rawShort);
+    const longPeriod = Number(rawLong);
+
+    if (!Number.isFinite(shortPeriod) || shortPeriod <= 0) {
+      throw createError("short_period must be a positive number", 400);
+    }
+    if (!Number.isFinite(longPeriod) || longPeriod <= 0) {
+      throw createError("long_period must be a positive number", 400);
+    }
+    if (shortPeriod >= longPeriod) {
+      throw createError("short_period must be less than long_period", 400);
+    }
+
+    // Extract volumes from candle data
+    const volumes = candles.map((c) => Number(c.v ?? c.volume));
+    if (volumes.some((v) => !Number.isFinite(v) || v < 0)) {
+      throw createError("Invalid volume values in candle data", 400);
+    }
+
+    // Calculate short and long EMAs for volume
+    const shortEMA = new EMA(shortPeriod);
+    const longEMA = new EMA(longPeriod);
+    const results: { value: number; shortEMA: number; longEMA: number }[] = [];
+
+    for (const volume of volumes) {
+      shortEMA.update(volume);
+      longEMA.update(volume);
+
+      if (shortEMA.isStable && longEMA.isStable) {
+        const shortValue = toNumber(shortEMA.getResult());
+        const longValue = toNumber(longEMA.getResult());
+        
+        let oscillatorValue: number;
+        if (type === "percentage") {
+          // Percentage Volume Oscillator (PVO)
+          oscillatorValue = ((shortValue - longValue) / longValue) * 100;
+        } else {
+          // Absolute difference
+          oscillatorValue = shortValue - longValue;
+        }
+
+        results.push({
+          value: oscillatorValue,
+          shortEMA: shortValue,
+          longEMA: longValue
+        });
+      }
+    }
+
+    const latest = results.length > 0 ? results[results.length - 1] : null;
+    
+    return {
+      success: true,
+      indicator: type === "percentage" ? "PVO" : "VolumeOscillator",
+      periods: { short: shortPeriod, long: longPeriod },
+      values: results,
+      latest
+    };
+  }
+
   static async calculateSupportResistancePivot(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
@@ -679,6 +753,9 @@ export class IndicatorService {
         return this.calculateOBV(input);
       case "vwap":
         return this.calculateVWAP(input);
+      case "volume-oscillator":
+      case "volumeoscillator":
+        return this.calculateVolumeOscillator(input);
       case "support-resistance":
         const method = (input.method || "pivot").toLowerCase();
         switch (method) {

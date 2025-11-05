@@ -103,6 +103,16 @@ router.post('/vwap', async (req, res, next) => {
   }
 });
 
+// Volume Oscillator endpoint
+router.post('/volume-oscillator', async (req, res, next) => {
+  try {
+    const result = await IndicatorService.calculateVolumeOscillator(req.body);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Support & Resistance endpoint
 router.post('/support-resistance', async (req, res, next) => {
   try {

@@ -20,6 +20,7 @@ import BBDDef from './BB.json'
 import IchimokuDef from './Ichimoku.json'
 import OBVDef from './OBV.json'
 import VWAPDef from './VWAP.json'
+import VolumeOscillatorDef from './VolumeOscillator.json'
 import HttpRequestDef from './HttpRequest.json'
 import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
@@ -105,6 +106,7 @@ export const nodeManifest = {
   [IchimokuDef.name]: IchimokuDef,
   [OBVDef.name]: OBVDef,
   [VWAPDef.name]: VWAPDef,
+  [VolumeOscillatorDef.name]: VolumeOscillatorDef,
   [IfDef.name]: IfDef,
   [SwitchDef.name]: SwitchDef,
   [VisualizeDef.name]: VisualizeDef,

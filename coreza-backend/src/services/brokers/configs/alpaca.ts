@@ -62,7 +62,7 @@ export const alpacaConfig: RestConfig = {
         const {
           symbol,
           interval,
-          lookback,
+          limit,
           start: inputStart,
           end: inputEnd,
           sort,
@@ -72,9 +72,6 @@ export const alpacaConfig: RestConfig = {
         if (!symbol) {
           throw new Error("Symbol is required for get_candle operation");
         }
-
-        // parse lookback/limit
-        const lb = Number(lookback) || 1000;
 
         // calculate start/end if needed
         let startDate = inputStart;
@@ -86,7 +83,7 @@ export const alpacaConfig: RestConfig = {
           timeframe,
           start: startDate,
           end: endDate,
-          limit: String(lb),
+          ...(limit ? { limit } : {}),
           adjustment: "raw",
           feed: feed,
           sort: sort,

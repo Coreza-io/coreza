@@ -127,11 +127,11 @@
       }
     },
     {
-      "key": "lookback",
+      "key": "limit",
       "label": "Bars to Fetch",
       "type": "text",
       "placeholder": "e.g. 100",
-      "required": true,
+      "required": false,
       "displayOptions": {
         "show": {
           "operation": ["get_candle"]
@@ -175,9 +175,12 @@
     {
       "key": "sort",
       "label": "Sort",
-      "type": "text",
-      "placeholder": "desc",
-      "default": "desc",
+      "type": "select",
+      "options": [
+        { "id": "asc", "name": "asc" },
+        { "id": "desc", "name": "desc" }
+      ],
+      "default": "asc",
       "required": false,
       "displayOptions": {
         "show": {

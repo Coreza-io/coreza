@@ -91,13 +91,19 @@ class WorkflowScheduler {
 
   // Helper to format dates in the configured timezone
   private formatTime(date: Date, timezone?: string): string {
+    // Guard invalid Date
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+      return 'Invalid Date';
+    }
+
     if (!timezone) {
       return date.toISOString(); // Fallback to UTC if no timezone
     }
     
     try {
-      // Format: "2025-11-07 09:44:00 IST" (human-readable)
-      return formatInTimeZone(date, timezone, 'yyyy-MM-dd HH:mm:ss zzz');
+      // Use offset token (XXX) which is reliable across platforms, and append IANA name
+      const local = formatInTimeZone(date, timezone, 'yyyy-MM-dd HH:mm:ss XXX');
+      return `${local} (${timezone})`;
     } catch (error) {
       console.error(`⚠️ [SCHEDULER] Invalid timezone ${timezone}, falling back to UTC:`, error);
       return date.toISOString();

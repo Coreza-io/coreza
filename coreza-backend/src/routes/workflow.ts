@@ -504,7 +504,8 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             userId,
             cronToSave,
             workflow.nodes,
-            workflow.edges
+            workflow.edges,
+            tzToUse
           );
         }
 

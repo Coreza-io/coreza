@@ -114,6 +114,11 @@ export class NodeStoreV2 {
     return val;
   }
 
+  // Alias for consistency with LoopHandler
+  appendEdgeBuf(loopId: string, payload: any) {
+    this.bufferToLoop(loopId, `edge-${Date.now()}`, payload);
+  }
+
   finishLoop(id: string) {
     const st = this.loops.get(id)!;
     st.finished = true;

@@ -7,6 +7,7 @@ import {
 import { QueueManager } from "./queueManagerV2";
 import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
+import { LoopHandler } from "./loopHandler";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
 
@@ -26,6 +27,7 @@ export class WorkflowEngine {
   private router: NodeRouter;
   private queue: QueueManager;
   private store: NodeStoreV2;
+  private loopHandler: LoopHandler;
   private executors: Map<string, any> = new Map();
   private edgePayload = new Map<string, any>();
   private executed = new Set<string>();
@@ -51,6 +53,7 @@ export class WorkflowEngine {
     };
     this.queue = new QueueManager();
     this.store = new NodeStoreV2(runId, nodes);
+    this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
     this.mode = mode;
   }
 
@@ -258,6 +261,23 @@ export class WorkflowEngine {
       return;
     }
 
+    // Special handling for Loop nodes - delegate to LoopHandler for parallel execution
+    if (node.name === "Loop") {
+      try {
+        await this.loopHandler.tick(nodeId, input);
+        this.executed.add(nodeId);
+        return;
+      } catch (error) {
+        console.error(`❌ Loop node ${nodeId} failed:`, error);
+        this.failed.add(nodeId);
+        this.store.setNodeError(nodeId, error);
+        if (this.mode === "fail-fast") {
+          throw error;
+        }
+        return;
+      }
+    }
+
     try {
       // Create execution context with all necessary information
       const executionContext = {
@@ -280,30 +300,6 @@ export class WorkflowEngine {
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
 
-      if (
-        node.name === "Loop" &&
-        fullResult &&
-        typeof fullResult === "object"
-      ) {
-        if (fullResult.meta?.isLoopCompleted) {
-          const doneEdges = this.router.doneEdges(nodeId);
-          for (const edge of doneEdges) {
-            await this.routeEdge(edge, result, meta);
-          }
-        } else if (fullResult.meta?.isLoopIteration) {
-          const loopEdges = this.router.loopBodyEdges(nodeId);
-          for (const edge of loopEdges) {
-            const iterMeta: IterMeta = {
-              ...(meta || {}),
-              originLoopId: nodeId,
-              iterIndex: fullResult.meta.currentIndex,
-            };
-            await this.routeEdge(edge, result, iterMeta);
-          }
-        }
-        return; // don't clear loop node payloads
-      }
-
       const edges = this.router.select(nodeId, result);
       console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
 
@@ -312,14 +308,11 @@ export class WorkflowEngine {
         const loopNode = this.nodes.find((n) => n.id === loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
         if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
-          const currentResults =
-            this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
-          currentResults.push(result);
-          this.store.setNodeState(
-            loopNodeId,
-            "aggregatedResults",
-            currentResults
-          );
+          this.store.bufferToLoop(loopNodeId, `feedback-${nodeId}`, result);
+          if (meta.iterIndex !== undefined) {
+            this.queue.dec(loopNodeId, meta.iterIndex);
+          }
+          return;
         }
       }
 

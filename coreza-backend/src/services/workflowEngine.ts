@@ -210,7 +210,7 @@ export class WorkflowEngine {
     // Find entry nodes (no incoming edges)
     const entryNodes = this.nodes.filter(
       (n) =>
-        n.node_type === "main" && // ✅ only include main nodes
+        n.node_type === "trigger" && // ✅ only include main nodes
         !this.edges.some((e) => e.target === n.id)
     );
 
@@ -218,13 +218,17 @@ export class WorkflowEngine {
     for (const node of entryNodes) {
       // Skip Alpaca or any external listener node if it’s already active
       if (node.name === "AlpacaNews") {
-        console.log(`🟡 Skipping re-run for ${node.name || node.node_type} node`);
+        console.log(
+          `🟡 Skipping re-run for ${node.name || node.node_type} node`
+        );
         const edges = this.router.select(node.id, initialInput);
         for (const edge of edges) {
           this.store.setNodeResult(node.id, initialInput);
           this.executed.add(node.id);
           await this.routeEdge(edge, initialInput);
         }
+      } else {
+        this.enqueue({ nodeId: node.id, input: initialInput });
       }
       //this.enqueue({ nodeId: node.id, input: initialInput });
     }
@@ -262,21 +266,21 @@ export class WorkflowEngine {
     }
 
     // Special handling for Loop nodes - delegate to LoopHandler for parallel execution
-    if (node.name === "Loop") {
-      try {
-        await this.loopHandler.tick(nodeId, input);
-        this.executed.add(nodeId);
-        return;
-      } catch (error) {
-        console.error(`❌ Loop node ${nodeId} failed:`, error);
-        this.failed.add(nodeId);
-        this.store.setNodeError(nodeId, error);
-        if (this.mode === "fail-fast") {
-          throw error;
-        }
-        return;
-      }
-    }
+    //if (node.name === "Loop") {
+    //try {
+    //await this.loopHandler.tick(nodeId, input);
+    //this.executed.add(nodeId);
+    //return;
+    //} catch (error) {
+    //console.error(`❌ Loop node ${nodeId} failed:`, error);
+    //this.failed.add(nodeId);
+    //this.store.setNodeError(nodeId, error);
+    //if (this.mode === "fail-fast") {
+    //throw error;
+    //}
+    //return;
+    //}
+    //}
 
     try {
       // Create execution context with all necessary information
@@ -300,6 +304,30 @@ export class WorkflowEngine {
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
 
+      if (
+        node.name === "Loop" &&
+        fullResult &&
+        typeof fullResult === "object"
+      ) {
+        if (fullResult.meta?.isLoopCompleted) {
+          const doneEdges = this.router.doneEdges(nodeId);
+          for (const edge of doneEdges) {
+            await this.routeEdge(edge, result, meta);
+          }
+        } else if (fullResult.meta?.isLoopIteration) {
+          const loopEdges = this.router.loopBodyEdges(nodeId);
+          for (const edge of loopEdges) {
+            const iterMeta: IterMeta = {
+              ...(meta || {}),
+              originLoopId: nodeId,
+              iterIndex: fullResult.meta.currentIndex,
+            };
+            await this.routeEdge(edge, result, iterMeta);
+          }
+        }
+        return; // don't clear loop node payloads
+      }
+
       const edges = this.router.select(nodeId, result);
       console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
 
@@ -308,10 +336,18 @@ export class WorkflowEngine {
         const loopNode = this.nodes.find((n) => n.id === loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
         if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
-          this.store.bufferToLoop(loopNodeId, `feedback-${nodeId}`, result);
-          if (meta.iterIndex !== undefined) {
-            this.queue.dec(loopNodeId, meta.iterIndex);
-          }
+          const currentResults =
+            this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
+          currentResults.push(result);
+          this.store.setNodeState(
+            loopNodeId,
+            "aggregatedResults",
+            currentResults
+          );
+          //this.store.bufferToLoop(loopNodeId, `feedback-${nodeId}`, result);
+          //if (meta.iterIndex !== undefined) {
+          //this.queue.dec(loopNodeId, meta.iterIndex);
+          //}
           return;
         }
       }

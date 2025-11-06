@@ -6,6 +6,7 @@ interface ScheduledJob {
   workflowId: string;
   userId: string;
   cronExpression: string;
+  timezone?: string;
   job: schedule.Job;
 }
 
@@ -92,7 +93,8 @@ class WorkflowScheduler {
     userId: string,
     cronExpression: string,
     nodes: any[],
-    edges: any[]
+    edges: any[],
+    timezone?: string
   ): Promise<void> {
     // Cancel existing job if it exists
     await this.unscheduleWorkflow(workflowId);
@@ -107,8 +109,11 @@ class WorkflowScheduler {
       }
       
       console.log(`⏰ [SCHEDULER] Validated cron expression. Next execution: ${validation.nextRun?.toISOString()}`);
+      console.log(`🌍 [SCHEDULER] Using timezone: ${timezone || 'Server Local Time'}`);
       
-      const job = schedule.scheduleJob(cronExpression, async () => {
+      // Create job with timezone support if provided
+      const jobConfig = timezone ? { rule: cronExpression, tz: timezone } : cronExpression;
+      const job = schedule.scheduleJob(jobConfig, async () => {
         const executionId = `${workflowId}_${Date.now()}`;
         console.log(`🚀 [SCHEDULER] Starting scheduled execution ${executionId} for workflow ${workflowId} at ${new Date().toISOString()}`);
         
@@ -179,11 +184,13 @@ class WorkflowScheduler {
         workflowId,
         userId,
         cronExpression,
+        timezone,
         job
       });
 
       const nextRun = job.nextInvocation();
-      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${nextRun?.toISOString() || 'Unknown'}`);
+      const timezoneInfo = timezone ? ` (${timezone})` : ' (Server Local Time)';
+      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${nextRun?.toISOString() || 'Unknown'}${timezoneInfo}`);
     } catch (error) {
       console.error(`❌ [SCHEDULER] Failed to schedule workflow ${workflowId}:`, error);
       throw error;
@@ -196,7 +203,8 @@ class WorkflowScheduler {
     if (scheduledJob) {
       scheduledJob.job.cancel();
       this.scheduledJobs.delete(workflowId);
-      console.log(`🗑️ [SCHEDULER] Unscheduled workflow: ${workflowId} (was scheduled with: ${scheduledJob.cronExpression})`);
+      const tzInfo = scheduledJob.timezone ? ` in ${scheduledJob.timezone}` : '';
+      console.log(`🗑️ [SCHEDULER] Unscheduled workflow: ${workflowId} (was scheduled with: ${scheduledJob.cronExpression}${tzInfo})`);
     } else {
       console.log(`ℹ️ [SCHEDULER] No scheduled job found for workflow: ${workflowId}`);
     }
@@ -207,12 +215,14 @@ class WorkflowScheduler {
     userId: string,
     cronExpression: string | null,
     nodes: any[],
-    edges: any[]
+    edges: any[],
+    timezone?: string
   ): Promise<void> {
-    console.log(`🔄 [SCHEDULER] Updating schedule for workflow ${workflowId} - New cron: ${cronExpression || 'UNSCHEDULED'}`);
+    const tzInfo = timezone ? ` (${timezone})` : '';
+    console.log(`🔄 [SCHEDULER] Updating schedule for workflow ${workflowId} - New cron: ${cronExpression || 'UNSCHEDULED'}${tzInfo}`);
     
     if (cronExpression) {
-      await this.scheduleWorkflow(workflowId, userId, cronExpression, nodes, edges);
+      await this.scheduleWorkflow(workflowId, userId, cronExpression, nodes, edges, timezone);
       console.log(`✅ [SCHEDULER] Schedule updated for workflow ${workflowId}`);
     } else {
       await this.unscheduleWorkflow(workflowId);

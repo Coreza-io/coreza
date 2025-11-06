@@ -5,7 +5,7 @@ const router = express.Router();
 // Scheduler execution handler
 router.post('/scheduler', async (req, res) => {
   try {
-    const { interval, count, hour, minute } = req.body;
+    const { interval, count, hour, minute, timezone } = req.body;
 
     if (!interval || !count) {
       return res.status(400).json({ 
@@ -76,7 +76,8 @@ router.post('/scheduler', async (req, res) => {
         interval,
         count: intervalCount,
         hour: scheduleHour,
-        minute: scheduleMinute
+        minute: scheduleMinute,
+        timezone: timezone || 'UTC'
       },
       nextExecution: nextExecution.toISOString(),
       cronExpression,

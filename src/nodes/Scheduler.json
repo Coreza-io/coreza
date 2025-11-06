@@ -75,6 +75,36 @@
       "placeholder": "0",
       "default": "0",
       "required": true
+    },
+    {
+      "key": "timezone",
+      "label": "Timezone",
+      "type": "select",
+      "optionsSource": "static",
+      "options": [
+        { "label": "UTC (Coordinated Universal Time)", "value": "UTC" },
+        { "label": "America/New_York (EST/EDT)", "value": "America/New_York" },
+        { "label": "America/Chicago (CST/CDT)", "value": "America/Chicago" },
+        { "label": "America/Denver (MST/MDT)", "value": "America/Denver" },
+        { "label": "America/Los_Angeles (PST/PDT)", "value": "America/Los_Angeles" },
+        { "label": "America/Toronto", "value": "America/Toronto" },
+        { "label": "America/Sao_Paulo", "value": "America/Sao_Paulo" },
+        { "label": "Europe/London (GMT/BST)", "value": "Europe/London" },
+        { "label": "Europe/Paris (CET/CEST)", "value": "Europe/Paris" },
+        { "label": "Europe/Berlin", "value": "Europe/Berlin" },
+        { "label": "Europe/Moscow", "value": "Europe/Moscow" },
+        { "label": "Asia/Dubai", "value": "Asia/Dubai" },
+        { "label": "Asia/Kolkata (IST)", "value": "Asia/Kolkata" },
+        { "label": "Asia/Shanghai (CST)", "value": "Asia/Shanghai" },
+        { "label": "Asia/Tokyo (JST)", "value": "Asia/Tokyo" },
+        { "label": "Asia/Hong_Kong", "value": "Asia/Hong_Kong" },
+        { "label": "Asia/Singapore", "value": "Asia/Singapore" },
+        { "label": "Australia/Sydney", "value": "Australia/Sydney" },
+        { "label": "Australia/Melbourne", "value": "Australia/Melbourne" },
+        { "label": "Pacific/Auckland", "value": "Pacific/Auckland" }
+      ],
+      "default": "UTC",
+      "required": true
     }
   ]
 }

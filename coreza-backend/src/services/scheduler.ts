@@ -1,6 +1,7 @@
 import * as schedule from 'node-schedule';
 import { supabase } from '../config/supabase';
 import { executeWorkflow } from './workflowEngine';
+import { formatInTimeZone } from 'date-fns-tz';
 
 interface ScheduledJob {
   workflowId: string;
@@ -88,6 +89,21 @@ class WorkflowScheduler {
     }
   }
 
+  // Helper to format dates in the configured timezone
+  private formatTime(date: Date, timezone?: string): string {
+    if (!timezone) {
+      return date.toISOString(); // Fallback to UTC if no timezone
+    }
+    
+    try {
+      // Format: "2025-11-07 09:44:00 IST" (human-readable)
+      return formatInTimeZone(date, timezone, 'yyyy-MM-dd HH:mm:ss zzz');
+    } catch (error) {
+      console.error(`⚠️ [SCHEDULER] Invalid timezone ${timezone}, falling back to UTC:`, error);
+      return date.toISOString();
+    }
+  }
+
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
@@ -108,14 +124,14 @@ class WorkflowScheduler {
         throw new Error(validation.error || 'Invalid cron expression');
       }
       
-      console.log(`⏰ [SCHEDULER] Validated cron expression. Next execution: ${validation.nextRun?.toISOString()}`);
+      console.log(`⏰ [SCHEDULER] Validated cron expression. Next execution: ${this.formatTime(validation.nextRun!, timezone)}`);
       console.log(`🌍 [SCHEDULER] Using timezone: ${timezone || 'Server Local Time'}`);
       
       // Create job with timezone support if provided
       const jobConfig = timezone ? { rule: cronExpression, tz: timezone } : cronExpression;
       const job = schedule.scheduleJob(jobConfig, async () => {
         const executionId = `${workflowId}_${Date.now()}`;
-        console.log(`🚀 [SCHEDULER] Starting scheduled execution ${executionId} for workflow ${workflowId} at ${new Date().toISOString()}`);
+        console.log(`🚀 [SCHEDULER] Starting scheduled execution ${executionId} for workflow ${workflowId} at ${this.formatTime(new Date(), timezone)}`);
         
         let runId = null;
         const startTime = Date.now();
@@ -189,8 +205,7 @@ class WorkflowScheduler {
       });
 
       const nextRun = job.nextInvocation();
-      const timezoneInfo = timezone ? ` (${timezone})` : ' (Server Local Time)';
-      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${nextRun?.toISOString() || 'Unknown'}${timezoneInfo}`);
+      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${this.formatTime(nextRun!, timezone) || 'Unknown'}`);
     } catch (error) {
       console.error(`❌ [SCHEDULER] Failed to schedule workflow ${workflowId}:`, error);
       throw error;

@@ -82,7 +82,7 @@ export const alpacaConfig: RestConfig = {
           symbols: symbol,
           timeframe,
           start: startDate,
-          end: endDate,
+          ...(endDate ? { endDate } : {}),
           ...(limit ? { limit } : {}),
           adjustment: "raw",
           feed: feed,

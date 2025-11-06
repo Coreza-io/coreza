@@ -65,11 +65,12 @@ class WorkflowScheduler {
         return { valid: false, error: 'Invalid cron expression format' };
       }
       
-      const nextRun = testJob.nextInvocation();
+      const nextRaw = testJob.nextInvocation();
       testJob.cancel(); // Clean up test job
       
+      const nextRun = this.getFireDate(nextRaw);
       if (!nextRun) {
-        return { valid: false, error: 'Cron expression will not execute in the future' };
+        return { valid: false, error: 'Unable to determine next run time' };
       }
       
       // Ensure the next run is in the future (at least 1 minute from now)
@@ -108,6 +109,22 @@ class WorkflowScheduler {
       console.error(`⚠️ [SCHEDULER] Invalid timezone ${timezone}, falling back to UTC:`, error);
       return date.toISOString();
     }
+  }
+
+  // Normalize nextInvocation outputs to a Date
+  private getFireDate(next: any): Date | undefined {
+    if (!next) return undefined;
+    if (next instanceof Date) return next;
+    if (next.fireDate instanceof Date) return next.fireDate;
+    if (typeof next.getTime === 'function') {
+      const t = next.getTime();
+      if (typeof t === 'number' && !Number.isNaN(t)) return new Date(t);
+    }
+    if (typeof next.toDate === 'function') {
+      const d = next.toDate();
+      if (d instanceof Date && !Number.isNaN(d.getTime())) return d;
+    }
+    return undefined;
   }
 
   async scheduleWorkflow(
@@ -210,8 +227,9 @@ class WorkflowScheduler {
         job
       });
 
-      const nextRun = job.nextInvocation();
-      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${this.formatTime(nextRun!, timezone) || 'Unknown'}`);
+      const nextRunRaw = job.nextInvocation();
+      const nextRunDate = this.getFireDate(nextRunRaw);
+      console.log(`✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${nextRunDate ? this.formatTime(nextRunDate, timezone) : 'Unknown'}`);
     } catch (error) {
       console.error(`❌ [SCHEDULER] Failed to schedule workflow ${workflowId}:`, error);
       throw error;

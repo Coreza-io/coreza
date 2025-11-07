@@ -329,7 +329,7 @@ export class WorkflowEngine {
       }
 
       const edges = this.router.select(nodeId, result);
-      console.log(`🎯 Routing from ${nodeId} via ${edges.length} edges`);
+      console.log(`🎯 Routing from ${nodeId} to ${edges.target}`);
 
       if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
@@ -344,11 +344,6 @@ export class WorkflowEngine {
             "aggregatedResults",
             currentResults
           );
-          //this.store.bufferToLoop(loopNodeId, `feedback-${nodeId}`, result);
-          //if (meta.iterIndex !== undefined) {
-          //this.queue.dec(loopNodeId, meta.iterIndex);
-          //}
-          return;
         }
       }
 

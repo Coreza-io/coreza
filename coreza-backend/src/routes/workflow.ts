@@ -293,14 +293,27 @@ function computeCronFromSchedulerNodes(nodes: any[]) {
   const cron = toCronFromValues(v);
   const tz = v.timezone || "UTC";
 
-  // Validate cron & ensure a future run
+  // Validate cron & ensure a future run with 1-minute buffer
   const it = parser.parseExpression(cron, { tz });
-  const next = it.next().toDate();
-  if (next <= new Date()) {
-    throw createError(
-      "Computed schedule does not yield a future run. Adjust time or interval.",
-      400
-    );
+  let next = it.next().toDate();
+  const now = new Date();
+  const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000);
+
+  let skipCount = 0;
+  // Auto-skip occurrences that are too close (< 1 minute buffer)
+  while (next <= oneMinuteFromNow) {
+    skipCount++;
+    console.log(`⏭️  [SCHEDULER] Skipping execution at ${next.toISOString()} (too close to now), checking next occurrence...`);
+    next = it.next().toDate();
+    
+    // Safety: prevent infinite loop
+    if (skipCount > 100) {
+      throw createError('Invalid cron expression: unable to find a valid future execution time within 100 iterations', 400);
+    }
+  }
+
+  if (skipCount > 0) {
+    console.log(`✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`);
   }
 
   return { cron, timezone: tz, next };

@@ -144,6 +144,8 @@ class WorkflowScheduler {
       // Validate cron expression
       const validation = this.validateCronExpression(cronExpression);
       if (!validation.valid) {
+        console.error(`❌ [SCHEDULER] Validation failed for workflow ${workflowId}: ${validation.error}`);
+        console.error(`   Cron: ${cronExpression}, Timezone: ${timezone || 'server local'}`);
         throw new Error(validation.error || 'Invalid cron expression');
       }
       

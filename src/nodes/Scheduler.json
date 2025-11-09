@@ -77,6 +77,23 @@
       "required": true
     },
     {
+      "key": "dow",
+      "label": "Days of Week (for Weekly trigger)",
+      "type": "multiselect",
+      "options": [
+        { "id": "0", "name": "Sunday" },
+        { "id": "1", "name": "Monday" },
+        { "id": "2", "name": "Tuesday" },
+        { "id": "3", "name": "Wednesday" },
+        { "id": "4", "name": "Thursday" },
+        { "id": "5", "name": "Friday" },
+        { "id": "6", "name": "Saturday" }
+      ],
+      "default": ["1"],
+      "required": false,
+      "placeholder": "Select days (only applies to Weekly interval)"
+    },
+    {
       "key": "timezone",
       "label": "Timezone",
       "type": "select",

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Edit2, Pin, PinOff, Save, X } from "lucide-react";
+import { format } from 'date-fns';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 // Props strongly typed, mirroring InputPanel
 export type OutputPanelProps = {
@@ -15,9 +17,37 @@ export type OutputPanelProps = {
   onPinToggle?: () => void;
 };
 
+// Helper to detect ISO date strings
+const isISODateString = (value: any): boolean => {
+  if (typeof value !== 'string') return false;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/.test(value);
+};
+
+// Helper to format dates in user's timezone
+const formatDateWithTimezone = (isoString: string, timezone?: string): string => {
+  try {
+    if (!timezone || timezone === 'UTC') {
+      return `${new Date(isoString).toUTCString()} (UTC)`;
+    }
+    
+    const zonedDate = toZonedTime(isoString, timezone);
+    const formatted = formatInTimeZone(isoString, timezone, 'EEE MMM dd yyyy HH:mm:ss');
+    const offset = format(zonedDate, 'xxx');
+    
+    return `${formatted} GMT${offset.replace(':', '')} (${timezone})`;
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return isoString;
+  }
+};
+
 // Recursively render output data, modern UI with design system
-const renderData = (data: any, parentKey = ""): React.ReactNode => {
-  console.log("Payload:", data)
+const renderData = (data: any, parentKey = "", rootData?: any): React.ReactNode => {
+  console.log("Payload:", data);
+  
+  // Extract timezone from response (if available)
+  const timezone = rootData?.schedule?.timezone || rootData?.timezone;
+  
   if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
     return (
       <div className="text-sm text-muted-foreground italic text-center py-6">
@@ -31,6 +61,11 @@ const renderData = (data: any, parentKey = ""): React.ReactNode => {
       <div className="flex flex-col gap-2">
         {Object.entries(data).map(([key, value]) => {
           const fullKey = parentKey ? `${parentKey}.${key}` : key;
+          
+          // Check if this value is a date string and format it
+          const isDate = isISODateString(value);
+          const displayValue = isDate ? formatDateWithTimezone(value as string, timezone) : value;
+          
           return (
             <div
               key={fullKey}
@@ -38,16 +73,18 @@ const renderData = (data: any, parentKey = ""): React.ReactNode => {
             >
               <span className="text-xs font-semibold text-primary">{key}</span>
               <span className="text-xs text-foreground pl-2 mt-1">
-                {value === undefined ? (
+                {displayValue === undefined ? (
                   <span className="text-muted-foreground">undefined</span>
-                ) : value === null ? (
+                ) : displayValue === null ? (
                   <span className="text-muted-foreground">null</span>
-                ) : typeof value === "object" ? (
+                ) : typeof displayValue === "object" ? (
                   <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs">
-                    {JSON.stringify(value, null, 2)}
+                    {JSON.stringify(displayValue, null, 2)}
                   </span>
                 ) : (
-                  <span className="break-words">{String(value)}</span>
+                  <span className={`break-words ${isDate ? 'font-medium text-green-600 dark:text-green-400' : ''}`}>
+                    {String(displayValue)}
+                  </span>
                 )}
               </span>
             </div>
@@ -184,7 +221,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {renderData(internalData)}
+            {renderData(internalData, "", internalData)}
           </div>
         )}
       </div>

@@ -1,36 +1,38 @@
-import express from 'express';
-import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import express from "express";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const router = express.Router();
 
 // Scheduler execution handler
-router.post('/scheduler', async (req, res) => {
+router.post("/scheduler", async (req, res) => {
   try {
     const { interval, count, hour, minute, timezone, dow } = req.body;
 
     if (!interval || !count) {
-      return res.status(400).json({ 
-        error: 'Interval and count are required',
-        received: { interval, count, hour, minute, dow }
+      return res.status(400).json({
+        error: "Interval and count are required",
+        received: { interval, count, hour, minute, dow },
       });
     }
 
     // Validate dow for weekly intervals
-    if (interval.toLowerCase() === 'weeks') {
+    if (interval.toLowerCase() === "weeks") {
       if (!dow || !Array.isArray(dow) || dow.length === 0) {
         return res.status(400).json({
-          error: 'dow (days of week) is required for weekly intervals as an array (e.g., ["1", "5"] for Monday and Friday)',
-          received: { dow }
+          error:
+            'dow (days of week) is required for weekly intervals as an array (e.g., ["1", "5"] for Monday and Friday)',
+          received: { dow },
         });
       }
-      
+
       // Validate each day is between 0-6
       for (const day of dow) {
         const dayNum = parseInt(day);
         if (isNaN(dayNum) || dayNum < 0 || dayNum > 6) {
           return res.status(400).json({
-            error: 'Each day in dow must be between 0 (Sunday) and 6 (Saturday)',
-            received: { dow, invalidDay: day }
+            error:
+              "Each day in dow must be between 0 (Sunday) and 6 (Saturday)",
+            received: { dow, invalidDay: day },
           });
         }
       }
@@ -38,7 +40,7 @@ router.post('/scheduler', async (req, res) => {
 
     // Calculate next execution time based on the schedule
     // Get current time in user's selected timezone
-    const userTimezone = timezone || 'UTC';
+    const userTimezone = timezone || "UTC";
     const nowInUserTz = toZonedTime(new Date(), userTimezone);
     const nextExecution = new Date(nowInUserTz);
 
@@ -48,29 +50,31 @@ router.post('/scheduler', async (req, res) => {
     const scheduleMinute = minute ? parseInt(minute) : nowInUserTz.getMinutes();
 
     switch (interval.toLowerCase()) {
-      case 'minutes':
+      case "minutes":
         nextExecution.setMinutes(nowInUserTz.getMinutes() + intervalCount);
         break;
-      case 'hours':
+      case "hours":
         nextExecution.setHours(nowInUserTz.getHours() + intervalCount);
         nextExecution.setMinutes(scheduleMinute);
         break;
-      case 'days':
+      case "days":
         nextExecution.setDate(nowInUserTz.getDate() + intervalCount);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         break;
-      case 'weeks':
+      case "weeks":
         // Parse all selected days of week
-        const selectedDays = dow.map((d: string) => parseInt(d)).sort((a: number, b: number) => a - b);
+        const selectedDays = dow
+          .map((d: string) => parseInt(d))
+          .sort((a: number, b: number) => a - b);
         const currentDayOfWeek = nowInUserTz.getDay();
-        
+
         // Find the next occurrence among all selected days
         let minDaysUntilTarget = Infinity;
-        
+
         for (const targetDayOfWeek of selectedDays) {
           let daysUntilTarget = targetDayOfWeek - currentDayOfWeek;
-          
+
           // If target day has passed this week, go to next occurrence
           if (daysUntilTarget < 0) {
             daysUntilTarget += 7;
@@ -78,55 +82,55 @@ router.post('/scheduler', async (req, res) => {
             // If it's the target day today, check if the time has passed
             const targetTime = new Date(nowInUserTz);
             targetTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-            
+
             if (nowInUserTz >= targetTime) {
               // Time has passed, schedule for next week
               daysUntilTarget = 7;
             }
           }
-          
+
           // Find the minimum (soonest occurrence)
           if (daysUntilTarget < minDaysUntilTarget) {
             minDaysUntilTarget = daysUntilTarget;
           }
         }
-        
+
         // Add additional weeks if interval > 1
         if (intervalCount > 1) {
           minDaysUntilTarget += (intervalCount - 1) * 7;
         }
-        
+
         nextExecution.setDate(nowInUserTz.getDate() + minDaysUntilTarget);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         nextExecution.setSeconds(0);
         nextExecution.setMilliseconds(0);
         break;
-      case 'months':
+      case "months":
         nextExecution.setMonth(nowInUserTz.getMonth() + intervalCount);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         break;
       default:
-        return res.status(400).json({ error: 'Invalid interval type' });
+        return res.status(400).json({ error: "Invalid interval type" });
     }
 
     // Generate cron expression for the schedule
-    let cronExpression = '';
+    let cronExpression = "";
     switch (interval) {
-      case 'minutes':
+      case "minutes":
         cronExpression = `*/${intervalCount} * * * *`;
         break;
-      case 'hours':
+      case "hours":
         cronExpression = `${scheduleMinute} */${intervalCount} * * *`;
         break;
-      case 'days':
+      case "days":
         cronExpression = `${scheduleMinute} ${scheduleHour} */${intervalCount} * *`;
         break;
-      case 'weeks':
+      case "weeks":
         // Parse and join days with comma for cron (supports multiple days)
-        const cronDays = dow.map((d: string) => parseInt(d)).join(',');
-        
+        const cronDays = dow.map((d: string) => parseInt(d)).join(",");
+
         if (intervalCount === 1) {
           // Every week on selected days: "0 10 * * 1,5" (Mon, Fri)
           cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
@@ -136,31 +140,30 @@ router.post('/scheduler', async (req, res) => {
           cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
         }
         break;
-      case 'months':
+      case "months":
         cronExpression = `${scheduleMinute} ${scheduleHour} 1 */${intervalCount} *`;
         break;
     }
 
     res.json({
-      message: 'Scheduler triggered successfully',
+      message: "Scheduler triggered successfully",
       schedule: {
         interval,
         count: intervalCount,
         hour: scheduleHour,
         minute: scheduleMinute,
-        dow: interval.toLowerCase() === 'weeks' ? dow : undefined,
-        timezone: userTimezone
+        dow: interval.toLowerCase() === "weeks" ? dow : undefined,
+        timezone: userTimezone,
       },
-      nextExecution: fromZonedTime(nextExecution, userTimezone).toISOString(),
+      nextExecution: nextExecution,
       cronExpression,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
-    console.error('Scheduler error:', error);
-    res.status(500).json({ 
-      error: 'Failed to process scheduler request',
-      details: error instanceof Error ? error.message : 'Unknown error'
+    console.error("Scheduler error:", error);
+    res.status(500).json({
+      error: "Failed to process scheduler request",
+      details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });

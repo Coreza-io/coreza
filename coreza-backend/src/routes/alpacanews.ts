@@ -240,12 +240,19 @@ router.post("/fetch", async (req, res) => {
         params.symbols = symbolArray.join(",");
       }
     }
-    if (start) params.start = start;
-    if (end) params.end = end;
-    if (limit) params.limit = Number(limit);
-    if (sort) params.sort = sort;
-    if (page_token) params.page_token = page_token;
-    if (include_content !== undefined) params.include_content = include_content === "true" || include_content === true;
+    if (start && start.trim() !== "") params.start = start.trim();
+    if (end && end.trim() !== "") params.end = end.trim();
+    if (limit && limit.toString().trim() !== "") {
+      const limitNum = Number(limit);
+      if (!isNaN(limitNum) && limitNum > 0) {
+        params.limit = limitNum;
+      }
+    }
+    if (sort && sort.trim() !== "") params.sort = sort.trim();
+    if (page_token && page_token.trim() !== "") params.page_token = page_token.trim();
+    if (include_content !== undefined && include_content !== "") {
+      params.include_content = include_content === "true" || include_content === true;
+    }
 
     // Make REST API call
     const response = await axios.get("https://data.alpaca.markets/v1beta1/news", {

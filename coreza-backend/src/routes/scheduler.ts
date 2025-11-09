@@ -5,29 +5,33 @@ const router = express.Router();
 // Scheduler execution handler
 router.post('/scheduler', async (req, res) => {
   try {
-    const { interval, count, hour, minute, timezone, dayOfWeek } = req.body;
+    const { interval, count, hour, minute, timezone, dow } = req.body;
 
     if (!interval || !count) {
       return res.status(400).json({ 
         error: 'Interval and count are required',
-        received: { interval, count, hour, minute, dayOfWeek }
+        received: { interval, count, hour, minute, dow }
       });
     }
 
-    // Validate dayOfWeek for weekly intervals
+    // Validate dow for weekly intervals
     if (interval.toLowerCase() === 'weeks') {
-      if (dayOfWeek === undefined || dayOfWeek === null) {
+      if (!dow || !Array.isArray(dow) || dow.length === 0) {
         return res.status(400).json({
-          error: 'dayOfWeek is required for weekly intervals (0=Sunday, 1=Monday, ..., 6=Saturday)',
-          received: { dayOfWeek }
+          error: 'dow (days of week) is required for weekly intervals as an array (e.g., ["1", "5"] for Monday and Friday)',
+          received: { dow }
         });
       }
-      const dow = parseInt(dayOfWeek);
-      if (isNaN(dow) || dow < 0 || dow > 6) {
-        return res.status(400).json({
-          error: 'dayOfWeek must be between 0 (Sunday) and 6 (Saturday)',
-          received: { dayOfWeek }
-        });
+      
+      // Validate each day is between 0-6
+      for (const day of dow) {
+        const dayNum = parseInt(day);
+        if (isNaN(dayNum) || dayNum < 0 || dayNum > 6) {
+          return res.status(400).json({
+            error: 'Each day in dow must be between 0 (Sunday) and 6 (Saturday)',
+            received: { dow, invalidDay: day }
+          });
+        }
       }
     }
 
@@ -54,32 +58,42 @@ router.post('/scheduler', async (req, res) => {
         nextExecution.setMinutes(scheduleMinute);
         break;
       case 'weeks':
-        const targetDayOfWeek = parseInt(dayOfWeek);
+        // Parse all selected days of week
+        const selectedDays = dow.map((d: string) => parseInt(d)).sort((a: number, b: number) => a - b);
         const currentDayOfWeek = now.getDay();
         
-        // Calculate days until target day
-        let daysUntilTarget = targetDayOfWeek - currentDayOfWeek;
+        // Find the next occurrence among all selected days
+        let minDaysUntilTarget = Infinity;
         
-        // If target day has passed this week, go to next occurrence
-        if (daysUntilTarget < 0) {
-          daysUntilTarget += 7;
-        } else if (daysUntilTarget === 0) {
-          // If it's the target day today, check if the time has passed
-          const targetTime = new Date(now);
-          targetTime.setHours(scheduleHour, scheduleMinute, 0, 0);
+        for (const targetDayOfWeek of selectedDays) {
+          let daysUntilTarget = targetDayOfWeek - currentDayOfWeek;
           
-          if (now >= targetTime) {
-            // Time has passed, schedule for next week
-            daysUntilTarget = 7;
+          // If target day has passed this week, go to next occurrence
+          if (daysUntilTarget < 0) {
+            daysUntilTarget += 7;
+          } else if (daysUntilTarget === 0) {
+            // If it's the target day today, check if the time has passed
+            const targetTime = new Date(now);
+            targetTime.setHours(scheduleHour, scheduleMinute, 0, 0);
+            
+            if (now >= targetTime) {
+              // Time has passed, schedule for next week
+              daysUntilTarget = 7;
+            }
+          }
+          
+          // Find the minimum (soonest occurrence)
+          if (daysUntilTarget < minDaysUntilTarget) {
+            minDaysUntilTarget = daysUntilTarget;
           }
         }
         
         // Add additional weeks if interval > 1
         if (intervalCount > 1) {
-          daysUntilTarget += (intervalCount - 1) * 7;
+          minDaysUntilTarget += (intervalCount - 1) * 7;
         }
         
-        nextExecution.setDate(now.getDate() + daysUntilTarget);
+        nextExecution.setDate(now.getDate() + minDaysUntilTarget);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         nextExecution.setSeconds(0);
@@ -107,14 +121,16 @@ router.post('/scheduler', async (req, res) => {
         cronExpression = `${scheduleMinute} ${scheduleHour} */${intervalCount} * *`;
         break;
       case 'weeks':
-        // Use the actual dayOfWeek value (0=Sunday, 6=Saturday)
-        const dow = parseInt(dayOfWeek);
+        // Parse and join days with comma for cron (supports multiple days)
+        const cronDays = dow.map((d: string) => parseInt(d)).join(',');
+        
         if (intervalCount === 1) {
-          cronExpression = `${scheduleMinute} ${scheduleHour} * * ${dow}`;
+          // Every week on selected days: "0 10 * * 1,5" (Mon, Fri)
+          cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
         } else {
           // Note: Cron cannot natively express "every N weeks", so this runs every week
           // The actual interval logic would need to be handled by node-schedule or custom logic
-          cronExpression = `${scheduleMinute} ${scheduleHour} * * ${dow}`;
+          cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
         }
         break;
       case 'months':
@@ -129,7 +145,7 @@ router.post('/scheduler', async (req, res) => {
         count: intervalCount,
         hour: scheduleHour,
         minute: scheduleMinute,
-        dayOfWeek: interval.toLowerCase() === 'weeks' ? parseInt(dayOfWeek) : undefined,
+        dow: interval.toLowerCase() === 'weeks' ? dow : undefined,
         timezone: timezone || 'UTC'
       },
       nextExecution: nextExecution.toISOString(),

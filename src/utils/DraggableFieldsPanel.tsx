@@ -1,10 +1,13 @@
 import React, { useMemo } from "react";
+import { format } from 'date-fns';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 type DraggableFieldsPanelProps = {
   data: unknown;
   onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   parentKey?: string;
   maxItems?: number;
+  timezone?: string;
 };
 
 type Entry = { key: string; value: unknown };
@@ -12,8 +15,38 @@ type Entry = { key: string; value: unknown };
 const isObjectLike = (v: unknown): v is Record<string, unknown> | unknown[] =>
   v !== null && typeof v === "object";
 
-const toStringValue = (value: unknown): string => {
-  if (typeof value === "string") return value;
+// Helper to detect ISO date strings
+const isISODateString = (value: any): boolean => {
+  if (typeof value !== 'string') return false;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/.test(value);
+};
+
+// Helper to format dates in user's timezone
+const formatDateWithTimezone = (isoString: string, timezone?: string): string => {
+  try {
+    if (!timezone || timezone === 'UTC') {
+      return `${new Date(isoString).toUTCString()} (UTC)`;
+    }
+    
+    const zonedDate = toZonedTime(isoString, timezone);
+    const formatted = formatInTimeZone(isoString, timezone, 'EEE MMM dd yyyy HH:mm:ss');
+    const offset = format(zonedDate, 'xxx');
+    
+    return `${formatted} GMT${offset.replace(':', '')} (${timezone})`;
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return isoString;
+  }
+};
+
+const toStringValue = (value: unknown, timezone?: string): string => {
+  if (typeof value === "string") {
+    // Format date strings with timezone
+    if (isISODateString(value)) {
+      return formatDateWithTimezone(value, timezone);
+    }
+    return value;
+  }
   try {
     return JSON.stringify(value);
   } catch {
@@ -34,6 +67,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   onDragStart,
   parentKey = "",
   maxItems = 25,
+  timezone,
 }) => {
   if (!isObjectLike(data)) return null;
 
@@ -63,7 +97,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                 className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors cursor-grab active:cursor-grabbing"
                 draggable
                 onDragStart={(e) => {
-                  const asString = toStringValue(value);
+                  const asString = toStringValue(value, timezone);
                   e.dataTransfer.setData(
                     "application/reactflow",
                     JSON.stringify({
@@ -77,19 +111,19 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title={
-                  isNestedObject ? (Array.isArray(value) ? "Array" : "Object") : String(value as any)
+                  isNestedObject ? (Array.isArray(value) ? "Array" : "Object") : toStringValue(value, timezone)
                 }
               >
                 {displayKey}
               </div>
 
-              <span className="text-xs text-muted-foreground">
+              <span className={`text-xs ${isISODateString(value) ? 'font-medium text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
                 {isNestedObject ? (
                   <span className="font-mono text-muted-foreground/60">
                     {Array.isArray(value) ? "[...]" : "{...}"}
                   </span>
                 ) : (
-                  String(value as any)
+                  toStringValue(value, timezone)
                 )}
               </span>
             </div>
@@ -101,6 +135,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   onDragStart={onDragStart}
                   parentKey={fullKey}
                   maxItems={maxItems}
+                  timezone={timezone}
                 />
               </div>
             )}

@@ -75,6 +75,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
     return result;
   }, [selectedPrevNodeId, nodes, executionStore]);
 
+  // Extract timezone from output data
+  const timezone = useMemo(() => {
+    return outputData?.schedule?.timezone || outputData?.timezone;
+  }, [outputData]);
+
   if (!isExpanded) return null;
 
   return (
@@ -118,6 +123,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
               <DraggableFieldsPanel
                 data={outputData}
                 onDragStart={handleDragStart ?? (() => {})}
+                timezone={timezone}
               />
             </div>
           </>

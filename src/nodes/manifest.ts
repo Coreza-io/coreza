@@ -2,6 +2,7 @@ import GmailDef from './Gmail.json'
 import AlpacaDef from './Alpaca.json'
 import AlpacaTradeDef from './AlpacaTrade.json'
 import AlpacaNewsDef from './AlpacaNews.json'
+import AlpacaNewsRESTDef from './AlpacaNewsREST.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
 import IfDef from './If.json'
@@ -113,6 +114,7 @@ export const nodeManifest = {
   [SchedulerDef.name]: SchedulerDef,
   [AlpacaTradeDef.name]: AlpacaTradeDef,
   [AlpacaNewsDef.name]: AlpacaNewsDef,
+  [AlpacaNewsRESTDef.name]: AlpacaNewsRESTDef,
   [DhanTradeDef.name]: DhanTradeDef,
   [MarketDef.name]: MarketDef,
   [HttpRequestDef.name]: HttpRequestDef,

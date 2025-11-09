@@ -1,4 +1,5 @@
 import express from "express";
+import axios from "axios";
 import { AlpacaNewsWebSocketClient } from "../services/websockets/AlpacaNewsWebSocketClient";
 import CredentialManager from "../utils/credentialManager";
 
@@ -203,6 +204,71 @@ router.get("/subscriptions/:userId", (req, res) => {
       success: false,
       error:
         error instanceof Error ? error.message : "Failed to get subscriptions",
+    });
+  }
+});
+
+/**
+ * Fetch historical news articles from Alpaca REST API
+ * POST /alpaca-news/fetch
+ */
+router.post("/fetch", async (req, res) => {
+  try {
+    const { user_id, credential_id, symbols, start, end, limit, sort, page_token, include_content } = req.body;
+
+    // Validation
+    if (!user_id) return res.status(400).json({ error: "user_id is required" });
+    if (!credential_id) return res.status(400).json({ error: "credential_id is required" });
+
+    // Get credentials
+    const credential = await CredentialManager.getCredentials(user_id, "alpaca", credential_id);
+    if (!credential) return res.status(404).json({ error: "Credential not found" });
+
+    const { credentials: { client_json } } = credential;
+    const { api_key, secret_key } = client_json;
+    if (!api_key || !secret_key) {
+      return res.status(400).json({ error: "Invalid Alpaca credentials" });
+    }
+
+    // Build query parameters
+    const params: any = {};
+    if (symbols) {
+      const symbolArray = typeof symbols === "string" 
+        ? symbols.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : Array.isArray(symbols) ? symbols : [];
+      if (symbolArray.length > 0) {
+        params.symbols = symbolArray.join(",");
+      }
+    }
+    if (start) params.start = start;
+    if (end) params.end = end;
+    if (limit) params.limit = Number(limit);
+    if (sort) params.sort = sort;
+    if (page_token) params.page_token = page_token;
+    if (include_content !== undefined) params.include_content = include_content === "true" || include_content === true;
+
+    // Make REST API call
+    const response = await axios.get("https://data.alpaca.markets/v1beta1/news", {
+      headers: {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": secret_key,
+      },
+      params,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        news: response.data.news || [],
+        count: response.data.news?.length || 0,
+        next_page_token: response.data.next_page_token || null,
+      },
+    });
+  } catch (error) {
+    console.error("Fetch news error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch news",
     });
   }
 });

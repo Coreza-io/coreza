@@ -1,4 +1,5 @@
 import express from 'express';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
 const router = express.Router();
 
@@ -36,31 +37,33 @@ router.post('/scheduler', async (req, res) => {
     }
 
     // Calculate next execution time based on the schedule
-    const now = new Date();
-    const nextExecution = new Date(now);
+    // Get current time in user's selected timezone
+    const userTimezone = timezone || 'UTC';
+    const nowInUserTz = toZonedTime(new Date(), userTimezone);
+    const nextExecution = new Date(nowInUserTz);
 
     // Parse the scheduling parameters
     const intervalCount = parseInt(count);
-    const scheduleHour = hour ? parseInt(hour) : now.getHours();
-    const scheduleMinute = minute ? parseInt(minute) : now.getMinutes();
+    const scheduleHour = hour ? parseInt(hour) : nowInUserTz.getHours();
+    const scheduleMinute = minute ? parseInt(minute) : nowInUserTz.getMinutes();
 
     switch (interval.toLowerCase()) {
       case 'minutes':
-        nextExecution.setMinutes(now.getMinutes() + intervalCount);
+        nextExecution.setMinutes(nowInUserTz.getMinutes() + intervalCount);
         break;
       case 'hours':
-        nextExecution.setHours(now.getHours() + intervalCount);
+        nextExecution.setHours(nowInUserTz.getHours() + intervalCount);
         nextExecution.setMinutes(scheduleMinute);
         break;
       case 'days':
-        nextExecution.setDate(now.getDate() + intervalCount);
+        nextExecution.setDate(nowInUserTz.getDate() + intervalCount);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         break;
       case 'weeks':
         // Parse all selected days of week
         const selectedDays = dow.map((d: string) => parseInt(d)).sort((a: number, b: number) => a - b);
-        const currentDayOfWeek = now.getDay();
+        const currentDayOfWeek = nowInUserTz.getDay();
         
         // Find the next occurrence among all selected days
         let minDaysUntilTarget = Infinity;
@@ -73,10 +76,10 @@ router.post('/scheduler', async (req, res) => {
             daysUntilTarget += 7;
           } else if (daysUntilTarget === 0) {
             // If it's the target day today, check if the time has passed
-            const targetTime = new Date(now);
+            const targetTime = new Date(nowInUserTz);
             targetTime.setHours(scheduleHour, scheduleMinute, 0, 0);
             
-            if (now >= targetTime) {
+            if (nowInUserTz >= targetTime) {
               // Time has passed, schedule for next week
               daysUntilTarget = 7;
             }
@@ -93,14 +96,14 @@ router.post('/scheduler', async (req, res) => {
           minDaysUntilTarget += (intervalCount - 1) * 7;
         }
         
-        nextExecution.setDate(now.getDate() + minDaysUntilTarget);
+        nextExecution.setDate(nowInUserTz.getDate() + minDaysUntilTarget);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         nextExecution.setSeconds(0);
         nextExecution.setMilliseconds(0);
         break;
       case 'months':
-        nextExecution.setMonth(now.getMonth() + intervalCount);
+        nextExecution.setMonth(nowInUserTz.getMonth() + intervalCount);
         nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         break;
@@ -146,11 +149,11 @@ router.post('/scheduler', async (req, res) => {
         hour: scheduleHour,
         minute: scheduleMinute,
         dow: interval.toLowerCase() === 'weeks' ? dow : undefined,
-        timezone: timezone || 'UTC'
+        timezone: userTimezone
       },
-      nextExecution: nextExecution.toISOString(),
+      nextExecution: fromZonedTime(nextExecution, userTimezone).toISOString(),
       cronExpression,
-      timestamp: now.toISOString()
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {

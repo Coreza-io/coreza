@@ -749,7 +749,7 @@ export class IndicatorService {
         return this.calculateSMA(input);
       case "macd":
         return this.calculateMACD(input);
-      case "bollinger":
+      case "bollinger bands":
         return this.calculateBollinger(input);
       case "adx":
         return this.calculateADX(input);
@@ -764,6 +764,8 @@ export class IndicatorService {
       case "volume-oscillator":
       case "volumeoscillator":
         return this.calculateVolumeOscillator(input);
+      case "vwap":
+        return this.calculateVWAP(input);
       case "support-resistance":
         const method = (input.method || "pivot").toLowerCase();
         switch (method) {

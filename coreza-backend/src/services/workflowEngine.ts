@@ -328,7 +328,7 @@ export class WorkflowEngine {
         return; // don't clear loop node payloads
       }
 
-      const edges = this.router.select(nodeId, result);
+      const edges = this.router.select(node, result);
       console.log(`🎯 Routing from ${nodeId} to ${edges.target}`);
 
       if (meta?.originLoopId) {

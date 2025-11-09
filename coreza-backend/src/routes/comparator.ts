@@ -2,6 +2,7 @@ import express from "express";
 import { ComparatorService, ComparatorInput } from "../services/comparator";
 import { MathService } from "../services/math";
 import { TransformService } from "../services/transform";
+import { DateService } from "../services/date";
 
 const router = express.Router();
 
@@ -265,6 +266,43 @@ router.post("/transform", async (req, res) => {
     console.error("Transform operation error:", error);
     res.status(500).json({
       error: "Failed to perform transform operation",
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+// Date operations
+router.post("/date", async (req, res) => {
+  try {
+    const { operation, date, date2, amount, unit, formatString, timezone, inputFormat } = req.body;
+
+    if (!operation) {
+      return res.status(400).json({
+        error: "operation is required",
+        received: req.body,
+      });
+    }
+
+    const result = DateService.execute({
+      operation,
+      date,
+      date2,
+      amount,
+      unit,
+      formatString,
+      timezone,
+      inputFormat
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({ result: result.result });
+  } catch (error) {
+    console.error("Date operation error:", error);
+    res.status(500).json({
+      error: "Failed to perform date operation",
       details: error instanceof Error ? error.message : String(error),
     });
   }

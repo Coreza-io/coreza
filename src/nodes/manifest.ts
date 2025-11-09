@@ -12,6 +12,7 @@ import RSIDef from './RSI.json'
 import MarketDef from './Market.json'
 import YahooFinanceDef from './YahooFinance.json'
 import ChatInputDef from './ChatInput.json'
+import DateDef from './Date.json'
 import SchedulerDef from './Scheduler.json'
 import VisualizeDef from './Visualize.json'
 import MACDDef from './MACD.json'
@@ -97,6 +98,7 @@ export const nodeManifest = {
   [DhanDef.name]: DhanDef,
   [GmailDef.name]: GmailDef,
   [ChatInputDef.name]: ChatInputDef,
+  [DateDef.name]: DateDef,
   [YahooFinanceDef.name]: YahooFinanceDef,
   [RSIDef.name]: RSIDef,
   [EMADef.name]: EMADef,

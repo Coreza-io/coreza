@@ -212,7 +212,7 @@ router.post("/field", async (req, res) => {
 router.post("/math", async (req, res) => {
   try {
     const { left, operator, right } = req.body;
-    
+
     // Validate required fields
     if (left === undefined || operator == null) {
       return res.status(400).json({
@@ -220,9 +220,9 @@ router.post("/math", async (req, res) => {
         received: { left, operator, right },
       });
     }
-    
+
     // For binary operators, right is required
-    const binaryOps = ['add', 'subtract', 'multiply', 'divide'];
+    const binaryOps = ["add", "subtract", "multiply", "divide"];
     if (binaryOps.includes(operator) && right === undefined) {
       return res.status(400).json({
         error: `right operand is required for ${operator}`,
@@ -274,7 +274,16 @@ router.post("/transform", async (req, res) => {
 // Date operations
 router.post("/date", async (req, res) => {
   try {
-    const { operation, date, date2, amount, unit, formatString, timezone, inputFormat } = req.body;
+    const {
+      operation,
+      date,
+      date2,
+      amount,
+      unit,
+      formatString,
+      timezone,
+      inputFormat,
+    } = req.body;
 
     if (!operation) {
       return res.status(400).json({
@@ -291,7 +300,7 @@ router.post("/date", async (req, res) => {
       unit,
       formatString,
       timezone,
-      inputFormat
+      inputFormat,
     });
 
     if (!result.success) {

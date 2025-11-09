@@ -24,8 +24,8 @@
       "options": [
         { "label": "Current Date/Time", "value": "now" },
         { "label": "Today (Date Only)", "value": "today" },
-        { "label": "Add Time", "value": "add" },
-        { "label": "Subtract Time", "value": "subtract" },
+        { "label": "Add", "value": "add" },
+        { "label": "Subtract", "value": "subtract" },
         { "label": "Format Date", "value": "format" },
         { "label": "Date Difference", "value": "difference" },
         { "label": "Start Of", "value": "startOf" },
@@ -94,7 +94,7 @@
       }
     },
     {
-      "key": "unit",
+      "key": "Period",
       "label": "Period",
       "type": "select",
       "options": [
@@ -112,7 +112,7 @@
       }
     },
     {
-      "key": "unit",
+      "key": "Component",
       "label": "Component",
       "type": "select",
       "options": [
@@ -143,7 +143,16 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["now", "today", "add", "subtract", "format", "startOf", "endOf", "convertTimezone"]
+          "operation": [
+            "now",
+            "today",
+            "add",
+            "subtract",
+            "format",
+            "startOf",
+            "endOf",
+            "convertTimezone"
+          ]
         }
       }
     },

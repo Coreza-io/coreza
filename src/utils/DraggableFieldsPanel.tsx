@@ -24,15 +24,9 @@ const isISODateString = (value: any): boolean => {
 // Helper to format dates in user's timezone
 const formatDateWithTimezone = (isoString: string, timezone?: string): string => {
   try {
-    if (!timezone || timezone === 'UTC') {
-      return `${new Date(isoString).toUTCString()} (UTC)`;
-    }
-    
-    const zonedDate = toZonedTime(isoString, timezone);
-    const formatted = formatInTimeZone(isoString, timezone, 'EEE MMM dd yyyy HH:mm:ss');
-    const offset = format(zonedDate, 'xxx');
-    
-    return `${formatted} GMT${offset.replace(':', '')} (${timezone})`;
+    const tz = timezone || 'UTC';
+    const formatted = formatInTimeZone(isoString, tz, 'yyyy-MM-dd HH:mm:ss');
+    return formatted;
   } catch (error) {
     console.error('Date formatting error:', error);
     return isoString;

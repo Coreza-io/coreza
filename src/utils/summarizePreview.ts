@@ -1,12 +1,44 @@
-export function summarizePreview(value: any, maxArrayItems = 3, maxLength = 100): string {
+import { format } from 'date-fns';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
+
+// Helper to detect ISO date strings
+const isISODateString = (value: any): boolean => {
+  if (typeof value !== 'string') return false;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/.test(value);
+};
+
+// Helper to format dates in user's timezone
+const formatDateWithTimezone = (isoString: string, timezone?: string): string => {
+  try {
+    if (!timezone || timezone === 'UTC') {
+      return `${new Date(isoString).toUTCString()} (UTC)`;
+    }
+    
+    const zonedDate = toZonedTime(isoString, timezone);
+    const formatted = formatInTimeZone(isoString, timezone, 'EEE MMM dd yyyy HH:mm:ss');
+    const offset = format(zonedDate, 'xxx');
+    
+    return `${formatted} GMT${offset.replace(':', '')} (${timezone})`;
+  } catch (error) {
+    console.error('Date formatting error:', error);
+    return isoString;
+  }
+};
+
+export function summarizePreview(value: any, maxArrayItems = 3, maxLength = 100, timezone?: string): string {
   try {
     // Handle null/undefined
     if (value === null || value === undefined) {
       return 'null';
     }
 
-    // Handle strings - try to parse as JSON first
+    // Handle strings - check for dates first, then try JSON parse
     if (typeof value === "string") {
+      // Check if it's a date string BEFORE trying to parse as JSON
+      if (isISODateString(value)) {
+        return formatDateWithTimezone(value, timezone);
+      }
+      
       let parsed;
       try {
         parsed = JSON.parse(value);

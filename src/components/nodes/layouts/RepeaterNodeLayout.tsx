@@ -358,7 +358,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       try {
         const resolved = resolveDeep(expr, srcData, allNodeData);
-        return summarizePreview(resolved);
+        
+        // Extract timezone from source node
+        const nodeMatch = typeof expr === 'string' ? expr.match(/\$\(['"]([^'"]+)['"]\)/) : null;
+        let timezone: string | undefined;
+        
+        if (nodeMatch) {
+          const sourceName = nodeMatch[1];
+          const sourceData = allNodeData[sourceName];
+          timezone = sourceData?.schedule?.timezone || 
+                     sourceData?.timezone ||
+                     sourceData?.config?.timezone;
+        }
+        
+        return summarizePreview(resolved, 3, 100, timezone);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";
@@ -394,7 +407,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       try {
         const resolved = resolveDeep(expr, srcData, allNodeData);
-        return summarizePreview(resolved);
+        
+        // Extract timezone from source node
+        const nodeMatch = typeof expr === 'string' ? expr.match(/\$\(['"]([^'"]+)['"]\)/) : null;
+        let timezone: string | undefined;
+        
+        if (nodeMatch) {
+          const sourceName = nodeMatch[1];
+          const sourceData = allNodeData[sourceName];
+          timezone = sourceData?.schedule?.timezone || 
+                     sourceData?.timezone ||
+                     sourceData?.config?.timezone;
+        }
+        
+        return summarizePreview(resolved, 3, 100, timezone);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";

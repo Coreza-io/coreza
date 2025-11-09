@@ -523,8 +523,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     });
     try {
       const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
-      //console.log("✅ Resolved:", { expr, srcData, allNodeData, resolved });
-      return summarizePreview(resolved);
+      
+      // Extract timezone from the source node being referenced
+      // Parse the expression to find the source node name
+      const nodeMatch = expr.match(/\$\(['"]([^'"]+)['"]\)/);
+      let timezone: string | undefined;
+      
+      if (nodeMatch) {
+        const sourceName = nodeMatch[1];
+        const sourceData = allNodeData[sourceName];
+        // Look for timezone in common locations
+        timezone = sourceData?.schedule?.timezone || 
+                   sourceData?.timezone ||
+                   sourceData?.config?.timezone;
+      }
+      
+      return summarizePreview(resolved, 3, 100, timezone);
     } catch (error) {
       //console.error("❌ Resolution error:", error);
       return "";

@@ -7,6 +7,7 @@ import { AlpacaNewsWebSocketClient } from "../services/websockets";
 import CredentialManager from "../utils/credentialManager";
 import parser from "cron-parser";
 import { format } from "date-fns";
+import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 const router = express.Router();
 
@@ -272,10 +273,17 @@ type SchedulerValues = {
   timezone?: string;
 };
 
-function computeCronFromSchedulerNodes(nodes: any[]): { cron: string; timezone: string; next: string } {
+function computeCronFromSchedulerNodes(nodes: any[]): {
+  cron: string;
+  timezone: string;
+  next: string;
+} {
   const list = Array.isArray(nodes) ? nodes : [];
   const schedulers = list.filter(
-    (n) => n?.name === "Scheduler" || n?.type === "Scheduler" || n?.data?.kind === "scheduler"
+    (n) =>
+      n?.name === "Scheduler" ||
+      n?.type === "Scheduler" ||
+      n?.data?.kind === "scheduler"
   );
 
   if (schedulers.length === 0) {
@@ -295,34 +303,50 @@ function computeCronFromSchedulerNodes(nodes: any[]): { cron: string; timezone: 
   const tz = v.timezone || "UTC";
 
   // Validate cron & ensure a future run with 1-minute buffer
+
   const it = parser.parseExpression(cron, { tz });
   let next = it.next().toDate();
+  let nextInTZ = toZonedTime(next, tz);
+  // 2️⃣ Set the custom time (20:30)
+  nextInTZ.setHours(v.hour, v.minute, 0, 0);
+  //const nextFormatted = formatInTimeZone(next, tz, "yyyy-MM-dd HH:mm:ssXXX");
+  //nextFormatted.setHours(v.hour, v.minute, 0, 0);
+  // ✅ 3️⃣ Convert back to UTC for the scheduler
+  nextInTZ = fromZonedTime(nextInTZ, tz);
   const now = new Date();
   const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000);
 
   let skipCount = 0;
   // Auto-skip occurrences that are too close (< 1 minute buffer)
-  while (next <= oneMinuteFromNow) {
+  while (nextInTZ <= oneMinuteFromNow) {
     skipCount++;
-    console.log(`⏭️  [SCHEDULER] Skipping execution at ${next.toISOString()} (too close to now), checking next occurrence...`);
+    console.log(
+      `⏭️  [SCHEDULER] Skipping execution at ${next.toISOString()} (too close to now), checking next occurrence...`
+    );
     next = it.next().toDate();
-    
+
     // Safety: prevent infinite loop
     if (skipCount > 100) {
-      throw createError('Invalid cron expression: unable to find a valid future execution time within 100 iterations', 400);
+      throw createError(
+        "Invalid cron expression: unable to find a valid future execution time within 100 iterations",
+        400
+      );
     }
   }
 
   if (skipCount > 0) {
-    console.log(`✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`);
+    console.log(
+      `✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`
+    );
   }
 
   // Format the next execution time in the user's timezone
-  const nextFormatted = format(next, "yyyy-MM-dd HH:mm:ss zzz", { 
-    timeZone: tz 
-  });
+  //const nextFormatted = format(next, "yyyy-MM-dd HH:mm:ss zzz", {
+  //  timeZone: tz
+  //});
+  //const nextFormatted = formatInTimeZone(next, tz, "yyyy-MM-dd HH:mm:ssXXX");
 
-  return { cron, timezone: tz, next: nextFormatted };
+  return { cron, timezone: tz, next: nextInTZ };
 }
 
 function toCronFromValues(v: SchedulerValues): string {
@@ -521,6 +545,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           await workflowScheduler.scheduleWorkflow(
             workflowId,
             userId,
+            nextRun,
             cronToSave,
             workflow.nodes,
             workflow.edges,
@@ -687,10 +712,14 @@ router.get("/scheduler/status", async (req, res, next) => {
         workflow_id: job.workflowId,
         user_id: job.userId,
         cron_expression: job.cronExpression,
-        next_run: job.job.nextInvocation() 
-          ? format(job.job.nextInvocation().toJSDate(), "yyyy-MM-dd HH:mm:ss zzz", { 
-              timeZone: job.timezone 
-            })
+        next_run: job.job.nextInvocation()
+          ? format(
+              job.job.nextInvocation().toJSDate(),
+              "yyyy-MM-dd HH:mm:ss zzz",
+              {
+                timeZone: job.timezone,
+              }
+            )
           : null,
       })),
     });

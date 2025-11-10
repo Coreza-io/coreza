@@ -160,6 +160,7 @@ class WorkflowScheduler {
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
+    start: string,
     cronExpression: string,
     nodes: any[],
     edges: any[],
@@ -170,42 +171,17 @@ class WorkflowScheduler {
 
     try {
       console.log(
-        `📅 [SCHEDULER] Creating schedule for workflow ${workflowId} with cron: ${cronExpression}`
-      );
-
-      // Validate cron expression
-      const validation = this.validateCronExpression(cronExpression);
-      if (!validation.valid) {
-        console.error(
-          `❌ [SCHEDULER] Validation failed for workflow ${workflowId}: ${validation.error}`
-        );
-        console.error(
-          `   Cron: ${cronExpression}, Timezone: ${timezone || "server local"}`
-        );
-        throw new Error(validation.error || "Invalid cron expression");
-      }
-
-      console.log(
-        `⏰ [SCHEDULER] Validated cron expression. Next execution: ${this.formatTime(
-          validation.nextRun!,
-          timezone
-        )}`
-      );
-      console.log(
-        `🌍 [SCHEDULER] Using timezone: ${timezone || "Server Local Time"}`
+        `📅 [SCHEDULER] Creating schedule for workflow ${workflowId} with cron: ${cronExpression} at ${start}`
       );
 
       // Create job with timezone support if provided
       const jobConfig = timezone
-        ? { rule: cronExpression, tz: timezone }
+        ? { start: start, rule: cronExpression }
         : cronExpression;
       const job = schedule.scheduleJob(jobConfig, async () => {
         const executionId = `${workflowId}_${Date.now()}`;
         console.log(
-          `🚀 [SCHEDULER] Starting scheduled execution ${executionId} for workflow ${workflowId} at ${this.formatTime(
-            new Date(),
-            timezone
-          )}`
+          `🚀 [SCHEDULER] Starting scheduled execution ${executionId} for workflow ${workflowId} at ${start}`
         );
 
         let runId = null;
@@ -319,9 +295,7 @@ class WorkflowScheduler {
       const nextRunRaw = job.nextInvocation();
       const nextRunDate = this.getFireDate(nextRunRaw);
       console.log(
-        `✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${
-          nextRunDate ? this.formatTime(nextRunDate, timezone) : "Unknown"
-        }`
+        `✅ [SCHEDULER] Successfully scheduled workflow ${workflowId} - Next execution: ${nextRunDate}`
       );
     } catch (error) {
       console.error(

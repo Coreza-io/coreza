@@ -53,9 +53,12 @@ router.post("/scheduler", async (req, res) => {
     switch (interval.toLowerCase()) {
       case "minutes":
         nextExecution.setMinutes(nowInUserTz.getMinutes() + intervalCount);
+        nextExecution.setHours(scheduleHour);
+        nextExecution.setMinutes(scheduleMinute);
         break;
       case "hours":
         nextExecution.setHours(nowInUserTz.getHours() + intervalCount);
+        nextExecution.setHours(scheduleHour);
         nextExecution.setMinutes(scheduleMinute);
         break;
       case "days":
@@ -118,7 +121,7 @@ router.post("/scheduler", async (req, res) => {
 
     // Generate cron expression for the schedule
     let cronExpression = "";
-    switch (interval) {
+    switch (interval.toLowerCase()) {
       case "minutes":
         cronExpression = `*/${intervalCount} * * * *`;
         break;
@@ -145,6 +148,9 @@ router.post("/scheduler", async (req, res) => {
         cronExpression = `${scheduleMinute} ${scheduleHour} 1 */${intervalCount} *`;
         break;
     }
+    const nextExecutionFormatted = format(nextExecution, "yyyy-MM-dd HH:mm", {
+      timeZone: userTimezone,
+    });
 
     res.json({
       message: "Scheduler triggered successfully",
@@ -156,7 +162,7 @@ router.post("/scheduler", async (req, res) => {
         dow: interval.toLowerCase() === "weeks" ? dow : undefined,
         timezone: userTimezone,
       },
-      nextExecution: format(nextExecution, "yyyy-MM-dd HH:mm:ss zzz", { timeZone: userTimezone }),
+      nextExecution: nextExecutionFormatted,
       cronExpression,
       timestamp: new Date().toISOString(),
     });

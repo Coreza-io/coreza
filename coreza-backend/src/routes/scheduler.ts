@@ -1,4 +1,5 @@
 import express from "express";
+import { format } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const router = express.Router();
@@ -155,7 +156,7 @@ router.post("/scheduler", async (req, res) => {
         dow: interval.toLowerCase() === "weeks" ? dow : undefined,
         timezone: userTimezone,
       },
-      nextExecution: nextExecution,
+      nextExecution: format(nextExecution, "yyyy-MM-dd HH:mm:ss zzz", { timeZone: userTimezone }),
       cronExpression,
       timestamp: new Date().toISOString(),
     });

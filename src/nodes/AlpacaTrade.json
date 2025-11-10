@@ -155,6 +155,7 @@
       "type": "text",
       "required": false,
       "placeholder": "e.g. 0.20",
+      "description": "Dollar amount to trail. Required if trail_percent is not provided",
       "displayOptions": {
         "show": {
           "type": "trailing_stop"
@@ -167,6 +168,7 @@
       "type": "text",
       "required": false,
       "placeholder": "e.g. 0.20",
+      "description": "Percentage to trail (0-1). Required if trail_price is not provided",
       "displayOptions": {
         "show": {
           "type": "trailing_stop"

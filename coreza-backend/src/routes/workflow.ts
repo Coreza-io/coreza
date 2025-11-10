@@ -6,6 +6,7 @@ import { workflowScheduler } from "../services/scheduler";
 import { AlpacaNewsWebSocketClient } from "../services/websockets";
 import CredentialManager from "../utils/credentialManager";
 import parser from "cron-parser";
+import { format } from "date-fns";
 
 const router = express.Router();
 
@@ -271,7 +272,7 @@ type SchedulerValues = {
   timezone?: string;
 };
 
-function computeCronFromSchedulerNodes(nodes: any[]) {
+function computeCronFromSchedulerNodes(nodes: any[]): { cron: string; timezone: string; next: string } {
   const list = Array.isArray(nodes) ? nodes : [];
   const schedulers = list.filter(
     (n) => n?.name === "Scheduler" || n?.type === "Scheduler" || n?.data?.kind === "scheduler"
@@ -316,7 +317,12 @@ function computeCronFromSchedulerNodes(nodes: any[]) {
     console.log(`✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`);
   }
 
-  return { cron, timezone: tz, next };
+  // Format the next execution time in the user's timezone
+  const nextFormatted = format(next, "yyyy-MM-dd HH:mm:ss zzz", { 
+    timeZone: tz 
+  });
+
+  return { cron, timezone: tz, next: nextFormatted };
 }
 
 function toCronFromValues(v: SchedulerValues): string {
@@ -498,7 +504,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
 
     let cronToSave: string | null = null;
     let tzToUse = "UTC";
-    let nextRun: Date | null = null;
+    let nextRun: string | null = null;
     let newsSubscription: { symbols: string[] } | null = null;
 
     try {
@@ -681,7 +687,11 @@ router.get("/scheduler/status", async (req, res, next) => {
         workflow_id: job.workflowId,
         user_id: job.userId,
         cron_expression: job.cronExpression,
-        next_run: job.job.nextInvocation(),
+        next_run: job.job.nextInvocation() 
+          ? format(job.job.nextInvocation().toJSDate(), "yyyy-MM-dd HH:mm:ss zzz", { 
+              timeZone: job.timezone 
+            })
+          : null,
       })),
     });
   } catch (error) {

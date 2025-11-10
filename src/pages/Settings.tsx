@@ -19,8 +19,10 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 
 const Settings = () => {
+  const { timezone, updateTimezone } = useUserPreferences();
   const [settings, setSettings] = useState({
     notifications: {
       email: true,
@@ -115,15 +117,30 @@ const Settings = () => {
 
               <div className="space-y-2">
                 <Label>Timezone</Label>
-                <Select defaultValue="utc">
+                <Select 
+                  value={timezone} 
+                  onValueChange={async (value) => {
+                    await updateTimezone(value);
+                    toast({
+                      title: "Timezone Updated",
+                      description: `Your timezone has been set to ${value}`,
+                    });
+                  }}
+                >
                   <SelectTrigger className="w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="utc">UTC</SelectItem>
-                    <SelectItem value="est">Eastern (EST)</SelectItem>
-                    <SelectItem value="pst">Pacific (PST)</SelectItem>
-                    <SelectItem value="cst">Central (CST)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/New_York">Eastern (EST/EDT)</SelectItem>
+                    <SelectItem value="America/Chicago">Central (CST/CDT)</SelectItem>
+                    <SelectItem value="America/Los_Angeles">Pacific (PST/PDT)</SelectItem>
+                    <SelectItem value="Europe/London">London (GMT/BST)</SelectItem>
+                    <SelectItem value="Asia/Kolkata">India (IST)</SelectItem>
+                    <SelectItem value="Asia/Tokyo">Tokyo (JST)</SelectItem>
+                    <SelectItem value="Asia/Singapore">Singapore (SGT)</SelectItem>
+                    <SelectItem value="Asia/Dubai">Dubai (GST)</SelectItem>
+                    <SelectItem value="Australia/Sydney">Sydney (AEDT/AEST)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

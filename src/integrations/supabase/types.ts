@@ -224,6 +224,24 @@ export type Database = {
         }
         Relationships: []
       }
+      mh_codactividad: {
+        Row: {
+          codigo: string
+          descripcion: string
+          id: number
+        }
+        Insert: {
+          codigo: string
+          descripcion: string
+          id?: number
+        }
+        Update: {
+          codigo?: string
+          descripcion?: string
+          id?: number
+        }
+        Relationships: []
+      }
       node_executions: {
         Row: {
           error_message: string | null
@@ -374,6 +392,7 @@ export type Database = {
           last_name: string
           location: string | null
           phone: string | null
+          timezone: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -384,6 +403,7 @@ export type Database = {
           last_name: string
           location?: string | null
           phone?: string | null
+          timezone?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -394,6 +414,7 @@ export type Database = {
           last_name?: string
           location?: string | null
           phone?: string | null
+          timezone?: string | null
           updated_at?: string | null
           user_id?: string | null
         }

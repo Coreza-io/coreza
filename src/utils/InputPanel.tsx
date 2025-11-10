@@ -4,6 +4,7 @@ import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useReactFlow } from "@xyflow/react";
 import { summarizePreview } from "@/utils/summarizePreview";
+import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 
 type InputPanelProps = {
   nodeId?: string;
@@ -33,6 +34,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   executionStore,
 }) => {
   const { getNodes, getEdges } = useReactFlow();
+  const { timezone: userTimezone } = useUserPreferences();
 
   // Get fresh node/edge data on every render
   const nodes = getNodes();
@@ -93,7 +95,10 @@ const InputPanel: React.FC<InputPanelProps> = ({
           Input Data
         </div>
         <div className="text-xs text-muted-foreground">
-          {new Date().toLocaleTimeString()}
+          {new Date().toLocaleTimeString('en-US', { 
+            timeZone: userTimezone, 
+            hour12: false 
+          })} {userTimezone}
         </div>
       </div>
       <div className="p-3 h-[calc(100%-42px)] overflow-auto">

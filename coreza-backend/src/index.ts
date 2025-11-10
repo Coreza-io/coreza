@@ -1,3 +1,6 @@
+// Force UTC timezone for all date operations in Node.js
+process.env.TZ = 'UTC';
+
 import dotenv from 'dotenv';
 
 // Load environment variables FIRST before any other imports

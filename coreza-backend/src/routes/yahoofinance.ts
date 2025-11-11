@@ -3,6 +3,53 @@ import { DataService } from '../services/data';
 
 const router = express.Router();
 
+// Get candle/historical data
+router.post('/get-candle', async (req, res, next) => {
+  try {
+    const { ticker, interval = '1d', lookback = 100 } = req.body;
+    
+    if (!ticker) {
+      return res.status(400).json({ error: 'ticker is required' });
+    }
+
+    // Calculate date range based on lookback
+    const end = new Date();
+    const start = new Date();
+    
+    // Calculate start date based on interval and lookback
+    const lookbackNum = parseInt(lookback);
+    switch (interval) {
+      case '1m':
+      case '5m':
+      case '15m':
+        start.setMinutes(end.getMinutes() - (lookbackNum * parseInt(interval)));
+        break;
+      case '60m':
+        start.setHours(end.getHours() - lookbackNum);
+        break;
+      case '1d':
+      default:
+        start.setDate(end.getDate() - lookbackNum);
+        break;
+    }
+    
+    const result = await DataService.execute('yahoofinance', 'get_history', {
+      symbol: ticker,
+      period1: start.toISOString(),
+      period2: end.toISOString(),
+      interval
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get quote data
 router.get('/quote/:symbol', async (req, res, next) => {
   try {

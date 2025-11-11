@@ -105,14 +105,6 @@
       "required": false
     },
     {
-      "key": "notional",
-      "label": "Notional (USD)",
-      "type": "text",
-      "required": false,
-      "placeholder": "e.g. 1",
-      "description": "Amount in USD to spend instead of specifying quantity"
-    },
-    {
       "key": "type",
       "label": "Order Type",
       "type": "select",
@@ -192,22 +184,6 @@
       "displayOptions": {
         "show": {
           "asset_type": ["stock"]
-        }
-      }
-    },
-    {
-      "key": "time_in_force",
-      "label": "Time In Force",
-      "type": "select",
-      "options": [
-        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
-        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" }
-      ],
-      "default": "gtc",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "asset_type": ["crypto"]
         }
       }
     },

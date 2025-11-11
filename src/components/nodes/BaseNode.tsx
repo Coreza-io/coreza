@@ -673,9 +673,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
     // Special handling for If node to add missing required fields
     if (definition?.name === "If") {
-      // Use the logicalOp field directly from fieldState (now it's a proper field)
-      // Default to "AND" if not set
-      payload.logicalOp = fieldState.logicalOp;
+      // Use the logicalOps array directly from fieldState
+      payload.logicalOps = fieldState.logicalOps;
 
       // Add inputData as the current available data
       payload.inputData = allNodeData;

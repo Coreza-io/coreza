@@ -157,6 +157,7 @@ export const alpacaConfig: RestConfig = {
           stop_limit_price,
           trail_percent,
           trail_price,
+          extended_hours,
         } = input;
 
         // Required base fields
@@ -213,6 +214,11 @@ export const alpacaConfig: RestConfig = {
           body.notional = String(notional);
         } else {
           body.qty = String(qty);
+        }
+
+        // Add extended_hours if provided (only valid for limit orders with day TIF)
+        if (extended_hours === "true" || extended_hours === true) {
+          body.extended_hours = true;
         }
 
         return body;

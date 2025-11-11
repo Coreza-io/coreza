@@ -181,9 +181,11 @@
       "type": "select",
       "options": [
         { "id": "day", "name": "Day" },
-        { "id": "gtc", "name": "Good Till Cancelled" },
-        { "id": "fok", "name": "Fill Or Kill" },
-        { "id": "ioc", "name": "Immediate Or Cancel" }
+        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
+        { "id": "opg", "name": "Market/Limit on Open (OPG)" },
+        { "id": "cls", "name": "Market/Limit on Close (CLS)" },
+        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" },
+        { "id": "fok", "name": "Fill Or Kill (FOK)" }
       ],
       "default": "day",
       "required": true,
@@ -198,15 +200,33 @@
       "label": "Time In Force",
       "type": "select",
       "options": [
-        { "id": "gtc", "name": "Good Till Cancelled" },
-        { "id": "fok", "name": "Fill Or Kill" },
-        { "id": "ioc", "name": "Immediate Or Cancel" }
+        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
+        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" }
       ],
       "default": "gtc",
       "required": true,
       "displayOptions": {
         "show": {
           "asset_type": ["crypto"]
+        }
+      }
+    },
+    {
+      "key": "extended_hours",
+      "label": "Extended Hours",
+      "type": "select",
+      "options": [
+        { "id": "false", "name": "Regular Hours Only" },
+        { "id": "true", "name": "Include Pre/After Market" }
+      ],
+      "default": "false",
+      "required": false,
+      "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
+      "displayOptions": {
+        "show": {
+          "type": ["limit"],
+          "time_in_force": ["day"],
+          "asset_type": ["stock"]
         }
       }
     }

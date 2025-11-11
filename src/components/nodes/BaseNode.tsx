@@ -692,11 +692,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       payload[key] = resolveDeep(value, selectedInputData, allNodeData);
     }
 
-    // Special handling for If node to add missing required fields
     if (definition?.name === "If") {
-      // Use the logicalOp field directly from fieldState (now it's a proper field)
-      // Default to "AND" if not set
-      payload.logicalOp = fieldState.logicalOp;
+      // Ensure logical operators array is passed through (prefer plural form)
+      if (Array.isArray(fieldState.logicalOps)) {
+        payload.logicalOps = fieldState.logicalOps;
+      }
 
       // Add inputData as the current available data
       payload.inputData = allNodeData;

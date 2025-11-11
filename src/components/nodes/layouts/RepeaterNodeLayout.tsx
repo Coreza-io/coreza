@@ -143,6 +143,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     });
   }, [conditions.length]);
 
+  // Normalize logicalOps length to match conditions - 1
+  useEffect(() => {
+    if (!isConditional) return;
+    const targetLen = Math.max(0, conditions.length - 1);
+    const currentLen = Array.isArray(logicalOps) ? logicalOps.length : 0;
+    if (currentLen !== targetLen) {
+      const padded = Array.from({ length: targetLen }, (_, i) => logicalOps[i] || "AND");
+      handleFieldStateBatch({ logicalOps: padded });
+    }
+  }, [isConditional, conditions.length, logicalOps?.length]);
+
   // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {
     const newConds = [...conditions, { ...defaultCond }];

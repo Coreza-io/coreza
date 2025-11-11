@@ -289,7 +289,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   //}
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
-    return Object.fromEntries(
+    
+    // Load defined fields from node definition
+    const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => [
         f.key,
         f.type === "repeater"
@@ -297,13 +299,23 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
       ])
     );
+    
+    // Preserve additional dynamic fields (like logicalOps) from saved data
+    const existingValues = data.fieldState || data.values || {};
+    const definedKeys = new Set(definition.fields.map((f: any) => f.key));
+    const dynamicFields = Object.fromEntries(
+      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
+    );
+    
+    return { ...definedFields, ...dynamicFields };
   });
 
   // Initialize fieldState only once when definition changes, prevent continuous updates
   useEffect(() => {
     if (!definition?.fields) return;
 
-    const newFieldState = Object.fromEntries(
+    // Load defined fields from node definition
+    const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => [
         f.key,
         f.type === "repeater"
@@ -311,6 +323,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
       ])
     );
+    
+    // Preserve additional dynamic fields (like logicalOps) from saved data
+    const existingValues = data.fieldState || data.values || {};
+    const definedKeys = new Set(definition.fields.map((f: any) => f.key));
+    const dynamicFields = Object.fromEntries(
+      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
+    );
+    
+    const newFieldState = { ...definedFields, ...dynamicFields };
 
     // Only update if we don't have fieldState initialized yet or if field definitions actually changed
     const isInitializing = Object.keys(fieldState).length === 0;

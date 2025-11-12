@@ -82,6 +82,16 @@ const InputPanel: React.FC<InputPanelProps> = ({
       prevNode?.data?.output ??
       prevNode?.data?.input ??
       {};
+    
+    // Normalize: wrap primitives so DraggableFieldsPanel can display them
+    if (result === null || result === undefined) {
+      return {};
+    }
+    if (typeof result !== 'object' || result instanceof Date) {
+      // Primitive value (number, string, boolean, Date) - wrap it
+      return { value: result };
+    }
+    
     return result;
   }, [selectedPrevNodeId, nodes, executionStore]);
 

@@ -447,7 +447,7 @@ export class WorkflowEngine {
     }
 
     // For simple results, wrap in structure to maintain consistency
-    return { data: result };
+    return { data: result.data };
   }
 }
 

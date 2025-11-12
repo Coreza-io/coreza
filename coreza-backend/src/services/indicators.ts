@@ -32,15 +32,7 @@ export interface IndicatorInput {
 
 export interface IndicatorResult {
   success: boolean;
-  indicator: string;
-  period?: String;
-  periods?: any;
-  values: any[];
-  latest: any;
-  sessionType?: string;
-  stdDev?: String;
-  count?: String;
-  method?: string;
+  data: any[];
 }
 
 // Helper to parse JSON string arrays
@@ -112,7 +104,7 @@ export class IndicatorService {
     }
 
     const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, indicator: "RSI", period, values: results, latest };
+    return { success: true, data: results };
   }
 
   static async calculateEMA(input: IndicatorInput): Promise<IndicatorResult> {
@@ -137,8 +129,8 @@ export class IndicatorService {
       }
     }
 
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, indicator: "EMA", period, values: results, latest };
+    //const latest = results.length > 0 ? results[results.length - 1] : null;
+    return { success: true, data: results };
   }
 
   static async calculateSMA(input: IndicatorInput): Promise<IndicatorResult> {
@@ -164,7 +156,7 @@ export class IndicatorService {
     }
 
     const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, indicator: "SMA", period, values: results, latest };
+    return { success: true, data: results };
   }
 
   static async calculateMACD(input: IndicatorInput): Promise<IndicatorResult> {
@@ -203,13 +195,7 @@ export class IndicatorService {
     }
 
     const latest = results.length > 0 ? results[results.length - 1] : null;
-    return {
-      success: true,
-      indicator: "MACD",
-      periods: { fast, slow, signal },
-      values: results,
-      latest,
-    };
+    return { success: true, data: results };
   }
 
   static async calculateBollinger(
@@ -254,14 +240,7 @@ export class IndicatorService {
     }
 
     const latest = results.length > 0 ? results[results.length - 1] : null;
-    return {
-      success: true,
-      indicator: "BollingerBands",
-      period,
-      stdDev,
-      values: results,
-      latest,
-    };
+    return { success: true, data: results };
   }
 
   static async calculateADX(input: IndicatorInput): Promise<IndicatorResult> {
@@ -279,16 +258,9 @@ export class IndicatorService {
       throw createError("Invalid numeric value in candles", 400);
     }
 
-    const adxResult = ADX.calculate({ high, low, close, period });
-    const latest =
-      adxResult.length > 0 ? adxResult[adxResult.length - 1] : null;
-    return {
-      success: true,
-      indicator: "ADX",
-      period,
-      values: adxResult,
-      latest,
-    };
+    const results = ADX.calculate({ high, low, close, period });
+    const latest = results.length > 0 ? results[results.length - 1] : null;
+    return { success: true, data: results };
   }
 
   static async calculateStochastic(
@@ -310,22 +282,15 @@ export class IndicatorService {
     const low = candles.map((c) => Number(c.l ?? c.low));
     const close = candles.map((c) => Number(c.c ?? c.close));
 
-    const stochResult = Stochastic.calculate({
+    const results = Stochastic.calculate({
       high,
       low,
       close,
       period: periodK,
       signalPeriod: periodD,
     });
-    const latest =
-      stochResult.length > 0 ? stochResult[stochResult.length - 1] : null;
-    return {
-      success: true,
-      indicator: "Stochastic",
-      periods: { k: periodK, d: periodD },
-      values: stochResult,
-      latest,
-    };
+    const latest = results.length > 0 ? results[results.length - 1] : null;
+    return { success: true, data: results };
   }
 
   static async calculateIchimoku(
@@ -350,7 +315,7 @@ export class IndicatorService {
     const high = candles.map((c) => Number(c.h ?? c.high));
     const low = candles.map((c) => Number(c.l ?? c.low));
 
-    const ichResult = IchimokuCloud.calculate({
+    const results = IchimokuCloud.calculate({
       high,
       low,
       conversionPeriod: conv,
@@ -358,15 +323,8 @@ export class IndicatorService {
       spanPeriod: span,
       displacement: disp,
     });
-    const latest =
-      ichResult.length > 0 ? ichResult[ichResult.length - 1] : null;
-    return {
-      success: true,
-      indicator: "IchimokuCloud",
-      periods: { conversion: conv, base, span_b: span, displacement: disp },
-      values: ichResult,
-      latest,
-    };
+    const latest = results.length > 0 ? results[results.length - 1] : null;
+    return { success: true, data: results };
   }
 
   static async calculateOBV(input: IndicatorInput): Promise<IndicatorResult> {
@@ -395,13 +353,7 @@ export class IndicatorService {
 
     const latest =
       obvValues.length > 0 ? obvValues[obvValues.length - 1] : null;
-    return {
-      success: true,
-      indicator: "OBV",
-      values: obvValues,
-      latest,
-      count: obvValues.length,
-    };
+    return { success: true, data: obvValues };
   }
 
   static async calculateVWAP(input: IndicatorInput): Promise<IndicatorResult> {
@@ -467,11 +419,7 @@ export class IndicatorService {
       vwapValues.length > 0 ? vwapValues[vwapValues.length - 1] : null;
     return {
       success: true,
-      indicator: "VWAP",
-      sessionType: session_type,
-      values: vwapValues,
-      latest,
-      count: vwapValues.length,
+      data: vwapValues,
     };
   }
 
@@ -539,10 +487,7 @@ export class IndicatorService {
 
     return {
       success: true,
-      indicator: type === "percentage" ? "PVO" : "VolumeOscillator",
-      periods: { short: shortPeriod, long: longPeriod },
-      values: results,
-      latest,
+      data: results,
     };
   }
 
@@ -592,11 +537,7 @@ export class IndicatorService {
 
     return {
       success: true,
-      indicator: "Support & Resistance",
-      values: [levels],
-      latest: levels,
-      method: "pivot",
-      count: String(numLevels),
+      data: [levels],
     };
   }
 
@@ -685,11 +626,7 @@ export class IndicatorService {
 
     return {
       success: true,
-      indicator: "Support & Resistance",
-      values: [levels],
-      latest: levels,
-      method: "swing",
-      count: String(resistanceLevels.length + supportLevels.length),
+      data: [levels],
     };
   }
 
@@ -728,11 +665,7 @@ export class IndicatorService {
 
     return {
       success: true,
-      indicator: "Support & Resistance",
-      values: [levels],
-      latest: levels,
-      method: "historical",
-      count: String(resistanceLevels.length + supportLevels.length),
+      data: [levels],
     };
   }
 
@@ -767,6 +700,7 @@ export class IndicatorService {
       case "vwap":
         return this.calculateVWAP(input);
       case "support-resistance":
+      case "support & resistance":
         const method = (input.method || "pivot").toLowerCase();
         switch (method) {
           case "pivot":

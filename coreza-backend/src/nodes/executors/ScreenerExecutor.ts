@@ -15,7 +15,7 @@ export class ScreenerExecutor implements INodeExecutor {
       const credential_id = node.values?.credential_id;
 
       // Credential is optional for manual screeners
-      if (!credential_id && screener.toLowerCase() !== "manual") {
+      if (!credential_id && screener !== "YahooFinance") {
         return {
           success: false,
           error: `${screener || "Screener"} credential_id is required`,

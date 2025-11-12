@@ -159,8 +159,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const fields = Array.isArray(resolvedParams.conditions)
-      ? resolvedParams.conditions
+    const fields = Array.isArray(resolvedParams.fields)
+      ? resolvedParams.fields
       : [];
     const persistent = !!resolvedParams.persistent;
     let result: Record<string, any> = {};

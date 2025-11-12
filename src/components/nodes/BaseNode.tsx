@@ -289,7 +289,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   //}
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
-    
+
     // Load defined fields from node definition
     const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => [
@@ -299,14 +299,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
       ])
     );
-    
+
     // Preserve additional dynamic fields (like logicalOps) from saved data
     const existingValues = data.fieldState || data.values || {};
     const definedKeys = new Set(definition.fields.map((f: any) => f.key));
     const dynamicFields = Object.fromEntries(
       Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
     );
-    
+
     return { ...definedFields, ...dynamicFields };
   });
 
@@ -323,14 +323,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
       ])
     );
-    
+
     // Preserve additional dynamic fields (like logicalOps) from saved data
     const existingValues = data.fieldState || data.values || {};
     const definedKeys = new Set(definition.fields.map((f: any) => f.key));
     const dynamicFields = Object.fromEntries(
       Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
     );
-    
+
     const newFieldState = { ...definedFields, ...dynamicFields };
 
     // Only update if we don't have fieldState initialized yet or if field definitions actually changed
@@ -544,21 +544,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     });
     try {
       const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
-      
+
       // Extract timezone from the source node being referenced
       // Parse the expression to find the source node name
       const nodeMatch = expr.match(/\$\(['"]([^'"]+)['"]\)/);
       let timezone: string | undefined;
-      
+
       if (nodeMatch) {
         const sourceName = nodeMatch[1];
         const sourceData = allNodeData[sourceName];
         // Look for timezone in common locations
-        timezone = sourceData?.schedule?.timezone || 
-                   sourceData?.timezone ||
-                   sourceData?.config?.timezone;
+        timezone =
+          sourceData?.schedule?.timezone ||
+          sourceData?.timezone ||
+          sourceData?.config?.timezone;
       }
-      
+
       return summarizePreview(resolved, 3, 100, timezone);
     } catch (error) {
       //console.error("❌ Resolution error:", error);
@@ -1009,7 +1010,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
         const res = await fetch(fullUrl, fetchOptions);
         const responseData = await res.json();
-        if (!res.ok) throw new Error(responseData.detail || "Action failed");
+        if (!res.ok) throw new Error(responseData || "Action failed");
 
         if (
           definition?.name === "AlpacaNews" &&
@@ -1102,7 +1103,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             );
           }
         } else {
-          outputData = responseData;
+          outputData = responseData.data;
         }
       } else {
         outputData = payload;

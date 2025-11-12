@@ -54,8 +54,11 @@ router.post("/if", async (req, res) => {
     }, undefined as unknown as boolean);
 
     res.json({
-      true: passed,
-      false: !passed,
+      success: true,
+      data: {
+        true: passed,
+        false: !passed,
+      },
     });
   } catch (error) {
     console.error("If condition evaluation error:", error);
@@ -112,7 +115,8 @@ router.post("/switch", async (req, res) => {
       result.matchedCase !== undefined ? cases[result.matchedCase] : null;
 
     res.json({
-      output: result.result,
+      success: true,
+      data: result.result,
     });
   } catch (error) {
     console.error("Switch case evaluation error:", error);
@@ -197,7 +201,6 @@ router.post("/field", async (req, res) => {
     res.json({
       success: true,
       data: result,
-      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Field manipulation error:", error);
@@ -234,7 +237,7 @@ router.post("/math", async (req, res) => {
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    res.json({ result: result.result });
+    res.json({ success: true, data: result.result });
   } catch (error) {
     console.error("Math operation error:", error);
     res.status(500).json({
@@ -261,7 +264,7 @@ router.post("/transform", async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json({ result: result.result });
+    res.json({ success: true, data: result.result });
   } catch (error) {
     console.error("Transform operation error:", error);
     res.status(500).json({
@@ -307,7 +310,7 @@ router.post("/date", async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json({ result: result.result });
+    res.json({ success: true, data: result.result });
   } catch (error) {
     console.error("Date operation error:", error);
     res.status(500).json({

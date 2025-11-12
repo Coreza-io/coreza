@@ -15,7 +15,7 @@
   },
   "fields": [
     {
-      "key": "ticker",
+      "key": "symbol",
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",

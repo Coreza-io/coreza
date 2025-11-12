@@ -237,7 +237,7 @@ router.post("/math", async (req, res) => {
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    res.json({ success: true, data: result.result });
+    res.json({ success: true, data: result.data });
   } catch (error) {
     console.error("Math operation error:", error);
     res.status(500).json({

@@ -49,13 +49,16 @@ const InputPanel: React.FC<InputPanelProps> = ({
   // Prefer a direct 'done' edge source when connected (Loop aggregated output)
   const preferredPrevId = useMemo(() => {
     if (!nodeId || !edges) return undefined;
-    const incomingDone = edges.find((e) => e.target === nodeId && e.sourceHandle === "done");
+    const incomingDone = edges.find(
+      (e) => e.target === nodeId && e.sourceHandle === "done"
+    );
     return incomingDone?.source;
   }, [nodeId, edges]);
 
   // Set default selected previous node (prefer 'done' source)
   useEffect(() => {
-    if (typeof setSelectedPrevNodeId !== "function" || selectedPrevNodeId) return;
+    if (typeof setSelectedPrevNodeId !== "function" || selectedPrevNodeId)
+      return;
     if (preferredPrevId) {
       setSelectedPrevNodeId(preferredPrevId);
       return;
@@ -63,7 +66,12 @@ const InputPanel: React.FC<InputPanelProps> = ({
     if (previousNodes.length > 0) {
       setSelectedPrevNodeId(previousNodes[0].id);
     }
-  }, [preferredPrevId, previousNodes, selectedPrevNodeId, setSelectedPrevNodeId]);
+  }, [
+    preferredPrevId,
+    previousNodes,
+    selectedPrevNodeId,
+    setSelectedPrevNodeId,
+  ]);
 
   // Get outputData prioritizing execution store
   const outputData = useMemo(() => {
@@ -90,10 +98,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
           Input Data
         </div>
         <div className="text-xs text-muted-foreground">
-          {new Date().toLocaleTimeString('en-US', { 
-            timeZone: userTimezone, 
-            hour12: false 
-          })} {userTimezone}
+          {new Date().toLocaleTimeString("en-US", {
+            timeZone: userTimezone,
+            hour12: false,
+          })}{" "}
+          {userTimezone}
         </div>
       </div>
       <div className="p-3 h-[calc(100%-42px)] overflow-auto">
@@ -113,7 +122,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
                   <option value="">Select node...</option>
                   {previousNodes.map((node: Node<any>) => (
                     <option key={node.id} value={node.id}>
-                      {node.data?.displayName || node.id}
+                      {node.id}
                     </option>
                   ))}
                 </select>

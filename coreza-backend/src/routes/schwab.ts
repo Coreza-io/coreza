@@ -333,6 +333,70 @@ router.get("/credentials", async (req, res) => {
   }
 });
 
+// Dynamic operation endpoint for all broker operations
+router.post("/:operation", async (req, res) => {
+  try {
+    const { operation } = req.params;
+    const userId = req.headers["x-user-id"] as string;
+    const { credential_id } = req.body;
+    
+    if (!userId || !credential_id) {
+      return res.status(400).json({ 
+        success: false,
+        error: "User ID and credential_id are required" 
+      });
+    }
+
+    // All supported operations go through broker service
+    const supportedOps = [
+      "get_account", 
+      "get_positions", 
+      "get_orders", 
+      "get_quotes", 
+      "get_price_history",
+      "place_order",
+      "cancel_order"
+    ];
+    
+    if (!supportedOps.includes(operation)) {
+      return res.status(400).json({ 
+        success: false,
+        error: `Unsupported operation: ${operation}` 
+      });
+    }
+
+    const brokerService = getBrokerService("schwab");
+    if (!brokerService) {
+      return res.status(500).json({
+        success: false,
+        error: "Schwab broker service not available"
+      });
+    }
+
+    const result = await brokerService.execute({
+      user_id: userId,
+      credential_id,
+      operation,
+      ...req.body,
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ 
+        success: false,
+        error: result.error || "Operation failed" 
+      });
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    console.error(`[SCHWAB] ${req.params.operation} error:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Operation failed"
+    });
+  }
+});
+
 // Place order through broker service
 router.post("/place_order", async (req, res) => {
   try {

@@ -110,7 +110,17 @@ async function refreshTokenIfNeeded(creds: SchwabCreds): Promise<SchwabCreds> {
 }
 
 export const schwabConfig: RestConfig = {
-  baseUrl: "https://api.schwabapi.com/trader/v1",
+  baseUrl: (creds: SchwabCreds, input?: BrokerInput) => {
+    // Market data operations use marketdata endpoint
+    const marketDataOps = ["get_quotes", "get_price_history"];
+    
+    if (input?.operation && marketDataOps.includes(input.operation)) {
+      return "https://api.schwabapi.com/marketdata/v1";
+    }
+    
+    // Trading operations use trader endpoint
+    return "https://api.schwabapi.com/trader/v1";
+  },
 
   makeAuthHeaders: async (creds: SchwabCreds) => {
     const refreshedCreds = await refreshTokenIfNeeded(creds);
@@ -213,6 +223,56 @@ export const schwabConfig: RestConfig = {
         }
         return `/accounts/${creds.account_number}/orders/${input.order_id}`;
       },
+    },
+
+    get_quotes: {
+      method: "get",
+      path: "/quotes",
+      makeParams: (input: BrokerInput) => {
+        if (!input.symbols) {
+          throw new Error("symbols parameter is required for get_quotes");
+        }
+        return {
+          symbols: input.symbols,
+          fields: input.fields || "quote,fundamental",
+          indicative: "false"
+        };
+      },
+      transformResult: (raw: any) => {
+        // Transform object format to array
+        const quotes = Object.entries(raw).map(([symbol, data]: [string, any]) => ({
+          symbol,
+          ...(data.quote || {}),
+          fundamental: data.fundamental,
+          reference: data.reference
+        }));
+        return { quotes, count: quotes.length };
+      },
+    },
+
+    get_price_history: {
+      method: "get",
+      path: (input: BrokerInput) => {
+        if (!input.symbol) {
+          throw new Error("symbol parameter is required for get_price_history");
+        }
+        return `/pricehistory`;
+      },
+      makeParams: (input: BrokerInput) => {
+        return {
+          symbol: input.symbol,
+          periodType: input.periodType || "day",
+          period: input.period || "10",
+          frequencyType: input.frequencyType || "minute",
+          frequency: input.frequency || "1",
+          needExtendedHoursData: input.needExtendedHoursData || "false"
+        };
+      },
+      transformResult: (raw: any) => ({
+        symbol: raw.symbol,
+        candles: raw.candles || [],
+        empty: raw.empty || false
+      }),
     },
   },
 };

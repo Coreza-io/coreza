@@ -1,0 +1,242 @@
+{
+  "name": "Schwab",
+  "def": "Schwab",
+  "node_type": "schwab",
+  "description": "Access Schwab account info, positions, orders, quotes, and price history",
+  "icon": "/assets/icons/schwab.svg",
+  "color": "text-blue-500",
+  "category": "Broker",
+  "subCategory": "Schwab",
+  "handles": {
+    "input": [{ "id": "in", "label": "Input" }],
+    "output": [{ "id": "out", "label": "Output" }]
+  },
+  "auth": "SchwabAuthModal",
+  "authAction": {
+    "url": "/schwab/generate-auth-url",
+    "method": "POST"
+  },
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g., My Schwab Account"
+    },
+    {
+      "key": "app_key",
+      "label": "App Key",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Key"
+    },
+    {
+      "key": "app_secret",
+      "label": "App Secret",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Secret"
+    },
+    {
+      "key": "account_number",
+      "label": "Account Number",
+      "type": "text",
+      "required": true,
+      "placeholder": "Your Schwab Account Number"
+    }
+  ],
+  "action": {
+    "url": "/schwab/{{operation}}",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "required": true,
+      "optionsSource": "credentialsApi",
+      "optionsApiUrl": "/schwab/credentials"
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "required": true,
+      "options": [
+        { "id": "get_account", "name": "Get Account" },
+        { "id": "get_positions", "name": "Get Positions" },
+        { "id": "get_orders", "name": "Get Orders" },
+        { "id": "get_quotes", "name": "Get Quotes" },
+        { "id": "get_price_history", "name": "Get Price History" }
+      ],
+      "default": "get_account"
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
+      "placeholder": "AAPL,TSLA,MSFT",
+      "description": "Comma-separated list of symbols",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_quotes"]
+        }
+      }
+    },
+    {
+      "key": "fields",
+      "label": "Quote Fields",
+      "type": "select",
+      "options": [
+        { "id": "quote", "name": "Quote Only" },
+        { "id": "fundamental", "name": "Fundamental Only" },
+        { "id": "extended", "name": "Extended Only" },
+        { "id": "quote,fundamental", "name": "Quote + Fundamental" },
+        { "id": "all", "name": "All Fields" }
+      ],
+      "default": "quote,fundamental",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_quotes"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "AAPL",
+      "description": "Single symbol for price history",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "periodType",
+      "label": "Period Type",
+      "type": "select",
+      "options": [
+        { "id": "day", "name": "Day" },
+        { "id": "month", "name": "Month" },
+        { "id": "year", "name": "Year" },
+        { "id": "ytd", "name": "Year to Date" }
+      ],
+      "default": "day",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "period",
+      "label": "Period",
+      "type": "text",
+      "placeholder": "10",
+      "description": "Number of periods (depends on periodType)",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "frequencyType",
+      "label": "Frequency Type",
+      "type": "select",
+      "options": [
+        { "id": "minute", "name": "Minute" },
+        { "id": "daily", "name": "Daily" },
+        { "id": "weekly", "name": "Weekly" },
+        { "id": "monthly", "name": "Monthly" }
+      ],
+      "default": "minute",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "frequency",
+      "label": "Frequency",
+      "type": "text",
+      "placeholder": "1",
+      "description": "Interval (e.g., 1 for 1-minute, 5 for 5-minute)",
+      "default": "1",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "needExtendedHoursData",
+      "label": "Include Extended Hours",
+      "type": "select",
+      "options": [
+        { "id": "true", "name": "Yes" },
+        { "id": "false", "name": "No" }
+      ],
+      "default": "false",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_price_history"]
+        }
+      }
+    },
+    {
+      "key": "limit",
+      "label": "Max Results",
+      "type": "text",
+      "placeholder": "100",
+      "default": "100",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_orders"]
+        }
+      }
+    },
+    {
+      "key": "start_date",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2024-01-01T00:00:00Z",
+      "description": "ISO 8601 format",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_orders"]
+        }
+      }
+    },
+    {
+      "key": "end_date",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2024-12-31T23:59:59Z",
+      "description": "ISO 8601 format",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_orders"]
+        }
+      }
+    },
+    {
+      "key": "status",
+      "label": "Order Status",
+      "type": "text",
+      "placeholder": "FILLED,CANCELED,REJECTED",
+      "default": "FILLED,CANCELED,REJECTED",
+      "description": "Comma-separated list of statuses",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_orders"]
+        }
+      }
+    }
+  ]
+}

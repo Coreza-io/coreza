@@ -5,7 +5,7 @@ import { BrokerInput, BrokerResult, IBrokerService } from "./types";
 export type HttpMethod = "get" | "post" | "put" | "delete";
 
 export interface RestOperation {
-  path: string | ((input: BrokerInput) => string);
+  path: string | ((input: BrokerInput, creds?: any) => string);
   method: HttpMethod;
   makeParams?: (input: BrokerInput) => Record<string, string>;
   makeBody?: (input: BrokerInput, creds?: any) => any;
@@ -16,7 +16,7 @@ export interface RestOperation {
 export interface RestConfig {
   baseUrl: string | ((creds: any, input: BrokerInput) => string);
 
-  makeAuthHeaders: (creds: any) => Record<string, string>;
+  makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   ops: Record<string, RestOperation>;
 }
 
@@ -61,9 +61,9 @@ export class RestBrokerService
         typeof this.config.baseUrl === "function"
           ? this.config.baseUrl(client_json, input)
           : this.config.baseUrl;
-      const path = typeof op.path === "function" ? op.path(input) : op.path;
+      const path = typeof op.path === "function" ? op.path(input, client_json) : op.path;
       const url = `${baseUrl}${path}`;
-      const headers = this.config.makeAuthHeaders(client_json);
+      const headers = await this.config.makeAuthHeaders(client_json);
       const params = op.makeParams?.(input) ?? {};
       const body = op.makeBody
         ? await op.makeBody(input, client_json)

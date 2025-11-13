@@ -180,7 +180,7 @@ class YahooFinanceService extends BaseDataService {
           );
       }
 
-      return { success: true, data: result };
+      return result;
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -278,8 +278,7 @@ class YahooFinanceService extends BaseDataService {
       );
 
       return {
-        symbol,
-        interval,
+        success: true,
         data: history.map((item) => ({
           date: item.date,
           open: item.open,

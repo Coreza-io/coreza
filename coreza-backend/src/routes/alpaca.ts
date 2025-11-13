@@ -76,7 +76,7 @@ router.post("/:operation", async (req, res, next) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json(result.data);
+    res.json(result);
   } catch (error) {
     console.error("Alpaca operation error:", error);
     next(error);

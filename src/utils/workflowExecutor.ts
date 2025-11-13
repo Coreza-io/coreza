@@ -820,12 +820,13 @@ export class WorkflowExecutor {
             } else if (
               result &&
               typeof result === "object" &&
-              ("true" in result || "false" in result)
+              result.data &&
+              ("true" in result.data || "false" in result.data)
             ) {
               handleKey =
-                result.true === true
+                result.data.true === true
                   ? "true"
-                  : result.false === true
+                  : result.data.false === true
                   ? "false"
                   : "";
             } else {

@@ -62,8 +62,7 @@ export class ScreenerExecutor implements INodeExecutor {
 
       console.log(`📊 [SCREENER] ${screener} screener completed successfully`);
       return {
-        success: true,
-        data: result,
+        data: result.data,
       };
     } catch (error) {
       console.error("[SCREENER] Execution error:", error);

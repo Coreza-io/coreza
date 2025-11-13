@@ -55,11 +55,14 @@ export class NodeRouter {
     if (
       result &&
       typeof result === "object" &&
-      ("true" in result || "false" in result)
+      result.data &&
+      typeof result.data === "object" &&
+      ("true" in result.data || "false" in result.data)
     ) {
-      const handles = Object.entries(result)
+      const handles = Object.entries(result.data)
         .filter(([, v]) => !!v)
         .map(([k]) => k);
+
       console.log(`[NodeRouter] Object result -> truthy handles: ${handles}`);
       return handles;
     }

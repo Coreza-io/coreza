@@ -934,7 +934,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           finished,
           edgeArrivals
         );
-        const uiOut = next.output; // current batch until final, then full aggregate
+        const uiOut = { data: next.output }; // current batch until final, then full aggregate
         setLastOutput(uiOut);
         data.output = uiOut;
         setNodes((nds) =>
@@ -1103,7 +1103,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             );
           }
         } else {
-          outputData = responseData.data;
+          outputData = responseData;
         }
       } else {
         outputData = payload;

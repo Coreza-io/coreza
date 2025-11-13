@@ -256,7 +256,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     if (!result.success) {
       return { success: false, error: result.error };
     }
-    return { success: true, data: { result: result.result } };
+    return result;
   }
 
   private async executeTransformNode(
@@ -273,7 +273,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     if (!result.success) {
       return { success: false, error: result.error };
     }
-    return { success: true, data: { result: result.result } };
+    return result;
   }
 
   private async executeLoopNode(

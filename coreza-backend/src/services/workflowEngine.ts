@@ -298,7 +298,7 @@ export class WorkflowEngine {
       };
 
       const fullResult = await this.executeNode(node, input, executionContext);
-      const result = fullResult?.data || fullResult;
+      const result = fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
 
       this.store.setNodeResult(nodeId, result);

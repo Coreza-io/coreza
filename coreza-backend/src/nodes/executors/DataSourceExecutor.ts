@@ -71,10 +71,7 @@ export class DataSourceExecutor implements INodeExecutor {
         };
       }
 
-      return {
-        success: true,
-        data: result.data,
-      };
+      return result;
     } catch (error) {
       return {
         success: false,

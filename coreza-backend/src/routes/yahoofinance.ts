@@ -44,7 +44,7 @@ router.post("/get-candle", async (req, res, next) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json(result.data);
+    res.json(result);
   } catch (error) {
     next(error);
   }

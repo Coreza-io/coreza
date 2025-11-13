@@ -5,6 +5,7 @@ import AlpacaNewsDef from './AlpacaNews.json'
 import AlpacaNewsRESTDef from './AlpacaNewsREST.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
+import SchwabTradeDef from './SchwabTrade.json'
 import IfDef from './If.json'
 import SwitchDef from './Switch.json'
 import EMADef from './EMA.json'
@@ -118,6 +119,7 @@ export const nodeManifest = {
   [AlpacaNewsDef.name]: AlpacaNewsDef,
   [AlpacaNewsRESTDef.name]: AlpacaNewsRESTDef,
   [DhanTradeDef.name]: DhanTradeDef,
+  [SchwabTradeDef.name]: SchwabTradeDef,
   [MarketDef.name]: MarketDef,
   [HttpRequestDef.name]: HttpRequestDef,
   [RiskEngineDef.name]: RiskEngineDef,

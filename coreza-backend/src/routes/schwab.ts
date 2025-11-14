@@ -330,17 +330,32 @@ router.get("/credentials", async (req, res) => {
 // Get account numbers (encrypted hashes)
 router.post("/get_account_numbers", async (req, res, next) => {
   try {
+    console.log(`📥 [SCHWAB] get_account_numbers request received:`, {
+      body: req.body,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'authorization': req.headers.authorization ? 'Bearer [PRESENT]' : '[MISSING]'
+      }
+    });
+    
     const { user_id, credential_id } = req.body;
 
     if (!user_id || !credential_id) {
+      console.error(`❌ [SCHWAB] Missing required fields:`, {
+        user_id: user_id || '[MISSING]',
+        credential_id: credential_id || '[MISSING]'
+      });
       return res.status(400).json({
         success: false,
         error: "user_id and credential_id are required",
       });
     }
 
+    console.log(`✅ [SCHWAB] Calling broker service with:`, { user_id, credential_id });
+
     const brokerService = getBrokerService("schwab");
     if (!brokerService) {
+      console.error(`❌ [SCHWAB] Broker service not available`);
       return res.status(500).json({
         success: false,
         error: "Schwab broker service not available",
@@ -353,6 +368,12 @@ router.post("/get_account_numbers", async (req, res, next) => {
       operation: "get_account_numbers",
     });
 
+    console.log(`📤 [SCHWAB] Broker service result:`, {
+      success: result?.success,
+      hasData: !!result?.data,
+      error: result?.error || 'none'
+    });
+
     if (!result || !result.success) {
       return res.status(400).json({
         success: false,
@@ -362,7 +383,7 @@ router.post("/get_account_numbers", async (req, res, next) => {
 
     res.json(result);
   } catch (error: any) {
-    console.error("[SCHWAB] get_account_numbers error:", error);
+    console.error("❌ [SCHWAB] get_account_numbers error:", error);
     next(error);
   }
 });

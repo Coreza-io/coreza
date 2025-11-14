@@ -623,9 +623,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
 
   const fetchDependentOptions = useCallback(
     async (field: any, parentValue: string) => {
-      if (!field.optionsApiUrl || !parentValue) return;
+      if (!field.optionsApiUrl || !parentValue) {
+        console.warn(`[DEPENDENT-API] Skipping fetch - missing optionsApiUrl or parentValue`, {
+          fieldKey: field.key,
+          hasApiUrl: !!field.optionsApiUrl,
+          parentValue
+        });
+        return;
+      }
       
       const fieldKey = field.key;
+      console.log(`[DEPENDENT-API] Fetching options for ${fieldKey}`, {
+        url: field.optionsApiUrl,
+        user_id: user?.id,
+        credential_id: parentValue
+      });
+      
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
       
       try {
@@ -642,7 +655,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
           }),
         });
         
+        console.log(`[DEPENDENT-API] Response status:`, response.status);
+        
         const result = await response.json();
+        console.log(`[DEPENDENT-API] Response data:`, result);
         
         if (result.success && result.data?.accounts) {
           setSelectOptions((prev) => ({
@@ -650,11 +666,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
             [fieldKey]: result.data.accounts,
           }));
         } else {
-          console.error("Failed to fetch dependent options:", result.error);
+          console.error(`[DEPENDENT-API] Failed to fetch dependent options:`, result.error);
           setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
         }
       } catch (error) {
-        console.error(`Error fetching options for ${fieldKey}:`, error);
+        console.error(`[DEPENDENT-API] Error fetching options for ${fieldKey}:`, error);
         setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
       } finally {
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
@@ -686,7 +702,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
         fetchDependentOptions(field, fieldState[field.dependsOn]);
       }
     });
-  }, [definition?.fields, fieldState.credential_id, fetchDependentOptions]);
+  }, [definition?.fields, fetchDependentOptions]);
 
   function collectNodeData() {
     const supportData = edges

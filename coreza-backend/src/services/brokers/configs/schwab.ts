@@ -126,7 +126,6 @@ export const schwabConfig: RestConfig = {
     const refreshedCreds = await refreshTokenIfNeeded(creds);
     return {
       Authorization: `Bearer ${refreshedCreds.access_token}`,
-      "Content-Type": "application/json",
     };
   },
 

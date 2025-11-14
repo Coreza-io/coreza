@@ -34,9 +34,10 @@
     },
     {
       "key": "account_number",
-      "label": "Account Number",
+      "label": "Account Number (Optional)",
       "type": "text",
-      "placeholder": "Your Schwab Account Number"
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
     }
   ],
   "authAction": { "url": "/schwab/generate-auth-url", "method": "POST" },
@@ -56,6 +57,17 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "required": true
+    },
+    {
+      "key": "accountHash",
+      "label": "Account",
+      "type": "select",
+      "required": true,
+      "optionsSource": "dependentApi",
+      "optionsApiUrl": "/schwab/get_account_numbers",
+      "dependsOn": "credential_id",
+      "placeholder": "Select an account",
+      "description": "Select the Schwab account for trading"
     },
     {
       "key": "symbol",

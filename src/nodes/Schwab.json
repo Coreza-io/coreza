@@ -40,10 +40,10 @@
     },
     {
       "key": "account_number",
-      "label": "Account Number",
+      "label": "Account Number (Optional)",
       "type": "text",
-      "required": true,
-      "placeholder": "Your Schwab Account Number"
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
     }
   ],
   "action": {
@@ -58,6 +58,22 @@
       "required": true,
       "optionsSource": "credentialsApi",
       "optionsApiUrl": "/schwab/credentials"
+    },
+    {
+      "key": "accountHash",
+      "label": "Account",
+      "type": "select",
+      "required": true,
+      "optionsSource": "dependentApi",
+      "optionsApiUrl": "/schwab/get_account_numbers",
+      "dependsOn": "credential_id",
+      "placeholder": "Select an account",
+      "description": "Select the Schwab account to use",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_account", "get_positions", "get_orders"]
+        }
+      }
     },
     {
       "key": "operation",

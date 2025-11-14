@@ -327,6 +327,46 @@ router.get("/credentials", async (req, res) => {
   }
 });
 
+// Get account numbers (encrypted hashes)
+router.post("/get_account_numbers", async (req, res, next) => {
+  try {
+    const { user_id, credential_id } = req.body;
+
+    if (!user_id || !credential_id) {
+      return res.status(400).json({
+        success: false,
+        error: "user_id and credential_id are required",
+      });
+    }
+
+    const brokerService = getBrokerService("schwab");
+    if (!brokerService) {
+      return res.status(500).json({
+        success: false,
+        error: "Schwab broker service not available",
+      });
+    }
+
+    const result = await brokerService.execute({
+      user_id,
+      credential_id,
+      operation: "get_account_numbers",
+    });
+
+    if (!result || !result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result?.error || "Failed to fetch accounts",
+      });
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("[SCHWAB] get_account_numbers error:", error);
+    next(error);
+  }
+});
+
 // Dynamic operation endpoint for all broker operations
 router.post("/:operation", async (req, res) => {
   try {
@@ -342,6 +382,7 @@ router.post("/:operation", async (req, res) => {
 
     // All supported operations go through broker service
     const supportedOps = [
+      "get_account_numbers",
       "get_account",
       "get_positions",
       "get_orders",

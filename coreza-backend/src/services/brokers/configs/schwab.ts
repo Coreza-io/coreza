@@ -131,22 +131,62 @@ export const schwabConfig: RestConfig = {
   },
 
   ops: {
+    get_account_numbers: {
+      method: "get",
+      path: `/accounts/accountNumbers`,
+      transformResult: (raw: any) => {
+        // Transform to format suitable for dropdown
+        if (!raw || !Array.isArray(raw)) {
+          return { accounts: [] };
+        }
+        return {
+          accounts: raw.map((acc: any) => ({
+            id: acc.hashValue,
+            name: `Account ${acc.accountNumber}`,
+            accountNumber: acc.accountNumber,
+            hashValue: acc.hashValue,
+          })),
+        };
+      },
+    },
+
     get_account: {
       method: "get",
-      path: (input: BrokerInput, creds: SchwabCreds) =>
-        `/accounts/${creds.account_number}`,
+      path: (input: BrokerInput, creds: SchwabCreds) => {
+        const accountHash = input.accountHash || input.account_hash;
+        if (!accountHash) {
+          throw new Error("accountHash is required. Please select an account.");
+        }
+        return `/accounts/${accountHash}`;
+      },
+      makeParams: (input: BrokerInput) => ({
+        fields: input.fields || "positions", // Include positions by default
+      }),
     },
 
     get_positions: {
       method: "get",
-      path: (input: BrokerInput, creds: SchwabCreds) =>
-        `/accounts/${creds.account_number}/positions`,
+      path: (input: BrokerInput, creds: SchwabCreds) => {
+        const accountHash = input.accountHash || input.account_hash;
+        if (!accountHash) {
+          throw new Error("accountHash is required. Please select an account.");
+        }
+        return `/accounts/${accountHash}`;
+      },
+      makeParams: (input: BrokerInput) => ({
+        fields: "positions",
+      }),
     },
 
     get_orders: {
       method: "get",
-      path: (input: BrokerInput, creds: SchwabCreds) =>
-        `/accounts/${creds.account_number}/orders`,
+      path: (input: BrokerInput, creds: SchwabCreds) => {
+        const accountHash = input.accountHash || input.account_hash;
+        if (!accountHash) {
+          throw new Error("accountHash is required. Please select an account.");
+        }
+        return `/accounts/${accountHash}/orders`;
+      },
       makeParams: (input: BrokerInput) => ({
         maxResults: input.limit || 100,
         fromEnteredTime: input.start_date,
@@ -157,8 +197,13 @@ export const schwabConfig: RestConfig = {
 
     place_order: {
       method: "post",
-      path: (input: BrokerInput, creds: SchwabCreds) =>
-        `/accounts/${creds.account_number}/orders`,
+      path: (input: BrokerInput, creds: SchwabCreds) => {
+        const accountHash = input.accountHash || input.account_hash;
+        if (!accountHash) {
+          throw new Error("accountHash is required. Please select an account.");
+        }
+        return `/accounts/${accountHash}/orders`;
+      },
       makeBody: (input: BrokerInput) => {
         const {
           symbol,
@@ -218,10 +263,14 @@ export const schwabConfig: RestConfig = {
     cancel_order: {
       method: "delete",
       path: (input: BrokerInput, creds: SchwabCreds) => {
+        const accountHash = input.accountHash || input.account_hash;
+        if (!accountHash) {
+          throw new Error("accountHash is required. Please select an account.");
+        }
         if (!input.order_id) {
           throw new Error("order_id is required for cancel_order");
         }
-        return `/accounts/${creds.account_number}/orders/${input.order_id}`;
+        return `/accounts/${accountHash}/orders/${input.order_id}`;
       },
     },
 

@@ -30,6 +30,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   getFieldPreview,
   setShowAuth,
   fetchCredentials,
+  fetchDependentOptions,
   referenceStyle,
 }) => {
   const { user } = useAuth();
@@ -228,7 +229,17 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             <div className="flex gap-2 items-center">
               <Select
                 value={fieldState[f.key]}
-                onValueChange={(val) => handleChange(f.key, val)}
+                onValueChange={(val) => {
+                  handleChange(f.key, val);
+                  // Fetch options for dependent API fields
+                  const dependentApiFields = definition.fields?.filter(
+                    (field: any) =>
+                      field.dependsOn === f.key && field.optionsSource === "dependentApi"
+                  );
+                  dependentApiFields?.forEach((depField: any) => {
+                    fetchDependentOptions(depField, val);
+                  });
+                }}
                 disabled={loadingSelect[f.key]}
               >
                 <SelectTrigger className="w-full">
@@ -261,6 +272,46 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             </div>
           );
         }
+        
+        if (f.optionsSource === "dependentApi") {
+          return (
+            <div className="flex flex-col gap-2">
+              <Select
+                value={fieldState[f.key]}
+                onValueChange={(val) => handleChange(f.key, val)}
+                disabled={loadingSelect[f.key] || !fieldState[f.dependsOn]}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      !fieldState[f.dependsOn]
+                        ? `Select ${f.dependsOn} first`
+                        : loadingSelect[f.key]
+                        ? "Loading..."
+                        : f.placeholder || "Select option"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(selectOptions[f.key] || []).length > 0 ? (
+                    selectOptions[f.key].map((option: any) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-options" disabled>
+                      {!fieldState[f.dependsOn]
+                        ? "Select credential first"
+                        : "No accounts found"}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        }
+        
         return (
           <Select
             value={fieldState[f.key]}
@@ -273,6 +324,14 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                   handleChange(depField.key, "");
                 });
               }
+              // Fetch options for dependent API fields
+              const dependentApiFields = definition.fields?.filter(
+                (field: any) =>
+                  field.dependsOn === f.key && field.optionsSource === "dependentApi"
+              );
+              dependentApiFields?.forEach((depField: any) => {
+                fetchDependentOptions(depField, val);
+              });
             }}
           >
             <SelectTrigger className="w-full">

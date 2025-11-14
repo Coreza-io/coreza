@@ -141,7 +141,7 @@ router.post("/exchange-token", async (req, res) => {
     const token_expires_at = Math.floor(Date.now() / 1000) + expires_in;
 
     // Save credentials using CredentialManager
-    const result = await CredentialManager.storeCredentials(
+    await CredentialManager.storeCredentials(
       user_id,
       "schwab",
       credential_name,
@@ -155,13 +155,6 @@ router.post("/exchange-token", async (req, res) => {
       "api"
     );
 
-    if (!result.success) {
-      return res.status(500).json({
-        success: false,
-        error: result.error || "Failed to store credentials",
-      });
-    }
-
     // Clean up temporary session
     tempAuthSessions.delete(temp_id);
 
@@ -169,8 +162,6 @@ router.post("/exchange-token", async (req, res) => {
 
     res.json({
       success: true,
-      credential_id: result.credential_id,
-      message: "Schwab account connected successfully!",
     });
   } catch (error: any) {
     console.error("[SCHWAB-AUTH] Error exchanging token:", error);
@@ -306,29 +297,32 @@ router.post("/refresh-token", async (req, res) => {
 router.get("/credentials", async (req, res) => {
   try {
     const userId = req.headers["x-user-id"] as string;
-    
+
     if (!userId) {
       return res.status(400).json({
         success: false,
-        error: "User ID is required"
+        error: "User ID is required",
       });
     }
 
-    const credentials = await CredentialManager.listCredentials(userId, "schwab");
-    
+    const credentials = await CredentialManager.listCredentials(
+      userId,
+      "schwab"
+    );
+
     res.json({
       success: true,
       credentials: credentials.map((c: any) => ({
         id: c.name,
         name: c.name,
-        account_number: c.client_json?.account_number
-      }))
+        account_number: c.client_json?.account_number,
+      })),
     });
   } catch (error: any) {
     console.error("[SCHWAB] Error listing credentials:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to list credentials"
+      error: error.message || "Failed to list credentials",
     });
   }
 });
@@ -337,31 +331,30 @@ router.get("/credentials", async (req, res) => {
 router.post("/:operation", async (req, res) => {
   try {
     const { operation } = req.params;
-    const userId = req.headers["x-user-id"] as string;
-    const { credential_id } = req.body;
-    
-    if (!userId || !credential_id) {
-      return res.status(400).json({ 
+    const { user_id, credential_id } = req.body;
+
+    if (!user_id || !credential_id) {
+      return res.status(400).json({
         success: false,
-        error: "User ID and credential_id are required" 
+        error: "User ID and credential_id are required",
       });
     }
 
     // All supported operations go through broker service
     const supportedOps = [
-      "get_account", 
-      "get_positions", 
-      "get_orders", 
-      "get_quotes", 
+      "get_account",
+      "get_positions",
+      "get_orders",
+      "get_quotes",
       "get_price_history",
       "place_order",
-      "cancel_order"
+      "cancel_order",
     ];
-    
+
     if (!supportedOps.includes(operation)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: `Unsupported operation: ${operation}` 
+        error: `Unsupported operation: ${operation}`,
       });
     }
 
@@ -369,21 +362,21 @@ router.post("/:operation", async (req, res) => {
     if (!brokerService) {
       return res.status(500).json({
         success: false,
-        error: "Schwab broker service not available"
+        error: "Schwab broker service not available",
       });
     }
 
     const result = await brokerService.execute({
-      user_id: userId,
+      user_id: user_id,
       credential_id,
       operation,
       ...req.body,
     });
 
     if (!result.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: result.error || "Operation failed" 
+        error: result.error || "Operation failed",
       });
     }
 
@@ -392,7 +385,7 @@ router.post("/:operation", async (req, res) => {
     console.error(`[SCHWAB] ${req.params.operation} error:`, error);
     res.status(500).json({
       success: false,
-      error: error.message || "Operation failed"
+      error: error.message || "Operation failed",
     });
   }
 });
@@ -406,38 +399,45 @@ router.post("/place_order", async (req, res) => {
     if (!userId) {
       return res.status(400).json({
         success: false,
-        error: "User ID is required"
+        error: "User ID is required",
       });
     }
 
     // Get credentials
-    const credResult = await CredentialManager.getCredentials(userId, "schwab", input.credential_id);
+    const credResult = await CredentialManager.getCredentials(
+      userId,
+      "schwab",
+      input.credential_id
+    );
     const creds = credResult.credentials?.client_json;
 
     if (!creds) {
       return res.status(404).json({
         success: false,
-        error: "Schwab credentials not found"
+        error: "Schwab credentials not found",
       });
     }
 
     // Execute through broker service
     const brokerService = getBrokerService("schwab");
-    const result = await brokerService.execute({
-      ...input,
-      operation: "place_order",
-      user_id: userId
-    }, creds);
+    const result = await brokerService.execute(
+      {
+        ...input,
+        operation: "place_order",
+        user_id: userId,
+      },
+      creds
+    );
 
     res.json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error: any) {
     console.error("[SCHWAB] Error placing order:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to place order"
+      error: error.message || "Failed to place order",
     });
   }
 });
@@ -451,35 +451,42 @@ router.get("/get_account", async (req, res) => {
     if (!userId || !credentialId) {
       return res.status(400).json({
         success: false,
-        error: "User ID and credential_id are required"
+        error: "User ID and credential_id are required",
       });
     }
 
-    const credResult = await CredentialManager.getCredentials(userId, "schwab", credentialId);
+    const credResult = await CredentialManager.getCredentials(
+      userId,
+      "schwab",
+      credentialId
+    );
     const creds = credResult.credentials?.client_json;
 
     if (!creds) {
       return res.status(404).json({
         success: false,
-        error: "Schwab credentials not found"
+        error: "Schwab credentials not found",
       });
     }
 
     const brokerService = getBrokerService("schwab");
-    const result = await brokerService.execute({
-      operation: "get_account",
-      user_id: userId
-    }, creds);
+    const result = await brokerService.execute(
+      {
+        operation: "get_account",
+        user_id: userId,
+      },
+      creds
+    );
 
     res.json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error: any) {
     console.error("[SCHWAB] Error getting account:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to get account"
+      error: error.message || "Failed to get account",
     });
   }
 });
@@ -493,35 +500,42 @@ router.get("/get_positions", async (req, res) => {
     if (!userId || !credentialId) {
       return res.status(400).json({
         success: false,
-        error: "User ID and credential_id are required"
+        error: "User ID and credential_id are required",
       });
     }
 
-    const credResult = await CredentialManager.getCredentials(userId, "schwab", credentialId);
+    const credResult = await CredentialManager.getCredentials(
+      userId,
+      "schwab",
+      credentialId
+    );
     const creds = credResult.credentials?.client_json;
 
     if (!creds) {
       return res.status(404).json({
         success: false,
-        error: "Schwab credentials not found"
+        error: "Schwab credentials not found",
       });
     }
 
     const brokerService = getBrokerService("schwab");
-    const result = await brokerService.execute({
-      operation: "get_positions",
-      user_id: userId
-    }, creds);
+    const result = await brokerService.execute(
+      {
+        operation: "get_positions",
+        user_id: userId,
+      },
+      creds
+    );
 
     res.json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error: any) {
     console.error("[SCHWAB] Error getting positions:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to get positions"
+      error: error.message || "Failed to get positions",
     });
   }
 });
@@ -535,36 +549,43 @@ router.get("/get_orders", async (req, res) => {
     if (!userId || !credentialId) {
       return res.status(400).json({
         success: false,
-        error: "User ID and credential_id are required"
+        error: "User ID and credential_id are required",
       });
     }
 
-    const credResult = await CredentialManager.getCredentials(userId, "schwab", credentialId);
+    const credResult = await CredentialManager.getCredentials(
+      userId,
+      "schwab",
+      credentialId
+    );
     const creds = credResult.credentials?.client_json;
 
     if (!creds) {
       return res.status(404).json({
         success: false,
-        error: "Schwab credentials not found"
+        error: "Schwab credentials not found",
       });
     }
 
     const brokerService = getBrokerService("schwab");
-    const result = await brokerService.execute({
-      operation: "get_orders",
-      user_id: userId,
-      ...req.query
-    }, creds);
+    const result = await brokerService.execute(
+      {
+        operation: "get_orders",
+        user_id: userId,
+        ...req.query,
+      },
+      creds
+    );
 
     res.json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error: any) {
     console.error("[SCHWAB] Error getting orders:", error);
     res.status(500).json({
       success: false,
-      error: error.message || "Failed to get orders"
+      error: error.message || "Failed to get orders",
     });
   }
 });

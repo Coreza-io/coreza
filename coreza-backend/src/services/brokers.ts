@@ -41,8 +41,9 @@ export class BrokerService {
   ): Promise<any> {
     try {
       // Import CredentialManager for secure v2 encryption
-      const CredentialManager = (await import("../utils/credentialManager")).default;
-      
+      const CredentialManager = (await import("../utils/credentialManager"))
+        .default;
+
       // Use CredentialManager which handles v2 encryption with HKDF user-scoped keys
       await CredentialManager.storeCredentials(
         userId,
@@ -61,7 +62,7 @@ export class BrokerService {
         .single();
 
       if (error) throw error;
-      
+
       return { success: true, id: data.id, credential_id: data.id };
     } catch (error) {
       console.error(`Error saving ${broker} credentials:`, error);

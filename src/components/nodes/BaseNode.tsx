@@ -86,6 +86,7 @@ export interface BaseNodeRenderProps {
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
   fetchCredentials: (fieldKey: string) => void;
+  fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
   referenceStyle: React.CSSProperties;
 }
@@ -620,6 +621,48 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     }
   };
 
+  const fetchDependentOptions = useCallback(
+    async (field: any, parentValue: string) => {
+      if (!field.optionsApiUrl || !parentValue) return;
+      
+      const fieldKey = field.key;
+      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
+      
+      try {
+        const url = `${BACKEND_URL}${field.optionsApiUrl}`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            user_id: user?.id,
+            credential_id: parentValue,
+          }),
+        });
+        
+        const result = await response.json();
+        
+        if (result.success && result.data?.accounts) {
+          setSelectOptions((prev) => ({
+            ...prev,
+            [fieldKey]: result.data.accounts,
+          }));
+        } else {
+          console.error("Failed to fetch dependent options:", result.error);
+          setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
+        }
+      } catch (error) {
+        console.error(`Error fetching options for ${fieldKey}:`, error);
+        setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
+      } finally {
+        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
+      }
+    },
+    [user?.id, session?.access_token]
+  );
+
   useEffect(() => {
     (definition?.fields || []).forEach(async (f: any) => {
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
@@ -630,6 +673,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
       }
     });
   }, [definition?.fields, definition?.name]);
+
+  // Load dependent API options on mount or when parent field changes
+  useEffect(() => {
+    (definition?.fields || []).forEach((field: any) => {
+      if (
+        field.type === "select" &&
+        field.optionsSource === "dependentApi" &&
+        field.dependsOn &&
+        fieldState[field.dependsOn]
+      ) {
+        fetchDependentOptions(field, fieldState[field.dependsOn]);
+      }
+    });
+  }, [definition?.fields, fieldState.credential_id, fetchDependentOptions]);
 
   function collectNodeData() {
     const supportData = edges
@@ -1258,6 +1315,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     handlePanelSave,
     handlePanelPinToggle,
     fetchCredentials,
+    fetchDependentOptions,
     referenceStyle,
   };
 

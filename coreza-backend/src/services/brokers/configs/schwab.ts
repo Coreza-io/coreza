@@ -46,8 +46,10 @@ async function refreshTokenIfNeeded(creds: SchwabCreds): Promise<SchwabCreds> {
       console.log("✅ [SCHWAB-BROKER] Token refreshed successfully");
 
       // Update credentials with new token
-      const { supabase } = await import("../../config/supabase");
-      const EnvelopeEncryptionUtil = (await import("../../utils/envelopeEncryption")).default;
+      const { supabase } = await import("../../../config/supabase");
+      const EnvelopeEncryptionUtil = (
+        await import("../../../utils/envelopeEncryption")
+      ).default;
 
       // Find and update the credential record
       const { data: credentialRecord } = await supabase
@@ -113,11 +115,11 @@ export const schwabConfig: RestConfig = {
   baseUrl: (creds: SchwabCreds, input?: BrokerInput) => {
     // Market data operations use marketdata endpoint
     const marketDataOps = ["get_quotes", "get_price_history"];
-    
+
     if (input?.operation && marketDataOps.includes(input.operation)) {
       return "https://api.schwabapi.com/marketdata/v1";
     }
-    
+
     // Trading operations use trader endpoint
     return "https://api.schwabapi.com/trader/v1";
   },
@@ -239,10 +241,7 @@ export const schwabConfig: RestConfig = {
         };
 
         // Add price for LIMIT and STOP_LIMIT orders
-        if (
-          (orderType === "LIMIT" || orderType === "STOP_LIMIT") &&
-          price
-        ) {
+        if ((orderType === "LIMIT" || orderType === "STOP_LIMIT") && price) {
           orderPayload.price = Number(price);
         }
 
@@ -283,17 +282,19 @@ export const schwabConfig: RestConfig = {
         return {
           symbols: input.symbols,
           fields: input.fields || "quote,fundamental",
-          indicative: "false"
+          indicative: "false",
         };
       },
       transformResult: (raw: any) => {
         // Transform object format to array
-        const quotes = Object.entries(raw).map(([symbol, data]: [string, any]) => ({
-          symbol,
-          ...(data.quote || {}),
-          fundamental: data.fundamental,
-          reference: data.reference
-        }));
+        const quotes = Object.entries(raw).map(
+          ([symbol, data]: [string, any]) => ({
+            symbol,
+            ...(data.quote || {}),
+            fundamental: data.fundamental,
+            reference: data.reference,
+          })
+        );
         return { quotes, count: quotes.length };
       },
     },
@@ -313,13 +314,13 @@ export const schwabConfig: RestConfig = {
           period: input.period || "10",
           frequencyType: input.frequencyType || "minute",
           frequency: input.frequency || "1",
-          needExtendedHoursData: input.needExtendedHoursData || "false"
+          needExtendedHoursData: input.needExtendedHoursData || "false",
         };
       },
       transformResult: (raw: any) => ({
         symbol: raw.symbol,
         candles: raw.candles || [],
-        empty: raw.empty || false
+        empty: raw.empty || false,
       }),
     },
   },

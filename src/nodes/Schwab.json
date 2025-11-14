@@ -112,7 +112,6 @@
         { "id": "quote,fundamental", "name": "Quote + Fundamental" },
         { "id": "all", "name": "All Fields" }
       ],
-      "default": "quote,fundamental",
       "displayOptions": {
         "show": {
           "operation": ["get_quotes"]
@@ -141,7 +140,6 @@
         { "id": "year", "name": "Year" },
         { "id": "ytd", "name": "Year to Date" }
       ],
-      "default": "day",
       "displayOptions": {
         "show": {
           "operation": ["get_price_history"]
@@ -170,7 +168,6 @@
         { "id": "weekly", "name": "Weekly" },
         { "id": "monthly", "name": "Monthly" }
       ],
-      "default": "minute",
       "displayOptions": {
         "show": {
           "operation": ["get_price_history"]
@@ -183,7 +180,6 @@
       "type": "text",
       "placeholder": "1",
       "description": "Interval (e.g., 1 for 1-minute, 5 for 5-minute)",
-      "default": "1",
       "displayOptions": {
         "show": {
           "operation": ["get_price_history"]
@@ -198,7 +194,6 @@
         { "id": "true", "name": "Yes" },
         { "id": "false", "name": "No" }
       ],
-      "default": "false",
       "displayOptions": {
         "show": {
           "operation": ["get_price_history"]
@@ -210,7 +205,6 @@
       "label": "Max Results",
       "type": "text",
       "placeholder": "100",
-      "default": "100",
       "displayOptions": {
         "show": {
           "operation": ["get_orders"]
@@ -246,7 +240,6 @@
       "label": "Order Status",
       "type": "text",
       "placeholder": "FILLED,CANCELED,REJECTED",
-      "default": "FILLED,CANCELED,REJECTED",
       "description": "Comma-separated list of statuses",
       "displayOptions": {
         "show": {

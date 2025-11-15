@@ -48,6 +48,7 @@ interface NodeWrapperProps {
   // Electric border props
   electricBorder?: boolean;
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
+  isExecuting?: boolean;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -75,6 +76,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   // Electric border props
   electricBorder = true,
   electricColor = "cyan",
+  isExecuting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const { theme } = useTheme();
@@ -123,7 +125,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
           ${
-            selected && electricBorder && isDarkMode
+            isExecuting && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`
               : selected
               ? "border-primary shadow-glow"
@@ -142,11 +144,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 200,
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
-          overflow: electricBorder && selected && isDarkMode ? "visible" : "hidden",
+          overflow: electricBorder && isExecuting && isDarkMode ? "visible" : "hidden",
         }}
       >
         {/* Electric Border SVG Overlay */}
-        {!isExpanded && electricBorder && selected && isDarkMode && (
+        {!isExpanded && electricBorder && isExecuting && isDarkMode && (
           <ElectricBorderSVG
             isExpanded={isExpanded}
             color={

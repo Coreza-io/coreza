@@ -108,7 +108,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           bg-card border-2 hover:shadow-elevated
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
-          ${selected && electricBorder 
+          ${selected && electricBorder && !isExpanded
             ? `electric-border electric-border-${electricColor} border-transparent` 
             : selected 
             ? "border-primary shadow-glow" 
@@ -127,11 +127,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 150,
           minHeight: isExpanded ? minHeight : 100,
           height: isExpanded ? "auto" : 100,
-          overflow: electricBorder && selected ? 'visible' : 'hidden',
+          overflow: electricBorder && selected && !isExpanded ? 'visible' : 'hidden',
         }}
       >
-        {/* Electric Border SVG Overlay */}
-        {electricBorder && selected && (
+        {/* Electric Border SVG Overlay - Only for collapsed nodes */}
+        {electricBorder && selected && !isExpanded && (
           <ElectricBorderSVG 
             isExpanded={isExpanded}
             color={

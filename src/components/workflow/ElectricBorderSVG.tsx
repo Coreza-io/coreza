@@ -1,73 +1,192 @@
-import React from 'react';
+import React, { useId, useMemo } from 'react';
 
 interface ElectricBorderSVGProps {
   color?: string;
   className?: string;
 }
 
-const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({ 
-  color = '#00ffff',
-  className = ''
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+  const normalized = hex.replace('#', '').trim();
+  if (normalized.length === 3) {
+    const r = parseInt(normalized[0] + normalized[0], 16);
+    const g = parseInt(normalized[1] + normalized[1], 16);
+    const b = parseInt(normalized[2] + normalized[2], 16);
+    return { r, g, b };
+  }
+
+  if (normalized.length === 6) {
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    return { r, g, b };
+  }
+
+  return null;
+};
+
+const rgbToHex = (r: number, g: number, b: number) =>
+  `#${[r, g, b]
+    .map((component) => component.toString(16).padStart(2, '0'))
+    .join('')}`;
+
+const lightenHex = (hex: string, amount: number) => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+
+  const { r, g, b } = rgb;
+  const lightened = {
+    r: Math.round(clamp(r + (255 - r) * amount, 0, 255)),
+    g: Math.round(clamp(g + (255 - g) * amount, 0, 255)),
+    b: Math.round(clamp(b + (255 - b) * amount, 0, 255)),
+  };
+
+  return rgbToHex(lightened.r, lightened.g, lightened.b);
+};
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return `rgba(0, 0, 0, ${alpha})`;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+};
+
+const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
+  color = '#dd8448',
+  className = '',
 }) => {
+  const rawId = useId();
+  const filterId = useMemo(() => rawId.replace(/:/g, ''), [rawId]);
+
+  const cssVariables = useMemo(() => {
+    const lightColor = lightenHex(color, 0.35);
+    return {
+      '--electric-border-color': color,
+      '--electric-border-light': lightColor,
+      '--electric-border-outer': hexToRgba(color, 0.45),
+      '--electric-border-glow': hexToRgba(lightColor, 0.7),
+      '--electric-border-glow-soft': hexToRgba(lightColor, 0.35),
+      '--electric-border-overlay': `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
+      '--electric-border-background': `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
+    } as React.CSSProperties;
+  }, [color]);
+
   return (
-    <svg 
-      className={`absolute inset-0 w-full h-full pointer-events-none ${className}`}
-      style={{ zIndex: 2 }}
+    <div
+      className={`electric-border-effect ${className}`}
+      style={cssVariables}
     >
-      <defs>
-        <filter id="electric-glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-          <feMerge>
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-        
-        <filter id="electric-turbulence">
-          <feTurbulence 
-            type="fractalNoise" 
-            baseFrequency="0.02" 
-            numOctaves="3"
-            result="turbulence"
-          >
-            <animate
-              attributeName="baseFrequency"
-              dur="3s"
-              values="0.02;0.03;0.02"
-              repeatCount="indefinite"
-            />
-          </feTurbulence>
-          <feDisplacementMap 
-            in="SourceGraphic" 
-            in2="turbulence" 
-            scale="3"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
-        </filter>
-      </defs>
-      
-      <rect
-        x="2"
-        y="2"
-        width="calc(100% - 4px)"
-        height="calc(100% - 4px)"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeDasharray="5 5"
-        filter="url(#electric-glow)"
-        rx="12"
+      <svg
+        className="electric-border-effect__svg"
+        aria-hidden="true"
+        focusable="false"
       >
-        <animate
-          attributeName="stroke-dashoffset"
-          from="0"
-          to="10"
-          dur="0.5s"
-          repeatCount="indefinite"
+        <defs>
+          <filter
+            id={filterId}
+            colorInterpolationFilters="sRGB"
+            x="-20%"
+            y="-20%"
+            width="140%"
+            height="140%"
+          >
+            <feTurbulence
+              type="turbulence"
+              baseFrequency="0.02"
+              numOctaves="10"
+              result="noise1"
+              seed="1"
+            />
+            <feOffset in="noise1" dx="0" dy="0" result="offsetNoise1">
+              <animate
+                attributeName="dy"
+                values="700; 0"
+                dur="6s"
+                repeatCount="indefinite"
+                calcMode="linear"
+              />
+            </feOffset>
+
+            <feTurbulence
+              type="turbulence"
+              baseFrequency="0.02"
+              numOctaves="10"
+              result="noise2"
+              seed="1"
+            />
+            <feOffset in="noise2" dx="0" dy="0" result="offsetNoise2">
+              <animate
+                attributeName="dy"
+                values="0; -700"
+                dur="6s"
+                repeatCount="indefinite"
+                calcMode="linear"
+              />
+            </feOffset>
+
+            <feTurbulence
+              type="turbulence"
+              baseFrequency="0.02"
+              numOctaves="10"
+              result="noise3"
+              seed="2"
+            />
+            <feOffset in="noise3" dx="0" dy="0" result="offsetNoise3">
+              <animate
+                attributeName="dx"
+                values="490; 0"
+                dur="6s"
+                repeatCount="indefinite"
+                calcMode="linear"
+              />
+            </feOffset>
+
+            <feTurbulence
+              type="turbulence"
+              baseFrequency="0.02"
+              numOctaves="10"
+              result="noise4"
+              seed="2"
+            />
+            <feOffset in="noise4" dx="0" dy="0" result="offsetNoise4">
+              <animate
+                attributeName="dx"
+                values="0; -490"
+                dur="6s"
+                repeatCount="indefinite"
+                calcMode="linear"
+              />
+            </feOffset>
+
+            <feComposite in="offsetNoise1" in2="offsetNoise2" result="part1" />
+            <feComposite in="offsetNoise3" in2="offsetNoise4" result="part2" />
+            <feBlend in="part1" in2="part2" mode="color-dodge" result="combinedNoise" />
+
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="combinedNoise"
+              scale="30"
+              xChannelSelector="R"
+              yChannelSelector="B"
+            />
+          </filter>
+        </defs>
+      </svg>
+
+      <div className="electric-border-effect__layers">
+        <div className="electric-border-effect__background" />
+        <div className="electric-border-effect__glow electric-border-effect__glow--soft" />
+        <div className="electric-border-effect__glow electric-border-effect__glow--strong" />
+        <div className="electric-border-effect__border-outer" />
+        <div
+          className="electric-border-effect__border-main"
+          style={{ filter: `url(#${filterId})` }}
         />
-      </rect>
-    </svg>
+        <div className="electric-border-effect__overlay electric-border-effect__overlay--primary" />
+        <div className="electric-border-effect__overlay electric-border-effect__overlay--secondary" />
+      </div>
+    </div>
   );
 };
 

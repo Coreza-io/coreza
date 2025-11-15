@@ -53,6 +53,24 @@ const FEMALE_PLUG_PATH =
 
 const MALE_PLUG_PATH =
   'M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z';
+export const MalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
+  color = '#64748b',
+  size = 24,
+}) => (
+  <svg viewBox="0 0 24 24" width={size} height={size}>
+    <path d={MALE_PLUG_PATH} fill={color} />
+  </svg>
+);
+
+export const FemalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
+  color = '#64748b',
+  size = 24,
+}) => (
+  <svg viewBox="0 0 24 24" width={size} height={size}>
+    <path d={FEMALE_PLUG_PATH} fill={color} />
+  </svg>
+);
+
 
 const lightenHex = (hex: string, amount: number): string => {
   const normalized = normalizeHex(hex);
@@ -151,8 +169,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const midY = (sourceY + targetY) / 2;
 
   const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
-  const plugSize = 24;
-  const plugHalf = plugSize / 2;
 
   return (
     <g
@@ -206,30 +222,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={`url(#${sparkId})`}
         className={`plug-edge__spark${executing ? ' plug-edge__spark--active' : ''}`}
       />
-      <g className="plug-edge__plug" transform={`translate(${sourceX} ${sourceY}) rotate(${degrees})`}>
-        <svg
-          className="plug-edge__plug-shape plug-edge__plug-shape--source"
-          viewBox="0 0 24 24"
-          width={plugSize}
-          height={plugSize}
-          x={-plugHalf}
-          y={-plugHalf}
-        >
-          <path d={MALE_PLUG_PATH} fill={cordColor} />
-        </svg>
-      </g>
-      <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}>
-        <svg
-          className="plug-edge__plug-shape plug-edge__plug-shape--target"
-          viewBox="0 0 24 24"
-          width={plugSize}
-          height={plugSize}
-          x={-plugHalf}
-          y={-plugHalf}
-        >
-          <path d={FEMALE_PLUG_PATH} fill={cordColor} />
-        </svg>
-      </g>
       {data?.label && (
         <text className="react-flow__edge-text">
           <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
@@ -320,9 +312,6 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
 
   const angle = Math.atan2(pointerY - anchorY, pointerX - anchorX);
   const degrees = (angle * 180) / Math.PI;
-  const plugSize = 24;
-  const plugHalf = plugSize / 2;
-
   return (
     <g className="plug-edge plug-edge--connection">
       <path
@@ -349,33 +338,6 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           pointerEvents: 'stroke',
         }}
       />
-      <g className="plug-edge__plug" transform={`translate(${pointerX} ${pointerY}) rotate(${degrees})`}>
-        <svg
-          className="plug-edge__plug-shape plug-edge__plug-shape--source"
-          viewBox="0 0 24 24"
-          width={plugSize}
-          height={plugSize}
-          x={-plugHalf}
-          y={-plugHalf}
-        >
-          <path d={MALE_PLUG_PATH} fill={cordColor} />
-        </svg>
-      </g>
-      <g
-        className="plug-edge__plug plug-edge__plug--target"
-        transform={`translate(${anchorX} ${anchorY}) rotate(${degrees + 180})`}
-      >
-        <svg
-          className="plug-edge__plug-shape plug-edge__plug-shape--target"
-          viewBox="0 0 24 24"
-          width={plugSize}
-          height={plugSize}
-          x={-plugHalf}
-          y={-plugHalf}
-        >
-          <path d={FEMALE_PLUG_PATH} fill={cordColor} />
-        </svg>
-      </g>
     </g>
   );
 };

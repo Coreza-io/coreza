@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
+import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
 
@@ -173,15 +174,18 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const style = isHorizontal
               ? { left: `${pct}%` }
               : { top: `${pct}%` };
+            const handleClass = h.type === "target" ? "plug-handle plug-handle--female" : "plug-handle plug-handle--male";
             return (
               <Handle
                 key={h.id}
                 id={h.id}
                 type={h.type}
                 position={POSITION_MAP[h.position]}
-                style={style}
-                className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
-              />
+                style={{ ...style, width: 24, height: 24 }}
+                className={handleClass}
+              >
+                {h.type === "target" ? <FemalePlugIcon size={20} /> : <MalePlugIcon size={20} />}
+              </Handle>
             );
           });
         })}

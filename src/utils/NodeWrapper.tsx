@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
-import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
+import {
+  FemalePlugIcon,
+  MalePlugIcon,
+} from "@/components/workflow/EdgeManager";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
 
@@ -81,14 +84,14 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const { theme } = useTheme();
-  
+
   // Determine if we're in dark mode
   const isDarkMode = useMemo(() => {
-    if (theme === 'dark') return true;
-    if (theme === 'light') return false;
+    if (theme === "dark") return true;
+    if (theme === "light") return false;
     // For 'system' theme, check the system preference
-    if (theme === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
     return false;
   }, [theme]);
@@ -147,7 +150,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
           overflow:
-            shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+            shouldShowHandlesOutside ||
+            (electricBorder && isExecuting && isDarkMode)
               ? "visible"
               : "hidden",
         }}
@@ -180,10 +184,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               : { top: `${pct}%` };
             const rawType = typeof h.type === "string" ? h.type : "source";
             const normalizedType = rawType.toLowerCase();
-            const isInputHandle = normalizedType === "target" || normalizedType === "input";
-            const handleClass = isInputHandle
-              ? "plug-handle plug-handle--female"
-              : "plug-handle plug-handle--male";
+            const isInputHandle = normalizedType === "target";
+            const orientationClass = `plug-handle--${pos}`;
+            const handleClass = `plug-handle ${orientationClass} ${
+              isInputHandle ? "plug-handle--female" : "plug-handle--male"
+            }`;
             return (
               <Handle
                 key={h.id}
@@ -193,7 +198,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 style={{ ...style, width: 24, height: 24 }}
                 className={handleClass}
               >
-                {isInputHandle ? <FemalePlugIcon size={20} /> : <MalePlugIcon size={20} />}
+                {isInputHandle ? (
+                  <FemalePlugIcon size={20} />
+                ) : (
+                  <MalePlugIcon size={20} />
+                )}
               </Handle>
             );
           });

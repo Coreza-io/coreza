@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
-import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
+import {
+  FemalePlugIcon,
+  MalePlugIcon,
+} from "@/components/workflow/EdgeManager";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
 
@@ -21,8 +24,8 @@ const POSITION_MAP: Record<HandlePosition, Position> = {
 };
 
 const ROTATION_MAP: Record<HandlePosition, number> = {
-  left: 180,
-  right: 0,
+  left: 45,
+  right: 45,
   top: -90,
   bottom: 90,
 };
@@ -156,7 +159,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
           overflow:
-            shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+            shouldShowHandlesOutside ||
+            (electricBorder && isExecuting && isDarkMode)
               ? "visible"
               : "hidden",
         }}
@@ -189,7 +193,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               : { top: `${pct}%` };
             const rawType = typeof h.type === "string" ? h.type : "source";
             const normalizedType = rawType.toLowerCase();
-            const isInputHandle = normalizedType === "target" || normalizedType === "input";
+            const isInputHandle =
+              normalizedType === "target" || normalizedType === "input";
             const orientationClass = `plug-handle--${pos}`;
             const handleClass = `plug-handle ${orientationClass} ${
               isInputHandle ? "plug-handle--female" : "plug-handle--male"

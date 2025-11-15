@@ -228,6 +228,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           minHeight={dynamicSize.height}
           handles={dynamicHandles}
           nodeType={definition.node_type}
+          electricBorder={true}
+          electricColor="cyan"
           // Node name editing props
           isEditing={renderProps.isEditing}
           editingName={renderProps.editingName}

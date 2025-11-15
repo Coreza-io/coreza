@@ -133,6 +133,35 @@
     --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
     --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
   }
+
+  /* Electric Border Animations */
+  @keyframes electric-pulse {
+    0%, 100% {
+      filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+      opacity: 1;
+    }
+    50% {
+      filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 24px currentColor);
+      opacity: 0.8;
+    }
+  }
+  
+  @keyframes electric-flicker {
+    0%, 100% { opacity: 1; }
+    20% { opacity: 0.9; }
+    40% { opacity: 1; }
+    60% { opacity: 0.85; }
+    80% { opacity: 1; }
+  }
+  
+  @keyframes border-flow {
+    0% {
+      stroke-dashoffset: 0;
+    }
+    100% {
+      stroke-dashoffset: -200;
+    }
+  }
 }
 
 @layer base {
@@ -142,6 +171,54 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Electric Border Utility Classes */
+  .electric-border {
+    position: relative;
+    overflow: visible !important;
+  }
+
+  .electric-border::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(
+      45deg,
+      transparent 30%,
+      currentColor 50%,
+      transparent 70%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: electric-pulse 2s ease-in-out infinite, electric-flicker 3s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 1;
+    will-change: filter;
+  }
+
+  .electric-border-cyan {
+    color: hsl(180 100% 50%);
+  }
+
+  .electric-border-orange {
+    color: hsl(30 100% 50%);
+  }
+
+  .electric-border-blue {
+    color: hsl(217 91% 60%);
+  }
+
+  .electric-border-purple {
+    color: hsl(270 100% 60%);
+  }
+
+  .electric-border-green {
+    color: hsl(120 100% 50%);
   }
   
   /* React Flow Edge Overrides - More specific selectors */

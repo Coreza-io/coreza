@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from "react";
 import {
   ConnectionLineComponentProps,
   EdgeProps,
   getSmoothStepPath,
   MarkerType,
-} from '@xyflow/react';
-import { Plus, Trash2 } from 'lucide-react';
+} from "@xyflow/react";
+import { Plus, Trash2 } from "lucide-react";
 
 export interface EdgeControl {
   icon: React.ReactNode;
@@ -15,7 +15,7 @@ export interface EdgeControl {
 export interface SelfLoopConfig {
   offsetX?: number;
   offsetY?: number;
-  direction?: 'top' | 'right' | 'bottom' | 'left';
+  direction?: "top" | "right" | "bottom" | "left";
 }
 
 export interface InteractiveEdgeProps extends EdgeProps {
@@ -27,10 +27,16 @@ export interface InteractiveEdgeProps extends EdgeProps {
 const buildControls = (data?: any): EdgeControl[] => {
   const controls: EdgeControl[] = [];
   if (data?.onAddEdge) {
-    controls.push({ icon: <Plus size={12} color="#22c55e" />, onClick: data.onAddEdge });
+    controls.push({
+      icon: <Plus size={12} color="#22c55e" />,
+      onClick: data.onAddEdge,
+    });
   }
   if (data?.onRemoveEdge) {
-    controls.push({ icon: <Trash2 size={12} color="#e11d48" />, onClick: data.onRemoveEdge });
+    controls.push({
+      icon: <Trash2 size={12} color="#e11d48" />,
+      onClick: data.onRemoveEdge,
+    });
   }
   return controls;
 };
@@ -41,15 +47,12 @@ const normalizeHex = (hex: string): string | null => {
   const value = match[1];
   if (value.length === 3) {
     return `#${value
-      .split('')
+      .split("")
       .map((ch) => ch + ch)
-      .join('')}`;
+      .join("")}`;
   }
   return `#${value}`;
 };
-
-const FEMALE_PLUG_PATH =
-  'm12.707,12.707l-2.293,2.293-1.414-1.414,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0l-2.293,2.293-1.879-1.879c-.391-.391-1.023-.391-1.414,0s-.391,1.023,0,1.414l.352.352-1.134,1.135c-1.77,1.769-1.982,4.515-.638,6.519l-2.58,2.58c-.391.391-.391,1.023,0,1.414.195.195.451.293.707.293s.512-.098.707-.293l2.58-2.58c.865.58,1.868.871,2.871.871,1.321,0,2.642-.503,3.647-1.509l1.135-1.134.352.352c.195.195.451.293.707.293s.512-.098.707-.293c.391-.391.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z';
 
 const MALE_PLUG_PATH =
   'M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z';
@@ -109,16 +112,17 @@ const lightenHex = (hex: string, amount: number): string => {
   const b = parseInt(normalized.slice(5, 7), 16);
 
   const clamp = (value: number) => Math.max(0, Math.min(255, value));
-  const mix = (channel: number) => clamp(Math.round(channel + (255 - channel) * amount));
+  const mix = (channel: number) =>
+    clamp(Math.round(channel + (255 - channel) * amount));
 
   return `#${[mix(r), mix(g), mix(b)]
-    .map((channel) => channel.toString(16).padStart(2, '0'))
-    .join('')}`;
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
 };
 
 const isExecutingClass = (className?: string): boolean => {
   if (!className) return false;
-  return className.split(' ').some((cls) => cls.trim() === 'executing-edge');
+  return className.split(" ").some((cls) => cls.trim() === "executing-edge");
 };
 
 export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
@@ -155,7 +159,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
-        style={{ stroke: '#6366f1', strokeWidth: 2, ...style }}
+        style={{ stroke: "#6366f1", strokeWidth: 2, ...style }}
         markerEnd={markerEnd}
         data={data}
         controls={computedControls}
@@ -170,9 +174,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const cordColor = typeof strokeValue === 'string' ? strokeValue : '#64748b';
+  const cordColor = typeof strokeValue === "string" ? strokeValue : "#64748b";
   const strokeWidth =
-    typeof strokeWidthValue === 'number'
+    typeof strokeWidthValue === "number"
       ? strokeWidthValue
       : strokeWidthValue
       ? Number.parseFloat(String(strokeWidthValue)) || 3
@@ -206,7 +210,13 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       className="plug-edge"
     >
       <defs>
-        <radialGradient id={sparkId} cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse">
+        <radialGradient
+          id={sparkId}
+          cx="0"
+          cy="0"
+          r="1"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop offset="0" stopColor={sparkOuter} stopOpacity={0.95} />
           <stop offset="0.55" stopColor={sparkColor} stopOpacity={0.85} />
           <stop offset="1" stopColor={sparkColor} stopOpacity={0} />
@@ -214,34 +224,36 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       </defs>
       <path
         d={edgePath}
-        className={`plug-edge__glow${executing ? ' plug-edge__glow--active' : ''}`}
+        className={`plug-edge__glow${
+          executing ? " plug-edge__glow--active" : ""
+        }`}
         stroke={glowColor}
         strokeWidth={strokeWidth + 6}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: "none" }}
       />
       <path
         id={id}
         d={edgePath}
         className={[
-          'react-flow__edge-path',
-          'plug-edge__cord',
-          className || '',
-          animated ? 'plug-edge__cord--animated' : '',
+          "react-flow__edge-path",
+          "plug-edge__cord",
+          className || "",
+          animated ? "plug-edge__cord--animated" : "",
         ]
           .filter(Boolean)
-          .join(' ')}
+          .join(" ")}
         stroke={cordColor}
         strokeWidth={strokeWidth}
         markerEnd={markerEnd}
         fill="none"
         style={{
           ...customStyle,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          pointerEvents: 'stroke',
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          pointerEvents: "stroke",
         }}
       />
       <circle
@@ -249,7 +261,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         cy={midY}
         r={6}
         fill={`url(#${sparkId})`}
-        className={`plug-edge__spark${executing ? ' plug-edge__spark--active' : ''}`}
+        className={`plug-edge__spark${
+          executing ? " plug-edge__spark--active" : ""
+        }`}
       />
       {data?.label && (
         <text className="react-flow__edge-text">
@@ -264,10 +278,15 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           y={labelY - 12}
           width={48}
           height={24}
-          style={{ pointerEvents: 'all' }}
+          style={{ pointerEvents: "all" }}
         >
           <div
-            style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}
+            style={{
+              display: "flex",
+              gap: "4px",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
           >
             {computedControls.map((ctrl, i) => (
               <button
@@ -275,11 +294,11 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
                 type="button"
                 onClick={ctrl.onClick}
                 style={{
-                  background: '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  padding: '2px',
-                  cursor: 'pointer',
+                  background: "#fff",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  padding: "2px",
+                  cursor: "pointer",
                 }}
               >
                 {ctrl.icon}
@@ -306,20 +325,20 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
 
   const baseStroke =
-    typeof style.stroke === 'string'
+    typeof style.stroke === "string"
       ? style.stroke
-      : connectionStatus === 'invalid'
-      ? '#ef4444'
-      : '#64748b';
+      : connectionStatus === "invalid"
+      ? "#ef4444"
+      : "#64748b";
 
   const strokeWidth =
-    typeof style.strokeWidth === 'number'
+    typeof style.strokeWidth === "number"
       ? style.strokeWidth
       : style.strokeWidth
       ? Number.parseFloat(String(style.strokeWidth)) || 3
       : 3;
 
-  const cordColor = connectionStatus === 'invalid' ? '#ef4444' : baseStroke;
+  const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const glowColor = lightenHex(cordColor, 0.5);
 
   const [edgePath] = getSmoothStepPath({
@@ -331,8 +350,8 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
     targetPosition: toPosition,
   });
 
-  const fromType = fromHandle?.type ?? 'source';
-  const draggingFromSource = fromType === 'source';
+  const fromType = fromHandle?.type ?? "source";
+  const draggingFromSource = fromType === "source";
 
   const anchorX = draggingFromSource ? fromX : toX;
   const anchorY = draggingFromSource ? fromY : toY;
@@ -351,7 +370,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
-        style={{ pointerEvents: 'none' }}
+        style={{ pointerEvents: "none" }}
       />
       <path
         d={edgePath}
@@ -362,9 +381,9 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         style={{
           ...style,
           stroke: cordColor,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          pointerEvents: 'stroke',
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          pointerEvents: "stroke",
         }}
       />
     </g>
@@ -389,58 +408,58 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
 }) => {
   // Detect self-loop (when source connects to target on same node)
   const isSelfLoop = source === target;
-  
+
   // Default self-loop configuration
   const defaultSelfLoopConfig: SelfLoopConfig = {
     offsetX: 40,
     offsetY: 80,
-    direction: 'right'
+    direction: "right",
   };
-  
+
   const loopConfig = { ...defaultSelfLoopConfig, ...selfLoopConfig };
-  
+
   let pathD: string;
   let midX: number;
   let midY: number;
   if (isSelfLoop) {
     // Create self-loop path based on direction
-    const { offsetX = 40, offsetY = 80, direction = 'right' } = loopConfig;
-    
+    const { offsetX = 40, offsetY = 80, direction = "right" } = loopConfig;
+
     switch (direction) {
-      case 'top':
+      case "top":
         pathD = [
           `M ${sourceX},${sourceY}`,
           `V ${sourceY - offsetY}`,
           `H ${sourceX + offsetX}`,
           `V ${targetY}`,
           `H ${targetX}`,
-        ].join(' ');
+        ].join(" ");
         midX = sourceX + offsetX / 2;
         midY = sourceY - offsetY;
         break;
-      case 'bottom':
+      case "bottom":
         pathD = [
           `M ${sourceX},${sourceY}`,
           `V ${sourceY + offsetY}`,
           `H ${sourceX + offsetX}`,
           `V ${targetY}`,
           `H ${targetX}`,
-        ].join(' ');
+        ].join(" ");
         midX = sourceX + offsetX / 2;
         midY = sourceY + offsetY;
         break;
-      case 'left':
+      case "left":
         pathD = [
           `M ${sourceX},${sourceY}`,
           `H ${sourceX - offsetX}`,
           `V ${sourceY + offsetY}`,
           `H ${targetX}`,
           `V ${targetY}`,
-        ].join(' ');
+        ].join(" ");
         midX = sourceX - offsetX;
         midY = sourceY + offsetY / 2;
         break;
-      case 'right':
+      case "right":
       default:
         pathD = [
           `M ${sourceX},${sourceY}`,
@@ -449,14 +468,21 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           `H ${targetX - offsetX}`,
           `V ${targetY}`,
           `H ${targetX}`,
-        ].join(' ');
+        ].join(" ");
         midX = sourceX + offsetX;
         midY = sourceY + offsetY / 2;
         break;
     }
   } else {
     // Regular edge path
-    pathD = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })[0];
+    pathD = getSmoothStepPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+    })[0];
     midX = (sourceX + targetX) / 2;
     midY = (sourceY + targetY) / 2;
   }
@@ -464,16 +490,19 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   const [hovered, setHovered] = useState(false);
 
   return (
-    <g onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <g
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <path
         id={id}
         className="react-flow__edge-path"
         d={pathD}
         style={{
           ...style,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          pointerEvents: 'stroke',
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          pointerEvents: "stroke",
         }}
         markerEnd={markerEnd}
       />
@@ -490,10 +519,15 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           y={midY - 12}
           width={48}
           height={24}
-          style={{ pointerEvents: 'all' }}
+          style={{ pointerEvents: "all" }}
         >
           <div
-            style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}
+            style={{
+              display: "flex",
+              gap: "4px",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
           >
             {controls.map((ctrl, i) => (
               <button
@@ -501,11 +535,11 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
                 type="button"
                 onClick={ctrl.onClick}
                 style={{
-                  background: '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  padding: '2px',
-                  cursor: 'pointer',
+                  background: "#fff",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  padding: "2px",
+                  cursor: "pointer",
                 }}
               >
                 {ctrl.icon}
@@ -521,7 +555,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
 // Generic Self-Loop Edge for any node
 export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
   const { data, source, target } = props;
-  
+
   // Only apply self-loop styling if it's actually a self-loop
   if (source !== target) {
     return <DefaultEdge {...props} />;
@@ -535,9 +569,14 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
       selfLoopConfig={{
         offsetX: (data?.offsetX as number) || 40,
         offsetY: (data?.offsetY as number) || 80,
-        direction: (data?.direction as 'top' | 'right' | 'bottom' | 'left') || 'right'
+        direction:
+          (data?.direction as "top" | "right" | "bottom" | "left") || "right",
       }}
-      style={{ stroke: (data?.loopColor as string) || '#6366f1', strokeWidth: 2, strokeDasharray: '5,5' }}
+      style={{
+        stroke: (data?.loopColor as string) || "#6366f1",
+        strokeWidth: 2,
+        strokeDasharray: "5,5",
+      }}
       markerEnd={MarkerType.ArrowClosed}
       controls={controls}
       data={{ label: data?.label }}
@@ -554,7 +593,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
       {...props}
       controls={controls}
       data={data}
-      style={{ stroke: '#64748b', strokeWidth: 3, ...props.style }}
+      style={{ stroke: "#64748b", strokeWidth: 3, ...props.style }}
     />
   );
 };
@@ -567,8 +606,8 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
   return (
     <InteractiveEdge
       {...props}
-      selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: 'right' }}
-      style={{ stroke: '#22c55e', strokeWidth: 3 }}
+      selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: "right" }}
+      style={{ stroke: "#22c55e", strokeWidth: 3 }}
       markerEnd={MarkerType.ArrowClosed}
       controls={controls}
       data={{ label: data?.label }}
@@ -586,4 +625,3 @@ const EdgeManager = {
   RemovableEdge: DefaultEdge,
 };
 export default EdgeManager;
-

@@ -90,14 +90,14 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const { theme } = useTheme();
-  
+
   // Determine if we're in dark mode
   const isDarkMode = useMemo(() => {
-    if (theme === 'dark') return true;
-    if (theme === 'light') return false;
+    if (theme === "dark") return true;
+    if (theme === "light") return false;
     // For 'system' theme, check the system preference
-    if (theme === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
     return false;
   }, [theme]);

@@ -242,9 +242,9 @@
     z-index: 5;
     --electric-border-color: #dd8448;
     --electric-border-light: #f5b27a;
-    --electric-border-outer: rgba(221, 132, 72, 0.45);
-    --electric-border-glow: rgba(221, 132, 72, 0.7);
-    --electric-border-glow-soft: rgba(221, 132, 72, 0.35);
+    --electric-border-outer: rgba(221, 132, 72, 0.2);
+    --electric-border-glow: rgba(221, 132, 72, 0.5);
+    --electric-border-glow-soft: rgba(221, 132, 72, 0.15);
     --electric-border-overlay: linear-gradient(
       -30deg,
       rgba(255, 255, 255, 0.9),
@@ -281,53 +281,23 @@
 
   .electric-border-effect__background {
     background: var(--electric-border-background);
-    filter: blur(28px);
-    opacity: 0.35;
-    transform: scale(1.12);
+    filter: blur(20px);
+    opacity: 0.25;
+    transform: scale(1.08);
     z-index: 0;
   }
 
-  .electric-border-effect__glow--soft {
-    border: 2px solid var(--electric-border-glow-soft);
-    filter: blur(8px);
-    opacity: 0.7;
-    transform: scale(1.08);
-    z-index: 1;
-  }
-
-  .electric-border-effect__glow--strong {
+  .electric-border-effect__glow {
     border: 2px solid var(--electric-border-glow);
-    filter: blur(3px);
-    opacity: 0.85;
-    transform: scale(1.03);
-    z-index: 2;
-  }
-
-  .electric-border-effect__border-outer {
-    border: 2px solid var(--electric-border-outer);
-    z-index: 3;
+    filter: blur(4px);
+    opacity: 0.6;
+    transform: scale(1.02);
+    z-index: 1;
   }
 
   .electric-border-effect__border-main {
     border: 2px solid var(--electric-border-color);
-    z-index: 4;
-  }
-
-  .electric-border-effect__overlay {
-    background: var(--electric-border-overlay);
-    mix-blend-mode: overlay;
-    filter: blur(16px);
-    transform: scale(1.08);
-  }
-
-  .electric-border-effect__overlay--primary {
-    opacity: 0.8;
-    z-index: 5;
-  }
-
-  .electric-border-effect__overlay--secondary {
-    opacity: 0.45;
-    z-index: 6;
+    z-index: 2;
   }
 
   /* React Flow Edge Overrides - More specific selectors */

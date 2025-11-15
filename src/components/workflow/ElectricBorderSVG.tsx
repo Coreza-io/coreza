@@ -178,15 +178,11 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
       <div className="electric-border-effect__layers">
         <div className="electric-border-effect__background" />
-        <div className="electric-border-effect__glow electric-border-effect__glow--soft" />
-        <div className="electric-border-effect__glow electric-border-effect__glow--strong" />
-        <div className="electric-border-effect__border-outer" />
+        <div className="electric-border-effect__glow" />
         <div
           className="electric-border-effect__border-main"
           style={{ filter: `url(#${filterId})` }}
         />
-        <div className="electric-border-effect__overlay electric-border-effect__overlay--primary" />
-        <div className="electric-border-effect__overlay electric-border-effect__overlay--secondary" />
       </div>
     </div>
   );

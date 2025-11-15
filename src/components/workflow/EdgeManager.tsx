@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { EdgeProps, getSmoothStepPath, MarkerType } from '@xyflow/react';
+import {
+  ConnectionLineComponentProps,
+  EdgeProps,
+  getSmoothStepPath,
+  MarkerType,
+} from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
 
 export interface EdgeControl {
@@ -42,6 +47,12 @@ const normalizeHex = (hex: string): string | null => {
   }
   return `#${value}`;
 };
+
+const FEMALE_PLUG_PATH =
+  'm12.707,12.707l-2.293,2.293-1.414-1.414,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0l-2.293,2.293-1.879-1.879c-.391-.391-1.023-.391-1.414,0s-.391,1.023,0,1.414l.352.352-1.134,1.135c-1.77,1.769-1.982,4.515-.638,6.519l-2.58,2.58c-.391.391-.391,1.023,0,1.414.195.195.451.293.707.293s.512-.098.707-.293l2.58-2.58c.865.58,1.868.871,2.871.871,1.321,0,2.642-.503,3.647-1.509l1.135-1.134.352.352c.195.195.451.293.707.293s.512-.098.707-.293c.391-.391.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z';
+
+const MALE_PLUG_PATH =
+  'M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z';
 
 const lightenHex = (hex: string, amount: number): string => {
   const normalized = normalizeHex(hex);
@@ -204,10 +215,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           x={-plugHalf}
           y={-plugHalf}
         >
-          <path
-            d="m12.707,12.707l-2.293,2.293-1.414-1.414,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0l-2.293,2.293-1.879-1.879c-.391-.391-1.023-.391-1.414,0s-.391,1.023,0,1.414l.352.352-1.134,1.135c-1.77,1.769-1.982,4.515-.638,6.519l-2.58,2.58c-.391.391-.391,1.023,0,1.414.195.195.451.293.707.293s.512-.098.707-.293l2.58-2.58c.865.58,1.868.871,2.871.871,1.321,0,2.642-.503,3.647-1.509l1.135-1.134.352.352c.195.195.451.293.707.293s.512-.098.707-.293c.391-.391.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z"
-            fill={cordColor}
-          />
+          <path d={MALE_PLUG_PATH} fill={cordColor} />
         </svg>
       </g>
       <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}>
@@ -219,10 +227,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           x={-plugHalf}
           y={-plugHalf}
         >
-          <path
-            d="M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z"
-            fill={cordColor}
-          />
+          <path d={FEMALE_PLUG_PATH} fill={cordColor} />
         </svg>
       </g>
       {data?.label && (
@@ -262,6 +267,103 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           </div>
         </foreignObject>
       )}
+    </g>
+  );
+};
+
+export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
+  fromX,
+  fromY,
+  toX,
+  toY,
+  fromPosition,
+  toPosition,
+  connectionLineStyle,
+  connectionStatus,
+}) => {
+  const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
+
+  const baseStroke =
+    typeof style.stroke === 'string'
+      ? style.stroke
+      : connectionStatus === 'invalid'
+      ? '#ef4444'
+      : '#64748b';
+
+  const strokeWidth =
+    typeof style.strokeWidth === 'number'
+      ? style.strokeWidth
+      : style.strokeWidth
+      ? Number.parseFloat(String(style.strokeWidth)) || 3
+      : 3;
+
+  const cordColor = connectionStatus === 'invalid' ? '#ef4444' : baseStroke;
+  const glowColor = lightenHex(cordColor, 0.5);
+
+  const [edgePath] = getSmoothStepPath({
+    sourceX: fromX,
+    sourceY: fromY,
+    sourcePosition: fromPosition,
+    targetX: toX,
+    targetY: toY,
+    targetPosition: toPosition,
+  });
+
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const degrees = (angle * 180) / Math.PI;
+  const plugSize = 24;
+  const plugHalf = plugSize / 2;
+
+  return (
+    <g className="plug-edge plug-edge--connection">
+      <path
+        d={edgePath}
+        className="plug-edge__glow"
+        stroke={glowColor}
+        strokeWidth={strokeWidth + 6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        style={{ pointerEvents: 'none' }}
+      />
+      <path
+        d={edgePath}
+        className="plug-edge__cord"
+        stroke={cordColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+        style={{
+          ...style,
+          stroke: cordColor,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          pointerEvents: 'stroke',
+        }}
+      />
+      <g className="plug-edge__plug" transform={`translate(${fromX} ${fromY}) rotate(${degrees})`}>
+        <svg
+          className="plug-edge__plug-shape plug-edge__plug-shape--source"
+          viewBox="0 0 24 24"
+          width={plugSize}
+          height={plugSize}
+          x={-plugHalf}
+          y={-plugHalf}
+        >
+          <path d={MALE_PLUG_PATH} fill={cordColor} />
+        </svg>
+      </g>
+      <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${toX} ${toY}) rotate(${degrees + 180})`}>
+        <svg
+          className="plug-edge__plug-shape plug-edge__plug-shape--target"
+          viewBox="0 0 24 24"
+          width={plugSize}
+          height={plugSize}
+          x={-plugHalf}
+          y={-plugHalf}
+        >
+          <path d={FEMALE_PLUG_PATH} fill={cordColor} />
+        </svg>
+      </g>
     </g>
   );
 };
@@ -474,6 +576,7 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
 const EdgeManager = {
   InteractiveEdge,
   PlugEdge,
+  PlugConnectionLine,
   SelfLoopEdge,
   DefaultEdge,
   LoopEdge,

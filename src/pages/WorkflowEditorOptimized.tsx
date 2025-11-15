@@ -35,6 +35,21 @@ const WorkflowEditorContent = () => {
     workflowActions.setEdges
   );
 
+  // Inject execution state into node data for visual feedback
+  useEffect(() => {
+    if (workflowState.nodes.length === 0) return;
+    
+    workflowActions.setNodes((currentNodes) =>
+      currentNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isExecuting: executionState.executingNode === node.id,
+        },
+      }))
+    );
+  }, [executionState.executingNode]);
+
   // Load workflow on mount or ID change
   useEffect(() => {
     if (authLoading) return;

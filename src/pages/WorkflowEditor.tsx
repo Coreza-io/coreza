@@ -169,6 +169,21 @@ const WorkflowEditorContent = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const rf = useReactFlow();
 
+  // Inject execution state into node data for visual feedback
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isExecuting: executingNode === node.id,
+        },
+      }))
+    );
+  }, [executingNode]);
+
   const cleanupAlpacaSubscription = useCallback(
     async (
       nodeId: string,

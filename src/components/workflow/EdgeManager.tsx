@@ -140,6 +140,8 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const midY = (sourceY + targetY) / 2;
 
   const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
+  const plugSize = 24;
+  const plugHalf = plugSize / 2;
 
   return (
     <g
@@ -193,21 +195,35 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={`url(#${sparkId})`}
         className={`plug-edge__spark${executing ? ' plug-edge__spark--active' : ''}`}
       />
-      <g
-        className="plug-edge__plug"
-        transform={`translate(${sourceX} ${sourceY}) rotate(${degrees})`}
-      >
-        <rect x={-18} y={-7} width={22} height={14} rx={5} fill="#0f172a" stroke={cordColor} strokeWidth={2} />
-        <rect x={4} y={-5} width={7} height={10} rx={2} fill={glowColor} />
-        <rect x={12} y={-3} width={3.5} height={6} rx={1.5} fill="#f8fafc" opacity={0.9} />
+      <g className="plug-edge__plug" transform={`translate(${sourceX} ${sourceY}) rotate(${degrees})`}>
+        <svg
+          className="plug-edge__plug-shape plug-edge__plug-shape--source"
+          viewBox="0 0 24 24"
+          width={plugSize}
+          height={plugSize}
+          x={-plugHalf}
+          y={-plugHalf}
+        >
+          <path
+            d="m12.707,12.707l-2.293,2.293-1.414-1.414,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0l-2.293,2.293-1.879-1.879c-.391-.391-1.023-.391-1.414,0s-.391,1.023,0,1.414l.352.352-1.134,1.135c-1.77,1.769-1.982,4.515-.638,6.519l-2.58,2.58c-.391.391-.391,1.023,0,1.414.195.195.451.293.707.293s.512-.098.707-.293l2.58-2.58c.865.58,1.868.871,2.871.871,1.321,0,2.642-.503,3.647-1.509l1.135-1.134.352.352c.195.195.451.293.707.293s.512-.098.707-.293c.391-.391.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z"
+            fill={cordColor}
+          />
+        </svg>
       </g>
-      <g
-        className="plug-edge__plug plug-edge__plug--target"
-        transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}
-      >
-        <rect x={-18} y={-7} width={22} height={14} rx={5} fill="#0f172a" stroke={cordColor} strokeWidth={2} />
-        <rect x={4} y={-5} width={7} height={10} rx={2} fill={glowColor} />
-        <rect x={12} y={-3} width={3.5} height={6} rx={1.5} fill="#f8fafc" opacity={0.9} />
+      <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}>
+        <svg
+          className="plug-edge__plug-shape plug-edge__plug-shape--target"
+          viewBox="0 0 24 24"
+          width={plugSize}
+          height={plugSize}
+          x={-plugHalf}
+          y={-plugHalf}
+        >
+          <path
+            d="M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z"
+            fill={cordColor}
+          />
+        </svg>
       </g>
       {data?.label && (
         <text className="react-flow__edge-text">

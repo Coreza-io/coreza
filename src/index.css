@@ -226,6 +226,15 @@
     }
   }
 
+  @keyframes plug-edge-plug-shift {
+    from {
+      transform: translate(0%, 0%);
+    }
+    to {
+      transform: translate(var(--plug-edge-shift-x, 0%), var(--plug-edge-shift-y, 0%));
+    }
+  }
+
   .plug-edge__glow {
     opacity: 0.2;
     filter: blur(10px);
@@ -265,11 +274,27 @@
     pointer-events: none;
   }
 
-  .plug-edge__plug rect {
+  .plug-edge__plug-shape {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: plug-edge-plug-shift 3s ease-in-out infinite alternate;
+  }
+
+  .plug-edge__plug-shape--source {
+    --plug-edge-shift-x: 10%;
+    --plug-edge-shift-y: -10%;
+  }
+
+  .plug-edge__plug-shape--target {
+    --plug-edge-shift-x: -10%;
+    --plug-edge-shift-y: 10%;
+  }
+
+  .plug-edge__plug-shape path {
     transition: filter 0.3s ease, fill 0.3s ease;
   }
 
-  .plug-edge__cord.executing-edge ~ .plug-edge__plug rect:first-child {
+  .plug-edge__cord.executing-edge ~ .plug-edge__plug .plug-edge__plug-shape path {
     filter: drop-shadow(0 0 8px currentColor);
   }
 

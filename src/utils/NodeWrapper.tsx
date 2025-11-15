@@ -7,19 +7,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
+import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
 
-const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
+type HandlePosition = "left" | "right" | "top" | "bottom";
+
+const POSITION_MAP: Record<HandlePosition, Position> = {
   left: Position.Left,
   right: Position.Right,
   top: Position.Top,
   bottom: Position.Bottom,
 };
 
+const ROTATION_MAP: Record<HandlePosition, number> = {
+  left: 180,
+  right: 0,
+  top: -90,
+  bottom: 90,
+};
+
 interface HandleConfig {
   id: string;
-  type: "source" | "target";
+  type?: "source" | "target" | "input" | "output";
   position: "left" | "right" | "top" | "bottom";
 }
 
@@ -111,6 +121,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     default: "rounded-lg",
   };
   const nodeShapeClass = shapeStyles[nodeType ?? "default"];
+  const shouldShowHandlesOutside = handles.length > 0;
 
   return (
     <div className="relative">
@@ -144,7 +155,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 200,
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
-          overflow: electricBorder && isExecuting && isDarkMode ? "visible" : "hidden",
+          overflow:
+            shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+              ? "visible"
+              : "hidden",
         }}
       >
         {/* Electric Border SVG Overlay */}
@@ -173,15 +187,30 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const style = isHorizontal
               ? { left: `${pct}%` }
               : { top: `${pct}%` };
+            const rawType = typeof h.type === "string" ? h.type : "source";
+            const normalizedType = rawType.toLowerCase();
+            const isInputHandle = normalizedType === "target" || normalizedType === "input";
+            const orientationClass = `plug-handle--${pos}`;
+            const handleClass = `plug-handle ${orientationClass} ${
+              isInputHandle ? "plug-handle--female" : "plug-handle--male"
+            }`;
+            const rotation = ROTATION_MAP[pos];
+            const iconStyle = { transform: `rotate(${rotation}deg)` };
             return (
               <Handle
                 key={h.id}
                 id={h.id}
-                type={h.type}
+                type={normalizedType === "target" ? "target" : "source"}
                 position={POSITION_MAP[h.position]}
-                style={style}
-                className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
-              />
+                style={{ ...style, width: 24, height: 24 }}
+                className={handleClass}
+              >
+                {isInputHandle ? (
+                  <FemalePlugIcon size={20} style={iconStyle} />
+                ) : (
+                  <MalePlugIcon size={20} style={iconStyle} />
+                )}
+              </Handle>
             );
           });
         })}

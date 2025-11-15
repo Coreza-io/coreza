@@ -247,25 +247,25 @@
 
   .electric-border-effect__background {
     background: var(--electric-border-background);
-    filter: blur(28px);
+    filter: blur(var(--electric-bg-blur, 28px));
     opacity: 0.35;
-    transform: scale(1.12);
+    transform: scale(var(--electric-scale-bg, 1.12));
     z-index: 0;
   }
 
   .electric-border-effect__glow--soft {
     border: 2px solid var(--electric-border-glow-soft);
-    filter: blur(8px);
+    filter: blur(var(--electric-glow-soft-blur, 8px));
     opacity: 0.7;
-    transform: scale(1.08);
+    transform: scale(var(--electric-scale-glow-soft, 1.08));
     z-index: 1;
   }
 
   .electric-border-effect__glow--strong {
     border: 2px solid var(--electric-border-glow);
-    filter: blur(3px);
+    filter: blur(var(--electric-glow-strong-blur, 3px));
     opacity: 0.85;
-    transform: scale(1.03);
+    transform: scale(var(--electric-scale-glow-strong, 1.03));
     z-index: 2;
   }
 
@@ -283,7 +283,7 @@
     background: var(--electric-border-overlay);
     mix-blend-mode: overlay;
     filter: blur(16px);
-    transform: scale(1.08);
+    transform: scale(var(--electric-scale-overlay, 1.08));
   }
 
   .electric-border-effect__overlay--primary {

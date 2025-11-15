@@ -20,7 +20,7 @@ const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
 
 interface HandleConfig {
   id: string;
-  type: "source" | "target";
+  type?: "source" | "target" | "input" | "output";
   position: "left" | "right" | "top" | "bottom";
 }
 
@@ -178,17 +178,22 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const style = isHorizontal
               ? { left: `${pct}%` }
               : { top: `${pct}%` };
-            const handleClass = h.type === "target" ? "plug-handle plug-handle--female" : "plug-handle plug-handle--male";
+            const rawType = typeof h.type === "string" ? h.type : "source";
+            const normalizedType = rawType.toLowerCase();
+            const isInputHandle = normalizedType === "target" || normalizedType === "input";
+            const handleClass = isInputHandle
+              ? "plug-handle plug-handle--female"
+              : "plug-handle plug-handle--male";
             return (
               <Handle
                 key={h.id}
                 id={h.id}
-                type={h.type}
+                type={normalizedType === "target" ? "target" : "source"}
                 position={POSITION_MAP[h.position]}
                 style={{ ...style, width: 24, height: 24 }}
                 className={handleClass}
               >
-                {h.type === "target" ? <FemalePlugIcon size={20} /> : <MalePlugIcon size={20} />}
+                {isInputHandle ? <FemalePlugIcon size={20} /> : <MalePlugIcon size={20} />}
               </Handle>
             );
           });

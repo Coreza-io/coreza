@@ -45,7 +45,7 @@
             { "label": "is empty", "value": "is_empty" },
             { "label": "is not empty", "value": "is_not_empty" },
             { "label": "matches regex", "value": "matches_regex" },
-            { "label": "is null", "value": "isNull" }
+            { "label": "is null", "value": "isNull" },
             { "label": "is not null", "value": "is_not_null" }
           ]
         },

@@ -108,7 +108,7 @@ const baseNodeTypes = Object.fromEntries([
 //console.log("NodeManifest keys:", Object.keys(nodeManifest));
 
 const edgeTypes = {
-  default: EdgeManager.SelfLoopEdge,
+  default: EdgeManager.PlugEdge,
   loop: EdgeManager.LoopEdge,
   removable: EdgeManager.DefaultEdge,
 };

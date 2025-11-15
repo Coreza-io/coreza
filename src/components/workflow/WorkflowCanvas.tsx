@@ -44,7 +44,7 @@ const baseNodeTypes = Object.fromEntries([
 ]);
 
 const edgeTypes = {
-  default: EdgeManager.SelfLoopEdge,
+  default: EdgeManager.PlugEdge,
   loop: EdgeManager.LoopEdge,
   removable: EdgeManager.DefaultEdge,
 };

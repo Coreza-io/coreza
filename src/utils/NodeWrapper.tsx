@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { useMemo } from "react";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -75,6 +77,18 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
+  const { theme } = useTheme();
+  
+  // Determine if we're in dark mode
+  const isDarkMode = useMemo(() => {
+    if (theme === 'dark') return true;
+    if (theme === 'light') return false;
+    // For 'system' theme, check the system preference
+    if (theme === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  }, [theme]);
 
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
@@ -109,7 +123,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
           ${
-            selected && electricBorder
+            selected && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`
               : selected
               ? "border-primary shadow-glow"
@@ -128,11 +142,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 200,
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
-          overflow: electricBorder && selected ? "visible" : "hidden",
+          overflow: electricBorder && selected && isDarkMode ? "visible" : "hidden",
         }}
       >
         {/* Electric Border SVG Overlay */}
-        {!isExpanded && electricBorder && selected && (
+        {!isExpanded && electricBorder && selected && isDarkMode && (
           <ElectricBorderSVG
             isExpanded={isExpanded}
             color={

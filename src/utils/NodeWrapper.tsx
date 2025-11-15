@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
+import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -42,6 +43,9 @@ interface NodeWrapperProps {
   startEditing?: () => void;
   finishEditing?: (save?: boolean) => void;
   setEditingName?: (name: string) => void;
+  // Electric border props
+  electricBorder?: boolean;
+  electricColor?: 'cyan' | 'orange' | 'blue' | 'purple' | 'green';
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -66,6 +70,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   startEditing,
   finishEditing,
   setEditingName,
+  // Electric border props
+  electricBorder = true,
+  electricColor = 'cyan',
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
 
@@ -97,11 +104,16 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Main Node Card */}
       <Card
         className={`
-          relative shadow-card overflow-hidden transition-all duration-300 ease-in-out 
+          relative shadow-card transition-all duration-300 ease-in-out 
           bg-card border-2 hover:shadow-elevated
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
-          ${selected ? "border-primary shadow-glow" : "border-border"}
+          ${selected && electricBorder 
+            ? `electric-border electric-border-${electricColor} border-transparent` 
+            : selected 
+            ? "border-primary shadow-glow" 
+            : "border-border"
+          }
         `}
         onDoubleClick={(e) => {
           e.preventDefault();
@@ -115,8 +127,21 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 150,
           minHeight: isExpanded ? minHeight : 100,
           height: isExpanded ? "auto" : 100,
+          overflow: electricBorder && selected ? 'visible' : 'hidden',
         }}
       >
+        {/* Electric Border SVG Overlay */}
+        {electricBorder && selected && (
+          <ElectricBorderSVG 
+            color={
+              electricColor === 'cyan' ? '#00ffff' :
+              electricColor === 'orange' ? '#ff8c00' :
+              electricColor === 'blue' ? '#3b82f6' :
+              electricColor === 'purple' ? '#a855f7' :
+              '#00ff00'
+            }
+          />
+        )}
         {/* Handles (configured in manifest) - Always render for React Flow connections */}
         {(["top", "bottom", "left", "right"] as const).map((pos) => {
           const group = handles.filter((h) => h.position === pos);

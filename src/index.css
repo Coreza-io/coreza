@@ -298,6 +298,23 @@
     filter: drop-shadow(0 0 8px currentColor);
   }
 
+  .plug-handle {
+    width: 24px;
+    height: 24px;
+    border-radius: 9999px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .plug-handle svg {
+    width: 100%;
+    height: 100%;
+  }
+
   .electric-border-effect {
     position: absolute;
     inset: 0;

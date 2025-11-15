@@ -9,6 +9,7 @@ import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
+import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -173,6 +174,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const style = isHorizontal
               ? { left: `${pct}%` }
               : { top: `${pct}%` };
+            const handleClassName = `plug-handle ${
+              h.type === "target" ? "plug-handle--female" : "plug-handle--male"
+            }`;
             return (
               <Handle
                 key={h.id}
@@ -180,8 +184,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 type={h.type}
                 position={POSITION_MAP[h.position]}
                 style={style}
-                className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
-              />
+                className={handleClassName}
+              >
+                {h.type === "target" ? <FemalePlugIcon /> : <MalePlugIcon />}
+              </Handle>
             );
           });
         })}

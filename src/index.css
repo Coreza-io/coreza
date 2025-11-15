@@ -239,7 +239,7 @@
     inset: 0;
     pointer-events: none;
     border-radius: inherit;
-    z-index: 5;
+    z-index: 1;
     --electric-border-color: #dd8448;
     --electric-border-light: #f5b27a;
     --electric-border-outer: rgba(221, 132, 72, 0.2);
@@ -292,7 +292,8 @@
     filter: blur(4px);
     opacity: 0.6;
     transform: scale(1.02);
-    z-index: 1;
+    mix-blend-mode: screen;
+    z-index: 0;
   }
 
   .electric-border-effect__border-main {

@@ -64,11 +64,6 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
     return {
       "--electric-border-color": color,
       "--electric-border-light": lightColor,
-      "--electric-border-outer": hexToRgba(color, 0.45),
-      "--electric-border-glow": hexToRgba(lightColor, 0.7),
-      "--electric-border-glow-soft": hexToRgba(lightColor, 0.35),
-      "--electric-border-overlay": `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
-      "--electric-border-background": `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
     } as React.CSSProperties;
   }, [color]);
 
@@ -177,7 +172,6 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
       </svg>
 
       <div className="electric-border-effect__layers">
-        <div className="electric-border-effect__background" />
         <div className="electric-border-effect__glow" />
         <div
           className="electric-border-effect__border-main"

@@ -5,6 +5,7 @@
   "description": "Access Schwab account info, positions, orders, quotes, and price history",
   "icon": "/assets/icons/schwab.svg",
   "color": "text-blue-500",
+  "size": { "width": 300, "height": 300 },
   "category": "Broker",
   "subCategory": "Schwab",
   "handles": [

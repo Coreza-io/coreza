@@ -1,4 +1,4 @@
-import React, { useId, useMemo } from 'react';
+import React, { useId, useMemo } from "react";
 
 interface ElectricBorderSVGProps {
   color?: string;
@@ -10,7 +10,7 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
-  const normalized = hex.replace('#', '').trim();
+  const normalized = hex.replace("#", "").trim();
   if (normalized.length === 3) {
     const r = parseInt(normalized[0] + normalized[0], 16);
     const g = parseInt(normalized[1] + normalized[1], 16);
@@ -30,8 +30,8 @@ const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
 
 const rgbToHex = (r: number, g: number, b: number) =>
   `#${[r, g, b]
-    .map((component) => component.toString(16).padStart(2, '0'))
-    .join('')}`;
+    .map((component) => component.toString(16).padStart(2, "0"))
+    .join("")}`;
 
 const lightenHex = (hex: string, amount: number) => {
   const rgb = hexToRgb(hex);
@@ -54,18 +54,20 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
-  color = '#dd8448',
-  className = '',
+  color = "#dd8448",
+  className = "",
   isExpanded = true,
 }) => {
   const rawId = useId();
-  const filterId = useMemo(() => rawId.replace(/:/g, ''), [rawId]);
+  const filterId = useMemo(() => rawId.replace(/:/g, ""), [rawId]);
 
   // Size-specific effect parameters
   const effectParams = useMemo(() => {
     if (isExpanded) {
       // Original values for expanded nodes
       return {
+        baseFrequency: 0.02,
+        numOctaves: 10,
         backgroundBlur: 28,
         glowBlurSoft: 8,
         glowBlurStrong: 3,
@@ -78,14 +80,16 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
     } else {
       // Enhanced values for collapsed nodes to maintain visual prominence
       return {
-        backgroundBlur: 20,
+        baseFrequency: 0.075,
+        numOctaves: 10,
+        backgroundBlur: 35,
         glowBlurSoft: 12,
         glowBlurStrong: 6,
-        scaleBackground: 1.25,
-        scaleGlowSoft: 1.20,
-        scaleGlowStrong: 1.12,
-        scaleOverlay: 1.15,
-        displacementScale: 25,
+        scaleBackground: 1.17,
+        scaleGlowSoft: 0,
+        scaleGlowStrong: 1,
+        scaleOverlay: 0,
+        displacementScale: 10,
       };
     }
   }, [isExpanded]);
@@ -93,28 +97,25 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
   const cssVariables = useMemo(() => {
     const lightColor = lightenHex(color, 0.35);
     return {
-      '--electric-border-color': color,
-      '--electric-border-light': lightColor,
-      '--electric-border-outer': hexToRgba(color, 0.45),
-      '--electric-border-glow': hexToRgba(lightColor, 0.7),
-      '--electric-border-glow-soft': hexToRgba(lightColor, 0.35),
-      '--electric-border-overlay': `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
-      '--electric-border-background': `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
-      '--electric-bg-blur': `${effectParams.backgroundBlur}px`,
-      '--electric-glow-soft-blur': `${effectParams.glowBlurSoft}px`,
-      '--electric-glow-strong-blur': `${effectParams.glowBlurStrong}px`,
-      '--electric-scale-bg': effectParams.scaleBackground,
-      '--electric-scale-glow-soft': effectParams.scaleGlowSoft,
-      '--electric-scale-glow-strong': effectParams.scaleGlowStrong,
-      '--electric-scale-overlay': effectParams.scaleOverlay,
+      "--electric-border-color": color,
+      "--electric-border-light": lightColor,
+      "--electric-border-outer": hexToRgba(color, 0.45),
+      "--electric-border-glow": hexToRgba(lightColor, 0.7),
+      "--electric-border-glow-soft": hexToRgba(lightColor, 0.35),
+      "--electric-border-overlay": `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
+      "--electric-border-background": `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
+      "--electric-bg-blur": `${effectParams.backgroundBlur}px`,
+      "--electric-glow-soft-blur": `${effectParams.glowBlurSoft}px`,
+      "--electric-glow-strong-blur": `${effectParams.glowBlurStrong}px`,
+      "--electric-scale-bg": effectParams.scaleBackground,
+      "--electric-scale-glow-soft": effectParams.scaleGlowSoft,
+      "--electric-scale-glow-strong": effectParams.scaleGlowStrong,
+      "--electric-scale-overlay": effectParams.scaleOverlay,
     } as React.CSSProperties;
   }, [color, effectParams]);
 
   return (
-    <div
-      className={`electric-border-effect ${className}`}
-      style={cssVariables}
-    >
+    <div className={`electric-border-effect ${className}`} style={cssVariables}>
       <svg
         className="electric-border-effect__svg"
         aria-hidden="true"
@@ -131,15 +132,15 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
           >
             <feTurbulence
               type="turbulence"
-              baseFrequency="0.02"
-              numOctaves="10"
+              baseFrequency={effectParams.baseFrequency}
+              numOctaves={effectParams.numOctaves}
               result="noise1"
               seed="1"
             />
             <feOffset in="noise1" dx="0" dy="0" result="offsetNoise1">
               <animate
                 attributeName="dy"
-                values="700; 0"
+                values="150; 0"
                 dur="6s"
                 repeatCount="indefinite"
                 calcMode="linear"
@@ -148,15 +149,15 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
             <feTurbulence
               type="turbulence"
-              baseFrequency="0.02"
-              numOctaves="10"
+              baseFrequency={effectParams.baseFrequency}
+              numOctaves={effectParams.numOctaves}
               result="noise2"
               seed="1"
             />
             <feOffset in="noise2" dx="0" dy="0" result="offsetNoise2">
               <animate
                 attributeName="dy"
-                values="0; -700"
+                values="0; -150"
                 dur="6s"
                 repeatCount="indefinite"
                 calcMode="linear"
@@ -165,15 +166,15 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
             <feTurbulence
               type="turbulence"
-              baseFrequency="0.02"
-              numOctaves="10"
+              baseFrequency={effectParams.baseFrequency}
+              numOctaves={effectParams.numOctaves}
               result="noise3"
               seed="2"
             />
             <feOffset in="noise3" dx="0" dy="0" result="offsetNoise3">
               <animate
                 attributeName="dx"
-                values="490; 0"
+                values="150; 0"
                 dur="6s"
                 repeatCount="indefinite"
                 calcMode="linear"
@@ -182,15 +183,15 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
             <feTurbulence
               type="turbulence"
-              baseFrequency="0.02"
-              numOctaves="10"
+              baseFrequency={effectParams.baseFrequency}
+              numOctaves={effectParams.numOctaves}
               result="noise4"
               seed="2"
             />
             <feOffset in="noise4" dx="0" dy="0" result="offsetNoise4">
               <animate
                 attributeName="dx"
-                values="0; -490"
+                values="0; -150"
                 dur="6s"
                 repeatCount="indefinite"
                 calcMode="linear"
@@ -199,7 +200,12 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
             <feComposite in="offsetNoise1" in2="offsetNoise2" result="part1" />
             <feComposite in="offsetNoise3" in2="offsetNoise4" result="part2" />
-            <feBlend in="part1" in2="part2" mode="color-dodge" result="combinedNoise" />
+            <feBlend
+              in="part1"
+              in2="part2"
+              mode="color-dodge"
+              result="combinedNoise"
+            />
 
             <feDisplacementMap
               in="SourceGraphic"

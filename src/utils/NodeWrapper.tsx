@@ -26,8 +26,8 @@ interface NodeWrapperProps {
   nodes: any[];
   edges: any[];
   selected?: boolean;
-  inputPanelProps?: any;   // props for InputPanel
-  outputPanelProps?: any;  // props for OutputPanel
+  inputPanelProps?: any; // props for InputPanel
+  outputPanelProps?: any; // props for OutputPanel
   icon?: React.ReactNode;
   label?: string;
   children: React.ReactNode;
@@ -45,7 +45,7 @@ interface NodeWrapperProps {
   setEditingName?: (name: string) => void;
   // Electric border props
   electricBorder?: boolean;
-  electricColor?: 'cyan' | 'orange' | 'blue' | 'purple' | 'green';
+  electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -65,14 +65,14 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   onDoubleClick,
   // Node name editing props
   isEditing = false,
-  editingName = '',
+  editingName = "",
   editInputRef,
   startEditing,
   finishEditing,
   setEditingName,
   // Electric border props
   electricBorder = true,
-  electricColor = 'cyan',
+  electricColor = "cyan",
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
 
@@ -91,7 +91,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   const shapeStyles: Record<string, string> = {
     support: "rounded-full",
-    agent: "rounded-lg", 
+    agent: "rounded-lg",
     default: "rounded-lg",
   };
   const nodeShapeClass = shapeStyles[nodeType ?? "default"];
@@ -108,11 +108,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           bg-card border-2 hover:shadow-elevated
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
-          ${selected && electricBorder 
-            ? `electric-border electric-border-${electricColor} border-transparent` 
-            : selected 
-            ? "border-primary shadow-glow" 
-            : "border-border"
+          ${
+            selected && electricBorder
+              ? `electric-border electric-border-${electricColor} border-transparent`
+              : selected
+              ? "border-primary shadow-glow"
+              : "border-border"
           }
         `}
         onDoubleClick={(e) => {
@@ -124,22 +125,26 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }
         }}
         style={{
-          width: isExpanded ? minWidth : 150,
-          minHeight: isExpanded ? minHeight : 100,
-          height: isExpanded ? "auto" : 100,
-          overflow: electricBorder && selected ? 'visible' : 'hidden',
+          width: isExpanded ? minWidth : 200,
+          minHeight: isExpanded ? minHeight : 150,
+          height: isExpanded ? "auto" : 150,
+          overflow: electricBorder && selected ? "visible" : "hidden",
         }}
       >
         {/* Electric Border SVG Overlay */}
-        {electricBorder && selected && (
-          <ElectricBorderSVG 
+        {!isExpanded && electricBorder && selected && (
+          <ElectricBorderSVG
             isExpanded={isExpanded}
             color={
-              electricColor === 'cyan' ? '#00ffff' :
-              electricColor === 'orange' ? '#ff8c00' :
-              electricColor === 'blue' ? '#3b82f6' :
-              electricColor === 'purple' ? '#a855f7' :
-              '#00ff00'
+              electricColor === "cyan"
+                ? "#00ffff"
+                : electricColor === "orange"
+                ? "#ff8c00"
+                : electricColor === "blue"
+                ? "#3b82f6"
+                : electricColor === "purple"
+                ? "#a855f7"
+                : "#00ff00"
             }
           />
         )}
@@ -149,7 +154,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           const isHorizontal = pos === "top" || pos === "bottom";
           return group.map((h, idx) => {
             const pct = ((idx + 1) / (group.length + 1)) * 100;
-            const style = isHorizontal ? { left: `${pct}%` } : { top: `${pct}%` };
+            const style = isHorizontal
+              ? { left: `${pct}%` }
+              : { top: `${pct}%` };
             return (
               <Handle
                 key={h.id}
@@ -168,13 +175,13 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           <div className="flex flex-col items-center justify-center h-full p-4 select-none">
             <div className="text-muted-foreground mb-2">
               {/* Render icon with immediate loading */}
-              {typeof icon === 'string' && icon.startsWith('/assets/') ? (
-                <img 
-                  src={icon} 
-                  alt="Node icon" 
-                  className="w-6 h-6" 
+              {typeof icon === "string" && icon.startsWith("/assets/") ? (
+                <img
+                  src={icon}
+                  alt="Node icon"
+                  className="w-6 h-6"
                   loading="eager"
-                  style={{ imageRendering: 'auto' }}
+                  style={{ imageRendering: "auto" }}
                 />
               ) : (
                 icon
@@ -189,16 +196,19 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   onBlur={(e) => {
                     // Prevent blur from canceling edit if clicking on edit controls
                     const relatedTarget = e.relatedTarget as HTMLElement;
-                    if (!relatedTarget || !relatedTarget.closest('.node-edit-controls')) {
+                    if (
+                      !relatedTarget ||
+                      !relatedTarget.closest(".node-edit-controls")
+                    ) {
                       finishEditing?.(true);
                     }
                   }}
                   onKeyDown={(e) => {
                     e.stopPropagation(); // Prevent parent handlers
-                    if (e.key === 'Enter') {
+                    if (e.key === "Enter") {
                       e.preventDefault();
                       finishEditing?.(true);
-                    } else if (e.key === 'Escape') {
+                    } else if (e.key === "Escape") {
                       e.preventDefault();
                       finishEditing?.(false);
                     }
@@ -208,8 +218,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <div 
-                  className="flex items-center justify-center gap-1 cursor-pointer group relative" 
+                <div
+                  className="flex items-center justify-center gap-1 cursor-pointer group relative"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     startEditing?.();

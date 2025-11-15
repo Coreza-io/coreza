@@ -6,7 +6,7 @@
 
 @layer components {
   .plug-handle {
-    @apply w-6 h-6 rounded-full bg-transparent border-0 flex items-center justify-center p-0;
+    @apply w-6 h-6 rounded-full bg-transparent border-0 flex items-center justify-center p-0 z-20;
   }
 
   .plug-handle svg {

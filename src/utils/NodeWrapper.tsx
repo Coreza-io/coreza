@@ -112,6 +112,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     default: "rounded-lg",
   };
   const nodeShapeClass = shapeStyles[nodeType ?? "default"];
+  const shouldShowHandlesOutside = handles.length > 0;
 
   return (
     <div className="relative">
@@ -145,7 +146,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           width: isExpanded ? minWidth : 200,
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
-          overflow: electricBorder && isExecuting && isDarkMode ? "visible" : "hidden",
+          overflow:
+            shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+              ? "visible"
+              : "hidden",
         }}
       >
         {/* Electric Border SVG Overlay */}

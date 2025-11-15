@@ -59,9 +59,17 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Light */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(217 91% 70%));
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
     --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
-    --gradient-glow: radial-gradient(circle at center, hsl(217 91% 60% / 0.08), transparent 70%);
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.08),
+      transparent 70%
+    );
 
     /* Shadows - Light */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
@@ -124,9 +132,21 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Dark */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(217 91% 70%));
-    --gradient-card: linear-gradient(145deg, hsl(224 12% 10%), hsl(224 12% 12%));
-    --gradient-glow: radial-gradient(circle at center, hsl(217 91% 60% / 0.15), transparent 70%);
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
+    --gradient-card: linear-gradient(
+      145deg,
+      hsl(224 12% 10%),
+      hsl(224 12% 12%)
+    );
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.15),
+      transparent 70%
+    );
 
     /* Shadows - Dark */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
@@ -136,24 +156,38 @@
 
   /* Electric Border Animations */
   @keyframes electric-pulse {
-    0%, 100% {
-      filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+    0%,
+    100% {
+      filter: drop-shadow(0 0 8px currentColor)
+        drop-shadow(0 0 16px currentColor);
       opacity: 1;
     }
     50% {
-      filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 24px currentColor);
+      filter: drop-shadow(0 0 12px currentColor)
+        drop-shadow(0 0 24px currentColor);
       opacity: 0.8;
     }
   }
-  
+
   @keyframes electric-flicker {
-    0%, 100% { opacity: 1; }
-    20% { opacity: 0.9; }
-    40% { opacity: 1; }
-    60% { opacity: 0.85; }
-    80% { opacity: 1; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    20% {
+      opacity: 0.9;
+    }
+    40% {
+      opacity: 1;
+    }
+    60% {
+      opacity: 0.85;
+    }
+    80% {
+      opacity: 1;
+    }
   }
-  
+
   @keyframes border-flow {
     0% {
       stroke-dashoffset: 0;
@@ -172,55 +206,130 @@
   body {
     @apply bg-background text-foreground;
   }
-  
+
   /* Electric Border Utility Classes */
   .electric-border {
     position: relative;
     overflow: visible !important;
-  }
-
-  .electric-border::before {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border-radius: inherit;
-    padding: 2px;
-    background: linear-gradient(
-      45deg,
-      transparent 30%,
-      currentColor 50%,
-      transparent 70%
-    );
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: electric-pulse 2s ease-in-out infinite, electric-flicker 3s ease-in-out infinite;
-    pointer-events: none;
-    z-index: 1;
-    will-change: filter;
+    --electric-border-color: currentColor;
   }
 
   .electric-border-cyan {
-    color: hsl(180 100% 50%);
+    color: #00ffff;
   }
 
   .electric-border-orange {
-    color: hsl(30 100% 50%);
+    color: #ff8c00;
   }
 
   .electric-border-blue {
-    color: hsl(217 91% 60%);
+    color: #3b82f6;
   }
 
   .electric-border-purple {
-    color: hsl(270 100% 60%);
+    color: #a855f7;
   }
 
   .electric-border-green {
-    color: hsl(120 100% 50%);
+    color: #00ff00;
   }
-  
+
+  .electric-border-effect {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: 5;
+    --electric-border-color: #dd8448;
+    --electric-border-light: #f5b27a;
+    --electric-border-outer: rgba(221, 132, 72, 0.45);
+    --electric-border-glow: rgba(221, 132, 72, 0.7);
+    --electric-border-glow-soft: rgba(221, 132, 72, 0.35);
+    --electric-border-overlay: linear-gradient(
+      -30deg,
+      rgba(255, 255, 255, 0.9),
+      transparent 32%,
+      transparent 68%,
+      rgba(255, 255, 255, 0.85)
+    );
+    --electric-border-background: linear-gradient(
+      -30deg,
+      var(--electric-border-light),
+      transparent,
+      var(--electric-border-color)
+    );
+  }
+
+  .electric-border-effect__svg {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .electric-border-effect__layers {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .electric-border-effect__layers > * {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .electric-border-effect__background {
+    background: var(--electric-border-background);
+    filter: blur(28px);
+    opacity: 0.35;
+    transform: scale(1.12);
+    z-index: 0;
+  }
+
+  .electric-border-effect__glow--soft {
+    border: 2px solid var(--electric-border-glow-soft);
+    filter: blur(8px);
+    opacity: 0.7;
+    transform: scale(1.08);
+    z-index: 1;
+  }
+
+  .electric-border-effect__glow--strong {
+    border: 2px solid var(--electric-border-glow);
+    filter: blur(3px);
+    opacity: 0.85;
+    transform: scale(1.03);
+    z-index: 2;
+  }
+
+  .electric-border-effect__border-outer {
+    border: 2px solid var(--electric-border-outer);
+    z-index: 3;
+  }
+
+  .electric-border-effect__border-main {
+    border: 2px solid var(--electric-border-color);
+    z-index: 4;
+  }
+
+  .electric-border-effect__overlay {
+    background: var(--electric-border-overlay);
+    mix-blend-mode: overlay;
+    filter: blur(16px);
+    transform: scale(1.08);
+  }
+
+  .electric-border-effect__overlay--primary {
+    opacity: 0.8;
+    z-index: 5;
+  }
+
+  .electric-border-effect__overlay--secondary {
+    opacity: 0.45;
+    z-index: 6;
+  }
+
   /* React Flow Edge Overrides - More specific selectors */
   .react-flow__edges .react-flow__edge path,
   .react-flow__edge path,
@@ -228,19 +337,19 @@
   .react-flow .react-flow__edges .react-flow__edge path {
     stroke: #6b7280 !important;
   }
-  
+
   .react-flow__edge.animated path,
   .react-flow__edge.animated .react-flow__edge-path {
     stroke: #6b7280 !important;
     stroke-dasharray: 5;
     animation: dashdraw 0.5s linear infinite;
   }
-  
+
   .react-flow__edge.selected path,
   .react-flow__edge.selected .react-flow__edge-path {
     stroke: #6b7280 !important;
   }
-  
+
   @keyframes dashdraw {
     to {
       stroke-dashoffset: -10;

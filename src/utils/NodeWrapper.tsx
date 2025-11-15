@@ -7,18 +7,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
-import {
-  FemalePlugIcon,
-  MalePlugIcon,
-} from "@/components/workflow/EdgeManager";
+import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useMemo } from "react";
 
-const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
+type HandlePosition = "left" | "right" | "top" | "bottom";
+
+const POSITION_MAP: Record<HandlePosition, Position> = {
   left: Position.Left,
   right: Position.Right,
   top: Position.Top,
   bottom: Position.Bottom,
+};
+
+const ROTATION_MAP: Record<HandlePosition, number> = {
+  left: 180,
+  right: 0,
+  top: -90,
+  bottom: 90,
 };
 
 interface HandleConfig {
@@ -150,8 +156,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           minHeight: isExpanded ? minHeight : 150,
           height: isExpanded ? "auto" : 150,
           overflow:
-            shouldShowHandlesOutside ||
-            (electricBorder && isExecuting && isDarkMode)
+            shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
               ? "visible"
               : "hidden",
         }}
@@ -184,11 +189,13 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               : { top: `${pct}%` };
             const rawType = typeof h.type === "string" ? h.type : "source";
             const normalizedType = rawType.toLowerCase();
-            const isInputHandle = normalizedType === "target";
+            const isInputHandle = normalizedType === "target" || normalizedType === "input";
             const orientationClass = `plug-handle--${pos}`;
             const handleClass = `plug-handle ${orientationClass} ${
               isInputHandle ? "plug-handle--female" : "plug-handle--male"
             }`;
+            const rotation = ROTATION_MAP[pos];
+            const iconStyle = { transform: `rotate(${rotation}deg)` };
             return (
               <Handle
                 key={h.id}
@@ -199,9 +206,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 className={handleClass}
               >
                 {isInputHandle ? (
-                  <FemalePlugIcon size={20} />
+                  <FemalePlugIcon size={20} style={iconStyle} />
                 ) : (
-                  <MalePlugIcon size={20} />
+                  <MalePlugIcon size={20} style={iconStyle} />
                 )}
               </Handle>
             );

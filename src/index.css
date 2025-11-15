@@ -11,18 +11,8 @@
 
   .plug-handle svg {
     @apply w-full h-full;
-  }
-
-  .plug-handle--left svg {
-    transform: rotate(180deg);
-  }
-
-  .plug-handle--top svg {
-    transform: rotate(-90deg);
-  }
-
-  .plug-handle--bottom svg {
-    transform: rotate(90deg);
+    transform-origin: center;
+    transform-box: fill-box;
   }
 }
 

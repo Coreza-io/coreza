@@ -280,6 +280,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   toPosition,
   connectionLineStyle,
   connectionStatus,
+  fromHandle,
 }) => {
   const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
 
@@ -309,7 +310,15 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
     targetPosition: toPosition,
   });
 
-  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const fromType = fromHandle?.type ?? 'source';
+  const draggingFromSource = fromType === 'source';
+
+  const anchorX = draggingFromSource ? fromX : toX;
+  const anchorY = draggingFromSource ? fromY : toY;
+  const pointerX = draggingFromSource ? toX : fromX;
+  const pointerY = draggingFromSource ? toY : fromY;
+
+  const angle = Math.atan2(pointerY - anchorY, pointerX - anchorX);
   const degrees = (angle * 180) / Math.PI;
   const plugSize = 24;
   const plugHalf = plugSize / 2;
@@ -340,7 +349,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           pointerEvents: 'stroke',
         }}
       />
-      <g className="plug-edge__plug" transform={`translate(${fromX} ${fromY}) rotate(${degrees})`}>
+      <g className="plug-edge__plug" transform={`translate(${pointerX} ${pointerY}) rotate(${degrees})`}>
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--source"
           viewBox="0 0 24 24"
@@ -352,7 +361,10 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           <path d={MALE_PLUG_PATH} fill={cordColor} />
         </svg>
       </g>
-      <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${toX} ${toY}) rotate(${degrees + 180})`}>
+      <g
+        className="plug-edge__plug plug-edge__plug--target"
+        transform={`translate(${anchorX} ${anchorY}) rotate(${degrees + 180})`}
+      >
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--target"
           viewBox="0 0 24 24"

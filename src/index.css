@@ -265,11 +265,16 @@
     pointer-events: none;
   }
 
-  .plug-edge__plug rect {
+  .plug-edge__plug-shape {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .plug-edge__plug-shape path {
     transition: filter 0.3s ease, fill 0.3s ease;
   }
 
-  .plug-edge__cord.executing-edge ~ .plug-edge__plug rect:first-child {
+  .plug-edge__cord.executing-edge ~ .plug-edge__plug .plug-edge__plug-shape path {
     filter: drop-shadow(0 0 8px currentColor);
   }
 

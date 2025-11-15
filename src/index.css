@@ -200,6 +200,79 @@
     color: #00ff00;
   }
 
+  /* Workflow plug edge styling */
+  @keyframes plug-edge-flow {
+    from {
+      stroke-dashoffset: 0;
+    }
+    to {
+      stroke-dashoffset: -48;
+    }
+  }
+
+  @keyframes plug-edge-spark {
+    0%,
+    100% {
+      transform: scale(0.9);
+      opacity: 0.15;
+    }
+    40% {
+      transform: scale(1.1);
+      opacity: 0.35;
+    }
+    70% {
+      transform: scale(1);
+      opacity: 0.25;
+    }
+  }
+
+  .plug-edge__glow {
+    opacity: 0.2;
+    filter: blur(10px);
+    transition: opacity 0.3s ease, filter 0.3s ease;
+  }
+
+  .plug-edge__glow--active {
+    opacity: 0.45;
+    filter: blur(12px);
+  }
+
+  .plug-edge__cord {
+    transition: filter 0.3s ease;
+  }
+
+  .plug-edge__cord--animated {
+    stroke-dasharray: 12 12;
+    animation: plug-edge-flow 1.4s linear infinite;
+  }
+
+  .plug-edge__cord.executing-edge {
+    filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 0 14px currentColor);
+  }
+
+  .plug-edge__spark {
+    opacity: 0.15;
+    transition: opacity 0.3s ease;
+    animation: plug-edge-spark 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .plug-edge__spark--active {
+    opacity: 0.5;
+  }
+
+  .plug-edge__plug {
+    pointer-events: none;
+  }
+
+  .plug-edge__plug rect {
+    transition: filter 0.3s ease, fill 0.3s ease;
+  }
+
+  .plug-edge__cord.executing-edge ~ .plug-edge__plug rect:first-child {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+
   .electric-border-effect {
     position: absolute;
     inset: 0;

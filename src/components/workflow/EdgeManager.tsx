@@ -206,7 +206,10 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={`url(#${sparkId})`}
         className={`plug-edge__spark${executing ? ' plug-edge__spark--active' : ''}`}
       />
-      <g className="plug-edge__plug" transform={`translate(${sourceX} ${sourceY}) rotate(${degrees})`}>
+      <g
+        className="plug-edge__plug plug-edge__plug--source"
+        transform={`translate(${sourceX} ${sourceY}) rotate(${degrees + 180})`}
+      >
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--source"
           viewBox="0 0 24 24"
@@ -218,7 +221,10 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           <path d={MALE_PLUG_PATH} fill={cordColor} />
         </svg>
       </g>
-      <g className="plug-edge__plug plug-edge__plug--target" transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}>
+      <g
+        className="plug-edge__plug plug-edge__plug--target"
+        transform={`translate(${targetX} ${targetY}) rotate(${degrees})`}
+      >
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--target"
           viewBox="0 0 24 24"
@@ -349,7 +355,10 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           pointerEvents: 'stroke',
         }}
       />
-      <g className="plug-edge__plug" transform={`translate(${pointerX} ${pointerY}) rotate(${degrees})`}>
+      <g
+        className="plug-edge__plug plug-edge__plug--source"
+        transform={`translate(${pointerX} ${pointerY}) rotate(${degrees + 180})`}
+      >
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--source"
           viewBox="0 0 24 24"
@@ -363,7 +372,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       </g>
       <g
         className="plug-edge__plug plug-edge__plug--target"
-        transform={`translate(${anchorX} ${anchorY}) rotate(${degrees + 180})`}
+        transform={`translate(${anchorX} ${anchorY}) rotate(${degrees})`}
       >
         <svg
           className="plug-edge__plug-shape plug-edge__plug-shape--target"

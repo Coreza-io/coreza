@@ -1,5 +1,5 @@
-import { createError } from '../middleware/errorHandler';
-import { Item } from '../nodes/types';
+import { createError } from "../middleware/errorHandler";
+import { Item } from "../nodes/types";
 
 export interface ComparatorInput {
   left: any;
@@ -20,89 +20,87 @@ export class ComparatorService {
       let result: boolean;
 
       switch (operator) {
-        case '==':
-        case 'equals':
-          result = left == right;
-          break;
-        case '===':
-        case 'strict_equals':
+        case "===":
           result = left === right;
           break;
-        case '!=':
-        case 'not_equals':
-          result = left != right;
-          break;
-        case '!==':
-        case 'strict_not_equals':
+        case "!==":
           result = left !== right;
           break;
-        case '>':
-        case 'greater_than':
+        case ">":
           result = Number(left) > Number(right);
           break;
-        case '>=':
-        case 'greater_than_or_equal':
+        case ">=":
           result = Number(left) >= Number(right);
           break;
-        case '<':
-        case 'less_than':
+        case "<":
           result = Number(left) < Number(right);
           break;
-        case '<=':
-        case 'less_than_or_equal':
+        case "<=":
           result = Number(left) <= Number(right);
           break;
-        case 'contains':
-          result = String(left).toLowerCase().includes(String(right).toLowerCase());
+        case "contains": {
+          if (Array.isArray(left)) {
+            // Array contains logic
+            result = left.some(
+              (item) =>
+                String(item).toLowerCase() === String(right).toLowerCase()
+            );
+          } else {
+            // String contains logic
+            result = String(left)
+              .toLowerCase()
+              .includes(String(right).toLowerCase());
+          }
           break;
-        case 'starts_with':
-          result = String(left).toLowerCase().startsWith(String(right).toLowerCase());
+        }
+        case "does_not_contain": {
+          if (Array.isArray(left)) {
+            // Array does NOT contain right
+            result = !left.some((item) =>
+              String(item).toLowerCase().includes(String(right).toLowerCase())
+            );
+          } else {
+            // String does NOT contain right
+            result = !String(left)
+              .toLowerCase()
+              .includes(String(right).toLowerCase());
+          }
           break;
-        case 'ends_with':
-          result = String(left).toLowerCase().endsWith(String(right).toLowerCase());
+        }
+
+        case "starts_with":
+          result = String(left)
+            .toLowerCase()
+            .startsWith(String(right).toLowerCase());
           break;
-        case 'regex':
-          const regex = new RegExp(String(right), 'i');
+        case "ends_with":
+          result = String(left)
+            .toLowerCase()
+            .endsWith(String(right).toLowerCase());
+          break;
+        case "matches_regex":
+          const regex = new RegExp(String(right), "i");
           result = regex.test(String(left));
           break;
-        case 'in_array':
-          result = Array.isArray(right) && right.includes(left);
+        case "is_empty":
+          result =
+            !left ||
+            left === "" ||
+            (Array.isArray(left) && left.length === 0) ||
+            (typeof left === "object" && Object.keys(left).length === 0);
           break;
-        case 'not_in_array':
-          result = Array.isArray(right) && !right.includes(left);
+        case "is_not_empty":
+          result =
+            !!left &&
+            left !== "" &&
+            !(Array.isArray(left) && left.length === 0) &&
+            !(typeof left === "object" && Object.keys(left).length === 0);
           break;
-        case 'is_empty':
-          result = !left || left === '' || (Array.isArray(left) && left.length === 0) || (typeof left === 'object' && Object.keys(left).length === 0);
-          break;
-        case 'is_not_empty':
-          result = !!left && left !== '' && !(Array.isArray(left) && left.length === 0) && !(typeof left === 'object' && Object.keys(left).length === 0);
-          break;
-        case 'isNull':
+        case "isNull":
           result = left === null;
           break;
-        case 'is_not_null':
+        case "is_not_null":
           result = left !== null;
-          break;
-        case 'is_undefined':
-          result = left === undefined;
-          break;
-        case 'is_not_undefined':
-          result = left !== undefined;
-          break;
-        case 'is_number':
-          result = typeof left === 'number' && !isNaN(left);
-          break;
-        case 'is_string':
-          result = typeof left === 'string';
-          break;
-        case 'is_boolean':
-          result = typeof left === 'boolean';
-          break;
-        case 'is_array':
-          result = Array.isArray(left);
-          break;
-        case 'is_object':
-          result = typeof left === 'object' && left !== null && !Array.isArray(left);
           break;
         default:
           throw createError(`Unsupported operator: ${operator}`, 400);
@@ -114,11 +112,21 @@ export class ComparatorService {
     }
   }
 
-  static async executeIf(condition: ComparatorInput): Promise<ComparatorResult> {
+  static async executeIf(
+    condition: ComparatorInput
+  ): Promise<ComparatorResult> {
     return this.evaluate(condition);
   }
 
-  static async executeSwitch(cases: Array<{ condition: ComparatorInput; value: any }>, defaultValue?: any): Promise<{ success: boolean; result: any; matchedCase?: number; error?: string }> {
+  static async executeSwitch(
+    cases: Array<{ condition: ComparatorInput; value: any }>,
+    defaultValue?: any
+  ): Promise<{
+    success: boolean;
+    result: any;
+    matchedCase?: number;
+    error?: string;
+  }> {
     try {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = await this.evaluate(cases[i].condition);
@@ -126,7 +134,7 @@ export class ComparatorService {
           return {
             success: true,
             result: cases[i].value,
-            matchedCase: i
+            matchedCase: i,
           };
         }
       }
@@ -134,13 +142,13 @@ export class ComparatorService {
       // No case matched, return default value
       return {
         success: true,
-        result: defaultValue ?? null
+        result: defaultValue ?? null,
       };
     } catch (error: any) {
       return {
         success: false,
         result: null,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -158,7 +166,7 @@ export class ComparatorService {
     for (const item of items) {
       const leftValue = this.resolvePath(item, condition.left);
       const rightValue =
-        typeof condition.right === 'string'
+        typeof condition.right === "string"
           ? this.resolvePath(item, condition.right) ?? condition.right
           : condition.right;
 
@@ -174,6 +182,6 @@ export class ComparatorService {
   }
 
   private static resolvePath(obj: any, path: string): any {
-    return path.split('.').reduce((acc, key) => acc?.[key], obj);
+    return path.split(".").reduce((acc, key) => acc?.[key], obj);
   }
 }

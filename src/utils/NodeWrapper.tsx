@@ -30,6 +30,20 @@ const ROTATION_MAP: Record<HandlePosition, number> = {
   bottom: 90,
 };
 
+const HANDLE_TRANSFORM_MAP: Record<HandlePosition, string> = {
+  left: "translate(-50%, -50%)",
+  right: "translate(50%, -50%)",
+  top: "translate(-50%, -50%)",
+  bottom: "translate(-50%, 50%)",
+};
+
+const ICON_TRANSLATION_MAP: Record<HandlePosition, string> = {
+  left: "translate(-2px, 0)",
+  right: "translate(2px, 0)",
+  top: "translate(0, -2px)",
+  bottom: "translate(0, 2px)",
+};
+
 interface HandleConfig {
   id: string;
   type?: "source" | "target" | "input" | "output";
@@ -199,15 +213,24 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const handleClass = `plug-handle ${orientationClass} ${
               isInputHandle ? "plug-handle--female" : "plug-handle--male"
             }`;
+            const handleTransform = HANDLE_TRANSFORM_MAP[pos];
             const rotation = ROTATION_MAP[pos];
-            const iconStyle = { transform: `rotate(${rotation}deg)` };
+            const iconTranslation = ICON_TRANSLATION_MAP[pos];
+            const iconStyle = {
+              transform: `${iconTranslation} rotate(${rotation}deg)`,
+            };
             return (
               <Handle
                 key={h.id}
                 id={h.id}
                 type={normalizedType === "target" ? "target" : "source"}
                 position={POSITION_MAP[h.position]}
-                style={{ ...style, width: 24, height: 24 }}
+                style={{
+                  ...style,
+                  width: 24,
+                  height: 24,
+                  transform: handleTransform,
+                }}
                 className={handleClass}
               >
                 {isInputHandle ? (

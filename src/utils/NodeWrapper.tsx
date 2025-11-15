@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position } from "@xyflow/react";
@@ -8,8 +8,7 @@ import { Input } from "@/components/ui/input";
 import { X, Edit2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { FemalePlugIcon, MalePlugIcon } from "@/components/workflow/EdgeManager";
-import { cn } from "@/lib/utils";
+import { useMemo } from "react";
 
 const POSITION_MAP: Record<"left" | "right" | "top" | "bottom", Position> = {
   left: Position.Left,
@@ -171,24 +170,18 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           const isHorizontal = pos === "top" || pos === "bottom";
           return group.map((h, idx) => {
             const pct = ((idx + 1) / (group.length + 1)) * 100;
-            const positionStyle: React.CSSProperties = isHorizontal
+            const style = isHorizontal
               ? { left: `${pct}%` }
               : { top: `${pct}%` };
-            const isTargetHandle = h.type === "target";
             return (
               <Handle
                 key={h.id}
                 id={h.id}
                 type={h.type}
                 position={POSITION_MAP[h.position]}
-                style={{ ...positionStyle, width: 24, height: 24 }}
-                className={cn(
-                  "plug-handle transition-transform",
-                  isTargetHandle ? "plug-handle--female" : "plug-handle--male"
-                )}
-              >
-                {isTargetHandle ? <FemalePlugIcon size={20} /> : <MalePlugIcon size={20} />}
-              </Handle>
+                style={style}
+                className="w-3 h-3 border-2 border-gray-600 bg-gray-500 hover:border-primary transition-colors"
+              />
             );
           });
         })}

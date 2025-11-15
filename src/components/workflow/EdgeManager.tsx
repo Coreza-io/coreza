@@ -54,24 +54,6 @@ const FEMALE_PLUG_PATH =
 const MALE_PLUG_PATH =
   'M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z';
 
-export const MalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
-  color = '#64748b',
-  size = 24,
-}) => (
-  <svg viewBox="0 0 24 24" width={size} height={size}>
-    <path d={MALE_PLUG_PATH} fill={color} />
-  </svg>
-);
-
-export const FemalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
-  color = '#64748b',
-  size = 24,
-}) => (
-  <svg viewBox="0 0 24 24" width={size} height={size}>
-    <path d={FEMALE_PLUG_PATH} fill={color} />
-  </svg>
-);
-
 const lightenHex = (hex: string, amount: number): string => {
   const normalized = normalizeHex(hex);
   if (!normalized) return hex;

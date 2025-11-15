@@ -57,7 +57,7 @@ export const MalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
   color = '#64748b',
   size = 24,
 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size}>
+  <svg viewBox="0 0 24 24" width={size} height={size} style={{ pointerEvents: 'none' }}>
     <path d={MALE_PLUG_PATH} fill={color} />
   </svg>
 );
@@ -66,7 +66,7 @@ export const FemalePlugIcon: React.FC<{ color?: string; size?: number }> = ({
   color = '#64748b',
   size = 24,
 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size}>
+  <svg viewBox="0 0 24 24" width={size} height={size} style={{ pointerEvents: 'none' }}>
     <path d={FEMALE_PLUG_PATH} fill={color} />
   </svg>
 );

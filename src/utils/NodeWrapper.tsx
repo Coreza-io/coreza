@@ -133,6 +133,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {/* Electric Border SVG Overlay */}
         {electricBorder && selected && (
           <ElectricBorderSVG 
+            isExpanded={isExpanded}
             color={
               electricColor === 'cyan' ? '#00ffff' :
               electricColor === 'orange' ? '#ff8c00' :

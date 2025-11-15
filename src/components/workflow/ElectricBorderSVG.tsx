@@ -3,6 +3,7 @@ import React, { useId, useMemo } from 'react';
 interface ElectricBorderSVGProps {
   color?: string;
   className?: string;
+  isExpanded?: boolean;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -55,9 +56,39 @@ const hexToRgba = (hex: string, alpha: number) => {
 const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
   color = '#dd8448',
   className = '',
+  isExpanded = true,
 }) => {
   const rawId = useId();
   const filterId = useMemo(() => rawId.replace(/:/g, ''), [rawId]);
+
+  // Size-specific effect parameters
+  const effectParams = useMemo(() => {
+    if (isExpanded) {
+      // Original values for expanded nodes
+      return {
+        backgroundBlur: 28,
+        glowBlurSoft: 8,
+        glowBlurStrong: 3,
+        scaleBackground: 1.12,
+        scaleGlowSoft: 1.08,
+        scaleGlowStrong: 1.03,
+        scaleOverlay: 1.08,
+        displacementScale: 30,
+      };
+    } else {
+      // Enhanced values for collapsed nodes to maintain visual prominence
+      return {
+        backgroundBlur: 20,
+        glowBlurSoft: 12,
+        glowBlurStrong: 6,
+        scaleBackground: 1.25,
+        scaleGlowSoft: 1.20,
+        scaleGlowStrong: 1.12,
+        scaleOverlay: 1.15,
+        displacementScale: 25,
+      };
+    }
+  }, [isExpanded]);
 
   const cssVariables = useMemo(() => {
     const lightColor = lightenHex(color, 0.35);
@@ -69,8 +100,15 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
       '--electric-border-glow-soft': hexToRgba(lightColor, 0.35),
       '--electric-border-overlay': `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
       '--electric-border-background': `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
+      '--electric-bg-blur': `${effectParams.backgroundBlur}px`,
+      '--electric-glow-soft-blur': `${effectParams.glowBlurSoft}px`,
+      '--electric-glow-strong-blur': `${effectParams.glowBlurStrong}px`,
+      '--electric-scale-bg': effectParams.scaleBackground,
+      '--electric-scale-glow-soft': effectParams.scaleGlowSoft,
+      '--electric-scale-glow-strong': effectParams.scaleGlowStrong,
+      '--electric-scale-overlay': effectParams.scaleOverlay,
     } as React.CSSProperties;
-  }, [color]);
+  }, [color, effectParams]);
 
   return (
     <div
@@ -166,7 +204,7 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
             <feDisplacementMap
               in="SourceGraphic"
               in2="combinedNoise"
-              scale="30"
+              scale={effectParams.displacementScale}
               xChannelSelector="R"
               yChannelSelector="B"
             />

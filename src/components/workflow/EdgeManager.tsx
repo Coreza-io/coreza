@@ -140,6 +140,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const midY = (sourceY + targetY) / 2;
 
   const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
+  const plugTipOffset = 15.5;
 
   return (
     <g
@@ -195,7 +196,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       />
       <g
         className="plug-edge__plug"
-        transform={`translate(${sourceX} ${sourceY}) rotate(${degrees})`}
+        transform={`translate(${sourceX} ${sourceY}) rotate(${degrees}) translate(${-plugTipOffset} 0)`}
       >
         <rect x={-18} y={-7} width={22} height={14} rx={5} fill="#0f172a" stroke={cordColor} strokeWidth={2} />
         <rect x={4} y={-5} width={7} height={10} rx={2} fill={glowColor} />
@@ -203,7 +204,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       </g>
       <g
         className="plug-edge__plug plug-edge__plug--target"
-        transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180})`}
+        transform={`translate(${targetX} ${targetY}) rotate(${degrees + 180}) translate(${-plugTipOffset} 0)`}
       >
         <rect x={-18} y={-7} width={22} height={14} rx={5} fill="#0f172a" stroke={cordColor} strokeWidth={2} />
         <rect x={4} y={-5} width={7} height={10} rx={2} fill={glowColor} />

@@ -164,7 +164,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Collapsed View */}
         {!isExpanded && (
-          <div className="relative z-[1] flex flex-col items-center justify-center h-full p-4 select-none">
+          <div className="flex flex-col items-center justify-center h-full p-4 select-none">
             <div className="text-muted-foreground mb-2">
               {/* Render icon with immediate loading */}
               {typeof icon === 'string' && icon.startsWith('/assets/') ? (
@@ -227,7 +227,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Expanded View */}
         {isExpanded && (
-          <CardContent className="relative z-[1] space-y-3 p-4">
+          <CardContent className="space-y-3 p-4">
             <Button
               variant="ghost"
               size="sm"

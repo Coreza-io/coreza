@@ -1,4 +1,4 @@
-import React, { useId, useMemo } from "react";
+import React, { useId, useMemo } from 'react';
 
 interface ElectricBorderSVGProps {
   color?: string;
@@ -9,7 +9,7 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
-  const normalized = hex.replace("#", "").trim();
+  const normalized = hex.replace('#', '').trim();
   if (normalized.length === 3) {
     const r = parseInt(normalized[0] + normalized[0], 16);
     const g = parseInt(normalized[1] + normalized[1], 16);
@@ -29,8 +29,8 @@ const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
 
 const rgbToHex = (r: number, g: number, b: number) =>
   `#${[r, g, b]
-    .map((component) => component.toString(16).padStart(2, "0"))
-    .join("")}`;
+    .map((component) => component.toString(16).padStart(2, '0'))
+    .join('')}`;
 
 const lightenHex = (hex: string, amount: number) => {
   const rgb = hexToRgb(hex);
@@ -53,22 +53,30 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
-  color = "#dd8448",
-  className = "",
+  color = '#dd8448',
+  className = '',
 }) => {
   const rawId = useId();
-  const filterId = useMemo(() => rawId.replace(/:/g, ""), [rawId]);
+  const filterId = useMemo(() => rawId.replace(/:/g, ''), [rawId]);
 
   const cssVariables = useMemo(() => {
     const lightColor = lightenHex(color, 0.35);
     return {
-      "--electric-border-color": color,
-      "--electric-border-light": lightColor,
+      '--electric-border-color': color,
+      '--electric-border-light': lightColor,
+      '--electric-border-outer': hexToRgba(color, 0.45),
+      '--electric-border-glow': hexToRgba(lightColor, 0.7),
+      '--electric-border-glow-soft': hexToRgba(lightColor, 0.35),
+      '--electric-border-overlay': `linear-gradient(-30deg, rgba(255,255,255,0.9), transparent 32%, transparent 68%, rgba(255,255,255,0.85))`,
+      '--electric-border-background': `linear-gradient(-30deg, ${lightColor}, transparent, ${color})`,
     } as React.CSSProperties;
   }, [color]);
 
   return (
-    <div className={`electric-border-effect ${className}`} style={cssVariables}>
+    <div
+      className={`electric-border-effect ${className}`}
+      style={cssVariables}
+    >
       <svg
         className="electric-border-effect__svg"
         aria-hidden="true"
@@ -153,12 +161,7 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
 
             <feComposite in="offsetNoise1" in2="offsetNoise2" result="part1" />
             <feComposite in="offsetNoise3" in2="offsetNoise4" result="part2" />
-            <feBlend
-              in="part1"
-              in2="part2"
-              mode="color-dodge"
-              result="combinedNoise"
-            />
+            <feBlend in="part1" in2="part2" mode="color-dodge" result="combinedNoise" />
 
             <feDisplacementMap
               in="SourceGraphic"
@@ -172,11 +175,16 @@ const ElectricBorderSVG: React.FC<ElectricBorderSVGProps> = ({
       </svg>
 
       <div className="electric-border-effect__layers">
-        <div className="electric-border-effect__glow" />
+        <div className="electric-border-effect__background" />
+        <div className="electric-border-effect__glow electric-border-effect__glow--soft" />
+        <div className="electric-border-effect__glow electric-border-effect__glow--strong" />
+        <div className="electric-border-effect__border-outer" />
         <div
           className="electric-border-effect__border-main"
           style={{ filter: `url(#${filterId})` }}
         />
+        <div className="electric-border-effect__overlay electric-border-effect__overlay--primary" />
+        <div className="electric-border-effect__overlay electric-border-effect__overlay--secondary" />
       </div>
     </div>
   );

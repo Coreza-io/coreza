@@ -164,6 +164,22 @@
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
     --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
     --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
+    
+    /* Category-specific metallic gradients */
+    --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
+    --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
+    --gradient-data: linear-gradient(135deg, #1f3d2d 0%, #3d7a5a 25%, #5fbf8b 50%, #3d7a5a 75%, #1f3d2d 100%);
+    --gradient-logic: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #bf8b5f 50%, #7a5a3d 75%, #3d2d1f 100%);
+    --gradient-screener: linear-gradient(135deg, #3d1f2d 0%, #7a3d5a 25%, #bf5f8b 50%, #7a3d5a 75%, #3d1f2d 100%);
+    --gradient-input: linear-gradient(135deg, #1f2d3d 0%, #3d5a7a 25%, #5f8bbf 50%, #3d5a7a 75%, #1f2d3d 100%);
+    --gradient-visualization: linear-gradient(135deg, #2d1f1f 0%, #5a3d3d 25%, #bf5f5f 50%, #5a3d3d 75%, #2d1f1f 100%);
+    --gradient-llm: linear-gradient(135deg, #1f1f3d 0%, #3d3d7a 25%, #5f5fbf 50%, #3d3d7a 75%, #1f1f3d 100%);
+    --gradient-chatmodel: linear-gradient(135deg, #2d2d1f 0%, #5a5a3d 25%, #8b8b5f 50%, #5a5a3d 75%, #2d2d1f 100%);
+    --gradient-aiagent: linear-gradient(135deg, #3d1f3d 0%, #7a3d7a 25%, #bf5fbf 50%, #7a3d7a 75%, #3d1f3d 100%);
+    --gradient-email: linear-gradient(135deg, #1f2d2d 0%, #3d5a5a 25%, #5f8b8b 50%, #3d5a5a 75%, #1f2d2d 100%);
+    --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
+    --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
+    --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
   }
 
   /* Electric Border Animations */
@@ -470,6 +486,104 @@
     to {
       stroke-dashoffset: -10;
     }
+  }
+
+  /* Metallic shimmer animation */
+  @keyframes metallic-shimmer {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  /* Metallic gradient utility classes - Dark mode only */
+  .dark .bg-gradient-indicators {
+    background: var(--gradient-indicators);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-broker {
+    background: var(--gradient-broker);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-data {
+    background: var(--gradient-data);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-logic {
+    background: var(--gradient-logic);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-screener {
+    background: var(--gradient-screener);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-input {
+    background: var(--gradient-input);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-visualization {
+    background: var(--gradient-visualization);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-llm {
+    background: var(--gradient-llm);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-chatmodel {
+    background: var(--gradient-chatmodel);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-aiagent {
+    background: var(--gradient-aiagent);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-email {
+    background: var(--gradient-email);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-tool {
+    background: var(--gradient-tool);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-risk {
+    background: var(--gradient-risk);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-scheduler {
+    background: var(--gradient-scheduler);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
   }
 }
 

@@ -74,6 +74,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
             minHeight={definition.size?.height || 200}
             handles={definition.handles || []}
             nodeType={definition.node_type}
+            category={definition.category}
           >
             <BasicNodeLayout {...renderProps} />
           </NodeWrapper>

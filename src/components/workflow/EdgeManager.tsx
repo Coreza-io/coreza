@@ -21,6 +21,7 @@ export interface SelfLoopConfig {
 export interface InteractiveEdgeProps extends EdgeProps {
   controls?: EdgeControl[];
   selfLoopConfig?: SelfLoopConfig;
+  className?: string;
 }
 
 // Build edge controls based on available callbacks

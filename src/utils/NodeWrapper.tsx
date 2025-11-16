@@ -64,6 +64,7 @@ interface NodeWrapperProps {
   minHeight?: number;
   handles?: HandleConfig[];
   nodeType?: string;
+  category?: string;
   onDoubleClick?: (e: React.MouseEvent) => void;
   // Node name editing props
   isEditing?: boolean;
@@ -92,6 +93,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   minHeight = 340,
   handles = [],
   nodeType,
+  category,
   onDoubleClick,
   // Node name editing props
   isEditing = false,
@@ -118,6 +120,34 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     }
     return false;
   }, [theme]);
+
+  // Map category to gradient class name
+  const getCategoryGradientClass = (category?: string): string => {
+    if (!category) return '';
+    
+    const normalizedCategory = category.toLowerCase().replace(/\s+/g, '');
+    
+    const categoryMap: Record<string, string> = {
+      'indicators': 'bg-gradient-indicators',
+      'broker': 'bg-gradient-broker',
+      'data': 'bg-gradient-data',
+      'logic': 'bg-gradient-logic',
+      'screener': 'bg-gradient-screener',
+      'input': 'bg-gradient-input',
+      'visualization': 'bg-gradient-visualization',
+      'llm': 'bg-gradient-llm',
+      'chatmodel': 'bg-gradient-chatmodel',
+      'aiagent': 'bg-gradient-aiagent',
+      'email': 'bg-gradient-email',
+      'tool': 'bg-gradient-tool',
+      'riskmanagement': 'bg-gradient-risk',
+      'scheduler': 'bg-gradient-scheduler',
+    };
+    
+    return categoryMap[normalizedCategory] || '';
+  };
+
+  const categoryGradientClass = getCategoryGradientClass(category);
 
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
@@ -149,7 +179,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       <Card
         className={`
           relative shadow-card transition-all duration-300 ease-in-out 
-          bg-card border-2 hover:shadow-elevated
+          border-2 hover:shadow-elevated
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
           ${
@@ -159,6 +189,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               ? "border-primary shadow-glow"
               : "border-border"
           }
+          ${isDarkMode && categoryGradientClass ? categoryGradientClass : 'bg-card'}
         `}
         onDoubleClick={(e) => {
           e.preventDefault();

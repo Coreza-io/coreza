@@ -32,7 +32,7 @@ const ROTATION_MAP: Record<HandlePosition, number> = {
 
 const HANDLE_TRANSFORM_MAP: Record<HandlePosition, string> = {
   left: "translate(-50%, -50%)",
-  right: "translate(50%, -50%)",
+  right: "translate(150%, -50%)",
   top: "translate(-50%, -50%)",
   bottom: "translate(-50%, 50%)",
 };

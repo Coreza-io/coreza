@@ -132,39 +132,6 @@ export class WorkflowExecutor {
       Array.from(this.conditionalMap.entries())
     );
   }
-
-  /**
-   * Detect cycles in the workflow graph
-   */
-  private detectCycles(): boolean {
-    const visitedInCycle = new Set<string>();
-    const inCurrentPath = new Set<string>();
-
-    const hasCycle = (nodeId: string): boolean => {
-      if (inCurrentPath.has(nodeId)) return true;
-      if (visitedInCycle.has(nodeId)) return false;
-
-      visitedInCycle.add(nodeId);
-      inCurrentPath.add(nodeId);
-
-      const outgoing = this.context.edges.filter((e) => e.source === nodeId);
-      for (const edge of outgoing) {
-        if (hasCycle(edge.target)) return true;
-      }
-
-      inCurrentPath.delete(nodeId);
-      return false;
-    };
-
-    for (const node of this.context.nodes) {
-      if (!visitedInCycle.has(node.id) && hasCycle(node.id)) {
-        console.error(`🔄 Cycle detected starting from node: ${node.id}`);
-        return true;
-      }
-    }
-    return false;
-  }
-
   /**
    * Execute conditional chain starting from a specific node
    */
@@ -320,24 +287,6 @@ export class WorkflowExecutor {
               },
             }
       )
-    );
-  }
-
-  /**
-   * Clear all node highlights
-   */
-  private clearNodeHighlights(): void {
-    this.context.setNodes((nodes) =>
-      nodes.map((n) => ({
-        ...n,
-        className: "",
-        style: {
-          ...n.style,
-          border: undefined,
-          backgroundColor: undefined,
-          boxShadow: undefined,
-        },
-      }))
     );
   }
 
@@ -632,7 +581,7 @@ export class WorkflowExecutor {
 
     this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
-    this.highlightNode(nodeId);
+    //this.highlightNode(nodeId);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -700,7 +649,7 @@ export class WorkflowExecutor {
     const roots = this.context.nodes
       .filter(
         (n) =>
-          (n.data.node_type === "main" || n.data.node_type === "trigger") &&
+          (n.node_type === "main" || n.node_type === "trigger") &&
           !this.context.edges.some((e) => e.target === n.id)
       )
       .map((n) => n.id);
@@ -719,7 +668,7 @@ export class WorkflowExecutor {
 
         const inc = this.context.edges.filter((e) => e.target === id);
         const missing =
-          node.data.node_type == "trigger" || node.type === "Loop"
+          node.node_type == "trigger" || node.type === "Loop"
             ? []
             : inc.filter(
                 (e) => !executed.has(e.source) && !failed.has(e.source)

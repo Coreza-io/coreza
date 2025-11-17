@@ -17,11 +17,21 @@ import {
   Settings,
   ArrowUp,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
 
 const Landing = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const heroRef = useRef<HTMLDivElement>(null);
+  
+  // Parallax scroll effect for hero section
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ["start start", "end start"]
+  });
+  
+  const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  const heroOpacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
 
   // Track scroll position to show/hide back to top button
   useEffect(() => {
@@ -162,8 +172,11 @@ const Landing = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4 relative overflow-hidden">
-        <div className="landing-grid-pattern absolute inset-0 opacity-30" />
+      <section ref={heroRef} className="pt-32 pb-20 px-4 relative overflow-hidden">
+        <motion.div 
+          className="landing-grid-pattern absolute inset-0 opacity-30"
+          style={{ y: heroY, opacity: heroOpacity }}
+        />
         <div className="container mx-auto relative z-10">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -272,8 +285,10 @@ const Landing = () => {
                   hidden: { opacity: 0, y: 20 },
                   visible: { opacity: 1, y: 0 },
                 }}
+                whileHover={{ y: -8 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
-                <Card className="p-6 hover:shadow-glow transition-all hover:scale-105 h-full border-border bg-card/50 backdrop-blur-sm">
+                <Card className="p-6 hover:shadow-glow transition-all h-full border-border bg-card/50 backdrop-blur-sm">
                   <div className={`${feature.gradient} p-3 rounded-xl w-fit mb-4`}>
                     <feature.icon className="h-6 w-6 text-white" />
                   </div>

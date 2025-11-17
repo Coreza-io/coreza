@@ -17,7 +17,101 @@
 }
 
 @layer base {
-  :root {
+  :root,
+  .dark {
+    /* Dark theme - Professional trading platform */
+    --background: 220 1% 18%;
+    --foreground: 210 20% 85%;
+
+    --card: 224 12% 10%;
+    --card-foreground: 210 20% 85%;
+
+    --popover: 224 12% 10%;
+    --popover-foreground: 210 20% 85%;
+
+    /* Professional blue primary */
+    --primary: 217 91% 60%;
+    --primary-foreground: 224 12% 8%;
+    --primary-glow: 217 91% 70%;
+
+    --secondary: 224 12% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 224 12% 12%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 224 12% 8%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 85%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 20% 85%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 224 12% 8%;
+
+    --border: 224 12% 20%;
+    --input: 224 12% 15%;
+    --ring: 217 91% 60%;
+
+    /* Trading platform specific colors - Dark */
+    --trading-grid: 220 1% 18%;
+    --trading-node: 224 12% 15%;
+    --trading-edge: 107 114 128;
+    --sidebar-background: 224 12% 6%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 224 12% 8%;
+    --sidebar-accent: 224 12% 12%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 224 12% 20%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Gradients - Dark */
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
+    --gradient-card: linear-gradient(
+      145deg,
+      hsl(224 12% 10%),
+      hsl(224 12% 12%)
+    );
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.15),
+      transparent 70%
+    );
+
+    /* Shadows - Dark */
+    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
+    --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
+    --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
+
+    /* Category-specific metallic gradients */
+    --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
+    --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
+    --gradient-data: linear-gradient(135deg, #1f3d2d 0%, #3d7a5a 25%, #5fbf8b 50%, #3d7a5a 75%, #1f3d2d 100%);
+    --gradient-logic: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #bf8b5f 50%, #7a5a3d 75%, #3d2d1f 100%);
+    --gradient-screener: linear-gradient(135deg, #3d1f2d 0%, #7a3d5a 25%, #bf5f8b 50%, #7a3d5a 75%, #3d1f2d 100%);
+    --gradient-input: linear-gradient(135deg, #1f2d3d 0%, #3d5a7a 25%, #5f8bbf 50%, #3d5a7a 75%, #1f2d3d 100%);
+    --gradient-visualization: linear-gradient(135deg, #2d1f1f 0%, #5a3d3d 25%, #bf5f5f 50%, #5a3d3d 75%, #2d1f1f 100%);
+    --gradient-llm: linear-gradient(135deg, #1f1f3d 0%, #3d3d7a 25%, #5f5fbf 50%, #3d3d7a 75%, #1f1f3d 100%);
+    --gradient-chatmodel: linear-gradient(135deg, #2d2d1f 0%, #5a5a3d 25%, #8b8b5f 50%, #5a5a3d 75%, #2d2d1f 100%);
+    --gradient-aiagent: linear-gradient(135deg, #3d1f3d 0%, #7a3d7a 25%, #bf5fbf 50%, #7a3d7a 75%, #3d1f3d 100%);
+    --gradient-email: linear-gradient(135deg, #1f2d2d 0%, #3d5a5a 25%, #5f8b8b 50%, #3d5a5a 75%, #1f2d2d 100%);
+    --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
+    --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
+    --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .light {
     /* Light theme - Modern trading platform */
     --background: 0 0% 100%;
     --foreground: 224 12% 8%;
@@ -87,99 +181,6 @@
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
     --shadow-card: 0 2px 8px hsl(220 13% 91% / 0.6);
     --shadow-elevated: 0 4px 16px hsl(220 13% 91% / 0.8);
-
-    /* Animations */
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .dark {
-    /* Dark theme - Professional trading platform */
-    --background: 224 12% 8%;
-    --foreground: 210 20% 85%;
-
-    --card: 224 12% 10%;
-    --card-foreground: 210 20% 85%;
-
-    --popover: 224 12% 10%;
-    --popover-foreground: 210 20% 85%;
-
-    /* Professional blue primary */
-    --primary: 217 91% 60%;
-    --primary-foreground: 224 12% 8%;
-    --primary-glow: 217 91% 70%;
-
-    --secondary: 224 12% 15%;
-    --secondary-foreground: 210 20% 85%;
-
-    --muted: 224 12% 12%;
-    --muted-foreground: 215 15% 60%;
-
-    --accent: 217 91% 60%;
-    --accent-foreground: 224 12% 8%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 20% 85%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 210 20% 85%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 224 12% 8%;
-
-    --border: 224 12% 20%;
-    --input: 224 12% 15%;
-    --ring: 217 91% 60%;
-
-    /* Trading platform specific colors - Dark */
-    --trading-grid: 220 13% 10%;
-    --trading-node: 224 12% 15%;
-    --trading-edge: 107 114 128;
-    --sidebar-background: 224 12% 6%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 217 91% 60%;
-    --sidebar-primary-foreground: 224 12% 8%;
-    --sidebar-accent: 224 12% 12%;
-    --sidebar-accent-foreground: 210 20% 85%;
-    --sidebar-border: 224 12% 20%;
-    --sidebar-ring: 217 91% 60%;
-
-    /* Gradients - Dark */
-    --gradient-primary: linear-gradient(
-      135deg,
-      hsl(217 91% 60%),
-      hsl(217 91% 70%)
-    );
-    --gradient-card: linear-gradient(
-      145deg,
-      hsl(224 12% 10%),
-      hsl(224 12% 12%)
-    );
-    --gradient-glow: radial-gradient(
-      circle at center,
-      hsl(217 91% 60% / 0.15),
-      transparent 70%
-    );
-
-    /* Shadows - Dark */
-    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
-    --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
-    --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
-    
-    /* Category-specific metallic gradients */
-    --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
-    --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
-    --gradient-data: linear-gradient(135deg, #1f3d2d 0%, #3d7a5a 25%, #5fbf8b 50%, #3d7a5a 75%, #1f3d2d 100%);
-    --gradient-logic: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #bf8b5f 50%, #7a5a3d 75%, #3d2d1f 100%);
-    --gradient-screener: linear-gradient(135deg, #3d1f2d 0%, #7a3d5a 25%, #bf5f8b 50%, #7a3d5a 75%, #3d1f2d 100%);
-    --gradient-input: linear-gradient(135deg, #1f2d3d 0%, #3d5a7a 25%, #5f8bbf 50%, #3d5a7a 75%, #1f2d3d 100%);
-    --gradient-visualization: linear-gradient(135deg, #2d1f1f 0%, #5a3d3d 25%, #bf5f5f 50%, #5a3d3d 75%, #2d1f1f 100%);
-    --gradient-llm: linear-gradient(135deg, #1f1f3d 0%, #3d3d7a 25%, #5f5fbf 50%, #3d3d7a 75%, #1f1f3d 100%);
-    --gradient-chatmodel: linear-gradient(135deg, #2d2d1f 0%, #5a5a3d 25%, #8b8b5f 50%, #5a5a3d 75%, #2d2d1f 100%);
-    --gradient-aiagent: linear-gradient(135deg, #3d1f3d 0%, #7a3d7a 25%, #bf5fbf 50%, #7a3d7a 75%, #3d1f3d 100%);
-    --gradient-email: linear-gradient(135deg, #1f2d2d 0%, #3d5a5a 25%, #5f8b8b 50%, #3d5a5a 75%, #1f2d2d 100%);
-    --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
-    --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
-    --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
   }
 
   /* Electric Border Animations */

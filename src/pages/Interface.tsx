@@ -44,7 +44,6 @@ const Interface = () => {
           <main className="flex-1 p-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/workflows" element={<Workflows />} />
               <Route path="/workflow/:id" element={<WorkflowEditor />} />

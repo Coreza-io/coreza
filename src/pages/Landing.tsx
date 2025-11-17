@@ -15,10 +15,28 @@ import {
   ArrowRight,
   CheckCircle2,
   Settings,
+  ArrowUp,
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
 
 const Landing = () => {
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  // Track scroll position to show/hide back to top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const features = [
     {
       icon: Network,
@@ -461,6 +479,27 @@ const Landing = () => {
           },
         })}
       </script>
+
+      {/* Back to Top Button */}
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-8 right-8 z-40"
+          >
+            <Button
+              onClick={scrollToTop}
+              size="icon"
+              className="h-12 w-12 rounded-full shadow-lg bg-gradient-primary hover:shadow-glow transition-shadow"
+              aria-label="Back to top"
+            >
+              <ArrowUp className="h-5 w-5" />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

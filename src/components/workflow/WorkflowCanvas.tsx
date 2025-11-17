@@ -18,6 +18,8 @@ import EdgeManager from "@/components/workflow/EdgeManager";
 import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
+import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import { cn } from "@/lib/utils";
 
 interface WorkflowCanvasProps {
   nodes: Node[];
@@ -65,6 +67,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
   disabled = false,
 }) => {
   const removeEdgeCallbackRef = useRef<(edgeId: string) => void>();
+  const resolvedTheme = useResolvedTheme();
 
   // Initialize remove edge callback
   const removeEdge = useCallback((edgeId: string) => {
@@ -204,7 +207,10 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           connectionLineComponent={EdgeManager.PlugConnectionLine}
           connectionLineType={ConnectionLineType.SmoothStep}
           fitView
-          className="workflow-canvas"
+          className={cn(
+            "workflow-canvas",
+            resolvedTheme === "dark" && "dark"
+          )}
           style={{ backgroundColor: 'hsl(var(--trading-grid))' }}
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}

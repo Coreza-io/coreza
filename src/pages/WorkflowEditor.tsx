@@ -49,6 +49,8 @@ import {
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import { cn } from "@/lib/utils";
 
 const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ||
@@ -139,6 +141,7 @@ const WorkflowEditorContent = () => {
   const messageHandlerRef = useRef<
     (rawPayload: any, timestamp?: string) => void
   >(() => {});
+  const resolvedTheme = useResolvedTheme();
 
   // CRITICAL FIX: Make isNewWorkflow reactive to URL changes
   const isNewWorkflow = id === "new" || !id;
@@ -1146,7 +1149,10 @@ const WorkflowEditorContent = () => {
             connectionLineComponent={EdgeManager.PlugConnectionLine}
             connectionLineType={ConnectionLineType.SmoothStep}
             fitView
-            className="workflow-canvas"
+            className={cn(
+              "workflow-canvas",
+              resolvedTheme === "dark" && "dark"
+            )}
             style={{ backgroundColor: "hsl(var(--trading-grid))" }}
           >
             <Background

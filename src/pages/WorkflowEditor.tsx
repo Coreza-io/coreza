@@ -596,9 +596,11 @@ const WorkflowEditorContent = () => {
 
         // CRITICAL FIX: Use React Router's navigate instead of window.history
         // This ensures useParams() updates properly
+        // Route workflow URLs through the authenticated dashboard layout
+        const workflowPath = `/dashboard/workflow/${data.id}`;
         const newUrl = projectId
-          ? `/workflow/${data.id}?project=${projectId}`
-          : `/workflow/${data.id}`;
+          ? `${workflowPath}?project=${projectId}`
+          : workflowPath;
 
         navigate(newUrl, { replace: true });
 

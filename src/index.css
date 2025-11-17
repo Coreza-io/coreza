@@ -17,84 +17,10 @@
 }
 
 @layer base {
-  :root {
-    /* Light theme - Modern trading platform */
-    --background: 0 0% 100%;
-    --foreground: 224 12% 8%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 224 12% 8%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 12% 8%;
-
-    /* Professional blue primary */
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 217 91% 70%;
-
-    --secondary: 210 10% 96%;
-    --secondary-foreground: 224 12% 8%;
-
-    --muted: 210 10% 96%;
-    --muted-foreground: 215 15% 40%;
-
-    --accent: 217 91% 60%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 217 91% 60%;
-
-    --radius: 0.75rem;
-
-    /* Trading platform specific colors - Light */
-    --trading-grid: 220 14% 95%;
-    --trading-node: 0 0% 100%;
-    --trading-edge: 156 163 175;
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 224 12% 8%;
-    --sidebar-primary: 217 91% 60%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 10% 96%;
-    --sidebar-accent-foreground: 224 12% 8%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217 91% 60%;
-
-    /* Gradients - Light */
-    --gradient-primary: linear-gradient(
-      135deg,
-      hsl(217 91% 60%),
-      hsl(217 91% 70%)
-    );
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
-    --gradient-glow: radial-gradient(
-      circle at center,
-      hsl(217 91% 60% / 0.08),
-      transparent 70%
-    );
-
-    /* Shadows - Light */
-    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
-    --shadow-card: 0 2px 8px hsl(220 13% 91% / 0.6);
-    --shadow-elevated: 0 4px 16px hsl(220 13% 91% / 0.8);
-
-    /* Animations */
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
+  :root,
   .dark {
     /* Dark theme - Professional trading platform */
-    --background: 224 12% 8%;
+    --background: 220 1% 18%;
     --foreground: 210 20% 85%;
 
     --card: 224 12% 10%;
@@ -164,7 +90,7 @@
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
     --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
     --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
-    
+
     /* Category-specific metallic gradients */
     --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
     --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
@@ -180,6 +106,81 @@
     --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
     --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
     --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .light {
+    /* Light theme - Modern trading platform */
+    --background: 0 0% 100%;
+    --foreground: 224 12% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 12% 8%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 12% 8%;
+
+    /* Professional blue primary */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 70%;
+
+    --secondary: 210 10% 96%;
+    --secondary-foreground: 224 12% 8%;
+
+    --muted: 210 10% 96%;
+    --muted-foreground: 215 15% 40%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* Trading platform specific colors - Light */
+    --trading-grid: 220 14% 95%;
+    --trading-node: 0 0% 100%;
+    --trading-edge: 156 163 175;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 224 12% 8%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 10% 96%;
+    --sidebar-accent-foreground: 224 12% 8%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Gradients - Light */
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.08),
+      transparent 70%
+    );
+
+    /* Shadows - Light */
+    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
+    --shadow-card: 0 2px 8px hsl(220 13% 91% / 0.6);
+    --shadow-elevated: 0 4px 16px hsl(220 13% 91% / 0.8);
   }
 
   /* Electric Border Animations */

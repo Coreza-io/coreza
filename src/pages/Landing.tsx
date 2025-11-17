@@ -17,12 +17,13 @@ import {
   Settings,
   ArrowUp,
 } from "lucide-react";
-import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { ParticleNetwork } from "@/components/effects/ParticleNetwork";
 
 const Landing = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [currentHueShift, setCurrentHueShift] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
   
   // Multi-layer parallax scroll effects for hero section
@@ -49,6 +50,14 @@ const Landing = () => {
   const orb2Y = useTransform(scrollYProgress, [0, 1], ["0%", "-40%"]);
   const orb3Y = useTransform(scrollYProgress, [0, 1], ["0%", "80%"]);
   const orb4Y = useTransform(scrollYProgress, [0, 1], ["0%", "-30%"]);
+  
+  // Color shift for particles based on scroll (0-40 degree hue shift)
+  const particleHueShift = useTransform(scrollYProgress, [0, 1], [0, 40]);
+  
+  // Track particle hue shift value
+  useMotionValueEvent(particleHueShift, "change", (latest) => {
+    setCurrentHueShift(latest);
+  });
 
   // Track scroll position to show/hide back to top button
   useEffect(() => {
@@ -200,6 +209,7 @@ const Landing = () => {
           particleCount={150}
           connectionDistance={120}
           particleSpeed={0.3}
+          hueShift={currentHueShift}
           className="opacity-60"
         />
         

@@ -13,6 +13,7 @@ interface ParticleNetworkProps {
   particleCount?: number;
   connectionDistance?: number;
   particleSpeed?: number;
+  hueShift?: number;
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export const ParticleNetwork = ({
   particleCount = 150,
   connectionDistance = 120,
   particleSpeed = 0.3,
+  hueShift = 0,
   className = '',
 }: ParticleNetworkProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,10 +54,19 @@ export const ParticleNetwork = ({
       }));
     };
     initParticles();
+    
+    let timeOffset = 0;
 
     // Animation loop
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Time-based color shift (cycles every 10 seconds)
+      timeOffset += 0.0005;
+      const timeHue = (timeOffset * 360) % 60; // 60 degree range
+      
+      // Combine scroll-based and time-based hue shifts
+      const currentHue = 220 + hueShift + timeHue; // Base blue hue + shifts
 
       const particles = particlesRef.current;
 
@@ -77,31 +88,23 @@ export const ParticleNetwork = ({
         ctx.beginPath();
         ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
         
-        // Get CSS variable color
-        const primaryColor = getComputedStyle(document.documentElement)
-          .getPropertyValue('--primary')
-          .trim();
-        
-        // Create gradient for glow
+        // Create gradient for glow with dynamic hue
         const gradient = ctx.createRadialGradient(
           particle.x, particle.y, 0,
           particle.x, particle.y, particle.radius * 3
         );
-        gradient.addColorStop(0, `hsl(${primaryColor} / 0.8)`);
-        gradient.addColorStop(1, `hsl(${primaryColor} / 0)`);
+        gradient.addColorStop(0, `hsl(${currentHue}, 70%, 60%, 0.8)`);
+        gradient.addColorStop(1, `hsl(${currentHue}, 70%, 60%, 0)`);
         
         ctx.fillStyle = gradient;
         ctx.fill();
         
         // Draw solid particle center
-        ctx.fillStyle = `hsl(${primaryColor} / 0.6)`;
+        ctx.fillStyle = `hsl(${currentHue}, 70%, 60%, 0.6)`;
         ctx.fill();
       });
 
-      // Draw connections between nearby particles
-      ctx.strokeStyle = `hsl(${getComputedStyle(document.documentElement)
-        .getPropertyValue('--primary')
-        .trim()} / 0.15)`;
+      // Draw connections between nearby particles with dynamic color
       ctx.lineWidth = 0.5;
 
       for (let i = 0; i < particles.length; i++) {
@@ -113,9 +116,7 @@ export const ParticleNetwork = ({
           if (distance < connectionDistance) {
             // Fade line based on distance
             const opacity = (1 - distance / connectionDistance) * 0.3;
-            ctx.strokeStyle = `hsl(${getComputedStyle(document.documentElement)
-              .getPropertyValue('--primary')
-              .trim()} / ${opacity})`;
+            ctx.strokeStyle = `hsl(${currentHue}, 60%, 55%, ${opacity})`;
             
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
@@ -133,10 +134,10 @@ export const ParticleNetwork = ({
     return () => {
       window.removeEventListener('resize', resizeCanvas);
       if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [particleCount, connectionDistance, particleSpeed]);
+  }, [particleCount, connectionDistance, particleSpeed, hueShift]);
 
   return (
     <motion.canvas

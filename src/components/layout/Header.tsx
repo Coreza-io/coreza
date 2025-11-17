@@ -115,11 +115,11 @@ export function Header() {
               <p className="text-xs text-muted-foreground">{user?.email || 'user@example.com'}</p>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
+            <DropdownMenuItem onClick={() => navigate('/dashboard/profile')} className="cursor-pointer">
               <User className="h-4 w-4 mr-2" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/settings')} className="cursor-pointer">
+            <DropdownMenuItem onClick={() => navigate('/dashboard/settings')} className="cursor-pointer">
               <Settings className="h-4 w-4 mr-2" />
               Settings
             </DropdownMenuItem>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
+import { ParticleNetwork } from "@/components/effects/ParticleNetwork";
 
 const Landing = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -192,6 +193,14 @@ const Landing = () => {
         <motion.div 
           className="landing-grid-pattern absolute inset-0 opacity-30"
           style={{ y: heroY, opacity: heroOpacity }}
+        />
+        
+        {/* Particle Network Animation */}
+        <ParticleNetwork 
+          particleCount={150}
+          connectionDistance={120}
+          particleSpeed={0.3}
+          className="opacity-60"
         />
         
         {/* Floating Gradient Orbs with Parallax */}

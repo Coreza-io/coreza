@@ -11,8 +11,7 @@ import {
   FemalePlugIcon,
   MalePlugIcon,
 } from "@/components/workflow/EdgeManager";
-import { useTheme } from "@/components/theme/ThemeProvider";
-import { useMemo } from "react";
+import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 
 type HandlePosition = "left" | "right" | "top" | "bottom";
 
@@ -108,18 +107,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   isExecuting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
-  const { theme } = useTheme();
-
-  // Determine if we're in dark mode
-  const isDarkMode = useMemo(() => {
-    if (theme === "dark") return true;
-    if (theme === "light") return false;
-    // For 'system' theme, check the system preference
-    if (theme === "system") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return false;
-  }, [theme]);
+  const resolvedTheme = useResolvedTheme();
+  const isDarkMode = resolvedTheme === "dark";
 
   // Map category to gradient class name
   const getCategoryGradientClass = (category?: string): string => {

@@ -420,7 +420,7 @@ const Workflows = () => {
                 </div>
                 
                 <div className="flex gap-3">
-                  <Link to={`/workflow/${workflow.id}`}>
+                  <Link to={`/dashboard/workflow/${workflow.id}`}>
                     <Button variant="outline" size="sm">
                       <Edit className="h-4 w-4 mr-2" />
                       Edit Workflow

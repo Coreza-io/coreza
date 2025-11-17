@@ -14,6 +14,7 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
+  Settings,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -216,7 +217,7 @@ const Landing = () => {
       </section>
 
       {/* Features Grid */}
-      <section className="py-20 px-4 bg-card/30">
+      <section id="features" className="py-20 px-4 bg-card/30 scroll-mt-20">
         <div className="container mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -268,7 +269,7 @@ const Landing = () => {
       </section>
 
       {/* How It Works */}
-      <section className="py-20 px-4">
+      <section id="how-it-works" className="py-20 px-4 scroll-mt-20">
         <div className="container mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -463,8 +464,5 @@ const Landing = () => {
     </div>
   );
 };
-
-// Missing import for Settings icon
-import { Settings } from "lucide-react";
 
 export default Landing;

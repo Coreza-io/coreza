@@ -375,7 +375,7 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex gap-3">
-          <Link to="/workflow/new">
+          <Link to="/dashboard/workflow/new">
             <Button className="bg-gradient-primary hover:shadow-glow">
               <Plus className="h-4 w-4 mr-2" />
               New Workflow
@@ -766,7 +766,7 @@ const Dashboard = () => {
                 ) : (
                   <div className="text-center py-4 text-muted-foreground">
                     <p>No workflows found</p>
-                    <Link to="/workflow/new">
+                    <Link to="/dashboard/workflow/new">
                       <Button variant="outline" size="sm" className="mt-2">
                         Create Your First Workflow
                       </Button>
@@ -775,7 +775,7 @@ const Dashboard = () => {
                 )}
               </div>
               <div className="mt-4">
-                <Link to="/workflows">
+                <Link to="/dashboard/workflows">
                   <Button variant="outline" className="w-full">
                     View All Workflows
                   </Button>
@@ -853,13 +853,13 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
-              <Link to="/workflow/new">
+              <Link to="/dashboard/workflow/new">
                 <Button variant="outline" className="w-full h-auto p-4 flex flex-col gap-2">
                   <Plus className="h-6 w-6" />
                   <span>Create Workflow</span>
                 </Button>
               </Link>
-              <Link to="/projects">
+              <Link to="/dashboard/projects">
                 <Button variant="outline" className="w-full h-auto p-4 flex flex-col gap-2">
                   <Activity className="h-6 w-6" />
                   <span>Manage Projects</span>

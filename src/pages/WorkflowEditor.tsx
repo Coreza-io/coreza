@@ -953,11 +953,11 @@ const WorkflowEditorContent = () => {
             setHasLoadedWorkflowId(workflowId);
           } else {
             console.error("Workflow not found or access denied");
-            navigate("/workflows");
+            navigate("/dashboard/workflows");
           }
         } catch (error) {
           console.error("Error loading workflow:", error);
-          navigate("/workflows");
+          navigate("/dashboard/workflows");
         }
         setLoading(false);
       }

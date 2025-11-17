@@ -296,7 +296,7 @@ const Projects = () => {
   };
 
   const handleViewWorkflows = (projectId: string) => {
-    navigate(`/workflows?project=${projectId}`);
+    navigate(`/dashboard/workflows?project=${projectId}`);
   };
 
   const container = {

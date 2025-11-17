@@ -18,13 +18,28 @@ import {
   TrendingUp,
   Settings,
   LogOut,
+  type LucideIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const menuItems = [
-  { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
-  { title: "Projects", url: "/projects", icon: FolderOpen },
-  { title: "Workflows", url: "/workflows", icon: Activity },
+const DASHBOARD_BASE_PATH = "/dashboard";
+
+type MenuItem = {
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  matchPaths?: string[];
+};
+
+const menuItems: MenuItem[] = [
+  { title: "Dashboard", url: DASHBOARD_BASE_PATH, icon: BarChart3 },
+  { title: "Projects", url: `${DASHBOARD_BASE_PATH}/projects`, icon: FolderOpen },
+  {
+    title: "Workflows",
+    url: `${DASHBOARD_BASE_PATH}/workflows`,
+    icon: Activity,
+    matchPaths: [`${DASHBOARD_BASE_PATH}/workflow`],
+  },
 ];
 
 export function AppSidebar() {
@@ -32,7 +47,19 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string, matchPaths: string[] = []) => {
+    if (path === DASHBOARD_BASE_PATH) {
+      return location.pathname === path;
+    }
+
+    if (location.pathname === path || location.pathname.startsWith(`${path}/`)) {
+      return true;
+    }
+
+    return matchPaths.some((matchPath) =>
+      location.pathname.startsWith(matchPath)
+    );
+  };
 
   return (
     <Sidebar
@@ -69,7 +96,7 @@ export function AppSidebar() {
                     <Link
                       to={item.url}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:bg-sidebar-accent ${
-                        isActive(item.url)
+                        isActive(item.url, item.matchPaths)
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
                       }`}

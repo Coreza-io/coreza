@@ -122,6 +122,12 @@ const Landing = () => {
             <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               How it Works
             </a>
+            <Link to="/documentation" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Documentation
+            </Link>
+            <Link to="/support" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Support
+            </Link>
           </div>
           <div className="flex items-center gap-4">
             <Link to="/login">
@@ -418,18 +424,18 @@ const Landing = () => {
               </div>
             </div>
             <div className="flex gap-6 text-sm text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">
+              <Link to="/documentation" className="hover:text-foreground transition-colors">
                 Documentation
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/support" className="hover:text-foreground transition-colors">
                 Support
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/privacy" className="hover:text-foreground transition-colors">
                 Privacy
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/terms" className="hover:text-foreground transition-colors">
                 Terms
-              </a>
+              </Link>
             </div>
           </div>
           <div className="text-center mt-8 text-sm text-muted-foreground">

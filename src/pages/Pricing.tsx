@@ -397,15 +397,15 @@ const Pricing = () => {
               © 2024 Coreza. All rights reserved.
             </div>
             <div className="flex gap-6 text-sm text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">
+              <Link to="/privacy" className="hover:text-foreground transition-colors">
                 Privacy
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/terms" className="hover:text-foreground transition-colors">
                 Terms
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/support" className="hover:text-foreground transition-colors">
                 Support
-              </a>
+              </Link>
             </div>
           </div>
         </div>

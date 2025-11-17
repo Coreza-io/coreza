@@ -24,14 +24,24 @@ const Landing = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
   
-  // Parallax scroll effect for hero section
+  // Multi-layer parallax scroll effects for hero section
   const { scrollYProgress } = useScroll({
     target: heroRef,
     offset: ["start start", "end start"]
   });
   
-  const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  // Background grid - subtle movement
+  const heroY = useTransform(scrollYProgress, [0, 1], ["0%", "30%"]);
   const heroOpacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
+  
+  // Hero text - medium speed parallax
+  const heroTextY = useTransform(scrollYProgress, [0, 1], ["0%", "40%"]);
+  
+  // Workflow nodes - slower parallax for depth
+  const heroNodesY = useTransform(scrollYProgress, [0, 1], ["0%", "20%"]);
+  
+  // Hero container - subtle scale effect
+  const heroScale = useTransform(scrollYProgress, [0, 1], [1, 0.95]);
 
   // Track scroll position to show/hide back to top button
   useEffect(() => {
@@ -177,12 +187,16 @@ const Landing = () => {
           className="landing-grid-pattern absolute inset-0 opacity-30"
           style={{ y: heroY, opacity: heroOpacity }}
         />
-        <div className="container mx-auto relative z-10">
+        <motion.div 
+          className="container mx-auto relative z-10"
+          style={{ scale: heroScale }}
+        >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="text-center max-w-4xl mx-auto"
+            style={{ y: heroTextY }}
           >
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               Automate Your Trading Workflows with{" "}
@@ -212,6 +226,7 @@ const Landing = () => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3, duration: 0.6 }}
               className="flex items-center justify-center gap-3 flex-wrap max-w-2xl mx-auto"
+              style={{ y: heroNodesY }}
             >
               {[
                 { icon: Database, label: "Data", gradient: "bg-gradient-data" },
@@ -244,7 +259,7 @@ const Landing = () => {
               ))}
             </motion.div>
           </motion.div>
-        </div>
+        </motion.div>
       </section>
 
       {/* Features Grid */}
@@ -278,15 +293,18 @@ const Landing = () => {
             viewport={{ once: true, margin: "-100px" }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
-            {features.map((feature, i) => (
+            {features.map((feature, index) => (
               <motion.div
-                key={i}
+                key={index}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.5, delay: index * 0.1, type: "spring", stiffness: 300, damping: 20 }}
                 variants={{
-                  hidden: { opacity: 0, y: 20 },
+                  hidden: { opacity: 0, y: 50 },
                   visible: { opacity: 1, y: 0 },
                 }}
-                whileHover={{ y: -8 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                whileHover={{ y: -12, scale: 1.02 }}
               >
                 <Card className="p-6 hover:shadow-glow transition-all h-full border-border bg-card/50 backdrop-blur-sm">
                   <div className={`${feature.gradient} p-3 rounded-xl w-fit mb-4`}>
@@ -318,16 +336,20 @@ const Landing = () => {
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {steps.map((step, i) => (
+            {steps.map((step, index) => (
               <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-100px" }}
-                transition={{ delay: i * 0.2, duration: 0.6 }}
+                key={index}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.6, delay: index * 0.15 }}
+                variants={{
+                  hidden: { opacity: 0, y: 40 },
+                  visible: { opacity: 1, y: 0 },
+                }}
                 className="relative"
               >
-                <Card className="p-8 text-center border-border bg-card/50 backdrop-blur-sm">
+                <Card className="p-8 text-center border-border bg-card/50 backdrop-blur-sm hover:shadow-glow transition-all">
                   <div className="text-6xl font-bold text-primary/20 mb-4">
                     {step.number}
                   </div>
@@ -337,7 +359,7 @@ const Landing = () => {
                   <h3 className="text-2xl font-bold mb-3">{step.title}</h3>
                   <p className="text-muted-foreground">{step.description}</p>
                 </Card>
-                {i < steps.length - 1 && (
+                {index < steps.length - 1 && (
                   <div className="hidden md:block absolute top-1/2 -right-4 transform -translate-y-1/2">
                     <ArrowRight className="h-8 w-8 text-primary/50" />
                   </div>

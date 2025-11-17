@@ -280,7 +280,7 @@ const Workflows = () => {
           <Button 
             variant="ghost" 
             size="sm"
-            onClick={() => navigate('/projects')}
+            onClick={() => navigate('/dashboard/projects')}
             className="flex items-center gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -364,7 +364,7 @@ const Workflows = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-popover border-border">
                       <DropdownMenuItem asChild>
-                        <Link to={`/workflow/${workflow.id}`}>
+                        <Link to={`/dashboard/workflow/${workflow.id}`}>
                           <Edit className="h-4 w-4 mr-2" />
                           Edit
                         </Link>

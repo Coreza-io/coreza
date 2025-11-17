@@ -26,14 +26,14 @@ const POSITION_MAP: Record<HandlePosition, Position> = {
 const ROTATION_MAP: Record<HandlePosition, number> = {
   left: 45,
   right: 45,
-  top: -90,
-  bottom: 90,
+  top: -45,
+  bottom: -45,
 };
 
 const HANDLE_TRANSFORM_MAP: Record<HandlePosition, string> = {
   left: "translate(-50%, -50%)",
   right: "translate(150%, -50%)",
-  top: "translate(-50%, -50%)",
+  top: "translate(-50%, -150%)",
   bottom: "translate(-50%, 50%)",
 };
 
@@ -123,28 +123,28 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   // Map category to gradient class name
   const getCategoryGradientClass = (category?: string): string => {
-    if (!category) return '';
-    
-    const normalizedCategory = category.toLowerCase().replace(/\s+/g, '');
-    
+    if (!category) return "";
+
+    const normalizedCategory = category.toLowerCase().replace(/\s+/g, "");
+
     const categoryMap: Record<string, string> = {
-      'indicators': 'bg-gradient-indicators',
-      'broker': 'bg-gradient-broker',
-      'data': 'bg-gradient-data',
-      'logic': 'bg-gradient-logic',
-      'screener': 'bg-gradient-screener',
-      'input': 'bg-gradient-input',
-      'visualization': 'bg-gradient-visualization',
-      'llm': 'bg-gradient-llm',
-      'chatmodel': 'bg-gradient-chatmodel',
-      'aiagent': 'bg-gradient-aiagent',
-      'email': 'bg-gradient-email',
-      'tool': 'bg-gradient-tool',
-      'riskmanagement': 'bg-gradient-risk',
-      'scheduler': 'bg-gradient-scheduler',
+      indicators: "bg-gradient-indicators",
+      broker: "bg-gradient-broker",
+      data: "bg-gradient-data",
+      logic: "bg-gradient-logic",
+      screener: "bg-gradient-screener",
+      input: "bg-gradient-input",
+      visualization: "bg-gradient-visualization",
+      llm: "bg-gradient-llm",
+      chatmodel: "bg-gradient-chatmodel",
+      aiagent: "bg-gradient-aiagent",
+      email: "bg-gradient-email",
+      tool: "bg-gradient-tool",
+      riskmanagement: "bg-gradient-risk",
+      scheduler: "bg-gradient-scheduler",
     };
-    
-    return categoryMap[normalizedCategory] || '';
+
+    return categoryMap[normalizedCategory] || "";
   };
 
   const categoryGradientClass = getCategoryGradientClass(category);
@@ -189,7 +189,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               ? "border-primary shadow-glow"
               : "border-border"
           }
-          ${isDarkMode && categoryGradientClass ? categoryGradientClass : 'bg-card'}
+          ${
+            isDarkMode && categoryGradientClass
+              ? categoryGradientClass
+              : "bg-card"
+          }
         `}
         onDoubleClick={(e) => {
           e.preventDefault();

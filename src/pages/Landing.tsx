@@ -25,6 +25,14 @@ const Landing = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
   
+  // Force dark mode for landing page
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    return () => {
+      // Theme will be restored by ThemeProvider on unmount
+    };
+  }, []);
+  
   // Multi-layer parallax scroll effects for hero section
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -148,7 +156,7 @@ const Landing = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="dark min-h-screen bg-background">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">

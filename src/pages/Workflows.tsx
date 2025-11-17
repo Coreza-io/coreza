@@ -306,7 +306,7 @@ const Workflows = () => {
             }
           </p>
         </div>
-        <Link to={projectId ? `/workflow/new?project=${projectId}` : "/workflow/new"}>
+        <Link to={projectId ? `/dashboard/workflow/new?project=${projectId}` : "/dashboard/workflow/new"}>
           <Button className="bg-gradient-primary hover:shadow-glow">
             <Plus className="h-4 w-4 mr-2" />
             New Workflow
@@ -463,7 +463,7 @@ const Workflows = () => {
             {searchQuery ? "Try adjusting your search query" : "Create your first workflow to start trading"}
           </p>
           {!searchQuery && (
-            <Link to={projectId ? `/workflow/new?project=${projectId}` : "/workflow/new"}>
+            <Link to={projectId ? `/dashboard/workflow/new?project=${projectId}` : "/dashboard/workflow/new"}>
               <Button className="bg-gradient-primary">
                 <Plus className="h-4 w-4 mr-2" />
                 Create Your First Workflow

@@ -340,7 +340,7 @@ const Landing = () => {
                 }}
                 whileHover={{ y: -12, scale: 1.02 }}
               >
-                <Card className="p-6 hover:shadow-glow transition-all h-full border-border bg-card/50 backdrop-blur-sm">
+                <Card className="p-6 hover:shadow-glow transition-all h-full border-border bg-card/50 backdrop-blur-sm animated-gradient-border">
                   <div className={`${feature.gradient} p-3 rounded-xl w-fit mb-4`}>
                     <feature.icon className="h-6 w-6 text-white" />
                   </div>

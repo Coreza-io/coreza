@@ -225,6 +225,24 @@
       stroke-dashoffset: -200;
     }
   }
+
+  @keyframes gradient-flow {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes border-pulse {
+    0%, 100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
 }
 
 @layer base {
@@ -234,6 +252,42 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Animated Gradient Border */
+  .animated-gradient-border {
+    @apply relative bg-card;
+    overflow: visible;
+  }
+
+  .animated-gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--primary)),
+      hsl(var(--chart-2)),
+      hsl(var(--chart-3)),
+      hsl(var(--primary))
+    );
+    background-size: 300% 300%;
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    animation: gradient-flow 4s ease infinite, border-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .animated-gradient-border:hover::before {
+    opacity: 1;
   }
 
   /* Electric Border Utility Classes */

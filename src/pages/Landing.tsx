@@ -42,6 +42,12 @@ const Landing = () => {
   
   // Hero container - subtle scale effect
   const heroScale = useTransform(scrollYProgress, [0, 1], [1, 0.95]);
+  
+  // Floating orbs - different parallax speeds for depth
+  const orb1Y = useTransform(scrollYProgress, [0, 1], ["0%", "60%"]);
+  const orb2Y = useTransform(scrollYProgress, [0, 1], ["0%", "-40%"]);
+  const orb3Y = useTransform(scrollYProgress, [0, 1], ["0%", "80%"]);
+  const orb4Y = useTransform(scrollYProgress, [0, 1], ["0%", "-30%"]);
 
   // Track scroll position to show/hide back to top button
   useEffect(() => {
@@ -187,6 +193,25 @@ const Landing = () => {
           className="landing-grid-pattern absolute inset-0 opacity-30"
           style={{ y: heroY, opacity: heroOpacity }}
         />
+        
+        {/* Floating Gradient Orbs with Parallax */}
+        <motion.div
+          className="absolute top-20 left-10 w-64 h-64 bg-gradient-indicators rounded-full blur-3xl opacity-20"
+          style={{ y: orb1Y }}
+        />
+        <motion.div
+          className="absolute top-40 right-20 w-96 h-96 bg-gradient-broker rounded-full blur-3xl opacity-15"
+          style={{ y: orb2Y }}
+        />
+        <motion.div
+          className="absolute bottom-40 left-1/4 w-72 h-72 bg-gradient-llm rounded-full blur-3xl opacity-20"
+          style={{ y: orb3Y }}
+        />
+        <motion.div
+          className="absolute bottom-20 right-1/3 w-80 h-80 bg-gradient-data rounded-full blur-3xl opacity-15"
+          style={{ y: orb4Y }}
+        />
+        
         <motion.div 
           className="container mx-auto relative z-10"
           style={{ scale: heroScale }}

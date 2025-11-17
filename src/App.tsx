@@ -8,6 +8,10 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
 import Landing from "./pages/Landing";
 import Pricing from "./pages/Pricing";
+import Documentation from "./pages/Documentation";
+import Support from "./pages/Support";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Interface from "./pages/Interface";
@@ -28,6 +32,10 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Landing />} />
                   <Route path="/pricing" element={<Pricing />} />
+                  <Route path="/documentation" element={<Documentation />} />
+                  <Route path="/support" element={<Support />} />
+                  <Route path="/privacy" element={<Privacy />} />
+                  <Route path="/terms" element={<Terms />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/signup" element={<Signup />} />
                   <Route path="/dashboard/*" element={<Interface />} />

@@ -106,6 +106,7 @@
     --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
     --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
     --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
+    --gradient-binance: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #f3ba2f 50%, #7a5a3d 75%, #3d2d1f 100%);
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -671,6 +672,12 @@
 
   .dark .bg-gradient-scheduler {
     background: var(--gradient-scheduler);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-binance {
+    background: var(--gradient-binance);
     background-size: 200% 200%;
     animation: metallic-shimmer 3s ease infinite;
   }

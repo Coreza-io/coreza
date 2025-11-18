@@ -39,6 +39,9 @@ import AlpacaScreenerDef from './AlpacaScreener.json'
 import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
 import SchwabScreenerDef from './SchwabScreener.json'
 import SupportResistanceDef from './SupportResistance.json'
+import BinanceDef from './Binance.json'
+import BinanceTradeDef from './BinanceTrade.json'
+import BinanceScreenerDef from './BinanceScreener.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -136,7 +139,10 @@ export const nodeManifest = {
   [AlpacaScreenerDef.name]: AlpacaScreenerDef,
   [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef,
   [SchwabScreenerDef.name]: SchwabScreenerDef,
-  [SupportResistanceDef.name]: SupportResistanceDef
+  [SupportResistanceDef.name]: SupportResistanceDef,
+  [BinanceDef.name]: BinanceDef,
+  [BinanceTradeDef.name]: BinanceTradeDef,
+  [BinanceScreenerDef.name]: BinanceScreenerDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

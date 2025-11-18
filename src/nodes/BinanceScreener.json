@@ -1,0 +1,98 @@
+{
+  "name": "BinanceScreener",
+  "def": "Screen Assets",
+  "node_type": "main",
+  "category": "Screener",
+  "parentNode": "Binance",
+  "icon": "/assets/icons/binance.svg",
+  "size": { "width": 340, "height": 340 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/binance/screener",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "label": "Spot", "value": "spot" },
+        { "label": "Futures", "value": "futures" }
+      ],
+      "default": "spot",
+      "required": true
+    },
+    {
+      "key": "filter_type",
+      "label": "Filter Type",
+      "type": "select",
+      "options": [
+        { "label": "Top Gainers", "value": "top_gainers" },
+        { "label": "Top Losers", "value": "top_losers" },
+        { "label": "Most Active by Volume", "value": "most_active" },
+        { "label": "New Listings", "value": "new_listings" }
+      ],
+      "default": "top_gainers",
+      "required": true
+    },
+    {
+      "key": "limit",
+      "label": "Limit",
+      "type": "number",
+      "default": 10,
+      "placeholder": "Number of results",
+      "required": true
+    },
+    {
+      "key": "quote_asset",
+      "label": "Quote Asset",
+      "type": "select",
+      "options": [
+        { "label": "USDT", "value": "USDT" },
+        { "label": "BUSD", "value": "BUSD" },
+        { "label": "BTC", "value": "BTC" },
+        { "label": "ETH", "value": "ETH" }
+      ],
+      "default": "USDT",
+      "displayOptions": {
+        "show": {
+          "asset_type": ["spot"]
+        }
+      }
+    },
+    {
+      "key": "min_volume",
+      "label": "Min Volume (24h)",
+      "type": "number",
+      "placeholder": "Minimum 24h volume",
+      "displayOptions": {
+        "show": {
+          "filter_type": ["most_active"]
+        }
+      }
+    },
+    {
+      "key": "min_price_change",
+      "label": "Min Price Change %",
+      "type": "number",
+      "placeholder": "Minimum price change percentage",
+      "displayOptions": {
+        "show": {
+          "filter_type": ["top_gainers", "top_losers"]
+        }
+      }
+    }
+  ]
+}

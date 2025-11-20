@@ -87,45 +87,6 @@ const Documentation = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
-      <nav className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link to="/" className="flex items-center gap-2">
-              <Zap className="h-6 w-6 text-primary" />
-              <span className="font-bold text-xl">Coreza</span>
-            </Link>
-            <div className="flex items-center gap-6">
-              <Link to="/#features" className="text-muted-foreground hover:text-foreground transition-colors">
-                Features
-              </Link>
-              <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">
-                Pricing
-              </Link>
-              <Link to="/documentation" className="text-foreground font-medium">
-                Documentation
-              </Link>
-              <Link to="/support" className="text-muted-foreground hover:text-foreground transition-colors">
-                Support
-              </Link>
-              <div className="flex items-center gap-4 ml-4">
-                <Link 
-                  to="/login"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Login
-                </Link>
-                <Link 
-                  to="/signup"
-                  className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
-                >
-                  Get Started
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
 
       {/* Hero Section */}
       <section className="pt-20 pb-12 px-4">
@@ -217,49 +178,6 @@ const Documentation = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border/40 py-12 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-4 gap-8 mb-8">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Zap className="h-5 w-5 text-primary" />
-                <span className="font-bold">Coreza</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Visual trading workflow automation platform
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-3">Product</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><Link to="/#features" className="hover:text-foreground transition-colors">Features</Link></li>
-                <li><Link to="/pricing" className="hover:text-foreground transition-colors">Pricing</Link></li>
-                <li><Link to="/documentation" className="hover:text-foreground transition-colors">Documentation</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-3">Company</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><Link to="/support" className="hover:text-foreground transition-colors">Support</Link></li>
-                <li><Link to="/privacy" className="hover:text-foreground transition-colors">Privacy</Link></li>
-                <li><Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-3">Connect</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors">GitHub</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Discord</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Twitter</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="pt-8 border-t border-border/40 text-center text-sm text-muted-foreground">
-            <p>© 2024 Coreza. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -17,6 +17,7 @@
 }
 
 @layer base {
+
   :root,
   .dark {
     /* Dark theme - Professional trading platform */
@@ -70,21 +71,15 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Dark */
-    --gradient-primary: linear-gradient(
-      135deg,
-      hsl(217 91% 60%),
-      hsl(217 91% 70%)
-    );
-    --gradient-card: linear-gradient(
-      145deg,
-      hsl(224 12% 10%),
-      hsl(224 12% 12%)
-    );
-    --gradient-glow: radial-gradient(
-      circle at center,
-      hsl(217 91% 60% / 0.15),
-      transparent 70%
-    );
+    --gradient-primary: linear-gradient(135deg,
+        hsl(217 91% 60%),
+        hsl(217 91% 70%));
+    --gradient-card: linear-gradient(145deg,
+        hsl(224 12% 10%),
+        hsl(224 12% 12%));
+    --gradient-glow: radial-gradient(circle at center,
+        hsl(217 91% 60% / 0.15),
+        transparent 70%);
 
     /* Shadows - Dark */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
@@ -166,17 +161,13 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Light */
-    --gradient-primary: linear-gradient(
-      135deg,
-      hsl(217 91% 60%),
-      hsl(217 91% 70%)
-    );
+    --gradient-primary: linear-gradient(135deg,
+        hsl(217 91% 60%),
+        hsl(217 91% 70%));
     --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
-    --gradient-glow: radial-gradient(
-      circle at center,
-      hsl(217 91% 60% / 0.08),
-      transparent 70%
-    );
+    --gradient-glow: radial-gradient(circle at center,
+        hsl(217 91% 60% / 0.08),
+        transparent 70%);
 
     /* Shadows - Light */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
@@ -186,33 +177,38 @@
 
   /* Electric Border Animations */
   @keyframes electric-pulse {
+
     0%,
     100% {
-      filter: drop-shadow(0 0 8px currentColor)
-        drop-shadow(0 0 16px currentColor);
+      filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
       opacity: 1;
     }
+
     50% {
-      filter: drop-shadow(0 0 12px currentColor)
-        drop-shadow(0 0 24px currentColor);
+      filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 24px currentColor);
       opacity: 0.8;
     }
   }
 
   @keyframes electric-flicker {
+
     0%,
     100% {
       opacity: 1;
     }
+
     20% {
       opacity: 0.9;
     }
+
     40% {
       opacity: 1;
     }
+
     60% {
       opacity: 0.85;
     }
+
     80% {
       opacity: 1;
     }
@@ -222,24 +218,31 @@
     0% {
       stroke-dashoffset: 0;
     }
+
     100% {
       stroke-dashoffset: -200;
     }
   }
 
   @keyframes gradient-flow {
-    0%, 100% {
+
+    0%,
+    100% {
       background-position: 0% 50%;
     }
+
     50% {
       background-position: 100% 50%;
     }
   }
 
   @keyframes border-pulse {
-    0%, 100% {
+
+    0%,
+    100% {
       opacity: 0.6;
     }
+
     50% {
       opacity: 1;
     }
@@ -267,16 +270,14 @@
     inset: -2px;
     border-radius: inherit;
     padding: 2px;
-    background: linear-gradient(
-      90deg,
-      hsl(var(--primary)),
-      hsl(var(--chart-2)),
-      hsl(var(--chart-3)),
-      hsl(var(--primary))
-    );
+    background: linear-gradient(90deg,
+        hsl(var(--primary)),
+        hsl(var(--chart-2)),
+        hsl(var(--chart-3)),
+        hsl(var(--primary)));
     background-size: 300% 300%;
-    -webkit-mask: 
-      linear-gradient(#fff 0 0) content-box, 
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -323,21 +324,25 @@
     from {
       stroke-dashoffset: 0;
     }
+
     to {
       stroke-dashoffset: -48;
     }
   }
 
   @keyframes plug-edge-spark {
+
     0%,
     100% {
       transform: scale(0.9);
       opacity: 0.15;
     }
+
     40% {
       transform: scale(1.1);
       opacity: 0.35;
     }
+
     70% {
       transform: scale(1);
       opacity: 0.25;
@@ -348,11 +353,10 @@
     from {
       transform: translate(0%, 0%);
     }
+
     to {
-      transform: translate(
-        var(--plug-edge-shift-x, 0%),
-        var(--plug-edge-shift-y, 0%)
-      );
+      transform: translate(var(--plug-edge-shift-x, 0%),
+          var(--plug-edge-shift-y, 0%));
     }
   }
 
@@ -415,10 +419,7 @@
     transition: filter 0.3s ease, fill 0.3s ease;
   }
 
-  .plug-edge__cord.executing-edge
-    ~ .plug-edge__plug
-    .plug-edge__plug-shape
-    path {
+  .plug-edge__cord.executing-edge~.plug-edge__plug .plug-edge__plug-shape path {
     filter: drop-shadow(0 0 8px currentColor);
   }
 
@@ -433,19 +434,15 @@
     --electric-border-outer: rgba(221, 132, 72, 0.45);
     --electric-border-glow: rgba(221, 132, 72, 0.7);
     --electric-border-glow-soft: rgba(221, 132, 72, 0.35);
-    --electric-border-overlay: linear-gradient(
-      -30deg,
-      rgba(255, 255, 255, 0.9),
-      transparent 32%,
-      transparent 68%,
-      rgba(255, 255, 255, 0.85)
-    );
-    --electric-border-background: linear-gradient(
-      -30deg,
-      var(--electric-border-light),
-      transparent,
-      var(--electric-border-color)
-    );
+    --electric-border-overlay: linear-gradient(-30deg,
+        rgba(255, 255, 255, 0.9),
+        transparent 32%,
+        transparent 68%,
+        rgba(255, 255, 255, 0.85));
+    --electric-border-background: linear-gradient(-30deg,
+        var(--electric-border-light),
+        transparent,
+        var(--electric-border-color));
   }
 
   .electric-border-effect__svg {
@@ -461,7 +458,7 @@
     border-radius: inherit;
   }
 
-  .electric-border-effect__layers > * {
+  .electric-border-effect__layers>* {
     position: absolute;
     inset: 0;
     border-radius: inherit;
@@ -545,51 +542,63 @@
   }
 
   /* Metallic shimmer animation */
-@keyframes metallic-shimmer {
-  0% {
-    background-position: 0% 50%;
+  @keyframes metallic-shimmer {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
   }
-  50% {
-    background-position: 100% 50%;
+
+  /* Landing page specific styles */
+  .landing-grid-pattern {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
-  100% {
-    background-position: 0% 50%;
+
+  .hero-glow {
+    box-shadow:
+      0 0 80px hsl(217 91% 60% / 0.3),
+      0 0 40px hsl(217 91% 60% / 0.2);
   }
-}
 
-/* Landing page specific styles */
-.landing-grid-pattern {
-  background-image: 
-    linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px);
-  background-size: 40px 40px;
-}
+  /* Animated gradient text */
+  .gradient-text {
+    background: linear-gradient(90deg,
+        hsl(217 91% 60%),
+        hsl(280 80% 60%),
+        hsl(217 91% 60%));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 3s ease infinite;
+  }
 
-.hero-glow {
-  box-shadow: 
-    0 0 80px hsl(217 91% 60% / 0.3),
-    0 0 40px hsl(217 91% 60% / 0.2);
-}
+  @keyframes gradient-shift {
 
-/* Animated gradient text */
-.gradient-text {
-  background: linear-gradient(
-    90deg,
-    hsl(217 91% 60%),
-    hsl(280 80% 60%),
-    hsl(217 91% 60%)
-  );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: gradient-shift 3s ease infinite;
-}
+    0%,
+    100% {
+      background-position: 0% center;
+    }
 
-@keyframes gradient-shift {
-  0%, 100% { background-position: 0% center; }
-  50% { background-position: 100% center; }
-}
+    50% {
+      background-position: 100% center;
+    }
+  }
+
+  .animate-gradient-shift {
+    background-size: 200% auto;
+    animation: gradient-shift 3s ease infinite;
+  }
 
   /* Metallic gradient utility classes - Dark mode only */
   .dark .bg-gradient-indicators {
@@ -686,9 +695,11 @@
 .react-flow__edges {
   z-index: 2 !important;
 }
+
 .react-flow__nodes {
   z-index: 1 !important;
 }
+
 .react-flow__edge-path {
   position: relative;
   z-index: 3 !important;

@@ -149,44 +149,6 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-gradient-primary rounded-lg shadow-glow">
-              <TrendingUp className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold">Coreza</span>
-          </div>
-          <div className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Features
-            </a>
-            <Link to="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Pricing
-            </Link>
-            <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              How it Works
-            </a>
-            <Link to="/documentation" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Documentation
-            </Link>
-            <Link to="/support" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Support
-            </Link>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link to="/login">
-              <Button variant="ghost">Login</Button>
-            </Link>
-            <Link to="/signup">
-              <Button className="bg-gradient-primary hover:shadow-glow">
-                Get Started
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
 
       {/* Hero Section */}
       <section ref={heroRef} className="pt-32 pb-20 px-4 relative overflow-hidden">
@@ -498,41 +460,6 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-12 px-4 border-t border-border bg-card/30">
-        <div className="container mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-gradient-primary rounded-lg">
-                <TrendingUp className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <span className="text-xl font-bold">Coreza</span>
-                <p className="text-sm text-muted-foreground">
-                  Professional Trading Workflow Platform
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-6 text-sm text-muted-foreground">
-              <Link to="/documentation" className="hover:text-foreground transition-colors">
-                Documentation
-              </Link>
-              <Link to="/support" className="hover:text-foreground transition-colors">
-                Support
-              </Link>
-              <Link to="/privacy" className="hover:text-foreground transition-colors">
-                Privacy
-              </Link>
-              <Link to="/terms" className="hover:text-foreground transition-colors">
-                Terms
-              </Link>
-            </div>
-          </div>
-          <div className="text-center mt-8 text-sm text-muted-foreground">
-            © 2024 Coreza. All rights reserved.
-          </div>
-        </div>
-      </footer>
 
       {/* JSON-LD Structured Data */}
       <script type="application/ld+json">

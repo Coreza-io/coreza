@@ -2,10 +2,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
+import { useAuth } from "@/contexts/AuthContext";
 import Landing from "./pages/Landing";
 import Pricing from "./pages/Pricing";
 import Documentation from "./pages/Documentation";
@@ -16,8 +17,54 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Interface from "./pages/Interface";
 import NotFound from "./pages/NotFound";
+import { MarketingLayout } from "@/components/layout/MarketingLayout";
+import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
+
+const AppLayout = () => (
+  <div className="min-h-screen bg-background text-foreground transition-colors">
+    <Toaster />
+    <Sonner />
+    <Outlet />
+  </div>
+);
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const PublicOnlyRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -25,24 +72,45 @@ const App = () => (
       <UserPreferencesProvider>
         <ThemeProvider defaultTheme="dark" storageKey="coreza-theme">
           <TooltipProvider>
-            <div className="min-h-screen bg-background text-foreground transition-colors">
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/" element={<Landing />} />
-                  <Route path="/pricing" element={<Pricing />} />
-                  <Route path="/documentation" element={<Documentation />} />
-                  <Route path="/support" element={<Support />} />
-                  <Route path="/privacy" element={<Privacy />} />
-                  <Route path="/terms" element={<Terms />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/dashboard/*" element={<Interface />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </BrowserRouter>
-            </div>
+            <BrowserRouter>
+              <Routes>
+                <Route element={<AppLayout />}>
+                  <Route
+                    path="/login"
+                    element={
+                      <PublicOnlyRoute>
+                        <Login />
+                      </PublicOnlyRoute>
+                    }
+                  />
+                  <Route
+                    path="/signup"
+                    element={
+                      <PublicOnlyRoute>
+                        <Signup />
+                      </PublicOnlyRoute>
+                    }
+                  />
+                  <Route
+                    path="/dashboard/*"
+                    element={
+                      <ProtectedRoute>
+                        <Interface />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route element={<MarketingLayout />}>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/pricing" element={<Pricing />} />
+                    <Route path="/documentation" element={<Documentation />} />
+                    <Route path="/support" element={<Support />} />
+                    <Route path="/privacy" element={<Privacy />} />
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
+                </Route>
+              </Routes>
+            </BrowserRouter>
           </TooltipProvider>
         </ThemeProvider>
       </UserPreferencesProvider>

@@ -37,6 +37,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     return "basic";
   };
 
+  // return repeater or basic
   const layoutType = getLayoutType(definition);
 
   // Extract cases length for stable dependency tracking

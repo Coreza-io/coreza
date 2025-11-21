@@ -359,7 +359,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
 
-      let srcData = srcNode.data?.output || {};
+      const srcData = srcNode.data?.output || {};
 
       const allNodeData = {} as Record<string, any>;
       previousNodes.forEach((prevNode) => {
@@ -404,7 +404,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
 
-      let srcData =
+      const srcData =
         srcNode.data?.output ||
         srcNode.data?.input ||
         srcNode.data?.values ||

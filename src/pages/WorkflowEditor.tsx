@@ -68,7 +68,7 @@ const resolveWebSocketUrl = (): string | null => {
     const wsProtocol = api.protocol === "https:" ? "wss:" : "ws:";
     const port =
       configuredPort ??
-      (api.port ? (api.port === "8000" ? "8081" : api.port) : "8081");
+      (api.port ? (api.port === "8000" ? "8080" : api.port) : "8080");
     return `${wsProtocol}//${api.hostname}:${port}`;
   } catch (error) {
     console.error("Failed to derive WebSocket URL", error);
@@ -239,7 +239,7 @@ const WorkflowEditorContent = () => {
         );
       }
     },
-    [authUser, executionStore, setNodes]
+    [authUser?.id, executionStore, setNodes]
   );
 
   const onNodesChange = useCallback(
@@ -435,7 +435,9 @@ const WorkflowEditorContent = () => {
       if (wsRef.current) {
         try {
           wsRef.current.close(1000, "navigate/cleanup");
-        } catch {}
+        } catch (e){
+          console.log(e,'ERROR')
+        }
         wsRef.current = null;
       }
     };
@@ -970,7 +972,7 @@ const WorkflowEditorContent = () => {
 
     loadWorkflow();
   }, [
-    authUser,
+    authUser?.id,
     authLoading,
     navigate,
     isNewWorkflow,
@@ -1072,7 +1074,7 @@ const WorkflowEditorContent = () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [nodes, authUser, isNewWorkflow, handleSaveWorkflow]);
+  }, [nodes, authUser?.id, isNewWorkflow, handleSaveWorkflow]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] w-full">

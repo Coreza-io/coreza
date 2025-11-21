@@ -230,7 +230,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             maskColor="hsl(var(--muted) / 0.6)"
           />
           <Controls 
-            className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted"
+            className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black"
           />
         </ReactFlow>
 

@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, User } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navLinks = [
   { label: "Features", hash: "#features" },
@@ -11,6 +12,7 @@ const navLinks = [
 ];
 
 export function MarketingHeader() {
+  const { user, loading } = useAuth();
   const location = useLocation();
   const isLandingPage = location.pathname === "/";
 
@@ -62,16 +64,31 @@ export function MarketingHeader() {
         <div className="hidden md:flex items-center gap-6">
           {navLinks.map(renderNavLink)}
         </div>
-        <div className="flex items-center gap-4">
-          <Link to="/login">
-            <Button variant="ghost">Login</Button>
-          </Link>
-          <Link to="/signup">
-            <Button className="bg-gradient-primary hover:shadow-glow">
-              Get Started
-            </Button>
-          </Link>
-        </div>
+        {!loading && user ? (
+          <div className="flex items-center gap-4">
+            <Link to="/dashboard">
+              <Button variant="ghost" className="rounded-full p-3">
+                <User className="h-4 w-4" />
+                <span className="text-sm font-medium">{user?.identities?.[0]?.identity_data?.first_name}</span>
+              </Button>
+            </Link>
+          </div>
+        ) : loading ? (
+          <div className="flex items-center gap-4">
+            <User className="h-4 w-4" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-4">
+            <Link to="/login">
+              <Button variant="ghost">Login</Button>
+            </Link>
+            <Link to="/signup">
+              <Button className="bg-gradient-primary hover:shadow-glow">
+                Get Started
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
     </nav>
   );

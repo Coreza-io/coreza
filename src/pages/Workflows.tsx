@@ -127,7 +127,7 @@ const Workflows = () => {
     };
 
     loadWorkflows();
-  }, [user, projectId, toast]);
+  }, [user?.id, projectId, toast]);
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {

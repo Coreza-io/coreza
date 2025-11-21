@@ -121,7 +121,7 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, [user, toast]);
+  }, [user?.id, toast]);
 
   // Fetch detailed execution history
   const fetchExecutionHistory = async () => {

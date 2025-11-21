@@ -1,0 +1,114 @@
+import { useEffect, useRef } from "react";
+import { useNodeId, useNodes } from "@xyflow/react";
+
+interface UseNodeAutoExecutionProps {
+  nodeId: string | null;
+  definition: any;
+  handleSubmit: (e?: React.FormEvent, inputOverride?: any) => Promise<void>;
+  executionStore: any;
+}
+
+/**
+ * Custom hook to handle auto-execution events
+ * Listens for 'auto-execute-node' custom events and triggers node execution
+ * This hook doesn't return anything, it just sets up event listeners
+ */
+export function useNodeAutoExecution({
+  nodeId,
+  definition,
+  handleSubmit,
+  executionStore,
+}: UseNodeAutoExecutionProps): void {
+  const nodes = useNodes();
+  const isMounted = useRef(true);
+
+  // Refs for stashing callbacks
+  const onSuccessRef = useRef<null | ((result: any) => void)>(null);
+  const onErrorRef = useRef<null | ((error: any) => void)>(null);
+
+  // Listen for auto-execution events
+  useEffect(() => {
+    const handleAutoExecute = async (event: CustomEvent) => {
+      if (event.detail?.nodeId === nodeId) {
+        console.log(`🚀 Auto-executing node: ${nodeId}`);
+
+        // Check if this node is a conditional target (should only execute when explicitly triggered)
+        if (event.detail.allEdges && event.detail.allNodes) {
+          const incomingEdges = event.detail.allEdges.filter(
+            (edge: any) => edge.target === nodeId
+          );
+          const isConditionalTarget = incomingEdges.some((edge: any) => {
+            const sourceNode = event.detail.allNodes.find(
+              (n: any) => n.id === edge.source
+            );
+            return (
+              sourceNode &&
+              (sourceNode.data?.definition as any)?.name === "If" &&
+              (edge.sourceHandle === "true" || edge.sourceHandle === "false")
+            );
+          });
+
+          // If this is a conditional target and wasn't explicitly triggered by the If node, skip execution
+          //if (isConditionalTarget && !event.detail.explicitlyTriggered) {
+          //  console.log(`🚫 Node ${nodeId} is a conditional target, skipping auto-execution (waiting for explicit trigger)`);
+          //  return;
+          //}
+        }
+
+        // === Stash callbacks for use in [nodes] effect ===
+        onSuccessRef.current = event.detail.onSuccess ?? null;
+        onErrorRef.current = event.detail.onError ?? null;
+
+        try {
+          const inputData = nodeId
+            ? executionStore.getNodeData(nodeId).input
+            : undefined;
+          await handleSubmit(undefined, inputData);
+          // Don't access nodes/output or call callback here!
+        } catch (executionError) {
+          onErrorRef.current?.(executionError);
+          onSuccessRef.current = onErrorRef.current = null;
+        }
+      }
+    };
+
+    window.addEventListener(
+      "auto-execute-node",
+      handleAutoExecute as EventListener
+    );
+    return () => {
+      isMounted.current = false;
+      window.removeEventListener(
+        "auto-execute-node",
+        handleAutoExecute as EventListener
+      );
+    };
+  }, [nodeId, handleSubmit, executionStore]);
+
+  // Watch for output changes and call success callback
+  useEffect(() => {
+    const currentNode = nodes.find((n) => n.id === nodeId);
+    if (!currentNode || !onSuccessRef.current) return;
+
+    const output = currentNode.data?.output;
+    if (output === undefined) return;
+
+    // Normalize result as needed
+    let resultToPass = output;
+
+    // Only normalize for Switch nodes that need special handling
+    if (
+      definition?.name === "Switch" &&
+      resultToPass &&
+      typeof resultToPass === "object" &&
+      "result" in resultToPass
+    ) {
+      resultToPass = resultToPass.result;
+    }
+
+    // Call the stashed success callback
+    onSuccessRef.current?.(resultToPass);
+    onSuccessRef.current = onErrorRef.current = null;
+  }, [nodes, nodeId, definition]);
+}
+

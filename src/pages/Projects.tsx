@@ -116,7 +116,7 @@ const Projects = () => {
     if (!authLoading && authUser) {
       fetchProjects();
     }
-  }, [authUser, authLoading]);
+  }, [authUser?.id]);
 
   const filteredProjects = projects.filter(project =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

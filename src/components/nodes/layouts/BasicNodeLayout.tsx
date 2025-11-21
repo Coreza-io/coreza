@@ -13,7 +13,24 @@ import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import type { BaseNodeRenderProps } from "../BaseNode";
 
-interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
+interface BasicNodeLayoutProps extends BaseNodeRenderProps {
+  definition: any;
+  fieldState: Record<string, any>;
+  error: string;
+  isSending: boolean;
+  loadingSelect: Record<string, boolean>;
+  selectOptions: Record<string, any[]>;
+  showAuth: boolean;
+  selectedInputData: any;
+  handleChange: (key: string, value: any) => void;
+  handleSubmit: (e?: React.FormEvent) => void;
+  handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
+  getFieldPreview: (fieldKey: string) => string | null;
+  setShowAuth: (show: boolean) => void;
+  fetchCredentials: (fieldKey: string) => void;
+  fetchDependentOptions: (field: any, parentValue: string) => void;
+  referenceStyle: React.CSSProperties;
+}
 
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
@@ -375,7 +392,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         );
 
       case "multiselect":
-        const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
+        {const selectedValues = Array.isArray(fieldState[f.key]) ? fieldState[f.key] : (f.default || []);
         const availableOptions = selectOptions[f.key] || f.options || [];
         
         return (
@@ -406,7 +423,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             })}
           </div>
         );
-      
+      }
       default:
         return null;
     }

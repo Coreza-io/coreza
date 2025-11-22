@@ -88,7 +88,7 @@ loadScripMaster().catch(() => {});
 // SCHWAB TOKEN REFRESH UTILITY
 // ============================================
 
-async function refreshSchwabTokenIfNeeded(creds: any): Promise<any> {
+export async function refreshSchwabTokenIfNeeded(creds: any): Promise<any> {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = creds.token_expires_at || 0;
 

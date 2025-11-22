@@ -1,0 +1,187 @@
+import { createError } from "../middleware/errorHandler";
+import { Item } from "../nodes/types";
+
+export interface ComparatorInput {
+  left: any;
+  operator: string;
+  right: any;
+}
+
+export interface ComparatorResult {
+  success: boolean;
+  result: boolean;
+  error?: string;
+}
+
+export class ComparatorService {
+  static async evaluate(input: ComparatorInput): Promise<ComparatorResult> {
+    try {
+      const { left, operator, right } = input;
+      let result: boolean;
+
+      switch (operator) {
+        case "===":
+          result = left === right;
+          break;
+        case "!==":
+          result = left !== right;
+          break;
+        case ">":
+          result = Number(left) > Number(right);
+          break;
+        case ">=":
+          result = Number(left) >= Number(right);
+          break;
+        case "<":
+          result = Number(left) < Number(right);
+          break;
+        case "<=":
+          result = Number(left) <= Number(right);
+          break;
+        case "contains": {
+          if (Array.isArray(left)) {
+            // Array contains logic
+            result = left.some(
+              (item) =>
+                String(item).toLowerCase() === String(right).toLowerCase()
+            );
+          } else {
+            // String contains logic
+            result = String(left)
+              .toLowerCase()
+              .includes(String(right).toLowerCase());
+          }
+          break;
+        }
+        case "does_not_contain": {
+          if (Array.isArray(left)) {
+            // Array does NOT contain right
+            result = !left.some((item) =>
+              String(item).toLowerCase().includes(String(right).toLowerCase())
+            );
+          } else {
+            // String does NOT contain right
+            result = !String(left)
+              .toLowerCase()
+              .includes(String(right).toLowerCase());
+          }
+          break;
+        }
+
+        case "starts_with":
+          result = String(left)
+            .toLowerCase()
+            .startsWith(String(right).toLowerCase());
+          break;
+        case "ends_with":
+          result = String(left)
+            .toLowerCase()
+            .endsWith(String(right).toLowerCase());
+          break;
+        case "matches_regex":
+          const regex = new RegExp(String(right), "i");
+          result = regex.test(String(left));
+          break;
+        case "is_empty":
+          result =
+            !left ||
+            left === "" ||
+            (Array.isArray(left) && left.length === 0) ||
+            (typeof left === "object" && Object.keys(left).length === 0);
+          break;
+        case "is_not_empty":
+          result =
+            !!left &&
+            left !== "" &&
+            !(Array.isArray(left) && left.length === 0) &&
+            !(typeof left === "object" && Object.keys(left).length === 0);
+          break;
+        case "isNull":
+          result = left === null;
+          break;
+        case "is_not_null":
+          result = left !== null;
+          break;
+        default:
+          throw createError(`Unsupported operator: ${operator}`, 400);
+      }
+
+      return { success: true, result };
+    } catch (error: any) {
+      return { success: false, result: false, error: error.message };
+    }
+  }
+
+  static async executeIf(
+    condition: ComparatorInput
+  ): Promise<ComparatorResult> {
+    return this.evaluate(condition);
+  }
+
+  static async executeSwitch(
+    cases: Array<{ condition: ComparatorInput; value: any }>,
+    defaultValue?: any
+  ): Promise<{
+    success: boolean;
+    result: any;
+    matchedCase?: number;
+    error?: string;
+  }> {
+    try {
+      for (let i = 0; i < cases.length; i++) {
+        const caseResult = await this.evaluate(cases[i].condition);
+        if (caseResult.success && caseResult.result) {
+          return {
+            success: true,
+            result: cases[i].value,
+            matchedCase: i,
+          };
+        }
+      }
+
+      // No case matched, return default value
+      return {
+        success: true,
+        result: defaultValue ?? null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        result: null,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Evaluate a single condition against each item and split into true/false arrays.
+   */
+  static async evaluateIfItems(
+    items: Item[],
+    condition: { left: string; operator: string; right: any }
+  ): Promise<{ trueItems: Item[]; falseItems: Item[] }> {
+    const trueItems: Item[] = [];
+    const falseItems: Item[] = [];
+
+    for (const item of items) {
+      const leftValue = this.resolvePath(item, condition.left);
+      const rightValue =
+        typeof condition.right === "string"
+          ? this.resolvePath(item, condition.right) ?? condition.right
+          : condition.right;
+
+      const { result } = await this.evaluate({
+        left: leftValue,
+        operator: condition.operator,
+        right: rightValue,
+      });
+      (result ? trueItems : falseItems).push(item);
+    }
+
+    return { trueItems, falseItems };
+  }
+
+  private static resolvePath(obj: any, path: string): any {
+    return path.split(".").reduce((acc, key) => acc?.[key], obj);
+  }
+}

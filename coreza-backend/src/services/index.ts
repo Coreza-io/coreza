@@ -8,4 +8,4 @@ export { LoopHandler } from './loopHandler';
 export { NodeStoreV2 } from './nodeStoreV2';
 
 // Export WebSocket services
-export { AlpacaNewsWebSocketClient } from './websockets';
+export { WebSocketClient } from './WebSocketClient';

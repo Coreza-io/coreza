@@ -1,15 +1,6 @@
 /**
  * WebSocket Services Module
- * 
- * This module provides WebSocket client implementations for connecting to external APIs.
- * All clients extend BaseWebSocketClient for consistent behavior.
- * 
- * @module websockets
+ *
+ * Centralizes configuration-driven WebSocket clients.
  */
-
-export { AlpacaNewsWebSocketClient } from './AlpacaNewsWebSocketClient';
-
-// Future exports:
-// export { DhanWebSocketClient } from './DhanWebSocketClient';
-// export { NewsWebSocketClient } from './NewsWebSocketClient';
-// export { FinnhubWebSocketClient } from './FinnhubWebSocketClient';
+export { getWebSocketConfig, getAllWebSocketSources } from "../../config/websockets";

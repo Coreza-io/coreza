@@ -1,22 +1,20 @@
 /**
  * @deprecated This file is kept for backward compatibility.
- * Use AlpacaNewsWebSocketClient from '../websockets/AlpacaNewsWebSocketClient' instead.
- * 
- * This wrapper delegates to the new base class architecture.
+ * Use the config-driven WebSocketClient instead.
  */
 
-import { AlpacaNewsWebSocketClient } from '../websockets/AlpacaNewsWebSocketClient';
+import { WebSocketClient } from "../WebSocketClient";
 
 /**
- * Legacy AlpacaWebSocketService - delegates to AlpacaNewsWebSocketClient
- * @deprecated Use AlpacaNewsWebSocketClient directly
+ * Legacy AlpacaWebSocketService - delegates to the generic WebSocketClient
+ * @deprecated Use WebSocketClient directly
  */
 export class AlpacaWebSocketService {
   private static instance: AlpacaWebSocketService;
-  private client: AlpacaNewsWebSocketClient;
+  private client: ReturnType<typeof WebSocketClient.getInstance>;
 
   private constructor() {
-    this.client = AlpacaNewsWebSocketClient.getInstance();
+    this.client = WebSocketClient.getInstance("alpaca_news");
   }
 
   static getInstance(): AlpacaWebSocketService {

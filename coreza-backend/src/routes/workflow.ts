@@ -3,7 +3,7 @@ import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { executeWorkflow } from "../services/workflowEngine";
 import { workflowScheduler } from "../services/scheduler";
-import { AlpacaNewsWebSocketClient } from "../services/websockets";
+import { WebSocketClient } from "../services/WebSocketClient";
 import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
@@ -135,7 +135,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
               : [];
 
           if (symbolArray.length > 0) {
-            const newsClient = AlpacaNewsWebSocketClient.getInstance();
+            const newsClient = WebSocketClient.getInstance("alpaca_news");
             await newsClient.unsubscribe(userId, symbolArray, {
               workflowId,
               nodeId: alpacaNewsNode.id,
@@ -603,7 +603,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           }
 
           // Get or connect WebSocket client
-          const newsClient = AlpacaNewsWebSocketClient.getInstance();
+          const newsClient = WebSocketClient.getInstance("alpaca_news");
           if (!newsClient.isReady()) {
             await newsClient.connect({ api_key, secret_key });
           }
@@ -638,7 +638,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
                 : [];
 
             if (symbolArray.length > 0) {
-              const newsClient = AlpacaNewsWebSocketClient.getInstance();
+              const newsClient = WebSocketClient.getInstance("alpaca_news");
               await newsClient.unsubscribe(userId, symbolArray, {
                 workflowId,
                 nodeId: alpacaNewsNode.id,

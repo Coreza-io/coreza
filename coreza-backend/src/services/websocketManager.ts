@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { IncomingMessage } from "http";
 import { URL } from "url";
 import jwt from "jsonwebtoken";
+import { WebSocketClient } from "./WebSocketClient";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -183,8 +184,15 @@ export class WebSocketManager {
           this.handleBrokerSubscription(ws, message.payload);
           break;
 
+        case "websocket_stream":
+          this.handleWebSocketStream(ws, message.payload);
+          break;
+
         case "alpaca_news":
-          this.handleAlpacaStream(ws, message.payload);
+          this.handleWebSocketStream(ws, {
+            source: "alpaca_news",
+            ...message.payload,
+          });
           break;
 
         default:
@@ -239,66 +247,63 @@ export class WebSocketManager {
     });
   }
 
-  private async handleAlpacaStream(
+  private async handleWebSocketStream(
     ws: AuthenticatedWebSocket,
     payload: any
   ): Promise<void> {
-    console.log(`User ${ws.userId} requested Alpaca news:`, payload);
+    const { source, action, symbols, node_id, nodeId } = payload || {};
+
+    if (!source) {
+      this.sendMessage(ws, {
+        type: "error",
+        payload: {
+          error: "source is required (e.g., alpaca_news)",
+        },
+      });
+      return;
+    }
 
     try {
-      // Import dynamically to avoid circular dependencies
-      const { AlpacaNewsWebSocketClient } = await import(
-        "./websockets/AlpacaNewsWebSocketClient"
-      );
-      const client = AlpacaNewsWebSocketClient.getInstance();
+      const client = WebSocketClient.getInstance(source);
+      const targetNodeId = node_id || nodeId;
 
-      const nodeId = payload.node_id || payload.nodeId;
-
-      if (payload.action === "subscribe" && payload.symbols) {
-        if (!nodeId) {
+      if (action === "subscribe" && symbols) {
+        if (!targetNodeId) {
           this.sendMessage(ws, {
-            type: "alpaca_news_error",
-            payload: {
-              error: "node_id is required to subscribe to Alpaca news",
-            },
+            type: `${source}_error`,
+            payload: { error: "node_id is required to subscribe" },
           });
           return;
         }
 
-        const success = await client.subscribe(ws.userId!, payload.symbols, {
-          nodeId,
+        const success = await client.subscribe(ws.userId!, symbols, {
+          nodeId: targetNodeId,
         });
 
         this.sendMessage(ws, {
-          type: "alpaca_news_started",
+          type: `${source}_started`,
           payload: {
-            symbols: payload.symbols,
-            node_id: nodeId,
+            symbols,
+            node_id: targetNodeId,
             success,
-            message: success
-              ? "Subscribed to news"
-              : "Failed to subscribe - WebSocket not connected",
           },
         });
-      } else if (payload.action === "unsubscribe" && payload.symbols) {
-        const success = await client.unsubscribe(ws.userId!, payload.symbols, {
-          nodeId,
+      } else if (action === "unsubscribe" && symbols) {
+        const success = await client.unsubscribe(ws.userId!, symbols, {
+          nodeId: targetNodeId,
         });
 
         this.sendMessage(ws, {
-          type: "alpaca_news_stopped",
+          type: `${source}_stopped`,
           payload: {
-            symbols: payload.symbols,
-            node_id: nodeId ?? null,
+            symbols,
+            node_id: targetNodeId ?? null,
             success,
-            message: success
-              ? "Unsubscribed from news"
-              : "Failed to unsubscribe",
           },
         });
       } else {
         this.sendMessage(ws, {
-          type: "alpaca_news_error",
+          type: `${source}_error`,
           payload: {
             error:
               "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
@@ -306,9 +311,8 @@ export class WebSocketManager {
         });
       }
     } catch (error) {
-      console.error("Error handling Alpaca news:", error);
       this.sendMessage(ws, {
-        type: "alpaca_news_error",
+        type: "error",
         payload: {
           error: error instanceof Error ? error.message : "Unknown error",
         },

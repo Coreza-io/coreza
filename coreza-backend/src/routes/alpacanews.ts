@@ -1,20 +1,9 @@
 import express from "express";
 import axios from "axios";
-import { AlpacaNewsWebSocketClient } from "../services/websockets/AlpacaNewsWebSocketClient";
+import { WebSocketClient } from "../services/WebSocketClient";
 import CredentialManager from "../utils/credentialManager";
 
 const router = express.Router();
-
-// ✅ Start the debug ingress ONCE when this module loads (safe no-op if restarted)
-try {
-  AlpacaNewsWebSocketClient.getInstance().startDebugIngressServer(9090);
-} catch (e) {
-  // If already started (hot-reload), ignore
-  console.warn(
-    "Debug ingress server already running or failed to start:",
-    (e as Error).message
-  );
-}
 
 /**
  * Subscribe to Alpaca news for specific symbols
@@ -81,7 +70,7 @@ router.post("/subscribe", async (req, res) => {
     }
 
     // Get or create WebSocket client
-    const client = AlpacaNewsWebSocketClient.getInstance();
+    const client = WebSocketClient.getInstance("alpaca_news");
 
     // Connect if not already connected
     if (!client.isReady()) {
@@ -138,7 +127,7 @@ router.post("/unsubscribe", async (req, res) => {
       return res.status(400).json({ error: "At least one symbol is required" });
     }
 
-    const client = AlpacaNewsWebSocketClient.getInstance();
+    const client = WebSocketClient.getInstance("alpaca_news");
     await client.unsubscribe(user_id, symbolArray, {
       nodeId: node_id,
     });
@@ -165,7 +154,7 @@ router.post("/unsubscribe", async (req, res) => {
  */
 router.get("/status", (req, res) => {
   try {
-    const client = AlpacaNewsWebSocketClient.getInstance();
+    const client = WebSocketClient.getInstance("alpaca_news");
     const stats = client.getStats();
 
     res.json({
@@ -187,7 +176,7 @@ router.get("/status", (req, res) => {
 router.get("/subscriptions/:userId", (req, res) => {
   try {
     const { userId } = req.params;
-    const client = AlpacaNewsWebSocketClient.getInstance();
+    const client = WebSocketClient.getInstance("alpaca_news");
     const subscriptions = client.getUserSubscriptions(userId);
 
     res.json({

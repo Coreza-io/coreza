@@ -45,16 +45,17 @@ router.get("/:broker/credentials", async (req, res, next) => {
       brokerKey
     );
 
-    const formattedCredentials = brokerKey === "schwab"
-      ? credentials.map((c: any) => ({
-          id: c.name,
-          name: c.name,
-          account_number: c.client_json?.account_number,
-        }))
-      : credentials.map((c: any) => ({
-          id: c.name,
-          name: c.name,
-        }));
+    const formattedCredentials =
+      brokerKey === "schwab"
+        ? credentials.map((c: any) => ({
+            id: c.name,
+            name: c.name,
+            account_number: c.client_json?.account_number,
+          }))
+        : credentials.map((c: any) => ({
+            id: c.name,
+            name: c.name,
+          }));
 
     res.json({
       success: true,
@@ -87,7 +88,7 @@ router.post("/:broker/auth", async (req, res, next) => {
       brokerKey,
       credential_name,
       credentials,
-      'api'
+      "api"
     );
 
     res.json({
@@ -161,7 +162,8 @@ router.post("/:broker/exchange-token", async (req, res) => {
     if (!temp_id || !redirect_url || !credential_name || !user_id) {
       return res.status(400).json({
         success: false,
-        error: "temp_id, redirect_url, credential_name, and user_id are required",
+        error:
+          "temp_id, redirect_url, credential_name, and user_id are required",
       });
     }
 
@@ -357,21 +359,31 @@ router.post("/:broker/:operation", async (req, res, next) => {
     }
 
     if (!isSupportedBroker(brokerKey)) {
-      return res.status(400).json({ error: `Unsupported broker: ${brokerKey}` });
+      return res
+        .status(400)
+        .json({ error: `Unsupported broker: ${brokerKey}` });
     }
 
     if (!user_id || !credential_id) {
-      return res.status(400).json({ error: "user_id and credential_id are required" });
+      return res
+        .status(400)
+        .json({ error: "user_id and credential_id are required" });
     }
 
     const config = getBrokerConfig(brokerKey);
     if (!config) {
-      return res.status(400).json({ error: `Broker config not found: ${brokerKey}` });
+      return res
+        .status(400)
+        .json({ error: `Broker config not found: ${brokerKey}` });
     }
 
     const op = config.operations[operation];
     if (!op) {
-      return res.status(400).json({ error: `Unsupported operation: ${operation} for broker: ${brokerKey}` });
+      return res
+        .status(400)
+        .json({
+          error: `Unsupported operation: ${operation} for broker: ${brokerKey}`,
+        });
     }
 
     // Parse symbol if it's a JSON array string
@@ -392,14 +404,16 @@ router.post("/:broker/:operation", async (req, res, next) => {
       brokerKey,
       credential_id
     );
-    const creds = credentials.client_json;
+    const creds = credentials?.client_json;
 
     // 2. Build request
-    const baseUrl = typeof config.baseUrl === "function"
-      ? config.baseUrl(creds, { operation, ...req.body })
-      : config.baseUrl;
+    const baseUrl =
+      typeof config.baseUrl === "function"
+        ? config.baseUrl(creds, { operation, ...req.body })
+        : config.baseUrl;
 
-    const path = typeof op.path === "function" ? op.path(req.body, creds) : op.path;
+    const path =
+      typeof op.path === "function" ? op.path(req.body, creds) : op.path;
     const url = `${baseUrl}${path}`;
     const headers = await config.makeAuthHeaders(creds);
     const params = op.makeParams?.(req.body) ?? {};
@@ -422,7 +436,9 @@ router.post("/:broker/:operation", async (req, res, next) => {
 
     // 4. Transform result
     const rawData = response.data;
-    const data = op.transformResult ? op.transformResult(rawData, req.body) : rawData;
+    const data = op.transformResult
+      ? op.transformResult(rawData, req.body)
+      : rawData;
 
     res.json({ success: true, data });
   } catch (err: any) {
@@ -435,7 +451,8 @@ router.post("/:broker/:operation", async (req, res, next) => {
       "Unknown error";
 
     if (status === 503) {
-      message = "API service is temporarily unavailable (HTTP 503). Please try again later.";
+      message =
+        "API service is temporarily unavailable (HTTP 503). Please try again later.";
     } else if (status === 400) {
       if (err.response?.data?.errorMessage || err.response?.data?.errorCode) {
         message = `API Error [${err.response.data.errorCode || "400"}]: ${

@@ -133,12 +133,33 @@ async function startServer() {
     await workflowScheduler.initialize();
 
     // Initialize WebSocket server
-    WebSocketManager.initialize(8081);
+    const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);
+    await WebSocketManager.initialize(wsPort);
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Coreza Node.js Backend running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
+
+    // Graceful shutdown handler
+    const shutdown = async (signal: string) => {
+      console.log(`\n${signal} received. Shutting down gracefully...`);
+      
+      // Close HTTP server
+      server.close(() => {
+        console.log('✅ HTTP server closed');
+      });
+      
+      // Close WebSocket server
+      await WebSocketManager.shutdown();
+      
+      // Exit process
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

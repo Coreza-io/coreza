@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { IncomingMessage } from "http";
 import { URL } from "url";
 import jwt from "jsonwebtoken";
+import { Server } from "net";
 import { WebSocketClient } from "./WebSocketClient";
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -31,16 +32,55 @@ export class WebSocketManager {
     return WebSocketManager.instance;
   }
 
-  initialize(port: number = 8081): void {
+  async initialize(port: number = 8081): Promise<void> {
+    // Check if port is available
+    const isPortAvailable = await this.checkPort(port);
+    
+    if (!isPortAvailable) {
+      console.error(`❌ Port ${port} is already in use`);
+      console.log(`💡 Solutions:`);
+      console.log(`   1. Kill existing process: netstat -ano | findstr :${port}`);
+      console.log(`   2. Change WEBSOCKET_PORT in .env`);
+      console.log(`   3. Run: taskkill /PID <PID> /F`);
+      throw new Error(`Port ${port} is already in use`);
+    }
+
     this.wss = new WebSocket.Server({
       port,
       verifyClient: this.verifyClient.bind(this),
     });
 
     this.wss.on("connection", this.handleConnection.bind(this));
+    this.wss.on("error", this.handleServerError.bind(this));
     this.setupHeartbeat();
 
     console.log(`🔌 WebSocket server started on port ${port}`);
+  }
+
+  private checkPort(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = new Server();
+      
+      server.once('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          resolve(false);
+        }
+      });
+      
+      server.once('listening', () => {
+        server.close();
+        resolve(true);
+      });
+      
+      server.listen(port);
+    });
+  }
+
+  private handleServerError(error: Error): void {
+    console.error('WebSocket server error:', error);
+    if (error.message.includes('EADDRINUSE')) {
+      console.log('💡 Try: taskkill /PID <PID> /F or change WEBSOCKET_PORT');
+    }
   }
 
   private async verifyClient(info: {
@@ -459,19 +499,29 @@ export class WebSocketManager {
     };
   }
 
-  shutdown(): void {
-    console.log("🔌 Shutting down WebSocket server...");
-
-    if (this.wss) {
-      this.wss.clients.forEach((ws) => {
-        ws.close(1000, "Server shutdown");
+  async shutdown(): Promise<void> {
+    console.log("🔌 Closing WebSocket connections...");
+    
+    // Close all client connections
+    this.clients.forEach((clientSet, userId) => {
+      clientSet.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close(1000, "Server shutting down");
+        }
       });
-
-      this.wss.close(() => {
-        console.log("✅ WebSocket server closed");
+    });
+    
+    // Close WebSocket server
+    if (this.wss) {
+      await new Promise<void>((resolve) => {
+        this.wss?.close(() => {
+          console.log("✅ WebSocket server closed");
+          resolve();
+        });
       });
     }
-
+    
+    // Clear maps
     this.clients.clear();
     this.sessions.clear();
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNodeId, useNodes, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 
@@ -24,6 +24,7 @@ export function useNodeFieldState({
   const nodeId = useNodeId();
   const nodes = useNodes();
   const { setNodes } = useReactFlow();
+  const hasInitialized = useRef(false);
 
   // Initialize fieldState from definition, saved data, or defaults
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
@@ -52,6 +53,9 @@ export function useNodeFieldState({
   // Initialize fieldState when definition changes
   useEffect(() => {
     if (!definition?.fields) return;
+    
+    // Only initialize once when component mounts or definition actually changes
+    if (hasInitialized.current) return;
 
     // Load defined fields from node definition
     const definedFields = Object.fromEntries(
@@ -72,36 +76,42 @@ export function useNodeFieldState({
 
     const newFieldState = { ...definedFields, ...dynamicFields };
 
-    // Only update if we don't have fieldState initialized yet or if field definitions actually changed
-    const isInitializing = Object.keys(fieldState).length === 0;
-    const fieldKeysChanged =
-      definition.fields.length !== Object.keys(fieldState).length ||
-      definition.fields.some((f: any) => !(f.key in fieldState));
-
-    if (isInitializing || fieldKeysChanged) {
+    // Only set if we actually have fields to initialize
+    if (Object.keys(newFieldState).length > 0) {
       console.log("🔄 BaseNode initializing fieldState for", definition.name);
       setFieldState(newFieldState);
+      hasInitialized.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [definition?.fields?.length, definition?.name, data.fieldState, data.values]);
+  }, [definition?.fields?.length, definition?.name]);
+
+  // Reset initialization flag if definition fundamentally changes
+  useEffect(() => {
+    hasInitialized.current = false;
+  }, [definition?.name]);
 
   // Sync fieldState changes to node data.values for proper persistence
   useEffect(() => {
-    if (Object.keys(fieldState).length > 0 && nodeId) {
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  values: { ...fieldState },
-                },
-              }
-            : n
-        )
-      );
-    }
+    if (Object.keys(fieldState).length === 0 || !nodeId || !hasInitialized.current) return;
+    
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (n.id !== nodeId) return n;
+        
+        // Check if values actually changed to prevent redundant updates
+        const currentValues = (n.data as any)?.values || {};
+        const valuesChanged = JSON.stringify(currentValues) !== JSON.stringify(fieldState);
+        
+        if (!valuesChanged) return n;
+        
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            values: { ...fieldState },
+          },
+        };
+      })
+    );
   }, [fieldState, nodeId, setNodes]);
 
   // Handle single field change

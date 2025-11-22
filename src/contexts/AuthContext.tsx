@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
 interface AuthContextType {
@@ -19,32 +19,168 @@ export const useAuth = () => {
   return context;
 };
 
+// Inactivity timeout in milliseconds (default: 7 hours)
+const INACTIVITY_TIMEOUT = parseInt(import.meta.env.VITE_INACTIVITY_TIMEOUT || '25200000'); // 7 hours
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
+  const userRef = useRef<User | null>(null);
+
+  // Keep userRef in sync with user state
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  // Reset inactivity timer - using ref to avoid recreating on every render
+  const resetInactivityTimer = useRef(() => {
+    lastActivityRef.current = Date.now();
+    
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+
+    // Only set timer if user is logged in
+    if (userRef.current) {
+      inactivityTimerRef.current = setTimeout(() => {
+        console.log('Auto logout: User inactive for too long');
+        supabase.auth.signOut();
+      }, INACTIVITY_TIMEOUT);
+    }
+  });
+
+  // Track user activity
+  useEffect(() => {
+    if (!user) {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      return;
+    }
+
+    const activityEvents = [
+      'mousedown',
+      'mousemove',
+      'keypress',
+      'scroll',
+      'touchstart',
+      'click',
+    ];
+
+    const handleActivity = () => {
+      resetInactivityTimer.current();
+    };
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    // Start the timer when user logs in
+    resetInactivityTimer.current();
+
+    return () => {
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, handleActivity);
+      });
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    };
+  }, [user]); // Only depend on user, not the callback
 
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      async (event: AuthChangeEvent, session: Session | null) => {
+        console.log('Auth state changed:', event);
+
+        switch (event) {
+          case 'SIGNED_OUT':
+            setSession(null);
+            setUser(null);
+            if (inactivityTimerRef.current) {
+              clearTimeout(inactivityTimerRef.current);
+              inactivityTimerRef.current = null;
+            }
+            break;
+
+          case 'TOKEN_REFRESHED':
+            setSession(session);
+            setUser(session?.user ?? null);
+            // Reset timer on token refresh
+            if (session?.user) {
+              resetInactivityTimer.current();
+            }
+            break;
+
+          case 'SIGNED_IN':
+            setSession(session);
+            setUser(session?.user ?? null);
+            // Timer will be started by the activity tracking useEffect
+            break;
+
+          default:
+            setSession(session);
+            setUser(session?.user ?? null);
+        }
+
         setLoading(false);
       }
     );
 
-    // Get initial session
+    // Get initial session and check expiration
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+      if (session) {
+        const expiresAt = session.expires_at;
+        if (expiresAt && expiresAt * 1000 < Date.now()) {
+          console.log('Session expired, signing out');
+          supabase.auth.signOut();
+        } else {
+          setSession(session);
+          setUser(session.user);
+          // Timer will be started by the activity tracking useEffect
+        }
+      } else {
+        setSession(null);
+        setUser(null);
+      }
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Periodically check session expiration (every 5 minutes)
+    const expirationCheckInterval = setInterval(() => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          const expiresAt = session.expires_at;
+          if (expiresAt && expiresAt * 1000 < Date.now()) {
+            console.log('Session expired during periodic check, signing out');
+            supabase.auth.signOut();
+          }
+        }
+      });
+    }, 5 * 60 * 1000); // Check every 5 minutes
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(expirationCheckInterval);
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    };
+  }, []); // No dependencies - runs once on mount
 
   const signOut = async () => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
     await supabase.auth.signOut();
   };
 

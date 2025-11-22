@@ -1,17 +1,27 @@
 import React, { useState } from "react";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useReactFlow } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Edit2 } from "lucide-react";
+import { X, Edit2, Trash2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import {
   FemalePlugIcon,
   MalePlugIcon,
 } from "@/components/workflow/EdgeManager";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type HandlePosition = "left" | "right" | "top" | "bottom";
 
@@ -107,8 +117,35 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   isExecuting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
+  const { setNodes, setEdges } = useReactFlow();
+
+  // Open delete confirmation dialog
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsDeleteDialogOpen(true);
+  };
+
+  // Confirm and delete node
+  const confirmDeleteNode = () => {
+    if (!nodeId) return;
+
+    // Remove the node
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    
+    // Remove all edges connected to this node
+    setEdges((eds) =>
+      eds.filter(
+        (edge) => edge.source !== nodeId && edge.target !== nodeId
+      )
+    );
+
+    // Close dialog
+    setIsDeleteDialogOpen(false);
+  };
 
   // Map category to gradient class name
   const getCategoryGradientClass = (category?: string): string => {
@@ -269,7 +306,19 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Collapsed View */}
         {!isExpanded && (
-          <div className="flex flex-col items-center justify-center h-full p-4 select-none">
+          <div className="flex flex-col items-center justify-center h-full p-4 select-none relative group">
+            {/* Delete button - appears on hover when selected */}
+            {selected && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDeleteClick}
+                title="Delete node"
+                className="absolute top-1 right-1 z-10 h-6 w-6 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 className="h-3 w-3 text-red-500" />
+              </Button>
+            )}
             <div className="text-muted-foreground mb-2">
               {/* Render icon with immediate loading */}
               {typeof icon === "string" && icon.startsWith("/assets/") ? (
@@ -336,18 +385,29 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {/* Expanded View */}
         {isExpanded && (
           <CardContent className="space-y-3 p-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsExpanded(false);
-              }}
-              title="Collapse"
-              className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-2 right-2 z-10 h-6 w-6 p-0"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="absolute top-2 right-2 z-10 flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDeleteClick}
+                title="Delete node"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-6 w-6 p-0"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsExpanded(false);
+                }}
+                title="Collapse"
+                className="text-muted-foreground hover:text-foreground hover:bg-muted h-6 w-6 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
             {children}
           </CardContent>
         )}
@@ -355,6 +415,32 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
       {/* Output Data Panel */}
       <OutputPanel {...mergedOutputPanelProps} />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Node</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{label}"? This action cannot be undone.
+              All connections to this node will also be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteNode}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Node
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

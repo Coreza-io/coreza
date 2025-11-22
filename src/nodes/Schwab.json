@@ -14,7 +14,7 @@
   ],
   "auth": "SchwabAuthModal",
   "authAction": {
-    "url": "/schwab/generate-auth-url",
+    "url": "/broker/schwab/generate-auth-url",
     "method": "POST"
   },
   "authFields": [
@@ -48,7 +48,7 @@
     }
   ],
   "action": {
-    "url": "/schwab/{{operation}}",
+    "url": "/broker/schwab/{{operation}}",
     "method": "POST"
   },
   "fields": [
@@ -58,7 +58,7 @@
       "type": "select",
       "required": true,
       "optionsSource": "credentialsApi",
-      "optionsApiUrl": "/schwab/credentials"
+      "optionsApiUrl": "/broker/schwab/credentials"
     },
     {
       "key": "accountHash",
@@ -66,7 +66,7 @@
       "type": "select",
       "required": true,
       "optionsSource": "dependentApi",
-      "optionsApiUrl": "/schwab/get_account_numbers",
+      "optionsApiUrl": "/broker/schwab/get_account_numbers",
       "dependsOn": "credential_id",
       "placeholder": "Select an account",
       "description": "Select the Schwab account to use",

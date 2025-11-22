@@ -40,9 +40,9 @@
       "placeholder": "For reference only - will be fetched dynamically"
     }
   ],
-  "authAction": { "url": "/schwab/generate-auth-url", "method": "POST" },
+  "authAction": { "url": "/broker/schwab/generate-auth-url", "method": "POST" },
 
-  "action": { "url": "/schwab/place_order", "method": "POST" },
+  "action": { "url": "/broker/schwab/place_order", "method": "POST" },
   "fields": [
     {
       "key": "operation",
@@ -64,7 +64,7 @@
       "type": "select",
       "required": true,
       "optionsSource": "dependentApi",
-      "optionsApiUrl": "/schwab/get_account_numbers",
+      "optionsApiUrl": "/broker/schwab/get_account_numbers",
       "dependsOn": "credential_id",
       "placeholder": "Select an account",
       "description": "Select the Schwab account for trading"

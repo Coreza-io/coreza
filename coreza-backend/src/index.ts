@@ -16,11 +16,9 @@ import { workflowScheduler } from './services/scheduler';
 
 // Import routes
 import indicatorRoutes from './routes/indicators';
-import alpacaRoutes from './routes/alpaca';
 import alpacaNewsRoutes from './routes/alpacanews';
 import marketRoutes from './routes/market';
 import credentialsRoutes from './routes/credentials';
-import dhanRoutes from './routes/dhan';
 import gmailRoutes from './routes/gmail';
 import finnhubRoutes from './routes/finnhub';
 import whatsappRoutes from './routes/whatsapp';
@@ -37,7 +35,7 @@ import openaiRoutes from './routes/openai';
 import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
 import screenerRoutes from './routes/screener';
-import schwabRoutes from './routes/schwab';
+import brokerRoutes from './routes/broker';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -71,16 +69,12 @@ app.get('/health', (req, res) => {
 console.log('📍 Setting up routes...');
 app.use('/indicators', indicatorRoutes);
 console.log('✅ Indicators route mounted');
-app.use('/alpaca', alpacaRoutes);
-console.log('✅ Alpaca route mounted');
 app.use('/alpaca-news', alpacaNewsRoutes);
 console.log('✅ AlpacaNews route mounted');
 app.use('/market', marketRoutes);
 console.log('✅ Market route mounted');
 app.use('/credentials', credentialsRoutes);
 console.log('✅ Credentials route mounted');
-app.use('/dhan', dhanRoutes);
-console.log('✅ Dhan route mounted');
 app.use('/gmail', gmailRoutes);
 console.log('✅ Gmail route mounted');
 app.use('/finnhub', finnhubRoutes);
@@ -113,8 +107,8 @@ app.use('/googlesearch', googleSearchRoutes);
 console.log('✅ Google Search route mounted');
 app.use('/screener', screenerRoutes);
 console.log('✅ Screener route mounted');
-app.use('/schwab', schwabRoutes);
-console.log('✅ Schwab route mounted');
+app.use('/broker', brokerRoutes);
+console.log('✅ Broker route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

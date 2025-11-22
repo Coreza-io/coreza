@@ -16,7 +16,6 @@ import { workflowScheduler } from './services/scheduler';
 
 // Import routes
 import indicatorRoutes from './routes/indicators';
-import alpacaNewsRoutes from './routes/alpacanews';
 import marketRoutes from './routes/market';
 import credentialsRoutes from './routes/credentials';
 import gmailRoutes from './routes/gmail';
@@ -68,8 +67,6 @@ app.get('/health', (req, res) => {
 console.log('📍 Setting up routes...');
 app.use('/indicators', indicatorRoutes);
 console.log('✅ Indicators route mounted');
-app.use('/alpaca-news', alpacaNewsRoutes);
-console.log('✅ AlpacaNews route mounted');
 app.use('/market', marketRoutes);
 console.log('✅ Market route mounted');
 app.use('/credentials', credentialsRoutes);

@@ -24,6 +24,52 @@ export interface BrokerConfig {
 }
 
 // ============================================
+// DATE CONVERSION UTILITY
+// ============================================
+
+/**
+ * Convert date string to ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ)
+ * Handles multiple input formats:
+ * - "2025-11-06 01:30:00" -> "2025-11-06T01:30:00Z"
+ * - "2025-11-06" -> "2025-11-06T00:00:00Z"
+ * - "2025-11-06T01:30:00Z" -> "2025-11-06T01:30:00Z" (already ISO)
+ */
+function convertToISO8601(dateStr: string): string {
+  if (!dateStr || dateStr.trim() === '') return dateStr;
+  
+  const trimmed = dateStr.trim();
+  
+  // Already in ISO 8601 format (has T and ends with Z)
+  if (trimmed.includes('T') && trimmed.endsWith('Z')) {
+    return trimmed;
+  }
+  
+  // Format: "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DD HH:mm:ss.SSS"
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(trimmed)) {
+    // Replace space with T and add Z
+    return trimmed.replace(' ', 'T') + 'Z';
+  }
+  
+  // Format: "YYYY-MM-DD" (date only)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}T00:00:00Z`;
+  }
+  
+  // Fallback: try parsing as Date and convert to ISO
+  try {
+    const date = new Date(trimmed);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  } catch (error) {
+    console.error('Date conversion error:', error);
+  }
+  
+  // Return original if we can't convert
+  return trimmed;
+}
+
+// ============================================
 // DHAN SCRIP MASTER UTILITIES
 // ============================================
 
@@ -188,7 +234,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   alpaca: {
     authType: 'api_key',
     baseUrl: (creds: any, input?: any) => {
-      if (input?.operation === 'get_candle' || input?.operation === 'get_latest_bar') {
+      if (input?.operation === 'get_candle' || input?.operation === 'get_latest_bar' || input?.operation === 'fetch_news') {
         return 'https://data.alpaca.markets';
       }
       return input?.environment === 'live'
@@ -256,6 +302,61 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         transformResult: (raw: any, input: any) => ({
           symbol: input.symbol,
           bar: raw.bars?.[input.symbol] ? [raw.bars[input.symbol]] : [],
+        }),
+      },
+      fetch_news: {
+        method: 'get',
+        path: '/v1beta1/news',
+        makeParams: (input: any) => {
+          const params: any = {};
+          
+          // Handle symbols (comma-separated string or array)
+          if (input.symbols) {
+            const symbolArray = typeof input.symbols === 'string'
+              ? input.symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+              : Array.isArray(input.symbols) ? input.symbols : [];
+            if (symbolArray.length > 0) {
+              params.symbols = symbolArray.join(',');
+            }
+          }
+          
+          // Convert dates to ISO 8601 format if needed
+          if (input.start && input.start.trim() !== '') {
+            params.start = convertToISO8601(input.start);
+          }
+          if (input.end && input.end.trim() !== '') {
+            params.end = convertToISO8601(input.end);
+          }
+          
+          // Numeric limit
+          if (input.limit && input.limit.toString().trim() !== '') {
+            const limitNum = Number(input.limit);
+            if (!isNaN(limitNum) && limitNum > 0) {
+              params.limit = limitNum;
+            }
+          }
+          
+          // Sort order
+          if (input.sort && input.sort.trim() !== '') {
+            params.sort = input.sort.trim();
+          }
+          
+          // Pagination token
+          if (input.page_token && input.page_token.trim() !== '') {
+            params.page_token = input.page_token.trim();
+          }
+          
+          // Include content boolean
+          if (input.include_content !== undefined && input.include_content !== '') {
+            params.include_content = input.include_content === 'true' || input.include_content === true;
+          }
+          
+          return params;
+        },
+        transformResult: (data: any) => ({
+          news: data.news || [],
+          count: data.news?.length || 0,
+          next_page_token: data.next_page_token || null,
         }),
       },
       place_order: {

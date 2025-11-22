@@ -1,7 +1,174 @@
 import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
+import { WebSocketClient } from '../services/WebSocketClient';
+import CredentialManager from '../utils/credentialManager';
 
 const router = express.Router();
+
+// ============================================
+// GENERIC WEBSOCKET OPERATIONS
+// ============================================
+
+/**
+ * Subscribe to a WebSocket source (alpaca_news, binance_trades, etc.)
+ * POST /websocket/:source/subscribe
+ */
+router.post('/:source/subscribe', async (req, res) => {
+  try {
+    const { source } = req.params;
+    const { user_id, credential_id, symbols, node_id } = req.body;
+
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
+    if (!symbols) return res.status(400).json({ error: 'symbols is required' });
+    if (!node_id) return res.status(400).json({ error: 'node_id is required' });
+
+    // Parse symbols (comma-separated string or array)
+    const symbolArray =
+      typeof symbols === 'string'
+        ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : Array.isArray(symbols)
+        ? symbols
+        : [];
+
+    if (symbolArray.length === 0) {
+      return res.status(400).json({ error: 'At least one symbol is required' });
+    }
+
+    // Get credentials - extract broker name from source (e.g., alpaca_news -> alpaca)
+    const brokerName = source.split('_')[0];
+    const credentialResponse = await CredentialManager.getCredentials(
+      user_id,
+      brokerName,
+      credential_id
+    );
+
+    if (!credentialResponse.credentials) {
+      return res.status(404).json({ error: 'Credential not found' });
+    }
+
+    const { credentials: { client_json } } = credentialResponse;
+
+    // Get or create WebSocket client
+    const client = WebSocketClient.getInstance(source);
+
+    // Connect if not already connected
+    if (!client.isReady()) {
+      await client.connect(client_json);
+    }
+
+    // Subscribe to symbols
+    await client.subscribe(user_id, symbolArray, { nodeId: node_id });
+
+    res.json({
+      success: true,
+      message: `Subscribed to ${source} for: ${symbolArray.join(', ')}`,
+      symbols: symbolArray,
+      node_id,
+      subscriptions: client.getUserSubscriptions(user_id),
+    });
+  } catch (error) {
+    console.error('Subscribe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Subscription failed',
+    });
+  }
+});
+
+/**
+ * Unsubscribe from a WebSocket source
+ * POST /websocket/:source/unsubscribe
+ */
+router.post('/:source/unsubscribe', async (req, res) => {
+  try {
+    const { source } = req.params;
+    const { user_id, symbols, node_id } = req.body;
+
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    if (!symbols) return res.status(400).json({ error: 'symbols is required' });
+
+    // Parse symbols
+    const symbolArray =
+      typeof symbols === 'string'
+        ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : Array.isArray(symbols)
+        ? symbols
+        : [];
+
+    if (symbolArray.length === 0) {
+      return res.status(400).json({ error: 'At least one symbol is required' });
+    }
+
+    const client = WebSocketClient.getInstance(source);
+    await client.unsubscribe(user_id, symbolArray, { nodeId: node_id });
+
+    res.json({
+      success: true,
+      message: `Unsubscribed from ${source} for: ${symbolArray.join(', ')}`,
+      symbols: symbolArray,
+      node_id: node_id ?? null,
+      subscriptions: client.getUserSubscriptions(user_id),
+    });
+  } catch (error) {
+    console.error('Unsubscribe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unsubscribe failed',
+    });
+  }
+});
+
+/**
+ * Get current subscription status for a WebSocket source
+ * GET /websocket/:source/status
+ */
+router.get('/:source/status', (req, res) => {
+  try {
+    const { source } = req.params;
+    const client = WebSocketClient.getInstance(source);
+    const stats = client.getStats();
+
+    res.json({
+      success: true,
+      source,
+      status: stats,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Status check failed',
+    });
+  }
+});
+
+/**
+ * Get user's subscriptions for a WebSocket source
+ * GET /websocket/:source/subscriptions/:userId
+ */
+router.get('/:source/subscriptions/:userId', (req, res) => {
+  try {
+    const { source, userId } = req.params;
+    const client = WebSocketClient.getInstance(source);
+    const subscriptions = client.getUserSubscriptions(userId);
+
+    res.json({
+      success: true,
+      source,
+      userId,
+      subscriptions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get subscriptions',
+    });
+  }
+});
+
+// ============================================
+// LEGACY ENDPOINTS (for backward compatibility)
+// ============================================
 
 // WebSocket status endpoint for debugging
 router.get('/status', (req, res) => {

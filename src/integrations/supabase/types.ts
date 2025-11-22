@@ -224,24 +224,6 @@ export type Database = {
         }
         Relationships: []
       }
-      mh_codactividad: {
-        Row: {
-          codigo: string
-          descripcion: string
-          id: number
-        }
-        Insert: {
-          codigo: string
-          descripcion: string
-          id?: number
-        }
-        Update: {
-          codigo?: string
-          descripcion?: string
-          id?: number
-        }
-        Relationships: []
-      }
       node_executions: {
         Row: {
           error_message: string | null

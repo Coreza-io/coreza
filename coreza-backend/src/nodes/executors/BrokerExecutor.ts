@@ -1,5 +1,5 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { getBrokerService } from "../../services/brokers/registry";
+import axios from "axios";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -33,32 +33,27 @@ export class BrokerExecutor implements INodeExecutor {
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`
       );
 
-      const brokerService = getBrokerService(broker);
-      if (!brokerService) {
-        return {
-          success: false,
-          error: `Unsupported broker: ${broker}`,
-        };
-      }
+      // Make internal HTTP call to broker route
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+      const url = `${backendUrl}/broker/${broker}/${operation}`;
 
-      const result = await brokerService.execute({
+      const response = await axios.post(url, {
         user_id: context?.userId,
         credential_id,
         operation,
         ...resolvedParams,
-        input,
       });
 
-      if (!result.success) {
+      if (!response.data.success) {
         return {
           success: false,
-          error: result.error || `${broker} ${operation} operation failed`,
+          error: response.data.error || `${broker} ${operation} operation failed`,
         };
       }
 
       return {
         success: true,
-        data: result.data,
+        data: response.data.data,
       };
     } catch (error) {
       return {

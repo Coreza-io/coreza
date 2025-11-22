@@ -39,7 +39,6 @@ import brokerRoutes from './routes/broker';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
-import { initializeBrokerServices } from './services/brokers/index';
 import { initializeScreenerServices } from './services/screeners';
 
 
@@ -129,9 +128,8 @@ async function startServer() {
       console.log('✅ Supabase connected successfully');
     }
 
-    // Initialize node executors and broker services
+    // Initialize node executors and screener services
     initializeScreenerServices();
-    initializeBrokerServices();
     initializeNodeExecutors();
 
     // Initialize workflow scheduler

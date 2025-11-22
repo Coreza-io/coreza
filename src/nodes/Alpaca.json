@@ -32,9 +32,9 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/alpaca/auth", "method": "POST" },
+  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
   "action": {
-    "url": "/alpaca/{{operation}}",
+    "url": "/broker/alpaca/{{operation}}",
     "method": "{{method}}"
   },
   "fields": [

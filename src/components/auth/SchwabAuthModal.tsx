@@ -73,7 +73,7 @@ export function SchwabAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/schwab/generate-auth-url`,
+        `${import.meta.env.VITE_API_URL}/broker/schwab/generate-auth-url`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,7 +119,7 @@ export function SchwabAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/schwab/exchange-token`,
+        `${import.meta.env.VITE_API_URL}/broker/schwab/exchange-token`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

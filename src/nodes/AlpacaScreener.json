@@ -31,7 +31,7 @@
       "type": "password"
     }
   ],
-  "authAction": { "url": "/alpaca/auth", "method": "POST" },
+  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
   "action": {
     "url": "/screener/alpaca/{{operation}}",
     "method": "POST"

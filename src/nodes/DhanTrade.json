@@ -33,9 +33,9 @@
       "placeholder": "Your Dhan Client ID"
     }
   ],
-  "authAction": { "url": "/dhan/auth", "method": "POST" },
+  "authAction": { "url": "/broker/dhan/auth", "method": "POST" },
 
-  "action": { "url": "/dhan/place_order", "method": "POST" },
+  "action": { "url": "/broker/dhan/place_order", "method": "POST" },
   "fields": [
     {
       "key": "operation",

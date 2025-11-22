@@ -6,7 +6,7 @@ import {
   NodeInput,
   NodeResult,
 } from "../nodes/types";
-import { QueueManager } from "./queueManagerV2";
+import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { LoopHandler } from "./loopHandler";
@@ -27,7 +27,7 @@ interface ExecutionContext {
 
 export class WorkflowEngine {
   private router: NodeRouter;
-  private queue: QueueManager;
+  private queue: NodeQueueManager;
   private store: NodeStoreV2;
   private loopHandler: LoopHandler;
   private executors: Map<string, any> = new Map();
@@ -53,7 +53,7 @@ export class WorkflowEngine {
       const node = this.nodes.find((n) => n.id === nodeId);
       return node?.type;
     };
-    this.queue = new QueueManager();
+    this.queue = new NodeQueueManager();
     this.store = new NodeStoreV2(runId, nodes);
     this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
     this.mode = mode;

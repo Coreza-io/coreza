@@ -129,6 +129,14 @@ async function startServer() {
     initializeScreenerServices();
     initializeNodeExecutors();
 
+    // Initialize job queue workers when BullMQ is enabled
+    if (process.env.USE_BULLMQ_QUEUE === 'true') {
+      console.log('🔄 [QUEUE] Starting BullMQ workers...');
+      require('./services/jobQueueManager');
+    } else {
+      console.log('⚡ [QUEUE] Using in-memory job queue');
+    }
+
     // Initialize workflow scheduler
     await workflowScheduler.initialize();
 

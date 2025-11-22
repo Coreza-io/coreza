@@ -1,9 +1,9 @@
 import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
-import { executeWorkflow } from "../services/workflowEngine";
 import { workflowScheduler } from "../services/scheduler";
 import { WebSocketClient } from "../services/WebSocketClient";
+import { jobQueue } from "../services/queueFactory";
 import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
@@ -217,7 +217,7 @@ router.post("/:userId/:workflowId/execute", async (req, res, next) => {
       .from("workflow_runs")
       .insert({
         workflow_id: workflowId,
-        status: "running",
+        status: "queued",
         initiated_by: userId,
       })
       .select()
@@ -227,33 +227,19 @@ router.post("/:userId/:workflowId/execute", async (req, res, next) => {
       throw createError("Failed to create workflow run", 500);
     }
 
-    // Execute workflow asynchronously
-    executeWorkflow(run.id, workflowId, userId, workflow.nodes, workflow.edges)
-      .then(async (result) => {
-        console.log(`Workflow ${workflowId} execution completed:`, result);
-
-        if (!result.success) {
-          console.error(`Workflow ${workflowId} failed:`, result.error);
-        }
-      })
-      .catch(async (error) => {
-        console.error(`Workflow ${workflowId} execution error:`, error);
-
-        // Update run status to failed
-        await supabase
-          .from("workflow_runs")
-          .update({
-            status: "failed",
-            completed_at: new Date().toISOString(),
-            error_message: error.message,
-          })
-          .eq("id", run.id);
-      });
+    await jobQueue.addWorkflowExecution({
+      runId: run.id,
+      workflowId,
+      userId,
+      nodes: workflow.nodes,
+      edges: workflow.edges,
+      trigger: "manual",
+    });
 
     res.json({
       run_id: run.id,
-      status: "started",
-      message: "Workflow execution started",
+      status: "queued",
+      message: "Workflow execution queued",
     });
   } catch (error) {
     next(error);

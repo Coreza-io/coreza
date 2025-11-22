@@ -1,7 +1,7 @@
 import * as schedule from "node-schedule";
 import { supabase } from "../config/supabase";
-import { executeWorkflow } from "./workflowEngine";
 import { formatInTimeZone } from "date-fns-tz";
+import { jobQueue } from "./queueFactory";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -225,7 +225,7 @@ class WorkflowScheduler {
             .from("workflow_runs")
             .insert({
               workflow_id: workflowId,
-              status: "running",
+              status: "queued",
               initiated_by: userId,
             })
             .select()
@@ -244,41 +244,14 @@ class WorkflowScheduler {
             `✅ [SCHEDULER] Created workflow run ${runId} for scheduled execution ${executionId}`
           );
 
-          // Execute workflow with timeout protection
-          console.log(
-            `⚡ [SCHEDULER] Starting workflow execution for run ${runId}...`
-          );
-          const executionPromise = executeWorkflow(
-            run.id,
+          await jobQueue.addWorkflowExecution({
+            runId: run.id,
             workflowId,
             userId,
             nodes,
-            edges
-          );
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(
-              () =>
-                reject(new Error("Workflow execution timeout (10 minutes)")),
-              10 * 60 * 1000
-            )
-          );
-
-          const result = (await Promise.race([
-            executionPromise,
-            timeoutPromise,
-          ])) as any;
-          const executionTime = Date.now() - startTime;
-
-          if (result.success) {
-            console.log(
-              `✅ [SCHEDULER] Execution ${executionId} completed successfully in ${executionTime}ms - Workflow: ${workflowId}, Run: ${runId}`
-            );
-          } else {
-            console.error(
-              `❌ [SCHEDULER] Execution ${executionId} failed after ${executionTime}ms - Workflow: ${workflowId}, Run: ${runId}, Error:`,
-              result.error
-            );
-          }
+            edges,
+            trigger: "scheduled",
+          });
         } catch (error) {
           const normalized = normalizeError(error);
           const executionTime = Date.now() - startTime;

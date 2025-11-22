@@ -83,16 +83,16 @@ if (useBullMQQueue) {
           edges
         );
 
-        // Send real-time update
-        WebSocketManager.sendToUser(userId, {
-          type: "workflow_completed",
-          payload: {
-            runId,
-            success: result.success,
-            result: result.result,
-            error: result.error,
-          },
-        });
+        // // Send real-time update
+        // WebSocketManager.sendToUser(userId, {
+        //   type: "workflow_completed",
+        //   payload: {
+        //     runId,
+        //     success: result.success,
+        //     result: result.result,
+        //     error: result.error,
+        //   },
+        // });
 
         return result;
       } catch (error) {
@@ -102,14 +102,14 @@ if (useBullMQQueue) {
           normalized
         );
 
-        // Send real-time error update
-        WebSocketManager.sendToUser(userId, {
-          type: "workflow_failed",
-          payload: {
-            runId,
-            error: normalized.message,
-          },
-        });
+        // // Send real-time error update
+        // WebSocketManager.sendToUser(userId, {
+        //   type: "workflow_failed",
+        //   payload: {
+        //     runId,
+        //     error: normalized.message,
+        //   },
+        // });
 
         throw normalized;
       }
@@ -359,10 +359,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   async cleanup(): Promise<void> {
     console.log("🧹 Cleaning up queues...");
-    await Promise.all([
-      workflowWorker?.close(),
-      scheduledWorker?.close(),
-    ]);
+    await Promise.all([workflowWorker?.close(), scheduledWorker?.close()]);
 
     await redis?.quit();
     console.log("✅ Queue cleanup completed");

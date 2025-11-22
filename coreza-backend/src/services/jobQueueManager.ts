@@ -2,7 +2,10 @@ import { Queue, Worker, Job } from "bullmq";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "./workflowEngine";
 import { WebSocketManager } from "./websocketManager";
-import { redis } from "../config/redis";
+import { getRedis } from "../config/redis";
+import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
+
+const useBullMQQueue = process.env.USE_BULLMQ_QUEUE === "true";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -18,25 +21,13 @@ const normalizeError = (error: unknown): Error => {
   }
 };
 
-// Queue instances
-export const workflowQueue = new Queue("workflow-execution", {
-  connection: redis,
-});
-export const scheduledQueue = new Queue("scheduled-workflows", {
-  connection: redis,
-});
+let redis = null as ReturnType<typeof getRedis> | null;
+let workflowQueue: Queue<WorkflowJobData> | null = null;
+let scheduledQueue: Queue<ScheduledWorkflowJobData> | null = null;
+let workflowWorker: Worker<WorkflowJobData> | null = null;
+let scheduledWorker: Worker<ScheduledWorkflowJobData> | null = null;
 //export const agentQueue = new Queue('agent-processing', { connection: redis });
 //export const notificationQueue = new Queue('notifications', { connection: redis });
-
-// Job data interfaces
-interface WorkflowJobData {
-  runId: string;
-  workflowId: string;
-  userId: string;
-  nodes: any[];
-  edges: any[];
-  trigger?: "manual" | "scheduled" | "webhook";
-}
 
 interface ScheduledWorkflowJobData {
   workflowId: string;
@@ -57,131 +48,145 @@ interface NotificationJobData {
   data: any;
 }
 
-// Workflow execution worker
-const workflowWorker = new Worker(
-  "workflow-execution",
-  async (job: Job<WorkflowJobData>) => {
-    const { runId, nodes, edges, userId, workflowId } = job.data;
+if (useBullMQQueue) {
+  redis = getRedis();
 
-    console.log(`🚀 Processing workflow job ${job.id} for run ${runId}`);
-
-    try {
-      // Update run status to running
-      await supabase
-        .from("workflow_runs")
-        .update({ status: "running" })
-        .eq("id", runId);
-
-      // Execute workflow using the unified engine
-      const result = await executeWorkflow(
-        runId,
-        workflowId,
-        userId,
-        nodes,
-        edges
-      );
-
-      // Send real-time update
-      WebSocketManager.sendToUser(userId, {
-        type: "workflow_completed",
-        payload: {
-          runId,
-          success: result.success,
-          result: result.result,
-          error: result.error,
-        },
-      });
-
-      return result;
-    } catch (error) {
-      const normalized = normalizeError(error);
-      console.error(
-        `❌ Workflow execution failed for run ${runId}:`,
-        normalized
-      );
-
-      // Send real-time error update
-      WebSocketManager.sendToUser(userId, {
-        type: "workflow_failed",
-        payload: {
-          runId,
-          error: normalized.message,
-        },
-      });
-
-      throw normalized;
-    }
-  },
-  {
+  // Queue instances
+  workflowQueue = new Queue("workflow-execution", {
     connection: redis,
-    concurrency: parseInt(process.env.WORKFLOW_JOB_CONCURRENCY || "5"),
-    removeOnComplete: { count: 50 },
-    removeOnFail: { count: 100 },
-  }
-);
-
-// Scheduled workflow worker
-const scheduledWorker = new Worker(
-  "scheduled-workflows",
-  async (job: Job<ScheduledWorkflowJobData>) => {
-    const { workflowId, userId } = job.data;
-
-    console.log(`⏰ Processing scheduled workflow ${workflowId}`);
-
-    try {
-      // Get workflow details
-      const { data: workflow, error } = await supabase
-        .from("workflows")
-        .select("*")
-        .eq("id", workflowId)
-        .eq("is_active", true)
-        .single();
-
-      if (error || !workflow) {
-        console.error(`Workflow ${workflowId} not found or not active`);
-        return;
-      }
-
-      // Create workflow run
-      const { data: run, error: runError } = await supabase
-        .from("workflow_runs")
-        .insert({
-          workflow_id: workflowId,
-          status: "queued",
-          initiated_by: userId,
-        })
-        .select()
-        .single();
-
-      if (runError) {
-        throw new Error(`Failed to create workflow run: ${runError.message}`);
-      }
-
-      // Queue workflow execution
-      await workflowQueue.add("execute-workflow", {
-        runId: run.id,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: "scheduled",
-      });
-
-      return { runId: run.id };
-    } catch (error) {
-      const normalized = normalizeError(error);
-      console.error(
-        `❌ Scheduled workflow failed for ${workflowId}:`,
-        normalized
-      );
-      throw normalized;
-    }
-  },
-  {
+  });
+  scheduledQueue = new Queue("scheduled-workflows", {
     connection: redis,
-    concurrency: 10,
-  }
-);
+  });
+
+  // Workflow execution worker
+  workflowWorker = new Worker(
+    "workflow-execution",
+    async (job: Job<WorkflowJobData>) => {
+      const { runId, nodes, edges, userId, workflowId } = job.data;
+
+      console.log(`🚀 Processing workflow job ${job.id} for run ${runId}`);
+
+      try {
+        // Update run status to running
+        await supabase
+          .from("workflow_runs")
+          .update({ status: "running" })
+          .eq("id", runId);
+
+        // Execute workflow using the unified engine
+        const result = await executeWorkflow(
+          runId,
+          workflowId,
+          userId,
+          nodes,
+          edges
+        );
+
+        // Send real-time update
+        WebSocketManager.sendToUser(userId, {
+          type: "workflow_completed",
+          payload: {
+            runId,
+            success: result.success,
+            result: result.result,
+            error: result.error,
+          },
+        });
+
+        return result;
+      } catch (error) {
+        const normalized = normalizeError(error);
+        console.error(
+          `❌ Workflow execution failed for run ${runId}:`,
+          normalized
+        );
+
+        // Send real-time error update
+        WebSocketManager.sendToUser(userId, {
+          type: "workflow_failed",
+          payload: {
+            runId,
+            error: normalized.message,
+          },
+        });
+
+        throw normalized;
+      }
+    },
+    {
+      connection: redis,
+      concurrency: parseInt(process.env.WORKFLOW_JOB_CONCURRENCY || "5"),
+      removeOnComplete: { count: 50 },
+      removeOnFail: { count: 100 },
+    }
+  );
+
+  // Scheduled workflow worker
+  scheduledWorker = new Worker(
+    "scheduled-workflows",
+    async (job: Job<ScheduledWorkflowJobData>) => {
+      const { workflowId, userId } = job.data;
+
+      console.log(`⏰ Processing scheduled workflow ${workflowId}`);
+
+      try {
+        // Get workflow details
+        const { data: workflow, error } = await supabase
+          .from("workflows")
+          .select("*")
+          .eq("id", workflowId)
+          .eq("is_active", true)
+          .single();
+
+        if (error || !workflow) {
+          console.error(`Workflow ${workflowId} not found or not active`);
+          return;
+        }
+
+        // Create workflow run
+        const { data: run, error: runError } = await supabase
+          .from("workflow_runs")
+          .insert({
+            workflow_id: workflowId,
+            status: "queued",
+            initiated_by: userId,
+          })
+          .select()
+          .single();
+
+        if (runError) {
+          throw new Error(`Failed to create workflow run: ${runError.message}`);
+        }
+
+        // Queue workflow execution
+        await workflowQueue!.add("execute-workflow", {
+          runId: run.id,
+          workflowId,
+          userId,
+          nodes: workflow.nodes,
+          edges: workflow.edges,
+          trigger: "scheduled",
+        });
+
+        return { runId: run.id };
+      } catch (error) {
+        const normalized = normalizeError(error);
+        console.error(
+          `❌ Scheduled workflow failed for ${workflowId}:`,
+          normalized
+        );
+        throw normalized;
+      }
+    },
+    {
+      connection: redis,
+      concurrency: 10,
+    }
+  );
+} else {
+  console.log("⚡ [QUEUE] BullMQ queue manager disabled - workers not started");
+}
 
 // // Agent processing worker
 // const agentWorker = new Worker(
@@ -260,9 +265,18 @@ const scheduledWorker = new Worker(
 // );
 
 // Queue management functions
-export class QueueManager {
-  static async addWorkflowExecution(data: WorkflowJobData): Promise<Job> {
-    return await workflowQueue.add("execute-workflow", data, {
+export class BullMQJobQueue implements IWorkflowJobQueue {
+  private assertQueues() {
+    if (!workflowQueue || !scheduledQueue) {
+      throw new Error(
+        "BullMQ job queue is disabled. Set USE_BULLMQ_QUEUE=true to enable distributed processing."
+      );
+    }
+  }
+
+  async addWorkflowExecution(data: WorkflowJobData): Promise<Job> {
+    this.assertQueues();
+    return await workflowQueue!.add("execute-workflow", data, {
       removeOnComplete: 50,
       removeOnFail: 100,
       attempts: 3,
@@ -273,16 +287,17 @@ export class QueueManager {
     });
   }
 
-  static async scheduleWorkflow(
+  async scheduleWorkflow(
     workflowId: string,
     userId: string,
     cronExpression: string
   ): Promise<Job> {
+    this.assertQueues();
     // Remove existing scheduled job
     await this.unscheduleWorkflow(workflowId);
 
     // Add new scheduled job
-    return await scheduledQueue.add(
+    return await scheduledQueue!.add(
       `scheduled-${workflowId}`,
       { workflowId, userId, cronExpression },
       {
@@ -294,12 +309,13 @@ export class QueueManager {
     );
   }
 
-  static async unscheduleWorkflow(workflowId: string): Promise<void> {
+  async unscheduleWorkflow(workflowId: string): Promise<void> {
+    this.assertQueues();
     const jobId = `scheduled-${workflowId}`;
-    await scheduledQueue.removeRepeatable(jobId, { pattern: "*" });
+    await scheduledQueue!.removeRepeatable(jobId, { pattern: "*" });
 
     // Remove any existing jobs
-    const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
+    const jobs = await scheduledQueue!.getJobs(["waiting", "delayed"]);
     for (const job of jobs) {
       if (job.id === jobId) {
         await job.remove();
@@ -327,44 +343,28 @@ export class QueueManager {
   //  });
   //}
 
-  static async getQueueStats() {
-    //const [workflowStats, scheduledStats, agentStats, notificationStats] = await Promise.all([
-    //  workflowQueue.getJobCounts(),
-    //  scheduledQueue.getJobCounts(),
-    //  agentQueue.getJobCounts(),
-    //  notificationQueue.getJobCounts()
-    //]);
-
+  async getQueueStats() {
+    this.assertQueues();
     const [workflowStats, scheduledStats] = await Promise.all([
-      workflowQueue.getJobCounts(),
-      scheduledQueue.getJobCounts(),
+      workflowQueue!.getJobCounts(),
+      scheduledQueue!.getJobCounts(),
     ]);
-
-    //return {
-    //  workflow: workflowStats,
-    //  scheduled: scheduledStats,
-    //  agent: agentStats,
-    //  notification: notificationStats
-    //};
 
     return {
       workflow: workflowStats,
       scheduled: scheduledStats,
+      mode: "bullmq",
     };
   }
 
-  static async cleanup(): Promise<void> {
+  async cleanup(): Promise<void> {
     console.log("🧹 Cleaning up queues...");
-    // await Promise.all([
-    //   workflowWorker.close(),
-    //   scheduledWorker.close(),
-    //   agentWorker.close(),
-    //   notificationWorker.close(),
-    // ]);
+    await Promise.all([
+      workflowWorker?.close(),
+      scheduledWorker?.close(),
+    ]);
 
-    await Promise.all([workflowWorker.close(), scheduledWorker.close()]);
-
-    await redis.quit();
+    await redis?.quit();
     console.log("✅ Queue cleanup completed");
   }
 }
@@ -391,25 +391,29 @@ async function sendWebhookNotification(data: any): Promise<void> {
 }
 
 // Event listeners for monitoring
-workflowWorker.on("completed", (job) => {
+workflowWorker?.on("completed", (job) => {
   console.log(`✅ Workflow job ${job.id} completed`);
 });
 
-workflowWorker.on("failed", (job, err) => {
+workflowWorker?.on("failed", (job, err) => {
   console.error(`❌ Workflow job ${job?.id} failed:`, err.message);
 });
 
-scheduledWorker.on("completed", (job) => {
+scheduledWorker?.on("completed", (job) => {
   console.log(`⏰ Scheduled job ${job.id} completed`);
 });
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  await QueueManager.cleanup();
-  process.exit(0);
-});
+export const bullMqJobQueue = new BullMQJobQueue();
 
-process.on("SIGTERM", async () => {
-  await QueueManager.cleanup();
-  process.exit(0);
-});
+// Graceful shutdown
+if (process.env.USE_BULLMQ_QUEUE === "true") {
+  process.on("SIGINT", async () => {
+    await bullMqJobQueue.cleanup();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", async () => {
+    await bullMqJobQueue.cleanup();
+    process.exit(0);
+  });
+}

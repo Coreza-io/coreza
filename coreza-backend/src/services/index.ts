@@ -2,7 +2,10 @@
 export { WorkflowEngine, executeWorkflow } from './workflowEngine';
 export { NodeStore } from './nodeStore';
 export { NodeScheduler } from './nodeScheduler';
-export { QueueManager } from './queueManagerV2';
+export { NodeQueueManager } from './nodeQueueManager';
+export { BullMQJobQueue } from './jobQueueManager';
+export { InMemoryJobQueue } from './inMemoryJobQueue';
+export { jobQueue } from './queueFactory';
 export { NodeRouter } from './router';
 export { LoopHandler } from './loopHandler';
 export { NodeStoreV2 } from './nodeStoreV2';

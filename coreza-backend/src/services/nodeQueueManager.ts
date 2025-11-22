@@ -1,10 +1,10 @@
 /**
- * Queue Manager V2 - Advanced Workflow Execution Queue
+ * Node Queue Manager - Advanced Workflow Execution Queue
  * 
  * Manages workflow node execution with support for loop iterations and reference counting.
  * Ensures proper synchronization of loop-based workflow execution with drain callbacks.
  * 
- * @module QueueManagerV2
+ * @module NodeQueueManager
  */
 
 import { QueueItem } from '../nodes/types';
@@ -18,7 +18,7 @@ import { QueueItem } from '../nodes/types';
  * - Drain callbacks when loop iterations complete
  * - Thread-safe iteration tracking
  */
-export class QueueManager {
+export class NodeQueueManager {
   /** Main FIFO queue for workflow items */
   private q: QueueItem[] = [];
 
@@ -33,7 +33,7 @@ export class QueueManager {
    * @param item - Workflow item to enqueue
    */
   enqueue(item: QueueItem) {
-    console.log(`[QueueManager] Enqueuing item: ${item.nodeId}`);
+    console.log(`[NodeQueueManager] Enqueuing item: ${item.nodeId}`);
     this.q.push(item);
   }
 
@@ -44,7 +44,7 @@ export class QueueManager {
   dequeue(): QueueItem | undefined {
     const item = this.q.shift();
     if (item) {
-      console.log(`[QueueManager] Dequeuing item: ${item.nodeId}`);
+      console.log(`[NodeQueueManager] Dequeuing item: ${item.nodeId}`);
     }
     return item;
   }
@@ -69,8 +69,10 @@ export class QueueManager {
     const m = this.loopIters.get(loopId) ?? new Map();
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
     st.pending += 1;
-    
-    console.log(`[QueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`);
+
+    console.log(
+      `[NodeQueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
+    );
     
     m.set(iterIndex, st);
     this.loopIters.set(loopId, m);
@@ -90,14 +92,16 @@ export class QueueManager {
     const m = this.loopIters.get(loopId); 
     if (!m) return;
     
-    const st = m.get(iterIndex); 
+    const st = m.get(iterIndex);
     if (!st) return;
-    
+
     st.pending -= 1;
-    console.log(`[QueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`);
-    
+    console.log(
+      `[NodeQueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
+    );
+
     if (st.pending === 0) {
-      console.log(`[QueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`);
+      console.log(`[NodeQueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`);
       st.onDrain();
     }
   }
@@ -111,7 +115,9 @@ export class QueueManager {
    * @param cb - Callback function to invoke on drain
    */
   onIterationDrain(loopId: string, iterIndex: number, cb: () => void) {
-    console.log(`[QueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`);
+    console.log(
+      `[NodeQueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`
+    );
     
     const m = this.loopIters.get(loopId) ?? new Map();
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
@@ -125,7 +131,7 @@ export class QueueManager {
    * Used for cleanup and reset operations
    */
   clear() {
-    console.log('[QueueManager] Clearing queue and loop iteration tracking');
+    console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
     this.q.length = 0;
     this.loopIters.clear();
   }

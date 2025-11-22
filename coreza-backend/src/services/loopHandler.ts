@@ -1,4 +1,4 @@
-import { QueueManager } from './queueManagerV2';
+import { NodeQueueManager } from './nodeQueueManager';
 import { QueueItem } from '../nodes/types';
 import { NodeRouter } from './router';
 import { NodeStoreV2 } from './nodeStoreV2'; // enhanced node store
@@ -10,7 +10,7 @@ export class LoopHandler {
   constructor(
     private store: NodeStoreV2,
     private router: NodeRouter,
-    private queue: QueueManager
+    private queue: NodeQueueManager
   ) {}
 
   async tick(loopId: string, input: any) {

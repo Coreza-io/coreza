@@ -19,33 +19,54 @@ const normalizeRedisInput = (rawValue: string | undefined) => {
   };
 };
 
-const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
-  process.env.REDIS_URL,
-);
+let redisInstance: Redis | null = null;
 
-const shouldUseTls =
-  process.env.REDIS_TLS === "true" ||
-  hasTlsFlag ||
-  (redisUrl?.startsWith("rediss://") ?? false);
-
-const connectionOptions: RedisOptions = {
+export const connectionOptions: RedisOptions = {
   ...baseOptions,
-  ...(shouldUseTls
-    ? {
-        tls: {
-          rejectUnauthorized:
-            process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-        },
-      }
-    : {}),
 };
 
-const redis = redisUrl
-  ? new Redis(redisUrl, connectionOptions)
-  : new Redis({
-      host: "localhost",
-      port: parseInt("6379", 10),
-      ...baseOptions,
-    });
+export function getRedis(): Redis {
+  if (redisInstance) return redisInstance;
 
-export { redis };
+  const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
+    process.env.REDIS_URL,
+  );
+
+  if (!redisUrl && process.env.USE_BULLMQ_QUEUE === "true") {
+    throw new Error("REDIS_URL is required when USE_BULLMQ_QUEUE=true");
+  }
+
+  const shouldUseTls =
+    process.env.REDIS_TLS === "true" ||
+    hasTlsFlag ||
+    (redisUrl?.startsWith("rediss://") ?? false);
+
+  const options: RedisOptions = {
+    ...connectionOptions,
+    ...(shouldUseTls
+      ? {
+          tls: {
+            rejectUnauthorized:
+              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+          },
+        }
+      : {}),
+  };
+
+  redisInstance = redisUrl
+    ? new Redis(redisUrl, options)
+    : new Redis({
+        host: "localhost",
+        port: parseInt("6379", 10),
+        ...baseOptions,
+      });
+
+  return redisInstance;
+}
+
+export async function closeRedis(): Promise<void> {
+  if (redisInstance) {
+    await redisInstance.quit();
+    redisInstance = null;
+  }
+}

@@ -1,4 +1,4 @@
-import { redis } from '../config/redis';
+import { getRedis } from '../config/redis';
 
 type LoopState = {
   loopItems: any[];
@@ -21,6 +21,7 @@ export class NodeStoreV2 {
   private nodeResults = new Map<string, any>();
   private nodeStates = new Map<string, Map<string, any>>();
   private workflowNodes: any[];
+  private inMemoryPersistentStore = new Map<string, any>();
 
   constructor(runId: string, nodes: any[]) {
     this.runId = runId;
@@ -173,33 +174,56 @@ export class NodeStoreV2 {
 
   // Persistent value management (for Edit Fields nodes)
   async getPersistentValue(workflowId: string, key: string): Promise<any> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') {
+      return this.inMemoryPersistentStore.get(`${workflowId}:${key}`) ?? null;
+    }
+
+    const redis = getRedis();
     const redisKey = `workflow:${workflowId}:persistent:${key}`;
     const value = await redis.get(redisKey);
     return value ? JSON.parse(value) : null;
   }
 
   async setPersistentValue(workflowId: string, key: string, value: any): Promise<void> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') {
+      this.inMemoryPersistentStore.set(`${workflowId}:${key}`, value);
+      return;
+    }
+
+    const redis = getRedis();
     const redisKey = `workflow:${workflowId}:persistent:${key}`;
     await redis.set(redisKey, JSON.stringify(value));
   }
 
   // Redis persistence methods (legacy compatibility)
   async setNodeStateRedis(nodeId: string, state: string): Promise<void> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') return;
+
+    const redis = getRedis();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     await redis.hset(key, 'state', state);
   }
 
   async getNodeStateRedis(nodeId: string): Promise<string | null> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') return null;
+
+    const redis = getRedis();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     return await redis.hget(key, 'state');
   }
 
   async setNodeOutput(nodeId: string, output: any): Promise<void> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') return;
+
+    const redis = getRedis();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     await redis.hset(key, 'output', JSON.stringify(output ?? null));
   }
 
   async getNodeOutput(nodeId: string): Promise<any> {
+    if (process.env.USE_BULLMQ_QUEUE !== 'true') return null;
+
+    const redis = getRedis();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     const value = await redis.hget(key, 'output');
     return value ? JSON.parse(value) : null;

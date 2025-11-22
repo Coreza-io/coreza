@@ -1,6 +1,5 @@
 import express from "express";
 import { CommunicationService } from "../services/communications";
-import { QueueManager } from "../services/queueManager";
 
 const DEFAULT_WHATSAPP_USER_ID = process.env.WHATSAPP_DEFAULT_USER_ID;
 const DEFAULT_WHATSAPP_CREDENTIAL_ID =

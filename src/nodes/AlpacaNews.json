@@ -39,7 +39,7 @@
     }
   ],
   "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
-  "action": { "url": "/alpaca-news/{{operation}}", "method": "POST" },
+  "action": { "url": "/websocket/alpaca_news/{{operation}}", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

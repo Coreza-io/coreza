@@ -34,7 +34,7 @@
     }
   ],
   "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
-  "action": { "url": "/alpaca-news/fetch", "method": "POST" },
+  "action": { "url": "/broker/alpaca/fetch_news", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

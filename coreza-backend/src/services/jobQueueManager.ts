@@ -63,7 +63,7 @@ const workflowWorker = new Worker(
       await supabase
         .from("workflow_runs")
         .update({
-          status: "completed",
+          status: "success",
           result: result,
           completed_at: new Date().toISOString(),
         })

@@ -1,0 +1,69 @@
+{
+  "name": "WhatsApp",
+  "def": "Send WhatsApp Message",
+  "node_type": "main",
+  "category": "Communication",
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "WhatsApp Business"
+    },
+    {
+      "key": "access_token",
+      "label": "Access Token",
+      "type": "password",
+      "placeholder": "Your WhatsApp Business API access token"
+    },
+    {
+      "key": "phone_number_id",
+      "label": "Phone Number ID",
+      "type": "text",
+      "placeholder": "Your WhatsApp Business phone number ID"
+    }
+  ],
+  "authAction": { "url": "/whatsapp/credentials", "method": "POST" },
+  "icon": "/assets/icons/whatsapp.svg",
+  "size": { "width": 340, "height": 340 },
+  "action": { "url": "/whatsapp/send", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "default": "send_message",
+      "options": [
+        { "label": "Send Message", "value": "send_message" }
+      ],
+      "required": true
+    },
+    {
+      "key": "to",
+      "label": "Recipient Phone",
+      "type": "text",
+      "placeholder": "+1234567890 (with country code)",
+      "required": true
+    },
+    {
+      "key": "message",
+      "label": "Message",
+      "type": "textarea",
+      "placeholder": "Message content...",
+      "required": true
+    }
+  ]
+}

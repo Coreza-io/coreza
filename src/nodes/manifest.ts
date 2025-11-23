@@ -43,6 +43,7 @@ import SupportResistanceDef from './SupportResistance.json'
 import BinanceDef from './Binance.json'
 import BinanceTradeDef from './BinanceTrade.json'
 import BinanceScreenerDef from './BinanceScreener.json'
+import WhatsAppDef from './WhatsApp.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -144,7 +145,8 @@ export const nodeManifest = {
   [SupportResistanceDef.name]: SupportResistanceDef,
   [BinanceDef.name]: BinanceDef,
   [BinanceTradeDef.name]: BinanceTradeDef,
-  [BinanceScreenerDef.name]: BinanceScreenerDef
+  [BinanceScreenerDef.name]: BinanceScreenerDef,
+  [WhatsAppDef.name]: WhatsAppDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

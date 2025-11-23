@@ -32,8 +32,8 @@ export function getRedis(): Redis {
     process.env.REDIS_URL,
   );
 
-  if (!redisUrl && process.env.USE_BULLMQ_QUEUE === "true") {
-    throw new Error("REDIS_URL is required when USE_BULLMQ_QUEUE=true");
+  if (!redisUrl) {
+    throw new Error("REDIS_URL is required for BullMQ queue");
   }
 
   const shouldUseTls =

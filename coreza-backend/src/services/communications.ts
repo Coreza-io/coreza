@@ -1,8 +1,6 @@
 import { google, gmail_v1 } from "googleapis";
 import axios from "axios";
-import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
-import DecryptionUtil from "../utils/decryption";
 import CredentialManager from "../utils/credentialManager";
 
 export interface CommunicationInput {
@@ -22,94 +20,6 @@ export interface CommunicationResult {
 // Base communication service class
 abstract class BaseCommunicationService {
   protected abstract serviceName: string;
-
-  protected async getCredentials(
-    userId: string,
-    credentialId: string
-  ): Promise<any> {
-    try {
-      const { data, error } = await supabase
-        .from("user_credentials")
-        .select("client_json, token_json")
-        .eq("user_id", userId)
-        .eq("name", credentialId)
-        .eq("service_type", this.serviceName)
-        .single();
-
-      if (error || !data) {
-        throw createError(`${this.serviceName} credentials not found`, 404);
-      }
-
-      // Decrypt credentials before returning
-      const decryptedClientJson = { ...data.client_json };
-      const decryptedTokenJson = { ...data.token_json };
-
-      try {
-        // Decrypt sensitive fields if they appear to be encrypted
-        if (
-          decryptedClientJson.client_id &&
-          DecryptionUtil.isEncrypted(decryptedClientJson.client_id)
-        ) {
-          decryptedClientJson.client_id = await DecryptionUtil.decrypt(
-            decryptedClientJson.client_id
-          );
-        }
-
-        if (
-          decryptedClientJson.client_secret &&
-          DecryptionUtil.isEncrypted(decryptedClientJson.client_secret)
-        ) {
-          decryptedClientJson.client_secret = await DecryptionUtil.decrypt(
-            decryptedClientJson.client_secret
-          );
-        }
-
-        if (
-          decryptedClientJson.api_key &&
-          DecryptionUtil.isEncrypted(decryptedClientJson.api_key)
-        ) {
-          decryptedClientJson.api_key = await DecryptionUtil.decrypt(
-            decryptedClientJson.api_key
-          );
-        }
-
-        if (
-          decryptedTokenJson.access_token &&
-          DecryptionUtil.isEncrypted(decryptedTokenJson.access_token)
-        ) {
-          decryptedTokenJson.access_token = await DecryptionUtil.decrypt(
-            decryptedTokenJson.access_token
-          );
-        }
-
-        if (
-          decryptedTokenJson.refresh_token &&
-          DecryptionUtil.isEncrypted(decryptedTokenJson.refresh_token)
-        ) {
-          decryptedTokenJson.refresh_token = await DecryptionUtil.decrypt(
-            decryptedTokenJson.refresh_token
-          );
-        }
-      } catch (decryptError) {
-        console.error(
-          `Error decrypting ${this.serviceName} credentials:`,
-          decryptError
-        );
-        throw new Error(`Failed to decrypt ${this.serviceName} credentials`);
-      }
-
-      return {
-        ...decryptedClientJson,
-        ...decryptedTokenJson,
-      };
-    } catch (error) {
-      throw new Error(
-        `Failed to get ${this.serviceName} credentials: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-  }
 
   abstract execute(
     operation: string,
@@ -167,7 +77,22 @@ class GmailService extends BaseCommunicationService {
         throw createError("user_id and credential_id are required", 400);
       }
 
-      const credentials = await this.getCredentials(userId, credentialId);
+      // Use CredentialManager instead of custom method
+      const result = await CredentialManager.getCredentials(
+        userId,
+        "gmail",
+        credentialId
+      );
+
+      if (!result.credentials) {
+        throw createError("Gmail credentials not found", 404);
+      }
+
+      // Flatten credentials structure
+      const credentials = {
+        ...result.credentials.client_json,
+        ...result.credentials.token_json,
+      };
       const auth = this.createGmailAuth(credentials);
       const gmail = google.gmail({ version: "v1", auth });
 
@@ -377,7 +302,22 @@ class WhatsAppService extends BaseCommunicationService {
         if (!userId || !credentialId) {
           throw createError("user_id and credential_id are required", 400);
         }
-        credentials = await this.getCredentials(userId, credentialId);
+        // Use CredentialManager instead of custom method
+        const result = await CredentialManager.getCredentials(
+          userId,
+          "whatsapp",
+          credentialId
+        );
+
+        if (!result.credentials) {
+          throw createError("WhatsApp credentials not found", 404);
+        }
+
+        // Flatten credentials structure
+        credentials = {
+          ...result.credentials.client_json,
+          ...result.credentials.token_json,
+        };
       }
 
       let result;

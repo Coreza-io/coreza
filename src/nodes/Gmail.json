@@ -37,7 +37,7 @@
       "required": true
     },
     {
-      "key": "message",
+      "key": "body",
       "label": "Message",
       "type": "textarea",
       "placeholder": "Email content...",

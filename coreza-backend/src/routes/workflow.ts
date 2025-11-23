@@ -3,7 +3,7 @@ import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { workflowScheduler } from "../services/scheduler";
 import { WebSocketClient } from "../services/WebSocketClient";
-import { jobQueue } from "../services/queueFactory";
+import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";

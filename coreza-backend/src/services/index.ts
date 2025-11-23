@@ -4,7 +4,7 @@ export { NodeStore } from './nodeStore';
 export { NodeScheduler } from './nodeScheduler';
 export { NodeQueueManager } from './nodeQueueManager';
 export { BullMQJobQueue } from './jobQueueManager';
-export { jobQueue } from './queueFactory';
+export { bullMqJobQueue as jobQueue } from './jobQueueManager';
 export { NodeRouter } from './router';
 export { LoopHandler } from './loopHandler';
 export { NodeStoreV2 } from './nodeStoreV2';

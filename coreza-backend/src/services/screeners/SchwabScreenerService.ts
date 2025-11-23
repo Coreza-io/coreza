@@ -1,6 +1,7 @@
 import { BaseScreenerService } from "./BaseScreenerService";
 import { ScreenerInput, IScreenerService } from "./types";
 import axios from "axios";
+import { refreshSchwabTokenIfNeeded } from "../../config/brokers";
 
 export class SchwabScreenerService
   extends BaseScreenerService
@@ -166,116 +167,27 @@ export class SchwabScreenerService
   };
 
   /**
-   * Get credentials with automatic token refresh
-   * Checks if access token is expired and refreshes it before returning
+   * Get credentials with automatic token refresh using centralized logic
    */
   private async getCredentialsWithRefresh(
     userId: string,
     credentialId: string
   ): Promise<any> {
+    // Get raw credentials from database
     const result = await this.getCredentials(userId, credentialId);
-    const creds = result.credentials?.client_json;
+    
+    // Flatten credentials structure (client_json + token_json)
+    let creds = {
+      ...result.credentials?.client_json,
+      ...result.credentials?.token_json,
+    };
 
-    if (!creds) {
-      throw new Error("Credentials not found");
+    if (!creds || !creds.access_token) {
+      throw new Error("Credentials not found or missing access token");
     }
 
-    // Check if access token is expired (refresh 1 minute before expiry)
-    const now = Math.floor(Date.now() / 1000);
-    const expiresAt = creds.token_expires_at || 0;
-
-    if (now >= expiresAt - 60) {
-      console.log("🔄 [SCHWAB] Access token expired, refreshing...");
-
-      try {
-        // Create Basic Auth header
-        const credentials = `${creds.app_key}:${creds.app_secret}`;
-        const encodedCredentials = Buffer.from(credentials).toString("base64");
-
-        // Refresh the token
-        const response = await axios.post(
-          "https://api.schwabapi.com/v1/oauth/token",
-          new URLSearchParams({
-            grant_type: "refresh_token",
-            refresh_token: creds.refresh_token,
-          }),
-          {
-            headers: {
-              Authorization: `Basic ${encodedCredentials}`,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-          }
-        );
-
-        const newTokens = response.data;
-        const newExpiresAt = now + newTokens.expires_in;
-
-        console.log("✅ [SCHWAB] Token refreshed successfully");
-
-        // Update stored credentials with new access token
-        // We need to get the credential record to update it
-        const { data: credentialRecord } = await (
-          await import("../../config/supabase")
-        ).supabase
-          .from("user_credentials")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("name", credentialId)
-          .eq("service_type", this.screenerKey)
-          .single();
-
-        if (credentialRecord) {
-          const EnvelopeEncryptionUtil = (
-            await import("../../utils/envelopeEncryption")
-          ).default;
-
-          const payload = {
-            service_type: this.screenerKey,
-            name: credentialId,
-            client: {
-              app_key: creds.app_key,
-              app_secret: creds.app_secret,
-            },
-            token: {
-              access_token: newTokens.access_token,
-              refresh_token: creds.refresh_token,
-              token_expires_at: newExpiresAt,
-            },
-            meta: {
-              last_token_refresh: new Date().toISOString(),
-            },
-          };
-
-          const encrypted = EnvelopeEncryptionUtil.encrypt(payload, userId);
-
-          await (
-            await import("../../config/supabase")
-          ).supabase
-            .from("user_credentials")
-            .update({
-              enc_payload: encrypted.encPayload,
-              iv: encrypted.iv,
-              auth_tag: encrypted.authTag,
-              dek_wrapped: encrypted.dekWrapped,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", credentialRecord.id)
-            .eq("user_id", userId);
-        }
-
-        // Return credentials with new access token
-        return {
-          ...creds,
-          access_token: newTokens.access_token,
-          token_expires_at: newExpiresAt,
-        };
-      } catch (refreshError: any) {
-        console.error("❌ [SCHWAB] Token refresh failed:", refreshError);
-        throw new Error(
-          `Token refresh failed: ${refreshError.message}. Please re-authenticate your Schwab account.`
-        );
-      }
-    }
+    // Use centralized token refresh logic from config/brokers.ts
+    creds = await refreshSchwabTokenIfNeeded(creds);
 
     return creds;
   }

@@ -232,6 +232,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           category={definition.category}
           electricBorder={true}
           electricColor="cyan"
+          isStreamingWaiting={data.isStreamingWaiting}
           // Node name editing props
           isEditing={renderProps.isEditing}
           editingName={renderProps.editingName}

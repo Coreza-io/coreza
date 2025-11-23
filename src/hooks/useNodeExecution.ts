@@ -4,7 +4,6 @@ import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
-import { createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL as string;
@@ -451,15 +450,22 @@ export function useNodeExecution({
           const responseData = await res.json();
           if (!res.ok) throw new Error(responseData || "Action failed");
 
-          // Handle AlpacaNews streaming
-          if (
-            definition?.name === "AlpacaNews" &&
-            fieldState.operation == "subscribe"
-          ) {
-            const waitingOutput = createWaitingNewsOutput({
-              nodeId: nodeId ?? undefined,
+          // Handle streaming subscriptions generically
+          const isStreamingSubscribe =
+            definition?.executionMode === "streaming" &&
+            fieldState.operation === "subscribe";
+
+          if (isStreamingSubscribe) {
+            const waitingOutput = {
+              status: "waiting",
+              message: `Listening for ${definition?.name} data...`,
+              subscribedAt: new Date().toISOString(),
               symbols: parsedSymbols,
-            });
+              streamTypes: fieldState.stream_types || [],
+              nodeId: nodeId ?? undefined,
+              news: {},
+            } as any;
+
             outputData = {
               ...waitingOutput,
               subscriptions: responseData?.subscriptions,
@@ -495,12 +501,17 @@ export function useNodeExecution({
                   const output = nodeData?.output as any;
 
                   // Check if we received actual streaming data
-                  if (
+                  const hasStreamingData =
                     output &&
                     output.status === "streaming" &&
-                    output.news &&
-                    Object.keys(output.news).length > 0
-                  ) {
+                    (output.news ||
+                      output.data ||
+                      output.trade ||
+                      output.quote ||
+                      output.bar ||
+                      output.dailyBar);
+
+                  if (hasStreamingData) {
                     clearInterval(checkInterval);
                     console.log("✅ Received first streaming data:", output);
                     outputData = output;
@@ -512,7 +523,9 @@ export function useNodeExecution({
                   if (Date.now() - startTime > timeout) {
                     clearInterval(checkInterval);
                     reject(
-                      new Error(`Timeout waiting for news after ${timeout}ms`)
+                      new Error(
+                        `Timeout waiting for ${definition?.name} data after ${timeout}ms`
+                      )
                     );
                   }
                 }, 100);

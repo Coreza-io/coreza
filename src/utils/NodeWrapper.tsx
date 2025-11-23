@@ -86,6 +86,7 @@ interface NodeWrapperProps {
   electricBorder?: boolean;
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   isExecuting?: boolean;
+  isStreamingWaiting?: boolean;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -115,6 +116,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricBorder = true,
   electricColor = "cyan",
   isExecuting = false,
+  isStreamingWaiting = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -175,6 +177,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   const categoryGradientClass = getCategoryGradientClass(category);
 
+  const streamingClasses = isStreamingWaiting
+    ? "border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse"
+    : "";
+
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
     nodeId,
@@ -211,10 +217,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${
             isExecuting && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`
-              : selected
-              ? "border-primary shadow-glow"
-              : "border-border"
+            : selected
+            ? "border-primary shadow-glow"
+            : "border-border"
           }
+          ${streamingClasses}
           ${
             isDarkMode && categoryGradientClass
               ? categoryGradientClass

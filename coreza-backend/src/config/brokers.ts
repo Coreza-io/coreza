@@ -1,14 +1,15 @@
-import fs from "fs";
-import csv from "csv-parser";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
+import fs from 'fs';
+import csv from 'csv-parser';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import { OAUTH_CONFIGS } from './oauth';
 
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
 
 export interface BrokerOperation {
-  method: "get" | "post" | "put" | "delete";
+  method: 'get' | 'post' | 'put' | 'delete';
   path: string | ((input: any, creds?: any) => string);
   makeParams?: (input: any) => Record<string, any>;
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
@@ -16,11 +17,9 @@ export interface BrokerOperation {
 }
 
 export interface BrokerConfig {
-  authType: "api_key" | "oauth";
+  authType: 'api_key' | 'oauth';
   baseUrl: string | ((creds: any, input?: any) => string);
-  makeAuthHeaders: (
-    creds: any
-  ) => Record<string, string> | Promise<Record<string, string>>;
+  makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   operations: Record<string, BrokerOperation>;
 }
 
@@ -36,26 +35,26 @@ export interface BrokerConfig {
  * - "2025-11-06T01:30:00Z" -> "2025-11-06T01:30:00Z" (already ISO)
  */
 function convertToISO8601(dateStr: string): string {
-  if (!dateStr || dateStr.trim() === "") return dateStr;
-
+  if (!dateStr || dateStr.trim() === '') return dateStr;
+  
   const trimmed = dateStr.trim();
-
+  
   // Already in ISO 8601 format (has T and ends with Z)
-  if (trimmed.includes("T") && trimmed.endsWith("Z")) {
+  if (trimmed.includes('T') && trimmed.endsWith('Z')) {
     return trimmed;
   }
-
+  
   // Format: "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DD HH:mm:ss.SSS"
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(trimmed)) {
     // Replace space with T and add Z
-    return trimmed.replace(" ", "T") + "Z";
+    return trimmed.replace(' ', 'T') + 'Z';
   }
-
+  
   // Format: "YYYY-MM-DD" (date only)
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     return `${trimmed}T00:00:00Z`;
   }
-
+  
   // Fallback: try parsing as Date and convert to ISO
   try {
     const date = new Date(trimmed);
@@ -63,9 +62,9 @@ function convertToISO8601(dateStr: string): string {
       return date.toISOString();
     }
   } catch (error) {
-    console.error("Date conversion error:", error);
+    console.error('Date conversion error:', error);
   }
-
+  
   // Return original if we can't convert
   return trimmed;
 }
@@ -85,35 +84,35 @@ async function loadScripMaster(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     const csvFilePath = path.resolve(
       __dirname,
-      "../../data/api-scrip-master-detailed.csv"
+      '../../data/api-scrip-master-detailed.csv'
     );
 
     if (!fs.existsSync(csvFilePath)) {
-      console.warn("Dhan scrip master CSV file not found. Skipping load.");
+      console.warn('Dhan scrip master CSV file not found. Skipping load.');
       scripMasterCache = map;
       return resolve(map);
     }
 
     fs.createReadStream(csvFilePath)
       .pipe(csv())
-      .on("data", (row: Record<string, string>) => {
-        const symbol = row["UNDERLYING_SYMBOL"]?.trim();
-        const securityId = row["SECURITY_ID"]?.trim();
-        const exchangeSegment = row["EXCH_ID"]?.trim();
+      .on('data', (row: Record<string, string>) => {
+        const symbol = row['UNDERLYING_SYMBOL']?.trim();
+        const securityId = row['SECURITY_ID']?.trim();
+        const exchangeSegment = row['EXCH_ID']?.trim();
 
         if (symbol && securityId && exchangeSegment) {
-          const baseSegment = exchangeSegment.split("_")[0];
+          const baseSegment = exchangeSegment.split('_')[0];
           const key = `${symbol}_${baseSegment}`;
           map.set(key, securityId);
         }
       })
-      .on("end", () => {
+      .on('end', () => {
         scripMasterCache = map;
         console.log(`✅ Loaded ${map.size} Dhan scrip mappings`);
         resolve(map);
       })
-      .on("error", (err) => {
-        console.error("Error loading Dhan scrip master CSV:", err);
+      .on('error', (err) => {
+        console.error('Error loading Dhan scrip master CSV:', err);
         reject(err);
       });
   });
@@ -121,14 +120,11 @@ async function loadScripMaster(): Promise<Map<string, string>> {
   return loadingPromise;
 }
 
-async function lookupSecurityId(
-  symbol: string,
-  exchangeSegment: string
-): Promise<string> {
+async function lookupSecurityId(symbol: string, exchangeSegment: string): Promise<string> {
   const map = await loadScripMaster();
-  const baseSegment = exchangeSegment.split("_")[0];
+  const baseSegment = exchangeSegment.split('_')[0];
   const key = `${symbol}_${baseSegment}`;
-  return map.get(key) || "";
+  return map.get(key) || '';
 }
 
 // Preload on startup
@@ -143,60 +139,53 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   // ALPACA
   // ============================================
   alpaca: {
-    authType: "api_key",
+    authType: 'api_key',
     baseUrl: (creds: any, input?: any) => {
-      if (
-        input?.operation === "get_candle" ||
-        input?.operation === "get_latest_bar" ||
-        input?.operation === "fetch_news"
-      ) {
-        return "https://data.alpaca.markets";
+      if (input?.operation === 'get_candle' || input?.operation === 'get_latest_bar' || input?.operation === 'fetch_news') {
+        return 'https://data.alpaca.markets';
       }
-      return input?.environment === "live"
-        ? "https://api.alpaca.markets"
-        : "https://paper-api.alpaca.markets";
+      return input?.environment === 'live'
+        ? 'https://api.alpaca.markets'
+        : 'https://paper-api.alpaca.markets';
     },
     makeAuthHeaders: (creds: any) => ({
-      "APCA-API-KEY-ID": creds.api_key,
-      "APCA-API-SECRET-KEY": creds.secret_key,
+      'APCA-API-KEY-ID': creds.api_key,
+      'APCA-API-SECRET-KEY': creds.secret_key,
     }),
     operations: {
       get_account: {
-        method: "get",
-        path: "/v2/account",
+        method: 'get',
+        path: '/v2/account',
       },
       get_positions: {
-        method: "get",
-        path: "/v2/positions",
+        method: 'get',
+        path: '/v2/positions',
       },
       get_orders: {
-        method: "get",
-        path: "/v2/orders",
+        method: 'get',
+        path: '/v2/orders',
         makeParams: () => ({
-          status: "all",
-          limit: "100",
+          status: 'all',
+          limit: '100',
         }),
       },
       cancel_orders: {
-        method: "delete",
-        path: "/v2/orders",
+        method: 'delete',
+        path: '/v2/orders',
       },
       get_candle: {
-        method: "get",
+        method: 'get',
         path: (input: any) =>
-          input.asset_type === "crypto"
-            ? "/v1beta3/crypto/us/bars"
-            : "/v2/stocks/bars",
+          input.asset_type === 'crypto' ? '/v1beta3/crypto/us/bars' : '/v2/stocks/bars',
         makeParams: (input: any) => {
-          if (!input.symbol)
-            throw new Error("Symbol is required for get_candle operation");
+          if (!input.symbol) throw new Error('Symbol is required for get_candle operation');
           return {
             symbols: input.symbol,
             timeframe: input.interval,
             start: input.start,
             ...(input.end ? { end: input.end } : {}),
             ...(input.limit ? { limit: input.limit } : {}),
-            adjustment: "raw",
+            adjustment: 'raw',
             feed: input.feed,
             sort: input.sort,
           };
@@ -207,17 +196,13 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         }),
       },
       get_latest_bar: {
-        method: "get",
+        method: 'get',
         path: (input: any) =>
-          input.asset_type === "crypto"
-            ? "/v1beta3/crypto/us/latest/bars"
-            : "/v2/stocks/bars/latest",
+          input.asset_type === 'crypto' ? '/v1beta3/crypto/us/latest/bars' : '/v2/stocks/bars/latest',
         makeParams: (input: any) => {
-          if (!input.symbol)
-            throw new Error("Symbol is required for get_latest_bar operation");
+          if (!input.symbol) throw new Error('Symbol is required for get_latest_bar operation');
           const params: any = { symbols: input.symbol };
-          if (input.asset_type !== "crypto" && input.feed)
-            params.feed = input.feed;
+          if (input.asset_type !== 'crypto' && input.feed) params.feed = input.feed;
           if (input.currency) params.currency = input.currency;
           return params;
         },
@@ -227,63 +212,52 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         }),
       },
       fetch_news: {
-        method: "get",
-        path: "/v1beta1/news",
+        method: 'get',
+        path: '/v1beta1/news',
         makeParams: (input: any) => {
           const params: any = {};
-
+          
           // Handle symbols (comma-separated string or array)
           if (input.symbols) {
-            const symbolArray =
-              typeof input.symbols === "string"
-                ? input.symbols
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean)
-                : Array.isArray(input.symbols)
-                ? input.symbols
-                : [];
+            const symbolArray = typeof input.symbols === 'string'
+              ? input.symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+              : Array.isArray(input.symbols) ? input.symbols : [];
             if (symbolArray.length > 0) {
-              params.symbols = symbolArray.join(",");
+              params.symbols = symbolArray.join(',');
             }
           }
-
+          
           // Convert dates to ISO 8601 format if needed
-          if (input.start && input.start.trim() !== "") {
+          if (input.start && input.start.trim() !== '') {
             params.start = convertToISO8601(input.start);
           }
-          if (input.end && input.end.trim() !== "") {
+          if (input.end && input.end.trim() !== '') {
             params.end = convertToISO8601(input.end);
           }
-
+          
           // Numeric limit
-          if (input.limit && input.limit.toString().trim() !== "") {
+          if (input.limit && input.limit.toString().trim() !== '') {
             const limitNum = Number(input.limit);
             if (!isNaN(limitNum) && limitNum > 0) {
               params.limit = limitNum;
             }
           }
-
+          
           // Sort order
-          if (input.sort && input.sort.trim() !== "") {
+          if (input.sort && input.sort.trim() !== '') {
             params.sort = input.sort.trim();
           }
-
+          
           // Pagination token
-          if (input.page_token && input.page_token.trim() !== "") {
+          if (input.page_token && input.page_token.trim() !== '') {
             params.page_token = input.page_token.trim();
           }
-
+          
           // Include content boolean
-          if (
-            input.include_content !== undefined &&
-            input.include_content !== ""
-          ) {
-            params.include_content =
-              input.include_content === "true" ||
-              input.include_content === true;
+          if (input.include_content !== undefined && input.include_content !== '') {
+            params.include_content = input.include_content === 'true' || input.include_content === true;
           }
-
+          
           return params;
         },
         transformResult: (data: any) => ({
@@ -293,8 +267,8 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         }),
       },
       place_order: {
-        method: "post",
-        path: "/v2/orders",
+        method: 'post',
+        path: '/v2/orders',
         makeBody: (input: any) => {
           const {
             symbol,
@@ -311,33 +285,26 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             extended_hours,
           } = input;
 
-          if (!symbol) throw new Error("Symbol is required for place_order");
-          if (!qty && !notional)
-            throw new Error("Either qty or notional must be provided");
+          if (!symbol) throw new Error('Symbol is required for place_order');
+          if (!qty && !notional) throw new Error('Either qty or notional must be provided');
 
           const body: any = { symbol, side, type, time_in_force };
 
-          if (type === "limit") {
-            if (!limit_price)
-              throw new Error("Limit orders require a limit_price");
+          if (type === 'limit') {
+            if (!limit_price) throw new Error('Limit orders require a limit_price');
             body.limit_price = String(limit_price);
-          } else if (type === "stop") {
-            if (!stop_price)
-              throw new Error("Stop orders require a stop_price");
+          } else if (type === 'stop') {
+            if (!stop_price) throw new Error('Stop orders require a stop_price');
             body.stop_price = String(stop_price);
-          } else if (type === "stop_limit") {
+          } else if (type === 'stop_limit') {
             if (!stop_price || !stop_limit_price) {
-              throw new Error(
-                "Stop limit orders require both stop_price and limit_price"
-              );
+              throw new Error('Stop limit orders require both stop_price and limit_price');
             }
             body.stop_price = String(stop_price);
             body.limit_price = String(stop_limit_price);
-          } else if (type === "trailing_stop") {
+          } else if (type === 'trailing_stop') {
             if (!trail_percent && !trail_price) {
-              throw new Error(
-                "Either trail percent or trail price must be provided"
-              );
+              throw new Error('Either trail percent or trail price must be provided');
             }
             if (trail_percent) body.trail_percent = String(trail_percent);
             else body.trail_price = String(trail_price);
@@ -346,7 +313,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           if (notional) body.notional = String(notional);
           else body.qty = String(qty);
 
-          if (extended_hours === "true" || extended_hours === true) {
+          if (extended_hours === 'true' || extended_hours === true) {
             body.extended_hours = true;
           }
 
@@ -360,57 +327,55 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   // DHAN
   // ============================================
   dhan: {
-    authType: "api_key",
-    baseUrl: process.env.DHAN_API_BASE_URL || "https://sandbox.dhan.co/v2",
+    authType: 'api_key',
+    baseUrl: process.env.DHAN_API_BASE_URL || 'https://sandbox.dhan.co/v2',
     makeAuthHeaders: (creds: any) => ({
-      "access-token": creds.api_key,
-      "Content-Type": "application/json",
+      'access-token': creds.api_key,
+      'Content-Type': 'application/json',
     }),
     operations: {
       get_account: {
-        method: "get",
-        path: "/funds",
+        method: 'get',
+        path: '/funds',
       },
       get_positions: {
-        method: "get",
-        path: "/positions",
+        method: 'get',
+        path: '/positions',
       },
       get_holdings: {
-        method: "get",
-        path: "/holdings",
+        method: 'get',
+        path: '/holdings',
       },
       get_orders: {
-        method: "get",
-        path: "/orders",
+        method: 'get',
+        path: '/orders',
       },
       place_order: {
-        method: "post",
-        path: "/orders",
+        method: 'post',
+        path: '/orders',
         makeBody: async (input: any, creds: any) => {
           const {
             symbol,
-            exchange_segment = "NSE_EQ",
-            transactionType = "BUY",
-            orderType = "MARKET",
-            productType = "CNC",
-            validity = "DAY",
+            exchange_segment = 'NSE_EQ',
+            transactionType = 'BUY',
+            orderType = 'MARKET',
+            productType = 'CNC',
+            validity = 'DAY',
             quantity = 1,
             disclosedQuantity = 0,
-            price = "",
-            triggerPrice = "",
+            price = '',
+            triggerPrice = '',
             afterMarketOrder = false,
-            amoTime = "",
+            amoTime = '',
             boProfitValue = 0,
             boStopLossValue = 0,
-            drvExpiryDate = "",
-            drvOptionType = "",
+            drvExpiryDate = '',
+            drvOptionType = '',
             drvStrikePrice = 0,
           } = input;
 
           if (!symbol || !quantity || !transactionType) {
-            throw new Error(
-              "Symbol, quantity, and transactionType are required for place_order"
-            );
+            throw new Error('Symbol, quantity, and transactionType are required for place_order');
           }
 
           const securityId = await lookupSecurityId(symbol, exchange_segment);
@@ -421,20 +386,15 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           }
 
           if (!creds.client_id) {
-            throw new Error(
-              "Dhan client_id missing in credentials (required for order)"
-            );
+            throw new Error('Dhan client_id missing in credentials (required for order)');
           }
 
-          const priceVal = orderType === "LIMIT" ? String(price || "0") : "";
-          const triggerPriceVal = [
-            "STOP_LOSS",
-            "STOP_LOSS_MARKET",
-            "SL",
-            "SLM",
-          ].includes(orderType)
-            ? String(triggerPrice || "0")
-            : "";
+          const priceVal = orderType === 'LIMIT' ? String(price || '0') : '';
+          const triggerPriceVal = ['STOP_LOSS', 'STOP_LOSS_MARKET', 'SL', 'SLM'].includes(
+            orderType
+          )
+            ? String(triggerPrice || '0')
+            : '';
 
           return {
             dhanClientId: creds.client_id,
@@ -460,19 +420,19 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         },
       },
       get_candle: {
-        method: "post",
-        path: "/charts/historical",
+        method: 'post',
+        path: '/charts/historical',
         makeBody: async (input: any) => {
           const {
             symbol,
-            exchange_segment = "NSE_EQ",
+            exchange_segment = 'NSE_EQ',
             from_date,
             to_date,
             lookback,
-            timeframe = "1",
+            timeframe = '1',
           } = input;
 
-          if (!symbol) throw new Error("Symbol is required for get_candle");
+          if (!symbol) throw new Error('Symbol is required for get_candle');
 
           const securityId = await lookupSecurityId(symbol, exchange_segment);
           if (!securityId) {
@@ -489,9 +449,9 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             const now = new Date();
             const sd = new Date(now);
 
-            if (timeframe.endsWith("Min")) {
+            if (timeframe.endsWith('Min')) {
               sd.setMinutes(now.getMinutes() - lb);
-            } else if (timeframe.endsWith("Hour")) {
+            } else if (timeframe.endsWith('Hour')) {
               sd.setHours(now.getHours() - lb);
             } else {
               sd.setDate(now.getDate() - lb);
@@ -502,15 +462,13 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           }
 
           if (!startDate || !endDate) {
-            throw new Error(
-              "Either lookback or both from_date and to_date must be provided"
-            );
+            throw new Error('Either lookback or both from_date and to_date must be provided');
           }
 
           return {
             securityId,
             exchangeSegment: exchange_segment,
-            instrument: "EQUITY",
+            instrument: 'EQUITY',
             fromDate: startDate,
             toDate: endDate,
             expiryCode: 0,
@@ -566,13 +524,13 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   // SCHWAB
   // ============================================
   schwab: {
-    authType: "oauth",
+    authType: 'oauth',
     baseUrl: (creds: any, input?: any) => {
-      const marketDataOps = ["get_quotes", "get_price_history"];
+      const marketDataOps = ['get_quotes', 'get_price_history'];
       if (input?.operation && marketDataOps.includes(input.operation)) {
-        return "https://api.schwabapi.com/marketdata/v1";
+        return 'https://api.schwabapi.com/marketdata/v1';
       }
-      return "https://api.schwabapi.com/trader/v1";
+      return 'https://api.schwabapi.com/trader/v1';
     },
     makeAuthHeaders: async (creds: any) => {
       const refreshedCreds = await refreshSchwabTokenIfNeeded(creds);
@@ -582,8 +540,8 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
     },
     operations: {
       get_account_numbers: {
-        method: "get",
-        path: "/accounts/accountNumbers",
+        method: 'get',
+        path: '/accounts/accountNumbers',
         transformResult: (raw: any) => {
           if (!raw || !Array.isArray(raw)) return { accounts: [] };
           return {
@@ -597,93 +555,80 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         },
       },
       get_account: {
-        method: "get",
+        method: 'get',
         path: (input: any) => {
           const accountHash = input.accountHash || input.account_hash;
-          if (!accountHash)
-            throw new Error(
-              "accountHash is required. Please select an account."
-            );
+          if (!accountHash) throw new Error('accountHash is required. Please select an account.');
           return `/accounts/${accountHash}`;
         },
         makeParams: (input: any) => ({
-          fields: input.fields || "positions",
+          fields: input.fields || 'positions',
         }),
       },
       get_positions: {
-        method: "get",
+        method: 'get',
         path: (input: any) => {
           const accountHash = input.accountHash || input.account_hash;
-          if (!accountHash)
-            throw new Error(
-              "accountHash is required. Please select an account."
-            );
+          if (!accountHash) throw new Error('accountHash is required. Please select an account.');
           return `/accounts/${accountHash}`;
         },
         makeParams: () => ({
-          fields: "positions",
+          fields: 'positions',
         }),
       },
       get_orders: {
-        method: "get",
+        method: 'get',
         path: (input: any) => {
           const accountHash = input.accountHash || input.account_hash;
-          if (!accountHash)
-            throw new Error(
-              "accountHash is required. Please select an account."
-            );
+          if (!accountHash) throw new Error('accountHash is required. Please select an account.');
           return `/accounts/${accountHash}/orders`;
         },
         makeParams: (input: any) => ({
           maxResults: input.limit || 100,
           fromEnteredTime: input.start_date,
           toEnteredTime: input.end_date,
-          status: input.status || "FILLED,CANCELED,REJECTED",
+          status: input.status || 'FILLED,CANCELED,REJECTED',
         }),
       },
       place_order: {
-        method: "post",
+        method: 'post',
         path: (input: any) => {
           const accountHash = input.accountHash || input.account_hash;
-          if (!accountHash)
-            throw new Error(
-              "accountHash is required. Please select an account."
-            );
+          if (!accountHash) throw new Error('accountHash is required. Please select an account.');
           return `/accounts/${accountHash}/orders`;
         },
         makeBody: (input: any) => {
           const {
             symbol,
-            instruction = "BUY",
+            instruction = 'BUY',
             quantity,
-            orderType = "MARKET",
+            orderType = 'MARKET',
             price,
-            duration = "DAY",
-            session = "NORMAL",
+            duration = 'DAY',
+            session = 'NORMAL',
           } = input;
 
-          if (!symbol) throw new Error("symbol is required for place_order");
-          if (!quantity || quantity <= 0)
-            throw new Error("quantity must be greater than 0");
+          if (!symbol) throw new Error('symbol is required for place_order');
+          if (!quantity || quantity <= 0) throw new Error('quantity must be greater than 0');
 
           const orderPayload: any = {
             orderType: orderType.toUpperCase(),
             session: session.toUpperCase(),
             duration: duration.toUpperCase(),
-            orderStrategyType: "SINGLE",
+            orderStrategyType: 'SINGLE',
             orderLegCollection: [
               {
                 instruction: instruction.toUpperCase(),
                 quantity: Number(quantity),
                 instrument: {
                   symbol: symbol.toUpperCase(),
-                  assetType: "EQUITY",
+                  assetType: 'EQUITY',
                 },
               },
             ],
           };
 
-          if ((orderType === "LIMIT" || orderType === "STOP_LIMIT") && price) {
+          if ((orderType === 'LIMIT' || orderType === 'STOP_LIMIT') && price) {
             orderPayload.price = Number(price);
           }
 
@@ -691,62 +636,52 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
         },
         transformResult: (raw: any) => ({
           success: true,
-          message: "Order placed successfully",
-          orderId: raw.orderId || "Order submitted",
+          message: 'Order placed successfully',
+          orderId: raw.orderId || 'Order submitted',
         }),
       },
       cancel_order: {
-        method: "delete",
+        method: 'delete',
         path: (input: any) => {
           const accountHash = input.accountHash || input.account_hash;
-          if (!accountHash)
-            throw new Error(
-              "accountHash is required. Please select an account."
-            );
-          if (!input.order_id)
-            throw new Error("order_id is required for cancel_order");
+          if (!accountHash) throw new Error('accountHash is required. Please select an account.');
+          if (!input.order_id) throw new Error('order_id is required for cancel_order');
           return `/accounts/${accountHash}/orders/${input.order_id}`;
         },
       },
       get_quotes: {
-        method: "get",
-        path: "/quotes",
+        method: 'get',
+        path: '/quotes',
         makeParams: (input: any) => {
-          if (!input.symbols)
-            throw new Error("symbols parameter is required for get_quotes");
+          if (!input.symbols) throw new Error('symbols parameter is required for get_quotes');
           return {
             symbols: input.symbols,
-            fields: input.fields || "quote,fundamental",
-            indicative: "false",
+            fields: input.fields || 'quote,fundamental',
+            indicative: 'false',
           };
         },
         transformResult: (raw: any) => {
-          const quotes = Object.entries(raw).map(
-            ([symbol, data]: [string, any]) => ({
-              symbol,
-              ...(data.quote || {}),
-              fundamental: data.fundamental,
-              reference: data.reference,
-            })
-          );
+          const quotes = Object.entries(raw).map(([symbol, data]: [string, any]) => ({
+            symbol,
+            ...(data.quote || {}),
+            fundamental: data.fundamental,
+            reference: data.reference,
+          }));
           return { quotes, count: quotes.length };
         },
       },
       get_price_history: {
-        method: "get",
-        path: "/pricehistory",
+        method: 'get',
+        path: '/pricehistory',
         makeParams: (input: any) => {
-          if (!input.symbol)
-            throw new Error(
-              "symbol parameter is required for get_price_history"
-            );
+          if (!input.symbol) throw new Error('symbol parameter is required for get_price_history');
           return {
             symbol: input.symbol,
-            periodType: input.periodType || "day",
-            period: input.period || "10",
-            frequencyType: input.frequencyType || "minute",
-            frequency: input.frequency || "1",
-            needExtendedHoursData: input.needExtendedHoursData || "false",
+            periodType: input.periodType || 'day',
+            period: input.period || '10',
+            frequencyType: input.frequencyType || 'minute',
+            frequency: input.frequency || '1',
+            needExtendedHoursData: input.needExtendedHoursData || 'false',
           };
         },
         transformResult: (raw: any) => ({
@@ -762,18 +697,18 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   // BINANCE (placeholder - add operations as needed)
   // ============================================
   binance: {
-    authType: "api_key",
+    authType: 'api_key',
     baseUrl: (creds: any, input?: any) =>
-      input?.environment === "testnet"
-        ? "https://testnet.binance.vision"
-        : "https://api.binance.com",
+      input?.environment === 'testnet'
+        ? 'https://testnet.binance.vision'
+        : 'https://api.binance.com',
     makeAuthHeaders: (creds: any) => ({
-      "X-MBX-APIKEY": creds.api_key,
+      'X-MBX-APIKEY': creds.api_key,
     }),
     operations: {
       get_account: {
-        method: "get",
-        path: "/api/v3/account",
+        method: 'get',
+        path: '/api/v3/account',
       },
     },
   },

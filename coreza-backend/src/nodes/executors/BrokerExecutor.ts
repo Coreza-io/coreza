@@ -2,7 +2,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { getBrokerConfig } from "../../config/brokers";
 import CredentialManager from "../../utils/credentialManager";
-import { refreshOAuthToken } from "../../utils/oauthTokenManager";
+import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -15,11 +15,7 @@ export class BrokerExecutor implements INodeExecutor {
     try {
       const operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory?: string };
-      const broker = (
-        brokerNode.subCategory ??
-        node.name ??
-        node.node_type
-      )?.toLowerCase();
+      const broker = (brokerNode.subCategory ?? node.name ?? node.node_type)?.toLowerCase();
       const credential_id = node.values?.credential_id;
 
       if (!credential_id) {
@@ -76,8 +72,8 @@ export class BrokerExecutor implements INodeExecutor {
       // Handle OAuth token refresh if needed
       let workingCreds = creds;
       if (broker === "schwab") {
-        workingCreds = await refreshOAuthToken(
-          "schwab",
+        workingCreds = await refreshOAuthTokenIfNeeded(
+          'schwab',
           creds,
           context?.userId,
           credential_id
@@ -102,7 +98,9 @@ export class BrokerExecutor implements INodeExecutor {
         ? await op.makeBody(resolvedParams, workingCreds)
         : undefined;
 
-      console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
+      console.log(
+        `📤 [BROKER] Executing ${broker}.${operation} → ${url}`
+      );
 
       // Execute request to external broker (Alpaca/Dhan/Schwab/Binance)
       const response = await axios({
@@ -114,7 +112,9 @@ export class BrokerExecutor implements INodeExecutor {
         timeout: 30000,
       });
 
-      console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
+      console.log(
+        `✅ [BROKER] ${broker}.${operation} completed successfully`
+      );
 
       // Transform result
       const data = op.transformResult

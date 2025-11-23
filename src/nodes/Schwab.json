@@ -12,7 +12,41 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": { "type": "oauth", "provider": "schwab" },
+  "auth": "SchwabAuthModal",
+  "authAction": {
+    "url": "/oauth/schwab/generate-auth-url",
+    "method": "POST"
+  },
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g., My Schwab Account"
+    },
+    {
+      "key": "app_key",
+      "label": "App Key",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Key"
+    },
+    {
+      "key": "app_secret",
+      "label": "App Secret",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Secret"
+    },
+    {
+      "key": "account_number",
+      "label": "Account Number (Optional)",
+      "type": "text",
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
+    }
+  ],
   "action": {
     "url": "/broker/schwab/{{operation}}",
     "method": "POST"

@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
-import { GenericOAuthModal } from "@/components/auth/GenericOAuthModal";
+import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
+import { GmailAuthModal } from "@/components/auth/GmailAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
@@ -544,8 +545,8 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
       {showAuth && (
         <Suspense fallback={<div>Loading...</div>}>
-          {definition.auth?.type === 'oauth' ? (
-            <GenericOAuthModal
+          {definition.auth === 'SchwabAuthModal' ? (
+            <SchwabAuthModal
               isOpen={showAuth}
               onClose={() => {
                 setShowAuth(false);
@@ -564,7 +565,27 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                 });
               }}
               userId={user?.id || ''}
-              provider={definition.auth.provider}
+            />
+          ) : definition.auth === 'GmailAuthModal' ? (
+            <GmailAuthModal
+              isOpen={showAuth}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              onSuccess={(credentialId) => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              userId={user?.id || ''}
             />
           ) : (
             <GenericAuthModal

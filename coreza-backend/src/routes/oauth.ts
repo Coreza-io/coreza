@@ -1,7 +1,68 @@
 import express from "express";
 import OAuthService from "../services/oauthService";
+import { OAUTH_CONFIGS } from "../config/oauth";
 
 const router = express.Router();
+
+router.get("/providers", async (req, res, next) => {
+  try {
+    const providers = Object.entries(OAUTH_CONFIGS).map(([id, config]) => ({
+      id,
+      name: config.displayName,
+      authFlowType: config.authFlowType,
+      docsUrl: config.docsUrl,
+      authUrlDisplayName: config.authUrlDisplayName,
+      callbackPlaceholder: config.callbackPlaceholder,
+      callbackHelpText: config.callbackHelpText,
+      fields: [
+        {
+          key: "credential_name",
+          label: "Credential Name",
+          type: "text",
+          placeholder: `My ${config.displayName} Account`,
+          required: true,
+        },
+        {
+          key: config.clientIdField,
+          label: config.clientIdField
+            .split("_")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" "),
+          type: "password",
+          placeholder: `Enter your ${config.displayName} ${config.clientIdField.replace(/_/g, " ")}`,
+          required: true,
+        },
+        {
+          key: config.clientSecretField,
+          label: config.clientSecretField
+            .split("_")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" "),
+          type: "password",
+          placeholder: `Enter your ${config.displayName} ${config.clientSecretField.replace(/_/g, " ")}`,
+          required: true,
+        },
+        ...(config.redirectUriField
+          ? [
+              {
+                key: config.redirectUriField,
+                label: "Redirect URI",
+                type: "text",
+                placeholder:
+                  config.defaultRedirectUri ||
+                  "http://localhost:8000/callback",
+                required: false,
+              },
+            ]
+          : []),
+      ],
+    }));
+
+    res.json({ success: true, providers });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post("/:provider/generate-auth-url", async (req, res, next) => {
   try {

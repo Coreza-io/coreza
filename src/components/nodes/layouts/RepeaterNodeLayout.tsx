@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, X, Plus } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
-import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
+import { GenericOAuthModal } from "@/components/auth/GenericOAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
@@ -1062,8 +1062,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       {/* Auth Modal */}
       <Suspense fallback={<div>Loading modal...</div>}>
         {showAuth && (
-          definition.auth === 'SchwabAuthModal' ? (
-            <SchwabAuthModal
+          definition.auth?.type === 'oauth' ? (
+            <GenericOAuthModal
               isOpen={showAuth}
               onClose={() => {
                 setShowAuth(false);
@@ -1082,6 +1082,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 });
               }}
               userId={user?.id || ''}
+              provider={definition.auth.provider}
             />
           ) : (
             <GenericAuthModal

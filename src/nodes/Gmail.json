@@ -7,8 +7,7 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": "GmailAuthModal",
-  "authAction": { "url": "/oauth/gmail/generate-auth-url", "method": "POST" },
+  "auth": { "type": "oauth", "provider": "gmail" },
 
   "icon": "/assets/icons/gmail.svg",
   "size": { "width": 340, "height": 340 },

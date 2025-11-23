@@ -23,6 +23,12 @@ export interface OAuthProviderConfig {
   redirectUriField?: string;
   defaultRedirectUri?: string;
   defaultScopes?: string[];
+  displayName: string;
+  authFlowType: "authorization_code" | "redirect_url";
+  docsUrl: string;
+  authUrlDisplayName: string;
+  callbackPlaceholder: string;
+  callbackHelpText: string;
   generateAuthUrl: (
     session: OAuthSessionData,
     body: any
@@ -45,6 +51,12 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
     clientIdField: "app_key",
     clientSecretField: "app_secret",
     defaultRedirectUri: SCHWAB_REDIRECT_URI,
+    displayName: "Schwab",
+    authFlowType: "redirect_url",
+    docsUrl: "https://developer.schwab.com",
+    authUrlDisplayName: "Schwab Authorization",
+    callbackPlaceholder: "https://127.0.0.1/?code=...",
+    callbackHelpText: "After authorizing in Schwab, you'll be redirected to a URL starting with https://127.0.0.1/?code=. Copy the entire URL from your browser's address bar and paste it above.",
     generateAuthUrl: async (session) =>
       `https://api.schwabapi.com/v1/oauth/authorize?client_id=${encodeURIComponent(
         session.clientId
@@ -137,6 +149,12 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
     ],
+    displayName: "Gmail",
+    authFlowType: "authorization_code",
+    docsUrl: "https://console.cloud.google.com/apis/credentials",
+    authUrlDisplayName: "Google Authorization",
+    callbackPlaceholder: "4/0AfJohXk...",
+    callbackHelpText: "After authorizing in Google, you'll receive an authorization code. Copy the ENTIRE code (usually starts with \"4/0A\") and paste it above. The code is valid for 10 minutes and can only be used once. If it fails, restart the process to get a new code.",
     generateAuthUrl: async (session, body) => {
       const oauth2Client = new google.auth.OAuth2(
         session.clientId,

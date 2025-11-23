@@ -1,8 +1,8 @@
 import fs from 'fs';
 import csv from 'csv-parser';
 import path from 'path';
-import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { OAUTH_CONFIGS } from './oauth';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -142,25 +142,16 @@ export async function refreshSchwabTokenIfNeeded(creds: any): Promise<any> {
     console.log('🔄 [SCHWAB] Access token expired, refreshing...');
 
     try {
-      const credentials = `${creds.app_key}:${creds.app_secret}`;
-      const encodedCredentials = Buffer.from(credentials).toString('base64');
+      const refreshed = await OAUTH_CONFIGS.schwab.refreshToken?.({
+        credentials: creds,
+      });
 
-      const response = await axios.post(
-        'https://api.schwabapi.com/v1/oauth/token',
-        new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: creds.refresh_token,
-        }),
-        {
-          headers: {
-            Authorization: `Basic ${encodedCredentials}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
+      if (!refreshed?.token?.access_token) {
+        throw new Error('No access token returned during refresh');
+      }
 
-      const newTokens = response.data;
-      const newExpiresAt = now + newTokens.expires_in;
+      const newTokens = refreshed.token;
+      const newExpiresAt = newTokens.token_expires_at ?? now + 3600;
 
       console.log('✅ [SCHWAB] Token refreshed successfully');
 

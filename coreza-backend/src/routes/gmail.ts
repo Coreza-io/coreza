@@ -31,59 +31,6 @@ router.get("/credentials", async (req, res, next) => {
   }
 });
 
-// Gmail OAuth flow - Get auth URL (for authAction)
-router.post("/auth", async (req, res, next) => {
-  try {
-    const { user_id, credential_name, client_id, client_secret, redirect_uri } =
-      req.body;
-
-    const result = await CommunicationService.execute(
-      "gmail",
-      "create_auth_url",
-      {
-        user_id,
-        credentialName: credential_name,
-        clientId: client_id,
-        clientSecret: client_secret,
-        redirectUri: redirect_uri,
-      }
-    );
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json(result.data);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Gmail OAuth flow - Exchange code for tokens
-router.post("/auth/callback", async (req, res, next) => {
-  try {
-    const { user_id, credential_name, code } = req.body;
-
-    const result = await CommunicationService.execute(
-      "gmail",
-      "exchange_code",
-      {
-        user_id,
-        credentialName: credential_name,
-        code,
-      }
-    );
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json(result.data);
-  } catch (error) {
-    next(error);
-  }
-});
-
 // Send email
 router.post("/send", async (req, res, next) => {
   try {

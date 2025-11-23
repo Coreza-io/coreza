@@ -3,6 +3,7 @@ import AlpacaDef from './Alpaca.json'
 import AlpacaTradeDef from './AlpacaTrade.json'
 import AlpacaNewsDef from './AlpacaNews.json'
 import AlpacaNewsRESTDef from './AlpacaNewsREST.json'
+import AlpacaStreamDataDef from './AlpacaStreamData.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
 import SchwabTradeDef from './SchwabTrade.json'
@@ -122,6 +123,7 @@ export const nodeManifest = {
   [AlpacaTradeDef.name]: AlpacaTradeDef,
   [AlpacaNewsDef.name]: AlpacaNewsDef,
   [AlpacaNewsRESTDef.name]: AlpacaNewsRESTDef,
+  [AlpacaStreamDataDef.name]: AlpacaStreamDataDef,
   [DhanTradeDef.name]: DhanTradeDef,
   [SchwabTradeDef.name]: SchwabTradeDef,
   [SchwabDef.name]: SchwabDef,

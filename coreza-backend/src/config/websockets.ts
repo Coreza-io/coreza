@@ -5,8 +5,8 @@ export interface WebSocketSourceConfig {
   makeAuthMessage?: (creds: any) => any;
   parseMessage?: (data: Buffer) => any[];
   identifyMessageType: (msg: any) => string;
-  makeSubscribeMessage: (symbols: string[]) => any;
-  makeUnsubscribeMessage: (symbols: string[]) => any;
+  makeSubscribeMessage: (symbols: string[], streamTypes?: any) => any;
+  makeUnsubscribeMessage: (symbols: string[], streamTypes?: any) => any;
   extractData: (msg: any) => any;
   extractSymbols?: (msg: any) => string[];
   shouldTriggerWorkflow?: (msg: any) => boolean;
@@ -51,6 +51,104 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
     }),
     extractSymbols: (msg) => msg.symbols || [],
     shouldTriggerWorkflow: (msg) => msg.T === "n",
+    maxReconnectAttempts: 5,
+    reconnectDelay: 1000,
+  },
+  alpaca_stream: {
+    id: "alpaca_stream",
+    url: "wss://stream.data.alpaca.markets/v2/iex",
+    makeAuthMessage: (creds) => ({
+      action: "auth",
+      key: creds.api_key,
+      secret: creds.secret_key,
+    }),
+    parseMessage: defaultParser,
+    identifyMessageType: (msg) => {
+      if (msg.T === "success") return "authenticated";
+      if (msg.T === "subscription") return "subscription";
+      if (msg.T === "error") return "error";
+      return msg.T;
+    },
+    makeSubscribeMessage: (symbols, streamTypes) => {
+      const message: any = { action: "subscribe" };
+      if (streamTypes && streamTypes.length > 0) {
+        streamTypes.forEach((type: string) => {
+          message[type] = symbols;
+        });
+      } else {
+        message.trades = symbols;
+      }
+      return message;
+    },
+    makeUnsubscribeMessage: (symbols, streamTypes) => {
+      const message: any = { action: "unsubscribe" };
+      if (streamTypes && streamTypes.length > 0) {
+        streamTypes.forEach((type: string) => {
+          message[type] = symbols;
+        });
+      } else {
+        message.trades = symbols;
+      }
+      return message;
+    },
+    extractData: (msg) => {
+      switch (msg.T) {
+        case "t":
+          return {
+            type: "trade",
+            symbol: msg.S,
+            id: msg.i,
+            exchange: msg.x,
+            price: msg.p,
+            size: msg.s,
+            conditions: msg.c,
+            tape: msg.z,
+            timestamp: msg.t,
+          };
+        case "q":
+          return {
+            type: "quote",
+            symbol: msg.S,
+            bid_exchange: msg.bx,
+            bid_price: msg.bp,
+            bid_size: msg.bs,
+            ask_exchange: msg.ax,
+            ask_price: msg.ap,
+            ask_size: msg.as,
+            conditions: msg.c,
+            tape: msg.z,
+            timestamp: msg.t,
+          };
+        case "b":
+          return {
+            type: "bar",
+            symbol: msg.S,
+            open: msg.o,
+            high: msg.h,
+            low: msg.l,
+            close: msg.c,
+            volume: msg.v,
+            timestamp: msg.t,
+            trade_count: msg.n,
+            vwap: msg.vw,
+          };
+        case "d":
+          return {
+            type: "daily_bar",
+            symbol: msg.S,
+            open: msg.o,
+            high: msg.h,
+            low: msg.l,
+            close: msg.c,
+            volume: msg.v,
+            timestamp: msg.t,
+          };
+        default:
+          return msg;
+      }
+    },
+    extractSymbols: (msg) => [msg.S],
+    shouldTriggerWorkflow: (msg) => ["t", "q", "b", "d"].includes(msg.T),
     maxReconnectAttempts: 5,
     reconnectDelay: 1000,
   },

@@ -28,6 +28,7 @@ interface UseNodeExecutionProps {
   selectedInputData: any;
   setLastOutput: (output: any) => void;
   overrideOutput: any | null;
+  workflowId?: string;
 }
 
 interface UseNodeExecutionReturn {
@@ -48,6 +49,7 @@ export function useNodeExecution({
   selectedInputData,
   setLastOutput,
   overrideOutput,
+  workflowId,
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
   const nodes = useNodes();
@@ -240,8 +242,13 @@ export function useNodeExecution({
           userId
         );
         payload.user_id = userId;
-        if (definition?.name === "AlpacaNews" && nodeId) {
+        
+        // Auto-include node_id and workflow_id for all streaming nodes
+        if (definition?.executionMode === "streaming" && nodeId) {
           payload.node_id = nodeId;
+          if (workflowId) {
+            payload.workflow_id = workflowId;
+          }
         }
 
         const parsedSymbols: string[] = Array.isArray(payload.symbols)

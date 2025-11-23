@@ -1,11 +1,44 @@
 import express from "express";
 import { CommunicationService } from "../services/communications";
+import CredentialManager from "../utils/credentialManager";
 
 const DEFAULT_WHATSAPP_USER_ID = process.env.WHATSAPP_DEFAULT_USER_ID;
 const DEFAULT_WHATSAPP_CREDENTIAL_ID =
   process.env.WHATSAPP_DEFAULT_CREDENTIAL_ID;
 
 const router = express.Router();
+
+// Save WhatsApp credentials
+router.post("/credentials", async (req, res, next) => {
+  try {
+    const { user_id, credential_name, access_token, phone_number_id } = req.body;
+
+    if (!user_id || !credential_name || !access_token || !phone_number_id) {
+      return res.status(400).json({
+        error:
+          "user_id, credential_name, access_token, and phone_number_id are required",
+      });
+    }
+
+    const credentialId = await CredentialManager.saveCredentials(
+      user_id,
+      "whatsapp",
+      credential_name,
+      {
+        access_token,
+        phone_number_id,
+      }
+    );
+
+    res.json({
+      success: true,
+      credential_id: credentialId,
+      message: "WhatsApp credentials saved successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Webhook verification (GET)
 router.get("/webhook", async (req, res) => {

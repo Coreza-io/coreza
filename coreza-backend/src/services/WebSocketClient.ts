@@ -35,7 +35,7 @@ export class WebSocketClient {
   private symbolWorkflowSubscribers: Map<string, Set<string>> = new Map();
   private workflowMetadata: Map<
     string,
-    { userId: string; nodeId?: string; symbols: Set<string> }
+    { userId: string; workflowId?: string; nodeId?: string; symbols: Set<string> }
   > = new Map();
 
   private isAuthenticated = false;
@@ -347,10 +347,11 @@ export class WebSocketClient {
       const workflowId = options.workflowId;
       let metadata = this.workflowMetadata.get(workflowId);
       if (!metadata) {
-        metadata = { userId, nodeId, symbols: new Set() };
+        metadata = { userId, workflowId, nodeId, symbols: new Set() };
         this.workflowMetadata.set(workflowId, metadata);
       }
       metadata.nodeId = nodeId;
+      metadata.workflowId = workflowId;
 
       normalizedSymbols.forEach((symbol) => {
         metadata!.symbols.add(symbol);
@@ -365,7 +366,7 @@ export class WebSocketClient {
       this.sendSubscription("subscribe", newSymbols, options.streamTypes);
     }
 
-    await this.persistSubscriptionsToRedis(userId, nodeId, options.streamTypes);
+    await this.persistSubscriptionsToRedis(userId, nodeId, options.workflowId, options.streamTypes);
 
     return true;
   }
@@ -453,7 +454,7 @@ export class WebSocketClient {
       this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)), options.streamTypes);
     }
 
-    await this.cleanupRedisSubscriptions(userId, options.nodeId);
+    await this.cleanupRedisSubscriptions(userId, options.nodeId, options.workflowId);
 
     return true;
   }
@@ -571,14 +572,23 @@ export class WebSocketClient {
 
   // ========== Redis Persistence Methods ==========
 
-  private getRedisKey(suffix: string): string {
-    return `ws:${this.config.id}:${suffix}`;
+  private getRedisKey(userId: string, nodeId: string, workflowId?: string): string {
+    if (workflowId) {
+      return `ws:${this.config.id}:subs:${userId}:${workflowId}:${nodeId}`;
+    }
+    // Fallback for backward compatibility (old subscriptions without workflowId)
+    return `ws:${this.config.id}:subs:${userId}:${nodeId}`;
   }
 
-  private async persistSubscriptionsToRedis(userId: string, nodeId: string, streamTypes?: string[]): Promise<void> {
+  private async persistSubscriptionsToRedis(
+    userId: string,
+    nodeId: string,
+    workflowId?: string,
+    streamTypes?: string[]
+  ): Promise<void> {
     try {
       const redis = getRedis();
-      const key = this.getRedisKey(`subs:${userId}:${nodeId}`);
+      const key = this.getRedisKey(userId, nodeId, workflowId);
 
       const userNodes = this.userSubscriptions.get(userId);
       if (!userNodes) return;
@@ -590,7 +600,11 @@ export class WebSocketClient {
       }
 
       const symbolsArray = Array.from(nodeSymbols);
-      const data = { symbols: symbolsArray, streamTypes: streamTypes || [] };
+      const data = { 
+        symbols: symbolsArray, 
+        streamTypes: streamTypes || [],
+        workflowId: workflowId || null,
+      };
       await redis.set(key, JSON.stringify(data), "EX", 86400 * 7); // 7 days TTL
     } catch (error) {
       console.error(`[${this.config.id}] Failed to persist subscriptions to Redis:`, error);
@@ -600,7 +614,7 @@ export class WebSocketClient {
   private async restoreSubscriptionsFromRedis(): Promise<void> {
     try {
       const redis = getRedis();
-      const pattern = this.getRedisKey("subs:*");
+      const pattern = `ws:${this.config.id}:subs:*`;
       const keys = await redis.keys(pattern);
 
       for (const key of keys) {
@@ -611,12 +625,25 @@ export class WebSocketClient {
           const parsed = JSON.parse(data);
           const symbols = Array.isArray(parsed) ? parsed : (parsed.symbols || []);
           const streamTypes = parsed.streamTypes || [];
+          const workflowId = parsed.workflowId || null;
           
+          // Parse key: ws:alpaca_stream:subs:userId:workflowId:nodeId OR ws:alpaca_stream:subs:userId:nodeId
           const parts = key.split(":");
           if (parts.length < 4) continue;
 
-          const userId = parts[2];
-          const nodeId = parts[3];
+          const userId = parts[3];
+          let nodeId: string;
+          
+          // Check if key includes workflowId (5 parts) or not (4 parts)
+          if (parts.length === 6) {
+            // New format: ws:source:subs:userId:workflowId:nodeId
+            nodeId = parts[5];
+          } else if (parts.length === 5) {
+            // Old format: ws:source:subs:userId:nodeId
+            nodeId = parts[4];
+          } else {
+            continue;
+          }
 
           if (!this.userSubscriptions.has(userId)) {
             this.userSubscriptions.set(userId, new Map());
@@ -641,7 +668,7 @@ export class WebSocketClient {
           });
 
           console.log(
-            `[${this.config.id}] Restored ${symbols.length} symbols for ${userId}:${nodeId}${streamTypes.length > 0 ? ` (types: ${streamTypes.join(',')})` : ''}`
+            `[${this.config.id}] Restored ${symbols.length} symbols for ${userId}${workflowId ? `:${workflowId}` : ''}:${nodeId}${streamTypes.length > 0 ? ` (types: ${streamTypes.join(',')})` : ''}`
           );
         } catch (parseError) {
           console.error(`[${this.config.id}] Failed to parse subscription data from ${key}:`, parseError);
@@ -658,15 +685,16 @@ export class WebSocketClient {
     }
   }
 
-  private async cleanupRedisSubscriptions(userId: string, nodeId?: string): Promise<void> {
+  private async cleanupRedisSubscriptions(userId: string, nodeId?: string, workflowId?: string): Promise<void> {
     try {
       const redis = getRedis();
 
       if (nodeId) {
-        const key = this.getRedisKey(`subs:${userId}:${nodeId}`);
+        const key = this.getRedisKey(userId, nodeId, workflowId);
         await redis.del(key);
       } else {
-        const pattern = this.getRedisKey(`subs:${userId}:*`);
+        // Delete all subscriptions for this user
+        const pattern = `ws:${this.config.id}:subs:${userId}:*`;
         const keys = await redis.keys(pattern);
         if (keys.length > 0) {
           await redis.del(...keys);

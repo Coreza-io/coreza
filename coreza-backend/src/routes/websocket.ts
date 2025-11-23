@@ -16,7 +16,7 @@ const router = express.Router();
 router.post('/:source/subscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, credential_id, symbols, node_id, stream_types } = req.body;
+    const { user_id, credential_id, symbols, node_id, workflow_id, stream_types } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
@@ -64,8 +64,12 @@ router.post('/:source/subscribe', async (req, res) => {
       await client.connect(client_json);
     }
 
-    // Subscribe to symbols with optional stream types
-    await client.subscribe(user_id, symbolArray, { nodeId: node_id, streamTypes });
+    // Subscribe to symbols with optional stream types and workflow_id
+    await client.subscribe(user_id, symbolArray, { 
+      nodeId: node_id, 
+      workflowId: workflow_id,
+      streamTypes 
+    });
 
     res.json({
       success: true,
@@ -73,6 +77,7 @@ router.post('/:source/subscribe', async (req, res) => {
       symbols: symbolArray,
       stream_types: streamTypes,
       node_id,
+      workflow_id: workflow_id || null,
       subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {
@@ -91,7 +96,7 @@ router.post('/:source/subscribe', async (req, res) => {
 router.post('/:source/unsubscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, symbols, node_id, stream_types } = req.body;
+    const { user_id, symbols, node_id, workflow_id, stream_types } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!symbols) return res.status(400).json({ error: 'symbols is required' });
@@ -116,7 +121,11 @@ router.post('/:source/unsubscribe', async (req, res) => {
       : undefined;
 
     const client = WebSocketClient.getInstance(source);
-    await client.unsubscribe(user_id, symbolArray, { nodeId: node_id, streamTypes });
+    await client.unsubscribe(user_id, symbolArray, { 
+      nodeId: node_id, 
+      workflowId: workflow_id,
+      streamTypes 
+    });
 
     res.json({
       success: true,
@@ -124,6 +133,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
       symbols: symbolArray,
       stream_types: streamTypes,
       node_id: node_id ?? null,
+      workflow_id: workflow_id || null,
       subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {

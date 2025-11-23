@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
+import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -79,6 +80,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
   const nodes = useNodes();
   const edges = useEdges();
   const executionStore = useExecutionStore();
+  const { id: workflowId } = useParams();
 
   const definition = data.definition;
   const displayName = useMemo(() => {
@@ -149,6 +151,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData,
     setLastOutput: outputHook.setLastOutput,
     overrideOutput: outputHook.isPinned ? outputHook.displayedData : null,
+    workflowId,
   });
 
   // References (drag-drop and previews)

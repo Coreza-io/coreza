@@ -14,7 +14,7 @@
   ],
   "auth": "SchwabAuthModal",
   "authAction": {
-    "url": "/broker/schwab/generate-auth-url",
+    "url": "/oauth/schwab/generate-auth-url",
     "method": "POST"
   },
   "authFields": [

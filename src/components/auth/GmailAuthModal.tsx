@@ -131,7 +131,7 @@ export function GmailAuthModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             temp_id: tempId,
-            code: authCode,
+            code: authCode.trim(),
             credential_name: credentialName,
             user_id: userId,
           }),
@@ -304,8 +304,10 @@ export function GmailAuthModal({
                 className="font-mono text-sm"
               />
               <p className="text-sm text-muted-foreground">
-                After authorizing in Google, you'll receive an authorization
-                code. Copy the code and paste it above.
+                After authorizing in Google, you'll receive an authorization code. 
+                <strong className="text-foreground"> Copy the ENTIRE code</strong> (usually starts with "4/0A") 
+                and paste it above. The code is valid for 10 minutes and can only be used once.
+                If it fails, restart the process to get a new code.
               </p>
             </div>
 

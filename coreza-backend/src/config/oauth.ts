@@ -150,6 +150,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
         access_type: "offline",
         prompt: "consent",
         scope: scopes?.length ? scopes : undefined,
+        redirect_uri: session.redirectUri,
       });
     },
     exchangeCode: async ({ code, session }) => {
@@ -163,25 +164,36 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
         session.redirectUri
       );
 
-      const { tokens } = await oauth2Client.getToken(code);
+      try {
+        const { tokens } = await oauth2Client.getToken(code.trim());
 
-      const token_expires_at = tokens.expiry_date
-        ? Math.floor(tokens.expiry_date / 1000)
-        : undefined;
+        const token_expires_at = tokens.expiry_date
+          ? Math.floor(tokens.expiry_date / 1000)
+          : undefined;
 
-      return {
-        client: {
-          client_id: session.clientId,
-          client_secret: session.clientSecret,
-          redirect_uri: session.redirectUri,
-        },
-        token: {
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          token_expires_at,
-        },
-        scopes: tokens.scope ? tokens.scope.split(" ") : session.scope,
-      };
+        return {
+          client: {
+            client_id: session.clientId,
+            client_secret: session.clientSecret,
+            redirect_uri: session.redirectUri,
+          },
+          token: {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            token_expires_at,
+          },
+          scopes: tokens.scope ? tokens.scope.split(" ") : session.scope,
+        };
+      } catch (error: any) {
+        if (error.message?.includes('invalid_grant')) {
+          throw new Error(
+            'Invalid authorization code. The code may have expired (valid for 5-10 minutes), ' +
+            'already been used, or the redirect URI may not match what is configured in Google Cloud Console. ' +
+            'Please restart the authorization process.'
+          );
+        }
+        throw error;
+      }
     },
     refreshToken: async ({ credentials }) => {
       const oauth2Client = new google.auth.OAuth2(

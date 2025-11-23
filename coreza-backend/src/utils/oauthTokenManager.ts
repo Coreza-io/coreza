@@ -1,10 +1,10 @@
-import OAuthService from '../services/oauthService';
+import OAuthService from "../services/oauthService";
 
 /**
  * Generic OAuth token refresh utility
  * Works for any OAuth provider (Schwab, Gmail, etc.)
  */
-export async function refreshOAuthTokenIfNeeded(
+export async function refreshOAuthToken(
   provider: string,
   credentials: any,
   userId: string,
@@ -15,7 +15,9 @@ export async function refreshOAuthTokenIfNeeded(
 
   // Check if token will expire in next 60 seconds
   if (now >= expiresAt - 60) {
-    console.log(`🔄 [${provider.toUpperCase()}] Access token expired, refreshing...`);
+    console.log(
+      `🔄 [${provider.toUpperCase()}] Access token expired, refreshing...`
+    );
 
     try {
       // Use generic OAuth service to refresh
@@ -24,7 +26,9 @@ export async function refreshOAuthTokenIfNeeded(
         credential_id: credentialId,
       });
 
-      console.log(`✅ [${provider.toUpperCase()}] Token refreshed successfully`);
+      console.log(
+        `✅ [${provider.toUpperCase()}] Token refreshed successfully`
+      );
 
       // Return updated credentials with new token
       return {

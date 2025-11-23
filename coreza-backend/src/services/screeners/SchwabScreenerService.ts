@@ -1,7 +1,7 @@
 import { BaseScreenerService } from "./BaseScreenerService";
 import { ScreenerInput, IScreenerService } from "./types";
 import axios from "axios";
-import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
+import { refreshOAuthToken } from "../../utils/oauthTokenManager";
 
 export class SchwabScreenerService
   extends BaseScreenerService
@@ -175,7 +175,7 @@ export class SchwabScreenerService
   ): Promise<any> {
     // Get raw credentials from database
     const result = await this.getCredentials(userId, credentialId);
-    
+
     // Flatten credentials structure (client_json + token_json)
     const creds = {
       ...result.credentials?.client_json,
@@ -187,11 +187,6 @@ export class SchwabScreenerService
     }
 
     // Use generic OAuth token refresh (works for any provider)
-    return await refreshOAuthTokenIfNeeded(
-      'schwab',
-      creds,
-      userId,
-      credentialId
-    );
+    return await refreshOAuthToken("schwab", creds, userId, credentialId);
   }
 }

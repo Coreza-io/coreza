@@ -40,7 +40,7 @@
       "placeholder": "For reference only - will be fetched dynamically"
     }
   ],
-  "authAction": { "url": "/broker/schwab/generate-auth-url", "method": "POST" },
+  "authAction": { "url": "/oauth/schwab/generate-auth-url", "method": "POST" },
 
   "action": { "url": "/broker/schwab/place_order", "method": "POST" },
   "fields": [

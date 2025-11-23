@@ -2,6 +2,7 @@ import express from "express";
 import axios, { AxiosRequestConfig } from "axios";
 import CredentialManager from "../utils/credentialManager";
 import { getBrokerConfig, isSupportedBroker } from "../config/brokers";
+import { refreshOAuthTokenIfNeeded } from "../utils/oauthTokenManager";
 
 const router = express.Router();
 
@@ -142,9 +143,19 @@ router.post("/:broker/:operation", async (req, res, next) => {
       brokerKey,
       credential_id
     );
-    const creds = credentials?.client_json;
+    let creds = credentials?.client_json;
 
-    // 2. Build request
+    // 2. Handle OAuth token refresh for any OAuth broker
+    if (config.authType === 'oauth') {
+      creds = await refreshOAuthTokenIfNeeded(
+        brokerKey,
+        creds,
+        user_id,
+        credential_id
+      );
+    }
+
+    // 3. Build request
     const baseUrl =
       typeof config.baseUrl === "function"
         ? config.baseUrl(creds, { operation, ...req.body })

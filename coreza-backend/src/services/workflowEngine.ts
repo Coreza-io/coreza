@@ -9,7 +9,6 @@ import {
 import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
-import { LoopHandler } from "./loopHandler";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
 
@@ -29,7 +28,6 @@ export class WorkflowEngine {
   private router: NodeRouter;
   private queue: NodeQueueManager;
   private store: NodeStoreV2;
-  private loopHandler: LoopHandler;
   private executors: Map<string, any> = new Map();
   private edgePayload = new Map<string, any>();
   private executed = new Set<string>();
@@ -55,7 +53,6 @@ export class WorkflowEngine {
     };
     this.queue = new NodeQueueManager();
     this.store = new NodeStoreV2(runId, nodes);
-    this.loopHandler = new LoopHandler(this.store, this.router, this.queue);
     this.mode = mode;
   }
 
@@ -267,23 +264,6 @@ export class WorkflowEngine {
       return;
     }
 
-    // Special handling for Loop nodes - delegate to LoopHandler for parallel execution
-    //if (node.name === "Loop") {
-    //try {
-    //await this.loopHandler.tick(nodeId, input);
-    //this.executed.add(nodeId);
-    //return;
-    //} catch (error) {
-    //console.error(`❌ Loop node ${nodeId} failed:`, error);
-    //this.failed.add(nodeId);
-    //this.store.setNodeError(nodeId, error);
-    //if (this.mode === "fail-fast") {
-    //throw error;
-    //}
-    //return;
-    //}
-    //}
-
     try {
       // Create execution context with all necessary information
       const executionContext = {
@@ -367,8 +347,7 @@ export class WorkflowEngine {
         const config = loopNode?.values || {};
         if (config.continueOnError) {
           const currentResults =
-            this.store.getNodeState(originLoopId, "aggregatedResults") ||
-            [];
+            this.store.getNodeState(originLoopId, "aggregatedResults") || [];
           currentResults.push({ error: (error as any).message });
           this.store.setNodeState(
             originLoopId,

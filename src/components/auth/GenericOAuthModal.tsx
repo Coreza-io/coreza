@@ -67,17 +67,14 @@ export function GenericOAuthModal({
   // Fetch provider configuration
   useEffect(() => {
     if (isOpen && provider) {
-      fetch(`${import.meta.env.VITE_API_URL}/oauth/providers`)
+      fetch(`${import.meta.env.VITE_API_URL}/oauth/providers?provider=${provider}`)
         .then((res) => res.json())
         .then((data) => {
-          const config = data.providers.find(
-            (p: ProviderConfig) => p.id === provider
-          );
-          if (config) {
-            setProviderConfig(config);
+          if (data.success && data.provider) {
+            setProviderConfig(data.provider);
             // Initialize fields with default values
             const initialFields: Record<string, string> = {};
-            config.fields.forEach((field) => {
+            data.provider.fields.forEach((field: any) => {
               if (field.key === "credential_name") {
                 initialFields[field.key] = field.placeholder;
               } else {

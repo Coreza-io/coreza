@@ -6,6 +6,7 @@ import {
   WebSocketSourceConfig,
   getWebSocketConfig,
 } from "../config/websockets";
+import { getRedis } from "../config/redis";
 
 interface SubscriberInfo {
   userId: string;
@@ -44,6 +45,9 @@ export class WebSocketClient {
 
   private constructor(config: WebSocketSourceConfig) {
     this.config = config;
+    this.restoreSubscriptionsFromRedis().catch((err) => {
+      console.error(`[${this.config.id}] Failed to restore subscriptions from Redis:`, err);
+    });
   }
 
   static getInstance(sourceId: string): WebSocketClient {
@@ -361,6 +365,8 @@ export class WebSocketClient {
       this.sendSubscription("subscribe", newSymbols);
     }
 
+    await this.persistSubscriptionsToRedis(userId, nodeId);
+
     return true;
   }
 
@@ -446,6 +452,8 @@ export class WebSocketClient {
     if (symbolsToUnsubscribe.length > 0 && this.isAuthenticated) {
       this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)));
     }
+
+    await this.cleanupRedisSubscriptions(userId, options.nodeId);
 
     return true;
   }
@@ -559,5 +567,109 @@ export class WebSocketClient {
     this.isAuthenticated = false;
     this.isConnecting = false;
     this.reconnectAttempts = 0;
+  }
+
+  // ========== Redis Persistence Methods ==========
+
+  private getRedisKey(suffix: string): string {
+    return `ws:${this.config.id}:${suffix}`;
+  }
+
+  private async persistSubscriptionsToRedis(userId: string, nodeId: string): Promise<void> {
+    try {
+      const redis = getRedis();
+      const key = this.getRedisKey(`subs:${userId}:${nodeId}`);
+
+      const userNodes = this.userSubscriptions.get(userId);
+      if (!userNodes) return;
+
+      const nodeSymbols = userNodes.get(nodeId);
+      if (!nodeSymbols || nodeSymbols.size === 0) {
+        await redis.del(key);
+        return;
+      }
+
+      const symbolsArray = Array.from(nodeSymbols);
+      await redis.set(key, JSON.stringify(symbolsArray), "EX", 86400 * 7); // 7 days TTL
+    } catch (error) {
+      console.error(`[${this.config.id}] Failed to persist subscriptions to Redis:`, error);
+    }
+  }
+
+  private async restoreSubscriptionsFromRedis(): Promise<void> {
+    try {
+      const redis = getRedis();
+      const pattern = this.getRedisKey("subs:*");
+      const keys = await redis.keys(pattern);
+
+      for (const key of keys) {
+        try {
+          const data = await redis.get(key);
+          if (!data) continue;
+
+          const symbols = JSON.parse(data) as string[];
+          const parts = key.split(":");
+          if (parts.length < 4) continue;
+
+          const userId = parts[2];
+          const nodeId = parts[3];
+
+          if (!this.userSubscriptions.has(userId)) {
+            this.userSubscriptions.set(userId, new Map());
+          }
+
+          const userNodes = this.userSubscriptions.get(userId)!;
+          if (!userNodes.has(nodeId)) {
+            userNodes.set(nodeId, new Set());
+          }
+
+          const nodeSymbols = userNodes.get(nodeId)!;
+          const subscriberKey = this.getSubscriberKey(userId, nodeId);
+          this.subscriberDirectory.set(subscriberKey, { userId, nodeId });
+
+          symbols.forEach((symbol) => {
+            nodeSymbols.add(symbol);
+
+            if (!this.symbolSubscribers.has(symbol)) {
+              this.symbolSubscribers.set(symbol, new Set());
+            }
+            this.symbolSubscribers.get(symbol)!.add(subscriberKey);
+          });
+
+          console.log(
+            `[${this.config.id}] Restored ${symbols.length} symbols for ${userId}:${nodeId}`
+          );
+        } catch (parseError) {
+          console.error(`[${this.config.id}] Failed to parse subscription data from ${key}:`, parseError);
+        }
+      }
+
+      if (keys.length > 0) {
+        console.log(
+          `[${this.config.id}] Restored ${keys.length} subscription entries from Redis`
+        );
+      }
+    } catch (error) {
+      console.error(`[${this.config.id}] Failed to restore subscriptions from Redis:`, error);
+    }
+  }
+
+  private async cleanupRedisSubscriptions(userId: string, nodeId?: string): Promise<void> {
+    try {
+      const redis = getRedis();
+
+      if (nodeId) {
+        const key = this.getRedisKey(`subs:${userId}:${nodeId}`);
+        await redis.del(key);
+      } else {
+        const pattern = this.getRedisKey(`subs:${userId}:*`);
+        const keys = await redis.keys(pattern);
+        if (keys.length > 0) {
+          await redis.del(...keys);
+        }
+      }
+    } catch (error) {
+      console.error(`[${this.config.id}] Failed to cleanup Redis subscriptions:`, error);
+    }
   }
 }

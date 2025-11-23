@@ -16,7 +16,7 @@ const router = express.Router();
 router.post('/:source/subscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, credential_id, symbols, node_id } = req.body;
+    const { user_id, credential_id, symbols, node_id, stream_types } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
@@ -34,6 +34,13 @@ router.post('/:source/subscribe', async (req, res) => {
     if (symbolArray.length === 0) {
       return res.status(400).json({ error: 'At least one symbol is required' });
     }
+
+    // Parse stream types (for alpaca_stream and similar sources)
+    const streamTypes = stream_types
+      ? (typeof stream_types === 'string' 
+          ? stream_types.split(',').map((s: string) => s.trim()) 
+          : stream_types)
+      : undefined;
 
     // Get credentials - extract broker name from source (e.g., alpaca_news -> alpaca)
     const brokerName = source.split('_')[0];
@@ -57,13 +64,14 @@ router.post('/:source/subscribe', async (req, res) => {
       await client.connect(client_json);
     }
 
-    // Subscribe to symbols
-    await client.subscribe(user_id, symbolArray, { nodeId: node_id });
+    // Subscribe to symbols with optional stream types
+    await client.subscribe(user_id, symbolArray, { nodeId: node_id, streamTypes });
 
     res.json({
       success: true,
       message: `Subscribed to ${source} for: ${symbolArray.join(', ')}`,
       symbols: symbolArray,
+      stream_types: streamTypes,
       node_id,
       subscriptions: client.getUserSubscriptions(user_id),
     });
@@ -83,7 +91,7 @@ router.post('/:source/subscribe', async (req, res) => {
 router.post('/:source/unsubscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, symbols, node_id } = req.body;
+    const { user_id, symbols, node_id, stream_types } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!symbols) return res.status(400).json({ error: 'symbols is required' });
@@ -100,13 +108,21 @@ router.post('/:source/unsubscribe', async (req, res) => {
       return res.status(400).json({ error: 'At least one symbol is required' });
     }
 
+    // Parse stream types
+    const streamTypes = stream_types
+      ? (typeof stream_types === 'string'
+          ? stream_types.split(',').map((s: string) => s.trim())
+          : stream_types)
+      : undefined;
+
     const client = WebSocketClient.getInstance(source);
-    await client.unsubscribe(user_id, symbolArray, { nodeId: node_id });
+    await client.unsubscribe(user_id, symbolArray, { nodeId: node_id, streamTypes });
 
     res.json({
       success: true,
       message: `Unsubscribed from ${source} for: ${symbolArray.join(', ')}`,
       symbols: symbolArray,
+      stream_types: streamTypes,
       node_id: node_id ?? null,
       subscriptions: client.getUserSubscriptions(user_id),
     });

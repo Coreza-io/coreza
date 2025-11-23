@@ -283,7 +283,7 @@ export class WebSocketClient {
   async subscribe(
     userId: string,
     symbols: string[],
-    options: { workflowId?: string; nodeId?: string } = {}
+    options: { workflowId?: string; nodeId?: string; streamTypes?: string[] } = {}
   ): Promise<boolean> {
     if (!this.credentials) {
       throw new Error("Not connected. Call connect() first.");
@@ -362,10 +362,10 @@ export class WebSocketClient {
     }
 
     if (newSymbols.length > 0) {
-      this.sendSubscription("subscribe", newSymbols);
+      this.sendSubscription("subscribe", newSymbols, options.streamTypes);
     }
 
-    await this.persistSubscriptionsToRedis(userId, nodeId);
+    await this.persistSubscriptionsToRedis(userId, nodeId, options.streamTypes);
 
     return true;
   }
@@ -373,7 +373,7 @@ export class WebSocketClient {
   async unsubscribe(
     userId: string,
     symbols: string[],
-    options: { workflowId?: string; nodeId?: string } = {}
+    options: { workflowId?: string; nodeId?: string; streamTypes?: string[] } = {}
   ): Promise<boolean> {
     const normalizedSymbols = symbols
       .map((s) => (s === "*" ? "*" : s.toUpperCase()))
@@ -450,7 +450,7 @@ export class WebSocketClient {
     }
 
     if (symbolsToUnsubscribe.length > 0 && this.isAuthenticated) {
-      this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)));
+      this.sendSubscription("unsubscribe", Array.from(new Set(symbolsToUnsubscribe)), options.streamTypes);
     }
 
     await this.cleanupRedisSubscriptions(userId, options.nodeId);
@@ -458,15 +458,15 @@ export class WebSocketClient {
     return true;
   }
 
-  private sendSubscription(action: "subscribe" | "unsubscribe", symbols: string[]): void {
+  private sendSubscription(action: "subscribe" | "unsubscribe", symbols: string[], streamTypes?: string[]): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
     const message =
       action === "subscribe"
-        ? this.config.makeSubscribeMessage(symbols)
-        : this.config.makeUnsubscribeMessage(symbols);
+        ? this.config.makeSubscribeMessage(symbols, streamTypes)
+        : this.config.makeUnsubscribeMessage(symbols, streamTypes);
 
     this.ws.send(JSON.stringify(message));
   }
@@ -575,7 +575,7 @@ export class WebSocketClient {
     return `ws:${this.config.id}:${suffix}`;
   }
 
-  private async persistSubscriptionsToRedis(userId: string, nodeId: string): Promise<void> {
+  private async persistSubscriptionsToRedis(userId: string, nodeId: string, streamTypes?: string[]): Promise<void> {
     try {
       const redis = getRedis();
       const key = this.getRedisKey(`subs:${userId}:${nodeId}`);
@@ -590,7 +590,8 @@ export class WebSocketClient {
       }
 
       const symbolsArray = Array.from(nodeSymbols);
-      await redis.set(key, JSON.stringify(symbolsArray), "EX", 86400 * 7); // 7 days TTL
+      const data = { symbols: symbolsArray, streamTypes: streamTypes || [] };
+      await redis.set(key, JSON.stringify(data), "EX", 86400 * 7); // 7 days TTL
     } catch (error) {
       console.error(`[${this.config.id}] Failed to persist subscriptions to Redis:`, error);
     }
@@ -607,7 +608,10 @@ export class WebSocketClient {
           const data = await redis.get(key);
           if (!data) continue;
 
-          const symbols = JSON.parse(data) as string[];
+          const parsed = JSON.parse(data);
+          const symbols = Array.isArray(parsed) ? parsed : (parsed.symbols || []);
+          const streamTypes = parsed.streamTypes || [];
+          
           const parts = key.split(":");
           if (parts.length < 4) continue;
 
@@ -627,7 +631,7 @@ export class WebSocketClient {
           const subscriberKey = this.getSubscriberKey(userId, nodeId);
           this.subscriberDirectory.set(subscriberKey, { userId, nodeId });
 
-          symbols.forEach((symbol) => {
+          symbols.forEach((symbol: string) => {
             nodeSymbols.add(symbol);
 
             if (!this.symbolSubscribers.has(symbol)) {
@@ -637,7 +641,7 @@ export class WebSocketClient {
           });
 
           console.log(
-            `[${this.config.id}] Restored ${symbols.length} symbols for ${userId}:${nodeId}`
+            `[${this.config.id}] Restored ${symbols.length} symbols for ${userId}:${nodeId}${streamTypes.length > 0 ? ` (types: ${streamTypes.join(',')})` : ''}`
           );
         } catch (parseError) {
           console.error(`[${this.config.id}] Failed to parse subscription data from ${key}:`, parseError);

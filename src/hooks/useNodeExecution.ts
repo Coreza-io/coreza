@@ -241,14 +241,16 @@ export function useNodeExecution({
           userId
         );
         payload.user_id = userId;
-        
-        // Auto-include node_id and workflow_id for all streaming nodes
-        if (definition?.executionMode === "streaming" && nodeId) {
-          payload.node_id = nodeId;
-          if (workflowId) {
-            payload.workflow_id = workflowId;
-          }
-        }
+        payload.node_id = nodeId;
+        payload.workflow_id = workflowId;
+
+        // // Auto-include node_id and workflow_id for all streaming nodes
+        // if (definition?.executionMode === "streaming" && nodeId) {
+        //   payload.node_id = nodeId;
+        //   if (workflowId) {
+        //     payload.workflow_id = workflowId;
+        //   }
+        // }
 
         const parsedSymbols: string[] = Array.isArray(payload.symbols)
           ? payload.symbols
@@ -409,7 +411,10 @@ export function useNodeExecution({
         let method = definition?.action?.method || "POST";
 
         if (url.includes("{{") && url.includes("}}")) {
-          url = url.replace(/\{\{(\w+)\}\}/g, (_, key) => fieldState[key] || "");
+          url = url.replace(
+            /\{\{(\w+)\}\}/g,
+            (_, key) => fieldState[key] || ""
+          );
         }
 
         if (method.includes("{{") && method.includes("}}")) {
@@ -563,7 +568,8 @@ export function useNodeExecution({
         }
 
         setLastOutput(outputData);
-        const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+        const finalOutput =
+          overrideOutput !== null ? overrideOutput : outputData;
         data.output = finalOutput;
         executionStore.setNodeData(nodeId!, {
           input: effectiveInput,
@@ -611,4 +617,3 @@ export function useNodeExecution({
     handleSubmit,
   };
 }
-

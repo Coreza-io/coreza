@@ -532,12 +532,9 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
       }
       return 'https://api.schwabapi.com/trader/v1';
     },
-    makeAuthHeaders: async (creds: any) => {
-      const refreshedCreds = await refreshSchwabTokenIfNeeded(creds);
-      return {
-        Authorization: `Bearer ${refreshedCreds.access_token}`,
-      };
-    },
+    makeAuthHeaders: (creds: any) => ({
+      Authorization: `Bearer ${creds.access_token}`,
+    }),
     operations: {
       get_account_numbers: {
         method: 'get',

@@ -1,7 +1,7 @@
 import * as schedule from "node-schedule";
 import { supabase } from "../config/supabase";
 import { formatInTimeZone } from "date-fns-tz";
-import { jobQueue } from "./queueFactory";
+import { bullMqJobQueue as jobQueue } from "./jobQueueManager";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {

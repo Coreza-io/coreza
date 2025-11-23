@@ -96,25 +96,25 @@ class GmailService extends BaseCommunicationService {
       const auth = this.createGmailAuth(credentials);
       const gmail = google.gmail({ version: "v1", auth });
 
-      let result;
+      let operationResult;
       switch (operation) {
         case "send":
         case "send_email":
-          result = await this.sendEmail(gmail, input);
+          operationResult = await this.sendEmail(gmail, input);
           break;
         case "messages":
         case "get_messages":
-          result = await this.getMessages(gmail, input);
+          operationResult = await this.getMessages(gmail, input);
           break;
         case "message":
         case "get_message":
-          result = await this.getMessage(gmail, input);
+          operationResult = await this.getMessage(gmail, input);
           break;
         default:
           throw createError(`Unsupported Gmail operation: ${operation}`, 400);
       }
 
-      return { success: true, data: result };
+      return { success: true, data: operationResult };
     } catch (error: any) {
       if (error.response?.status === 401) {
         return {
@@ -320,23 +320,23 @@ class WhatsAppService extends BaseCommunicationService {
         };
       }
 
-      let result;
+      let operationResult;
       switch (operation) {
         case "send":
         case "send_message":
-          result = await this.sendMessage(credentials, input);
+          operationResult = await this.sendMessage(credentials, input);
           break;
         case "send_template":
-          result = await this.sendTemplate(credentials, input);
+          operationResult = await this.sendTemplate(credentials, input);
           break;
         case "send_media":
-          result = await this.sendMedia(credentials, input);
+          operationResult = await this.sendMedia(credentials, input);
           break;
         case "get_templates":
-          result = await this.listTemplates(credentials);
+          operationResult = await this.listTemplates(credentials);
           break;
         case "verify_webhook":
-          result = this.verifyWebhook(input);
+          operationResult = this.verifyWebhook(input);
           break;
         default:
           throw createError(
@@ -345,7 +345,7 @@ class WhatsAppService extends BaseCommunicationService {
           );
       }
 
-      return { success: true, data: result };
+      return { success: true, data: operationResult };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

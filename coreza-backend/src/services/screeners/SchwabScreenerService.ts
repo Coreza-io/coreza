@@ -1,7 +1,7 @@
 import { BaseScreenerService } from "./BaseScreenerService";
 import { ScreenerInput, IScreenerService } from "./types";
 import axios from "axios";
-import { refreshSchwabTokenIfNeeded } from "../../config/brokers";
+import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 
 export class SchwabScreenerService
   extends BaseScreenerService
@@ -167,7 +167,7 @@ export class SchwabScreenerService
   };
 
   /**
-   * Get credentials with automatic token refresh using centralized logic
+   * Get credentials with automatic token refresh using generic OAuth system
    */
   private async getCredentialsWithRefresh(
     userId: string,
@@ -177,7 +177,7 @@ export class SchwabScreenerService
     const result = await this.getCredentials(userId, credentialId);
     
     // Flatten credentials structure (client_json + token_json)
-    let creds = {
+    const creds = {
       ...result.credentials?.client_json,
       ...result.credentials?.token_json,
     };
@@ -186,9 +186,12 @@ export class SchwabScreenerService
       throw new Error("Credentials not found or missing access token");
     }
 
-    // Use centralized token refresh logic from config/brokers.ts
-    creds = await refreshSchwabTokenIfNeeded(creds);
-
-    return creds;
+    // Use generic OAuth token refresh (works for any provider)
+    return await refreshOAuthTokenIfNeeded(
+      'schwab',
+      creds,
+      userId,
+      credentialId
+    );
   }
 }

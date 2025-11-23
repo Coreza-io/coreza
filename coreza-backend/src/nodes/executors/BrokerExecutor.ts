@@ -1,7 +1,8 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
-import { getBrokerConfig, refreshSchwabTokenIfNeeded } from "../../config/brokers";
+import { getBrokerConfig } from "../../config/brokers";
 import CredentialManager from "../../utils/credentialManager";
+import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -68,10 +69,15 @@ export class BrokerExecutor implements INodeExecutor {
 
       const creds = credentials.client_json;
 
-      // Handle Schwab token refresh if needed
+      // Handle OAuth token refresh if needed
       let workingCreds = creds;
       if (broker === "schwab") {
-        workingCreds = await refreshSchwabTokenIfNeeded(creds);
+        workingCreds = await refreshOAuthTokenIfNeeded(
+          'schwab',
+          creds,
+          context?.userId,
+          credential_id
+        );
       }
 
       // Build request to EXTERNAL broker API

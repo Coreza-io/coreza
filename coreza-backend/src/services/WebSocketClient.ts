@@ -197,6 +197,7 @@ export class WebSocketClient {
       }
 
       WebSocketManager.sendToUser(info.userId, {
+        status: "streaming",
         type: this.config.id,
         payload: {
           nodeId: info.nodeId,

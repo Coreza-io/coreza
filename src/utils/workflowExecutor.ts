@@ -425,7 +425,12 @@ export class WorkflowExecutor {
         if (
           output &&
           output.status === "streaming" &&
-          (output.news || output.data)
+          (output.news ||
+            output.data ||
+            output.trade ||
+            output.quote ||
+            output.bar ||
+            output.dailyBar)
         ) {
           clearTimeout(timeoutId);
           console.log(

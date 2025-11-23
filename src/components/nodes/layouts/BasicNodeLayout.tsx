@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
+import { GmailAuthModal } from "@/components/auth/GmailAuthModal";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
@@ -546,6 +547,27 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         <Suspense fallback={<div>Loading...</div>}>
           {definition.auth === 'SchwabAuthModal' ? (
             <SchwabAuthModal
+              isOpen={showAuth}
+              onClose={() => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              onSuccess={(credentialId) => {
+                setShowAuth(false);
+                (definition.fields || []).forEach((f: any) => {
+                  if (f.type === "select" && f.optionsSource === "credentialsApi") {
+                    fetchCredentials(f.key);
+                  }
+                });
+              }}
+              userId={user?.id || ''}
+            />
+          ) : definition.auth === 'GmailAuthModal' ? (
+            <GmailAuthModal
               isOpen={showAuth}
               onClose={() => {
                 setShowAuth(false);

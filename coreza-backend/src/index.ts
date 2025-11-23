@@ -36,6 +36,7 @@ import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
 import screenerRoutes from './routes/screener';
 import brokerRoutes from './routes/broker';
+import oauthRoutes from './routes/oauth';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -108,6 +109,8 @@ app.use('/screener', screenerRoutes);
 console.log('✅ Screener route mounted');
 app.use('/broker', brokerRoutes);
 console.log('✅ Broker route mounted');
+app.use('/oauth', oauthRoutes);
+console.log('✅ OAuth route mounted');
 console.log('📍 All routes mounted successfully');
 
 // Error handling

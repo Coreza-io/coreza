@@ -144,7 +144,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
         session.redirectUri
       );
 
-      const scopes = body.scope || session.scope || undefined;
+      const scopes = body.scope || session.scope || this.defaultScopes;
 
       return oauth2Client.generateAuthUrl({
         access_type: "offline",

@@ -7,34 +7,8 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": "GenericAuthModal",
-  "authFields": [
-    {
-      "key": "credential_name",
-      "label": "Credential Label",
-      "type": "text",
-      "default": "Personal Gmail"
-    },
-    {
-      "key": "client_id",
-      "label": "Client ID",
-      "type": "text",
-      "placeholder": "Client Id"
-    },
-    {
-      "key": "client_secret",
-      "label": "Client Secret",
-      "type": "password",
-      "placeholder": "Client Secret key"
-    },
-    {
-      "key": "redirect_uri",
-      "label": "OAuth Redirect URL",
-      "type": "static",
-      "value": "http://localhost:8000/gmail/oauth2callback"
-    }
-  ],
-  "authAction": { "url": "/gmail/auth", "method": "POST" },
+  "auth": "GmailAuthModal",
+  "authAction": { "url": "/oauth/gmail/generate-auth-url", "method": "POST" },
 
   "icon": "/assets/icons/gmail.svg",
   "size": { "width": 340, "height": 340 },

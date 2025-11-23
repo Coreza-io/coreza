@@ -59,6 +59,17 @@ const workflowWorker = new Worker(
         edges
       );
 
+      // Save successful result to database
+      await supabase
+        .from("workflow_runs")
+        .update({
+          status: "completed",
+          result: result,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+
+      console.log(`✅ Workflow run ${runId} completed successfully`);
       return result;
     } catch (error) {
       const normalized = normalizeError(error);
@@ -66,6 +77,16 @@ const workflowWorker = new Worker(
         `❌ Workflow execution failed for run ${runId}:`,
         normalized
       );
+
+      // Save error to database
+      await supabase
+        .from("workflow_runs")
+        .update({
+          status: "failed",
+          error_message: normalized.message,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
 
       throw normalized;
     }

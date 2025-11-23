@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,47 +13,97 @@ import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
-interface GmailAuthModalProps {
+interface GenericOAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (credentialId: string) => void;
   userId: string;
+  provider: string;
+}
+
+interface ProviderConfig {
+  id: string;
+  name: string;
+  authFlowType: "authorization_code" | "redirect_url";
+  docsUrl: string;
+  authUrlDisplayName: string;
+  callbackPlaceholder: string;
+  callbackHelpText: string;
+  fields: Array<{
+    key: string;
+    label: string;
+    type: string;
+    placeholder: string;
+    required: boolean;
+  }>;
 }
 
 type Step = "credentials" | "authorize" | "success";
 
-export function GmailAuthModal({
+export function GenericOAuthModal({
   isOpen,
   onClose,
   onSuccess,
   userId,
-}: GmailAuthModalProps) {
+  provider,
+}: GenericOAuthModalProps) {
   const [step, setStep] = useState<Step>("credentials");
   const [loading, setLoading] = useState(false);
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(
+    null
+  );
 
-  // Step 1: Credentials
-  const [credentialName, setCredentialName] = useState("Personal Gmail");
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [redirectUri, setRedirectUri] = useState("");
+  // Dynamic form fields
+  const [fields, setFields] = useState<Record<string, string>>({});
 
   // Step 2: Authorization
   const [authUrl, setAuthUrl] = useState("");
   const [tempId, setTempId] = useState("");
-  const [authCode, setAuthCode] = useState("");
+  const [callback, setCallback] = useState("");
 
   // Step 3: Success
   const [credentialId, setCredentialId] = useState("");
 
+  // Fetch provider configuration
+  useEffect(() => {
+    if (isOpen && provider) {
+      fetch(`${import.meta.env.VITE_API_URL}/oauth/providers`)
+        .then((res) => res.json())
+        .then((data) => {
+          const config = data.providers.find(
+            (p: ProviderConfig) => p.id === provider
+          );
+          if (config) {
+            setProviderConfig(config);
+            // Initialize fields with default values
+            const initialFields: Record<string, string> = {};
+            config.fields.forEach((field) => {
+              if (field.key === "credential_name") {
+                initialFields[field.key] = field.placeholder;
+              } else {
+                initialFields[field.key] = "";
+              }
+            });
+            setFields(initialFields);
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to fetch provider config:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load OAuth provider configuration",
+            variant: "destructive",
+          });
+        });
+    }
+  }, [isOpen, provider]);
+
   const handleReset = () => {
     setStep("credentials");
-    setCredentialName("Personal Gmail");
-    setClientId("");
-    setClientSecret("");
-    setRedirectUri("");
+    setFields({});
     setAuthUrl("");
     setTempId("");
-    setAuthCode("");
+    setCallback("");
     setCredentialId("");
   };
 
@@ -63,10 +113,17 @@ export function GmailAuthModal({
   };
 
   const handleGenerateAuthUrl = async () => {
-    if (!clientId.trim() || !clientSecret.trim() || !redirectUri.trim()) {
+    if (!providerConfig) return;
+
+    // Validate required fields
+    const missingFields = providerConfig.fields
+      .filter((f) => f.required && !fields[f.key]?.trim())
+      .map((f) => f.label);
+
+    if (missingFields.length > 0) {
       toast({
         title: "Missing Information",
-        description: "Please enter Client ID, Client Secret, and Redirect URI",
+        description: `Please enter: ${missingFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -75,15 +132,11 @@ export function GmailAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/gmail/generate-auth-url`,
+        `${import.meta.env.VITE_API_URL}/oauth/${provider}/generate-auth-url`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-          }),
+          body: JSON.stringify(fields),
         }
       );
 
@@ -99,7 +152,7 @@ export function GmailAuthModal({
 
       toast({
         title: "Authorization URL Generated",
-        description: "Click the link below to authorize your Gmail account",
+        description: `Click the link below to authorize your ${providerConfig.name} account`,
       });
     } catch (error: any) {
       toast({
@@ -113,10 +166,12 @@ export function GmailAuthModal({
   };
 
   const handleCompleteConnection = async () => {
-    if (!authCode.trim()) {
+    if (!providerConfig) return;
+
+    if (!callback.trim()) {
       toast({
-        title: "Missing Authorization Code",
-        description: "Please paste the authorization code from Google",
+        title: `Missing ${providerConfig.authFlowType === "authorization_code" ? "Code" : "URL"}`,
+        description: `Please paste the ${providerConfig.authFlowType === "authorization_code" ? "authorization code" : "redirect URL"}`,
         variant: "destructive",
       });
       return;
@@ -124,17 +179,24 @@ export function GmailAuthModal({
 
     setLoading(true);
     try {
+      const payload: any = {
+        temp_id: tempId,
+        credential_name: fields.credential_name,
+        user_id: userId,
+      };
+
+      if (providerConfig.authFlowType === "authorization_code") {
+        payload.code = callback.trim();
+      } else {
+        payload.redirect_url = callback.trim();
+      }
+
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/gmail/exchange-token`,
+        `${import.meta.env.VITE_API_URL}/oauth/${provider}/exchange-token`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            temp_id: tempId,
-            code: authCode.trim(),
-            credential_name: credentialName,
-            user_id: userId,
-          }),
+          body: JSON.stringify(payload),
         }
       );
 
@@ -149,7 +211,7 @@ export function GmailAuthModal({
 
       toast({
         title: "Success!",
-        description: "Your Gmail account has been connected successfully",
+        description: `Your ${providerConfig.name} account has been connected successfully`,
       });
 
       onSuccess(data.credential_id);
@@ -172,68 +234,42 @@ export function GmailAuthModal({
     });
   };
 
+  if (!providerConfig) {
+    return null;
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Connect Gmail Account</DialogTitle>
+          <DialogTitle>Connect {providerConfig.name} Account</DialogTitle>
           <DialogDescription>
             {step === "credentials" &&
-              "Enter your Google OAuth credentials to get started"}
+              `Enter your ${providerConfig.name} OAuth credentials to get started`}
             {step === "authorize" &&
-              "Authorize Coreza to access your Gmail account"}
-            {step === "success" && "Your Gmail account is now connected!"}
+              `Authorize Coreza to access your ${providerConfig.name} account`}
+            {step === "success" &&
+              `Your ${providerConfig.name} account is now connected!`}
           </DialogDescription>
         </DialogHeader>
 
         {/* Step 1: Enter Credentials */}
         {step === "credentials" && (
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="credentialName">Credential Name</Label>
-              <Input
-                id="credentialName"
-                value={credentialName}
-                onChange={(e) => setCredentialName(e.target.value)}
-                placeholder="Personal Gmail"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="clientId">Client ID</Label>
-              <Input
-                id="clientId"
-                type="password"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="Enter your Google Client ID"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="clientSecret">Client Secret</Label>
-              <Input
-                id="clientSecret"
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                placeholder="Enter your Google Client Secret"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="redirectUri">Redirect URI</Label>
-              <Input
-                id="redirectUri"
-                value={redirectUri}
-                onChange={(e) => setRedirectUri(e.target.value)}
-                placeholder="http://localhost:8000/gmail/oauth2callback"
-              />
-              <p className="text-sm text-muted-foreground">
-                This must match one of the redirect URIs configured in your
-                Google Cloud Console
-              </p>
-            </div>
+            {providerConfig.fields.map((field) => (
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={field.key}>{field.label}</Label>
+                <Input
+                  id={field.key}
+                  type={field.type}
+                  value={fields[field.key] || ""}
+                  onChange={(e) =>
+                    setFields({ ...fields, [field.key]: e.target.value })
+                  }
+                  placeholder={field.placeholder}
+                />
+              </div>
+            ))}
 
             <div className="rounded-md bg-muted p-3 text-sm">
               <div className="flex items-start gap-2">
@@ -241,15 +277,14 @@ export function GmailAuthModal({
                 <div>
                   <p className="font-medium">Where to find your credentials:</p>
                   <p className="text-muted-foreground mt-1">
-                    Get your Client ID and Client Secret from Google Cloud
-                    Console at{" "}
+                    Get your credentials from{" "}
                     <a
-                      href="https://console.cloud.google.com/apis/credentials"
+                      href={providerConfig.docsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline"
                     >
-                      console.cloud.google.com
+                      {providerConfig.name} Developer Portal
                     </a>
                   </p>
                 </div>
@@ -279,7 +314,7 @@ export function GmailAuthModal({
                   onClick={() => window.open(authUrl, "_blank")}
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
-                  Open Google Authorization
+                  Open {providerConfig.authUrlDisplayName}
                 </Button>
                 <Button
                   variant="ghost"
@@ -292,22 +327,23 @@ export function GmailAuthModal({
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="authCode">
-                Step 2: Paste the authorization code here
+              <Label htmlFor="callback">
+                Step 2: Paste the{" "}
+                {providerConfig.authFlowType === "authorization_code"
+                  ? "authorization code"
+                  : "redirect URL"}{" "}
+                here
               </Label>
               <Textarea
-                id="authCode"
-                value={authCode}
-                onChange={(e) => setAuthCode(e.target.value)}
-                placeholder="4/0AfJohXk..."
+                id="callback"
+                value={callback}
+                onChange={(e) => setCallback(e.target.value)}
+                placeholder={providerConfig.callbackPlaceholder}
                 rows={4}
                 className="font-mono text-sm"
               />
               <p className="text-sm text-muted-foreground">
-                After authorizing in Google, you'll receive an authorization code. 
-                <strong className="text-foreground"> Copy the ENTIRE code</strong> (usually starts with "4/0A") 
-                and paste it above. The code is valid for 10 minutes and can only be used once.
-                If it fails, restart the process to get a new code.
+                {providerConfig.callbackHelpText}
               </p>
             </div>
 
@@ -334,9 +370,11 @@ export function GmailAuthModal({
                   Connection Successful!
                 </h3>
                 <p className="text-muted-foreground mt-2">
-                  Your Gmail account "
-                  <span className="font-medium">{credentialName}</span>" is now
-                  connected.
+                  Your {providerConfig.name} account "
+                  <span className="font-medium">
+                    {fields.credential_name}
+                  </span>
+                  " is now connected.
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
                   You can now use this credential in your workflows. Access

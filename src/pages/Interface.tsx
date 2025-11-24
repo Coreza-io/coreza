@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
@@ -15,6 +15,10 @@ import Settings from "./Settings";
 const Interface = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check if current path is a workflow editor page
+  const isWorkflowEditorPage = location.pathname.includes('/workflow/');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -40,8 +44,8 @@ const Interface = () => {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
-          <Header />
-          <main className="flex-1 p-6">
+          {!isWorkflowEditorPage && <Header />}
+          <main className={`flex-1 ${!isWorkflowEditorPage ? 'p-6' : ''}`}>
             <Routes>
               <Route index element={<Dashboard />} />
               <Route path="projects" element={<Projects />} />

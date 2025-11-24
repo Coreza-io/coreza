@@ -205,7 +205,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionLineComponent={EdgeManager.PlugConnectionLine}
-          connectionLineType={ConnectionLineType.SmoothStep}
+          connectionLineType={ConnectionLineType.Bezier}
           fitView
           className={cn(
             "workflow-canvas",

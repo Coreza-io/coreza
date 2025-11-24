@@ -10,6 +10,7 @@ import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import {
   FemalePlugIcon,
   MalePlugIcon,
+  ConnectedSwitchIcon,
 } from "@/components/workflow/EdgeManager";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import {
@@ -40,8 +41,8 @@ const ROTATION_MAP: Record<HandlePosition, number> = {
 };
 
 const HANDLE_TRANSFORM_MAP: Record<HandlePosition, string> = {
-  left: "translate(-50%, -50%)",
-  right: "translate(150%, -50%)",
+  left: "translate(-55%, -50%)",
+  right: "translate(110%, -50%)",
   top: "translate(-50%, -150%)",
   bottom: "translate(-50%, 50%)",
 };
@@ -277,6 +278,18 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const normalizedType = rawType.toLowerCase();
             const isInputHandle =
               normalizedType === "target" || normalizedType === "input";
+            
+            // Check if this handle is connected
+            const isConnected = edges.some((edge) => {
+              if (isInputHandle) {
+                // For input handles, check if this node is a target
+                return edge.target === nodeId && edge.targetHandle === h.id;
+              } else {
+                // For output handles, check if this node is a source
+                return edge.source === nodeId && edge.sourceHandle === h.id;
+              }
+            });
+            
             const orientationClass = `plug-handle--${pos}`;
             const handleClass = `plug-handle ${orientationClass} ${
               isInputHandle ? "plug-handle--female" : "plug-handle--male"
@@ -287,6 +300,23 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const iconStyle = {
               transform: `${iconTranslation} rotate(${rotation}deg)`,
             };
+            
+            // Determine which icon to show
+            let handleIcon = null;
+            if (isInputHandle) {
+              // For input handles: show ConnectedSwitchIcon if connected, otherwise FemalePlugIcon
+              handleIcon = isConnected ? (
+                <ConnectedSwitchIcon size={20} style={iconStyle} />
+              ) : (
+                <FemalePlugIcon size={20} style={iconStyle} />
+              );
+            } else {
+              // For output handles: hide icon if connected, otherwise show MalePlugIcon
+              handleIcon = isConnected ? null : (
+                <MalePlugIcon size={20} style={iconStyle} />
+              );
+            }
+            
             return (
               <Handle
                 key={h.id}
@@ -301,11 +331,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 }}
                 className={handleClass}
               >
-                {isInputHandle ? (
-                  <FemalePlugIcon size={20} style={iconStyle} />
-                ) : (
-                  <MalePlugIcon size={20} style={iconStyle} />
-                )}
+                {handleIcon}
               </Handle>
             );
           });

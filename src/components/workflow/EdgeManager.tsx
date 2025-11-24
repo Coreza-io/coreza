@@ -3,6 +3,7 @@ import {
   ConnectionLineComponentProps,
   EdgeProps,
   getSmoothStepPath,
+  getBezierPath,
   MarkerType,
 } from "@xyflow/react";
 import { Plus, Trash2 } from "lucide-react";
@@ -73,6 +74,14 @@ interface PlugIconProps {
   style?: React.CSSProperties;
 }
 
+const CONNECTED_SWITCH = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" width="24" height="24">
+  <!-- Female plug path -->
+  <path d="M23.707,0.293c-0.391-0.391-1.023-0.391-1.414,0l-2.58,2.58c-2.004-1.344-4.749-1.132-6.519,0.638l-1.135,1.135l-0.353-0.353c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l8,8c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-0.353-0.353l1.135-1.135c1.77-1.769,1.982-4.515,0.638-6.519l2.58-2.58c0.391-0.391,0.391-1.023,0-1.414Z" fill="#64748b"/>
+  
+  <!-- Male plug path -->
+  <path d="M19.707,5.707l-2.293,2.293-1.414-1.414,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0l-2.293,2.293-1.879-1.879c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l0.352,0.352-1.134,1.135c-1.77,1.769-1.982,4.515-0.638,6.519l-2.58,2.58c-0.391,0.391-0.391,1.023,0,1.414c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293l2.58-2.58c0.865,0.58,1.868,0.871,2.871,0.871,1.321,0,2.642-0.503,3.647-1.509l1.135-1.134l0.352,0.352c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z" fill="#64748b"/>
+</svg>
+`
 const mergeIconStyle = (style?: React.CSSProperties): React.CSSProperties => ({
   pointerEvents: "none",
   transformOrigin: "center",
@@ -110,6 +119,17 @@ export const FemalePlugIcon: React.FC<PlugIconProps> = ({
     style={mergeIconStyle(style)}
   >
     <path d={FEMALE_PLUG_PATH} fill={color} />
+  </svg>
+);
+export const ConnectedSwitchIcon: React.FC<PlugIconProps> = ({
+  color = "#64748b",
+  size = 24,
+  className,
+  style,
+}) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width={size} height={size} className={className} style={mergeIconStyle(style)}>
+    <path d="M23.707,0.293c-0.391-0.391-1.023-0.391-1.414,0l-2.58,2.58c-2.004-1.344-4.749-1.132-6.519,0.638l-1.135,1.135l-0.353-0.353c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l8,8c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-0.353-0.353l1.135-1.135c1.77-1.769,1.982-4.515,0.638-6.519l2.58-2.58c0.391-0.391,0.391-1.023,0-1.414Z" fill={color} />
+    <path d="M19.707,5.707l-2.293,2.293-1.414-1.414,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0l-2.293,2.293-1.879-1.879c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l0.352,0.352-1.134,1.135c-1.77,1.769-1.982,4.515-0.638,6.519l-2.58,2.58c-0.391,0.391-0.391,1.023,0,1.414c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293l2.58-2.58c0.865,0.58,1.868,0.871,2.871,0.871,1.321,0,2.642-0.503,3.647-1.509l1.135-1.134l0.352,0.352c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z" fill={color} />
   </svg>
 );
 
@@ -155,6 +175,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const [hovered, setHovered] = useState(false);
   const computedControls = controls.length > 0 ? controls : buildControls(data);
   const isSelfLoop = source === target;
+  const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
 
   if (isSelfLoop) {
     return (
@@ -162,9 +183,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         id={id}
         source={source}
         target={target}
-        sourceX={sourceX}
+        sourceX={sourceX - 25}
         sourceY={sourceY}
-        targetX={targetX}
+        targetX={targetX + 25}
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
@@ -188,20 +209,31 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
     typeof strokeWidthValue === "number"
       ? strokeWidthValue
       : strokeWidthValue
-      ? Number.parseFloat(String(strokeWidthValue)) || 3
-      : 3;
+        ? Number.parseFloat(String(strokeWidthValue)) || 3
+        : 3;
 
   const glowColor = lightenHex(cordColor, 0.5);
   const sparkColor = lightenHex(cordColor, 0.7);
   const sparkOuter = lightenHex(cordColor, 0.85);
   const executing = isExecutingClass(className);
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
+  // Extend edge to reach plug icons
+  const extensionDistance = -25;
+  const extendedSourceX = sourcePosition === "left" ? sourceX - extensionDistance :
+    sourcePosition === "right" ? sourceX + extensionDistance : sourceX;
+  const extendedSourceY = sourcePosition === "top" ? sourceY - extensionDistance :
+    sourcePosition === "bottom" ? sourceY + extensionDistance : sourceY;
+  const extendedTargetX = targetPosition === "left" ? targetX - extensionDistance :
+    targetPosition === "right" ? targetX + extensionDistance : targetX;
+  const extendedTargetY = targetPosition === "top" ? targetY - extensionDistance :
+    targetPosition === "bottom" ? targetY + extensionDistance : targetY;
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX: extendedSourceX,
+    sourceY: extendedSourceY,
     sourcePosition,
-    targetX,
-    targetY,
+    targetX: extendedTargetX,
+    targetY: extendedTargetY,
     targetPosition,
   });
 
@@ -210,13 +242,11 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const midX = (sourceX + targetX) / 2;
   const midY = (sourceY + targetY) / 2;
 
-  const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
-
   return (
     <g
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="plug-edge"
+      className="plug-edge p-2"
     >
       <defs>
         <radialGradient
@@ -231,11 +261,18 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           <stop offset="1" stopColor={sparkColor} stopOpacity={0} />
         </radialGradient>
       </defs>
+      {/* Invisible wider path for better hover detection */}
       <path
         d={edgePath}
-        className={`plug-edge__glow${
-          executing ? " plug-edge__glow--active" : ""
-        }`}
+        stroke="transparent"
+        strokeWidth={3}
+        fill="none"
+        style={{ pointerEvents: "stroke" }}
+      />
+      <path
+        d={edgePath}
+        className={`plug-edge__glow${executing ? " plug-edge__glow--active" : ""
+          }`}
         stroke={glowColor}
         strokeWidth={strokeWidth + 6}
         strokeLinecap="round"
@@ -262,7 +299,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           ...customStyle,
           strokeLinecap: "round",
           strokeLinejoin: "round",
-          pointerEvents: "stroke",
+          pointerEvents: "none",
         }}
       />
       <circle
@@ -270,9 +307,8 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         cy={midY}
         r={6}
         fill={`url(#${sparkId})`}
-        className={`plug-edge__spark${
-          executing ? " plug-edge__spark--active" : ""
-        }`}
+        className={`plug-edge__spark${executing ? " plug-edge__spark--active" : ""
+          }`}
       />
       {data?.label && (
         <text className="react-flow__edge-text">
@@ -283,18 +319,19 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       )}
       {computedControls.length > 0 && hovered && (
         <foreignObject
-          x={labelX - 24}
-          y={labelY - 12}
-          width={48}
-          height={24}
-          style={{ pointerEvents: "all" }}
+          x={midX - 30}
+          y={midY - 15}
+          width={60}
+          height={30}
+          style={{ pointerEvents: "all", overflow: "visible" }}
         >
           <div
             style={{
               display: "flex",
-              gap: "4px",
+              gap: "6px",
               justifyContent: "center",
               alignItems: "center",
+              height: "100%",
             }}
           >
             {computedControls.map((ctrl, i) => (
@@ -304,10 +341,23 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
                 onClick={ctrl.onClick}
                 style={{
                   background: "#fff",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  padding: "2px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  padding: "10px",
                   cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f3f4f6";
+                  e.currentTarget.style.transform = "scale(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.transform = "scale(1)";
                 }}
               >
                 {ctrl.icon}
@@ -337,20 +387,22 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
     typeof style.stroke === "string"
       ? style.stroke
       : connectionStatus === "invalid"
-      ? "#ef4444"
-      : "#64748b";
+        ? "#ef4444"
+        : "#64748b";
 
   const strokeWidth =
     typeof style.strokeWidth === "number"
       ? style.strokeWidth
       : style.strokeWidth
-      ? Number.parseFloat(String(style.strokeWidth)) || 3
-      : 3;
+        ? Number.parseFloat(String(style.strokeWidth)) || 3
+        : 3;
 
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const glowColor = lightenHex(cordColor, 0.5);
 
-  const [edgePath] = getSmoothStepPath({
+  // Extend connection line to reach plug icons
+
+  const [edgePath] = getBezierPath({
     sourceX: fromX,
     sourceY: fromY,
     sourcePosition: fromPosition,
@@ -483,13 +535,13 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         break;
     }
   } else {
-    // Regular edge path
-    pathD = getSmoothStepPath({
-      sourceX,
-      sourceY,
+    // // Regular edge path - extend to reach plug icons
+    pathD = getBezierPath({
+      sourceX: sourceX,
+      sourceY: sourceY,
       sourcePosition,
-      targetX,
-      targetY,
+      targetX: targetX,
+      targetY: targetY,
       targetPosition,
     })[0];
     midX = (sourceX + targetX) / 2;
@@ -503,6 +555,14 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      {/* Invisible wider path for better hover detection */}
+      <path
+        d={pathD}
+        stroke="transparent"
+        strokeWidth={1}
+        fill="none"
+        style={{ pointerEvents: "stroke" }}
+      />
       <path
         id={id}
         className="react-flow__edge-path"
@@ -511,7 +571,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           ...style,
           strokeLinecap: "round",
           strokeLinejoin: "round",
-          pointerEvents: "stroke",
+          pointerEvents: "none",
         }}
         markerEnd={markerEnd}
       />
@@ -524,18 +584,19 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       )}
       {controls.length > 0 && hovered && (
         <foreignObject
-          x={midX - 24}
-          y={midY - 12}
-          width={48}
-          height={24}
-          style={{ pointerEvents: "all" }}
+          x={midX - 30}
+          y={midY - 15}
+          width={60}
+          height={30}
+          style={{ pointerEvents: "all", overflow: "visible" }}
         >
           <div
             style={{
               display: "flex",
-              gap: "4px",
+              gap: "6px",
               justifyContent: "center",
               alignItems: "center",
+              height: "100%",
             }}
           >
             {controls.map((ctrl, i) => (
@@ -545,10 +606,23 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
                 onClick={ctrl.onClick}
                 style={{
                   background: "#fff",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  padding: "2px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  padding: "10px",
                   cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f3f4f6";
+                  e.currentTarget.style.transform = "scale(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.transform = "scale(1)";
                 }}
               >
                 {ctrl.icon}

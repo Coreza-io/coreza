@@ -19,8 +19,8 @@ export const useAuth = () => {
   return context;
 };
 
-// Inactivity timeout in milliseconds (default: 7 hours)
-const INACTIVITY_TIMEOUT = parseInt(import.meta.env.VITE_INACTIVITY_TIMEOUT || '25200000'); // 7 hours
+// Inactivity timeout in milliseconds (default: 4 hours)
+const INACTIVITY_TIMEOUT = parseInt(import.meta.env.VITE_INACTIVITY_TIMEOUT || '14400000'); // 4 hours
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);

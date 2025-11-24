@@ -697,7 +697,7 @@
 }
 
 .react-flow__nodes {
-  z-index: 1 !important;
+  z-index: 100 !important;
 }
 
 .react-flow__edge-path {

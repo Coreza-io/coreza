@@ -1077,7 +1077,7 @@ const WorkflowEditorContent = () => {
   }, [nodes, authUser?.id, isNewWorkflow, handleSaveWorkflow]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] w-full">
+    <div className="flex flex-col h-[calc(100vh)] w-full">
       {/* Workflow Header - Fixed at top */}
       <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-4">
@@ -1149,7 +1149,7 @@ const WorkflowEditorContent = () => {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             connectionLineComponent={EdgeManager.PlugConnectionLine}
-            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineType={ConnectionLineType.Bezier}
             fitView
             className={cn(
               "workflow-canvas",

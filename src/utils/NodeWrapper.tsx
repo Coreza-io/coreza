@@ -419,7 +419,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {isExpanded && (
           <CardContent className="space-y-3 p-4">
             <div className="absolute top-2 right-2 z-10 flex gap-1">
-              <Button
+              {/* <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleDeleteClick}
@@ -427,7 +427,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-6 w-6 p-0"
               >
                 <Trash2 className="h-4 w-4" />
-              </Button>
+              </Button> */}
               <Button
                 variant="ghost"
                 size="sm"

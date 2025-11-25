@@ -360,6 +360,26 @@
     }
   }
 
+  @keyframes plug-drag-wobble {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.08);
+    }
+  }
+
+  @keyframes plug-pulse {
+    0%, 100% {
+      opacity: 0.2;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(1.3);
+    }
+  }
+
   .plug-edge__glow {
     opacity: 0.2;
     filter: blur(10px);
@@ -399,6 +419,23 @@
     pointer-events: none;
   }
 
+  /* .plug-edge__plug-dragging-inner {
+    animation: plug-drag-wobble 1s ease-in-out infinite;
+    transform-origin: center center;
+  }
+
+  .plug-edge__plug-dragging-inner path {
+    transform-box: fill-box;
+  }
+
+  .plug-edge__plug--anchored {
+    transform-origin: center;
+  }
+
+  .plug-edge__plug-pulse {
+    animation: plug-pulse 1.5s ease-in-out infinite;
+  } */
+
   .plug-edge__plug-shape {
     transform-box: fill-box;
     transform-origin: center;
@@ -421,6 +458,18 @@
 
   .plug-edge__cord.executing-edge~.plug-edge__plug .plug-edge__plug-shape path {
     filter: drop-shadow(0 0 8px currentColor);
+  }
+
+  /* Connection line animation styles */
+  .plug-edge--connection .plug-edge__glow--connecting {
+    opacity: 0.4;
+    filter: blur(12px);
+    animation: plug-edge-spark 1.2s ease-in-out infinite;
+  }
+
+  .plug-edge--connection .plug-edge__cord--connecting {
+    stroke-dasharray: 10 5;
+    animation: plug-edge-flow 0.8s linear infinite;
   }
 
   .electric-border-effect {
@@ -703,4 +752,25 @@
 .react-flow__edge-path {
   position: relative;
   z-index: 3 !important;
+}
+
+/* Custom cursor for edge interactions */
+.react-flow__edge:hover,
+.react-flow__edge.selected,
+.plug-edge:hover {
+  cursor: grab !important;
+}
+
+.react-flow__edge:active,
+.react-flow__edge.selected:active {
+  cursor: grabbing !important;
+}
+
+/* Connection line cursor */
+.react-flow__connection-path {
+  cursor: crosshair !important;
+}
+
+.plug-edge--connection {
+  cursor: crosshair !important;
 }

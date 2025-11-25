@@ -39,6 +39,16 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -74,6 +84,7 @@ export function AppSidebar() {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const [profile, setProfile] = useState<{ first_name?: string; last_name?: string } | null>(null);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -107,8 +118,13 @@ export function AppSidebar() {
     return name.substring(0, 2).toUpperCase();
   };
 
-  const handleLogout = async () => {
+  const handleLogoutClick = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = async () => {
     await signOut();
+    setShowLogoutDialog(false);
     navigate('/login');
   };
 
@@ -131,7 +147,8 @@ export function AppSidebar() {
       className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300`}
     >
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 px-4 py-4">
+        <div className="flex items-center gap-3 px-4 py-4 cursor-pointer"
+        onClick={() => navigate('/')}>
           <div className="p-2 bg-gradient-primary rounded-lg shadow-glow">
             <TrendingUp className="h-6 w-6 text-primary-foreground" />
           </div>
@@ -306,7 +323,7 @@ export function AppSidebar() {
 
             {/* Logout */}
             <DropdownMenuItem
-              onClick={handleLogout}
+              onClick={handleLogoutClick}
               className="cursor-pointer text-destructive focus:text-destructive"
             >
               <LogOut className="h-4 w-4 mr-2" />
@@ -315,6 +332,24 @@ export function AppSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
+
+      {/* Logout Confirmation Dialog */}
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Logout</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to log out? Any unsaved changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmLogout} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Logout
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sidebar>
   );
 }

@@ -89,7 +89,7 @@ const mergeIconStyle = (style?: React.CSSProperties): React.CSSProperties => ({
 });
 
 export const MalePlugIcon: React.FC<PlugIconProps> = ({
-  color = "#64748b",
+  color = "#6b7280",
   size = 24,
   className,
   style,
@@ -106,7 +106,7 @@ export const MalePlugIcon: React.FC<PlugIconProps> = ({
 );
 
 export const FemalePlugIcon: React.FC<PlugIconProps> = ({
-  color = "#64748b",
+  color = "#6b7280",
   size = 24,
   className,
   style,
@@ -122,7 +122,7 @@ export const FemalePlugIcon: React.FC<PlugIconProps> = ({
   </svg>
 );
 export const ConnectedSwitchIcon: React.FC<PlugIconProps> = ({
-  color = "#64748b",
+  color = "#6b7280",
   size = 24,
   className,
   style,
@@ -400,8 +400,6 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const glowColor = lightenHex(cordColor, 0.5);
 
-  // Extend connection line to reach plug icons
-
   const [edgePath] = getBezierPath({
     sourceX: fromX,
     sourceY: fromY,
@@ -423,9 +421,19 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const degrees = (angle * 180) / Math.PI;
   return (
     <g className="plug-edge plug-edge--connection">
+      <defs>
+        <filter id="plug-glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
       <path
         d={edgePath}
-        className="plug-edge__glow"
+        className="plug-edge__glow plug-edge__glow--connecting"
         stroke={glowColor}
         strokeWidth={strokeWidth + 6}
         strokeLinecap="round"
@@ -435,7 +443,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       />
       <path
         d={edgePath}
-        className="plug-edge__cord"
+        className="plug-edge__cord plug-edge__cord--connecting"
         stroke={cordColor}
         strokeWidth={strokeWidth}
         fill="none"
@@ -447,6 +455,21 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           pointerEvents: "stroke",
         }}
       />
+
+      {/* Male plug that follows cursor */}
+      <g transform={`translate(${toX + 5}, ${toY - 15})`}>
+        <g
+          transform={`rotate(${45})`}
+          className="plug-edge__plug-dragging-inner"
+        >
+          <path
+            d={MALE_PLUG_PATH}
+            fill={cordColor}
+            transform="translate(0, 0) scale(0.9)"
+            style={{ filter: "drop-shadow(0 0 6px currentColor)" }}
+          />
+        </g>
+      </g>
     </g>
   );
 };

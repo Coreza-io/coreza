@@ -58,7 +58,7 @@ const Login = () => {
       >
         <Card className="bg-gradient-card border-border shadow-elevated">
           <CardHeader className="text-center">
-            <div className="flex items-center justify-center mb-4">
+            <div className="flex items-center justify-center mb-4 cursor-pointer" onClick={() => navigate('/')}>
               <div className="p-3 bg-gradient-primary rounded-xl shadow-glow">
                 <TrendingUp className="h-8 w-8 text-primary-foreground" />
               </div>

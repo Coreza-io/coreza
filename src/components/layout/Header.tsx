@@ -11,6 +11,16 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
@@ -21,6 +31,7 @@ export function Header() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [profile, setProfile] = useState<{ first_name?: string; last_name?: string } | null>(null);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -41,8 +52,13 @@ export function Header() {
     }
   }, [user]);
 
-  const handleLogout = async () => {
+  const handleLogoutClick = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = async () => {
     await signOut();
+    setShowLogoutDialog(false);
     navigate('/login');
   };
 
@@ -72,6 +88,29 @@ export function Header() {
           />
         </div>
       </div>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="sm" className="flex items-center gap-2" onClick={handleLogoutClick} title="Logout">
+          <LogOut className="h-4 w-4 text-red-500" />
+        </Button>
+      </div>
+
+      {/* Logout Confirmation Dialog */}
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Logout</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to log out? Any unsaved changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmLogout} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Logout
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex items-center gap-4 hidden">
         {/* Market Status */}
@@ -128,7 +167,7 @@ export function Header() {
               Analytics
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
+            <DropdownMenuItem onClick={handleLogoutClick} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4 mr-2" />
               Log out
             </DropdownMenuItem>

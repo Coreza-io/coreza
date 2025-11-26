@@ -3,6 +3,8 @@ import { getRedis } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { GatewayConfig, GATEWAY_CONFIGS } from '../config/marketGateways';
 import { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
+import { redisPublishBreaker } from '../utils/redisCircuitBreaker';
+import { RedisBuffer } from './RedisBuffer';
 
 export class MarketDataGateway {
   private static instances = new Map<MarketSource, MarketDataGateway>();
@@ -85,7 +87,7 @@ export class MarketDataGateway {
     });
   }
   
-  private handleMessage(buffer: Buffer): void {
+  private async handleMessage(buffer: Buffer): Promise<void> {
     try {
       const messages = this.config.parseMessage(buffer);
       for (const msg of messages) {
@@ -94,14 +96,26 @@ export class MarketDataGateway {
         const event = this.config.normalize(msg);
         if (!event || !event.symbol) continue;
         
-        // Publish to Redis symbol channel
+        // Publish to Redis symbol channel with circuit breaker
         const channel = REDIS_CHANNELS.marketData(event.symbol);
-        this.redis.publish(channel, JSON.stringify(event));
+        await this.publishToRedis(channel, JSON.stringify(event));
         
         console.log(`[${this.config.id}] Published ${event.type} for ${event.symbol} @ ${event.lastPrice || event.c}`);
       }
     } catch (error) {
       console.error(`[${this.config.id}] Message parse error:`, error);
+    }
+  }
+
+  /**
+   * Publish to Redis with circuit breaker and fallback buffering
+   */
+  private async publishToRedis(channel: string, message: string): Promise<void> {
+    try {
+      await redisPublishBreaker.fire(channel, message);
+    } catch (error) {
+      console.warn(`⚠️ [${this.config.id}] Redis unavailable, buffering message for ${channel}`);
+      RedisBuffer.getInstance().bufferMessage(channel, message);
     }
   }
   

@@ -16,6 +16,8 @@ export class WorkflowCache {
   private cache = new Map<string, CachedWorkflow>();
   private supabase: SupabaseClient;
   private readonly DEFAULT_TTL_MS = 60000; // 60 seconds
+  private readonly MAX_CACHE_SIZE = 1000;
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   private constructor() {
     this.supabase = createClient(
@@ -126,8 +128,44 @@ export class WorkflowCache {
       }
     }
 
+    // Enforce max cache size with LRU-style eviction
+    if (this.cache.size > this.MAX_CACHE_SIZE) {
+      const entriesToRemove = this.cache.size - this.MAX_CACHE_SIZE;
+      const sortedEntries = Array.from(this.cache.entries())
+        .sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      
+      for (let i = 0; i < entriesToRemove; i++) {
+        this.cache.delete(sortedEntries[i][0]);
+        removed++;
+      }
+    }
+
     if (removed > 0) {
-      console.log(`🧹 [WorkflowCache] Cleaned up ${removed} expired entries`);
+      console.log(`🧹 [WorkflowCache] Cleaned up ${removed} entries (${this.cache.size}/${this.MAX_CACHE_SIZE})`);
+    }
+  }
+
+  /**
+   * Start periodic cleanup timer (every 60 seconds)
+   */
+  startCleanupTimer(): void {
+    if (this.cleanupInterval) return;
+    
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup();
+    }, 60000); // 60 seconds
+    
+    console.log('🧹 [WorkflowCache] Started cleanup timer (every 60s)');
+  }
+
+  /**
+   * Stop periodic cleanup timer
+   */
+  stopCleanupTimer(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      console.log('🧹 [WorkflowCache] Stopped cleanup timer');
     }
   }
 }

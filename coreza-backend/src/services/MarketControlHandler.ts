@@ -10,6 +10,7 @@ import { getRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
 import { CredentialManager } from '../utils/credentialManager';
+import { redisSetBreaker } from '../utils/redisCircuitBreaker';
 import type { MarketSource } from '../types/marketEvent';
 
 interface ControlMessage {
@@ -255,29 +256,30 @@ export class MarketControlHandler {
   }
 
   /**
-   * Persist gateway state to Redis
+   * Persist gateway state to Redis (with circuit breaker)
    */
   private async persistState(source: MarketSource): Promise<void> {
+    const state = this.sourceStates.get(source);
+    if (!state) return;
+
+    const stateData = {
+      userId: state.connectedUserId,
+      credentialId: state.credentialId,
+      symbols: Array.from(state.symbols),
+      workflowSymbols: Array.from(state.workflowSymbols.entries()).map(([wfId, symbols]) => ({
+        workflowId: wfId,
+        symbols: Array.from(symbols),
+      })),
+      timestamp: new Date().toISOString(),
+    };
+
     try {
-      const state = this.sourceStates.get(source);
-      if (!state) return;
-
-      const stateData = {
-        userId: state.connectedUserId,
-        credentialId: state.credentialId,
-        symbols: Array.from(state.symbols),
-        workflowSymbols: Array.from(state.workflowSymbols.entries()).map(([wfId, symbols]) => ({
-          workflowId: wfId,
-          symbols: Array.from(symbols),
-        })),
-        timestamp: new Date().toISOString(),
-      };
-
-      await this.redisPub.set(
+      await redisSetBreaker.fire(
         REDIS_CHANNELS.gatewayState(source),
         JSON.stringify(stateData)
       );
 
+      // Also persist symbols set (no circuit breaker for now, less critical)
       await this.redisPub.sadd(
         REDIS_CHANNELS.gatewaySymbols(source),
         ...state.symbols
@@ -285,7 +287,8 @@ export class MarketControlHandler {
 
       console.log(`💾 [MarketControl] Persisted state for ${source}`);
     } catch (error) {
-      console.error(`❌ [MarketControl] Failed to persist state for ${source}:`, error);
+      console.warn(`⚠️ [MarketControl] Failed to persist state for ${source}, continuing with in-memory state`);
+      // Continue operation - state is still in memory
     }
   }
 

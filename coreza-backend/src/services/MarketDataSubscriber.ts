@@ -5,6 +5,7 @@ import { CorezaMarketEvent, MarketSource, MarketEventType } from '../types/marke
 import { supabase } from '../config/supabase';
 import { bullMqJobQueue } from './jobQueueManager';
 import WorkflowCache from './WorkflowCache';
+import { redisPublishBreaker, redisSetBreaker } from '../utils/redisCircuitBreaker';
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -93,18 +94,22 @@ export class MarketDataSubscriber {
         this.isInitialized = true;
       }
 
-      // Publish control message to notify MarketDataGateway
+      // Publish control message to notify MarketDataGateway (with circuit breaker)
       if (subscription.source) {
-        await this.redisPub.publish(
-          REDIS_CHANNELS.controlSubscribe,
-          JSON.stringify({
-            action: 'subscribe',
-            userId,
-            workflowId,
-            symbols: Array.from(subscription.symbols),
-            source: subscription.source,
-          })
-        );
+        try {
+          await redisPublishBreaker.fire(
+            REDIS_CHANNELS.controlSubscribe,
+            JSON.stringify({
+              action: 'subscribe',
+              userId,
+              workflowId,
+              symbols: Array.from(subscription.symbols),
+              source: subscription.source,
+            })
+          );
+        } catch (error) {
+          console.warn(`⚠️ [MarketDataSubscriber] Failed to publish control message, gateway may not receive subscription`);
+        }
       }
 
       console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} subscribed successfully`);
@@ -149,18 +154,22 @@ export class MarketDataSubscriber {
       // Remove from Redis persistence
       await this.redisPub.del(REDIS_CHANNELS.workflowSubscription(workflowId));
 
-      // Publish control message to notify MarketDataGateway
+      // Publish control message to notify MarketDataGateway (with circuit breaker)
       if (subscription.source) {
-        await this.redisPub.publish(
-          REDIS_CHANNELS.controlUnsubscribe,
-          JSON.stringify({
-            action: 'unsubscribe',
-            userId: subscription.userId,
-            workflowId,
-            symbols: Array.from(subscription.symbols),
-            source: subscription.source,
-          })
-        );
+        try {
+          await redisPublishBreaker.fire(
+            REDIS_CHANNELS.controlUnsubscribe,
+            JSON.stringify({
+              action: 'unsubscribe',
+              userId: subscription.userId,
+              workflowId,
+              symbols: Array.from(subscription.symbols),
+              source: subscription.source,
+            })
+          );
+        } catch (error) {
+          console.warn(`⚠️ [MarketDataSubscriber] Failed to publish unsubscribe control message`);
+        }
       }
 
       console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} unsubscribed successfully`);
@@ -338,7 +347,7 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Persist subscription to Redis
+   * Persist subscription to Redis (with circuit breaker)
    */
   private async persistSubscription(subscription: WorkflowSubscription): Promise<void> {
     const key = REDIS_CHANNELS.workflowSubscription(subscription.workflowId);
@@ -350,7 +359,13 @@ export class MarketDataSubscriber {
       source: subscription.source,
       eventTypes: subscription.eventTypes,
     });
-    await this.redisPub.set(key, data);
+    
+    try {
+      await redisSetBreaker.fire(key, data);
+    } catch (error) {
+      console.warn(`⚠️ [MarketDataSubscriber] Failed to persist subscription to Redis, continuing with in-memory state`);
+      // Continue - subscription is still active in memory
+    }
   }
 
   /**

@@ -42,6 +42,10 @@ import { initializeNodeExecutors } from './nodes';
 import { initializeScreenerServices } from './services/screeners';
 import { MarketDataSubscriber } from './services/MarketDataSubscriber';
 import { MarketControlHandler } from './services/MarketControlHandler';
+import WorkflowCache from './services/WorkflowCache';
+import { redisPublishBreaker, redisGetBreaker, redisSetBreaker } from './utils/redisCircuitBreaker';
+import { RedisBuffer } from './services/RedisBuffer';
+import { setupBufferFlush } from './utils/flushRedisBuffer';
 
 
 const app = express();
@@ -57,12 +61,21 @@ app.use(requestLogger);
 // Store supabase instance in app.locals for route access
 app.locals.supabase = supabase;
 
-// Health check
+// Health check with circuit breaker and cache stats
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    redis: {
+      circuitBreaker: {
+        publish: redisPublishBreaker.opened ? 'OPEN' : redisPublishBreaker.halfOpen ? 'HALF-OPEN' : 'CLOSED',
+        get: redisGetBreaker.opened ? 'OPEN' : redisGetBreaker.halfOpen ? 'HALF-OPEN' : 'CLOSED',
+        set: redisSetBreaker.opened ? 'OPEN' : redisSetBreaker.halfOpen ? 'HALF-OPEN' : 'CLOSED',
+      },
+      buffer: RedisBuffer.getInstance().getStats(),
+    },
+    workflowCache: WorkflowCache.getInstance().getStats(),
   });
 });
 
@@ -143,6 +156,13 @@ async function startServer() {
     // Initialize workflow scheduler
     await workflowScheduler.initialize();
 
+    // Start WorkflowCache cleanup timer (Phase 3)
+    console.log('🧹 [WorkflowCache] Starting periodic cleanup...');
+    WorkflowCache.getInstance().startCleanupTimer();
+
+    // Setup Redis buffer flush on circuit breaker close (Phase 3)
+    setupBufferFlush();
+
     // Initialize Market Data Subscriber and restore subscriptions
     console.log('📊 [MarketData] Initializing Market Data Subscriber...');
     const marketDataSubscriber = MarketDataSubscriber.getInstance();
@@ -172,6 +192,9 @@ async function startServer() {
       server.close(() => {
         console.log('✅ HTTP server closed');
       });
+      
+      // Stop WorkflowCache cleanup timer
+      WorkflowCache.getInstance().stopCleanupTimer();
       
       // Close WebSocket server
       await WebSocketManager.shutdown();

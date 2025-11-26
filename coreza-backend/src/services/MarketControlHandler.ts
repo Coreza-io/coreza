@@ -394,13 +394,7 @@ export class MarketControlHandler {
             await this.connectGateway(source, stateData.userId, stateData.credentialId);
             const state = this.sourceStates.get(source)!;
 
-            // Restore symbols
-            if (stateData.symbols && Array.isArray(stateData.symbols)) {
-              stateData.symbols.forEach((s: string) => state.symbols.add(s.toUpperCase()));
-              state.gateway.subscribeSymbols(stateData.symbols);
-            }
-
-            // Restore symbol types
+            // Restore symbol types first
             if (stateData.symbolTypes && Array.isArray(stateData.symbolTypes)) {
               stateData.symbolTypes.forEach((entry: any) => {
                 const types = new Set<string>();
@@ -409,6 +403,28 @@ export class MarketControlHandler {
                 }
                 state.symbolTypes.set(entry.symbol.toUpperCase(), types);
               });
+              
+              // Group symbols by their types for efficient subscription
+              const typeGroups = new Map<string, string[]>();
+              
+              stateData.symbolTypes.forEach((entry: any) => {
+                const types = entry.types && Array.isArray(entry.types) ? entry.types : ['trades'];
+                const typeKey = types.sort().join(',');
+                if (!typeGroups.has(typeKey)) typeGroups.set(typeKey, []);
+                typeGroups.get(typeKey)!.push(entry.symbol.toUpperCase());
+              });
+              
+              // Subscribe each group with proper types
+              for (const [typeKey, symbols] of typeGroups) {
+                const types = typeKey.split(',');
+                state.gateway.subscribeSymbols(symbols, types);
+                console.log(`🔄 [MarketControl] Restored ${symbols.length} symbols on ${source} (types: ${types.join(', ')})`);
+              }
+            }
+
+            // Also restore symbols set (for backwards compatibility)
+            if (stateData.symbols && Array.isArray(stateData.symbols)) {
+              stateData.symbols.forEach((s: string) => state.symbols.add(s.toUpperCase()));
             }
 
             // Restore workflow mappings

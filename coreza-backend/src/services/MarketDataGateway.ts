@@ -15,8 +15,7 @@ export class MarketDataGateway {
   private ws: WebSocket | null = null;
   private config: GatewayConfig;
   private credentials: any = null;
-  private subscribedSymbols = new Set<string>();
-  private subscribedTypes: string[] = []; // Track subscribed event types for reconnection
+  private subscribedSymbolTypes = new Map<string, Set<string>>(); // symbol → event types
   private isAuthenticated = false;
   private reconnectAttempts = 0;
   private redis = getRedis();
@@ -133,48 +132,70 @@ export class MarketDataGateway {
   }
   
   subscribeSymbols(symbols: string[], types?: string[]): void {
-    const newSymbols = symbols.filter(s => !this.subscribedSymbols.has(s.toUpperCase()));
-    if (newSymbols.length === 0) return;
+    const requestedTypes = types || ['trades'];
+    const subscriptionUpdates: string[] = [];
     
-    // Store types for reconnection
-    if (types && types.length > 0) {
-      this.subscribedTypes = types;
+    for (const symbol of symbols) {
+      const upperSymbol = symbol.toUpperCase();
+      const existingTypes = this.subscribedSymbolTypes.get(upperSymbol) || new Set();
+      
+      // Check if any requested type is new for this symbol
+      const hasNewTypes = requestedTypes.some(t => !existingTypes.has(t));
+      
+      if (!this.subscribedSymbolTypes.has(upperSymbol) || hasNewTypes) {
+        subscriptionUpdates.push(upperSymbol);
+        // Add all requested types to tracking
+        requestedTypes.forEach(t => existingTypes.add(t));
+        this.subscribedSymbolTypes.set(upperSymbol, existingTypes);
+      }
     }
     
-    newSymbols.forEach(s => this.subscribedSymbols.add(s.toUpperCase()));
+    if (subscriptionUpdates.length === 0) {
+      this.logger.debug({ source: this.config.id }, 'All symbols already subscribed with requested types');
+      return;
+    }
     
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      const msg = this.config.makeSubscribeMessage(newSymbols, types);
+      const msg = this.config.makeSubscribeMessage(subscriptionUpdates, requestedTypes);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
-      console.log(`[${this.config.id}] Subscribed to: ${newSymbols.join(', ')} (types: ${types?.join(', ') || 'default'})`);
+      this.logger.info({ source: this.config.id, symbols: subscriptionUpdates, types: requestedTypes }, 'Subscribed to symbols');
     }
   }
   
   unsubscribeSymbols(symbols: string[]): void {
-    const toRemove = symbols.filter(s => this.subscribedSymbols.has(s.toUpperCase()));
+    const toRemove = symbols.filter(s => this.subscribedSymbolTypes.has(s.toUpperCase()));
     if (toRemove.length === 0) return;
     
-    toRemove.forEach(s => this.subscribedSymbols.delete(s.toUpperCase()));
+    toRemove.forEach(s => this.subscribedSymbolTypes.delete(s.toUpperCase()));
     
     if (this.ws?.readyState === WebSocket.OPEN) {
       const msg = this.config.makeUnsubscribeMessage(toRemove);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
-      console.log(`[${this.config.id}] Unsubscribed from: ${toRemove.join(', ')}`);
+      this.logger.info({ source: this.config.id, symbols: toRemove }, 'Unsubscribed from symbols');
     }
   }
   
   private resubscribeAll(): void {
-    if (this.subscribedSymbols.size > 0) {
-      const msg = this.config.makeSubscribeMessage(
-        Array.from(this.subscribedSymbols),
-        this.subscribedTypes.length > 0 ? this.subscribedTypes : undefined
-      );
-      const payload = this.encodeMessage(msg);
-      this.ws?.send(payload);
-      const typesInfo = this.subscribedTypes.length > 0 ? ` (types: ${this.subscribedTypes.join(', ')})` : '';
-      console.log(`[${this.config.id}] Resubscribed to ${this.subscribedSymbols.size} symbols${typesInfo}`);
+    if (this.subscribedSymbolTypes.size > 0) {
+      // Group symbols by their types for efficient subscription
+      const typeGroups = new Map<string, string[]>();
+      
+      for (const [symbol, types] of this.subscribedSymbolTypes) {
+        const typeKey = Array.from(types).sort().join(',');
+        if (!typeGroups.has(typeKey)) typeGroups.set(typeKey, []);
+        typeGroups.get(typeKey)!.push(symbol);
+      }
+      
+      // Send subscription for each type group
+      for (const [typeKey, symbols] of typeGroups) {
+        const types = typeKey.split(',');
+        const msg = this.config.makeSubscribeMessage(symbols, types);
+        const payload = this.encodeMessage(msg);
+        this.ws?.send(payload);
+        this.logger.info({ source: this.config.id, symbols: symbols.length, types }, 'Resubscribed to symbols');
+      }
     }
   }
   
@@ -231,7 +252,10 @@ export class MarketDataGateway {
       source: this.config.id,
       connected: this.ws?.readyState === WebSocket.OPEN,
       authenticated: this.isAuthenticated,
-      subscribedSymbols: Array.from(this.subscribedSymbols),
+      subscribedSymbols: Array.from(this.subscribedSymbolTypes.entries()).map(([symbol, types]) => ({
+        symbol,
+        types: Array.from(types),
+      })),
       reconnectAttempts: this.reconnectAttempts,
     };
   }

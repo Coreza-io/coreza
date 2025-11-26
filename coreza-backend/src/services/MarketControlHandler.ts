@@ -6,7 +6,7 @@
 
 import Redis from 'ioredis';
 import { Mutex } from 'async-mutex';
-import { getRedisPubSub } from '../config/redis';
+import { createRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
 import { MarketDataSubscriber } from './MarketDataSubscriber';
@@ -43,8 +43,8 @@ export class MarketControlHandler {
   private gatewayMutex = new Mutex(); // Mutex to prevent race conditions
 
   private constructor() {
-    // Use shared Redis connections from factory
-    const { pub, sub } = getRedisPubSub();
+    // Create isolated Redis connections for this service
+    const { pub, sub } = createRedisPubSub();
     this.redisPub = pub;
     this.redisSub = sub;
   }

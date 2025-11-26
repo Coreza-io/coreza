@@ -11,6 +11,7 @@ import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
 import CredentialManager from '../utils/credentialManager';
 import { redisSetBreaker } from '../utils/redisCircuitBreaker';
+import { getWebSocketConfig } from '../config/websockets';
 import type { MarketSource } from '../types/marketEvent';
 
 interface ControlMessage {
@@ -98,6 +99,8 @@ export class MarketControlHandler {
           source: msg.source,
           symbols: msg.symbols,
           workflowId: msg.workflowId,
+          userId: msg.userId,
+          credentialId: msg.credentialId
         });
 
         if (channel === REDIS_CHANNELS.controlSubscribe) {
@@ -221,23 +224,46 @@ export class MarketControlHandler {
     credentialId?: string
   ): Promise<void> {
     try {
-      // Fetch credentials
-      const { credentials, error } = await CredentialManager.getDecryptedCredentials(
-        userId,
-        source
-      );
+      // Map source to credential service type
+      const wsConfig = getWebSocketConfig(source);
+      const serviceType = wsConfig?.credentialServiceType || source;
 
-      if (error || !credentials) {
-        throw new Error(`No credentials found for ${source}: ${error}`);
+      let creds: any;
+
+      // Use getCredentials (like brokers) when credentialId is provided
+      if (credentialId) {
+        const { credentials } = await CredentialManager.getCredentials(
+          userId,
+          serviceType,
+          credentialId
+        );
+
+        if (!credentials?.client_json) {
+          throw new Error(`No credentials found for ${serviceType}/${credentialId}`);
+        }
+
+        console.log(`🔑 [MarketControl] Retrieved credentials for ${serviceType}/${credentialId}`);
+        creds = credentials.client_json;
+      } else {
+        // Fallback: get most recent credential (backward compatibility)
+        const { credentials, error } = await CredentialManager.getDecryptedCredentials(
+          userId,
+          serviceType
+        );
+
+        if (error || !credentials) {
+          throw new Error(`No credentials found for ${serviceType}: ${error}`);
+        }
+
+        console.log(`🔑 [MarketControl] Retrieved credentials for ${serviceType} (fallback)`);
+        creds = credentials;
       }
-
-      console.log(`🔑 [MarketControl] Retrieved credentials for ${source}`);
 
       // Get or create gateway instance
       const gateway = MarketDataGateway.getInstance(source);
 
       // Connect gateway with credentials
-      await gateway.connect(credentials);
+      await gateway.connect(creds);
 
       // Track state
       this.sourceStates.set(source, {

@@ -1,5 +1,6 @@
 export interface WebSocketSourceConfig {
   id: string;
+  credentialServiceType?: string; // Maps to user_credentials.service_type
   url: string | ((creds: any) => string);
   makeAuthHeaders?: (creds: any) => Record<string, string>;
   makeAuthMessage?: (creds: any) => any;
@@ -22,6 +23,7 @@ const defaultParser = (buffer: Buffer): any[] => {
 const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
   alpaca_news: {
     id: "alpaca_news",
+    credentialServiceType: "alpaca",
     url: "wss://stream.data.alpaca.markets/v1beta1/news",
     makeAuthHeaders: (creds) => ({
       "APCA-API-KEY-ID": creds.api_key,
@@ -56,6 +58,7 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
   },
   alpaca_stream: {
     id: "alpaca_stream",
+    credentialServiceType: "alpaca",
     url: "wss://stream.data.alpaca.markets/v2/iex",
     makeAuthMessage: (creds) => ({
       action: "auth",

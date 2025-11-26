@@ -23,6 +23,11 @@ export interface GatewayConfig {
   // Connection settings
   reconnectDelay?: number;
   maxReconnectAttempts?: number;
+  
+  // Protocol flags
+  isBinary?: boolean;                    // Uses binary WebSocket protocol (Dhan)
+  requiresPreConnect?: boolean;          // Needs setup before connect (Schwab OAuth)
+  preConnect?: (creds: any) => Promise<any>;  // Pre-connection setup hook
 }
 
 export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
@@ -99,27 +104,150 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     maxReconnectAttempts: 5,
   },
   
-  // TODO: Implement Dhan gateway configuration
+  // Dhan - Binary WebSocket protocol
   dhan: {
     id: 'dhan',
-    wsUrl: '',
-    makeSubscribeMessage: () => ({}),
-    makeUnsubscribeMessage: () => ({}),
-    parseMessage: () => [],
-    identifyMessageType: () => 'unknown',
-    shouldPublish: () => false,
-    normalize: () => null,
+    wsUrl: (creds) => `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
+    
+    // No separate auth message - auth is in URL
+    makeAuthMessage: undefined,
+    
+    makeSubscribeMessage: (symbols, types = ['ticker']) => {
+      // Returns binary buffer via encoder
+      return {
+        RequestCode: 15,
+        InstrumentCount: symbols.length,
+        InstrumentList: symbols.map(s => ({
+          ExchangeSegment: 'NSE_EQ',
+          SecurityId: s,
+        })),
+      };
+    },
+    
+    makeUnsubscribeMessage: (symbols) => ({
+      RequestCode: 16,
+      InstrumentCount: symbols.length,
+      InstrumentList: symbols.map(s => ({
+        ExchangeSegment: 'NSE_EQ',
+        SecurityId: s,
+      })),
+    }),
+    
+    parseMessage: (buffer) => {
+      const { parseDhanBinaryPacket } = require('../utils/dhanBinaryParser');
+      return parseDhanBinaryPacket(buffer);
+    },
+    
+    identifyMessageType: (msg) => msg.type || 'unknown',
+    shouldPublish: (msg) => ['ticker', 'quote', 'full'].includes(msg.type),
+    
+    normalize: (msg) => {
+      if (!msg.SecurityId) return null;
+      return {
+        source: 'dhan' as const,
+        symbol: msg.TradingSymbol || msg.SecurityId,
+        type: 'trade' as const,
+        ts: new Date().toISOString(),
+        lastPrice: msg.LTP,
+        bid: msg.BidPrice,
+        bidSize: msg.BidQty,
+        ask: msg.AskPrice,
+        askSize: msg.AskQty,
+        o: msg.Open,
+        h: msg.High,
+        l: msg.Low,
+        c: msg.Close,
+        v: msg.Volume,
+        raw: msg,
+      };
+    },
+    
+    reconnectDelay: 2000,
+    maxReconnectAttempts: 5,
+    isBinary: true,
   },
   
-  // TODO: Implement Schwab gateway configuration
+  // Schwab - OAuth with dynamic streaming URL
   schwab: {
     id: 'schwab',
-    wsUrl: '',
-    makeSubscribeMessage: () => ({}),
-    makeUnsubscribeMessage: () => ({}),
-    parseMessage: () => [],
-    identifyMessageType: () => 'unknown',
-    shouldPublish: () => false,
-    normalize: () => null,
+    wsUrl: (creds) => creds.streamerSocketUrl,
+    
+    // Pre-connect: Fetch streaming URL from OAuth'd session
+    preConnect: async (creds) => {
+      const { fetchSchwabStreamingConfig } = require('../utils/schwabStreamingSetup');
+      return await fetchSchwabStreamingConfig(creds.access_token);
+    },
+    
+    makeAuthMessage: (creds) => {
+      const { buildSchwabLoginMessage } = require('../utils/schwabStreamingSetup');
+      return buildSchwabLoginMessage(creds);
+    },
+    
+    makeSubscribeMessage: (symbols, types = ['quotes']) => ({
+      requests: [{
+        requestid: String(Date.now()),
+        service: 'LEVELONE_EQUITIES',
+        command: 'SUBS',
+        parameters: {
+          keys: symbols.join(','),
+          fields: '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,28',
+        },
+      }],
+    }),
+    
+    makeUnsubscribeMessage: (symbols) => ({
+      requests: [{
+        requestid: String(Date.now()),
+        service: 'LEVELONE_EQUITIES',
+        command: 'UNSUBS',
+        parameters: {
+          keys: symbols.join(','),
+        },
+      }],
+    }),
+    
+    parseMessage: (buffer) => {
+      const parsed = JSON.parse(buffer.toString());
+      const { parseSchwabStreamingMessage } = require('../utils/schwabStreamingSetup');
+      return parseSchwabStreamingMessage(parsed);
+    },
+    
+    identifyMessageType: (msg) => {
+      if (msg.service === 'LEVELONE_EQUITIES') return 'quote';
+      if (msg.service === 'CHART_EQUITY') return 'bar';
+      return msg.service || 'unknown';
+    },
+    
+    shouldPublish: (msg) => 
+      msg.service === 'LEVELONE_EQUITIES' && msg.content?.length > 0,
+    
+    normalize: (msg) => {
+      if (msg.service !== 'LEVELONE_EQUITIES') return null;
+      
+      const content = msg.content?.[0];
+      if (!content) return null;
+      
+      return {
+        source: 'schwab' as const,
+        symbol: content.key?.toUpperCase() || content['0']?.toUpperCase(),
+        type: 'quote' as const,
+        ts: new Date().toISOString(),
+        lastPrice: content['3'],
+        bid: content['1'],
+        bidSize: content['4'],
+        ask: content['2'],
+        askSize: content['5'],
+        o: content['28'],
+        h: content['12'],
+        l: content['13'],
+        c: content['15'],
+        v: content['8'],
+        raw: msg,
+      };
+    },
+    
+    reconnectDelay: 2000,
+    maxReconnectAttempts: 5,
+    requiresPreConnect: true,
   },
 };

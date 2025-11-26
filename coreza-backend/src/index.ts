@@ -154,9 +154,12 @@ async function startServer() {
     // Start WorkflowCache cleanup timer (Phase 3)
     logger.info('Starting WorkflowCache periodic cleanup...');
     WorkflowCache.getInstance().startCleanupTimer();
+    logger.debug('WorkflowCache cleanup timer started');
 
     // Setup Redis buffer flush on circuit breaker close (Phase 3)
+    logger.debug('Setting up Redis buffer flush...');
     setupBufferFlush();
+    logger.debug('Redis buffer flush setup complete');
 
     // Initialize Market Data Subscriber and restore subscriptions
     logger.info('Initializing Market Data Subscriber...');
@@ -204,7 +207,8 @@ async function startServer() {
     process.on('SIGINT', () => shutdown('SIGINT'));
     
   } catch (error) {
-    logger.fatal({ error }, 'Failed to start server');
+    logger.fatal({ err: error, stack: error instanceof Error ? error.stack : undefined }, 'Failed to start server');
+    console.error('STARTUP ERROR:', error);
     process.exit(1);
   }
 }

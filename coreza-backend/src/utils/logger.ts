@@ -15,7 +15,8 @@ const logger = pino({
   serializers: {
     req: pino.stdSerializers.req,
     res: pino.stdSerializers.res,
-    err: pino.stdSerializers.err
+    err: pino.stdSerializers.err,
+    error: pino.stdSerializers.err
   },
   redact: {
     paths: ['password', 'token', 'authorization', 'apiKey', 'secretKey', 'credentials.apiKey', 'credentials.secretKey'],

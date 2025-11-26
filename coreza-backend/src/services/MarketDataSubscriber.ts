@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { getRedis } from '../config/redis';
+import { getRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { CorezaMarketEvent, MarketSource, MarketEventType } from '../types/marketEvent';
 import { supabase } from '../config/supabase';
@@ -32,8 +32,9 @@ export class MarketDataSubscriber {
   private workflowCache = WorkflowCache;
 
   private constructor() {
-    this.redisSub = getRedis();
-    this.redisPub = getRedis();
+    const { pub, sub } = getRedisPubSub();
+    this.redisSub = sub;  // Dedicated subscriber connection
+    this.redisPub = pub;  // Dedicated publisher connection
   }
 
   static getInstance(): MarketDataSubscriber {

@@ -1,5 +1,5 @@
 import CircuitBreaker from 'opossum';
-import { getRedis } from '../config/redis';
+import { getRedisPubSub } from '../config/redis';
 import { createLogger } from './logger';
 import { alertRedisCircuitOpen } from './alerting';
 import { redisOperationsCounter } from './metrics';
@@ -13,14 +13,16 @@ const circuitBreakerOptions = {
   volumeThreshold: 5,               // Min requests before circuit can open
 };
 
+// Get dedicated pub connection for Redis operations (never used for subscribe)
+const { pub: redisPub } = getRedisPubSub();
+
 /**
  * Circuit breaker for Redis PUBLISH operations
  * Prevents cascading failures when Redis is unavailable
  */
 export const redisPublishBreaker = new CircuitBreaker(
   async (channel: string, message: string) => {
-    const redis = getRedis();
-    return redis.publish(channel, message);
+    return redisPub.publish(channel, message);
   },
   circuitBreakerOptions
 );
@@ -30,8 +32,7 @@ export const redisPublishBreaker = new CircuitBreaker(
  */
 export const redisGetBreaker = new CircuitBreaker(
   async (key: string) => {
-    const redis = getRedis();
-    return redis.get(key);
+    return redisPub.get(key);
   },
   circuitBreakerOptions
 );
@@ -41,8 +42,7 @@ export const redisGetBreaker = new CircuitBreaker(
  */
 export const redisSetBreaker = new CircuitBreaker(
   async (key: string, value: string) => {
-    const redis = getRedis();
-    return redis.set(key, value);
+    return redisPub.set(key, value);
   },
   circuitBreakerOptions
 );

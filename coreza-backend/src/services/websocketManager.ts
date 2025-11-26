@@ -30,18 +30,24 @@ export class WebSocketManager {
   private constructor() {
     // Initialize JWKS for JWT verification with extended timeout and caching
     const supabaseUrl = process.env.SUPABASE_URL;
-    if (supabaseUrl) {
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    
+    if (supabaseUrl && supabaseAnonKey) {
       const jwksUrl = new URL(`${supabaseUrl}/auth/v1/jwks`);
       console.log(`🔐 Initializing JWKS from: ${jwksUrl.toString()}`);
       
-      // Create JWKS with extended timeout and caching
+      // Create JWKS with extended timeout, caching, and API key header
       this.jwks = createRemoteJWKSet(jwksUrl, {
         timeoutDuration: 15000,  // 15 seconds timeout (default is 5s)
         cooldownDuration: 30000, // 30 seconds between refetches on error
         cacheMaxAge: 600000,     // Cache JWKS for 10 minutes
+        headers: {
+          apikey: supabaseAnonKey,  // Required by Supabase
+        },
       });
     } else {
-      console.warn('⚠️ SUPABASE_URL not set - JWT verification will be disabled');
+      if (!supabaseUrl) console.warn('⚠️ SUPABASE_URL not set - JWT verification will be disabled');
+      if (!supabaseAnonKey) console.warn('⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled');
     }
   }
 
@@ -57,8 +63,15 @@ export class WebSocketManager {
    */
   private async testJwksEndpoint(): Promise<boolean> {
     const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    
     if (!supabaseUrl) {
       console.warn('⚠️ SUPABASE_URL not set - skipping JWKS health check');
+      return false;
+    }
+    
+    if (!supabaseAnonKey) {
+      console.warn('⚠️ SUPABASE_ANON_KEY not set - skipping JWKS health check');
       return false;
     }
     
@@ -69,7 +82,12 @@ export class WebSocketManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
       
-      const response = await fetch(jwksUrl, { signal: controller.signal });
+      const response = await fetch(jwksUrl, { 
+        signal: controller.signal,
+        headers: {
+          apikey: supabaseAnonKey,  // Required by Supabase
+        },
+      });
       clearTimeout(timeoutId);
       
       if (response.ok) {
@@ -78,6 +96,8 @@ export class WebSocketManager {
         return true;
       } else {
         console.error(`❌ JWKS endpoint returned ${response.status}: ${response.statusText}`);
+        const body = await response.text();
+        console.error(`   Response: ${body}`);
         return false;
       }
     } catch (error) {
@@ -195,7 +215,8 @@ export class WebSocketManager {
   private async verifyJWT(token: string): Promise<{ userId: string }> {
     try {
       if (!this.jwks) {
-        throw new Error("JWKS not initialized - SUPABASE_URL required");
+        console.error('❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY');
+        throw new Error("JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required");
       }
 
       // Verify JWT signature against Supabase JWKS endpoint

@@ -15,6 +15,10 @@ export const REDIS_CHANNELS = {
   // Workflow subscription persistence
   workflowSubscription: (workflowId: string) => `wf:sub:${workflowId}`,
   symbolWorkflows: (symbol: string) => `wf:subs:symbol:${symbol.toUpperCase()}`,
+  
+  // Gateway state persistence (Phase 5)
+  gatewayState: (source: string) => `md:gateway:${source}`,
+  gatewaySymbols: (source: string) => `md:gateway:${source}:symbols`,
 } as const;
 
 export type RedisChannel = ReturnType<typeof REDIS_CHANNELS[keyof typeof REDIS_CHANNELS]>;

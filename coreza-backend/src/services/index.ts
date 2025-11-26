@@ -15,3 +15,4 @@ export { WebSocketClient } from './WebSocketClient';
 // Export Market Data services
 export { MarketDataGateway } from './MarketDataGateway';
 export { MarketDataSubscriber } from './MarketDataSubscriber';
+export { MarketControlHandler } from './MarketControlHandler';

@@ -42,6 +42,7 @@ import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeScreenerServices } from './services/screeners';
 import { MarketDataSubscriber } from './services/MarketDataSubscriber';
+import { MarketControlHandler } from './services/MarketControlHandler';
 
 
 const app = express();
@@ -149,6 +150,12 @@ async function startServer() {
     await marketDataSubscriber.restoreFromRedis();
     console.log('✅ [MarketData] Market Data Subscriber initialized');
 
+    // Initialize Market Control Handler (Phase 5)
+    console.log('🎛️ [MarketControl] Initializing Market Control Handler...');
+    const marketControlHandler = MarketControlHandler.getInstance();
+    await marketControlHandler.initialize();
+    console.log('✅ [MarketControl] Market Control Handler initialized');
+
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);
     await WebSocketManager.initialize(wsPort);
@@ -169,6 +176,9 @@ async function startServer() {
       
       // Close WebSocket server
       await WebSocketManager.shutdown();
+      
+      // Cleanup Market Control Handler
+      await marketControlHandler.cleanup();
       
       // Exit process
       process.exit(0);

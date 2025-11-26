@@ -83,7 +83,7 @@ app.get('/health', (req, res) => {
       },
       buffer: RedisBuffer.getInstance().getStats(),
     },
-    workflowCache: WorkflowCache.getInstance().getStats(),
+    workflowCache: WorkflowCache.getStats(),
   });
 });
 
@@ -153,7 +153,7 @@ async function startServer() {
 
     // Start WorkflowCache cleanup timer (Phase 3)
     logger.info('Starting WorkflowCache periodic cleanup...');
-    WorkflowCache.getInstance().startCleanupTimer();
+    WorkflowCache.startCleanupTimer();
     logger.debug('WorkflowCache cleanup timer started');
 
     // Setup Redis buffer flush on circuit breaker close (Phase 3)
@@ -191,7 +191,7 @@ async function startServer() {
       });
       
       // Stop WorkflowCache cleanup timer
-      WorkflowCache.getInstance().stopCleanupTimer();
+      WorkflowCache.stopCleanupTimer();
       
       // Close WebSocket server
       await WebSocketManager.shutdown();

@@ -6,6 +6,7 @@ import { supabase } from '../config/supabase';
 import { bullMqJobQueue } from './jobQueueManager';
 import WorkflowCache from './WorkflowCache';
 import { redisPublishBreaker, redisSetBreaker } from '../utils/redisCircuitBreaker';
+import { WebSocketManager } from './websocketManager';
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -247,6 +248,15 @@ export class MarketDataSubscriber {
 
           // Filter by event type if specified
           if (subscription.eventTypes && !subscription.eventTypes.includes(event.type)) continue;
+
+          // Send market data to frontend via WebSocket
+          WebSocketManager.sendToUser(subscription.userId, {
+            type: 'market_data',
+            payload: {
+              nodeId: subscription.nodeId,
+              data: event,
+            },
+          });
 
           await this.triggerWorkflowExecution(workflowId, subscription.userId, event);
         }

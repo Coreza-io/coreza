@@ -224,9 +224,10 @@ export class MarketControlHandler {
     credentialId?: string
   ): Promise<void> {
     try {
-      // Map source to credential service type
+      // Map source to credential service type and gateway source
       const wsConfig = getWebSocketConfig(source);
       const serviceType = wsConfig?.credentialServiceType || source;
+      const gatewaySource = (wsConfig?.gatewaySource || source) as MarketSource;
 
       let creds: any;
 
@@ -259,8 +260,8 @@ export class MarketControlHandler {
         creds = credentials;
       }
 
-      // Get or create gateway instance
-      const gateway = MarketDataGateway.getInstance(source);
+      // Get or create gateway instance using mapped gateway source
+      const gateway = MarketDataGateway.getInstance(gatewaySource);
 
       // Connect gateway with credentials
       await gateway.connect(creds);

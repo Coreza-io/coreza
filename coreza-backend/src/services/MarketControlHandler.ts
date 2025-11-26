@@ -9,7 +9,7 @@ import { Mutex } from 'async-mutex';
 import { getRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
-import { CredentialManager } from '../utils/credentialManager';
+import CredentialManager from '../utils/credentialManager';
 import { redisSetBreaker } from '../utils/redisCircuitBreaker';
 import type { MarketSource } from '../types/marketEvent';
 

@@ -33,7 +33,7 @@ export class WebSocketManager {
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
     
     if (supabaseUrl && supabaseAnonKey) {
-      const jwksUrl = new URL(`${supabaseUrl}/auth/v1/jwks`);
+      const jwksUrl = new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
       console.log(`🔐 Initializing JWKS from: ${jwksUrl.toString()}`);
       
       // Create JWKS with extended timeout, caching, and API key header
@@ -76,7 +76,7 @@ export class WebSocketManager {
     }
     
     try {
-      const jwksUrl = `${supabaseUrl}/auth/v1/jwks`;
+      const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
       console.log(`🔐 Testing JWKS endpoint: ${jwksUrl}`);
       
       const controller = new AbortController();

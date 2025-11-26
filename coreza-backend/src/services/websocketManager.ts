@@ -4,6 +4,7 @@ import { URL } from "url";
 import jwt from "jsonwebtoken";
 import { Server } from "net";
 import { WebSocketClient } from "./WebSocketClient";
+import { SubscriptionManager } from "./SubscriptionManager";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -22,6 +23,7 @@ export class WebSocketManager {
   private wss: WebSocket.Server | null = null;
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
   private sessions = new Map<string, AuthenticatedWebSocket>();
+  private subscriptionManager = SubscriptionManager.getInstance();
 
   private constructor() {}
 
@@ -53,6 +55,7 @@ export class WebSocketManager {
     this.wss.on("connection", this.handleConnection.bind(this));
     this.wss.on("error", this.handleServerError.bind(this));
     this.setupHeartbeat();
+    this.setupRedisSubscription();
 
     console.log(`🔌 WebSocket server started on port ${port}`);
   }
@@ -293,68 +296,84 @@ export class WebSocketManager {
   ): Promise<void> {
     const { source, action, symbols, node_id, nodeId } = payload || {};
 
-    if (!source) {
-      this.sendMessage(ws, {
-        type: "error",
-        payload: {
-          error: "source is required (e.g., alpaca_news)",
-        },
-      });
-      return;
-    }
+    // If source is specified, use legacy WebSocketClient for backward compatibility
+    if (source) {
+      try {
+        const client = WebSocketClient.getInstance(source);
+        const targetNodeId = node_id || nodeId;
 
-    try {
-      const client = WebSocketClient.getInstance(source);
-      const targetNodeId = node_id || nodeId;
+        if (action === "subscribe" && symbols) {
+          if (!targetNodeId) {
+            this.sendMessage(ws, {
+              type: `${source}_error`,
+              payload: { error: "node_id is required to subscribe" },
+            });
+            return;
+          }
 
-      if (action === "subscribe" && symbols) {
-        if (!targetNodeId) {
+          const success = await client.subscribe(ws.userId!, symbols, {
+            nodeId: targetNodeId,
+          });
+
+          this.sendMessage(ws, {
+            type: `${source}_started`,
+            payload: {
+              symbols,
+              node_id: targetNodeId,
+              success,
+            },
+          });
+        } else if (action === "unsubscribe" && symbols) {
+          const success = await client.unsubscribe(ws.userId!, symbols, {
+            nodeId: targetNodeId,
+          });
+
+          this.sendMessage(ws, {
+            type: `${source}_stopped`,
+            payload: {
+              symbols,
+              node_id: targetNodeId ?? null,
+              success,
+            },
+          });
+        } else {
           this.sendMessage(ws, {
             type: `${source}_error`,
-            payload: { error: "node_id is required to subscribe" },
+            payload: {
+              error:
+                "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
+            },
           });
-          return;
         }
-
-        const success = await client.subscribe(ws.userId!, symbols, {
-          nodeId: targetNodeId,
-        });
-
+      } catch (error) {
         this.sendMessage(ws, {
-          type: `${source}_started`,
+          type: "error",
           payload: {
-            symbols,
-            node_id: targetNodeId,
-            success,
-          },
-        });
-      } else if (action === "unsubscribe" && symbols) {
-        const success = await client.unsubscribe(ws.userId!, symbols, {
-          nodeId: targetNodeId,
-        });
-
-        this.sendMessage(ws, {
-          type: `${source}_stopped`,
-          payload: {
-            symbols,
-            node_id: targetNodeId ?? null,
-            success,
-          },
-        });
-      } else {
-        this.sendMessage(ws, {
-          type: `${source}_error`,
-          payload: {
-            error:
-              "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
+            error: error instanceof Error ? error.message : "Unknown error",
           },
         });
       }
-    } catch (error) {
+      return;
+    }
+
+    // New Redis-based market data subscription (no source specified)
+    if (action === "subscribe" && symbols) {
+      await this.subscriptionManager.subscribeClient(ws.sessionId!, symbols);
+      this.sendMessage(ws, {
+        type: "market_subscribed",
+        payload: { symbols, success: true },
+      });
+    } else if (action === "unsubscribe" && symbols) {
+      await this.subscriptionManager.unsubscribeClient(ws.sessionId!, symbols);
+      this.sendMessage(ws, {
+        type: "market_unsubscribed",
+        payload: { symbols, success: true },
+      });
+    } else {
       this.sendMessage(ws, {
         type: "error",
         payload: {
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
         },
       });
     }
@@ -365,6 +384,9 @@ export class WebSocketManager {
       console.log(
         `👋 User ${ws.userId} disconnected (session: ${ws.sessionId})`
       );
+
+      // Remove from subscription manager
+      this.subscriptionManager.removeClient(ws.sessionId);
 
       // Remove from clients
       const userClients = this.clients.get(ws.userId);
@@ -391,6 +413,26 @@ export class WebSocketManager {
 
   private generateSessionId(): string {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private setupRedisSubscription(): void {
+    this.subscriptionManager.onMessage((symbol, data) => {
+      const clients = this.subscriptionManager.getClientsForSymbol(symbol);
+      const wildcardClients = this.subscriptionManager.getClientsForSymbol('*');
+      const allClients = new Set([...clients, ...wildcardClients]);
+      
+      const event = JSON.parse(data);
+      
+      allClients.forEach(clientId => {
+        const ws = this.sessions.get(clientId);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          this.sendMessage(ws, {
+            type: 'market_data',
+            payload: event,
+          });
+        }
+      });
+    });
   }
 
   private setupHeartbeat(): void {
@@ -496,6 +538,7 @@ export class WebSocketManager {
           connections: clients.size,
         })
       ),
+      subscriptions: instance.subscriptionManager.getStats(),
     };
   }
 

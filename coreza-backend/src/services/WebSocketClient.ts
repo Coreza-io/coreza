@@ -1,3 +1,24 @@
+/**
+ * ============================================
+ * DEPRECATED: WebSocketClient
+ * ============================================
+ * This class is DEPRECATED and will be removed in a future version.
+ * 
+ * All WebSocket operations now use the unified Redis Pub/Sub architecture:
+ * - routes/websocket.ts → publishes control messages to Redis
+ * - MarketControlHandler → orchestrates gateway connections
+ * - MarketDataGateway → manages broker WebSocket connections
+ * - MarketDataSubscriber → triggers workflows on market events
+ * 
+ * Migration path:
+ * - Replace WebSocketClient.subscribe() with Redis Pub/Sub control messages
+ * - Use MarketControlHandler for gateway management
+ * - Use MarketDataSubscriber for workflow triggers
+ * 
+ * Removal date: TBD (after all usages are migrated)
+ * ============================================
+ */
+
 import WebSocket from "ws";
 import { supabase } from "../config/supabase";
 import { WebSocketManager } from "./websocketManager";

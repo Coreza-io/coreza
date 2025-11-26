@@ -5,6 +5,8 @@
  */
 
 import Redis from 'ioredis';
+import { Mutex } from 'async-mutex';
+import { getRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
 import { CredentialManager } from '../utils/credentialManager';
@@ -34,11 +36,13 @@ export class MarketControlHandler {
   private redisPub: Redis;
   private sourceStates = new Map<MarketSource, SourceState>();
   private initialized = false;
+  private gatewayMutex = new Mutex(); // Mutex to prevent race conditions
 
   private constructor() {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    this.redisSub = new Redis(redisUrl, { lazyConnect: true });
-    this.redisPub = new Redis(redisUrl, { lazyConnect: true });
+    // Use shared Redis connections from factory
+    const { pub, sub } = getRedisPubSub();
+    this.redisPub = pub;
+    this.redisSub = sub;
   }
 
   static getInstance(): MarketControlHandler {
@@ -58,10 +62,8 @@ export class MarketControlHandler {
     }
 
     try {
-      // Connect to Redis
-      await this.redisSub.connect();
-      await this.redisPub.connect();
-      console.log('✅ [MarketControl] Connected to Redis');
+      // Redis connections are already established by factory
+      console.log('✅ [MarketControl] Using shared Redis connections');
 
       // Subscribe to control channels
       await this.redisSub.subscribe(
@@ -113,43 +115,46 @@ export class MarketControlHandler {
   }
 
   /**
-   * Handle subscribe control message
+   * Handle subscribe control message (with mutex protection)
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
     const { source, userId, workflowId, symbols } = msg;
 
     try {
-      let state = this.sourceStates.get(source);
+      // Acquire mutex to prevent concurrent gateway connections
+      await this.gatewayMutex.runExclusive(async () => {
+        let state = this.sourceStates.get(source);
 
-      // Connect gateway if needed
-      if (!state || !state.gateway.getStats().connected) {
-        console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
-        await this.connectGateway(source, userId, msg.credentialId);
-        state = this.sourceStates.get(source)!;
-        console.log(`✅ [MarketControl] Connected to ${source} gateway`);
-      }
+        // Connect gateway if needed
+        if (!state || !state.gateway.getStats().connected) {
+          console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
+          await this.connectGateway(source, userId, msg.credentialId);
+          state = this.sourceStates.get(source)!;
+          console.log(`✅ [MarketControl] Connected to ${source} gateway`);
+        }
 
-      // Track workflow symbols
-      if (workflowId) {
-        const currentSymbols = state.workflowSymbols.get(workflowId) || new Set();
-        symbols.forEach(s => currentSymbols.add(s.toUpperCase()));
-        state.workflowSymbols.set(workflowId, currentSymbols);
-      }
+        // Track workflow symbols
+        if (workflowId) {
+          const currentSymbols = state.workflowSymbols.get(workflowId) || new Set();
+          symbols.forEach(s => currentSymbols.add(s.toUpperCase()));
+          state.workflowSymbols.set(workflowId, currentSymbols);
+        }
 
-      // Find new symbols not already subscribed
-      const newSymbols = symbols.filter(s => !state.symbols.has(s.toUpperCase()));
+        // Find new symbols not already subscribed
+        const newSymbols = symbols.filter(s => !state!.symbols.has(s.toUpperCase()));
 
-      if (newSymbols.length > 0) {
-        console.log(`➕ [MarketControl] Subscribing to new symbols on ${source}:`, newSymbols);
-        newSymbols.forEach(s => state!.symbols.add(s.toUpperCase()));
-        state.gateway.subscribeSymbols(newSymbols);
+        if (newSymbols.length > 0) {
+          console.log(`➕ [MarketControl] Subscribing to new symbols on ${source}:`, newSymbols);
+          newSymbols.forEach(s => state!.symbols.add(s.toUpperCase()));
+          state!.gateway.subscribeSymbols(newSymbols);
 
-        // Persist to Redis
-        await this.persistState(source);
-        console.log(`✅ [MarketControl] Subscribed to ${newSymbols.length} new symbols on ${source}`);
-      } else {
-        console.log(`ℹ️ [MarketControl] All symbols already subscribed on ${source}`);
-      }
+          // Persist to Redis
+          await this.persistState(source);
+          console.log(`✅ [MarketControl] Subscribed to ${newSymbols.length} new symbols on ${source}`);
+        } else {
+          console.log(`ℹ️ [MarketControl] All symbols already subscribed on ${source}`);
+        }
+      });
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to handle subscribe for ${source}:`, error);
       throw error;

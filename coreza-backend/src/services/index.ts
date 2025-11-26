@@ -9,10 +9,11 @@ export { NodeRouter } from './router';
 export { LoopHandler } from './loopHandler';
 export { NodeStoreV2 } from './nodeStoreV2';
 
-// Export WebSocket services
-export { WebSocketClient } from './WebSocketClient';
-
-// Export Market Data services
+// Export Market Data services (Redis Pub/Sub architecture)
 export { MarketDataGateway } from './MarketDataGateway';
 export { MarketDataSubscriber } from './MarketDataSubscriber';
 export { MarketControlHandler } from './MarketControlHandler';
+export { SubscriptionManager } from './SubscriptionManager';
+
+// Note: WebSocketClient is DEPRECATED and no longer exported
+// Use Redis Pub/Sub architecture via MarketControlHandler instead

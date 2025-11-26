@@ -21,4 +21,7 @@ export const REDIS_CHANNELS = {
   gatewaySymbols: (source: string) => `md:gateway:${source}:symbols`,
 } as const;
 
-export type RedisChannel = ReturnType<typeof REDIS_CHANNELS[keyof typeof REDIS_CHANNELS]>;
+type RedisChannelValue = typeof REDIS_CHANNELS[keyof typeof REDIS_CHANNELS];
+export type RedisChannel = RedisChannelValue extends (...args: any[]) => infer R
+  ? R
+  : RedisChannelValue;

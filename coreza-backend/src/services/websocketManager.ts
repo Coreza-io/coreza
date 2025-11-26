@@ -111,7 +111,9 @@ export class WebSocketManager {
 
     this.wss = new WebSocket.Server({
       port,
-      verifyClient: this.verifyClient.bind(this),
+      verifyClient: (info, done) => {
+        this.verifyClient(info, done);
+      },
     });
 
     this.wss.on("connection", this.handleConnection.bind(this));
@@ -148,11 +150,14 @@ export class WebSocketManager {
     }
   }
 
-  private async verifyClient(info: {
-    origin: string;
-    secure: boolean;
-    req: IncomingMessage;
-  }): Promise<boolean> {
+  private async verifyClient(
+    info: {
+      origin: string;
+      secure: boolean;
+      req: IncomingMessage;
+    },
+    done: (result: boolean, code?: number, message?: string) => void
+  ): Promise<void> {
     try {
       const url = new URL(
         info.req.url || "",
@@ -162,22 +167,24 @@ export class WebSocketManager {
 
       if (!token) {
         console.warn("WebSocket connection rejected: No token provided");
-        return false;
+        done(false, 401, "Unauthorized");
+        return;
       }
 
       // Verify JWT token with proper signature validation
       const decoded = await this.verifyJWT(token);
       if (!decoded.userId) {
         console.warn("WebSocket connection rejected: Invalid token");
-        return false;
+        done(false, 401, "Unauthorized");
+        return;
       }
 
       // Store user info in request for later use
       (info.req as any).userId = decoded.userId;
-      return true;
+      done(true);
     } catch (error) {
       console.error("WebSocket verification error:", error);
-      return false;
+      done(false, 401, "Unauthorized");
     }
   }
 
@@ -234,6 +241,11 @@ export class WebSocketManager {
     req: IncomingMessage
   ): void {
     const userId = (req as any).userId;
+    if (!userId) {
+      console.warn("WebSocket connection missing userId after verification");
+      ws.close(1008, "Authentication required");
+      return;
+    }
     const sessionId = this.generateSessionId();
 
     console.log(

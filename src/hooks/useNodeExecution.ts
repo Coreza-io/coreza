@@ -495,63 +495,79 @@ export function useNodeExecution({
               )
             );
 
-            // Wait for first streaming data
-            const timeout = definition?.streamingConfig?.timeout || 30000;
-            const startTime = Date.now();
+            // Only wait for first streaming data if configured
+            const shouldWaitForFirstEvent = definition?.streamingConfig?.waitForFirstEvent !== false;
+            
+            if (shouldWaitForFirstEvent) {
+              const timeout = definition?.streamingConfig?.timeout || 30000;
+              const startTime = Date.now();
 
-            try {
-              await new Promise<void>((resolve, reject) => {
-                const checkInterval = setInterval(() => {
-                  const nodeData = executionStore.getNodeData(nodeId!);
-                  const output = nodeData?.output as any;
+              try {
+                await new Promise<void>((resolve, reject) => {
+                  const checkInterval = setInterval(() => {
+                    const nodeData = executionStore.getNodeData(nodeId!);
+                    const output = nodeData?.output as any;
 
-                  // Check if we received actual streaming data
-                  const hasStreamingData =
-                    output &&
-                    output.status === "streaming" &&
-                    (output.news ||
-                      output.data ||
-                      output.trade ||
-                      output.quote ||
-                      output.bar ||
-                      output.dailyBar);
+                    // Check if we received actual streaming data
+                    const hasStreamingData =
+                      output &&
+                      output.status === "streaming" &&
+                      (output.news ||
+                        output.data ||
+                        output.trade ||
+                        output.quote ||
+                        output.bar ||
+                        output.dailyBar);
 
-                  if (hasStreamingData) {
-                    clearInterval(checkInterval);
-                    console.log("✅ Received first streaming data:", output);
-                    outputData = output;
-                    resolve();
-                    return;
-                  }
+                    if (hasStreamingData) {
+                      clearInterval(checkInterval);
+                      console.log("✅ Received first streaming data:", output);
+                      outputData = output;
+                      resolve();
+                      return;
+                    }
 
-                  // Check timeout
-                  if (Date.now() - startTime > timeout) {
-                    clearInterval(checkInterval);
-                    reject(
-                      new Error(
-                        `Timeout waiting for ${definition?.name} data after ${timeout}ms`
-                      )
-                    );
-                  }
-                }, 100);
-              });
+                    // Check timeout
+                    if (Date.now() - startTime > timeout) {
+                      clearInterval(checkInterval);
+                      reject(
+                        new Error(
+                          `Timeout waiting for ${definition?.name} data after ${timeout}ms`
+                        )
+                      );
+                    }
+                  }, 100);
+                });
 
-              // Clear streaming waiting state
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
-                    : n
-                )
-              );
-            } catch (error: any) {
-              console.error("Streaming wait error:", error);
-              setError(error.message || "Failed to receive streaming data");
+                // Clear streaming waiting state
+                setNodes((nds) =>
+                  nds.map((n) =>
+                    n.id === nodeId
+                      ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
+                      : n
+                  )
+                );
+              } catch (error: any) {
+                console.error("Streaming wait error:", error);
+                setError(error.message || "Failed to receive streaming data");
+                outputData = {
+                  status: "error",
+                  error: error.message || "Failed to receive streaming data",
+                };
+              }
+            } else {
+              // Skip wait loop, return immediate subscription success
               outputData = {
-                ...outputData,
-                status: "error",
-                message: error.message,
+                status: "subscribed",
+                message: `Successfully subscribed to ${definition?.name}`,
+                subscribedAt: new Date().toISOString(),
+                symbols: parsedSymbols,
+                streamTypes: fieldState.stream_types || fieldState.stream_type || [],
+                nodeId: nodeId,
+                subscriptions: responseData?.subscriptions,
               };
+              
+              // Clear streaming waiting state
               setNodes((nds) =>
                 nds.map((n) =>
                   n.id === nodeId

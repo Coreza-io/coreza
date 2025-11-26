@@ -4,6 +4,7 @@ import { REDIS_CHANNELS } from '../config/redisChannels';
 import { CorezaMarketEvent, MarketSource, MarketEventType } from '../types/marketEvent';
 import { supabase } from '../config/supabase';
 import { bullMqJobQueue } from './jobQueueManager';
+import WorkflowCache from './WorkflowCache';
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -26,6 +27,8 @@ export class MarketDataSubscriber {
   private redisSub: Redis;
   private redisPub: Redis;
   private isInitialized = false;
+  private messageHandler: ((channel: string, message: string) => Promise<void>) | null = null;
+  private workflowCache = WorkflowCache;
 
   private constructor() {
     this.redisSub = getRedis();
@@ -192,14 +195,10 @@ export class MarketDataSubscriber {
             eventTypes?: MarketEventType[];
           };
 
-          // Verify workflow is still active
-          const { data: workflow, error } = await supabase
-            .from('workflows')
-            .select('is_active')
-            .eq('id', subscription.workflowId)
-            .single();
-
-          if (error || !workflow?.is_active) {
+          // Verify workflow is still active (use cache)
+          const workflow = await this.workflowCache.getWorkflow(subscription.workflowId);
+          
+          if (!workflow?.is_active) {
             console.log(`⚠️  Skipping inactive workflow ${subscription.workflowId}`);
             await this.redisPub.del(key);
             continue;
@@ -230,10 +229,16 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Setup Redis message handler
+   * Setup Redis message handler with memory leak prevention
    */
   private setupMessageHandler(): void {
-    this.redisSub.on('message', async (channel: string, message: string) => {
+    // Remove existing handler to prevent duplicates
+    if (this.messageHandler) {
+      this.redisSub.off('message', this.messageHandler);
+    }
+
+    // Create new handler
+    this.messageHandler = async (channel: string, message: string) => {
       try {
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
@@ -267,13 +272,16 @@ export class MarketDataSubscriber {
       } catch (error) {
         console.error(`❌ [MarketDataSubscriber] Message handler error:`, error);
       }
-    });
+    };
 
+    // Attach handler
+    this.redisSub.on('message', this.messageHandler);
     console.log(`✅ [MarketDataSubscriber] Message handler setup complete`);
   }
 
   /**
    * Trigger workflow execution with market event
+   * Uses WorkflowCache to avoid repeated Supabase queries (60s cache)
    */
   private async triggerWorkflowExecution(
     workflowId: string,
@@ -281,20 +289,16 @@ export class MarketDataSubscriber {
     event: CorezaMarketEvent
   ): Promise<void> {
     try {
-      // Fetch workflow definition
-      const { data: workflow, error } = await supabase
-        .from('workflows')
-        .select('id, name, nodes, edges, is_active')
-        .eq('id', workflowId)
-        .single();
+      // Fetch workflow definition from cache (60s TTL)
+      const workflow = await this.workflowCache.getWorkflow(workflowId);
 
-      if (error) {
-        console.error(`Failed to fetch workflow ${workflowId}:`, error);
+      if (!workflow) {
+        console.error(`❌ [MarketDataSubscriber] Workflow ${workflowId} not found or inactive`);
         return;
       }
 
-      if (!workflow?.is_active) {
-        console.log(`⚠️  Workflow ${workflowId} is not active, skipping execution`);
+      if (!workflow.is_active) {
+        console.log(`⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`);
         return;
       }
 
@@ -310,7 +314,7 @@ export class MarketDataSubscriber {
         .single();
 
       if (runError || !runData) {
-        console.error(`Failed to create workflow run for ${workflowId}:`, runError);
+        console.error(`❌ [MarketDataSubscriber] Failed to create workflow run for ${workflowId}:`, runError);
         return;
       }
 
@@ -373,10 +377,16 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Cleanup and disconnect
+   * Cleanup resources and prevent memory leaks
    */
   async cleanup(): Promise<void> {
     console.log(`📊 [MarketDataSubscriber] Cleaning up...`);
+    
+    // Remove message handler
+    if (this.messageHandler) {
+      this.redisSub.off('message', this.messageHandler);
+      this.messageHandler = null;
+    }
     
     // Unsubscribe from all channels
     await this.redisSub.unsubscribe();

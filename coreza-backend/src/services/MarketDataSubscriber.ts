@@ -95,24 +95,6 @@ export class MarketDataSubscriber {
         this.isInitialized = true;
       }
 
-      // Publish control message to notify MarketDataGateway (with circuit breaker)
-      if (subscription.source) {
-        try {
-          await redisPublishBreaker.fire(
-            REDIS_CHANNELS.controlSubscribe,
-            JSON.stringify({
-              action: 'subscribe',
-              userId,
-              workflowId,
-              symbols: Array.from(subscription.symbols),
-              source: subscription.source,
-            })
-          );
-        } catch (error) {
-          console.warn(`⚠️ [MarketDataSubscriber] Failed to publish control message, gateway may not receive subscription`);
-        }
-      }
-
       console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} subscribed successfully`);
     } catch (error) {
       console.error(`❌ [MarketDataSubscriber] Subscribe error:`, error);
@@ -154,24 +136,6 @@ export class MarketDataSubscriber {
 
       // Remove from Redis persistence
       await this.redisPub.del(REDIS_CHANNELS.workflowSubscription(workflowId));
-
-      // Publish control message to notify MarketDataGateway (with circuit breaker)
-      if (subscription.source) {
-        try {
-          await redisPublishBreaker.fire(
-            REDIS_CHANNELS.controlUnsubscribe,
-            JSON.stringify({
-              action: 'unsubscribe',
-              userId: subscription.userId,
-              workflowId,
-              symbols: Array.from(subscription.symbols),
-              source: subscription.source,
-            })
-          );
-        } catch (error) {
-          console.warn(`⚠️ [MarketDataSubscriber] Failed to publish unsubscribe control message`);
-        }
-      }
 
       console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} unsubscribed successfully`);
     } catch (error) {
@@ -252,6 +216,12 @@ export class MarketDataSubscriber {
       try {
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
+        
+        // Validate that this is a proper market event, not a Redis control message
+        if (!event || typeof event !== 'object' || !event.symbol || !event.type) {
+          // Not a valid CorezaMarketEvent, skip (could be subscription confirmation)
+          return;
+        }
         
         // Find workflows subscribed to this symbol
         const workflows = this.symbolWorkflows.get(event.symbol.toUpperCase());

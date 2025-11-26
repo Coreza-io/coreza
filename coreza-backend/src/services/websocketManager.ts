@@ -28,10 +28,20 @@ export class WebSocketManager {
   private sessionNodeIds = new Map<string, string>();
 
   private constructor() {
-    // Initialize JWKS for JWT verification
+    // Initialize JWKS for JWT verification with extended timeout and caching
     const supabaseUrl = process.env.SUPABASE_URL;
     if (supabaseUrl) {
-      this.jwks = createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/jwks`));
+      const jwksUrl = new URL(`${supabaseUrl}/auth/v1/jwks`);
+      console.log(`🔐 Initializing JWKS from: ${jwksUrl.toString()}`);
+      
+      // Create JWKS with extended timeout and caching
+      this.jwks = createRemoteJWKSet(jwksUrl, {
+        timeoutDuration: 15000,  // 15 seconds timeout (default is 5s)
+        cooldownDuration: 30000, // 30 seconds between refetches on error
+        cacheMaxAge: 600000,     // Cache JWKS for 10 minutes
+      });
+    } else {
+      console.warn('⚠️ SUPABASE_URL not set - JWT verification will be disabled');
     }
   }
 
@@ -42,7 +52,51 @@ export class WebSocketManager {
     return WebSocketManager.instance;
   }
 
+  /**
+   * Test JWKS endpoint connectivity before starting server
+   */
+  private async testJwksEndpoint(): Promise<boolean> {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.warn('⚠️ SUPABASE_URL not set - skipping JWKS health check');
+      return false;
+    }
+    
+    try {
+      const jwksUrl = `${supabaseUrl}/auth/v1/jwks`;
+      console.log(`🔐 Testing JWKS endpoint: ${jwksUrl}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      
+      const response = await fetch(jwksUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ JWKS endpoint reachable - ${data.keys?.length || 0} keys available`);
+        return true;
+      } else {
+        console.error(`❌ JWKS endpoint returned ${response.status}: ${response.statusText}`);
+        return false;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`❌ JWKS endpoint timed out after 15 seconds`);
+      } else {
+        console.error(`❌ JWKS endpoint unreachable:`, error instanceof Error ? error.message : error);
+      }
+      return false;
+    }
+  }
+
   async initialize(port: number = 8081): Promise<void> {
+    // Test JWKS endpoint connectivity first
+    const jwksAvailable = await this.testJwksEndpoint();
+    if (!jwksAvailable) {
+      console.warn('⚠️ JWKS endpoint not available - WebSocket auth may fail. Continuing anyway...');
+    }
+
     // Check if port is available
     const isPortAvailable = await this.checkPort(port);
     
@@ -156,7 +210,21 @@ export class WebSocketManager {
       console.log(`✅ JWT verified successfully for user: ${userId}`);
       return { userId };
     } catch (error) {
-      console.error("❌ JWT verification failed:", error instanceof Error ? error.message : error);
+      const message = error instanceof Error ? error.message : String(error);
+      const errorCode = (error as any)?.code;
+      
+      console.error(`❌ JWT verification failed: ${message}`);
+      
+      // Provide specific guidance based on error type
+      if (errorCode === 'ERR_JWKS_TIMEOUT' || message.includes('timed out')) {
+        console.error(`   → Network timeout fetching JWKS. Check connectivity to Supabase.`);
+        console.error(`   → Try: curl ${process.env.SUPABASE_URL}/auth/v1/jwks`);
+        console.error(`   → Or check if Supabase URL is correct: ${process.env.SUPABASE_URL}`);
+      } else if (message.includes('Expected 200 OK')) {
+        console.error(`   → JWKS endpoint not returning 200. Supabase may be down or unreachable.`);
+        console.error(`   → Verify SUPABASE_URL in .env: ${process.env.SUPABASE_URL}`);
+      }
+      
       throw new Error("Invalid or expired token");
     }
   }

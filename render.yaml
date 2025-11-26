@@ -1,0 +1,69 @@
+databases:
+  - name: coreza-redis
+    plan: free
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: allow all
+
+services:
+  - type: web
+    name: coreza-backend
+    env: node
+    plan: free
+    buildCommand: "cd coreza-backend && npm install && npm run build"
+    startCommand: "cd coreza-backend && npm start"
+    envVars:
+      - key: REDIS_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SUPABASE_URL
+        value: "YOUR_SUPABASE_URL"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: "YOUR_SUPABASE_SERVICE_ROLE_KEY"
+      - key: COREZA_ENCRYPTION_KEY
+        value: "YOUR_ENCRYPTION_KEY"
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: "production"
+
+  # Optional: Comment out if staying free-only (Celery worker needs Starter plan)
+  - type: worker
+    name: coreza-worker
+    env: docker
+    plan: starter
+    dockerfilePath: ./coreza-backend/Dockerfile.worker
+    envVars:
+      - key: REDIS_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SUPABASE_URL
+        value: ""
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: ""
+      - key: ENVIRONMENT
+        value: "production"
+
+  - type: web
+    name: coreza-frontend
+    env: static
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_SUPABASE_URL
+        value: "YOUR_SUPABASE_URL"
+      - key: VITE_SUPABASE_ANON_KEY  
+        value: "YOUR_SUPABASE_ANON_KEY"
+      - key: VITE_COREZA_ENCRYPTION_KEY
+        value: "YOUR_ENCRYPTION_KEY"
+      - key: VITE_API_URL
+        fromService:
+          name: coreza-backend
+          type: web
+          property: host

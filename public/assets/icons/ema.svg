@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background circle -->
+  <circle cx="16" cy="16" r="15" fill="#F8FAFC" stroke="#3B82F6" stroke-width="2"/>
+  
+  <!-- Chart grid lines -->
+  <path d="M6 12H26M6 20H26" stroke="#E5E7EB" stroke-width="0.5"/>
+  <path d="M10 8V24M16 8V24M22 8V24" stroke="#E5E7EB" stroke-width="0.5"/>
+  
+  <!-- Price line (more volatile) -->
+  <path d="M6 18L9 15L12 17L15 14L18 16L21 13L24 15L26 12" stroke="#6B7280" stroke-width="1.5" fill="none"/>
+  
+  <!-- EMA line (smoother) -->
+  <path d="M6 19L9 16.5L12 17.5L15 15.5L18 16.5L21 14.5L24 15.5L26 13.5" stroke="#3B82F6" stroke-width="2" fill="none"/>
+  
+  <!-- EMA text -->
+  <text x="16" y="8" text-anchor="middle" fill="#3B82F6" font-family="Arial, sans-serif" font-size="4" font-weight="bold">EMA</text>
+</svg>

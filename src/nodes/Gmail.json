@@ -1,0 +1,47 @@
+{
+  "name": "Gmail",
+  "def": "Send Email",
+  "node_type": "main",
+  "category": "Email",
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GmailAuthModal",
+  "authAction": { "url": "/oauth/gmail/generate-auth-url", "method": "POST" },
+
+  "icon": "/assets/icons/gmail.svg",
+  "size": { "width": 340, "height": 340 },
+  "action": { "url": "/gmail/send", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "to",
+      "label": "Recipient",
+      "type": "text",
+      "placeholder": "recipient@example.com",
+      "required": true
+    },
+    {
+      "key": "subject",
+      "label": "Subject",
+      "type": "text",
+      "placeholder": "Subject line",
+      "required": true
+    },
+    {
+      "key": "body",
+      "label": "Message",
+      "type": "textarea",
+      "placeholder": "Email content...",
+      "required": true
+    }
+  ]
+}

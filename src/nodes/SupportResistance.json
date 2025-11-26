@@ -1,0 +1,60 @@
+{
+  "name": "Support & Resistance",
+  "def": "Support and Resistance Levels",
+  "node_type": "main",
+  "icon": "/assets/icons/support-resistance.svg",
+  "category": "Indicators",
+  "description": "Calculate support and resistance levels using multiple methods",
+  "color": "text-purple-500",
+  "size": { "width": 360, "height": 320 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/indicators/support-resistance",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data (OHLC)",
+      "type": "text",
+      "required": true,
+      "placeholder": "Connect from Market node"
+    },
+    {
+      "key": "method",
+      "label": "Calculation Method",
+      "type": "select",
+      "options": [
+        { "value": "pivot", "label": "Pivot Points (Classic)" },
+        { "value": "swing", "label": "Swing High/Low (Price Action)" },
+        { "value": "historical", "label": "Historical High/Low" }
+      ],
+      "default": "pivot",
+      "required": true
+    },
+    {
+      "key": "lookback_period",
+      "label": "Lookback Period",
+      "type": "text",
+      "default": "20",
+      "placeholder": "e.g. 20"
+    },
+    {
+      "key": "sensitivity",
+      "label": "Sensitivity (%)",
+      "type": "text",
+      "default": "1.0",
+      "placeholder": "e.g. 1.0"
+    },
+    {
+      "key": "num_levels",
+      "label": "Number of Levels",
+      "type": "text",
+      "default": "3",
+      "placeholder": "e.g. 3"
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "name": "BinanceTrade",
+  "def": "Execute Trade",
+  "node_type": "main",
+  "category": "Broker",
+  "parentNode": "Binance",
+  "icon": "/assets/icons/binance.svg",
+  "size": { "width": 340, "height": 340 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/binance/place_order",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "label": "Spot", "value": "spot" },
+        { "label": "Futures", "value": "futures" },
+        { "label": "Margin", "value": "margin" }
+      ],
+      "default": "spot",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. BTCUSDT",
+      "required": true
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        { "label": "Buy", "value": "buy" },
+        { "label": "Sell", "value": "sell" }
+      ],
+      "required": true
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        { "label": "Market", "value": "market" },
+        { "label": "Limit", "value": "limit" },
+        { "label": "Stop Loss", "value": "stop_loss" },
+        { "label": "Take Profit", "value": "take_profit" },
+        { "label": "Stop Loss Limit", "value": "stop_loss_limit" },
+        { "label": "Take Profit Limit", "value": "take_profit_limit" }
+      ],
+      "default": "market",
+      "required": true
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "number",
+      "placeholder": "Order quantity",
+      "required": true
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "number",
+      "placeholder": "Limit price",
+      "displayOptions": {
+        "show": {
+          "type": ["limit", "stop_loss_limit", "take_profit_limit"]
+        }
+      }
+    },
+    {
+      "key": "stopPrice",
+      "label": "Stop Price",
+      "type": "number",
+      "placeholder": "Stop price",
+      "displayOptions": {
+        "show": {
+          "type": ["stop_loss", "take_profit", "stop_loss_limit", "take_profit_limit"]
+        }
+      }
+    },
+    {
+      "key": "timeInForce",
+      "label": "Time In Force",
+      "type": "select",
+      "options": [
+        { "label": "GTC (Good Till Cancel)", "value": "GTC" },
+        { "label": "IOC (Immediate Or Cancel)", "value": "IOC" },
+        { "label": "FOK (Fill Or Kill)", "value": "FOK" }
+      ],
+      "default": "GTC",
+      "displayOptions": {
+        "show": {
+          "type": ["limit", "stop_loss_limit", "take_profit_limit"]
+        }
+      }
+    },
+    {
+      "key": "icebergQty",
+      "label": "Iceberg Quantity",
+      "type": "number",
+      "placeholder": "Optional iceberg quantity",
+      "displayOptions": {
+        "show": {
+          "type": ["limit"]
+        }
+      }
+    },
+    {
+      "key": "newOrderRespType",
+      "label": "Response Type",
+      "type": "select",
+      "options": [
+        { "label": "ACK", "value": "ACK" },
+        { "label": "RESULT", "value": "RESULT" },
+        { "label": "FULL", "value": "FULL" }
+      ],
+      "default": "RESULT"
+    }
+  ]
+}

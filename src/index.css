@@ -1,0 +1,776 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Coreza Trading Platform Design System */
+
+@layer components {
+  .plug-handle {
+    @apply w-6 h-6 rounded-full bg-transparent border-0 flex items-center justify-center p-0 z-20;
+  }
+
+  .plug-handle svg {
+    @apply w-full h-full;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+}
+
+@layer base {
+
+  :root,
+  .dark {
+    /* Dark theme - Professional trading platform */
+    --background: 220 1% 18%;
+    --foreground: 210 20% 85%;
+
+    --card: 224 12% 10%;
+    --card-foreground: 210 20% 85%;
+
+    --popover: 224 12% 10%;
+    --popover-foreground: 210 20% 85%;
+
+    /* Professional blue primary */
+    --primary: 217 91% 60%;
+    --primary-foreground: 224 12% 8%;
+    --primary-glow: 217 91% 70%;
+
+    --secondary: 224 12% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 224 12% 12%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 224 12% 8%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 85%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 20% 85%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 224 12% 8%;
+
+    --border: 224 12% 20%;
+    --input: 224 12% 15%;
+    --ring: 217 91% 60%;
+
+    /* Trading platform specific colors - Dark */
+    --trading-grid: 220 1% 18%;
+    --trading-node: 224 12% 15%;
+    --trading-edge: 107 114 128;
+    --sidebar-background: 224 12% 6%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 224 12% 8%;
+    --sidebar-accent: 224 12% 12%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 224 12% 20%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Gradients - Dark */
+    --gradient-primary: linear-gradient(135deg,
+        hsl(217 91% 60%),
+        hsl(217 91% 70%));
+    --gradient-card: linear-gradient(145deg,
+        hsl(224 12% 10%),
+        hsl(224 12% 12%));
+    --gradient-glow: radial-gradient(circle at center,
+        hsl(217 91% 60% / 0.15),
+        transparent 70%);
+
+    /* Shadows - Dark */
+    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
+    --shadow-card: 0 4px 12px hsl(224 12% 4% / 0.5);
+    --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
+
+    /* Category-specific metallic gradients */
+    --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
+    --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
+    --gradient-data: linear-gradient(135deg, #1f3d2d 0%, #3d7a5a 25%, #5fbf8b 50%, #3d7a5a 75%, #1f3d2d 100%);
+    --gradient-logic: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #bf8b5f 50%, #7a5a3d 75%, #3d2d1f 100%);
+    --gradient-screener: linear-gradient(135deg, #3d1f2d 0%, #7a3d5a 25%, #bf5f8b 50%, #7a3d5a 75%, #3d1f2d 100%);
+    --gradient-input: linear-gradient(135deg, #1f2d3d 0%, #3d5a7a 25%, #5f8bbf 50%, #3d5a7a 75%, #1f2d3d 100%);
+    --gradient-visualization: linear-gradient(135deg, #2d1f1f 0%, #5a3d3d 25%, #bf5f5f 50%, #5a3d3d 75%, #2d1f1f 100%);
+    --gradient-llm: linear-gradient(135deg, #1f1f3d 0%, #3d3d7a 25%, #5f5fbf 50%, #3d3d7a 75%, #1f1f3d 100%);
+    --gradient-chatmodel: linear-gradient(135deg, #2d2d1f 0%, #5a5a3d 25%, #8b8b5f 50%, #5a5a3d 75%, #2d2d1f 100%);
+    --gradient-aiagent: linear-gradient(135deg, #3d1f3d 0%, #7a3d7a 25%, #bf5fbf 50%, #7a3d7a 75%, #3d1f3d 100%);
+    --gradient-email: linear-gradient(135deg, #1f2d2d 0%, #3d5a5a 25%, #5f8b8b 50%, #3d5a5a 75%, #1f2d2d 100%);
+    --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
+    --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
+    --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
+    --gradient-binance: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #f3ba2f 50%, #7a5a3d 75%, #3d2d1f 100%);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .light {
+    /* Light theme - Modern trading platform */
+    --background: 0 0% 100%;
+    --foreground: 224 12% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 12% 8%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 12% 8%;
+
+    /* Professional blue primary */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 70%;
+
+    --secondary: 210 10% 96%;
+    --secondary-foreground: 224 12% 8%;
+
+    --muted: 210 10% 96%;
+    --muted-foreground: 215 15% 40%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* Trading platform specific colors - Light */
+    --trading-grid: 220 14% 95%;
+    --trading-node: 0 0% 100%;
+    --trading-edge: 156 163 175;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 224 12% 8%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 10% 96%;
+    --sidebar-accent-foreground: 224 12% 8%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+
+    /* Gradients - Light */
+    --gradient-primary: linear-gradient(135deg,
+        hsl(217 91% 60%),
+        hsl(217 91% 70%));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
+    --gradient-glow: radial-gradient(circle at center,
+        hsl(217 91% 60% / 0.08),
+        transparent 70%);
+
+    /* Shadows - Light */
+    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
+    --shadow-card: 0 2px 8px hsl(220 13% 91% / 0.6);
+    --shadow-elevated: 0 4px 16px hsl(220 13% 91% / 0.8);
+  }
+
+  /* Electric Border Animations */
+  @keyframes electric-pulse {
+
+    0%,
+    100% {
+      filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+      opacity: 1;
+    }
+
+    50% {
+      filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 24px currentColor);
+      opacity: 0.8;
+    }
+  }
+
+  @keyframes electric-flicker {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    20% {
+      opacity: 0.9;
+    }
+
+    40% {
+      opacity: 1;
+    }
+
+    60% {
+      opacity: 0.85;
+    }
+
+    80% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes border-flow {
+    0% {
+      stroke-dashoffset: 0;
+    }
+
+    100% {
+      stroke-dashoffset: -200;
+    }
+  }
+
+  @keyframes gradient-flow {
+
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes border-pulse {
+
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Animated Gradient Border */
+  .animated-gradient-border {
+    @apply relative bg-card;
+    overflow: visible;
+  }
+
+  .animated-gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(90deg,
+        hsl(var(--primary)),
+        hsl(var(--chart-2)),
+        hsl(var(--chart-3)),
+        hsl(var(--primary)));
+    background-size: 300% 300%;
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    animation: gradient-flow 4s ease infinite, border-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .animated-gradient-border:hover::before {
+    opacity: 1;
+  }
+
+  /* Electric Border Utility Classes */
+  .electric-border {
+    position: relative;
+    overflow: visible !important;
+    --electric-border-color: currentColor;
+  }
+
+  .electric-border-cyan {
+    color: #00ffff;
+  }
+
+  .electric-border-orange {
+    color: #ff8c00;
+  }
+
+  .electric-border-blue {
+    color: #3b82f6;
+  }
+
+  .electric-border-purple {
+    color: #a855f7;
+  }
+
+  .electric-border-green {
+    color: #00ff00;
+  }
+
+  /* Workflow plug edge styling */
+  @keyframes plug-edge-flow {
+    from {
+      stroke-dashoffset: 0;
+    }
+
+    to {
+      stroke-dashoffset: -48;
+    }
+  }
+
+  @keyframes plug-edge-spark {
+
+    0%,
+    100% {
+      transform: scale(0.9);
+      opacity: 0.15;
+    }
+
+    40% {
+      transform: scale(1.1);
+      opacity: 0.35;
+    }
+
+    70% {
+      transform: scale(1);
+      opacity: 0.25;
+    }
+  }
+
+  @keyframes plug-edge-plug-shift {
+    from {
+      transform: translate(0%, 0%);
+    }
+
+    to {
+      transform: translate(var(--plug-edge-shift-x, 0%),
+          var(--plug-edge-shift-y, 0%));
+    }
+  }
+
+  @keyframes plug-drag-wobble {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.08);
+    }
+  }
+
+  @keyframes plug-pulse {
+    0%, 100% {
+      opacity: 0.2;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(1.3);
+    }
+  }
+
+  .plug-edge__glow {
+    opacity: 0.2;
+    filter: blur(10px);
+    transition: opacity 0.3s ease, filter 0.3s ease;
+  }
+
+  .plug-edge__glow--active {
+    opacity: 0.45;
+    filter: blur(12px);
+  }
+
+  .plug-edge__cord {
+    transition: filter 0.3s ease;
+  }
+
+  .plug-edge__cord--animated {
+    stroke-dasharray: 12 12;
+    animation: plug-edge-flow 1.4s linear infinite;
+  }
+
+  .plug-edge__cord.executing-edge {
+    filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 0 14px currentColor);
+  }
+
+  .plug-edge__spark {
+    opacity: 0.15;
+    transition: opacity 0.3s ease;
+    animation: plug-edge-spark 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .plug-edge__spark--active {
+    opacity: 0.5;
+  }
+
+  .plug-edge__plug {
+    pointer-events: none;
+  }
+
+  /* .plug-edge__plug-dragging-inner {
+    animation: plug-drag-wobble 1s ease-in-out infinite;
+    transform-origin: center center;
+  }
+
+  .plug-edge__plug-dragging-inner path {
+    transform-box: fill-box;
+  }
+
+  .plug-edge__plug--anchored {
+    transform-origin: center;
+  }
+
+  .plug-edge__plug-pulse {
+    animation: plug-pulse 1.5s ease-in-out infinite;
+  } */
+
+  .plug-edge__plug-shape {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: plug-edge-plug-shift 3s ease-in-out infinite alternate;
+  }
+
+  .plug-edge__plug-shape--source {
+    --plug-edge-shift-x: 10%;
+    --plug-edge-shift-y: -10%;
+  }
+
+  .plug-edge__plug-shape--target {
+    --plug-edge-shift-x: -10%;
+    --plug-edge-shift-y: 10%;
+  }
+
+  .plug-edge__plug-shape path {
+    transition: filter 0.3s ease, fill 0.3s ease;
+  }
+
+  .plug-edge__cord.executing-edge~.plug-edge__plug .plug-edge__plug-shape path {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+
+  /* Connection line animation styles */
+  .plug-edge--connection .plug-edge__glow--connecting {
+    opacity: 0.4;
+    filter: blur(12px);
+    animation: plug-edge-spark 1.2s ease-in-out infinite;
+  }
+
+  .plug-edge--connection .plug-edge__cord--connecting {
+    stroke-dasharray: 10 5;
+    animation: plug-edge-flow 0.8s linear infinite;
+  }
+
+  .electric-border-effect {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: 5;
+    --electric-border-color: #dd8448;
+    --electric-border-light: #f5b27a;
+    --electric-border-outer: rgba(221, 132, 72, 0.45);
+    --electric-border-glow: rgba(221, 132, 72, 0.7);
+    --electric-border-glow-soft: rgba(221, 132, 72, 0.35);
+    --electric-border-overlay: linear-gradient(-30deg,
+        rgba(255, 255, 255, 0.9),
+        transparent 32%,
+        transparent 68%,
+        rgba(255, 255, 255, 0.85));
+    --electric-border-background: linear-gradient(-30deg,
+        var(--electric-border-light),
+        transparent,
+        var(--electric-border-color));
+  }
+
+  .electric-border-effect__svg {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .electric-border-effect__layers {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .electric-border-effect__layers>* {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .electric-border-effect__background {
+    background: var(--electric-border-background);
+    filter: blur(var(--electric-bg-blur, 28px));
+    opacity: 0.35;
+    transform: scale(var(--electric-scale-bg, 1.12));
+    z-index: 0;
+  }
+
+  .electric-border-effect__glow--soft {
+    border: 2px solid var(--electric-border-glow-soft);
+    filter: blur(var(--electric-glow-soft-blur, 8px));
+    opacity: 0.7;
+    transform: scale(var(--electric-scale-glow-soft, 1.08));
+    z-index: 1;
+  }
+
+  .electric-border-effect__glow--strong {
+    border: 2px solid var(--electric-border-glow);
+    filter: blur(var(--electric-glow-strong-blur, 3px));
+    opacity: 0.85;
+    transform: scale(var(--electric-scale-glow-strong, 1.03));
+    z-index: 2;
+  }
+
+  .electric-border-effect__border-outer {
+    border: 2px solid var(--electric-border-outer);
+    z-index: 3;
+  }
+
+  .electric-border-effect__border-main {
+    border: 2px solid var(--electric-border-color);
+    z-index: 4;
+  }
+
+  .electric-border-effect__overlay {
+    background: var(--electric-border-overlay);
+    mix-blend-mode: overlay;
+    filter: blur(16px);
+    transform: scale(var(--electric-scale-overlay, 1.08));
+  }
+
+  .electric-border-effect__overlay--primary {
+    opacity: 0.8;
+    z-index: 5;
+  }
+
+  .electric-border-effect__overlay--secondary {
+    opacity: 0.45;
+    z-index: 6;
+  }
+
+  /* React Flow Edge Overrides - More specific selectors */
+  .react-flow__edges .react-flow__edge path,
+  .react-flow__edge path,
+  .react-flow__edge-path,
+  .react-flow .react-flow__edges .react-flow__edge path {
+    stroke: #6b7280 !important;
+  }
+
+  .react-flow__edge.animated path,
+  .react-flow__edge.animated .react-flow__edge-path {
+    stroke: #6b7280 !important;
+    stroke-dasharray: 5;
+    animation: dashdraw 0.5s linear infinite;
+  }
+
+  .react-flow__edge.selected path,
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke: #6b7280 !important;
+  }
+
+  @keyframes dashdraw {
+    to {
+      stroke-dashoffset: -10;
+    }
+  }
+
+  /* Metallic shimmer animation */
+  @keyframes metallic-shimmer {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  /* Landing page specific styles */
+  .landing-grid-pattern {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .hero-glow {
+    box-shadow:
+      0 0 80px hsl(217 91% 60% / 0.3),
+      0 0 40px hsl(217 91% 60% / 0.2);
+  }
+
+  /* Animated gradient text */
+  .gradient-text {
+    background: linear-gradient(90deg,
+        hsl(217 91% 60%),
+        hsl(280 80% 60%),
+        hsl(217 91% 60%));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 3s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+
+    0%,
+    100% {
+      background-position: 0% center;
+    }
+
+    50% {
+      background-position: 100% center;
+    }
+  }
+
+  .animate-gradient-shift {
+    background-size: 200% auto;
+    animation: gradient-shift 3s ease infinite;
+  }
+
+  /* Metallic gradient utility classes - Dark mode only */
+  .dark .bg-gradient-indicators {
+    background: var(--gradient-indicators);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-broker {
+    background: var(--gradient-broker);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-data {
+    background: var(--gradient-data);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-logic {
+    background: var(--gradient-logic);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-screener {
+    background: var(--gradient-screener);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-input {
+    background: var(--gradient-input);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-visualization {
+    background: var(--gradient-visualization);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-llm {
+    background: var(--gradient-llm);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-chatmodel {
+    background: var(--gradient-chatmodel);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-aiagent {
+    background: var(--gradient-aiagent);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-email {
+    background: var(--gradient-email);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-tool {
+    background: var(--gradient-tool);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-risk {
+    background: var(--gradient-risk);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-scheduler {
+    background: var(--gradient-scheduler);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+
+  .dark .bg-gradient-binance {
+    background: var(--gradient-binance);
+    background-size: 200% 200%;
+    animation: metallic-shimmer 3s ease infinite;
+  }
+}
+
+.react-flow__edges {
+  z-index: 2 !important;
+}
+
+.react-flow__nodes {
+  z-index: 100 !important;
+}
+
+.react-flow__edge-path {
+  position: relative;
+  z-index: 3 !important;
+}
+
+/* Custom cursor for edge interactions */
+.react-flow__edge:hover,
+.react-flow__edge.selected,
+.plug-edge:hover {
+  cursor: grab !important;
+}
+
+.react-flow__edge:active,
+.react-flow__edge.selected:active {
+  cursor: grabbing !important;
+}
+
+/* Connection line cursor */
+.react-flow__connection-path {
+  cursor: crosshair !important;
+}
+
+.plug-edge--connection {
+  cursor: crosshair !important;
+}

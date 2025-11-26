@@ -1,0 +1,20 @@
+{
+  "testEnvironment": "node",
+  "roots": ["<rootDir>/tests"],
+  "testMatch": [
+    "**/__tests__/**/*.ts",
+    "**/?(*.)+(spec|test).ts"
+  ],
+  "transform": {
+    "^.+\\.ts$": "ts-jest"
+  },
+  "collectCoverageFrom": [
+    "coreza-backend-node/src/**/*.ts",
+    "!coreza-backend-node/src/**/*.d.ts"
+  ],
+  "coverageDirectory": "coverage",
+  "coverageReporters": ["text", "lcov", "html"],
+  "setupFilesAfterEnv": ["<rootDir>/tests/setup.ts"],
+  "testTimeout": 30000,
+  "maxWorkers": 4
+}

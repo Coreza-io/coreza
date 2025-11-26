@@ -1,0 +1,112 @@
+{
+  "name": "AlpacaNewsREST",
+  "def": "Alpaca News (REST)",
+  "node_type": "main",
+  "icon": "/assets/icons/alpaca.svg",
+  "category": "Broker",
+  "subCategory": "Alpaca",
+  "description": "Fetch historical news articles from Alpaca using REST API",
+  "color": "text-yellow-500",
+  "size": { "width": 340, "height": 420 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Alpaca"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "Your Alpaca API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "placeholder": "Your Alpaca Secret Key"
+    }
+  ],
+  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
+  "action": { "url": "/broker/alpaca/fetch_news", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
+      "placeholder": "e.g. AAPL,MSFT (leave empty for all)",
+      "description": "Comma-separated stock symbols. Leave empty to fetch all news.",
+      "required": false
+    },
+    {
+      "key": "start",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "e.g. 2024-01-01 or 2024-01-01T00:00:00Z",
+      "description": "Start date for news articles (ISO format)",
+      "required": false
+    },
+    {
+      "key": "end",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "e.g. 2024-12-31 or 2024-12-31T23:59:59Z",
+      "description": "End date for news articles (ISO format)",
+      "required": false
+    },
+    {
+      "key": "limit",
+      "label": "Limit",
+      "type": "text",
+      "placeholder": "e.g. 50 (default: 10, max: 50)",
+      "description": "Maximum number of articles to return",
+      "required": false,
+      "default": "10"
+    },
+    {
+      "key": "sort",
+      "label": "Sort Order",
+      "type": "select",
+      "options": [
+        { "id": "ASC", "name": "Ascending (Oldest first)" },
+        { "id": "DESC", "name": "Descending (Newest first)" }
+      ],
+      "default": "DESC",
+      "required": false
+    },
+    {
+      "key": "include_content",
+      "label": "Include Full Content",
+      "type": "select",
+      "options": [
+        { "id": "true", "name": "Yes" },
+        { "id": "false", "name": "No" }
+      ],
+      "default": "false",
+      "description": "Include full article content (may increase response size)",
+      "required": false
+    },
+    {
+      "key": "page_token",
+      "label": "Page Token",
+      "type": "text",
+      "placeholder": "For pagination (optional)",
+      "description": "Token from previous response for pagination",
+      "required": false
+    }
+  ]
+}

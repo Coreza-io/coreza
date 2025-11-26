@@ -1,0 +1,56 @@
+{
+  "name": "Transform",
+  "label": "Transform",
+  "def": "Manipulate a value",
+  "node_type": "main",
+  "icon": "/assets/icons/if.svg",
+  "category": "Logic",
+  "description": "Value transformations like length, substring or trim",
+  "color": "text-yellow-500",
+  "size": { "width": 300, "height": 240 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/comparator/transform",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "value",
+      "label": "Value",
+      "type": "text",
+      "placeholder": "{{ $json.field }}",
+      "required": true
+    },
+    {
+      "key": "operator",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        { "label": "Length", "value": "len" },
+        { "label": "Substring", "value": "substring" },
+        { "label": "Trim", "value": "trim" },
+        { "label": "To Upper", "value": "upper" },
+        { "label": "To Lower", "value": "lower" }
+      ],
+      "default": "len",
+      "required": true
+    },
+    {
+      "key": "arg1",
+      "label": "Arg1",
+      "type": "text",
+      "placeholder": "Start index",
+      "displayOptions": { "show": { "operator": ["substring"] } }
+    },
+    {
+      "key": "arg2",
+      "label": "Arg2",
+      "type": "text",
+      "placeholder": "Length",
+      "displayOptions": { "show": { "operator": ["substring"] } }
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "name": "Loop",
+  "def": "Loop Over Items",
+  "node_type": "main",
+  "icon": "/assets/icons/loop.svg",
+  "category": "Logic",
+  "description": "Iterate over array items, executing downstream nodes once per item (like N8N Loop Over).",
+  "color": "text-yellow-500",
+  "size": { "width": 320, "height": 200 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "in" },
+    { "type": "source", "position": "top", "id": "done" },
+    { "type": "source", "position": "right", "id": "loop" }
+  ],
+  "fields": [
+    {
+      "key": "inputArray",
+      "label": "Input Array",
+      "type": "text",
+      "placeholder": "items",
+      "required": true,
+      "description": "Field name containing the array to loop over."
+    },
+    {
+      "key": "batchSize",
+      "label": "Batch Size",
+      "type": "text",
+      "placeholder": "1",
+      "default": 1,
+      "description": "Number of items to process per iteration."
+    },
+    {
+      "key": "aggregate",
+      "label": "Aggregate Output",
+      "type": "checkbox",
+      "default": false,
+      "description": "Accumulate results and emit all processed items each iteration"
+    },
+    {
+      "key": "parallel",
+      "label": "Parallel Execution",
+      "type": "checkbox",
+      "default": false,
+      "description": "Run all iterations concurrently"
+    },
+    {
+      "key": "continueOnError",
+      "label": "Continue On Error",
+      "type": "checkbox",
+      "default": false,
+      "description": "Skip failed iterations instead of aborting"
+    },
+    {
+      "key": "throttleMs",
+      "label": "Throttle (ms)",
+      "type": "text",
+      "placeholder": "200",
+      "default": 200,
+      "description": "Delay between loop iterations"
+    }
+  ]
+}

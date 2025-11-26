@@ -1,0 +1,147 @@
+{
+  "name": "SchwabTrade",
+  "def": "Schwab Trade",
+  "node_type": "main",
+  "icon": "/assets/icons/schwab.svg",
+  "category": "Broker",
+  "subCategory": "Schwab",
+  "description": "Execute trades through Charles Schwab",
+  "color": "text-blue-500",
+  "size": { "width": 340, "height": 360 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "SchwabAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Schwab"
+    },
+    {
+      "key": "app_key",
+      "label": "App Key",
+      "type": "password",
+      "placeholder": "Your Schwab App Key"
+    },
+    {
+      "key": "app_secret",
+      "label": "App Secret",
+      "type": "password",
+      "placeholder": "Your Schwab App Secret"
+    },
+    {
+      "key": "account_number",
+      "label": "Account Number (Optional)",
+      "type": "text",
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
+    }
+  ],
+  "authAction": { "url": "/oauth/schwab/generate-auth-url", "method": "POST" },
+
+  "action": { "url": "/broker/schwab/place_order", "method": "POST" },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "hidden",
+      "default": "place_order"
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "accountHash",
+      "label": "Account",
+      "type": "select",
+      "required": true,
+      "optionsSource": "dependentApi",
+      "optionsApiUrl": "/broker/schwab/get_account_numbers",
+      "dependsOn": "credential_id",
+      "placeholder": "Select an account",
+      "description": "Select the Schwab account for trading"
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "instruction",
+      "label": "Action",
+      "type": "select",
+      "options": [
+        { "id": "BUY", "name": "Buy" },
+        { "id": "SELL", "name": "Sell" },
+        { "id": "BUY_TO_COVER", "name": "Buy to Cover" },
+        { "id": "SELL_SHORT", "name": "Sell Short" }
+      ],
+      "default": "BUY",
+      "required": true
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 10",
+      "required": true
+    },
+    {
+      "key": "orderType",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        { "id": "MARKET", "name": "Market" },
+        { "id": "LIMIT", "name": "Limit" },
+        { "id": "STOP", "name": "Stop" },
+        { "id": "STOP_LIMIT", "name": "Stop Limit" }
+      ],
+      "default": "MARKET",
+      "required": true
+    },
+    {
+      "key": "price",
+      "label": "Limit Price",
+      "type": "text",
+      "placeholder": "Required for limit orders",
+      "displayOptions": {
+        "show": {
+          "orderType": ["LIMIT", "STOP_LIMIT"]
+        }
+      }
+    },
+    {
+      "key": "duration",
+      "label": "Duration",
+      "type": "select",
+      "options": [
+        { "id": "DAY", "name": "Day" },
+        { "id": "GOOD_TILL_CANCEL", "name": "Good Till Cancel" },
+        { "id": "FILL_OR_KILL", "name": "Fill or Kill" }
+      ],
+      "default": "DAY",
+      "required": true
+    },
+    {
+      "key": "session",
+      "label": "Session",
+      "type": "select",
+      "options": [
+        { "id": "NORMAL", "name": "Normal" },
+        { "id": "AM", "name": "Pre-Market" },
+        { "id": "PM", "name": "After-Hours" }
+      ],
+      "default": "NORMAL"
+    }
+  ]
+}

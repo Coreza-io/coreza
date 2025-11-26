@@ -1,10 +1,11 @@
 import { createContext, useContext, useRef, useEffect } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 const ExecutionStoreContext = createContext<ExecutionContext | null>(null);
 
-const BACKEND_WS_URL = import.meta.env.VITE_API_URL?.replace(/^http/, 'ws').replace(/\/api$/, '') || 'ws://localhost:8081';
+const BACKEND_WS_URL = 'ws://localhost:8081';
 
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
@@ -19,9 +20,16 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   useEffect(() => {
     if (!user?.id) return;
 
-    const connectWebSocket = () => {
-      const wsUrl = `${BACKEND_WS_URL}?userId=${user.id}`;
-      console.log('📡 [ExecutionStore] Connecting to WebSocket:', wsUrl);
+    const connectWebSocket = async () => {
+      // Get JWT token from Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error('❌ [ExecutionStore] No access token found');
+        return;
+      }
+
+      const wsUrl = `${BACKEND_WS_URL}?token=${session.access_token}`;
+      console.log('📡 [ExecutionStore] Connecting to WebSocket:', BACKEND_WS_URL);
       
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -35,12 +43,11 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
           const message = JSON.parse(event.data);
           console.log('📨 [ExecutionStore] Received WebSocket message:', message);
 
-          // Handle streaming market data updates
-          if (message.type === 'market_data' && message.nodeId) {
-            const { nodeId, data } = message;
+          // Handle streaming market data updates (new Redis Pub/Sub format)
+          if (message.type === 'market_data' && message.payload) {
+            const { nodeId, data } = message.payload;
             
-            // Update execution store with streaming data
-            if (storeRef.current) {
+            if (nodeId && storeRef.current) {
               storeRef.current.setNodeData(nodeId, {
                 output: {
                   status: 'streaming',
@@ -52,18 +59,20 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
             }
           }
 
-          // Handle other streaming message types
-          if (message.status === 'streaming' && message.nodeId) {
-            const { nodeId, data } = message;
+          // Handle legacy streaming format (WebSocketClient broadcasts)
+          if (message.status === 'streaming' && message.payload?.nodeId) {
+            const { nodeId, data } = message.payload;
             
             if (storeRef.current) {
               storeRef.current.setNodeData(nodeId, {
                 output: {
                   status: 'streaming',
                   data,
+                  streamType: message.type,
                   receivedAt: new Date().toISOString()
                 }
               });
+              console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
             }
           }
         } catch (error) {
@@ -77,7 +86,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
       ws.onclose = () => {
         console.log('🔌 [ExecutionStore] WebSocket disconnected, reconnecting in 3s...');
-        setTimeout(connectWebSocket, 3000);
+        setTimeout(() => connectWebSocket(), 3000);
       };
     };
 

@@ -11,3 +11,7 @@ export { NodeStoreV2 } from './nodeStoreV2';
 
 // Export WebSocket services
 export { WebSocketClient } from './WebSocketClient';
+
+// Export Market Data services
+export { MarketDataGateway } from './MarketDataGateway';
+export { MarketDataSubscriber } from './MarketDataSubscriber';

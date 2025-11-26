@@ -5,6 +5,8 @@ import {
   getSmoothStepPath,
   getBezierPath,
   MarkerType,
+  useNodes,
+  Position,
 } from "@xyflow/react";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -74,14 +76,6 @@ interface PlugIconProps {
   style?: React.CSSProperties;
 }
 
-const CONNECTED_SWITCH = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" width="24" height="24">
-  <!-- Female plug path -->
-  <path d="M23.707,0.293c-0.391-0.391-1.023-0.391-1.414,0l-2.58,2.58c-2.004-1.344-4.749-1.132-6.519,0.638l-1.135,1.135l-0.353-0.353c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l8,8c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-0.353-0.353l1.135-1.135c1.77-1.769,1.982-4.515,0.638-6.519l2.58-2.58c0.391-0.391,0.391-1.023,0-1.414Z" fill="#64748b"/>
-  
-  <!-- Male plug path -->
-  <path d="M19.707,5.707l-2.293,2.293-1.414-1.414,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0l-2.293,2.293-1.879-1.879c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l0.352,0.352-1.134,1.135c-1.77,1.769-1.982,4.515-0.638,6.519l-2.58,2.58c-0.391,0.391-0.391,1.023,0,1.414c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293l2.58-2.58c0.865,0.58,1.868,0.871,2.871,0.871,1.321,0,2.642-0.503,3.647-1.509l1.135-1.134l0.352,0.352c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z" fill="#64748b"/>
-</svg>
-`
 const mergeIconStyle = (style?: React.CSSProperties): React.CSSProperties => ({
   pointerEvents: "none",
   transformOrigin: "center",
@@ -154,6 +148,190 @@ const isExecutingClass = (className?: string): boolean => {
   return className.split(" ").some((cls) => cls.trim() === "executing-edge");
 };
 
+// Calculate a smart path that routes around nodes by using waypoints
+const calculateSmartPath = (
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+  sourcePosition: Position,
+  targetPosition: Position,
+  nodes: any[],
+  sourceNodeId: string,
+  targetNodeId: string
+): string => {
+  const defaultNodeWidth = 340;
+  const defaultNodeHeight = 340;
+  const nodePadding = 30;
+
+  const sourceNode = nodes.find(n => n.id === sourceNodeId);
+  const targetNode = nodes.find(n => n.id === targetNodeId);
+
+  const sourceWidth = (sourceNode?.measured?.width || sourceNode?.width || defaultNodeWidth);
+  const sourceHeight = (sourceNode?.measured?.height || sourceNode?.height || defaultNodeHeight);
+  const targetWidth = (targetNode?.measured?.width || targetNode?.width || defaultNodeWidth);
+  const targetHeight = (targetNode?.measured?.height || targetNode?.height || defaultNodeHeight);
+
+  const horizontalDistance = Math.abs(targetX - sourceX);
+  const verticalDistance = Math.abs(targetY - sourceY);
+  const isHorizontal = horizontalDistance > verticalDistance * 2;
+  const isVertical = verticalDistance > horizontalDistance * 5;
+  const isDiagonal = !isHorizontal && !isVertical;
+
+  const minHorizontalGap = (sourceWidth + targetWidth) / 2 + nodePadding;
+  const minVerticalGap = (sourceHeight + targetHeight) / 2 + nodePadding;
+
+  if (isDiagonal) {
+    const bezierPadding = 20;
+    let bezierSourceX = sourceX;
+    let bezierSourceY = sourceY;
+    let bezierTargetX = targetX;
+    let bezierTargetY = targetY;
+
+    if (sourcePosition === Position.Right) {
+      bezierSourceX = sourceX;
+    } else if (sourcePosition === Position.Left) {
+      bezierSourceX = sourceX - bezierPadding;
+    } else if (sourcePosition === Position.Bottom) {
+      bezierSourceY = sourceY + bezierPadding;
+    } else if (sourcePosition === Position.Top) {
+      bezierSourceY = sourceY - bezierPadding;
+    }
+
+    if (targetPosition === Position.Left) {
+      bezierTargetX = targetX - bezierPadding;
+    } else if (targetPosition === Position.Right) {
+      bezierTargetX = targetX + bezierPadding;
+    } else if (targetPosition === Position.Top) {
+      bezierTargetY = targetY - bezierPadding;
+    } else if (targetPosition === Position.Bottom) {
+      bezierTargetY = targetY + bezierPadding;
+    }
+
+    return getBezierPath({
+      sourceX: bezierSourceX,
+      sourceY: bezierSourceY,
+      sourcePosition,
+      targetX: bezierTargetX,
+      targetY: bezierTargetY,
+      targetPosition,
+      curvature: 0.5,
+    })[0];
+  }
+
+  if (horizontalDistance > minHorizontalGap || verticalDistance > minVerticalGap) {
+    return getSmoothStepPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      borderRadius: 10,
+    })[0];
+  }
+
+  if (sourcePosition === Position.Right && targetPosition === Position.Left) {
+    const exitX = sourceX + sourceWidth / 2 + nodePadding;
+    const exitY = sourceY;
+
+    const maxNodeHeight = Math.max(sourceHeight, targetHeight);
+    const verticalOffset = maxNodeHeight / 2 + nodePadding + Math.abs(targetY - sourceY) / 2;
+    const routeY = sourceY + (targetY > sourceY ? verticalOffset : -verticalOffset);
+
+    const entryX = targetX + targetWidth / 2 + nodePadding;
+    const entryY = targetY;
+
+    const radius = 10;
+    return [
+      `M ${sourceX},${sourceY}`,
+      `L ${exitX - radius},${exitY}`,
+      `Q ${exitX},${exitY} ${exitX},${exitY + (routeY > exitY ? radius : -radius)}`,
+      `L ${exitX},${routeY - (routeY > exitY ? radius : -radius)}`,
+      `Q ${exitX},${routeY} ${entryX},${routeY}`,
+      `L ${entryX},${entryY - (entryY > routeY ? radius : -radius)}`,
+      `Q ${entryX},${entryY} ${targetX - radius},${entryY}`,
+      `L ${targetX},${targetY}`,
+    ].join(" ");
+  } else if (sourcePosition === Position.Left && targetPosition === Position.Right) {
+    const exitX = sourceX - sourceWidth / 2 - nodePadding;
+    const exitY = sourceY;
+
+    const maxNodeHeight = Math.max(sourceHeight, targetHeight);
+    const verticalOffset = maxNodeHeight / 2 + nodePadding + Math.abs(targetY - sourceY) / 2;
+    const routeY = sourceY + (targetY > sourceY ? verticalOffset : -verticalOffset);
+
+    const entryX = targetX - targetWidth / 2 - nodePadding;
+    const entryY = targetY;
+
+    const radius = 10;
+    return [
+      `M ${sourceX},${sourceY}`,
+      `L ${exitX + radius},${exitY}`,
+      `Q ${exitX},${exitY} ${exitX},${exitY + (routeY > exitY ? radius : -radius)}`,
+      `L ${exitX},${routeY - (routeY > exitY ? radius : -radius)}`,
+      `Q ${exitX},${routeY} ${entryX},${routeY}`,
+      `L ${entryX},${entryY - (entryY > routeY ? radius : -radius)}`,
+      `Q ${entryX},${entryY} ${targetX + radius},${entryY}`,
+      `L ${targetX},${targetY}`,
+    ].join(" ");
+  } else if (sourcePosition === Position.Bottom && targetPosition === Position.Top) {
+    const exitX = sourceX;
+    const exitY = sourceY + sourceHeight / 2 + nodePadding;
+
+    const maxNodeWidth = Math.max(sourceWidth, targetWidth);
+    const horizontalOffset = maxNodeWidth / 2 + nodePadding + Math.abs(targetX - sourceX) / 2;
+    const routeX = sourceX + (targetX > sourceX ? horizontalOffset : -horizontalOffset);
+
+    const entryX = targetX;
+    const entryY = targetY + targetHeight / 2 + nodePadding;
+
+    const radius = 10;
+    return [
+      `M ${sourceX},${sourceY}`,
+      `L ${exitX},${exitY - radius}`,
+      `Q ${exitX},${exitY} ${exitX + (routeX > exitX ? radius : -radius)},${exitY}`,
+      `L ${routeX - (routeX > exitX ? radius : -radius)},${exitY}`,
+      `Q ${routeX},${exitY} ${routeX},${entryY}`,
+      `L ${entryX - (entryX > routeX ? radius : -radius)},${entryY}`,
+      `Q ${entryX},${entryY} ${entryX},${targetY + radius}`,
+      `L ${targetX},${targetY}`,
+    ].join(" ");
+  } else if (sourcePosition === Position.Top && targetPosition === Position.Bottom) {
+    const exitX = sourceX;
+    const exitY = sourceY - sourceHeight / 2 - nodePadding;
+
+    const maxNodeWidth = Math.max(sourceWidth, targetWidth);
+    const horizontalOffset = maxNodeWidth / 2 + nodePadding + Math.abs(targetX - sourceX) / 2;
+    const routeX = sourceX + (targetX > sourceX ? horizontalOffset : -horizontalOffset);
+
+    const entryX = targetX;
+    const entryY = targetY - targetHeight / 2 - nodePadding;
+
+    const radius = 10;
+    return [
+      `M ${sourceX},${sourceY}`,
+      `L ${exitX},${exitY + radius}`,
+      `Q ${exitX},${exitY} ${exitX + (routeX > exitX ? radius : -radius)},${exitY}`,
+      `L ${routeX - (routeX > exitX ? radius : -radius)},${exitY}`,
+      `Q ${routeX},${exitY} ${routeX},${entryY}`,
+      `L ${entryX - (entryX > routeX ? radius : -radius)},${entryY}`,
+      `Q ${entryX},${entryY} ${entryX},${targetY - radius}`,
+      `L ${targetX},${targetY}`,
+    ].join(" ");
+  } else {
+    return getSmoothStepPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      borderRadius: 10,
+    })[0];
+  }
+};
+
 export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   id,
   source,
@@ -176,6 +354,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const computedControls = controls.length > 0 ? controls : buildControls(data);
   const isSelfLoop = source === target;
   const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
+  const nodes = useNodes();
 
   if (isSelfLoop) {
     return (
@@ -217,7 +396,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const sparkOuter = lightenHex(cordColor, 0.85);
   const executing = isExecutingClass(className);
 
-  // Extend edge to reach plug icons
   const extensionDistance = -25;
   const extendedSourceX = sourcePosition === "left" ? sourceX - extensionDistance :
     sourcePosition === "right" ? sourceX + extensionDistance : sourceX;
@@ -228,17 +406,18 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const extendedTargetY = targetPosition === "top" ? targetY - extensionDistance :
     targetPosition === "bottom" ? targetY + extensionDistance : targetY;
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX: extendedSourceX,
-    sourceY: extendedSourceY,
+  const edgePath = calculateSmartPath(
+    extendedSourceX,
+    extendedSourceY,
+    extendedTargetX,
+    extendedTargetY,
     sourcePosition,
-    targetX: extendedTargetX,
-    targetY: extendedTargetY,
     targetPosition,
-  });
+    nodes,
+    source,
+    target
+  );
 
-  const angle = Math.atan2(targetY - sourceY, targetX - sourceX);
-  const degrees = (angle * 180) / Math.PI;
   const midX = (sourceX + targetX) / 2;
   const midY = (sourceY + targetY) / 2;
 
@@ -400,6 +579,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const glowColor = lightenHex(cordColor, 0.5);
 
+  // Use smooth step path for connection line to route around nodes
   const [edgePath] = getBezierPath({
     sourceX: fromX,
     sourceY: fromY,
@@ -407,6 +587,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
     targetX: toX,
     targetY: toY,
     targetPosition: toPosition,
+    // borderRadius: 10,
   });
 
   const fromType = fromHandle?.type ?? "source";
@@ -457,7 +638,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       />
 
       {/* Male plug that follows cursor */}
-      <g transform={`translate(${toX + 5}, ${toY - 15})`}>
+      <g transform={`translate(${toX + 15}, ${toY - 15})`}>
         <g
           transform={`rotate(${45})`}
           className="plug-edge__plug-dragging-inner"
@@ -490,6 +671,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   controls = [],
   selfLoopConfig,
 }) => {
+  const nodes = useNodes();
   // Detect self-loop (when source connects to target on same node)
   const isSelfLoop = source === target;
 
@@ -558,15 +740,18 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         break;
     }
   } else {
-    // // Regular edge path - extend to reach plug icons
-    pathD = getBezierPath({
-      sourceX: sourceX,
-      sourceY: sourceY,
+    // Regular edge path - use smart path calculation to route around nodes
+    pathD = calculateSmartPath(
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
       sourcePosition,
-      targetX: targetX,
-      targetY: targetY,
       targetPosition,
-    })[0];
+      nodes,
+      source,
+      target
+    );
     midX = (sourceX + targetX) / 2;
     midY = (sourceY + targetY) / 2;
   }

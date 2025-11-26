@@ -7,7 +7,7 @@
   "subCategory": "Alpaca",
   "executionMode": "streaming",
   "streamingConfig": {
-    "waitForFirstEvent": true,
+    "waitForFirstEvent": false,
     "timeout": 30000
   },
   "description": "Subscribe to real-time news from Alpaca News API",

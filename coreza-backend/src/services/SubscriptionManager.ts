@@ -43,10 +43,15 @@ export class SubscriptionManager {
         await this.redisSub.subscribe(REDIS_CHANNELS.marketData(normalized));
         console.log(`[SubscriptionManager] Subscribed to Redis channel: ${REDIS_CHANNELS.marketData(normalized)}`);
         
-        // Notify gateway to subscribe to exchange
+        // Notify gateway to subscribe to exchange (format expected by MarketControlHandler)
         await this.redisPub.publish(
           REDIS_CHANNELS.controlSubscribe,
-          JSON.stringify({ symbol: normalized })
+          JSON.stringify({ 
+            action: 'subscribe',
+            userId: clientId,
+            symbols: [normalized],
+            source: 'alpaca' // Default to alpaca, can be made dynamic later
+          })
         );
         console.log(`[SubscriptionManager] Published control message to subscribe: ${normalized}`);
       }
@@ -76,7 +81,12 @@ export class SubscriptionManager {
           
           await this.redisPub.publish(
             REDIS_CHANNELS.controlUnsubscribe,
-            JSON.stringify({ symbol: normalized })
+            JSON.stringify({ 
+              action: 'unsubscribe',
+              userId: clientId,
+              symbols: [normalized],
+              source: 'alpaca' // Default to alpaca, can be made dynamic later
+            })
           );
           console.log(`[SubscriptionManager] Published control message to unsubscribe: ${normalized}`);
         }

@@ -1,9 +1,8 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
 import { DataService } from '../../services/data';
-import { MarketDataGateway } from '../../services/MarketDataGateway';
-import { MarketDataSubscriber } from '../../services/MarketDataSubscriber';
 import { MarketSource } from '../../types/marketEvent';
-import CredentialManager from '../../utils/credentialManager';
+import { getRedis } from '../../config/redis';
+import { REDIS_CHANNELS } from '../../config/redisChannels';
 
 export class MarketExecutor implements INodeExecutor {
   readonly category = 'Market';
@@ -82,9 +81,8 @@ export class MarketExecutor implements INodeExecutor {
         };
       }
 
-      // Handle subscribe operation
+      // Handle subscribe operation via Redis control channel
       if (operation === 'subscribe') {
-        // Get credentials
         if (!credential_id) {
           return {
             success: false,
@@ -92,30 +90,26 @@ export class MarketExecutor implements INodeExecutor {
           };
         }
 
-        const { credentials, error: credError } = await CredentialManager.getDecryptedCredentials(
+        // Publish control message to Redis
+        // MarketControlHandler will orchestrate gateway connection and subscription
+        const redis = getRedis();
+        const controlMessage = {
+          action: 'subscribe',
           userId,
+          workflowId,
+          nodeId,
+          symbols: symbolArray,
           source,
-          credential_id
+          credentialId: credential_id,
+          eventTypes: stream_types,
+        };
+
+        await redis.publish(
+          REDIS_CHANNELS.controlSubscribe,
+          JSON.stringify(controlMessage)
         );
 
-        if (credError || !credentials) {
-          return {
-            success: false,
-            error: `Failed to get credentials: ${credError}`
-          };
-        }
-
-        // Connect gateway and subscribe to broker
-        const gateway = MarketDataGateway.getInstance(source);
-        await gateway.connect(credentials);
-        gateway.subscribeSymbols(symbolArray);
-
-        // Subscribe workflow to Redis market data
-        const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.subscribe(workflowId, nodeId, userId, symbolArray, {
-          source,
-          eventTypes: stream_types,
-        });
+        console.log(`📤 [MarketExecutor] Published subscribe control message for ${source}:`, symbolArray);
 
         return {
           success: true,
@@ -126,16 +120,26 @@ export class MarketExecutor implements INodeExecutor {
             stream_types,
           }
         };
-      } 
-      // Handle unsubscribe operation
+      }
+      // Handle unsubscribe operation via Redis control channel
       else if (operation === 'unsubscribe') {
-        // Unsubscribe from gateway
-        const gateway = MarketDataGateway.getInstance(source);
-        gateway.unsubscribeSymbols(symbolArray);
+        // Publish control message to Redis
+        const redis = getRedis();
+        const controlMessage = {
+          action: 'unsubscribe',
+          userId,
+          workflowId,
+          nodeId,
+          symbols: symbolArray,
+          source,
+        };
 
-        // Unsubscribe workflow from Redis
-        const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.unsubscribe(workflowId);
+        await redis.publish(
+          REDIS_CHANNELS.controlUnsubscribe,
+          JSON.stringify(controlMessage)
+        );
+
+        console.log(`📤 [MarketExecutor] Published unsubscribe control message for ${source}:`, symbolArray);
 
         return {
           success: true,

@@ -1,16 +1,28 @@
+/**
+ * ============================================
+ * WEBSOCKET ROUTES - REDIS PUB/SUB ARCHITECTURE
+ * ============================================
+ * All WebSocket operations route through Redis Pub/Sub control channels.
+ * MarketControlHandler orchestrates gateway connections and subscriptions.
+ */
+
 import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
-import { WebSocketClient } from '../services/WebSocketClient';
+import { MarketDataSubscriber } from '../services/MarketDataSubscriber';
+import { MarketControlHandler } from '../services/MarketControlHandler';
+import { SubscriptionManager } from '../services/SubscriptionManager';
 import CredentialManager from '../utils/credentialManager';
+import { getRedis } from '../config/redis';
+import { REDIS_CHANNELS } from '../config/redisChannels';
 
 const router = express.Router();
 
 // ============================================
-// GENERIC WEBSOCKET OPERATIONS
+// REDIS PUB/SUB WEBSOCKET OPERATIONS
 // ============================================
 
 /**
- * Subscribe to a WebSocket source (alpaca_news, binance_trades, etc.)
+ * Subscribe to a market data source via Redis Pub/Sub
  * POST /websocket/:source/subscribe
  */
 router.post('/:source/subscribe', async (req, res) => {
@@ -35,50 +47,41 @@ router.post('/:source/subscribe', async (req, res) => {
       return res.status(400).json({ error: 'At least one symbol is required' });
     }
 
-    // Parse stream types (for alpaca_stream and similar sources)
+    // Parse stream types
     const streamTypes = stream_types
       ? (typeof stream_types === 'string' 
           ? stream_types.split(',').map((s: string) => s.trim()) 
           : stream_types)
       : undefined;
 
-    // Get credentials - extract broker name from source (e.g., alpaca_news -> alpaca)
-    const brokerName = source.split('_')[0];
-    const credentialResponse = await CredentialManager.getCredentials(
-      user_id,
-      brokerName,
-      credential_id
+    // Publish control message to Redis
+    // MarketControlHandler will orchestrate gateway connection and subscription
+    const redis = getRedis();
+    const controlMessage = {
+      action: 'subscribe',
+      userId: user_id,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      symbols: symbolArray,
+      source,
+      credentialId: credential_id,
+      eventTypes: streamTypes,
+    };
+
+    await redis.publish(
+      REDIS_CHANNELS.controlSubscribe,
+      JSON.stringify(controlMessage)
     );
 
-    if (!credentialResponse.credentials) {
-      return res.status(404).json({ error: 'Credential not found' });
-    }
-
-    const { credentials: { client_json } } = credentialResponse;
-
-    // Get or create WebSocket client
-    const client = WebSocketClient.getInstance(source);
-
-    // Connect if not already connected
-    if (!client.isReady()) {
-      await client.connect(client_json);
-    }
-
-    // Subscribe to symbols with optional stream types and workflow_id
-    await client.subscribe(user_id, symbolArray, { 
-      nodeId: node_id, 
-      workflowId: workflow_id,
-      streamTypes 
-    });
+    console.log(`📤 [WebSocket Route] Published subscribe control message for ${source}:`, symbolArray);
 
     res.json({
       success: true,
-      message: `Subscribed to ${source} for: ${symbolArray.join(', ')}`,
+      message: `Subscription request sent for ${source}: ${symbolArray.join(', ')}`,
       symbols: symbolArray,
       stream_types: streamTypes,
       node_id,
       workflow_id: workflow_id || null,
-      subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {
     console.error('Subscribe error:', error);
@@ -90,7 +93,7 @@ router.post('/:source/subscribe', async (req, res) => {
 });
 
 /**
- * Unsubscribe from a WebSocket source
+ * Unsubscribe from a market data source via Redis Pub/Sub
  * POST /websocket/:source/unsubscribe
  */
 router.post('/:source/unsubscribe', async (req, res) => {
@@ -120,21 +123,32 @@ router.post('/:source/unsubscribe', async (req, res) => {
           : stream_types)
       : undefined;
 
-    const client = WebSocketClient.getInstance(source);
-    await client.unsubscribe(user_id, symbolArray, { 
-      nodeId: node_id, 
+    // Publish control message to Redis
+    const redis = getRedis();
+    const controlMessage = {
+      action: 'unsubscribe',
+      userId: user_id,
       workflowId: workflow_id,
-      streamTypes 
-    });
+      nodeId: node_id,
+      symbols: symbolArray,
+      source,
+      eventTypes: streamTypes,
+    };
+
+    await redis.publish(
+      REDIS_CHANNELS.controlUnsubscribe,
+      JSON.stringify(controlMessage)
+    );
+
+    console.log(`📤 [WebSocket Route] Published unsubscribe control message for ${source}:`, symbolArray);
 
     res.json({
       success: true,
-      message: `Unsubscribed from ${source} for: ${symbolArray.join(', ')}`,
+      message: `Unsubscription request sent for ${source}: ${symbolArray.join(', ')}`,
       symbols: symbolArray,
       stream_types: streamTypes,
       node_id: node_id ?? null,
       workflow_id: workflow_id || null,
-      subscriptions: client.getUserSubscriptions(user_id),
     });
   } catch (error) {
     console.error('Unsubscribe error:', error);
@@ -146,19 +160,22 @@ router.post('/:source/unsubscribe', async (req, res) => {
 });
 
 /**
- * Get current subscription status for a WebSocket source
+ * Get current subscription status for a market data source
  * GET /websocket/:source/status
  */
 router.get('/:source/status', (req, res) => {
   try {
     const { source } = req.params;
-    const client = WebSocketClient.getInstance(source);
-    const stats = client.getStats();
+    const controlHandler = MarketControlHandler.getInstance();
+    const stats = controlHandler.getStats();
+    
+    // Find gateway stats for this source
+    const sourceStats = stats.gateways[source] || { connected: false, symbolCount: 0 };
 
     res.json({
       success: true,
       source,
-      status: stats,
+      status: sourceStats,
     });
   } catch (error) {
     res.status(500).json({
@@ -169,20 +186,27 @@ router.get('/:source/status', (req, res) => {
 });
 
 /**
- * Get user's subscriptions for a WebSocket source
+ * Get user's subscriptions for a market data source
  * GET /websocket/:source/subscriptions/:userId
  */
 router.get('/:source/subscriptions/:userId', (req, res) => {
   try {
     const { source, userId } = req.params;
-    const client = WebSocketClient.getInstance(source);
-    const subscriptions = client.getUserSubscriptions(userId);
+    const subscriptionManager = SubscriptionManager.getInstance();
+    const stats = subscriptionManager.getStats();
+    
+    // Filter subscriptions for this user
+    const userSubscriptions = stats.clients
+      .filter(client => client.clientId.includes(userId))
+      .map(client => ({
+        symbols: Array.from(client.symbols),
+      }));
 
     res.json({
       success: true,
       source,
       userId,
-      subscriptions,
+      subscriptions: userSubscriptions,
     });
   } catch (error) {
     res.status(500).json({

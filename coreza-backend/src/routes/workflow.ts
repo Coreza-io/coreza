@@ -2,11 +2,12 @@ import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { workflowScheduler } from "../services/scheduler";
-import { WebSocketClient } from "../services/WebSocketClient";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { getRedis } from "../config/redis";
+import { REDIS_CHANNELS } from "../config/redisChannels";
 
 const router = express.Router();
 
@@ -114,32 +115,48 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
       // Unschedule if has Scheduler node
       await workflowScheduler.unscheduleWorkflow(workflowId);
 
-      // Unsubscribe from news if has AlpacaNews node
-      const alpacaNewsNode = workflow.nodes?.find(
-        (n: any) => n.name === "AlpacaNews" || n.type === "AlpacaNews"
+      // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, etc.)
+      const streamingNodes = workflow.nodes?.filter(
+        (n: any) => 
+          n.name === "AlpacaNews" || 
+          n.type === "AlpacaNews" ||
+          n.name === "AlpacaStreamData" ||
+          n.type === "AlpacaStreamData"
       );
-      if (alpacaNewsNode && workflow.is_active) {
-        const nodeValues =
-          alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
-        const symbols = nodeValues.symbols;
+      
+      if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
+        const redis = getRedis();
+        
+        for (const node of streamingNodes) {
+          const nodeValues = node.values || node.data?.values || {};
+          const symbols = nodeValues.symbols;
 
-        if (symbols) {
-          const symbolArray =
-            typeof symbols === "string"
-              ? symbols
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : Array.isArray(symbols)
-              ? symbols
-              : [];
+          if (symbols) {
+            const symbolArray =
+              typeof symbols === "string"
+                ? symbols.split(",").map((s: string) => s.trim()).filter(Boolean)
+                : Array.isArray(symbols)
+                ? symbols
+                : [];
 
-          if (symbolArray.length > 0) {
-            const newsClient = WebSocketClient.getInstance("alpaca_news");
-            await newsClient.unsubscribe(userId, symbolArray, {
-              workflowId,
-              nodeId: alpacaNewsNode.id,
-            });
+            if (symbolArray.length > 0) {
+              // Publish control message to Redis for unsubscription
+              const controlMessage = {
+                action: 'unsubscribe',
+                userId,
+                workflowId,
+                nodeId: node.id,
+                symbols: symbolArray,
+                source: 'alpaca',
+              };
+
+              await redis.publish(
+                REDIS_CHANNELS.controlUnsubscribe,
+                JSON.stringify(controlMessage)
+              );
+
+              console.log(`📤 [Workflow Delete] Published unsubscribe control message:`, symbolArray);
+            }
           }
         }
       }
@@ -571,34 +588,25 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             );
           }
 
-          // Get credentials
-          const credential = await CredentialManager.getCredentials(
+          // Publish control message to Redis for subscription
+          // MarketControlHandler will orchestrate the connection
+          const redis = getRedis();
+          const controlMessage = {
+            action: 'subscribe',
             userId,
-            "alpaca",
-            credentialId
-          );
-          if (!credential?.credentials) {
-            throw createError("Alpaca credentials not found", 404);
-          }
-
-          const { client_json } = credential.credentials;
-          const { api_key, secret_key } = client_json;
-
-          if (!api_key || !secret_key) {
-            throw createError("Invalid Alpaca credentials", 400);
-          }
-
-          // Get or connect WebSocket client
-          const newsClient = WebSocketClient.getInstance("alpaca_news");
-          if (!newsClient.isReady()) {
-            await newsClient.connect({ api_key, secret_key });
-          }
-
-          // Subscribe to news for this workflow
-          await newsClient.subscribe(userId, symbolArray, {
             workflowId,
             nodeId: alpacaNewsNode.id,
-          });
+            symbols: symbolArray,
+            source: 'alpaca',
+            credentialId,
+          };
+
+          await redis.publish(
+            REDIS_CHANNELS.controlSubscribe,
+            JSON.stringify(controlMessage)
+          );
+
+          console.log(`📤 [Workflow Route] Published subscribe control message for alpaca_news:`, symbolArray);
           newsSubscription = { symbols: symbolArray };
         }
       } else {
@@ -624,11 +632,23 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
                 : [];
 
             if (symbolArray.length > 0) {
-              const newsClient = WebSocketClient.getInstance("alpaca_news");
-              await newsClient.unsubscribe(userId, symbolArray, {
+              // Publish control message to Redis for unsubscription
+              const redis = getRedis();
+              const controlMessage = {
+                action: 'unsubscribe',
+                userId,
                 workflowId,
                 nodeId: alpacaNewsNode.id,
-              });
+                symbols: symbolArray,
+                source: 'alpaca',
+              };
+
+              await redis.publish(
+                REDIS_CHANNELS.controlUnsubscribe,
+                JSON.stringify(controlMessage)
+              );
+
+              console.log(`📤 [Workflow Route] Published unsubscribe control message for alpaca_news:`, symbolArray);
             }
           }
         }

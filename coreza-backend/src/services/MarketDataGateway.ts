@@ -5,6 +5,9 @@ import { GatewayConfig, GATEWAY_CONFIGS } from '../config/marketGateways';
 import { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
 import { redisPublishBreaker } from '../utils/redisCircuitBreaker';
 import { RedisBuffer } from './RedisBuffer';
+import { createLogger } from '../utils/logger';
+import { marketMessagesCounter, marketMessageLatencyHistogram, activeGatewayConnectionsGauge } from '../utils/metrics';
+import { alertGatewayDisconnected, alertMaxReconnectAttempts } from '../utils/alerting';
 
 export class MarketDataGateway {
   private static instances = new Map<MarketSource, MarketDataGateway>();
@@ -16,6 +19,7 @@ export class MarketDataGateway {
   private isAuthenticated = false;
   private reconnectAttempts = 0;
   private redis = getRedis();
+  private logger = createLogger('MarketDataGateway');
   
   private constructor(config: GatewayConfig) {
     this.config = config;
@@ -37,7 +41,7 @@ export class MarketDataGateway {
     
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch)
     if (this.config.requiresPreConnect && this.config.preConnect) {
-      console.log(`[${this.config.id}] Running pre-connect setup...`);
+      this.logger.info({ source: this.config.id }, 'Running pre-connect setup');
       this.credentials = await this.config.preConnect(credentials);
     }
     
@@ -51,7 +55,8 @@ export class MarketDataGateway {
       });
       
       this.ws.on('open', () => {
-        console.log(`[${this.config.id}] Gateway connected`);
+        this.logger.info({ source: this.config.id }, 'Gateway connected');
+        activeGatewayConnectionsGauge.set({ source: this.config.id }, 1);
         const authMsg = this.config.makeAuthMessage?.(this.credentials);
         if (authMsg) {
           const payload = this.config.isBinary 
@@ -68,7 +73,6 @@ export class MarketDataGateway {
       this.ws.on('message', (data: Buffer) => {
         this.handleMessage(data);
         if (!this.isAuthenticated) {
-          // Check for auth success (implementation depends on broker response format)
           this.isAuthenticated = true;
           this.resubscribeAll();
           resolve();
@@ -76,12 +80,14 @@ export class MarketDataGateway {
       });
       
       this.ws.on('close', () => {
-        console.log(`[${this.config.id}] Gateway disconnected`);
+        this.logger.warn({ source: this.config.id }, 'Gateway disconnected');
+        activeGatewayConnectionsGauge.set({ source: this.config.id }, 0);
+        alertGatewayDisconnected(this.config.id, 'Connection closed');
         this.handleReconnect();
       });
       
       this.ws.on('error', (err) => {
-        console.error(`[${this.config.id}] Gateway error:`, err);
+        this.logger.error({ source: this.config.id, error: err }, 'Gateway error');
         reject(err);
       });
     });
@@ -89,6 +95,7 @@ export class MarketDataGateway {
   
   private async handleMessage(buffer: Buffer): Promise<void> {
     try {
+      const startTime = Date.now();
       const messages = this.config.parseMessage(buffer);
       for (const msg of messages) {
         if (!this.config.shouldPublish(msg)) continue;
@@ -100,10 +107,15 @@ export class MarketDataGateway {
         const channel = REDIS_CHANNELS.marketData(event.symbol);
         await this.publishToRedis(channel, JSON.stringify(event));
         
-        console.log(`[${this.config.id}] Published ${event.type} for ${event.symbol} @ ${event.lastPrice || event.c}`);
+        // Metrics
+        marketMessagesCounter.inc({ source: this.config.id, symbol: event.symbol, type: event.type });
+        const latency = (Date.now() - startTime) / 1000;
+        marketMessageLatencyHistogram.observe({ source: this.config.id }, latency);
+        
+        this.logger.debug({ source: this.config.id, symbol: event.symbol, type: event.type, price: event.lastPrice || event.c }, 'Market event published');
       }
     } catch (error) {
-      console.error(`[${this.config.id}] Message parse error:`, error);
+      this.logger.error({ source: this.config.id, error }, 'Message parse error');
     }
   }
 
@@ -114,7 +126,7 @@ export class MarketDataGateway {
     try {
       await redisPublishBreaker.fire(channel, message);
     } catch (error) {
-      console.warn(`⚠️ [${this.config.id}] Redis unavailable, buffering message for ${channel}`);
+      this.logger.warn({ source: this.config.id, channel }, 'Redis unavailable, buffering message');
       RedisBuffer.getInstance().bufferMessage(channel, message);
     }
   }

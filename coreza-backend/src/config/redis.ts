@@ -110,6 +110,43 @@ export function getRedisPubSub(): { pub: Redis; sub: Redis } {
   return { pub: redisPubInstance, sub: redisSubInstance };
 }
 
+/**
+ * Create NEW Redis connections for Pub/Sub (not singletons)
+ * Use this when services need isolated subscriber connections
+ */
+export function createRedisPubSub(): { pub: Redis; sub: Redis } {
+  const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
+    process.env.REDIS_URL,
+  );
+
+  if (!redisUrl) {
+    throw new Error("REDIS_URL is required for Pub/Sub");
+  }
+
+  const shouldUseTls =
+    process.env.REDIS_TLS === "true" ||
+    hasTlsFlag ||
+    (redisUrl?.startsWith("rediss://") ?? false);
+
+  const options: RedisOptions = {
+    ...connectionOptions,
+    ...(shouldUseTls
+      ? {
+          tls: {
+            rejectUnauthorized:
+              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+          },
+        }
+      : {}),
+  };
+
+  // Create NEW connections (not singletons)
+  return {
+    pub: new Redis(redisUrl, options),
+    sub: new Redis(redisUrl, options),
+  };
+}
+
 export async function closeRedis(): Promise<void> {
   if (redisInstance) {
     await redisInstance.quit();

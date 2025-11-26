@@ -41,6 +41,7 @@ import oauthRoutes from './routes/oauth';
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeScreenerServices } from './services/screeners';
+import { MarketDataSubscriber } from './services/MarketDataSubscriber';
 
 
 const app = express();
@@ -141,6 +142,12 @@ async function startServer() {
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();
+
+    // Initialize Market Data Subscriber and restore subscriptions
+    console.log('📊 [MarketData] Initializing Market Data Subscriber...');
+    const marketDataSubscriber = MarketDataSubscriber.getInstance();
+    await marketDataSubscriber.restoreFromRedis();
+    console.log('✅ [MarketData] Market Data Subscriber initialized');
 
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);

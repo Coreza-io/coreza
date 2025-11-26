@@ -11,6 +11,10 @@ export const REDIS_CHANNELS = {
   
   // User-specific channels (optional for direct delivery)
   userData: (userId: string) => `md:user:${userId}`,
+  
+  // Workflow subscription persistence
+  workflowSubscription: (workflowId: string) => `wf:sub:${workflowId}`,
+  symbolWorkflows: (symbol: string) => `wf:subs:symbol:${symbol.toUpperCase()}`,
 } as const;
 
 export type RedisChannel = ReturnType<typeof REDIS_CHANNELS[keyof typeof REDIS_CHANNELS]>;

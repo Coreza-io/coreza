@@ -12,7 +12,11 @@ import helmet from 'helmet';
 import { supabase } from './config/supabase';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { workflowScheduler } from './services/scheduler';
+import client from 'prom-client';
+import { register } from './utils/metrics';
+import logger from './utils/logger';
 
 // Import routes
 import indicatorRoutes from './routes/indicators';
@@ -51,12 +55,16 @@ import { setupBufferFlush } from './utils/flushRedisBuffer';
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Collect default Node.js metrics (CPU, memory, event loop, etc.)
+client.collectDefaultMetrics({ prefix: 'coreza_' });
+
 // Middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
+app.use(metricsMiddleware);
 
 // Store supabase instance in app.locals for route access
 app.locals.supabase = supabase;
@@ -79,53 +87,40 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Routes - with debugging
-console.log('📍 Setting up routes...');
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (error) {
+    res.status(500).end(error);
+  }
+});
+
+// Routes
+logger.info('Setting up routes...');
 app.use('/indicators', indicatorRoutes);
-console.log('✅ Indicators route mounted');
 app.use('/market', marketRoutes);
-console.log('✅ Market route mounted');
 app.use('/credentials', credentialsRoutes);
-console.log('✅ Credentials route mounted');
 app.use('/gmail', gmailRoutes);
-console.log('✅ Gmail route mounted');
 app.use('/oauth', oauthRoutes);
-console.log('✅ OAuth route mounted');
 app.use('/finnhub', finnhubRoutes);
-console.log('✅ FinnHub route mounted');
 app.use('/whatsapp', whatsappRoutes);
-console.log('✅ WhatsApp route mounted');
 app.use('/webhooks', webhookRoutes);
-console.log('✅ Webhooks route mounted');
 app.use('/workflows', workflowRoutes);
-console.log('✅ Workflows route mounted');
 app.use('/yahoofinance', yahoofinanceRoutes);
-console.log('✅ YahooFinance route mounted');
 app.use('/http', httpRoutes);
-console.log('✅ HTTP route mounted');
 app.use('/execute', schedulerRoutes);
-console.log('✅ Execute/Scheduler route mounted');
 app.use('/comparator', comparatorRoutes);
-console.log('✅ Comparator route mounted');
 app.use('/control', controlRoutes);
-console.log('✅ Control route mounted');
 app.use('/risk', riskRoutes);
-console.log('✅ Risk route mounted');
 app.use('/websocket', websocketRoutes);
-console.log('✅ WebSocket route mounted');
 app.use('/openai', openaiRoutes);
-console.log('✅ OpenAI route mounted');
 app.use('/aiagent', aiAgentRoutes);
-console.log('✅ AI Agent route mounted');
 app.use('/googlesearch', googleSearchRoutes);
-console.log('✅ Google Search route mounted');
 app.use('/screener', screenerRoutes);
-console.log('✅ Screener route mounted');
 app.use('/broker', brokerRoutes);
-console.log('✅ Broker route mounted');
-app.use('/oauth', oauthRoutes);
-console.log('✅ OAuth route mounted');
-console.log('📍 All routes mounted successfully');
+logger.info('All routes mounted successfully');
 
 // Error handling
 app.use(errorHandler);
@@ -140,9 +135,9 @@ async function startServer() {
     // Test Supabase connection
     const { data, error } = await supabase.from('users').select('count').limit(1);
     if (error) {
-      console.warn('Supabase connection warning:', error.message);
+      logger.warn({ error: error.message }, 'Supabase connection warning');
     } else {
-      console.log('✅ Supabase connected successfully');
+      logger.info('Supabase connected successfully');
     }
 
     // Initialize node executors and screener services
@@ -150,47 +145,46 @@ async function startServer() {
     initializeNodeExecutors();
 
     // Initialize BullMQ job queue workers
-    console.log('🔄 [QUEUE] Starting BullMQ workers...');
+    logger.info('Starting BullMQ workers...');
     require('./services/jobQueueManager');
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();
 
     // Start WorkflowCache cleanup timer (Phase 3)
-    console.log('🧹 [WorkflowCache] Starting periodic cleanup...');
+    logger.info('Starting WorkflowCache periodic cleanup...');
     WorkflowCache.getInstance().startCleanupTimer();
 
     // Setup Redis buffer flush on circuit breaker close (Phase 3)
     setupBufferFlush();
 
     // Initialize Market Data Subscriber and restore subscriptions
-    console.log('📊 [MarketData] Initializing Market Data Subscriber...');
+    logger.info('Initializing Market Data Subscriber...');
     const marketDataSubscriber = MarketDataSubscriber.getInstance();
     await marketDataSubscriber.restoreFromRedis();
-    console.log('✅ [MarketData] Market Data Subscriber initialized');
+    logger.info('Market Data Subscriber initialized');
 
     // Initialize Market Control Handler (Phase 5)
-    console.log('🎛️ [MarketControl] Initializing Market Control Handler...');
+    logger.info('Initializing Market Control Handler...');
     const marketControlHandler = MarketControlHandler.getInstance();
     await marketControlHandler.initialize();
-    console.log('✅ [MarketControl] Market Control Handler initialized');
+    logger.info('Market Control Handler initialized');
 
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);
     await WebSocketManager.initialize(wsPort);
 
     const server = app.listen(PORT, () => {
-      console.log(`🚀 Coreza Node.js Backend running on port ${PORT}`);
-      console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info({ port: PORT, environment: process.env.NODE_ENV || 'development' }, 'Coreza Node.js Backend started');
     });
 
     // Graceful shutdown handler
     const shutdown = async (signal: string) => {
-      console.log(`\n${signal} received. Shutting down gracefully...`);
+      logger.info({ signal }, 'Shutting down gracefully...');
       
       // Close HTTP server
       server.close(() => {
-        console.log('✅ HTTP server closed');
+        logger.info('HTTP server closed');
       });
       
       // Stop WorkflowCache cleanup timer
@@ -210,7 +204,7 @@ async function startServer() {
     process.on('SIGINT', () => shutdown('SIGINT'));
     
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.fatal({ error }, 'Failed to start server');
     process.exit(1);
   }
 }

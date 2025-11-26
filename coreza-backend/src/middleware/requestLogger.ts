@@ -1,19 +1,18 @@
-import { Request, Response, NextFunction } from 'express';
+import pinoHttp from 'pino-http';
+import logger from '../utils/logger';
 
-export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
-  const start = Date.now();
-  
-  // Log request
-  console.log(`📥 ${req.method} ${req.url} - ${new Date().toISOString()}`);
-  
-  // Log response when finished
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const status = res.statusCode;
-    const statusEmoji = status >= 400 ? '❌' : status >= 300 ? '🔄' : '✅';
-    
-    console.log(`📤 ${statusEmoji} ${req.method} ${req.url} - ${status} - ${duration}ms`);
-  });
-  
-  next();
-};
+export const requestLogger = pinoHttp({
+  logger,
+  autoLogging: true,
+  customLogLevel: (req, res, err) => {
+    if (res.statusCode >= 500 || err) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  customSuccessMessage: (req, res) => {
+    return `${req.method} ${req.url} completed`;
+  },
+  customErrorMessage: (req, res, err) => {
+    return `${req.method} ${req.url} failed`;
+  }
+});

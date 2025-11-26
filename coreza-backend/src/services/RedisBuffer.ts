@@ -1,4 +1,9 @@
 import Redis from 'ioredis';
+import { createLogger } from '../utils/logger';
+import { redisBufferSizeGauge } from '../utils/metrics';
+import { alertBufferOverflow } from '../utils/alerting';
+
+const logger = createLogger('RedisBuffer');
 
 interface BufferedMessage {
   channel: string;
@@ -31,10 +36,15 @@ export class RedisBuffer {
    * Buffer a message when Redis is unavailable
    */
   bufferMessage(channel: string, message: string): void {
+    // Alert if buffer approaching capacity (80%)
+    if (this.buffer.length >= this.MAX_BUFFER_SIZE * 0.8) {
+      alertBufferOverflow();
+    }
+
     // Remove oldest messages if buffer is full
     if (this.buffer.length >= this.MAX_BUFFER_SIZE) {
       const removed = this.buffer.shift();
-      console.warn(`⚠️ [RedisBuffer] Buffer full, dropped oldest message from ${removed?.channel}`);
+      logger.warn({ channel: removed?.channel, bufferSize: this.buffer.length }, 'Buffer full, dropped oldest message');
     }
 
     this.buffer.push({
@@ -43,7 +53,8 @@ export class RedisBuffer {
       timestamp: Date.now(),
     });
 
-    console.log(`📦 [RedisBuffer] Buffered message for ${channel} (${this.buffer.length}/${this.MAX_BUFFER_SIZE})`);
+    redisBufferSizeGauge.set(this.buffer.length);
+    logger.debug({ channel, bufferSize: this.buffer.length, maxSize: this.MAX_BUFFER_SIZE }, 'Message buffered');
   }
 
   /**
@@ -53,7 +64,8 @@ export class RedisBuffer {
   async flushToRedis(redis: Redis): Promise<number> {
     if (this.buffer.length === 0) return 0;
 
-    console.log(`🔄 [RedisBuffer] Starting flush of ${this.buffer.length} buffered messages...`);
+    const startSize = this.buffer.length;
+    logger.info({ startSize }, 'Starting buffer flush');
 
     let flushed = 0;
     const now = Date.now();
@@ -65,7 +77,7 @@ export class RedisBuffer {
       // Skip messages older than MAX_AGE
       if (now - msg.timestamp > this.MAX_AGE_MS) {
         this.buffer.shift();
-        console.warn(`⚠️ [RedisBuffer] Skipped expired message from ${msg.channel}`);
+        logger.warn({ channel: msg.channel, age: now - msg.timestamp }, 'Skipped expired message');
         continue;
       }
 
@@ -81,11 +93,12 @@ export class RedisBuffer {
     }
 
     if (flushed > 0) {
-      console.log(`✅ [RedisBuffer] Flushed ${flushed} messages to Redis (${this.buffer.length} remaining)`);
+      redisBufferSizeGauge.set(this.buffer.length);
+      logger.info({ flushed, remaining: this.buffer.length }, 'Buffer flush completed');
     }
 
     if (errors.length > 0) {
-      console.error(`❌ [RedisBuffer] Failed to flush remaining messages:`, errors[0]);
+      logger.error({ error: errors[0], flushed, remaining: this.buffer.length }, 'Buffer flush incomplete');
     }
 
     return flushed;
@@ -112,7 +125,8 @@ export class RedisBuffer {
   clear(): void {
     const count = this.buffer.length;
     this.buffer = [];
-    console.log(`🗑️ [RedisBuffer] Cleared ${count} buffered messages`);
+    redisBufferSizeGauge.set(0);
+    logger.warn({ clearedCount: count }, 'Buffer cleared');
   }
 }
 

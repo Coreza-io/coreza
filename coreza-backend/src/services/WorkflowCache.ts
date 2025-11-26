@@ -1,4 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createLogger } from '../utils/logger';
+import { workflowCacheSizeGauge } from '../utils/metrics';
+
+const logger = createLogger('WorkflowCache');
 
 interface CachedWorkflow {
   workflow: any;
@@ -43,12 +47,12 @@ export class WorkflowCache {
     // Check cache first
     const cached = this.cache.get(workflowId);
     if (cached && cached.expiresAt > Date.now()) {
-      console.log(`✅ [WorkflowCache] Cache HIT for workflow ${workflowId}`);
+      logger.debug({ workflowId, cacheSize: this.cache.size }, 'Cache HIT');
       return cached.workflow;
     }
 
     // Cache miss - fetch from Supabase
-    console.log(`🔍 [WorkflowCache] Cache MISS for workflow ${workflowId}, fetching...`);
+    logger.debug({ workflowId }, 'Cache MISS - fetching from database');
     
     try {
       const { data: workflow, error } = await this.supabase
@@ -59,12 +63,12 @@ export class WorkflowCache {
         .single();
 
       if (error) {
-        console.error(`❌ [WorkflowCache] Failed to fetch workflow ${workflowId}:`, error);
+        logger.error({ workflowId, error }, 'Failed to fetch workflow');
         return null;
       }
 
       if (!workflow) {
-        console.warn(`⚠️ [WorkflowCache] Workflow ${workflowId} not found or inactive`);
+        logger.warn({ workflowId }, 'Workflow not found or inactive');
         return null;
       }
 
@@ -74,10 +78,11 @@ export class WorkflowCache {
         expiresAt: Date.now() + ttlMs,
       });
 
-      console.log(`✅ [WorkflowCache] Cached workflow ${workflowId} for ${ttlMs}ms`);
+      workflowCacheSizeGauge.set(this.cache.size);
+      logger.info({ workflowId, ttlMs, cacheSize: this.cache.size }, 'Workflow cached');
       return workflow;
     } catch (error) {
-      console.error(`❌ [WorkflowCache] Error fetching workflow:`, error);
+      logger.error({ workflowId, error }, 'Error fetching workflow');
       return null;
     }
   }
@@ -87,7 +92,8 @@ export class WorkflowCache {
    */
   invalidate(workflowId: string): void {
     this.cache.delete(workflowId);
-    console.log(`🗑️ [WorkflowCache] Invalidated cache for workflow ${workflowId}`);
+    workflowCacheSizeGauge.set(this.cache.size);
+    logger.info({ workflowId, cacheSize: this.cache.size }, 'Workflow invalidated');
   }
 
   /**
@@ -95,7 +101,8 @@ export class WorkflowCache {
    */
   invalidateAll(): void {
     this.cache.clear();
-    console.log(`🗑️ [WorkflowCache] Cleared all cached workflows`);
+    workflowCacheSizeGauge.set(0);
+    logger.info('Cleared all cached workflows');
   }
 
   /**
@@ -141,7 +148,8 @@ export class WorkflowCache {
     }
 
     if (removed > 0) {
-      console.log(`🧹 [WorkflowCache] Cleaned up ${removed} entries (${this.cache.size}/${this.MAX_CACHE_SIZE})`);
+      workflowCacheSizeGauge.set(this.cache.size);
+      logger.info({ removed, cacheSize: this.cache.size, maxSize: this.MAX_CACHE_SIZE }, 'Cleanup completed');
     }
   }
 
@@ -155,7 +163,7 @@ export class WorkflowCache {
       this.cleanup();
     }, 60000); // 60 seconds
     
-    console.log('🧹 [WorkflowCache] Started cleanup timer (every 60s)');
+    logger.info('Cleanup timer started (every 60s)');
   }
 
   /**
@@ -165,7 +173,7 @@ export class WorkflowCache {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
-      console.log('🧹 [WorkflowCache] Stopped cleanup timer');
+      logger.info('Cleanup timer stopped');
     }
   }
 }

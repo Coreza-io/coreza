@@ -1,5 +1,10 @@
 import CircuitBreaker from 'opossum';
 import { getRedis } from '../config/redis';
+import { createLogger } from './logger';
+import { alertRedisCircuitOpen } from './alerting';
+import { redisOperationsCounter } from './metrics';
+
+const logger = createLogger('CircuitBreaker');
 
 const circuitBreakerOptions = {
   timeout: 5000,                    // 5 second timeout for operations
@@ -44,37 +49,44 @@ export const redisSetBreaker = new CircuitBreaker(
 
 // Event handlers for monitoring
 redisPublishBreaker.on('open', () => {
-  console.error('🔴 [CircuitBreaker] Redis PUBLISH circuit OPEN - fallback active');
+  logger.fatal({ breaker: 'redisPublish', state: 'OPEN' }, 'Redis PUBLISH circuit OPEN - fallback active');
+  redisOperationsCounter.inc({ operation: 'publish', status: 'circuit_open' });
+  alertRedisCircuitOpen();
 });
 
 redisPublishBreaker.on('halfOpen', () => {
-  console.warn('🟡 [CircuitBreaker] Redis PUBLISH circuit HALF-OPEN - testing connection');
+  logger.warn({ breaker: 'redisPublish', state: 'HALF_OPEN' }, 'Redis PUBLISH circuit HALF-OPEN - testing connection');
 });
 
 redisPublishBreaker.on('close', () => {
-  console.log('🟢 [CircuitBreaker] Redis PUBLISH circuit CLOSED - normal operation');
+  logger.info({ breaker: 'redisPublish', state: 'CLOSED' }, 'Redis PUBLISH circuit CLOSED - normal operation');
+  redisOperationsCounter.inc({ operation: 'publish', status: 'circuit_closed' });
 });
 
 redisGetBreaker.on('open', () => {
-  console.error('🔴 [CircuitBreaker] Redis GET circuit OPEN - fallback active');
+  logger.fatal({ breaker: 'redisGet', state: 'OPEN' }, 'Redis GET circuit OPEN - fallback active');
+  redisOperationsCounter.inc({ operation: 'get', status: 'circuit_open' });
 });
 
 redisGetBreaker.on('halfOpen', () => {
-  console.warn('🟡 [CircuitBreaker] Redis GET circuit HALF-OPEN - testing connection');
+  logger.warn({ breaker: 'redisGet', state: 'HALF_OPEN' }, 'Redis GET circuit HALF-OPEN - testing connection');
 });
 
 redisGetBreaker.on('close', () => {
-  console.log('🟢 [CircuitBreaker] Redis GET circuit CLOSED - normal operation');
+  logger.info({ breaker: 'redisGet', state: 'CLOSED' }, 'Redis GET circuit CLOSED - normal operation');
+  redisOperationsCounter.inc({ operation: 'get', status: 'circuit_closed' });
 });
 
 redisSetBreaker.on('open', () => {
-  console.error('🔴 [CircuitBreaker] Redis SET circuit OPEN - fallback active');
+  logger.fatal({ breaker: 'redisSet', state: 'OPEN' }, 'Redis SET circuit OPEN - fallback active');
+  redisOperationsCounter.inc({ operation: 'set', status: 'circuit_open' });
 });
 
 redisSetBreaker.on('halfOpen', () => {
-  console.warn('🟡 [CircuitBreaker] Redis SET circuit HALF-OPEN - testing connection');
+  logger.warn({ breaker: 'redisSet', state: 'HALF_OPEN' }, 'Redis SET circuit HALF-OPEN - testing connection');
 });
 
 redisSetBreaker.on('close', () => {
-  console.log('🟢 [CircuitBreaker] Redis SET circuit CLOSED - normal operation');
+  logger.info({ breaker: 'redisSet', state: 'CLOSED' }, 'Redis SET circuit CLOSED - normal operation');
+  redisOperationsCounter.inc({ operation: 'set', status: 'circuit_closed' });
 });

@@ -151,9 +151,9 @@ export class MarketControlHandler {
         const newSymbols = symbols.filter(s => !state!.symbols.has(s.toUpperCase()));
 
         if (newSymbols.length > 0) {
-          console.log(`➕ [MarketControl] Subscribing to new symbols on ${source}:`, newSymbols);
+          console.log(`➕ [MarketControl] Subscribing to new symbols on ${source}:`, newSymbols, eventTypes ? `(types: ${eventTypes.join(', ')})` : '');
           newSymbols.forEach(s => state!.symbols.add(s.toUpperCase()));
-          state!.gateway.subscribeSymbols(newSymbols);
+          state!.gateway.subscribeSymbols(newSymbols, eventTypes);
 
           // Persist to Redis
           await this.persistState(source);

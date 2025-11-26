@@ -16,6 +16,7 @@ export class MarketDataGateway {
   private config: GatewayConfig;
   private credentials: any = null;
   private subscribedSymbols = new Set<string>();
+  private subscribedTypes: string[] = []; // Track subscribed event types for reconnection
   private isAuthenticated = false;
   private reconnectAttempts = 0;
   private redis = getRedis();
@@ -131,17 +132,22 @@ export class MarketDataGateway {
     }
   }
   
-  subscribeSymbols(symbols: string[]): void {
+  subscribeSymbols(symbols: string[], types?: string[]): void {
     const newSymbols = symbols.filter(s => !this.subscribedSymbols.has(s.toUpperCase()));
     if (newSymbols.length === 0) return;
+    
+    // Store types for reconnection
+    if (types && types.length > 0) {
+      this.subscribedTypes = types;
+    }
     
     newSymbols.forEach(s => this.subscribedSymbols.add(s.toUpperCase()));
     
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      const msg = this.config.makeSubscribeMessage(newSymbols);
+      const msg = this.config.makeSubscribeMessage(newSymbols, types);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
-      console.log(`[${this.config.id}] Subscribed to: ${newSymbols.join(', ')}`);
+      console.log(`[${this.config.id}] Subscribed to: ${newSymbols.join(', ')} (types: ${types?.join(', ') || 'default'})`);
     }
   }
   
@@ -161,10 +167,14 @@ export class MarketDataGateway {
   
   private resubscribeAll(): void {
     if (this.subscribedSymbols.size > 0) {
-      const msg = this.config.makeSubscribeMessage(Array.from(this.subscribedSymbols));
+      const msg = this.config.makeSubscribeMessage(
+        Array.from(this.subscribedSymbols),
+        this.subscribedTypes.length > 0 ? this.subscribedTypes : undefined
+      );
       const payload = this.encodeMessage(msg);
       this.ws?.send(payload);
-      console.log(`[${this.config.id}] Resubscribed to ${this.subscribedSymbols.size} symbols`);
+      const typesInfo = this.subscribedTypes.length > 0 ? ` (types: ${this.subscribedTypes.join(', ')})` : '';
+      console.log(`[${this.config.id}] Resubscribed to ${this.subscribedSymbols.size} symbols${typesInfo}`);
     }
   }
   

@@ -7,7 +7,7 @@
   "subCategory": "Alpaca",
   "executionMode": "streaming",
   "streamingConfig": {
-    "waitForFirstEvent": false,
+    "waitForFirstEvent": true,
     "timeout": 30000
   },
   "description": "Subscribe to real-time market data streams (trades, quotes, bars) from Alpaca",

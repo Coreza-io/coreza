@@ -9,6 +9,7 @@ import { Mutex } from 'async-mutex';
 import { getRedisPubSub } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { MarketDataGateway } from './MarketDataGateway';
+import { MarketDataSubscriber } from './MarketDataSubscriber';
 import CredentialManager from '../utils/credentialManager';
 import { redisSetBreaker } from '../utils/redisCircuitBreaker';
 import { getWebSocketConfig } from '../config/websockets';
@@ -22,6 +23,7 @@ interface ControlMessage {
   symbols: string[];
   source: MarketSource;
   credentialId?: string;
+  eventTypes?: string[];
 }
 
 interface SourceState {
@@ -99,6 +101,7 @@ export class MarketControlHandler {
           source: msg.source,
           symbols: msg.symbols,
           workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
           userId: msg.userId,
           credentialId: msg.credentialId
         });
@@ -122,7 +125,7 @@ export class MarketControlHandler {
    * Handle subscribe control message (with mutex protection)
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
-    const { source, userId, workflowId, symbols } = msg;
+    const { source, userId, workflowId, nodeId, symbols, eventTypes } = msg;
 
     try {
       // Acquire mutex to prevent concurrent gateway connections
@@ -158,6 +161,22 @@ export class MarketControlHandler {
         } else {
           console.log(`ℹ️ [MarketControl] All symbols already subscribed on ${source}`);
         }
+
+        // Register workflow with MarketDataSubscriber for workflow triggering
+        if (workflowId && nodeId) {
+          const subscriber = MarketDataSubscriber.getInstance();
+          await subscriber.subscribe(
+            workflowId,
+            nodeId,
+            userId,
+            symbols,
+            {
+              source,
+              eventTypes: eventTypes as any,
+            }
+          );
+          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber`);
+        }
       });
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to handle subscribe for ${source}:`, error);
@@ -176,6 +195,13 @@ export class MarketControlHandler {
       if (!state) {
         console.log(`⚠️ [MarketControl] No gateway state found for ${source}`);
         return;
+      }
+
+      // Unregister workflow from MarketDataSubscriber
+      if (workflowId) {
+        const subscriber = MarketDataSubscriber.getInstance();
+        await subscriber.unsubscribe(workflowId);
+        console.log(`✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`);
       }
 
       // Remove workflow tracking

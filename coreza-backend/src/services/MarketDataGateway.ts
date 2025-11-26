@@ -32,8 +32,15 @@ export class MarketDataGateway {
     if (this.ws?.readyState === WebSocket.OPEN) return;
     
     this.credentials = credentials;
+    
+    // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch)
+    if (this.config.requiresPreConnect && this.config.preConnect) {
+      console.log(`[${this.config.id}] Running pre-connect setup...`);
+      this.credentials = await this.config.preConnect(credentials);
+    }
+    
     const url = typeof this.config.wsUrl === 'function' 
-      ? this.config.wsUrl(credentials) 
+      ? this.config.wsUrl(this.credentials) 
       : this.config.wsUrl;
     
     return new Promise((resolve, reject) => {
@@ -43,9 +50,12 @@ export class MarketDataGateway {
       
       this.ws.on('open', () => {
         console.log(`[${this.config.id}] Gateway connected`);
-        const authMsg = this.config.makeAuthMessage?.(credentials);
+        const authMsg = this.config.makeAuthMessage?.(this.credentials);
         if (authMsg) {
-          this.ws!.send(JSON.stringify(authMsg));
+          const payload = this.config.isBinary 
+            ? this.encodeMessage(authMsg)
+            : JSON.stringify(authMsg);
+          this.ws!.send(payload);
         } else {
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -103,7 +113,8 @@ export class MarketDataGateway {
     
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.config.makeSubscribeMessage(newSymbols);
-      this.ws.send(JSON.stringify(msg));
+      const payload = this.encodeMessage(msg);
+      this.ws.send(payload);
       console.log(`[${this.config.id}] Subscribed to: ${newSymbols.join(', ')}`);
     }
   }
@@ -116,7 +127,8 @@ export class MarketDataGateway {
     
     if (this.ws?.readyState === WebSocket.OPEN) {
       const msg = this.config.makeUnsubscribeMessage(toRemove);
-      this.ws.send(JSON.stringify(msg));
+      const payload = this.encodeMessage(msg);
+      this.ws.send(payload);
       console.log(`[${this.config.id}] Unsubscribed from: ${toRemove.join(', ')}`);
     }
   }
@@ -124,9 +136,32 @@ export class MarketDataGateway {
   private resubscribeAll(): void {
     if (this.subscribedSymbols.size > 0) {
       const msg = this.config.makeSubscribeMessage(Array.from(this.subscribedSymbols));
-      this.ws?.send(JSON.stringify(msg));
+      const payload = this.encodeMessage(msg);
+      this.ws?.send(payload);
       console.log(`[${this.config.id}] Resubscribed to ${this.subscribedSymbols.size} symbols`);
     }
+  }
+  
+  private encodeMessage(msg: any): Buffer | string {
+    // Binary protocol (Dhan)
+    if (this.config.isBinary) {
+      const { encodeDhanSubscribeMessage, encodeDhanUnsubscribeMessage } = require('../utils/dhanBinaryParser');
+      if (msg.RequestCode === 15) {
+        return encodeDhanSubscribeMessage(
+          msg.InstrumentList.map((i: any) => i.SecurityId),
+          msg.InstrumentList[0]?.ExchangeSegment || 'NSE_EQ'
+        );
+      } else if (msg.RequestCode === 16) {
+        return encodeDhanUnsubscribeMessage(
+          msg.InstrumentList.map((i: any) => i.SecurityId),
+          msg.InstrumentList[0]?.ExchangeSegment || 'NSE_EQ'
+        );
+      }
+      return Buffer.from(JSON.stringify(msg));
+    }
+    
+    // JSON protocol (default)
+    return JSON.stringify(msg);
   }
   
   private handleReconnect(): void {

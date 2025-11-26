@@ -31,6 +31,7 @@ interface SourceState {
   connectedUserId: string;
   credentialId: string;
   symbols: Set<string>;
+  symbolTypes: Map<string, Set<string>>; // symbol → event types
   workflowSymbols: Map<string, Set<string>>; // workflowId → symbols
 }
 
@@ -147,19 +148,35 @@ export class MarketControlHandler {
           state.workflowSymbols.set(workflowId, currentSymbols);
         }
 
-        // Find new symbols not already subscribed
-        const newSymbols = symbols.filter(s => !state!.symbols.has(s.toUpperCase()));
+        // Check if any symbols need new event types subscribed
+        const subscriptionNeeded: string[] = [];
+        const requestedTypes = eventTypes || ['trades'];
+        
+        for (const symbol of symbols) {
+          const upperSymbol = symbol.toUpperCase();
+          const existingTypes = state.symbolTypes.get(upperSymbol) || new Set();
+          
+          // Check if any requested type is new for this symbol
+          const hasNewTypes = requestedTypes.some(t => !existingTypes.has(t));
+          
+          if (!state.symbols.has(upperSymbol) || hasNewTypes) {
+            subscriptionNeeded.push(upperSymbol);
+            // Add all requested types to tracking
+            requestedTypes.forEach(t => existingTypes.add(t));
+            state.symbolTypes.set(upperSymbol, existingTypes);
+            state.symbols.add(upperSymbol);
+          }
+        }
 
-        if (newSymbols.length > 0) {
-          console.log(`➕ [MarketControl] Subscribing to new symbols on ${source}:`, newSymbols, eventTypes ? `(types: ${eventTypes.join(', ')})` : '');
-          newSymbols.forEach(s => state!.symbols.add(s.toUpperCase()));
-          state!.gateway.subscribeSymbols(newSymbols, eventTypes);
+        if (subscriptionNeeded.length > 0) {
+          console.log(`➕ [MarketControl] Subscribing to symbols with new types on ${source}:`, subscriptionNeeded, `(types: ${requestedTypes.join(', ')})`);
+          state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
 
           // Persist to Redis
           await this.persistState(source);
-          console.log(`✅ [MarketControl] Subscribed to ${newSymbols.length} new symbols on ${source}`);
+          console.log(`✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`);
         } else {
-          console.log(`ℹ️ [MarketControl] All symbols already subscribed on ${source}`);
+          console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
         }
 
         // Register workflow with MarketDataSubscriber for workflow triggering
@@ -298,6 +315,7 @@ export class MarketControlHandler {
         connectedUserId: userId,
         credentialId: credentialId || 'default',
         symbols: new Set(),
+        symbolTypes: new Map(),
         workflowSymbols: new Map(),
       });
 
@@ -319,6 +337,10 @@ export class MarketControlHandler {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
       symbols: Array.from(state.symbols),
+      symbolTypes: Array.from(state.symbolTypes.entries()).map(([symbol, types]) => ({
+        symbol,
+        types: Array.from(types),
+      })),
       workflowSymbols: Array.from(state.workflowSymbols.entries()).map(([wfId, symbols]) => ({
         workflowId: wfId,
         symbols: Array.from(symbols),
@@ -376,6 +398,17 @@ export class MarketControlHandler {
             if (stateData.symbols && Array.isArray(stateData.symbols)) {
               stateData.symbols.forEach((s: string) => state.symbols.add(s.toUpperCase()));
               state.gateway.subscribeSymbols(stateData.symbols);
+            }
+
+            // Restore symbol types
+            if (stateData.symbolTypes && Array.isArray(stateData.symbolTypes)) {
+              stateData.symbolTypes.forEach((entry: any) => {
+                const types = new Set<string>();
+                if (entry.types && Array.isArray(entry.types)) {
+                  entry.types.forEach((t: string) => types.add(t));
+                }
+                state.symbolTypes.set(entry.symbol.toUpperCase(), types);
+              });
             }
 
             // Restore workflow mappings

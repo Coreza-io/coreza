@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 const ExecutionStoreContext = createContext<ExecutionContext | null>(null);
 
-const BACKEND_WS_URL = 'ws://localhost:8081';
+const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
 
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();

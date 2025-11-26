@@ -24,6 +24,8 @@ export class WebSocketManager {
   private sessions = new Map<string, AuthenticatedWebSocket>();
   private subscriptionManager = SubscriptionManager.getInstance();
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+  // Track sessionId -> nodeId mapping for market data routing
+  private sessionNodeIds = new Map<string, string>();
 
   private constructor() {
     // Initialize JWKS for JWT verification
@@ -334,6 +336,11 @@ export class WebSocketManager {
 
     try {
       if (action === "subscribe") {
+        // Store nodeId for this session to include in market data messages
+        if (targetNodeId && ws.sessionId) {
+          this.sessionNodeIds.set(ws.sessionId, targetNodeId);
+        }
+        
         // Subscribe via SubscriptionManager (Redis Pub/Sub)
         await this.subscriptionManager.subscribeClient(ws.sessionId!, symbols);
         
@@ -347,7 +354,7 @@ export class WebSocketManager {
         });
         
         console.log(`✅ [WebSocketManager] Subscribed session ${ws.sessionId} to symbols:`, symbols);
-      } 
+      }
       else if (action === "unsubscribe") {
         // Unsubscribe via SubscriptionManager
         await this.subscriptionManager.unsubscribeClient(ws.sessionId!, symbols);
@@ -390,6 +397,9 @@ export class WebSocketManager {
 
       // Remove from subscription manager
       this.subscriptionManager.removeClient(ws.sessionId);
+      
+      // Remove nodeId mapping
+      this.sessionNodeIds.delete(ws.sessionId);
 
       // Remove from clients
       const userClients = this.clients.get(ws.userId);
@@ -429,9 +439,14 @@ export class WebSocketManager {
       allClients.forEach(clientId => {
         const ws = this.sessions.get(clientId);
         if (ws && ws.readyState === WebSocket.OPEN) {
+          // Include nodeId in payload for frontend routing
+          const nodeId = this.sessionNodeIds.get(clientId);
           this.sendMessage(ws, {
             type: 'market_data',
-            payload: event,
+            payload: {
+              nodeId,
+              data: event,
+            },
           });
         }
       });

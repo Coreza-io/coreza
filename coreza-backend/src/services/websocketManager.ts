@@ -1,9 +1,8 @@
 import WebSocket from "ws";
 import { IncomingMessage } from "http";
 import { URL } from "url";
-import jwt from "jsonwebtoken";
+import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { Server } from "net";
-import { WebSocketClient } from "./WebSocketClient";
 import { SubscriptionManager } from "./SubscriptionManager";
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -24,8 +23,15 @@ export class WebSocketManager {
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
   private sessions = new Map<string, AuthenticatedWebSocket>();
   private subscriptionManager = SubscriptionManager.getInstance();
+  private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
-  private constructor() {}
+  private constructor() {
+    // Initialize JWKS for JWT verification
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (supabaseUrl) {
+      this.jwks = createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/jwks`));
+    }
+  }
 
   static getInstance(): WebSocketManager {
     if (!WebSocketManager.instance) {
@@ -103,8 +109,8 @@ export class WebSocketManager {
         return false;
       }
 
-      // Verify JWT token (you'll need to implement this based on your auth system)
-      const decoded = this.verifyJWT(token);
+      // Verify JWT token with proper signature validation
+      const decoded = await this.verifyJWT(token);
       if (!decoded.userId) {
         console.warn("WebSocket connection rejected: Invalid token");
         return false;
@@ -119,24 +125,38 @@ export class WebSocketManager {
     }
   }
 
-  private verifyJWT(token: string): { userId: string } {
-    // For Supabase ES256 tokens, decode without verification (development)
-    // In production, implement JWKS verification via supabase JWKS endpoint
-    const decoded: any = jwt.decode(token, { complete: false });
+  /**
+   * Verify JWT token with proper signature validation using Supabase JWKS
+   * Production-ready implementation with security checks
+   */
+  private async verifyJWT(token: string): Promise<{ userId: string }> {
+    try {
+      if (!this.jwks) {
+        throw new Error("JWKS not initialized - SUPABASE_URL required");
+      }
 
-    if (!decoded) {
-      console.error("JWT decode failed: token is invalid");
-      throw new Error("Invalid token");
+      // Verify JWT signature against Supabase JWKS endpoint
+      const { payload } = await jwtVerify(token, this.jwks, {
+        issuer: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL}/auth/v1` : undefined,
+      });
+
+      const userId = payload.sub;
+      if (!userId) {
+        throw new Error("Token missing user identifier (sub)");
+      }
+
+      // Additional security checks
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp && payload.exp < now) {
+        throw new Error("Token expired");
+      }
+
+      console.log(`✅ JWT verified successfully for user: ${userId}`);
+      return { userId };
+    } catch (error) {
+      console.error("❌ JWT verification failed:", error instanceof Error ? error.message : error);
+      throw new Error("Invalid or expired token");
     }
-
-    const userId = decoded.sub || decoded.user_id || decoded.userId;
-    if (!userId) {
-      console.error("JWT missing user ID:", decoded);
-      throw new Error("Token missing user identifier");
-    }
-
-    console.log(`✅ JWT decoded successfully for user: ${userId}`);
-    return { userId };
   }
 
   private handleConnection(
@@ -290,90 +310,73 @@ export class WebSocketManager {
     });
   }
 
+  /**
+   * Handle WebSocket stream subscriptions/unsubscriptions
+   * CONSOLIDATED: All market data now goes through Redis Pub/Sub via SubscriptionManager
+   */
   private async handleWebSocketStream(
     ws: AuthenticatedWebSocket,
     payload: any
   ): Promise<void> {
     const { source, action, symbols, node_id, nodeId } = payload || {};
+    const targetNodeId = node_id || nodeId;
 
-    // If source is specified, use legacy WebSocketClient for backward compatibility
-    if (source) {
-      try {
-        const client = WebSocketClient.getInstance(source);
-        const targetNodeId = node_id || nodeId;
-
-        if (action === "subscribe" && symbols) {
-          if (!targetNodeId) {
-            this.sendMessage(ws, {
-              type: `${source}_error`,
-              payload: { error: "node_id is required to subscribe" },
-            });
-            return;
-          }
-
-          const success = await client.subscribe(ws.userId!, symbols, {
-            nodeId: targetNodeId,
-          });
-
-          this.sendMessage(ws, {
-            type: `${source}_started`,
-            payload: {
-              symbols,
-              node_id: targetNodeId,
-              success,
-            },
-          });
-        } else if (action === "unsubscribe" && symbols) {
-          const success = await client.unsubscribe(ws.userId!, symbols, {
-            nodeId: targetNodeId,
-          });
-
-          this.sendMessage(ws, {
-            type: `${source}_stopped`,
-            payload: {
-              symbols,
-              node_id: targetNodeId ?? null,
-              success,
-            },
-          });
-        } else {
-          this.sendMessage(ws, {
-            type: `${source}_error`,
-            payload: {
-              error:
-                "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
-            },
-          });
-        }
-      } catch (error) {
-        this.sendMessage(ws, {
-          type: "error",
-          payload: {
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
-      }
-      return;
-    }
-
-    // New Redis-based market data subscription (no source specified)
-    if (action === "subscribe" && symbols) {
-      await this.subscriptionManager.subscribeClient(ws.sessionId!, symbols);
-      this.sendMessage(ws, {
-        type: "market_subscribed",
-        payload: { symbols, success: true },
-      });
-    } else if (action === "unsubscribe" && symbols) {
-      await this.subscriptionManager.unsubscribeClient(ws.sessionId!, symbols);
-      this.sendMessage(ws, {
-        type: "market_unsubscribed",
-        payload: { symbols, success: true },
-      });
-    } else {
+    // Validate payload
+    if (!action || !symbols || !Array.isArray(symbols) || symbols.length === 0) {
       this.sendMessage(ws, {
         type: "error",
         payload: {
           error: "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
+        },
+      });
+      return;
+    }
+
+    try {
+      if (action === "subscribe") {
+        // Subscribe via SubscriptionManager (Redis Pub/Sub)
+        await this.subscriptionManager.subscribeClient(ws.sessionId!, symbols);
+        
+        this.sendMessage(ws, {
+          type: source ? `${source}_started` : "market_subscribed",
+          payload: {
+            symbols,
+            node_id: targetNodeId,
+            success: true,
+          },
+        });
+        
+        console.log(`✅ [WebSocketManager] Subscribed session ${ws.sessionId} to symbols:`, symbols);
+      } 
+      else if (action === "unsubscribe") {
+        // Unsubscribe via SubscriptionManager
+        await this.subscriptionManager.unsubscribeClient(ws.sessionId!, symbols);
+        
+        this.sendMessage(ws, {
+          type: source ? `${source}_stopped` : "market_unsubscribed",
+          payload: {
+            symbols,
+            node_id: targetNodeId ?? null,
+            success: true,
+          },
+        });
+        
+        console.log(`✅ [WebSocketManager] Unsubscribed session ${ws.sessionId} from symbols:`, symbols);
+      }
+      else {
+        this.sendMessage(ws, {
+          type: "error",
+          payload: {
+            error: `Unknown action: ${action}. Expected 'subscribe' or 'unsubscribe'.`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error(`❌ [WebSocketManager] Stream operation failed:`, error);
+      this.sendMessage(ws, {
+        type: "error",
+        payload: {
+          error: error instanceof Error ? error.message : "Unknown error",
         },
       });
     }

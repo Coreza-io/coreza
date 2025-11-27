@@ -13,8 +13,16 @@ const circuitBreakerOptions = {
   volumeThreshold: 5,               // Min requests before circuit can open
 };
 
-// Get dedicated pub connection for Redis operations (never used for subscribe)
-const { pub: redisPub } = getRedisPubSub();
+// Lazy Redis connection initialization to prevent startup crashes
+let redisPub: any = null;
+
+function getRedisConnection() {
+  if (!redisPub) {
+    const { pub } = getRedisPubSub();
+    redisPub = pub;
+  }
+  return redisPub;
+}
 
 /**
  * Circuit breaker for Redis PUBLISH operations
@@ -22,7 +30,7 @@ const { pub: redisPub } = getRedisPubSub();
  */
 export const redisPublishBreaker = new CircuitBreaker(
   async (channel: string, message: string) => {
-    return redisPub.publish(channel, message);
+    return getRedisConnection().publish(channel, message);
   },
   circuitBreakerOptions
 );
@@ -32,7 +40,7 @@ export const redisPublishBreaker = new CircuitBreaker(
  */
 export const redisGetBreaker = new CircuitBreaker(
   async (key: string) => {
-    return redisPub.get(key);
+    return getRedisConnection().get(key);
   },
   circuitBreakerOptions
 );
@@ -42,7 +50,7 @@ export const redisGetBreaker = new CircuitBreaker(
  */
 export const redisSetBreaker = new CircuitBreaker(
   async (key: string, value: string) => {
-    return redisPub.set(key, value);
+    return getRedisConnection().set(key, value);
   },
   circuitBreakerOptions
 );

@@ -3,7 +3,6 @@ import { IncomingMessage } from "http";
 import { URL } from "url";
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { Server } from "net";
-import { SubscriptionManager } from "./SubscriptionManager";
 import { createRedisPubSub } from "../config/redis";
 import type Redis from "ioredis";
 
@@ -24,10 +23,7 @@ export class WebSocketManager {
   private wss: WebSocket.Server | null = null;
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
   private sessions = new Map<string, AuthenticatedWebSocket>();
-  private subscriptionManager = SubscriptionManager.getInstance();
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-  // Track sessionId -> nodeId mapping for market data routing
-  private sessionNodeIds = new Map<string, string>();
   
   // Redis pub/sub for receiving market data from market-stream-service
   private redisSub: Redis | null = null;
@@ -420,79 +416,24 @@ export class WebSocketManager {
 
   /**
    * Handle WebSocket stream subscriptions/unsubscriptions
-   * CONSOLIDATED: All market data now goes through Redis Pub/Sub via SubscriptionManager
+   * DEPRECATED: This direct WebSocket subscription path is no longer used.
+   * All subscriptions now go through HTTP POST /websocket/:source/subscribe
+   * which publishes control messages to market-stream-service via Redis.
    */
   private async handleWebSocketStream(
     ws: AuthenticatedWebSocket,
     payload: any
   ): Promise<void> {
-    const { source, action, symbols, node_id, nodeId } = payload || {};
-    const targetNodeId = node_id || nodeId;
+    const { source, action } = payload || {};
 
-    // Validate payload
-    if (!action || !symbols || !Array.isArray(symbols) || symbols.length === 0) {
-      this.sendMessage(ws, {
-        type: "error",
-        payload: {
-          error: "Invalid payload. Expected action (subscribe/unsubscribe) and symbols array.",
-        },
-      });
-      return;
-    }
-
-    try {
-      if (action === "subscribe") {
-        // Store nodeId for this session to include in market data messages
-        if (targetNodeId && ws.sessionId) {
-          this.sessionNodeIds.set(ws.sessionId, targetNodeId);
-        }
-        
-        // Subscribe via SubscriptionManager (Redis Pub/Sub)
-        await this.subscriptionManager.subscribeClient(ws.sessionId!, symbols);
-        
-        this.sendMessage(ws, {
-          type: source ? `${source}_started` : "market_subscribed",
-          payload: {
-            symbols,
-            node_id: targetNodeId,
-            success: true,
-          },
-        });
-        
-        console.log(`✅ [WebSocketManager] Subscribed session ${ws.sessionId} to symbols:`, symbols);
-      }
-      else if (action === "unsubscribe") {
-        // Unsubscribe via SubscriptionManager
-        await this.subscriptionManager.unsubscribeClient(ws.sessionId!, symbols);
-        
-        this.sendMessage(ws, {
-          type: source ? `${source}_stopped` : "market_unsubscribed",
-          payload: {
-            symbols,
-            node_id: targetNodeId ?? null,
-            success: true,
-          },
-        });
-        
-        console.log(`✅ [WebSocketManager] Unsubscribed session ${ws.sessionId} from symbols:`, symbols);
-      }
-      else {
-        this.sendMessage(ws, {
-          type: "error",
-          payload: {
-            error: `Unknown action: ${action}. Expected 'subscribe' or 'unsubscribe'.`,
-          },
-        });
-      }
-    } catch (error) {
-      console.error(`❌ [WebSocketManager] Stream operation failed:`, error);
-      this.sendMessage(ws, {
-        type: "error",
-        payload: {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-      });
-    }
+    console.warn(`⚠️ [WebSocketManager] Received legacy WebSocket subscription message. Use HTTP POST /websocket/:source/subscribe instead.`);
+    
+    this.sendMessage(ws, {
+      type: "error",
+      payload: {
+        error: "Direct WebSocket subscriptions are deprecated. Use HTTP POST /websocket/:source/subscribe endpoint.",
+      },
+    });
   }
 
   private handleDisconnection(ws: AuthenticatedWebSocket): void {
@@ -500,12 +441,6 @@ export class WebSocketManager {
       console.log(
         `👋 User ${ws.userId} disconnected (session: ${ws.sessionId})`
       );
-
-      // Remove from subscription manager
-      this.subscriptionManager.removeClient(ws.sessionId);
-      
-      // Remove nodeId mapping
-      this.sessionNodeIds.delete(ws.sessionId);
 
       // Remove from clients
       const userClients = this.clients.get(ws.userId);
@@ -535,31 +470,8 @@ export class WebSocketManager {
   }
 
   private setupRedisSubscription(): void {
-    // Setup market data forwarding via SubscriptionManager (symbol-based)
-    this.subscriptionManager.onMessage((symbol, data) => {
-      const clients = this.subscriptionManager.getClientsForSymbol(symbol);
-      const wildcardClients = this.subscriptionManager.getClientsForSymbol('*');
-      const allClients = new Set([...clients, ...wildcardClients]);
-      
-      const event = JSON.parse(data);
-      
-      allClients.forEach(clientId => {
-        const ws = this.sessions.get(clientId);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          // Include nodeId in payload for frontend routing
-          const nodeId = this.sessionNodeIds.get(clientId);
-          this.sendMessage(ws, {
-            type: 'market_data',
-            payload: {
-              nodeId,
-              data: event,
-            },
-          });
-        }
-      });
-    });
-
     // Setup Redis subscriber for user-specific market data from market-stream-service
+    // All market data now flows through: market-stream-service → ws:user:{userId} → WebSocketManager
     const { sub } = createRedisPubSub();
     this.redisSub = sub;
 
@@ -712,7 +624,6 @@ export class WebSocketManager {
           connections: clients.size,
         })
       ),
-      subscriptions: instance.subscriptionManager.getStats(),
     };
   }
 

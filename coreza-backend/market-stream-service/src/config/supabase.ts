@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
 // Load environment variables FIRST
 dotenv.config();
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase';
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -18,7 +18,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey, 
     autoRefreshToken: false,
     persistSession: false
   }
-});
+}) as SupabaseClient<any>;
 
 // Alpaca Configuration - Paper Trading URLs (Public)
 export const ALPACA_CONFIG = {

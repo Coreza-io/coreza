@@ -6,7 +6,7 @@ import { supabase } from '../config/supabase';
 import { bullMqJobQueue } from './jobQueueManager';
 import WorkflowCache from './WorkflowCache';
 import { redisPublishBreaker, redisSetBreaker } from '../utils/redisCircuitBreaker';
-import { logger } from '../utils/logger';
+import logger from '../utils/logger';
 
 interface WorkflowSubscription {
   workflowId: string;

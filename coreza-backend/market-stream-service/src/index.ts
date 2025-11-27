@@ -1,6 +1,6 @@
 import express from 'express';
 import { register } from 'prom-client';
-import { logger } from './utils/logger';
+import logger from './utils/logger';
 import { MarketControlHandler } from './services/MarketControlHandler';
 import { MarketDataSubscriber } from './services/MarketDataSubscriber';
 import WorkflowCache from './services/WorkflowCache';

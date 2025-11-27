@@ -62,7 +62,7 @@ async function startMarketStreamService() {
           cache: cacheStats,
           buffer: bufferStats,
           circuitBreaker: {
-            state: redisPublishBreaker.status.state,
+            stats: redisPublishBreaker.stats,
           },
         },
       });

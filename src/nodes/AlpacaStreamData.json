@@ -8,7 +8,7 @@
   "executionMode": "streaming",
   "streamingConfig": {
     "waitForFirstEvent": true,
-    "timeout": 30000
+    "timeout": 300000
   },
   "description": "Subscribe to real-time market data streams (trades, quotes, bars) from Alpaca",
   "color": "text-yellow-500",

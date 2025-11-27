@@ -8,10 +8,6 @@
 
 import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
-import { MarketDataSubscriber } from '../services/MarketDataSubscriber';
-import { MarketControlHandler } from '../services/MarketControlHandler';
-import { SubscriptionManager } from '../services/SubscriptionManager';
-import CredentialManager from '../utils/credentialManager';
 import { getRedis } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 
@@ -159,62 +155,6 @@ router.post('/:source/unsubscribe', async (req, res) => {
   }
 });
 
-/**
- * Get current subscription status for a market data source
- * GET /websocket/:source/status
- */
-router.get('/:source/status', (req, res) => {
-  try {
-    const { source } = req.params;
-    const controlHandler = MarketControlHandler.getInstance();
-    const stats = controlHandler.getStats();
-    
-    // Find gateway stats for this source
-    const sourceStats = stats.gateways[source] || { connected: false, symbolCount: 0 };
-
-    res.json({
-      success: true,
-      source,
-      status: sourceStats,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Status check failed',
-    });
-  }
-});
-
-/**
- * Get user's subscriptions for a market data source
- * GET /websocket/:source/subscriptions/:userId
- */
-router.get('/:source/subscriptions/:userId', (req, res) => {
-  try {
-    const { source, userId } = req.params;
-    const subscriptionManager = SubscriptionManager.getInstance();
-    const stats = subscriptionManager.getStats();
-    
-    // Filter subscriptions for this user
-    const userSubscriptions = stats.clients
-      .filter(client => client.clientId.includes(userId))
-      .map(client => ({
-        symbols: Array.from(client.symbols),
-      }));
-
-    res.json({
-      success: true,
-      source,
-      userId,
-      subscriptions: userSubscriptions,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to get subscriptions',
-    });
-  }
-});
 
 // ============================================
 // LEGACY ENDPOINTS (for backward compatibility)

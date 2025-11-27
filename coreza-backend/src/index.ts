@@ -44,8 +44,6 @@ import brokerRoutes from './routes/broker';
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
 import { initializeScreenerServices } from './services/screeners';
-import { MarketDataSubscriber } from './services/MarketDataSubscriber';
-import { MarketControlHandler } from './services/MarketControlHandler';
 import WorkflowCache from './services/WorkflowCache';
 import { redisPublishBreaker, redisGetBreaker, redisSetBreaker } from './utils/redisCircuitBreaker';
 import { RedisBuffer } from './services/RedisBuffer';
@@ -161,18 +159,6 @@ async function startServer() {
     setupBufferFlush();
     logger.debug('Redis buffer flush setup complete');
 
-    // Initialize Market Data Subscriber and restore subscriptions
-    logger.info('Initializing Market Data Subscriber...');
-    const marketDataSubscriber = MarketDataSubscriber.getInstance();
-    await marketDataSubscriber.restoreFromRedis();
-    logger.info('Market Data Subscriber initialized');
-
-    // Initialize Market Control Handler (Phase 5)
-    logger.info('Initializing Market Control Handler...');
-    const marketControlHandler = MarketControlHandler.getInstance();
-    await marketControlHandler.initialize();
-    logger.info('Market Control Handler initialized');
-
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);
     await WebSocketManager.initialize(wsPort);
@@ -195,9 +181,6 @@ async function startServer() {
       
       // Close WebSocket server
       await WebSocketManager.shutdown();
-      
-      // Cleanup Market Control Handler
-      await marketControlHandler.cleanup();
       
       // Exit process
       process.exit(0);

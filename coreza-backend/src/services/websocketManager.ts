@@ -4,6 +4,8 @@ import { URL } from "url";
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { Server } from "net";
 import { SubscriptionManager } from "./SubscriptionManager";
+import { createRedisPubSub } from "../config/redis";
+import type Redis from "ioredis";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -26,6 +28,9 @@ export class WebSocketManager {
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
   // Track sessionId -> nodeId mapping for market data routing
   private sessionNodeIds = new Map<string, string>();
+  
+  // Redis pub/sub for receiving market data from market-stream-service
+  private redisSub: Redis | null = null;
 
   private constructor() {
     // Initialize JWKS for JWT verification with extended timeout and caching
@@ -530,6 +535,7 @@ export class WebSocketManager {
   }
 
   private setupRedisSubscription(): void {
+    // Setup market data forwarding via SubscriptionManager (symbol-based)
     this.subscriptionManager.onMessage((symbol, data) => {
       const clients = this.subscriptionManager.getClientsForSymbol(symbol);
       const wildcardClients = this.subscriptionManager.getClientsForSymbol('*');
@@ -551,6 +557,55 @@ export class WebSocketManager {
           });
         }
       });
+    });
+
+    // Setup Redis subscriber for user-specific market data from market-stream-service
+    const { sub } = createRedisPubSub();
+    this.redisSub = sub;
+
+    // Subscribe to pattern ws:user:* to receive market data for all users
+    this.redisSub.psubscribe('ws:user:*', (err, count) => {
+      if (err) {
+        console.error('❌ Failed to subscribe to ws:user:* pattern:', err);
+      } else {
+        console.log(`✅ Subscribed to ws:user:* pattern (${count} patterns active)`);
+      }
+    });
+
+    // Handle incoming messages from market-stream-service
+    this.redisSub.on('pmessage', (pattern: string, channel: string, message: string) => {
+      try {
+        // Extract userId from channel name: ws:user:{userId}
+        const userId = channel.split(':')[2];
+        if (!userId) {
+          console.warn(`⚠️ Invalid channel format: ${channel}`);
+          return;
+        }
+
+        // Parse message payload
+        const payload = JSON.parse(message);
+        
+        // Forward to all connected WebSocket clients for this user
+        const userClients = this.clients.get(userId);
+        if (userClients && userClients.size > 0) {
+          const messageWithTimestamp = {
+            ...payload,
+            timestamp: new Date().toISOString(),
+          };
+
+          userClients.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              this.sendMessage(ws, messageWithTimestamp);
+            }
+          });
+
+          console.log(`📤 Forwarded market data to ${userClients.size} client(s) for user ${userId}`);
+        } else {
+          console.log(`⚠️ No connected clients for user ${userId}, skipping`);
+        }
+      } catch (error) {
+        console.error('❌ Error processing Redis message:', error);
+      }
     });
   }
 
@@ -663,6 +718,16 @@ export class WebSocketManager {
 
   async shutdown(): Promise<void> {
     console.log("🔌 Closing WebSocket connections...");
+    
+    // Close Redis subscriber
+    if (this.redisSub) {
+      try {
+        await this.redisSub.quit();
+        console.log("✅ Redis subscriber closed");
+      } catch (error) {
+        console.error("❌ Error closing Redis subscriber:", error);
+      }
+    }
     
     // Close all client connections
     this.clients.forEach((clientSet, userId) => {

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts",
+    "verify-health": "ts-node scripts/verify-health.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.51.0",

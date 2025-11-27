@@ -7,6 +7,7 @@ import { bullMqJobQueue } from './jobQueueManager';
 import WorkflowCache from './WorkflowCache';
 import { redisPublishBreaker, redisSetBreaker } from '../utils/redisCircuitBreaker';
 import logger from '../utils/logger';
+import { retrySupabaseOperation } from '../utils/retryHelper';
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -302,38 +303,60 @@ export class MarketDataSubscriber {
         return;
       }
 
-      // Create workflow run entry
-      const { data: runData, error: runError } = await supabase
-        .from('workflow_runs')
-        .insert({
-          workflow_id: workflowId,
-          initiated_by: userId,
-          status: 'queued',
-        })
-        .select('id')
-        .single();
+      // Create workflow run entry with retry logic
+      const { data: runData, error: runError } = await retrySupabaseOperation(
+        async () => {
+          return await supabase
+            .from('workflow_runs')
+            .insert({
+              workflow_id: workflowId,
+              initiated_by: userId,
+              status: 'queued',
+            })
+            .select('id')
+            .single();
+        },
+        'Create workflow_runs entry'
+      );
 
       if (runError || !runData) {
-        console.error(`❌ [MarketDataSubscriber] Failed to create workflow run for ${workflowId}:`, runError);
+        logger.error(
+          { err: runError, workflowId, userId },
+          'Failed to create workflow run after retries'
+        );
         return;
       }
 
       const runId = runData.id;
 
       // Add job to BullMQ queue with market event as initial input
-      await bullMqJobQueue.addWorkflowExecution({
-        runId,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: 'webhook',
-        initialInput: { marketEvent: event },
-      });
+      try {
+        await bullMqJobQueue.addWorkflowExecution({
+          runId,
+          workflowId,
+          userId,
+          nodes: workflow.nodes,
+          edges: workflow.edges,
+          trigger: 'webhook',
+          initialInput: { marketEvent: event },
+        });
 
-      console.log(`✅ [MarketDataSubscriber] Queued workflow ${workflow.name} (${workflowId}) with run ${runId}`);
+        logger.info(
+          { workflowId, runId, workflowName: workflow.name, symbol: event.symbol },
+          'Queued workflow execution successfully'
+        );
+      } catch (queueError) {
+        logger.error(
+          { err: queueError, workflowId, runId },
+          'Failed to add workflow to execution queue'
+        );
+        // Don't throw - workflow_runs entry already created, just log the failure
+      }
     } catch (error) {
-      console.error(`❌ [MarketDataSubscriber] Trigger workflow error:`, error);
+      logger.error(
+        { err: error, workflowId, userId, symbol: event.symbol },
+        'Trigger workflow error'
+      );
     }
   }
 

@@ -13,17 +13,20 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-      - "8080:8080"  # WebSocket port
+      - "8081:8081"  # WebSocket port
     environment:
       - NODE_ENV=production
       - PORT=8000
+      - WEBSOCKET_PORT=8081
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
+      - COREZA_ENCRYPTION_KEY=${COREZA_ENCRYPTION_KEY}
     depends_on:
       redis:
         condition: service_healthy
@@ -38,6 +41,49 @@ services:
       retries: 3
       start_period: 40s
     deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # =============================================================================
+  # Market Stream Service (Single Instance)
+  # =============================================================================
+  market-stream-service:
+    build:
+      context: ./coreza-backend/market-stream-service
+      dockerfile: Dockerfile
+    container_name: market-stream-service
+    restart: unless-stopped
+    ports:
+      - "8090:8090"  # Health check / metrics port
+    environment:
+      - NODE_ENV=production
+      - MARKET_STREAM_PORT=8090
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - COREZA_ENCRYPTION_KEY=${COREZA_ENCRYPTION_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - coreza-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8090/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 1  # CRITICAL: Must be exactly 1 instance
       resources:
         limits:
           memory: 512M

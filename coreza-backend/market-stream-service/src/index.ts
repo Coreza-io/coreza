@@ -1,0 +1,123 @@
+import express from 'express';
+import { register } from 'prom-client';
+import { logger } from './utils/logger';
+import { MarketControlHandler } from './services/MarketControlHandler';
+import { MarketDataSubscriber } from './services/MarketDataSubscriber';
+import WorkflowCache from './services/WorkflowCache';
+import { RedisBuffer } from './services/RedisBuffer';
+import { getRedis } from './config/redis';
+import { redisPublishBreaker } from './utils/redisCircuitBreaker';
+
+const PORT = process.env.MARKET_STREAM_PORT || 8090;
+
+async function startMarketStreamService() {
+  const app = express();
+
+  logger.info('🚀 Starting Market Stream Service...');
+
+  try {
+    // Initialize WorkflowCache cleanup
+    logger.info('Initializing WorkflowCache cleanup timer...');
+    WorkflowCache.startCleanupTimer();
+
+    // Initialize Redis buffer flush on circuit breaker recovery
+    logger.info('Setting up Redis buffer flush on circuit breaker recovery...');
+    redisPublishBreaker.on('close', async () => {
+      logger.info('Redis circuit breaker closed (recovered), flushing buffer...');
+      try {
+        const redis = getRedis();
+        const flushed = await RedisBuffer.getInstance().flushToRedis(redis);
+        logger.info({ flushed }, 'Successfully flushed buffered messages to Redis');
+      } catch (error) {
+        logger.error({ err: error }, 'Failed to flush Redis buffer on recovery');
+      }
+    });
+
+    // Initialize MarketControlHandler (listens to md:control:* and manages gateways)
+    logger.info('Initializing MarketControlHandler...');
+    const marketControlHandler = MarketControlHandler.getInstance();
+    await marketControlHandler.initialize();
+    logger.info('✅ MarketControlHandler initialized');
+
+    // Initialize MarketDataSubscriber (listens to md:symbol:* and triggers workflows)
+    logger.info('Initializing MarketDataSubscriber...');
+    const marketDataSubscriber = MarketDataSubscriber.getInstance();
+    await marketDataSubscriber.restoreFromRedis();
+    logger.info('✅ MarketDataSubscriber initialized and subscriptions restored');
+
+    // Health check endpoint
+    app.get('/health', (req, res) => {
+      const controlStats = marketControlHandler.getStats();
+      const subscriberStats = marketDataSubscriber.getStats();
+      const cacheStats = WorkflowCache.getStats();
+      const bufferStats = RedisBuffer.getInstance().getStats();
+
+      res.json({
+        status: 'healthy',
+        service: 'market-stream-service',
+        timestamp: new Date().toISOString(),
+        stats: {
+          gateways: controlStats,
+          subscriber: subscriberStats,
+          cache: cacheStats,
+          buffer: bufferStats,
+          circuitBreaker: {
+            state: redisPublishBreaker.status.state,
+          },
+        },
+      });
+    });
+
+    // Prometheus metrics endpoint
+    app.get('/metrics', async (req, res) => {
+      res.set('Content-Type', register.contentType);
+      res.end(await register.metrics());
+    });
+
+    // Start HTTP server
+    const server = app.listen(PORT, () => {
+      logger.info({ port: PORT }, '✅ Market Stream Service HTTP server listening');
+    });
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      logger.info('Shutting down Market Stream Service...');
+      
+      server.close(() => {
+        logger.info('HTTP server closed');
+      });
+
+      try {
+        await marketControlHandler.cleanup();
+        logger.info('MarketControlHandler cleaned up');
+      } catch (error) {
+        logger.error({ err: error }, 'Error cleaning up MarketControlHandler');
+      }
+
+      try {
+        await marketDataSubscriber.cleanup();
+        logger.info('MarketDataSubscriber cleaned up');
+      } catch (error) {
+        logger.error({ err: error }, 'Error cleaning up MarketDataSubscriber');
+      }
+
+      WorkflowCache.stopCleanupTimer();
+      logger.info('WorkflowCache cleanup timer stopped');
+
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
+  } catch (error) {
+    logger.fatal({ err: error, stack: error instanceof Error ? error.stack : undefined }, 'Failed to start Market Stream Service');
+    console.error('Fatal error during Market Stream Service startup:', error);
+    process.exit(1);
+  }
+}
+
+// Set TZ to UTC to ensure consistent date handling
+process.env.TZ = 'UTC';
+
+startMarketStreamService();

@@ -260,9 +260,7 @@ export class MarketDataSubscriber {
               },
             });
             
-            await redisPublishBreaker.fire(async () => {
-              await this.redisPub.publish(userChannel, payload);
-            });
+            await redisPublishBreaker.fire(userChannel, payload);
             
             logger.debug({ userId: subscription.userId, symbol: event.symbol, eventType: event.type }, 'Published market data to user channel');
           } catch (error) {

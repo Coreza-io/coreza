@@ -1,3 +1,11 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 export interface Database {
   public: {
     Tables: {
@@ -112,35 +120,63 @@ export interface Database {
           user_id: string;
           service_type: string;
           name: string;
-          client_json: any;
-          token_json: any;
+          client_json: Json | null;
+          token_json: Json | null;
           scopes: string | null;
           created_at: string;
           updated_at: string;
+          is_encrypted: boolean;
+          enc_payload: string | null;
+          iv: string | null;
+          auth_tag: string | null;
+          key_ref: string | null;
+          dek_wrapped: string | null;
+          enc_version: number | null;
+          key_algo: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           service_type: string;
           name: string;
-          client_json?: any;
-          token_json?: any;
+          client_json?: Json | null;
+          token_json?: Json | null;
           scopes?: string | null;
           created_at?: string;
           updated_at?: string;
+          is_encrypted?: boolean;
+          enc_payload?: string | null;
+          iv?: string | null;
+          auth_tag?: string | null;
+          key_ref?: string | null;
+          dek_wrapped?: string | null;
+          enc_version?: number | null;
+          key_algo?: string | null;
         };
         Update: {
           id?: string;
           user_id?: string;
           service_type?: string;
           name?: string;
-          client_json?: any;
-          token_json?: any;
+          client_json?: Json | null;
+          token_json?: Json | null;
           scopes?: string | null;
           created_at?: string;
           updated_at?: string;
+          is_encrypted?: boolean;
+          enc_payload?: string | null;
+          iv?: string | null;
+          auth_tag?: string | null;
+          key_ref?: string | null;
+          dek_wrapped?: string | null;
+          enc_version?: number | null;
+          key_algo?: string | null;
         };
       };
     };
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
   };
 }

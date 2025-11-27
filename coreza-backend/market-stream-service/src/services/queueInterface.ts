@@ -5,6 +5,7 @@ export interface WorkflowJobData {
   nodes: any[];
   edges: any[];
   trigger?: "manual" | "scheduled" | "webhook";
+  initialInput?: Record<string, unknown>;
 }
 
 export interface IWorkflowJobQueue {

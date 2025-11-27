@@ -55,6 +55,28 @@ npm install
 npm run dev
 ```
 
+### Health Check Verification
+
+After starting the service, verify it's running correctly:
+
+```bash
+npm run verify-health
+```
+
+This script checks:
+- HTTP server is responding
+- All components initialized properly
+- Circuit breakers are functioning
+- Redis connection is active
+
+### Startup Validation
+
+The service automatically validates on startup:
+1. **Environment Variables**: Checks all required variables are set
+2. **Redis Connection**: Tests PING, SET/GET operations, checks version
+3. **Supabase Connection**: Validates access to workflows, workflow_runs, user_credentials tables
+4. **Timeout**: Fails fast (10s) if dependencies unavailable
+
 ## Docker Deployment
 
 ### docker-compose.yml
@@ -108,6 +130,41 @@ market-stream-service:
 5. **Credential Rotation**: Market data gateways support OAuth token refresh for brokers like Schwab.
 
 ## Troubleshooting
+
+### Service won't start
+
+**1. Check startup validation logs:**
+```bash
+npm run dev
+# Look for validation errors in structured JSON logs
+```
+
+Common failures:
+- **Missing environment variables**: Check `.env` file matches `.env.example`
+- **Redis connection failed**: Ensure Redis is running (`redis-cli ping`)
+- **Supabase connection failed**: Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+
+**2. Run health check after startup:**
+```bash
+npm run verify-health
+```
+
+**3. Check Redis version:**
+```bash
+redis-cli INFO server | grep redis_version
+```
+
+If below 6.2.0, upgrade Redis for optimal BullMQ performance:
+
+**Docker:**
+```bash
+docker run -d -p 6379:6379 redis:7-alpine
+```
+
+**Windows (Chocolatey):**
+```bash
+choco upgrade redis-64
+```
 
 ### No market data flowing to workflows
 

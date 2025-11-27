@@ -7,6 +7,7 @@ import WorkflowCache from './services/WorkflowCache';
 import { RedisBuffer } from './services/RedisBuffer';
 import { getRedis } from './config/redis';
 import { redisPublishBreaker } from './utils/redisCircuitBreaker';
+import { runStartupValidation } from './utils/startupValidation';
 
 const PORT = process.env.MARKET_STREAM_PORT || 8090;
 
@@ -16,6 +17,9 @@ async function startMarketStreamService() {
   logger.info('🚀 Starting Market Stream Service...');
 
   try {
+    // Run startup validation (Redis, Supabase, env vars)
+    await runStartupValidation();
+
     // Initialize WorkflowCache cleanup
     logger.info('Initializing WorkflowCache cleanup timer...');
     WorkflowCache.startCleanupTimer();

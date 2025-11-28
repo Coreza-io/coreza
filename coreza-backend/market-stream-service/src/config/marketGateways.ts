@@ -1,5 +1,18 @@
 import { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
 
+// Map singular event types to Alpaca's plural API keys
+const ALPACA_TYPE_TO_KEY: Record<string, string> = {
+  'trade': 'trades',
+  'quote': 'quotes', 
+  'bar': 'bars',
+  'daily_bar': 'dailyBars',
+  // Fallback: if already plural, keep as-is
+  'trades': 'trades',
+  'quotes': 'quotes',
+  'bars': 'bars',
+  'dailyBars': 'dailyBars',
+};
+
 export interface GatewayConfig {
   id: MarketSource;
   wsUrl: string | ((creds: any) => string);
@@ -65,14 +78,20 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         }
       }
     },
-    makeSubscribeMessage: (symbols, types = ['trades']) => {
+    makeSubscribeMessage: (symbols, types = ['trade']) => {
       const msg: any = { action: 'subscribe' };
-      types.forEach(t => { msg[t] = symbols; });
+      types.forEach(t => {
+        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;  // Map singular → plural
+        msg[key] = symbols;
+      });
       return msg;
     },
-    makeUnsubscribeMessage: (symbols, types = ['trades']) => {
+    makeUnsubscribeMessage: (symbols, types = ['trade']) => {
       const msg: any = { action: 'unsubscribe' };
-      types.forEach(t => { msg[t] = symbols; });
+      types.forEach(t => {
+        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;  // Map singular → plural
+        msg[key] = symbols;
+      });
       return msg;
     },
     parseMessage: (buffer) => {

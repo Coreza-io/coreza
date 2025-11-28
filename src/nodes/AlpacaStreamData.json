@@ -117,6 +117,24 @@
       "placeholder": "e.g. AAPL,MSFT,TSLA or * for all",
       "description": "Comma-separated symbols or * for all symbols",
       "required": true
+    },
+    {
+      "key": "feed",
+      "label": "Data Feed",
+      "type": "select",
+      "options": [
+        {
+          "id": "iex",
+          "name": "IEX (Free - Regular Hours Only)"
+        },
+        {
+          "id": "sip",
+          "name": "SIP (Paid - Includes Pre/After Hours)"
+        }
+      ],
+      "default": "iex",
+      "description": "SIP feed requires Alpaca subscription for pre-market/after-hours data",
+      "required": true
     }
   ]
 }

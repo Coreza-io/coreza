@@ -24,6 +24,7 @@ interface ControlMessage {
   source: MarketSource;
   credentialId?: string;
   eventTypes?: string[];
+  feed?: string;
 }
 
 interface SourceState {
@@ -126,7 +127,7 @@ export class MarketControlHandler {
    * Handle subscribe control message (with mutex protection)
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
-    const { source, userId, workflowId, nodeId, symbols, eventTypes } = msg;
+    const { source, userId, workflowId, nodeId, symbols, eventTypes, feed } = msg;
 
     try {
       // Acquire mutex to prevent concurrent gateway connections
@@ -136,7 +137,7 @@ export class MarketControlHandler {
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
-          await this.connectGateway(source, userId, msg.credentialId);
+          await this.connectGateway(source, userId, msg.credentialId, feed);
           state = this.sourceStates.get(source)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
@@ -264,7 +265,8 @@ export class MarketControlHandler {
   private async connectGateway(
     source: MarketSource,
     userId: string,
-    credentialId?: string
+    credentialId?: string,
+    feed?: string
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
@@ -301,6 +303,12 @@ export class MarketControlHandler {
 
         console.log(`🔑 [MarketControl] Retrieved credentials for ${serviceType} (fallback)`);
         creds = credentials;
+      }
+
+      // Add feed parameter to credentials if provided
+      if (feed) {
+        creds = { ...creds, feed };
+        console.log(`📡 [MarketControl] Using ${feed.toUpperCase()} feed for ${source}`);
       }
 
       // Get or create gateway instance using mapped gateway source

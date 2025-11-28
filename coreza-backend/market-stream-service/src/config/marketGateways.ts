@@ -36,7 +36,10 @@ export interface GatewayConfig {
 export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
   alpaca: {
     id: 'alpaca',
-    wsUrl: 'wss://stream.data.alpaca.markets/v2/iex',
+    wsUrl: (creds) => {
+      const feed = creds.feed || 'iex';
+      return `wss://stream.data.alpaca.markets/v2/${feed}`;
+    },
     makeAuthMessage: (creds) => ({
       action: 'auth',
       key: creds.api_key,

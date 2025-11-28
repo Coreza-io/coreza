@@ -20,6 +20,7 @@ export class MarketDataGateway {
   private reconnectAttempts = 0;
   private redis = getRedis();
   private logger = createLogger('MarketDataGateway');
+  private keepaliveInterval: NodeJS.Timeout | null = null;
   
   private constructor(config: GatewayConfig) {
     this.config = config;
@@ -57,6 +58,7 @@ export class MarketDataGateway {
       this.ws.on('open', () => {
         this.logger.info({ source: this.config.id }, 'Gateway connected');
         activeGatewayConnectionsGauge.set({ source: this.config.id }, 1);
+        this.startKeepalive();
         const authMsg = this.config.makeAuthMessage?.(this.credentials);
         if (authMsg) {
           const payload = this.config.isBinary 
@@ -80,6 +82,7 @@ export class MarketDataGateway {
         activeGatewayConnectionsGauge.set({ source: this.config.id }, 0);
         alertGatewayDisconnected(this.config.id, `Connection closed: ${code} - ${reasonStr}`);
         this.isAuthenticated = false;
+        this.stopKeepalive();
         this.handleReconnect();
       });
       
@@ -262,7 +265,25 @@ export class MarketDataGateway {
     }, delay);
   }
   
+  private startKeepalive(): void {
+    this.stopKeepalive();
+    this.keepaliveInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.ping();
+        this.logger.debug({ source: this.config.id }, 'Sent keepalive ping');
+      }
+    }, 30000); // Ping every 30 seconds
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveInterval) {
+      clearInterval(this.keepaliveInterval);
+      this.keepaliveInterval = null;
+    }
+  }
+
   disconnect(): void {
+    this.stopKeepalive();
     if (this.ws) {
       this.ws.close();
       this.ws = null;

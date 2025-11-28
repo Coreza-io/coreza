@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNodeId } from "@xyflow/react";
 import { createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { useExecutionStore, useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
 
 interface UseNodeOutputProps {
   data: any;
@@ -24,6 +25,8 @@ export function useNodeOutput({
   definition,
 }: UseNodeOutputProps): UseNodeOutputReturn {
   const nodeId = useNodeId();
+  const executionStore = useExecutionStore();
+  const version = useExecutionStoreVersion();
   const [lastOutput, setLastOutput] = useState<any>(() =>
     definition?.name === "AlpacaNews"
       ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined })
@@ -56,18 +59,26 @@ export function useNodeOutput({
 
   // Sync output from data when not pinned
   useEffect(() => {
-    if (isPinned) return;
+    if (isPinned || !nodeId) return;
 
+    // Read from execution store when version changes (WebSocket updates)
+    const storeData = executionStore.getNodeData(nodeId);
+    if (storeData?.output) {
+      setLastOutput(storeData.output);
+      return;
+    }
+
+    // Fallback to data.output for non-streaming updates
     if (definition?.name === "AlpacaNews") {
       if (data.output) {
         setLastOutput(data.output);
-      } else if (nodeId && lastOutput?.status !== "waiting") {
+      } else if (lastOutput?.status !== "waiting") {
         setLastOutput(createWaitingNewsOutput({ nodeId }));
       }
     } else if (data.output) {
       setLastOutput(data.output);
     }
-  }, [data.output, definition?.name, isPinned, lastOutput?.status, nodeId]);
+  }, [version, data.output, definition?.name, isPinned, lastOutput?.status, nodeId, executionStore]);
 
   return {
     displayedData,

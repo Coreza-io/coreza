@@ -151,6 +151,10 @@ export class MarketControlHandler {
 
         // Register workflow with MarketDataSubscriber FIRST (before gateway starts sending data)
         if (workflowId && nodeId) {
+          // Compute gatewaySource for proper filtering
+          const wsConfig = getWebSocketConfig(source);
+          const gatewaySource = (wsConfig?.gatewaySource || source) as MarketSource;
+
           const subscriber = MarketDataSubscriber.getInstance();
           await subscriber.subscribe(
             workflowId,
@@ -158,11 +162,11 @@ export class MarketControlHandler {
             userId,
             symbols,
             {
-              source,
+              source: gatewaySource,  // Use gatewaySource instead of raw source
               eventTypes: eventTypes as any,
             }
           );
-          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber`);
+          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber (gatewaySource: ${gatewaySource})`);
         }
 
         // Check if any symbols need new event types subscribed

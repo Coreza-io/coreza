@@ -72,6 +72,53 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     maxReconnectAttempts: 5,
   },
   
+  alpaca_news: {
+    id: 'alpaca_news',
+    wsUrl: 'wss://stream.data.alpaca.markets/v1beta1/news',
+    makeAuthMessage: (creds) => ({
+      action: 'auth',
+      key: creds.api_key,
+      secret: creds.secret_key,
+    }),
+    makeSubscribeMessage: (symbols) => ({
+      action: 'subscribe',
+      news: symbols,
+    }),
+    makeUnsubscribeMessage: (symbols) => ({
+      action: 'unsubscribe',
+      news: symbols,
+    }),
+    parseMessage: (buffer) => {
+      const parsed = JSON.parse(buffer.toString());
+      return Array.isArray(parsed) ? parsed : [parsed];
+    },
+    identifyMessageType: (msg) => msg.T,
+    shouldPublish: (msg) => msg.T === 'n',
+    normalize: (msg) => {
+      if (msg.T !== 'n') return null;
+      return {
+        source: 'alpaca_news' as const,
+        symbol: msg.symbols?.[0]?.toUpperCase() || '*',
+        type: 'news' as const,
+        ts: msg.created_at || new Date().toISOString(),
+        raw: {
+          id: msg.id,
+          headline: msg.headline,
+          summary: msg.summary,
+          author: msg.author,
+          url: msg.url,
+          symbols: msg.symbols,
+          source: msg.source,
+          created_at: msg.created_at,
+          updated_at: msg.updated_at,
+          content: msg.content,
+        },
+      };
+    },
+    reconnectDelay: 1000,
+    maxReconnectAttempts: 5,
+  },
+  
   binance: {
     id: 'binance',
     wsUrl: 'wss://stream.binance.com:9443/ws',

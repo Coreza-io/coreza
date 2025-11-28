@@ -1,9 +1,12 @@
-import { createContext, useContext, useRef, useEffect } from 'react';
+import { createContext, useContext, useRef, useEffect, useState } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
-const ExecutionStoreContext = createContext<ExecutionContext | null>(null);
+const ExecutionStoreContext = createContext<{
+  store: ExecutionContext;
+  version: number;
+} | null>(null);
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
 
@@ -13,6 +16,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   const keepaliveRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
   const { user } = useAuth();
+  const [updateVersion, setUpdateVersion] = useState(0);
   
   if (!storeRef.current) {
     storeRef.current = new ExecutionContext();
@@ -77,6 +81,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   lastUpdate: new Date().toISOString()
                 }
               });
+              setUpdateVersion(v => v + 1); // Trigger React re-render
               console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
             }
           }
@@ -94,6 +99,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   receivedAt: new Date().toISOString()
                 }
               });
+              setUpdateVersion(v => v + 1); // Trigger React re-render
               console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
             }
           }
@@ -145,7 +151,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   }, [user?.id]);
 
   return (
-    <ExecutionStoreContext.Provider value={storeRef.current}>
+    <ExecutionStoreContext.Provider value={{ store: storeRef.current, version: updateVersion }}>
       {children}
     </ExecutionStoreContext.Provider>
   );
@@ -156,7 +162,12 @@ export const useExecutionStore = (): ExecutionContext => {
   if (!ctx) {
     throw new Error('useExecutionStore must be used within an ExecutionStoreProvider');
   }
-  return ctx;
+  return ctx.store;
+};
+
+export const useExecutionStoreVersion = (): number => {
+  const ctx = useContext(ExecutionStoreContext);
+  return ctx?.version ?? 0;
 };
 
 export default ExecutionStoreContext;

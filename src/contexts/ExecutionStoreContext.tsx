@@ -10,6 +10,8 @@ const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:80
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
   const wsRef = useRef<WebSocket | null>(null);
+  const keepaliveRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldReconnectRef = useRef(true);
   const { user } = useAuth();
   
   if (!storeRef.current) {
@@ -21,6 +23,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
     if (!user?.id) return;
 
     const connectWebSocket = async () => {
+      if (!shouldReconnectRef.current) return;
+      
       // Get JWT token from Supabase session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -36,11 +40,29 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
       ws.onopen = () => {
         console.log('✅ [ExecutionStore] WebSocket connected');
+        
+        // Start keepalive - send ping every 25 seconds
+        if (keepaliveRef.current) {
+          clearInterval(keepaliveRef.current);
+        }
+        keepaliveRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+            console.log('💓 [ExecutionStore] Sent keepalive ping');
+          }
+        }, 25000);
       };
 
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          
+          // Ignore pong messages (keepalive response)
+          if (message.type === 'pong') {
+            console.log('💓 [ExecutionStore] Received pong');
+            return;
+          }
+          
           console.log('📨 [ExecutionStore] Received WebSocket message:', message);
 
           // Handle streaming market data updates (new Redis Pub/Sub format)
@@ -85,14 +107,35 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
       };
 
       ws.onclose = () => {
-        console.log('🔌 [ExecutionStore] WebSocket disconnected, reconnecting in 3s...');
-        setTimeout(() => connectWebSocket(), 3000);
+        console.log('🔌 [ExecutionStore] WebSocket disconnected');
+        
+        // Clear keepalive interval
+        if (keepaliveRef.current) {
+          clearInterval(keepaliveRef.current);
+          keepaliveRef.current = null;
+        }
+        
+        // Only reconnect if flag allows (not during cleanup)
+        if (shouldReconnectRef.current) {
+          console.log('🔄 [ExecutionStore] Reconnecting in 3s...');
+          setTimeout(() => connectWebSocket(), 3000);
+        }
       };
     };
 
+    shouldReconnectRef.current = true;
     connectWebSocket();
 
     return () => {
+      shouldReconnectRef.current = false;
+      
+      // Clear keepalive interval
+      if (keepaliveRef.current) {
+        clearInterval(keepaliveRef.current);
+        keepaliveRef.current = null;
+      }
+      
+      // Close WebSocket
       if (wsRef.current) {
         console.log('🔌 [ExecutionStore] Closing WebSocket connection');
         wsRef.current.close();

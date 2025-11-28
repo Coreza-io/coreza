@@ -171,9 +171,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     );
   }
 
-  // Detect if this is a streaming node
-  const isStreamingNode = definition.executionMode === 'streaming';
-
   return (
     <BaseNode data={data} selected={selected}>
       {(renderProps) => (
@@ -182,7 +179,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           nodes={nodes}
           edges={edges}
           selected={selected}
-          isStreaming={isStreamingNode}
           inputPanelProps={{
             handleDragStart: renderProps.handleDragStart,
             selectedPrevNodeId: renderProps.selectedPrevNodeId,

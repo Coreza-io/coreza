@@ -23,7 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { WebSocketStatusIndicator } from "@/components/workflow/WebSocketStatusIndicator";
 
 type HandlePosition = "left" | "right" | "top" | "bottom";
 
@@ -89,8 +88,6 @@ interface NodeWrapperProps {
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
-  // Streaming node flag
-  isStreaming?: boolean;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -121,8 +118,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
   isExecuting = false,
   isStreamingWaiting = false,
-  // Streaming node flag
-  isStreaming = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -345,12 +340,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {/* Collapsed View */}
         {!isExpanded && (
           <div className="flex flex-col items-center justify-center h-full p-4 select-none relative group">
-            {/* WebSocket status indicator for streaming nodes */}
-            {isStreaming && (
-              <div className="absolute top-1 left-1 z-10">
-                <WebSocketStatusIndicator size="sm" />
-              </div>
-            )}
             {/* Delete button - appears on hover when selected */}
             {selected && (
               <Button

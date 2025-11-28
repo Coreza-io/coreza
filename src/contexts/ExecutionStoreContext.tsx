@@ -1,16 +1,9 @@
-import { createContext, useContext, useRef, useEffect, useState } from 'react';
+import { createContext, useContext, useRef, useEffect } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
-export type WebSocketStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
-
-interface ExecutionStoreContextValue {
-  store: ExecutionContext;
-  wsStatus: WebSocketStatus;
-}
-
-const ExecutionStoreContext = createContext<ExecutionStoreContextValue | null>(null);
+const ExecutionStoreContext = createContext<ExecutionContext | null>(null);
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
 
@@ -19,7 +12,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   const wsRef = useRef<WebSocket | null>(null);
   const keepaliveRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
-  const [wsStatus, setWsStatus] = useState<WebSocketStatus>('disconnected');
   const { user } = useAuth();
   
   if (!storeRef.current) {
@@ -32,8 +24,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
     const connectWebSocket = async () => {
       if (!shouldReconnectRef.current) return;
-      
-      setWsStatus('connecting');
       
       // Get JWT token from Supabase session
       const { data: { session } } = await supabase.auth.getSession();
@@ -50,7 +40,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
       ws.onopen = () => {
         console.log('✅ [ExecutionStore] WebSocket connected');
-        setWsStatus('connected');
         
         // Start keepalive - send ping every 25 seconds
         if (keepaliveRef.current) {
@@ -128,11 +117,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         
         // Only reconnect if flag allows (not during cleanup)
         if (shouldReconnectRef.current) {
-          setWsStatus('reconnecting');
           console.log('🔄 [ExecutionStore] Reconnecting in 3s...');
           setTimeout(() => connectWebSocket(), 3000);
-        } else {
-          setWsStatus('disconnected');
         }
       };
     };
@@ -159,7 +145,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   }, [user?.id]);
 
   return (
-    <ExecutionStoreContext.Provider value={{ store: storeRef.current, wsStatus }}>
+    <ExecutionStoreContext.Provider value={storeRef.current}>
       {children}
     </ExecutionStoreContext.Provider>
   );
@@ -170,15 +156,7 @@ export const useExecutionStore = (): ExecutionContext => {
   if (!ctx) {
     throw new Error('useExecutionStore must be used within an ExecutionStoreProvider');
   }
-  return ctx.store;
-};
-
-export const useWebSocketStatus = (): WebSocketStatus => {
-  const ctx = useContext(ExecutionStoreContext);
-  if (!ctx) {
-    throw new Error('useWebSocketStatus must be used within an ExecutionStoreProvider');
-  }
-  return ctx.wsStatus;
+  return ctx;
 };
 
 export default ExecutionStoreContext;

@@ -71,18 +71,15 @@ export class MarketDataGateway {
       });
       
       this.ws.on('message', (data: Buffer) => {
-        this.handleMessage(data);
-        if (!this.isAuthenticated) {
-          this.isAuthenticated = true;
-          this.resubscribeAll();
-          resolve();
-        }
+        this.handleMessage(data, resolve);
       });
       
-      this.ws.on('close', () => {
-        this.logger.warn({ source: this.config.id }, 'Gateway disconnected');
+      this.ws.on('close', (code: number, reason: Buffer) => {
+        const reasonStr = reason.toString() || 'No reason provided';
+        this.logger.warn({ source: this.config.id, code, reason: reasonStr }, 'Gateway disconnected');
         activeGatewayConnectionsGauge.set({ source: this.config.id }, 0);
-        alertGatewayDisconnected(this.config.id, 'Connection closed');
+        alertGatewayDisconnected(this.config.id, `Connection closed: ${code} - ${reasonStr}`);
+        this.isAuthenticated = false;
         this.handleReconnect();
       });
       
@@ -93,11 +90,38 @@ export class MarketDataGateway {
     });
   }
   
-  private async handleMessage(buffer: Buffer): Promise<void> {
+  private async handleMessage(buffer: Buffer, resolveConnect?: () => void): Promise<void> {
     try {
       const startTime = Date.now();
       const messages = this.config.parseMessage(buffer);
+      
+      // Debug log ALL incoming messages
+      this.logger.debug({ source: this.config.id, rawMessages: messages }, 'Raw messages received');
+      
       for (const msg of messages) {
+        const msgType = this.config.identifyMessageType(msg);
+        
+        // Check for auth success/error messages
+        if (!this.isAuthenticated && this.config.isAuthSuccess && this.config.isAuthSuccess(msg)) {
+          this.logger.info({ source: this.config.id }, 'Authentication successful');
+          this.isAuthenticated = true;
+          this.resubscribeAll();
+          if (resolveConnect) resolveConnect();
+          continue;
+        }
+        
+        if (this.config.isAuthError && this.config.isAuthError(msg)) {
+          this.logger.error({ source: this.config.id, msg }, 'Authentication failed');
+          this.ws?.close();
+          continue;
+        }
+        
+        // Handle control messages (subscription confirmations, etc.)
+        if (this.config.handleControlMessage) {
+          this.config.handleControlMessage(msg, this.logger);
+        }
+        
+        // Only publish market data messages
         if (!this.config.shouldPublish(msg)) continue;
         
         const event = this.config.normalize(msg);

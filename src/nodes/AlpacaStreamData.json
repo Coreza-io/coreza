@@ -90,23 +90,23 @@
       "type": "multiselect",
       "options": [
         {
-          "id": "trades",
+          "id": "trade",
           "name": "Trades"
         },
         {
-          "id": "quotes",
+          "id": "quote",
           "name": "Quotes"
         },
         {
-          "id": "bars",
+          "id": "bar",
           "name": "Minute Bars"
         },
         {
-          "id": "dailyBars",
+          "id": "dailyBar",
           "name": "Daily Bars"
         }
       ],
-      "default": ["trades"],
+      "default": ["trade"],
       "description": "Select data stream types to subscribe to",
       "required": true
     },

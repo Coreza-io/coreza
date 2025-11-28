@@ -24,7 +24,7 @@ export class WebSocketManager {
   private clients = new Map<string, Set<AuthenticatedWebSocket>>();
   private sessions = new Map<string, AuthenticatedWebSocket>();
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-  
+
   // Redis pub/sub for receiving market data from market-stream-service
   private redisSub: Redis | null = null;
 
@@ -32,23 +32,29 @@ export class WebSocketManager {
     // Initialize JWKS for JWT verification with extended timeout and caching
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-    
+
     if (supabaseUrl && supabaseAnonKey) {
       const jwksUrl = new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
       console.log(`🔐 Initializing JWKS from: ${jwksUrl.toString()}`);
-      
+
       // Create JWKS with extended timeout, caching, and API key header
       this.jwks = createRemoteJWKSet(jwksUrl, {
-        timeoutDuration: 15000,  // 15 seconds timeout (default is 5s)
+        timeoutDuration: 15000, // 15 seconds timeout (default is 5s)
         cooldownDuration: 30000, // 30 seconds between refetches on error
-        cacheMaxAge: 600000,     // Cache JWKS for 10 minutes
+        cacheMaxAge: 600000, // Cache JWKS for 10 minutes
         headers: {
-          apikey: supabaseAnonKey,  // Required by Supabase
+          apikey: supabaseAnonKey, // Required by Supabase
         },
       });
     } else {
-      if (!supabaseUrl) console.warn('⚠️ SUPABASE_URL not set - JWT verification will be disabled');
-      if (!supabaseAnonKey) console.warn('⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled');
+      if (!supabaseUrl)
+        console.warn(
+          "⚠️ SUPABASE_URL not set - JWT verification will be disabled"
+        );
+      if (!supabaseAnonKey)
+        console.warn(
+          "⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled"
+        );
     }
   }
 
@@ -65,47 +71,56 @@ export class WebSocketManager {
   private async testJwksEndpoint(): Promise<boolean> {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-    
+
     if (!supabaseUrl) {
-      console.warn('⚠️ SUPABASE_URL not set - skipping JWKS health check');
+      console.warn("⚠️ SUPABASE_URL not set - skipping JWKS health check");
       return false;
     }
-    
+
     if (!supabaseAnonKey) {
-      console.warn('⚠️ SUPABASE_ANON_KEY not set - skipping JWKS health check');
+      console.warn("⚠️ SUPABASE_ANON_KEY not set - skipping JWKS health check");
       return false;
     }
-    
+
     try {
       const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
       console.log(`🔐 Testing JWKS endpoint: ${jwksUrl}`);
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-      
-      const response = await fetch(jwksUrl, { 
+
+      const response = await fetch(jwksUrl, {
         signal: controller.signal,
         headers: {
-          apikey: supabaseAnonKey,  // Required by Supabase
+          apikey: supabaseAnonKey, // Required by Supabase
         },
       });
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
         const data = await response.json();
-        console.log(`✅ JWKS endpoint reachable - ${data.keys?.length || 0} keys available`);
+        console.log(
+          `✅ JWKS endpoint reachable - ${
+            data.keys?.length || 0
+          } keys available`
+        );
         return true;
       } else {
-        console.error(`❌ JWKS endpoint returned ${response.status}: ${response.statusText}`);
+        console.error(
+          `❌ JWKS endpoint returned ${response.status}: ${response.statusText}`
+        );
         const body = await response.text();
         console.error(`   Response: ${body}`);
         return false;
       }
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         console.error(`❌ JWKS endpoint timed out after 15 seconds`);
       } else {
-        console.error(`❌ JWKS endpoint unreachable:`, error instanceof Error ? error.message : error);
+        console.error(
+          `❌ JWKS endpoint unreachable:`,
+          error instanceof Error ? error.message : error
+        );
       }
       return false;
     }
@@ -115,16 +130,20 @@ export class WebSocketManager {
     // Test JWKS endpoint connectivity first
     const jwksAvailable = await this.testJwksEndpoint();
     if (!jwksAvailable) {
-      console.warn('⚠️ JWKS endpoint not available - WebSocket auth may fail. Continuing anyway...');
+      console.warn(
+        "⚠️ JWKS endpoint not available - WebSocket auth may fail. Continuing anyway..."
+      );
     }
 
     // Check if port is available
     const isPortAvailable = await this.checkPort(port);
-    
+
     if (!isPortAvailable) {
       console.error(`❌ Port ${port} is already in use`);
       console.log(`💡 Solutions:`);
-      console.log(`   1. Kill existing process: netstat -ano | findstr :${port}`);
+      console.log(
+        `   1. Kill existing process: netstat -ano | findstr :${port}`
+      );
       console.log(`   2. Change WEBSOCKET_PORT in .env`);
       console.log(`   3. Run: taskkill /PID <PID> /F`);
       throw new Error(`Port ${port} is already in use`);
@@ -148,26 +167,26 @@ export class WebSocketManager {
   private checkPort(port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const server = new Server();
-      
-      server.once('error', (err: any) => {
-        if (err.code === 'EADDRINUSE') {
+
+      server.once("error", (err: any) => {
+        if (err.code === "EADDRINUSE") {
           resolve(false);
         }
       });
-      
-      server.once('listening', () => {
+
+      server.once("listening", () => {
         server.close();
         resolve(true);
       });
-      
+
       server.listen(port);
     });
   }
 
   private handleServerError(error: Error): void {
-    console.error('WebSocket server error:', error);
-    if (error.message.includes('EADDRINUSE')) {
-      console.log('💡 Try: taskkill /PID <PID> /F or change WEBSOCKET_PORT');
+    console.error("WebSocket server error:", error);
+    if (error.message.includes("EADDRINUSE")) {
+      console.log("💡 Try: taskkill /PID <PID> /F or change WEBSOCKET_PORT");
     }
   }
 
@@ -216,13 +235,19 @@ export class WebSocketManager {
   private async verifyJWT(token: string): Promise<{ userId: string }> {
     try {
       if (!this.jwks) {
-        console.error('❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY');
-        throw new Error("JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required");
+        console.error(
+          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY"
+        );
+        throw new Error(
+          "JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required"
+        );
       }
 
       // Verify JWT signature against Supabase JWKS endpoint
       const { payload } = await jwtVerify(token, this.jwks, {
-        issuer: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL}/auth/v1` : undefined,
+        issuer: process.env.SUPABASE_URL
+          ? `${process.env.SUPABASE_URL}/auth/v1`
+          : undefined,
       });
 
       const userId = payload.sub;
@@ -241,19 +266,29 @@ export class WebSocketManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const errorCode = (error as any)?.code;
-      
+
       console.error(`❌ JWT verification failed: ${message}`);
-      
+
       // Provide specific guidance based on error type
-      if (errorCode === 'ERR_JWKS_TIMEOUT' || message.includes('timed out')) {
-        console.error(`   → Network timeout fetching JWKS. Check connectivity to Supabase.`);
-        console.error(`   → Try: curl ${process.env.SUPABASE_URL}/auth/v1/jwks`);
-        console.error(`   → Or check if Supabase URL is correct: ${process.env.SUPABASE_URL}`);
-      } else if (message.includes('Expected 200 OK')) {
-        console.error(`   → JWKS endpoint not returning 200. Supabase may be down or unreachable.`);
-        console.error(`   → Verify SUPABASE_URL in .env: ${process.env.SUPABASE_URL}`);
+      if (errorCode === "ERR_JWKS_TIMEOUT" || message.includes("timed out")) {
+        console.error(
+          `   → Network timeout fetching JWKS. Check connectivity to Supabase.`
+        );
+        console.error(
+          `   → Try: curl ${process.env.SUPABASE_URL}/auth/v1/jwks`
+        );
+        console.error(
+          `   → Or check if Supabase URL is correct: ${process.env.SUPABASE_URL}`
+        );
+      } else if (message.includes("Expected 200 OK")) {
+        console.error(
+          `   → JWKS endpoint not returning 200. Supabase may be down or unreachable.`
+        );
+        console.error(
+          `   → Verify SUPABASE_URL in .env: ${process.env.SUPABASE_URL}`
+        );
       }
-      
+
       throw new Error("Invalid or expired token");
     }
   }
@@ -426,12 +461,15 @@ export class WebSocketManager {
   ): Promise<void> {
     const { source, action } = payload || {};
 
-    console.warn(`⚠️ [WebSocketManager] Received legacy WebSocket subscription message. Use HTTP POST /websocket/:source/subscribe instead.`);
-    
+    console.warn(
+      `⚠️ [WebSocketManager] Received legacy WebSocket subscription message. Use HTTP POST /websocket/:source/subscribe instead.`
+    );
+
     this.sendMessage(ws, {
       type: "error",
       payload: {
-        error: "Direct WebSocket subscriptions are deprecated. Use HTTP POST /websocket/:source/subscribe endpoint.",
+        error:
+          "Direct WebSocket subscriptions are deprecated. Use HTTP POST /websocket/:source/subscribe endpoint.",
       },
     });
   }
@@ -476,49 +514,56 @@ export class WebSocketManager {
     this.redisSub = sub;
 
     // Subscribe to pattern ws:user:* to receive market data for all users
-    this.redisSub.psubscribe('ws:user:*', (err, count) => {
+    this.redisSub.psubscribe("ws:user:*", (err, count) => {
       if (err) {
-        console.error('❌ Failed to subscribe to ws:user:* pattern:', err);
+        console.error("❌ Failed to subscribe to ws:user:* pattern:", err);
       } else {
-        console.log(`✅ Subscribed to ws:user:* pattern (${count} patterns active)`);
+        console.log(
+          `✅ Subscribed to ws:user:* pattern (${count} patterns active)`
+        );
       }
     });
 
     // Handle incoming messages from market-stream-service
-    this.redisSub.on('pmessage', (pattern: string, channel: string, message: string) => {
-      try {
-        // Extract userId from channel name: ws:user:{userId}
-        const userId = channel.split(':')[2];
-        if (!userId) {
-          console.warn(`⚠️ Invalid channel format: ${channel}`);
-          return;
+    this.redisSub.on(
+      "pmessage",
+      (pattern: string, channel: string, message: string) => {
+        try {
+          // Extract userId from channel name: ws:user:{userId}
+          const userId = channel.split(":")[2];
+          if (!userId) {
+            console.warn(`⚠️ Invalid channel format: ${channel}`);
+            return;
+          }
+
+          // Parse message payload
+          const payload = JSON.parse(message);
+
+          // Forward to all connected WebSocket clients for this user
+          const userClients = this.clients.get(userId);
+          if (userClients && userClients.size > 0) {
+            const messageWithTimestamp = {
+              ...payload,
+              timestamp: new Date().toISOString(),
+            };
+
+            userClients.forEach((ws) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                this.sendMessage(ws, messageWithTimestamp);
+              }
+            });
+
+            console.log(
+              `📤 Forwarded market data to ${userClients.size} client(s) for user ${userId}`
+            );
+          } else {
+            console.log(`⚠️ No connected clients for user ${userId}, skipping`);
+          }
+        } catch (error) {
+          console.error("❌ Error processing Redis message:", error);
         }
-
-        // Parse message payload
-        const payload = JSON.parse(message);
-        
-        // Forward to all connected WebSocket clients for this user
-        const userClients = this.clients.get(userId);
-        if (userClients && userClients.size > 0) {
-          const messageWithTimestamp = {
-            ...payload,
-            timestamp: new Date().toISOString(),
-          };
-
-          userClients.forEach((ws) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              this.sendMessage(ws, messageWithTimestamp);
-            }
-          });
-
-          console.log(`📤 Forwarded market data to ${userClients.size} client(s) for user ${userId}`);
-        } else {
-          console.log(`⚠️ No connected clients for user ${userId}, skipping`);
-        }
-      } catch (error) {
-        console.error('❌ Error processing Redis message:', error);
       }
-    });
+    );
   }
 
   private setupHeartbeat(): void {
@@ -629,7 +674,7 @@ export class WebSocketManager {
 
   async shutdown(): Promise<void> {
     console.log("🔌 Closing WebSocket connections...");
-    
+
     // Close Redis subscriber
     if (this.redisSub) {
       try {
@@ -639,7 +684,7 @@ export class WebSocketManager {
         console.error("❌ Error closing Redis subscriber:", error);
       }
     }
-    
+
     // Close all client connections
     this.clients.forEach((clientSet, userId) => {
       clientSet.forEach((ws) => {
@@ -648,7 +693,7 @@ export class WebSocketManager {
         }
       });
     });
-    
+
     // Close WebSocket server
     if (this.wss) {
       await new Promise<void>((resolve) => {
@@ -658,7 +703,7 @@ export class WebSocketManager {
         });
       });
     }
-    
+
     // Clear maps
     this.clients.clear();
     this.sessions.clear();

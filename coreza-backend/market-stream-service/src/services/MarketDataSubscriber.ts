@@ -1,13 +1,20 @@
-import Redis from 'ioredis';
-import { createRedisPubSub } from '../config/redis';
-import { REDIS_CHANNELS } from '../config/redisChannels';
-import { CorezaMarketEvent, MarketSource, MarketEventType } from '../types/marketEvent';
-import { supabase } from '../config/supabase';
-import { bullMqJobQueue } from './jobQueueManager';
-import WorkflowCache from './WorkflowCache';
-import { redisPublishBreaker, redisSetBreaker } from '../utils/redisCircuitBreaker';
-import logger from '../utils/logger';
-import { retrySupabaseOperation } from '../utils/retryHelper';
+import Redis from "ioredis";
+import { createRedisPubSub } from "../config/redis";
+import { REDIS_CHANNELS } from "../config/redisChannels";
+import {
+  CorezaMarketEvent,
+  MarketSource,
+  MarketEventType,
+} from "../types/marketEvent";
+import { supabase } from "../config/supabase";
+import { bullMqJobQueue } from "./jobQueueManager";
+import WorkflowCache from "./WorkflowCache";
+import {
+  redisPublishBreaker,
+  redisSetBreaker,
+} from "../utils/redisCircuitBreaker";
+import logger from "../utils/logger";
+import { retrySupabaseOperation } from "../utils/retryHelper";
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -20,24 +27,26 @@ interface WorkflowSubscription {
 
 export class MarketDataSubscriber {
   private static instance: MarketDataSubscriber;
-  
+
   // workflowId → subscription metadata
   private subscriptions = new Map<string, WorkflowSubscription>();
-  
+
   // symbol → Set<workflowId> for fast lookup
   private symbolWorkflows = new Map<string, Set<string>>();
-  
+
   private redisSub: Redis;
   private redisPub: Redis;
   private isInitialized = false;
-  private messageHandler: ((channel: string, message: string) => Promise<void>) | null = null;
+  private messageHandler:
+    | ((channel: string, message: string) => Promise<void>)
+    | null = null;
   private workflowCache = WorkflowCache;
 
   private constructor() {
     // Create isolated Redis connections for this service
     const { pub, sub } = createRedisPubSub();
-    this.redisSub = sub;  // Dedicated subscriber connection
-    this.redisPub = pub;  // Dedicated publisher connection
+    this.redisSub = sub; // Dedicated subscriber connection
+    this.redisPub = pub; // Dedicated publisher connection
   }
 
   static getInstance(): MarketDataSubscriber {
@@ -61,14 +70,17 @@ export class MarketDataSubscriber {
     }
   ): Promise<void> {
     try {
-      console.log(`📊 [MarketDataSubscriber] Subscribing workflow ${workflowId} to symbols:`, symbols);
+      console.log(
+        `📊 [MarketDataSubscriber] Subscribing workflow ${workflowId} to symbols:`,
+        symbols
+      );
 
       // Create subscription object
       const subscription: WorkflowSubscription = {
         workflowId,
         nodeId,
         userId,
-        symbols: new Set(symbols.map(s => s.toUpperCase())),
+        symbols: new Set(symbols.map((s) => s.toUpperCase())),
         source: options?.source,
         eventTypes: options?.eventTypes,
       };
@@ -80,11 +92,17 @@ export class MarketDataSubscriber {
       for (const symbol of subscription.symbols) {
         if (!this.symbolWorkflows.has(symbol)) {
           this.symbolWorkflows.set(symbol, new Set());
-          
+
           // Subscribe to Redis channel for this symbol
           const channel = REDIS_CHANNELS.marketData(symbol);
           await this.redisSub.subscribe(channel);
-          console.log(`📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`);
+          console.log(
+            `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`
+          );
+          console.log(
+            `🟢 [DEBUG-2] Current subscribed channels:`,
+            this.symbolWorkflows.keys()
+          );
         }
         this.symbolWorkflows.get(symbol)!.add(workflowId);
       }
@@ -98,7 +116,9 @@ export class MarketDataSubscriber {
         this.isInitialized = true;
       }
 
-      console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} subscribed successfully`);
+      console.log(
+        `✅ [MarketDataSubscriber] Workflow ${workflowId} subscribed successfully`
+      );
     } catch (error) {
       console.error(`❌ [MarketDataSubscriber] Subscribe error:`, error);
       throw error;
@@ -110,11 +130,15 @@ export class MarketDataSubscriber {
    */
   async unsubscribe(workflowId: string): Promise<void> {
     try {
-      console.log(`📊 [MarketDataSubscriber] Unsubscribing workflow ${workflowId}`);
+      console.log(
+        `📊 [MarketDataSubscriber] Unsubscribing workflow ${workflowId}`
+      );
 
       const subscription = this.subscriptions.get(workflowId);
       if (!subscription) {
-        console.warn(`⚠️  [MarketDataSubscriber] No subscription found for workflow ${workflowId}`);
+        console.warn(
+          `⚠️  [MarketDataSubscriber] No subscription found for workflow ${workflowId}`
+        );
         return;
       }
 
@@ -123,13 +147,15 @@ export class MarketDataSubscriber {
         const workflows = this.symbolWorkflows.get(symbol);
         if (workflows) {
           workflows.delete(workflowId);
-          
+
           // If no more workflows need this symbol, unsubscribe from Redis
           if (workflows.size === 0) {
             const channel = REDIS_CHANNELS.marketData(symbol);
             await this.redisSub.unsubscribe(channel);
             this.symbolWorkflows.delete(symbol);
-            console.log(`📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`);
+            console.log(
+              `📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`
+            );
           }
         }
       }
@@ -140,7 +166,9 @@ export class MarketDataSubscriber {
       // Remove from Redis persistence
       await this.redisPub.del(REDIS_CHANNELS.workflowSubscription(workflowId));
 
-      console.log(`✅ [MarketDataSubscriber] Workflow ${workflowId} unsubscribed successfully`);
+      console.log(
+        `✅ [MarketDataSubscriber] Workflow ${workflowId} unsubscribed successfully`
+      );
     } catch (error) {
       console.error(`❌ [MarketDataSubscriber] Unsubscribe error:`, error);
       throw error;
@@ -152,9 +180,11 @@ export class MarketDataSubscriber {
    */
   async restoreFromRedis(): Promise<void> {
     try {
-      console.log(`📊 [MarketDataSubscriber] Restoring subscriptions from Redis...`);
+      console.log(
+        `📊 [MarketDataSubscriber] Restoring subscriptions from Redis...`
+      );
 
-      const pattern = 'wf:sub:*';
+      const pattern = "wf:sub:*";
       const keys = await this.redisPub.keys(pattern);
 
       let restored = 0;
@@ -173,10 +203,14 @@ export class MarketDataSubscriber {
           };
 
           // Verify workflow is still active (use cache)
-          const workflow = await this.workflowCache.getWorkflow(subscription.workflowId);
-          
+          const workflow = await this.workflowCache.getWorkflow(
+            subscription.workflowId
+          );
+
           if (!workflow?.is_active) {
-            console.log(`⚠️  Skipping inactive workflow ${subscription.workflowId}`);
+            console.log(
+              `⚠️  Skipping inactive workflow ${subscription.workflowId}`
+            );
             await this.redisPub.del(key);
             continue;
           }
@@ -199,7 +233,9 @@ export class MarketDataSubscriber {
         }
       }
 
-      console.log(`✅ [MarketDataSubscriber] Restored ${restored} subscriptions from Redis`);
+      console.log(
+        `✅ [MarketDataSubscriber] Restored ${restored} subscriptions from Redis`
+      );
     } catch (error) {
       console.error(`❌ [MarketDataSubscriber] Restore error:`, error);
     }
@@ -211,33 +247,47 @@ export class MarketDataSubscriber {
   private setupMessageHandler(): void {
     // Remove existing handler to prevent duplicates
     if (this.messageHandler) {
-      this.redisSub.off('message', this.messageHandler);
+      this.redisSub.off("message", this.messageHandler);
     }
 
     // Create new handler
     this.messageHandler = async (channel: string, message: string) => {
       try {
+        console.log(`🟣 [DEBUG-3] MESSAGE RECEIVED on channel: ${channel}`);
+        console.log(`🟣 [DEBUG-3] Raw message:`, message.substring(0, 200));
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
-        
+
         // Validate that this is a proper market event, not a Redis control message
-        if (!event || typeof event !== 'object' || !event.symbol || !event.type) {
+        if (
+          !event ||
+          typeof event !== "object" ||
+          !event.symbol ||
+          !event.type
+        ) {
           // Not a valid CorezaMarketEvent, skip (could be subscription confirmation)
           return;
         }
-        
+
         // Find workflows subscribed to this symbol
         const workflows = this.symbolWorkflows.get(event.symbol.toUpperCase());
         if (!workflows || workflows.size === 0) return;
 
         // Handle wildcard subscriptions (*)
-        const wildcardWorkflows = this.symbolWorkflows.get('*');
+        const wildcardWorkflows = this.symbolWorkflows.get("*");
         const allWorkflows = new Set([
           ...(workflows || []),
           ...(wildcardWorkflows || []),
         ]);
 
-        logger.debug({ symbol: event.symbol, type: event.type, workflowCount: allWorkflows.size }, 'Received market event');
+        logger.debug(
+          {
+            symbol: event.symbol,
+            type: event.type,
+            workflowCount: allWorkflows.size,
+          },
+          "Received market event"
+        );
 
         // Trigger each workflow
         for (const workflowId of allWorkflows) {
@@ -245,38 +295,65 @@ export class MarketDataSubscriber {
           if (!subscription) continue;
 
           // Filter by source if specified
-          if (subscription.source && subscription.source !== event.source) continue;
+          if (subscription.source && subscription.source !== event.source)
+            continue;
 
           // Filter by event type if specified
-          if (subscription.eventTypes && !subscription.eventTypes.includes(event.type)) continue;
+          if (
+            subscription.eventTypes &&
+            !subscription.eventTypes.includes(event.type)
+          )
+            continue;
 
           // Publish market data to Redis for WebSocketManager to forward to frontend
           try {
             const userChannel = `ws:user:${subscription.userId}`;
             const payload = JSON.stringify({
-              type: 'market_data',
+              type: "market_data",
               payload: {
                 nodeId: subscription.nodeId,
                 data: event,
               },
             });
-            
+
             await redisPublishBreaker.fire(userChannel, payload);
-            
-            logger.debug({ userId: subscription.userId, symbol: event.symbol, eventType: event.type }, 'Published market data to user channel');
+
+            logger.debug(
+              {
+                userId: subscription.userId,
+                symbol: event.symbol,
+                eventType: event.type,
+              },
+              "Published market data to user channel"
+            );
           } catch (error) {
-            logger.error({ err: error, userId: subscription.userId }, 'Failed to publish market data to user channel');
+            logger.error(
+              { err: error, userId: subscription.userId },
+              "Failed to publish market data to user channel"
+            );
           }
 
-          await this.triggerWorkflowExecution(workflowId, subscription.userId, event);
+          await this.triggerWorkflowExecution(
+            workflowId,
+            subscription.userId,
+            event
+          );
         }
       } catch (error) {
-        console.error(`❌ [MarketDataSubscriber] Message handler error:`, error);
+        console.error(
+          `❌ [MarketDataSubscriber] Message handler error:`,
+          error
+        );
       }
     };
 
     // Attach handler
-    this.redisSub.on('message', this.messageHandler);
+    this.redisSub.on("message", this.messageHandler);
+    console.log(`✅ [MarketDataSubscriber] Message handler setup complete`);
+
+    console.log(`🟡 [SUBSCRIBER] Handler attached to redisSub`);
+    console.log(`🟡 [SUBSCRIBER] redisSub.status: ${this.redisSub.status}`);
+
     console.log(`✅ [MarketDataSubscriber] Message handler setup complete`);
   }
 
@@ -294,12 +371,16 @@ export class MarketDataSubscriber {
       const workflow = await this.workflowCache.getWorkflow(workflowId);
 
       if (!workflow) {
-        console.error(`❌ [MarketDataSubscriber] Workflow ${workflowId} not found or inactive`);
+        console.error(
+          `❌ [MarketDataSubscriber] Workflow ${workflowId} not found or inactive`
+        );
         return;
       }
 
       if (!workflow.is_active) {
-        console.log(`⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`);
+        console.log(
+          `⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`
+        );
         return;
       }
 
@@ -307,22 +388,22 @@ export class MarketDataSubscriber {
       const { data: runData, error: runError } = await retrySupabaseOperation(
         async () => {
           return await supabase
-            .from('workflow_runs')
+            .from("workflow_runs")
             .insert({
               workflow_id: workflowId,
               initiated_by: userId,
-              status: 'queued',
+              status: "queued",
             })
-            .select('id')
+            .select("id")
             .single();
         },
-        'Create workflow_runs entry'
+        "Create workflow_runs entry"
       );
 
       if (runError || !runData) {
         logger.error(
           { err: runError, workflowId, userId },
-          'Failed to create workflow run after retries'
+          "Failed to create workflow run after retries"
         );
         return;
       }
@@ -337,25 +418,30 @@ export class MarketDataSubscriber {
           userId,
           nodes: workflow.nodes,
           edges: workflow.edges,
-          trigger: 'webhook',
+          trigger: "webhook",
           initialInput: { marketEvent: event },
         });
 
         logger.info(
-          { workflowId, runId, workflowName: workflow.name, symbol: event.symbol },
-          'Queued workflow execution successfully'
+          {
+            workflowId,
+            runId,
+            workflowName: workflow.name,
+            symbol: event.symbol,
+          },
+          "Queued workflow execution successfully"
         );
       } catch (queueError) {
         logger.error(
           { err: queueError, workflowId, runId },
-          'Failed to add workflow to execution queue'
+          "Failed to add workflow to execution queue"
         );
         // Don't throw - workflow_runs entry already created, just log the failure
       }
     } catch (error) {
       logger.error(
         { err: error, workflowId, userId, symbol: event.symbol },
-        'Trigger workflow error'
+        "Trigger workflow error"
       );
     }
   }
@@ -363,7 +449,9 @@ export class MarketDataSubscriber {
   /**
    * Persist subscription to Redis (with circuit breaker)
    */
-  private async persistSubscription(subscription: WorkflowSubscription): Promise<void> {
+  private async persistSubscription(
+    subscription: WorkflowSubscription
+  ): Promise<void> {
     const key = REDIS_CHANNELS.workflowSubscription(subscription.workflowId);
     const data = JSON.stringify({
       workflowId: subscription.workflowId,
@@ -373,11 +461,13 @@ export class MarketDataSubscriber {
       source: subscription.source,
       eventTypes: subscription.eventTypes,
     });
-    
+
     try {
       await redisSetBreaker.fire(key, data);
     } catch (error) {
-      console.warn(`⚠️ [MarketDataSubscriber] Failed to persist subscription to Redis, continuing with in-memory state`);
+      console.warn(
+        `⚠️ [MarketDataSubscriber] Failed to persist subscription to Redis, continuing with in-memory state`
+      );
       // Continue - subscription is still active in memory
     }
   }
@@ -397,7 +487,7 @@ export class MarketDataSubscriber {
     return {
       totalWorkflows: this.subscriptions.size,
       totalSymbols: this.symbolWorkflows.size,
-      subscriptions: Array.from(this.subscriptions.values()).map(sub => ({
+      subscriptions: Array.from(this.subscriptions.values()).map((sub) => ({
         workflowId: sub.workflowId,
         symbols: Array.from(sub.symbols),
         source: sub.source,
@@ -410,22 +500,22 @@ export class MarketDataSubscriber {
    */
   async cleanup(): Promise<void> {
     console.log(`📊 [MarketDataSubscriber] Cleaning up...`);
-    
+
     // Remove message handler
     if (this.messageHandler) {
-      this.redisSub.off('message', this.messageHandler);
+      this.redisSub.off("message", this.messageHandler);
       this.messageHandler = null;
     }
-    
+
     // Unsubscribe from all channels
     await this.redisSub.unsubscribe();
-    
+
     // Clear memory
     this.subscriptions.clear();
     this.symbolWorkflows.clear();
-    
+
     this.isInitialized = false;
-    
+
     console.log(`✅ [MarketDataSubscriber] Cleanup complete`);
   }
 }

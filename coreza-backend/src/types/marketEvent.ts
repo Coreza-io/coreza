@@ -1,6 +1,6 @@
 // Unified market event format - all sources normalize to this
 export type MarketEventType = 'trade' | 'quote' | 'bar' | 'daily_bar' | 'news';
-export type MarketSource = 'alpaca' | 'binance' | 'dhan' | 'schwab';
+export type MarketSource = 'alpaca' | 'alpaca_news' | 'binance' | 'dhan' | 'schwab';
 export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
 
 export interface CorezaMarketEvent {

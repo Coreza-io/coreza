@@ -25,7 +25,7 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
   alpaca_news: {
     id: "alpaca_news",
     credentialServiceType: "alpaca",
-    gatewaySource: "alpaca",
+    gatewaySource: "alpaca_news",
     url: "wss://stream.data.alpaca.markets/v1beta1/news",
     makeAuthHeaders: (creds) => ({
       "APCA-API-KEY-ID": creds.api_key,

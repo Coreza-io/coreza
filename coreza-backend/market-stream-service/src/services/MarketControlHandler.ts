@@ -386,7 +386,7 @@ export class MarketControlHandler {
     try {
       console.log('🔄 [MarketControl] Restoring gateway states from Redis...');
       
-      const sources: MarketSource[] = ['alpaca', 'binance', 'dhan', 'schwab'];
+      const sources: MarketSource[] = ['alpaca', 'alpaca_news', 'binance', 'dhan', 'schwab'];
       let restoredCount = 0;
 
       for (const source of sources) {

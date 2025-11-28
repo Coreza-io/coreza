@@ -7,6 +7,8 @@ export interface GatewayConfig {
   // Authentication
   makeAuthMessage?: (creds: any) => any;
   makeAuthHeaders?: (creds: any) => Record<string, string>;
+  isAuthSuccess?: (msg: any) => boolean;  // Check if auth succeeded
+  isAuthError?: (msg: any) => boolean;    // Check if auth failed
   
   // Subscription management
   makeSubscribeMessage: (symbols: string[], types?: string[]) => any;
@@ -16,6 +18,7 @@ export interface GatewayConfig {
   parseMessage: (buffer: Buffer) => any[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any) => boolean;
+  handleControlMessage?: (msg: any, logger: any) => void;  // Handle control messages
   
   // CRITICAL: Normalizer to CorezaMarketEvent
   normalize: (msg: any) => CorezaMarketEvent | null;
@@ -39,6 +42,26 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
       key: creds.api_key,
       secret: creds.secret_key,
     }),
+    isAuthSuccess: (msg) => {
+      // Alpaca sends [{ T: 'success', msg: 'authenticated' }]
+      return Array.isArray(msg) ? msg.some(m => m.T === 'success') : msg.T === 'success';
+    },
+    isAuthError: (msg) => {
+      // Alpaca sends [{ T: 'error', msg: '...', code: ... }]
+      return Array.isArray(msg) ? msg.some(m => m.T === 'error') : msg.T === 'error';
+    },
+    handleControlMessage: (msg, logger) => {
+      const messages = Array.isArray(msg) ? msg : [msg];
+      for (const m of messages) {
+        if (m.T === 'subscription') {
+          logger.info({ source: 'alpaca', subscriptions: m }, 'Subscription confirmation received');
+        } else if (m.T === 'error') {
+          logger.error({ source: 'alpaca', error: m }, 'Error message received');
+        } else if (m.T === 'success') {
+          logger.info({ source: 'alpaca', msg: m.msg }, 'Success message received');
+        }
+      }
+    },
     makeSubscribeMessage: (symbols, types = ['trades']) => {
       const msg: any = { action: 'subscribe' };
       types.forEach(t => { msg[t] = symbols; });
@@ -49,7 +72,11 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
       types.forEach(t => { msg[t] = symbols; });
       return msg;
     },
-    parseMessage: (buffer) => JSON.parse(buffer.toString()),
+    parseMessage: (buffer) => {
+      const parsed = JSON.parse(buffer.toString());
+      // Alpaca wraps messages in array
+      return Array.isArray(parsed) ? parsed : [parsed];
+    },
     identifyMessageType: (msg) => msg.T,
     shouldPublish: (msg) => ['t', 'q', 'b', 'd'].includes(msg.T),
     normalize: (msg) => {

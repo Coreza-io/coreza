@@ -149,6 +149,22 @@ export class MarketControlHandler {
           state.workflowSymbols.set(workflowId, currentSymbols);
         }
 
+        // Register workflow with MarketDataSubscriber FIRST (before gateway starts sending data)
+        if (workflowId && nodeId) {
+          const subscriber = MarketDataSubscriber.getInstance();
+          await subscriber.subscribe(
+            workflowId,
+            nodeId,
+            userId,
+            symbols,
+            {
+              source,
+              eventTypes: eventTypes as any,
+            }
+          );
+          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber`);
+        }
+
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];
         const requestedTypes = eventTypes || ['trades'];
@@ -178,22 +194,6 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`);
         } else {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
-        }
-
-        // Register workflow with MarketDataSubscriber for workflow triggering
-        if (workflowId && nodeId) {
-          const subscriber = MarketDataSubscriber.getInstance();
-          await subscriber.subscribe(
-            workflowId,
-            nodeId,
-            userId,
-            symbols,
-            {
-              source,
-              eventTypes: eventTypes as any,
-            }
-          );
-          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber`);
         }
       });
     } catch (error) {

@@ -38,6 +38,11 @@ export class MarketDataSubscriber {
     const { pub, sub } = createRedisPubSub();
     this.redisSub = sub;  // Dedicated subscriber connection
     this.redisPub = pub;  // Dedicated publisher connection
+    
+    // Attach subscription confirmation listener (once, for debugging)
+    this.redisSub.on("subscribe", (channel, count) => {
+      console.log(`✅ [REDIS] Confirmed subscription to ${channel}, total subs: ${count}`);
+    });
   }
 
   static getInstance(): MarketDataSubscriber {

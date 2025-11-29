@@ -18,6 +18,9 @@ interface RedisOperationParams {
   setMember?: string;
   popDirection?: string;
   pushDirection?: string;
+  members?: string | string[];
+  member?: string;
+  otherKeys?: string | string[];
   ttl?: number;
   userId: string;
   credentialId: string;
@@ -309,6 +312,105 @@ export class RedisService {
           };
         }
 
+        case "sadd": {
+          const membersArray = this.parseMembers(params.members);
+          if (membersArray.length === 0) {
+            return { success: false, error: "At least one member is required" };
+          }
+          const added = await redis.sadd(key, ...membersArray);
+          if (ttl && ttl > 0) {
+            await redis.expire(key, ttl);
+          }
+          return { 
+            success: true, 
+            added, 
+            members: membersArray, 
+            key,
+            message: `${added} member(s) added to set`
+          };
+        }
+
+        case "srem": {
+          const membersArray = this.parseMembers(params.members);
+          if (membersArray.length === 0) {
+            return { success: false, error: "At least one member is required" };
+          }
+          const removed = await redis.srem(key, ...membersArray);
+          return { 
+            success: true, 
+            removed, 
+            members: membersArray, 
+            key,
+            message: `${removed} member(s) removed from set`
+          };
+        }
+
+        case "smembers": {
+          const members = await redis.smembers(key);
+          return { 
+            success: true, 
+            members, 
+            count: members.length, 
+            key 
+          };
+        }
+
+        case "sismember": {
+          const { member } = params;
+          if (!member) {
+            return { success: false, error: "Member is required for SISMEMBER" };
+          }
+          const isMember = await redis.sismember(key, member);
+          return { 
+            success: true, 
+            isMember: isMember === 1, 
+            member, 
+            key 
+          };
+        }
+
+        case "scard": {
+          const count = await redis.scard(key);
+          return { success: true, count, key };
+        }
+
+        case "sinter": {
+          const otherKeysArray = this.parseOtherKeys(params.otherKeys, scope || 'workflow', params);
+          const allKeys = [key, ...otherKeysArray];
+          const intersection = await redis.sinter(...allKeys);
+          return { 
+            success: true, 
+            members: intersection, 
+            count: intersection.length, 
+            keys: allKeys 
+          };
+        }
+
+        case "sunion": {
+          const otherKeysArray = this.parseOtherKeys(params.otherKeys, scope || 'workflow', params);
+          const allKeys = [key, ...otherKeysArray];
+          const union = await redis.sunion(...allKeys);
+          return { 
+            success: true, 
+            members: union, 
+            count: union.length, 
+            keys: allKeys 
+          };
+        }
+
+        case "sdiff": {
+          const otherKeysArray = this.parseOtherKeys(params.otherKeys, scope || 'workflow', params);
+          const allKeys = [key, ...otherKeysArray];
+          const diff = await redis.sdiff(...allKeys);
+          return { 
+            success: true, 
+            members: diff, 
+            count: diff.length, 
+            keys: allKeys,
+            message: "Members in first set but not in other sets"
+          };
+        }
+
         default:
           return { success: false, error: `Unsupported operation: ${operation}` };
       }
@@ -316,5 +418,27 @@ export class RedisService {
       logger.error({ err: error, operation: params.operation, key: params.key }, "Redis operation failed");
       return { success: false, error: error.message };
     }
+  }
+
+  private static parseMembers(members: string | string[] | undefined): string[] {
+    if (!members) return [];
+    if (Array.isArray(members)) return members.map(String);
+    return members.split(',').map(m => m.trim()).filter(Boolean);
+  }
+
+  private static parseOtherKeys(
+    otherKeys: string | string[] | undefined, 
+    scope: string, 
+    params: RedisOperationParams
+  ): string[] {
+    if (!otherKeys) return [];
+    const keys = Array.isArray(otherKeys) 
+      ? otherKeys 
+      : otherKeys.split(',').map(k => k.trim()).filter(Boolean);
+    
+    return keys.map(k => this.buildKey(scope, k, {
+      userId: params.userId,
+      workflowId: params.workflowId
+    }));
   }
 }

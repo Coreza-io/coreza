@@ -81,6 +81,9 @@ export class DataSourceExecutor implements INodeExecutor {
             setMember: resolvedParams.setMember,
             popDirection: resolvedParams.popDirection,
             pushDirection: resolvedParams.pushDirection,
+            members: resolvedParams.members,
+            member: resolvedParams.member,
+            otherKeys: resolvedParams.otherKeys,
             ttl: resolvedParams.ttl,
             workflowId: context?.workflowId || input.workflowId
           });

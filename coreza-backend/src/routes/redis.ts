@@ -213,6 +213,9 @@ router.post("/store", async (req, res) => {
       setMember,
       popDirection,
       pushDirection,
+      members,
+      member,
+      otherKeys,
       ttl,
       workflow_id,
     } = req.body;
@@ -239,6 +242,9 @@ router.post("/store", async (req, res) => {
       setMember,
       popDirection,
       pushDirection,
+      members,
+      member,
+      otherKeys,
       ttl,
       workflowId: workflow_id,
     });

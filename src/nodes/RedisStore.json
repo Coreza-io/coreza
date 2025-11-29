@@ -92,7 +92,15 @@
         { "label": "Pop", "value": "pop", "description": "Pop data from a redis list" },
         { "label": "Publish", "value": "publish", "description": "Publish message to redis channel" },
         { "label": "Push", "value": "push", "description": "Push data to a redis list" },
-        { "label": "Set", "value": "set", "description": "Set the value of a key in redis" }
+        { "label": "Set", "value": "set", "description": "Set the value of a key in redis" },
+        { "label": "Set Add (SADD)", "value": "sadd", "description": "Add one or more members to a set" },
+        { "label": "Set Remove (SREM)", "value": "srem", "description": "Remove one or more members from a set" },
+        { "label": "Set Members (SMEMBERS)", "value": "smembers", "description": "Get all members of a set" },
+        { "label": "Set Is Member (SISMEMBER)", "value": "sismember", "description": "Check if a member exists in a set" },
+        { "label": "Set Size (SCARD)", "value": "scard", "description": "Get the number of members in a set" },
+        { "label": "Set Intersection (SINTER)", "value": "sinter", "description": "Return the intersection of multiple sets" },
+        { "label": "Set Union (SUNION)", "value": "sunion", "description": "Return the union of multiple sets" },
+        { "label": "Set Difference (SDIFF)", "value": "sdiff", "description": "Return the difference between the first set and other sets" }
       ],
       "default": "set",
       "required": true
@@ -109,7 +117,7 @@
       "default": "workflow",
       "description": "Determines key namespace",
       "displayOptions": {
-        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push"] }
+        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff"] }
       }
     },
     {
@@ -134,7 +142,7 @@
       "type": "text",
       "placeholder": "e.g., scanner:breakoutCandidates",
       "displayOptions": {
-        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push"] }
+        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff"] }
       }
     },
     {
@@ -218,6 +226,35 @@
       }
     },
     {
+      "key": "members",
+      "label": "Members",
+      "type": "textarea",
+      "placeholder": "member1, member2, member3 OR {{ $('Node').json.array }}",
+      "description": "Comma-separated values or array from previous node",
+      "displayOptions": {
+        "show": { "operation": ["sadd", "srem"] }
+      }
+    },
+    {
+      "key": "member",
+      "label": "Member",
+      "type": "text",
+      "placeholder": "Member to check",
+      "displayOptions": {
+        "show": { "operation": ["sismember"] }
+      }
+    },
+    {
+      "key": "otherKeys",
+      "label": "Other Set Keys",
+      "type": "textarea",
+      "placeholder": "key2, key3, key4 (comma-separated set names)",
+      "description": "Additional set keys for intersection/union/difference operations",
+      "displayOptions": {
+        "show": { "operation": ["sinter", "sunion", "sdiff"] }
+      }
+    },
+    {
       "key": "ttl",
       "label": "TTL (seconds)",
       "type": "number",
@@ -225,7 +262,7 @@
       "default": 0,
       "description": "Time to live in seconds (0 = no expiry)",
       "displayOptions": { 
-        "show": { "operation": ["set", "push"] } 
+        "show": { "operation": ["set", "push", "sadd"] } 
       }
     }
   ]

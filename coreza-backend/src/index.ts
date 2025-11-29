@@ -40,6 +40,7 @@ import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
 import screenerRoutes from './routes/screener';
 import brokerRoutes from './routes/broker';
+import redisRoutes from './routes/redis';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -118,6 +119,7 @@ app.use('/aiagent', aiAgentRoutes);
 app.use('/googlesearch', googleSearchRoutes);
 app.use('/screener', screenerRoutes);
 app.use('/broker', brokerRoutes);
+app.use('/redis', redisRoutes);
 logger.info('All routes mounted successfully');
 
 // Error handling

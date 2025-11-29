@@ -1,5 +1,6 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DataService } from "../../services/data";
+import { RedisService } from "../../services/RedisService";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -54,6 +55,24 @@ export class DataSourceExecutor implements INodeExecutor {
             resolvedParams.operation,
             combinedInput
           );
+          break;
+        case "RedisStore":
+          // Build context for scoping
+          const scopeContext = {
+            userId: context?.userId || input.userId,
+            workflowId: context?.workflowId || input.workflowId
+          };
+          result = await RedisService.execute({
+            operation: resolvedParams.operation,
+            scope: resolvedParams.scope,
+            key: resolvedParams.key,
+            value: resolvedParams.value,
+            field: resolvedParams.field,
+            ttl: resolvedParams.ttl,
+            listStart: resolvedParams.listStart,
+            listEnd: resolvedParams.listEnd,
+            context: scopeContext
+          });
           break;
         default:
           return {

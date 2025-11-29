@@ -21,6 +21,10 @@ interface RedisOperationParams {
   members?: string | string[];
   member?: string;
   otherKeys?: string | string[];
+  incrementBy?: number;
+  startIndex?: number;
+  endIndex?: number;
+  index?: number;
   ttl?: number;
   userId: string;
   credentialId: string;
@@ -463,6 +467,79 @@ export class RedisService {
             incrementBy,
             key,
             message: `Field '${hashField}' incremented by ${incrementBy}, new value: ${newValue}`
+          };
+        }
+
+        case "lrange": {
+          const { startIndex = 0, endIndex = -1 } = params;
+          const elements = await redis.lrange(key, startIndex, endIndex);
+          const parsed = elements.map(item => {
+            try { return JSON.parse(item); } catch { return item; }
+          });
+          return { 
+            success: true, 
+            values: parsed, 
+            count: parsed.length, 
+            startIndex,
+            endIndex,
+            key,
+            message: `Retrieved ${parsed.length} element(s) from index ${startIndex} to ${endIndex}`
+          };
+        }
+
+        case "llen": {
+          const length = await redis.llen(key);
+          return { 
+            success: true, 
+            length, 
+            key,
+            message: `List contains ${length} element(s)`
+          };
+        }
+
+        case "lindex": {
+          const { index } = params;
+          if (index === undefined) {
+            return { success: false, error: "Index is required for LINDEX" };
+          }
+          const element = await redis.lindex(key, index);
+          if (element === null) {
+            return { success: false, error: "Index out of range or list not found", key, index };
+          }
+          try {
+            return { success: true, value: JSON.parse(element), key, index };
+          } catch {
+            return { success: true, value: element, key, index };
+          }
+        }
+
+        case "lset": {
+          const { index, value } = params;
+          if (index === undefined) {
+            return { success: false, error: "Index is required for LSET" };
+          }
+          if (value === undefined) {
+            return { success: false, error: "Value is required for LSET" };
+          }
+          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          await redis.lset(key, index, serialized);
+          return { 
+            success: true, 
+            key, 
+            index,
+            message: `Element at index ${index} updated successfully`
+          };
+        }
+
+        case "ltrim": {
+          const { startIndex = 0, endIndex = -1 } = params;
+          await redis.ltrim(key, startIndex, endIndex);
+          return { 
+            success: true, 
+            key,
+            startIndex,
+            endIndex,
+            message: `List trimmed to range ${startIndex} to ${endIndex}`
           };
         }
 

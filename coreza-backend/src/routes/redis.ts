@@ -217,6 +217,9 @@ router.post("/store", async (req, res) => {
       member,
       otherKeys,
       incrementBy,
+      startIndex,
+      endIndex,
+      index,
       ttl,
       workflow_id,
     } = req.body;
@@ -247,6 +250,9 @@ router.post("/store", async (req, res) => {
       member,
       otherKeys,
       incrementBy,
+      startIndex,
+      endIndex,
+      index,
       ttl,
       workflowId: workflow_id,
     });

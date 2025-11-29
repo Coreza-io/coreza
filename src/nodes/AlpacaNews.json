@@ -13,10 +13,7 @@
   "description": "Subscribe to real-time news from Alpaca News API",
   "color": "text-yellow-500",
   "size": { "width": 360, "height": 340 },
-  "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
-  ],
+  "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "auth": "GenericAuthModal",
   "authFields": [
     {

@@ -18,11 +18,6 @@
   },
   "handles": [
     {
-      "type": "target",
-      "position": "left",
-      "id": "input"
-    },
-    {
       "type": "source",
       "position": "right",
       "id": "output"

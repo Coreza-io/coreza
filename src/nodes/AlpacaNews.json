@@ -12,7 +12,7 @@
   },
   "description": "Subscribe to real-time news from Alpaca News API",
   "color": "text-yellow-500",
-  "size": { "width": 340, "height": 300 },
+  "size": { "width": 360, "height": 340 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -60,12 +60,43 @@
       "required": true
     },
     {
+      "key": "symbolSource",
+      "label": "Symbol Source",
+      "type": "select",
+      "options": [
+        { "id": "manual", "name": "Manual Entry" },
+        { "id": "store", "name": "From Store (Another Workflow)" }
+      ],
+      "default": "manual",
+      "required": true
+    },
+    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
       "placeholder": "e.g. AAPL,MSFT or * for all",
       "description": "Comma-separated symbols or * for all news",
-      "required": true
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["manual"] } }
+    },
+    {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow containing symbols",
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
+    },
+    {
+      "key": "sourceVariable",
+      "label": "Variable Name",
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select stored variable",
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
     }
   ]
 }

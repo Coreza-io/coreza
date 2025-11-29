@@ -1,0 +1,63 @@
+{
+  "name": "RedisTrigger",
+  "label": "Redis Trigger",
+  "def": "Trigger workflow on Redis Pub/Sub messages",
+  "node_type": "trigger",
+  "icon": "/assets/icons/redis.svg",
+  "category": "Data",
+  "description": "Subscribe to Redis channels and trigger workflow when messages arrive. Enables real-time inter-workflow communication.",
+  "color": "text-red-500",
+  "handles": [
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    { "key": "host", "label": "Redis Host", "type": "text", "placeholder": "localhost", "default": "localhost" },
+    { "key": "port", "label": "Port", "type": "text", "placeholder": "6379", "default": "6379" },
+    { "key": "password", "label": "Password", "type": "password", "placeholder": "Optional" },
+    { "key": "user", "label": "Username", "type": "text", "placeholder": "Optional (Redis 6+)" },
+    { "key": "database", "label": "Database", "type": "text", "placeholder": "0", "default": "0" },
+    { "key": "tls", "label": "Use TLS", "type": "select", "options": [
+      { "label": "No", "value": "false" },
+      { "label": "Yes", "value": "true" }
+    ], "default": "false" }
+  ],
+  "authAction": {
+    "url": "/redis/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/redis/trigger/subscribe",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Redis Connection",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "required": true,
+      "description": "Select your Redis connection credentials"
+    },
+    {
+      "key": "subscriptionType",
+      "label": "Subscription Type",
+      "type": "select",
+      "options": [
+        { "label": "Channel (SUBSCRIBE)", "value": "channel", "description": "Subscribe to exact channel names" },
+        { "label": "Pattern (PSUBSCRIBE)", "value": "pattern", "description": "Subscribe using wildcard patterns (e.g., orders:*)" }
+      ],
+      "default": "channel",
+      "required": true,
+      "description": "Channel subscribes to exact names, Pattern uses wildcards"
+    },
+    {
+      "key": "channels",
+      "label": "Channels",
+      "type": "textarea",
+      "placeholder": "notifications, alerts, orders:*",
+      "description": "Comma-separated channel names or patterns. Use * for wildcards in pattern mode.",
+      "required": true
+    }
+  ]
+}

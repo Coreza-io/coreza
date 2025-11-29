@@ -32,6 +32,8 @@ interface RedisOperationParams {
   reverseOrder?: string;
   minScore?: string;
   maxScore?: string;
+  channelPattern?: string;
+  channels?: string;
   userId: string;
   credentialId: string;
   workflowId?: string;
@@ -648,13 +650,44 @@ export class RedisService {
             removed, 
             members: membersArray, 
             key,
-            message: `${removed} member(s) removed from sorted set`
-          };
-        }
+        message: `${removed} member(s) removed from sorted set`
+      };
+    }
 
-        default:
-          return { success: false, error: `Unsupported operation: ${operation}` };
+    case "pubsub_channels": {
+      const { channelPattern = "*" } = params;
+      const channels = await redis.pubsub("CHANNELS", channelPattern);
+      return { 
+        success: true, 
+        channels, 
+        count: channels.length, 
+        pattern: channelPattern,
+        message: `Found ${channels.length} active channel(s)`
+      };
+    }
+
+    case "pubsub_numsub": {
+      const channelList = this.parseMembers(params.channels);
+      if (channelList.length === 0) {
+        return { success: false, error: "At least one channel is required" };
       }
+      const result = await redis.pubsub("NUMSUB", ...channelList) as any[];
+      // Result is [channel1, count1, channel2, count2, ...]
+      const subscribers: Record<string, number> = {};
+      for (let i = 0; i < result.length; i += 2) {
+        subscribers[result[i] as string] = result[i + 1] as number;
+      }
+      return { 
+        success: true, 
+        subscribers, 
+        channels: channelList,
+        message: `Subscriber counts for ${channelList.length} channel(s)`
+      };
+    }
+
+    default:
+      return { success: false, error: `Unsupported operation: ${operation}` };
+  }
     } catch (error: any) {
       logger.error({ err: error, operation: params.operation, key: params.key }, "Redis operation failed");
       return { success: false, error: error.message };

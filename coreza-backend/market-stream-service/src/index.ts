@@ -3,6 +3,7 @@ import { register } from 'prom-client';
 import logger from './utils/logger';
 import { MarketControlHandler } from './services/MarketControlHandler';
 import { MarketDataSubscriber } from './services/MarketDataSubscriber';
+import { RedisPubSubSubscriber } from './services/RedisPubSubSubscriber';
 import WorkflowCache from './services/WorkflowCache';
 import { RedisBuffer } from './services/RedisBuffer';
 import { getRedis } from './config/redis';
@@ -49,10 +50,17 @@ async function startMarketStreamService() {
     await marketDataSubscriber.restoreFromRedis();
     logger.info('✅ MarketDataSubscriber initialized and subscriptions restored');
 
+    // Initialize RedisPubSubSubscriber (listens to Redis channels for inter-workflow messaging)
+    logger.info('Initializing RedisPubSubSubscriber...');
+    const redisPubSubSubscriber = RedisPubSubSubscriber.getInstance();
+    await redisPubSubSubscriber.initialize();
+    logger.info('✅ RedisPubSubSubscriber initialized');
+
     // Health check endpoint
     app.get('/health', (req, res) => {
       const controlStats = marketControlHandler.getStats();
       const subscriberStats = marketDataSubscriber.getStats();
+      const redisPubSubStats = redisPubSubSubscriber.getStats();
       const cacheStats = WorkflowCache.getStats();
       const bufferStats = RedisBuffer.getInstance().getStats();
 
@@ -63,6 +71,7 @@ async function startMarketStreamService() {
         stats: {
           gateways: controlStats,
           subscriber: subscriberStats,
+          redisPubSub: redisPubSubStats,
           cache: cacheStats,
           buffer: bufferStats,
           circuitBreaker: {
@@ -103,6 +112,13 @@ async function startMarketStreamService() {
         logger.info('MarketDataSubscriber cleaned up');
       } catch (error) {
         logger.error({ err: error }, 'Error cleaning up MarketDataSubscriber');
+      }
+
+      try {
+        await redisPubSubSubscriber.shutdown();
+        logger.info('RedisPubSubSubscriber shut down');
+      } catch (error) {
+        logger.error({ err: error }, 'Error shutting down RedisPubSubSubscriber');
       }
 
       WorkflowCache.stopCleanupTimer();

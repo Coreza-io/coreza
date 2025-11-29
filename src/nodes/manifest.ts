@@ -45,6 +45,7 @@ import BinanceTradeDef from './BinanceTrade.json'
 import BinanceScreenerDef from './BinanceScreener.json'
 import WhatsAppDef from './WhatsApp.json'
 import RedisStoreDef from './RedisStore.json'
+import RedisTriggerDef from './RedisTrigger.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -148,7 +149,8 @@ export const nodeManifest = {
   [BinanceTradeDef.name]: BinanceTradeDef,
   [BinanceScreenerDef.name]: BinanceScreenerDef,
   [WhatsAppDef.name]: WhatsAppDef,
-  [RedisStoreDef.name]: RedisStoreDef
+  [RedisStoreDef.name]: RedisStoreDef,
+  [RedisTriggerDef.name]: RedisTriggerDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

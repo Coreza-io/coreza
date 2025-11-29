@@ -115,11 +115,13 @@
         { "label": "Sorted Set Score (ZSCORE)", "value": "zscore", "description": "Get the score of a member" },
         { "label": "Sorted Set Count (ZCOUNT)", "value": "zcount", "description": "Count members in a score range" },
         { "label": "Sorted Set Increment (ZINCRBY)", "value": "zincrby", "description": "Increment a member's score by a value" },
-        { "label": "Sorted Set Remove (ZREM)", "value": "zrem", "description": "Remove one or more members from a sorted set" }
-      ],
-      "default": "set",
-      "required": true
-    },
+      { "label": "Sorted Set Remove (ZREM)", "value": "zrem", "description": "Remove one or more members from a sorted set" },
+      { "label": "Pub/Sub Channels (PUBSUB CHANNELS)", "value": "pubsub_channels", "description": "List active channels matching a pattern" },
+      { "label": "Pub/Sub Subscribers (PUBSUB NUMSUB)", "value": "pubsub_numsub", "description": "Get subscriber count for specific channels" }
+    ],
+    "default": "set",
+    "required": true
+  },
     {
       "key": "scope",
       "label": "Scope",
@@ -147,10 +149,12 @@
         { "label": "String", "value": "string", "description": "Data in key is of type 'string'" }
       ],
       "default": "automatic",
-      "displayOptions": {
-        "show": { "operation": ["get", "set", "delete"] }
+    "displayOptions": {
+      "show": {
+        "operation": ["set", "get", "delete", "exists", "incr", "decr", "append", "lpush", "rpush", "lpop", "rpop", "lrange", "llen", "lindex", "lset", "sadd", "srem", "smembers", "scard", "sismember", "hset", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "zadd", "zrange", "zscore", "zcount", "zincrby", "zrem", "pubsub_channels", "pubsub_numsub"]
       }
-    },
+    }
+  },
     {
       "key": "key",
       "label": "Key",
@@ -386,16 +390,37 @@
           "show": { "operation": ["zcount"] }
         }
       },
-      {
-        "key": "maxScore",
-        "label": "Max Score",
-        "type": "text",
-        "placeholder": "+inf or number",
-        "default": "+inf",
-        "description": "Maximum score (use +inf for no upper bound)",
-        "displayOptions": {
-          "show": { "operation": ["zcount"] }
-        }
-      }
+  {
+    "key": "maxScore",
+    "label": "Max Score",
+    "type": "text",
+    "placeholder": "+inf or number",
+    "default": "+inf",
+    "description": "Maximum score (use +inf for no upper bound)",
+    "displayOptions": {
+      "show": { "operation": ["zcount"] }
+    }
+  },
+  {
+    "key": "channelPattern",
+    "label": "Channel Pattern",
+    "type": "text",
+    "placeholder": "*",
+    "default": "*",
+    "description": "Pattern to match channels (supports * wildcards)",
+    "displayOptions": {
+      "show": { "operation": ["pubsub_channels"] }
+    }
+  },
+  {
+    "key": "channels",
+    "label": "Channels",
+    "type": "textarea",
+    "placeholder": "channel1, channel2, channel3",
+    "description": "Comma-separated list of channel names",
+    "displayOptions": {
+      "show": { "operation": ["pubsub_numsub"] }
+    }
+  }
   ]
 }

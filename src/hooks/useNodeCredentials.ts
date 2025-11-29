@@ -13,6 +13,8 @@ interface UseNodeCredentialsReturn {
   selectOptions: Record<string, any[]>;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
+  fetchStoreWorkflows: (fieldKey: string) => void;
+  fetchStoreVariables: (field: any, workflowId: string) => void;
 }
 
 /**
@@ -83,6 +85,87 @@ export function useNodeCredentials({
       }
     },
     [definition, userId, session?.access_token]
+  );
+
+  const fetchStoreWorkflows = useCallback(
+    async (fieldKey: string) => {
+      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
+
+      if (!userId) {
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${BACKEND_URL}/store/workflows?user_id=${userId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const json = await response.json();
+
+        setSelectOptions((opts) => ({
+          ...opts,
+          [fieldKey]: json.workflows || [],
+        }));
+      } catch (error) {
+        console.error("Error fetching workflows for store options:", error);
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+      } finally {
+        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
+      }
+    },
+    [userId, session?.access_token],
+  );
+
+  const fetchStoreVariables = useCallback(
+    async (field: any, workflowId: string) => {
+      const fieldKey = field.key;
+      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
+
+      if (!userId || !workflowId) {
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${BACKEND_URL}/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const json = await response.json();
+
+        setSelectOptions((opts) => ({
+          ...opts,
+          [fieldKey]: json.variables?.map((v: string) => ({ id: v, name: v })) || [],
+        }));
+      } catch (error) {
+        console.error("Error fetching store variables:", error);
+        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
+      } finally {
+        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
+      }
+    },
+    [userId, session?.access_token],
   );
 
   // Fetch dependent options (cascading selects)
@@ -159,11 +242,14 @@ export function useNodeCredentials({
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
         fetchCredentials(f.key);
       }
+      if (f.type === "select" && f.optionsSource === "storeWorkflowsApi") {
+        fetchStoreWorkflows(f.key);
+      }
       if (f.type === "select" && f.options) {
         setSelectOptions((opts) => ({ ...opts, [f.key]: f.options! }));
       }
     });
-  }, [definition?.fields, definition?.name, fetchCredentials]);
+  }, [definition?.fields, definition?.name, fetchCredentials, fetchStoreWorkflows]);
 
   // Load dependent API options on mount or when parent field changes
   useEffect(() => {
@@ -176,14 +262,25 @@ export function useNodeCredentials({
       ) {
         fetchDependentOptions(field, fieldState[field.dependsOn]);
       }
+      if (field.type === "select" && field.optionsSource === "storeVariablesApi") {
+        const selectedWorkflowId = field.dependsOn ? fieldState[field.dependsOn] : undefined;
+
+        if (selectedWorkflowId) {
+          fetchStoreVariables(field, selectedWorkflowId);
+        } else {
+          setSelectOptions((opts) => ({ ...opts, [field.key]: [] }));
+        }
+      }
     });
-  }, [definition?.fields, fieldState, fetchDependentOptions]);
+  }, [definition?.fields, fieldState, fetchDependentOptions, fetchStoreVariables]);
 
   return {
     loadingSelect,
     selectOptions,
     fetchCredentials,
     fetchDependentOptions,
+    fetchStoreWorkflows,
+    fetchStoreVariables,
   };
 }
 

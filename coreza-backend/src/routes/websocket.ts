@@ -10,6 +10,7 @@ import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
 import { getRedis } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
+import { parseStoredValue, resolveStoreKey } from '../utils/store';
 
 const router = express.Router();
 
@@ -24,20 +25,64 @@ const router = express.Router();
 router.post('/:source/subscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, credential_id, symbols, node_id, workflow_id, stream_types } = req.body;
+    const {
+      user_id,
+      credential_id,
+      symbols,
+      node_id,
+      workflow_id,
+      stream_types,
+      symbolSource = 'manual',
+      sourceWorkflowId,
+      sourceVariable,
+    } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
-    if (!symbols) return res.status(400).json({ error: 'symbols is required' });
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
 
-    // Parse symbols (comma-separated string or array)
-    const symbolArray =
-      typeof symbols === 'string'
+    if (symbolSource === 'store' && (!sourceWorkflowId || !sourceVariable)) {
+      return res.status(400).json({
+        error: 'sourceWorkflowId and sourceVariable are required when using stored symbols',
+      });
+    }
+
+    // Resolve symbols from manual entry or stored values
+    const resolveSymbols = async (): Promise<string[]> => {
+      if (symbolSource === 'store') {
+        const redis = getRedis();
+        const storeKey = await resolveStoreKey(redis, user_id, sourceWorkflowId, sourceVariable);
+        const storedValue = parseStoredValue(await redis.get(storeKey));
+
+        if (Array.isArray(storedValue)) {
+          return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+        }
+
+        if (typeof storedValue === 'string') {
+          return storedValue
+            .split(',')
+            .map((symbol) => symbol.trim())
+            .filter(Boolean);
+        }
+
+        if (storedValue !== null && storedValue !== undefined) {
+          const coerced = String(storedValue).trim();
+          return coerced ? [coerced] : [];
+        }
+
+        return [];
+      }
+
+      if (!symbols) return [];
+
+      return typeof symbols === 'string'
         ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
         : Array.isArray(symbols)
         ? symbols
         : [];
+    };
+
+    const symbolArray = await resolveSymbols();
 
     if (symbolArray.length === 0) {
       return res.status(400).json({ error: 'At least one symbol is required' });
@@ -95,18 +140,60 @@ router.post('/:source/subscribe', async (req, res) => {
 router.post('/:source/unsubscribe', async (req, res) => {
   try {
     const { source } = req.params;
-    const { user_id, symbols, node_id, workflow_id, stream_types } = req.body;
+    const {
+      user_id,
+      symbols,
+      node_id,
+      workflow_id,
+      stream_types,
+      symbolSource = 'manual',
+      sourceWorkflowId,
+      sourceVariable,
+    } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
-    if (!symbols) return res.status(400).json({ error: 'symbols is required' });
 
-    // Parse symbols
-    const symbolArray =
-      typeof symbols === 'string'
+    if (symbolSource === 'store' && (!sourceWorkflowId || !sourceVariable)) {
+      return res.status(400).json({
+        error: 'sourceWorkflowId and sourceVariable are required when using stored symbols',
+      });
+    }
+
+    const resolveSymbols = async (): Promise<string[]> => {
+      if (symbolSource === 'store') {
+        const redis = getRedis();
+        const storeKey = await resolveStoreKey(redis, user_id, sourceWorkflowId, sourceVariable);
+        const storedValue = parseStoredValue(await redis.get(storeKey));
+
+        if (Array.isArray(storedValue)) {
+          return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+        }
+
+        if (typeof storedValue === 'string') {
+          return storedValue
+            .split(',')
+            .map((symbol) => symbol.trim())
+            .filter(Boolean);
+        }
+
+        if (storedValue !== null && storedValue !== undefined) {
+          const coerced = String(storedValue).trim();
+          return coerced ? [coerced] : [];
+        }
+
+        return [];
+      }
+
+      if (!symbols) return [];
+
+      return typeof symbols === 'string'
         ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
         : Array.isArray(symbols)
         ? symbols
         : [];
+    };
+
+    const symbolArray = await resolveSymbols();
 
     if (symbolArray.length === 0) {
       return res.status(400).json({ error: 'At least one symbol is required' });

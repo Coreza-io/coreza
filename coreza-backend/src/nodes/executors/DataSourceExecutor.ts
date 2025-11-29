@@ -1,6 +1,14 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DataService } from "../../services/data";
 import { RedisService } from "../../services/RedisService";
+import { getRedis } from "../../config/redis";
+import {
+  buildStoreKey,
+  extractVariableNameFromKey,
+  normalizeVariableName,
+  parseStoredValue,
+  resolveStoreKey,
+} from "../../utils/store";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -100,6 +108,9 @@ export class DataSourceExecutor implements INodeExecutor {
             workflowId: context?.workflowId || input.workflowId
           });
           break;
+        case "Store":
+          result = await this.executeStoreNode(resolvedParams, context);
+          break;
         default:
           return {
             success: false,
@@ -124,6 +135,106 @@ export class DataSourceExecutor implements INodeExecutor {
           error instanceof Error ? error.message : String(error)
         }`,
       };
+    }
+  }
+
+  private async executeStoreNode(
+    resolvedParams: any,
+    context?: any
+  ): Promise<NodeResult> {
+    const userId = context?.userId || resolvedParams.user_id || resolvedParams.userId;
+    const workflowId =
+      context?.workflowId || resolvedParams.workflow_id || resolvedParams.workflowId;
+    const operation = resolvedParams.operation || "set";
+    const variableName = resolvedParams.variableName;
+    const value = resolvedParams.value;
+    const ttl = resolvedParams.ttl;
+
+    if (!userId || !workflowId) {
+      return {
+        success: false,
+        error: "user_id and workflow_id are required for Store operations",
+      };
+    }
+
+    const redis = getRedis();
+
+    switch (operation) {
+      case "set": {
+        if (!variableName) {
+          return {
+            success: false,
+            error: "variableName is required for set",
+          };
+        }
+
+        const key = buildStoreKey(userId, workflowId, variableName);
+        const serialized = typeof value === "string" ? value : JSON.stringify(value);
+
+        if (ttl && ttl > 0) {
+          await redis.setex(key, ttl, serialized);
+        } else {
+          await redis.set(key, serialized);
+        }
+
+        return {
+          success: true,
+          data: { operation: "set", variableName, message: "Variable saved" },
+        };
+      }
+      case "get": {
+        if (!variableName) {
+          return {
+            success: false,
+            error: "variableName is required for get",
+          };
+        }
+
+        const key = await resolveStoreKey(redis, userId, workflowId, variableName);
+        const rawValue = await redis.get(key);
+
+        return {
+          success: true,
+          data: {
+            operation: "get",
+            variableName,
+            value: parseStoredValue(rawValue),
+          },
+        };
+      }
+      case "delete": {
+        if (!variableName) {
+          return {
+            success: false,
+            error: "variableName is required for delete",
+          };
+        }
+
+        const key = await resolveStoreKey(redis, userId, workflowId, variableName);
+        await redis.del(key);
+
+        return {
+          success: true,
+          data: { operation: "delete", variableName, message: "Variable deleted" },
+        };
+      }
+      case "list": {
+        const pattern = buildStoreKey(userId, workflowId, "*");
+        const keys = await redis.keys(pattern);
+        const variables = Array.from(
+          new Set(keys.map((key) => normalizeVariableName(extractVariableNameFromKey(key))))
+        );
+
+        return {
+          success: true,
+          data: { operation: "list", variables },
+        };
+      }
+      default:
+        return {
+          success: false,
+          error: `Unknown Store operation: ${operation}`,
+        };
     }
   }
 }

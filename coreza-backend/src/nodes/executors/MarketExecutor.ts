@@ -3,6 +3,7 @@ import { DataService } from '../../services/data';
 import { MarketSource } from '../../types/marketEvent';
 import { getRedis } from '../../config/redis';
 import { REDIS_CHANNELS } from '../../config/redisChannels';
+import { parseStoredValue, resolveStoreKey } from '../../utils/store';
 
 export class MarketExecutor implements INodeExecutor {
   readonly category = 'Market';
@@ -59,7 +60,15 @@ export class MarketExecutor implements INodeExecutor {
     source: MarketSource
   ): Promise<NodeResult> {
     try {
-      const { symbols, stream_types, operation, credential_id } = node.values;
+      const {
+        symbols,
+        stream_types,
+        operation,
+        credential_id,
+        symbolSource = 'manual',
+        sourceWorkflowId,
+        sourceVariable,
+      } = node.values;
       const { workflowId, userId, nodeId } = context;
 
       if (!workflowId || !userId || !nodeId) {
@@ -69,10 +78,38 @@ export class MarketExecutor implements INodeExecutor {
         };
       }
 
-      // Parse symbols (comma-separated string to array)
-      const symbolArray = typeof symbols === 'string' 
-        ? symbols.split(',').map(s => s.trim()).filter(Boolean)
-        : Array.isArray(symbols) ? symbols : [];
+      const redis = getRedis();
+      let symbolArray: string[] = [];
+
+      if (symbolSource === 'store') {
+        if (!sourceWorkflowId || !sourceVariable) {
+          return {
+            success: false,
+            error: 'Source workflow and variable are required when using stored symbols',
+          };
+        }
+
+        const storeKey = await resolveStoreKey(redis, userId, sourceWorkflowId, sourceVariable);
+        const storedValue = parseStoredValue(await redis.get(storeKey));
+
+        if (Array.isArray(storedValue)) {
+          symbolArray = storedValue
+            .map((symbol) => String(symbol).trim())
+            .filter(Boolean);
+        } else if (typeof storedValue === 'string') {
+          symbolArray = storedValue
+            .split(',')
+            .map((symbol) => symbol.trim())
+            .filter(Boolean);
+        } else if (storedValue !== null && storedValue !== undefined) {
+          const coerced = String(storedValue).trim();
+          symbolArray = coerced ? [coerced] : [];
+        }
+      } else {
+        symbolArray = typeof symbols === 'string'
+          ? symbols.split(',').map(s => s.trim()).filter(Boolean)
+          : Array.isArray(symbols) ? symbols : [];
+      }
 
       if (symbolArray.length === 0) {
         return {
@@ -92,7 +129,6 @@ export class MarketExecutor implements INodeExecutor {
 
         // Publish control message to Redis
         // MarketControlHandler will orchestrate gateway connection and subscription
-        const redis = getRedis();
         const controlMessage = {
           action: 'subscribe',
           userId,
@@ -124,7 +160,6 @@ export class MarketExecutor implements INodeExecutor {
       // Handle unsubscribe operation via Redis control channel
       else if (operation === 'unsubscribe') {
         // Publish control message to Redis
-        const redis = getRedis();
         const controlMessage = {
           action: 'unsubscribe',
           userId,

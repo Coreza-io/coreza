@@ -39,10 +39,10 @@ import openaiRoutes from './routes/openai';
 import aiAgentRoutes from './routes/aiagent';
 import googleSearchRoutes from './routes/googlesearch';
 import screenerRoutes from './routes/screener';
-import credentialsRoutes from './routes/credentials';
 import brokerRoutes from './routes/broker';
 import redisRoutes from './routes/redis';
 import redisTriggerRoutes from './routes/redisTrigger';
+import storeRoutes from './routes/store';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -123,6 +123,7 @@ app.use('/screener', screenerRoutes);
 app.use('/broker', brokerRoutes);
 app.use('/redis', redisRoutes);
 app.use('/redis/trigger', redisTriggerRoutes);
+app.use('/store', storeRoutes);
 logger.info('All routes mounted successfully');
 
 // Error handling

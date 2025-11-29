@@ -221,6 +221,12 @@ router.post("/store", async (req, res) => {
       endIndex,
       index,
       ttl,
+      score,
+      scoreMembers,
+      withScores,
+      reverseOrder,
+      minScore,
+      maxScore,
       workflow_id,
     } = req.body;
 
@@ -254,6 +260,12 @@ router.post("/store", async (req, res) => {
       endIndex,
       index,
       ttl,
+      score,
+      scoreMembers,
+      withScores,
+      reverseOrder,
+      minScore,
+      maxScore,
       workflowId: workflow_id,
     });
 

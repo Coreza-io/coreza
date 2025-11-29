@@ -26,6 +26,12 @@ interface RedisOperationParams {
   endIndex?: number;
   index?: number;
   ttl?: number;
+  score?: number;
+  scoreMembers?: string | Array<{score: number, member: string}>;
+  withScores?: string;
+  reverseOrder?: string;
+  minScore?: string;
+  maxScore?: string;
   userId: string;
   credentialId: string;
   workflowId?: string;
@@ -543,6 +549,109 @@ export class RedisService {
           };
         }
 
+        case "zadd": {
+          const { score, scoreMembers, member } = params;
+          
+          // Handle batch add with score:member pairs
+          if (scoreMembers) {
+            const pairs = this.parseScoreMembers(scoreMembers);
+            if (pairs.length === 0) {
+              return { success: false, error: "Invalid score-member pairs format" };
+            }
+            const args: (string | number)[] = [];
+            pairs.forEach(p => { args.push(p.score, p.member); });
+            const added = await redis.zadd(key, ...args);
+            if (ttl && ttl > 0) await redis.expire(key, ttl);
+            return { success: true, added, pairs, key, message: `${added} member(s) added to sorted set` };
+          }
+          
+          // Handle single member add
+          if (score === undefined || !member) {
+            return { success: false, error: "Score and member are required, or provide scoreMembers for batch" };
+          }
+          const added = await redis.zadd(key, score, member);
+          if (ttl && ttl > 0) await redis.expire(key, ttl);
+          return { success: true, added, score, member, key, message: added ? "Member added" : "Member score updated" };
+        }
+
+        case "zrange": {
+          const { startIndex = 0, endIndex = -1, withScores = "true", reverseOrder = "false" } = params;
+          const useRev = reverseOrder === "true";
+          const includeScores = withScores === "true";
+          
+          let results: string[];
+          if (useRev) {
+            results = includeScores 
+              ? await redis.zrevrange(key, startIndex, endIndex, "WITHSCORES")
+              : await redis.zrevrange(key, startIndex, endIndex);
+          } else {
+            results = includeScores
+              ? await redis.zrange(key, startIndex, endIndex, "WITHSCORES")
+              : await redis.zrange(key, startIndex, endIndex);
+          }
+          
+          if (includeScores) {
+            // Parse alternating member/score pairs
+            const members: Array<{member: string, score: number}> = [];
+            for (let i = 0; i < results.length; i += 2) {
+              members.push({ member: results[i], score: parseFloat(results[i + 1]) });
+            }
+            return { success: true, members, count: members.length, key, startIndex, endIndex };
+          }
+          
+          return { success: true, members: results, count: results.length, key, startIndex, endIndex };
+        }
+
+        case "zscore": {
+          const { member } = params;
+          if (!member) {
+            return { success: false, error: "Member is required for ZSCORE" };
+          }
+          const score = await redis.zscore(key, member);
+          if (score === null) {
+            return { success: false, error: "Member not found in sorted set", key, member };
+          }
+          return { success: true, score: parseFloat(score), member, key };
+        }
+
+        case "zcount": {
+          const { minScore = "-inf", maxScore = "+inf" } = params;
+          const count = await redis.zcount(key, minScore, maxScore);
+          return { success: true, count, minScore, maxScore, key };
+        }
+
+        case "zincrby": {
+          const { member, score } = params;
+          if (!member) {
+            return { success: false, error: "Member is required for ZINCRBY" };
+          }
+          const increment = score ?? 1;
+          const newScore = await redis.zincrby(key, increment, member);
+          return { 
+            success: true, 
+            newScore: parseFloat(newScore), 
+            member, 
+            increment, 
+            key,
+            message: `Member '${member}' score incremented by ${increment}, new score: ${newScore}`
+          };
+        }
+
+        case "zrem": {
+          const membersArray = this.parseMembers(params.members);
+          if (membersArray.length === 0) {
+            return { success: false, error: "At least one member is required for ZREM" };
+          }
+          const removed = await redis.zrem(key, ...membersArray);
+          return { 
+            success: true, 
+            removed, 
+            members: membersArray, 
+            key,
+            message: `${removed} member(s) removed from sorted set`
+          };
+        }
+
         default:
           return { success: false, error: `Unsupported operation: ${operation}` };
       }
@@ -572,5 +681,24 @@ export class RedisService {
       userId: params.userId,
       workflowId: params.workflowId
     }));
+  }
+
+  private static parseScoreMembers(
+    input: string | Array<{score: number, member: string}> | undefined
+  ): Array<{score: number, member: string}> {
+    if (!input) return [];
+    if (Array.isArray(input)) return input;
+    
+    // Parse "score1:member1, score2:member2" format
+    return input.split(',')
+      .map(pair => pair.trim())
+      .filter(Boolean)
+      .map(pair => {
+        const [scoreStr, ...memberParts] = pair.split(':');
+        const score = parseFloat(scoreStr.trim());
+        const member = memberParts.join(':').trim();
+        return { score, member };
+      })
+      .filter(p => !isNaN(p.score) && p.member);
   }
 }

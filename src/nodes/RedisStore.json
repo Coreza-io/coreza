@@ -104,7 +104,12 @@
         { "label": "Hash Keys (HKEYS)", "value": "hkeys", "description": "Get all field names in a hash" },
         { "label": "Hash Values (HVALS)", "value": "hvals", "description": "Get all values in a hash" },
         { "label": "Hash Exists (HEXISTS)", "value": "hexists", "description": "Check if a field exists in a hash" },
-        { "label": "Hash Increment (HINCRBY)", "value": "hincrby", "description": "Increment a hash field by a number" }
+        { "label": "Hash Increment (HINCRBY)", "value": "hincrby", "description": "Increment a hash field by a number" },
+        { "label": "List Range (LRANGE)", "value": "lrange", "description": "Get a slice of list elements by range" },
+        { "label": "List Length (LLEN)", "value": "llen", "description": "Get the length of a list" },
+        { "label": "List Index (LINDEX)", "value": "lindex", "description": "Get element at specific index" },
+        { "label": "List Set (LSET)", "value": "lset", "description": "Set value at specific index" },
+        { "label": "List Trim (LTRIM)", "value": "ltrim", "description": "Trim list to specified range" }
       ],
       "default": "set",
       "required": true
@@ -121,7 +126,7 @@
       "default": "workflow",
       "description": "Determines key namespace",
         "displayOptions": {
-          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby"] }
+          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby", "lrange", "llen", "lindex", "lset", "ltrim"] }
         }
     },
     {
@@ -146,7 +151,7 @@
       "type": "text",
       "placeholder": "e.g., scanner:breakoutCandidates",
         "displayOptions": {
-          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby"] }
+          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby", "lrange", "llen", "lindex", "lset", "ltrim"] }
         }
     },
     {
@@ -170,15 +175,15 @@
         "show": { "operation": ["publish"] }
       }
     },
-    {
-      "key": "value",
-      "label": "Value",
-      "type": "textarea",
-      "placeholder": "{{ $('Scanner').json.tickers }} or static value",
-      "displayOptions": { 
-        "show": { "operation": ["set", "push", "publish"] } 
-      }
-    },
+      {
+        "key": "value",
+        "label": "Value",
+        "type": "textarea",
+        "placeholder": "{{ $('Scanner').json.tickers }} or static value",
+        "displayOptions": { 
+          "show": { "operation": ["set", "push", "publish", "lset"] } 
+        }
+      },
       {
         "key": "hashField",
         "label": "Hash Field",
@@ -271,6 +276,38 @@
         "description": "Integer value to increment the hash field by (can be negative)",
         "displayOptions": {
           "show": { "operation": ["hincrby"] }
+        }
+      },
+      {
+        "key": "startIndex",
+        "label": "Start Index",
+        "type": "number",
+        "placeholder": "0 for first element, -1 for last",
+        "default": 0,
+        "description": "Starting position (0-based, negative counts from end)",
+        "displayOptions": {
+          "show": { "operation": ["lrange", "ltrim"] }
+        }
+      },
+      {
+        "key": "endIndex",
+        "label": "End Index",
+        "type": "number",
+        "placeholder": "-1 for last element",
+        "default": -1,
+        "description": "Ending position (inclusive, -1 for last element)",
+        "displayOptions": {
+          "show": { "operation": ["lrange", "ltrim"] }
+        }
+      },
+      {
+        "key": "index",
+        "label": "Index",
+        "type": "number",
+        "placeholder": "0 for first, -1 for last",
+        "description": "List position (0-based, negative counts from end)",
+        "displayOptions": {
+          "show": { "operation": ["lindex", "lset"] }
         }
       },
       {

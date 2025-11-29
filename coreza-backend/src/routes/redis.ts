@@ -42,15 +42,32 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
     tls: creds.tls === "true" ? { rejectUnauthorized: false } : undefined,
     maxRetriesPerRequest: 3,
     connectTimeout: 10000,
-    lazyConnect: false,
+    lazyConnect: true,  // Don't auto-connect
+    retryStrategy: () => null,  // Don't retry on failure
   });
   
-  // Wait for connection
-  await new Promise((resolve, reject) => {
-    redis.once('ready', resolve);
-    redis.once('error', reject);
-    setTimeout(() => reject(new Error('Redis connection timeout')), 10000);
+  // Attach listeners BEFORE connecting
+  const connectionPromise = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Redis connection timeout'));
+    }, 10000);
+    
+    redis.once('ready', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    
+    redis.once('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
+  
+  // NOW connect (after listeners are attached)
+  redis.connect();
+  
+  // Wait for connection
+  await connectionPromise;
   
   userRedisConnections.set(cacheKey, redis);
   logger.info({ userId, credentialId, host: creds.host }, 'User Redis connection established');
@@ -69,15 +86,32 @@ async function testRedisConnection(creds: any): Promise<{ success: boolean; erro
       db: parseInt(creds.database || "0", 10),
       tls: creds.tls === "true" ? { rejectUnauthorized: false } : undefined,
       connectTimeout: 5000,
-      lazyConnect: false,
+      lazyConnect: true,  // Don't auto-connect
+      retryStrategy: () => null,  // Don't retry on failure
     });
     
-    // Wait for connection with timeout
-    await new Promise((resolve, reject) => {
-      testRedis!.once('ready', resolve);
-      testRedis!.once('error', reject);
-      setTimeout(() => reject(new Error('Connection timeout')), 5000);
+    // Attach listeners BEFORE connecting
+    const connectionPromise = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Connection timeout'));
+      }, 5000);
+      
+      testRedis!.once('ready', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      
+      testRedis!.once('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
+    
+    // NOW connect (after listeners are attached)
+    testRedis.connect();
+    
+    // Wait for connection
+    await connectionPromise;
     
     // Test PING
     const pong = await testRedis.ping();
@@ -94,7 +128,11 @@ async function testRedisConnection(creds: any): Promise<{ success: boolean; erro
     };
   } finally {
     if (testRedis) {
-      await testRedis.quit();
+      try {
+        await testRedis.quit();
+      } catch {
+        testRedis.disconnect();
+      }
     }
   }
 }

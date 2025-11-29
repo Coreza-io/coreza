@@ -5,6 +5,7 @@
   "node_type": "trigger",
   "icon": "/assets/icons/redis.svg",
   "category": "Data",
+  "subCategory": "Redis",
   "description": "Subscribe to Redis channels and trigger workflow when messages arrive. Enables real-time inter-workflow communication.",
   "color": "text-red-500",
   "handles": [

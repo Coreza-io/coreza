@@ -5,6 +5,7 @@
   "node_type": "main",
   "icon": "/assets/icons/redis.svg",
   "category": "Data",
+  "subCategory": "Redis",
   "description": "Persistent key-value storage with TTL, lists, and hash support",
   "color": "text-red-500",
   "size": { "width": 340, "height": 420 },

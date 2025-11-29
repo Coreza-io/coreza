@@ -100,7 +100,11 @@
         { "label": "Set Size (SCARD)", "value": "scard", "description": "Get the number of members in a set" },
         { "label": "Set Intersection (SINTER)", "value": "sinter", "description": "Return the intersection of multiple sets" },
         { "label": "Set Union (SUNION)", "value": "sunion", "description": "Return the union of multiple sets" },
-        { "label": "Set Difference (SDIFF)", "value": "sdiff", "description": "Return the difference between the first set and other sets" }
+        { "label": "Set Difference (SDIFF)", "value": "sdiff", "description": "Return the difference between the first set and other sets" },
+        { "label": "Hash Keys (HKEYS)", "value": "hkeys", "description": "Get all field names in a hash" },
+        { "label": "Hash Values (HVALS)", "value": "hvals", "description": "Get all values in a hash" },
+        { "label": "Hash Exists (HEXISTS)", "value": "hexists", "description": "Check if a field exists in a hash" },
+        { "label": "Hash Increment (HINCRBY)", "value": "hincrby", "description": "Increment a hash field by a number" }
       ],
       "default": "set",
       "required": true
@@ -116,9 +120,9 @@
       ],
       "default": "workflow",
       "description": "Determines key namespace",
-      "displayOptions": {
-        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff"] }
-      }
+        "displayOptions": {
+          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby"] }
+        }
     },
     {
       "key": "keyType",
@@ -141,9 +145,9 @@
       "label": "Key",
       "type": "text",
       "placeholder": "e.g., scanner:breakoutCandidates",
-      "displayOptions": {
-        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff"] }
-      }
+        "displayOptions": {
+          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby"] }
+        }
     },
     {
       "key": "pattern",
@@ -175,18 +179,22 @@
         "show": { "operation": ["set", "push", "publish"] } 
       }
     },
-    {
-      "key": "hashField",
-      "label": "Hash Field",
-      "type": "text",
-      "placeholder": "Field name for hash operations",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["get", "set"],
-          "keyType": ["hash"]
-        } 
-      }
-    },
+      {
+        "key": "hashField",
+        "label": "Hash Field",
+        "type": "text",
+        "placeholder": "Field name for hash operations",
+        "displayOptions": { 
+          "show": { 
+            "operation": [
+              { "operation": "get", "keyType": "hash" },
+              { "operation": "set", "keyType": "hash" },
+              "hexists",
+              "hincrby"
+            ]
+          } 
+        }
+      },
     {
       "key": "setMember",
       "label": "Set Member",
@@ -244,26 +252,37 @@
         "show": { "operation": ["sismember"] }
       }
     },
-    {
-      "key": "otherKeys",
-      "label": "Other Set Keys",
-      "type": "textarea",
-      "placeholder": "key2, key3, key4 (comma-separated set names)",
-      "description": "Additional set keys for intersection/union/difference operations",
-      "displayOptions": {
-        "show": { "operation": ["sinter", "sunion", "sdiff"] }
+      {
+        "key": "otherKeys",
+        "label": "Other Set Keys",
+        "type": "textarea",
+        "placeholder": "key2, key3, key4 (comma-separated set names)",
+        "description": "Additional set keys for intersection/union/difference operations",
+        "displayOptions": {
+          "show": { "operation": ["sinter", "sunion", "sdiff"] }
+        }
+      },
+      {
+        "key": "incrementBy",
+        "label": "Increment By",
+        "type": "number",
+        "placeholder": "Amount to increment (default: 1)",
+        "default": 1,
+        "description": "Integer value to increment the hash field by (can be negative)",
+        "displayOptions": {
+          "show": { "operation": ["hincrby"] }
+        }
+      },
+      {
+        "key": "ttl",
+        "label": "TTL (seconds)",
+        "type": "number",
+        "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
+        "default": 0,
+        "description": "Time to live in seconds (0 = no expiry)",
+        "displayOptions": { 
+          "show": { "operation": ["set", "push", "sadd"] } 
+        }
       }
-    },
-    {
-      "key": "ttl",
-      "label": "TTL (seconds)",
-      "type": "number",
-      "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
-      "default": 0,
-      "description": "Time to live in seconds (0 = no expiry)",
-      "displayOptions": { 
-        "show": { "operation": ["set", "push", "sadd"] } 
-      }
-    }
   ]
 }

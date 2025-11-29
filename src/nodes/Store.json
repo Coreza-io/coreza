@@ -1,0 +1,55 @@
+{
+  "name": "Store",
+  "label": "Store",
+  "def": "Store Variables",
+  "node_type": "main",
+  "icon": "/assets/icons/store.svg",
+  "category": "Data",
+  "subCategory": "Store",
+  "description": "Save and retrieve variables using Coreza's built-in storage. No external Redis required.",
+  "color": "text-purple-500",
+  "size": { "width": 320, "height": 280 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/store/execute", "method": "POST" },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        { "id": "set", "name": "Set Variable" },
+        { "id": "get", "name": "Get Variable" },
+        { "id": "delete", "name": "Delete Variable" },
+        { "id": "list", "name": "List Variables" }
+      ],
+      "default": "set",
+      "required": true
+    },
+    {
+      "key": "variableName",
+      "label": "Variable Name",
+      "type": "text",
+      "placeholder": "e.g., scanner_tickers",
+      "required": true,
+      "displayOptions": { "show": { "operation": ["set", "get", "delete"] } }
+    },
+    {
+      "key": "value",
+      "label": "Value",
+      "type": "textarea",
+      "placeholder": "{{ $('Scanner').json.tickers }} or static value",
+      "displayOptions": { "show": { "operation": ["set"] } }
+    },
+    {
+      "key": "ttl",
+      "label": "TTL (seconds)",
+      "type": "number",
+      "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
+      "default": 0,
+      "displayOptions": { "show": { "operation": ["set"] } }
+    }
+  ]
+}

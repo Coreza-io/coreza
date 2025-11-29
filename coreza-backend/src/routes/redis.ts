@@ -32,9 +32,12 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
     throw new Error("Invalid Redis credentials - host is required");
   }
   
+  // Resolve localhost to 127.0.0.1 to avoid IPv6 issues on Windows
+  const host = creds.host === 'localhost' ? '127.0.0.1' : creds.host;
+  
   // Create new Redis connection with user's credentials
   const redis = new Redis({
-    host: creds.host,
+    host,
     port: parseInt(creds.port || "6379", 10),
     password: creds.password || undefined,
     username: creds.user || undefined,
@@ -44,6 +47,7 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
     connectTimeout: 10000,
     lazyConnect: true,  // Don't auto-connect
     retryStrategy: () => null,  // Don't retry on failure
+    family: 4,  // Force IPv4
   });
   
   // Attach listeners BEFORE connecting
@@ -64,7 +68,11 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
   });
   
   // NOW connect (after listeners are attached)
-  redis.connect();
+  try {
+    await redis.connect();
+  } catch (connectErr) {
+    // Connection error - will be caught by error listener
+  }
   
   // Wait for connection
   await connectionPromise;
@@ -78,8 +86,11 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
 async function testRedisConnection(creds: any): Promise<{ success: boolean; error?: string }> {
   let testRedis: Redis | null = null;
   try {
+    // Resolve localhost to 127.0.0.1 to avoid IPv6 issues on Windows
+    const host = creds.host === 'localhost' ? '127.0.0.1' : creds.host;
+    
     testRedis = new Redis({
-      host: creds.host,
+      host,
       port: parseInt(creds.port || "6379", 10),
       password: creds.password || undefined,
       username: creds.user || undefined,
@@ -88,6 +99,7 @@ async function testRedisConnection(creds: any): Promise<{ success: boolean; erro
       connectTimeout: 5000,
       lazyConnect: true,  // Don't auto-connect
       retryStrategy: () => null,  // Don't retry on failure
+      family: 4,  // Force IPv4
     });
     
     // Attach listeners BEFORE connecting
@@ -108,7 +120,11 @@ async function testRedisConnection(creds: any): Promise<{ success: boolean; erro
     });
     
     // NOW connect (after listeners are attached)
-    testRedis.connect();
+    try {
+      await testRedis.connect();
+    } catch (connectErr) {
+      // Connection error - will be caught by error listener
+    }
     
     // Wait for connection
     await connectionPromise;

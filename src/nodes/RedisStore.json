@@ -1,0 +1,102 @@
+{
+  "name": "RedisStore",
+  "label": "Redis Store",
+  "def": "Store and retrieve data from Redis",
+  "node_type": "main",
+  "icon": "/assets/icons/redis.svg",
+  "category": "Data",
+  "description": "Persistent key-value storage with TTL, lists, and hash support",
+  "color": "text-red-500",
+  "size": { "width": 340, "height": 380 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": {
+    "url": "/redis/store",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        { "label": "Set Value", "value": "set" },
+        { "label": "Get Value", "value": "get" },
+        { "label": "Delete Key", "value": "delete" },
+        { "label": "Check Exists", "value": "exists" },
+        { "label": "Push to List", "value": "lpush" },
+        { "label": "Get List", "value": "lrange" },
+        { "label": "Set Hash Field", "value": "hset" },
+        { "label": "Get Hash Field", "value": "hget" },
+        { "label": "Get All Hash", "value": "hgetall" },
+        { "label": "Increment", "value": "incr" },
+        { "label": "Set If Not Exists", "value": "setnx" }
+      ],
+      "default": "set",
+      "required": true
+    },
+    {
+      "key": "scope",
+      "label": "Scope",
+      "type": "select",
+      "options": [
+        { "label": "Workflow (this workflow only)", "value": "workflow" },
+        { "label": "User (shared across workflows)", "value": "user" },
+        { "label": "Global (shared across users)", "value": "global" }
+      ],
+      "default": "workflow",
+      "description": "Determines key namespace"
+    },
+    {
+      "key": "key",
+      "label": "Key",
+      "type": "text",
+      "placeholder": "e.g., scanner:breakoutCandidates",
+      "required": true
+    },
+    {
+      "key": "value",
+      "label": "Value",
+      "type": "textarea",
+      "placeholder": "{{ $('Scanner').json.tickers }} or static value",
+      "displayOptions": { 
+        "show": { "operation": ["set", "lpush", "hset", "setnx"] } 
+      }
+    },
+    {
+      "key": "field",
+      "label": "Hash Field",
+      "type": "text",
+      "placeholder": "Field name for hash operations",
+      "displayOptions": { 
+        "show": { "operation": ["hset", "hget"] } 
+      }
+    },
+    {
+      "key": "ttl",
+      "label": "TTL (seconds)",
+      "type": "number",
+      "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
+      "default": 0,
+      "displayOptions": { 
+        "show": { "operation": ["set", "lpush", "hset", "setnx"] } 
+      }
+    },
+    {
+      "key": "listStart",
+      "label": "List Start Index",
+      "type": "number",
+      "default": 0,
+      "displayOptions": { "show": { "operation": ["lrange"] } }
+    },
+    {
+      "key": "listEnd",
+      "label": "List End Index",
+      "type": "number",
+      "default": -1,
+      "displayOptions": { "show": { "operation": ["lrange"] } }
+    }
+  ]
+}

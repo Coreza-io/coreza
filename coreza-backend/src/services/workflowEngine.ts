@@ -394,7 +394,7 @@ export class WorkflowEngine {
       category = "Utility";
     } else if (["Gmail", "WhatsApp"].includes(nodeName)) {
       category = "Communication";
-    } else if (["FinnHub", "YahooFinance"].includes(nodeName)) {
+    } else if (["FinnHub", "YahooFinance", "Store"].includes(nodeName)) {
       category = "DataSource";
     } else if (nodeName === "LLM") {
       category = "LLM";

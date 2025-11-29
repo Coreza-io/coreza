@@ -14,7 +14,7 @@
   "color": "text-yellow-500",
   "size": {
     "width": 380,
-    "height": 340
+    "height": 420
   },
   "handles": [
     {
@@ -111,12 +111,43 @@
       "required": true
     },
     {
+      "key": "symbolSource",
+      "label": "Symbol Source",
+      "type": "select",
+      "options": [
+        { "id": "manual", "name": "Manual Entry" },
+        { "id": "store", "name": "From Store (Another Workflow)" }
+      ],
+      "default": "manual",
+      "required": true
+    },
+    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
       "placeholder": "e.g. AAPL,MSFT,TSLA or * for all",
       "description": "Comma-separated symbols or * for all symbols",
-      "required": true
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["manual"] } }
+    },
+    {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow containing symbols",
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
+    },
+    {
+      "key": "sourceVariable",
+      "label": "Variable Name",
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select stored variable",
+      "required": true,
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
     },
     {
       "key": "feed",

@@ -68,11 +68,8 @@ async function getUserRedis(userId: string, credentialId: string): Promise<Redis
   });
   
   // NOW connect (after listeners are attached)
-  try {
-    await redis.connect();
-  } catch (connectErr) {
-    // Connection error - will be caught by error listener
-  }
+  // Let connection errors propagate naturally - they'll be caught by error listener or outer try-catch
+  await redis.connect();
   
   // Wait for connection
   await connectionPromise;
@@ -120,11 +117,8 @@ async function testRedisConnection(creds: any): Promise<{ success: boolean; erro
     });
     
     // NOW connect (after listeners are attached)
-    try {
-      await testRedis.connect();
-    } catch (connectErr) {
-      // Connection error - will be caught by error listener
-    }
+    // Let connection errors propagate naturally - they'll be caught by error listener or outer try-catch
+    await testRedis.connect();
     
     // Wait for connection
     await connectionPromise;

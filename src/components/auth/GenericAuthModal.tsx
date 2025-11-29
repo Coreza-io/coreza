@@ -43,7 +43,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
     // Validate required fields except static
     for (const f of definition.authFields || []) {
-      if (f.type !== "static" && !fields[f.key]) {
+      if (f.required && f.type !== "static" && !fields[f.key]) {
         const errorMessage = `Please enter ${f.label}.`;
         setStatus({ type: "error", message: errorMessage });
         toast({

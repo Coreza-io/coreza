@@ -65,7 +65,8 @@ export interface NodeConfig {
     value?: string;
     default?: string;
     placeholder?: string;
-  }[]; 
+    required?: boolean;
+  }[];
   authAction?: { url: string; method: string };  
   icon?: string;
   size?: { width: number; height: number };

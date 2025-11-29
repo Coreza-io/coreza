@@ -9,18 +9,19 @@ const userRedisConnections = new Map<string, Redis>();
 interface RedisOperationParams {
   operation: string;
   scope?: string;
-  key: string;
+  key?: string;
   value?: any;
-  field?: string;
+  keyType?: string;
+  pattern?: string;
+  channel?: string;
+  hashField?: string;
+  setMember?: string;
+  popDirection?: string;
+  pushDirection?: string;
   ttl?: number;
-  listStart?: number;
-  listEnd?: number;
   userId: string;
   credentialId: string;
-  context?: {
-    userId?: string;
-    workflowId?: string;
-  };
+  workflowId?: string;
 }
 
 // Helper to get or create user's Redis connection
@@ -78,123 +79,242 @@ export class RedisService {
     }
   }
 
+  private static async detectKeyType(redis: Redis, key: string, value: any): Promise<string> {
+    const existingType = await redis.type(key);
+    if (existingType !== "none") {
+      return existingType;
+    }
+    
+    if (Array.isArray(value)) {
+      return "list";
+    } else if (typeof value === "object" && value !== null) {
+      return "hash";
+    } else {
+      return "string";
+    }
+  }
+
   static async execute(params: RedisOperationParams): Promise<NodeResult> {
     try {
-      const { userId, credentialId, operation, scope = 'workflow', key, value, field, ttl = 0, listStart = 0, listEnd = -1, context = {} } = params;
-      
-      // Get user's Redis connection
-      const redis = await getUserRedis(userId, credentialId);
-      
-      if (!key) {
-        return { success: false, error: "key is required" };
-      }
+      const redis = await getUserRedis(params.userId, params.credentialId);
+      const { operation, key: rawKey, value, ttl, scope, keyType = "automatic" } = params;
 
-      const scopedKey = this.buildKey(scope, key, context);
-      let result: any;
+      const key = ["info", "keys"].includes(operation)
+        ? rawKey
+        : this.buildKey(scope || 'workflow', rawKey || '', {
+            userId: params.userId,
+            workflowId: params.workflowId,
+          });
 
       switch (operation) {
-        case 'set':
-          const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-          if (ttl > 0) {
-            await redis.set(scopedKey, serialized, 'EX', ttl);
+        case "set": {
+          const actualKeyType = keyType === "automatic" ? await this.detectKeyType(redis, key, value) : keyType;
+          
+          if (actualKeyType === "hash") {
+            const { hashField } = params;
+            if (!hashField) {
+              return { success: false, error: "Hash field is required for hash type" };
+            }
+            const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+            await redis.hset(key, hashField, serialized);
+          } else if (actualKeyType === "list") {
+            const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+            await redis.rpush(key, serialized);
+          } else if (actualKeyType === "sets") {
+            const { setMember } = params;
+            if (!setMember) {
+              return { success: false, error: "Set member is required for sets type" };
+            }
+            await redis.sadd(key, setMember);
           } else {
-            await redis.set(scopedKey, serialized);
+            const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+            await redis.set(key, serialized);
           }
-          result = { success: true, key: scopedKey, operation: 'set' };
-          logger.info({ scopedKey, ttl }, 'Redis SET operation');
-          break;
-
-        case 'get':
-          const stored = await redis.get(scopedKey);
-          try {
-            result = stored ? JSON.parse(stored) : null;
-          } catch {
-            result = stored;
+          
+          if (ttl && ttl > 0) {
+            await redis.expire(key, ttl);
           }
-          logger.debug({ scopedKey }, 'Redis GET operation');
-          break;
+          return { success: true, message: "Value set successfully", key, keyType: actualKeyType };
+        }
 
-        case 'delete':
-          const deleted = await redis.del(scopedKey);
-          result = { success: true, deleted: deleted > 0 };
-          logger.info({ scopedKey, deleted: deleted > 0 }, 'Redis DEL operation');
-          break;
+        case "get": {
+          const actualKeyType = keyType === "automatic" ? await redis.type(key) : keyType;
+          
+          if (actualKeyType === "hash") {
+            const { hashField } = params;
+            if (hashField) {
+              const result = await redis.hget(key, hashField);
+              if (!result) {
+                return { success: false, error: "Hash field not found", key, hashField };
+              }
+              try {
+                return { success: true, value: JSON.parse(result), key, hashField };
+              } catch {
+                return { success: true, value: result, key, hashField };
+              }
+            } else {
+              const result = await redis.hgetall(key);
+              if (!result || Object.keys(result).length === 0) {
+                return { success: false, error: "Hash not found or empty", key };
+              }
+              const parsed: Record<string, any> = {};
+              for (const [k, v] of Object.entries(result)) {
+                try {
+                  parsed[k] = JSON.parse(v);
+                } catch {
+                  parsed[k] = v;
+                }
+              }
+              return { success: true, value: parsed, key };
+            }
+          } else if (actualKeyType === "list") {
+            const results = await redis.lrange(key, 0, -1);
+            const parsed = results.map((item) => {
+              try {
+                return JSON.parse(item);
+              } catch {
+                return item;
+              }
+            });
+            return { success: true, values: parsed, count: parsed.length, key };
+          } else if (actualKeyType === "set") {
+            const members = await redis.smembers(key);
+            return { success: true, values: members, count: members.length, key };
+          } else {
+            const result = await redis.get(key);
+            if (!result) {
+              return { success: false, error: "Key not found", key };
+            }
+            try {
+              return { success: true, value: JSON.parse(result), key };
+            } catch {
+              return { success: true, value: result, key };
+            }
+          }
+        }
 
-        case 'exists':
-          const exists = await redis.exists(scopedKey);
-          result = { exists: exists > 0 };
-          logger.debug({ scopedKey, exists: exists > 0 }, 'Redis EXISTS operation');
-          break;
+        case "delete": {
+          const actualKeyType = keyType === "automatic" ? await redis.type(key) : keyType;
+          
+          if (actualKeyType === "hash") {
+            const { hashField } = params;
+            if (hashField) {
+              const deleted = await redis.hdel(key, hashField);
+              return {
+                success: deleted > 0,
+                message: deleted > 0 ? "Hash field deleted" : "Hash field not found",
+                key,
+                hashField,
+              };
+            }
+          } else if (actualKeyType === "sets") {
+            const { setMember } = params;
+            if (setMember) {
+              const deleted = await redis.srem(key, setMember);
+              return {
+                success: deleted > 0,
+                message: deleted > 0 ? "Set member deleted" : "Set member not found",
+                key,
+                setMember,
+              };
+            }
+          }
+          
+          const deleted = await redis.del(key);
+          return {
+            success: deleted > 0,
+            message: deleted > 0 ? "Key deleted" : "Key not found",
+            key,
+          };
+        }
 
-        case 'lpush':
-          const listValue = typeof value === 'string' ? value : JSON.stringify(value);
-          await redis.lpush(scopedKey, listValue);
-          if (ttl > 0) await redis.expire(scopedKey, ttl);
-          result = { success: true, key: scopedKey, operation: 'lpush' };
-          logger.info({ scopedKey, ttl }, 'Redis LPUSH operation');
-          break;
+        case "increment": {
+          const newValue = await redis.incr(key);
+          return { success: true, value: newValue, key };
+        }
 
-        case 'lrange':
-          const listItems = await redis.lrange(scopedKey, listStart, listEnd);
-          result = listItems.map(item => {
-            try { return JSON.parse(item); } catch { return item; }
+        case "info": {
+          const info = await redis.info();
+          const sections: Record<string, any> = {};
+          let currentSection = "default";
+          
+          info.split("\r\n").forEach((line) => {
+            if (line.startsWith("#")) {
+              currentSection = line.substring(2).trim();
+              sections[currentSection] = {};
+            } else if (line.includes(":")) {
+              const [key, value] = line.split(":");
+              if (!sections[currentSection]) sections[currentSection] = {};
+              sections[currentSection][key] = isNaN(Number(value)) ? value : Number(value);
+            }
           });
-          logger.debug({ scopedKey, listStart, listEnd, count: listItems.length }, 'Redis LRANGE operation');
-          break;
+          
+          return { success: true, info: sections };
+        }
 
-        case 'hset':
-          if (!field) return { success: false, error: "field is required for hset" };
-          const hashValue = typeof value === 'string' ? value : JSON.stringify(value);
-          await redis.hset(scopedKey, field, hashValue);
-          if (ttl > 0) await redis.expire(scopedKey, ttl);
-          result = { success: true, key: scopedKey, field, operation: 'hset' };
-          logger.info({ scopedKey, field, ttl }, 'Redis HSET operation');
-          break;
+        case "keys": {
+          const { pattern = "*" } = params;
+          const keys = await redis.keys(pattern);
+          return { success: true, keys, count: keys.length, pattern };
+        }
 
-        case 'hget':
-          if (!field) return { success: false, error: "field is required for hget" };
-          const hashField = await redis.hget(scopedKey, field);
+        case "pop": {
+          const { popDirection = "left" } = params;
+          const result = popDirection === "left" ? await redis.lpop(key) : await redis.rpop(key);
+          
+          if (!result) {
+            return { success: false, error: "List is empty or key not found", key };
+          }
+          
           try {
-            result = hashField ? JSON.parse(hashField) : null;
+            return { success: true, value: JSON.parse(result), key };
           } catch {
-            result = hashField;
+            return { success: true, value: result, key };
           }
-          logger.debug({ scopedKey, field }, 'Redis HGET operation');
-          break;
+        }
 
-        case 'hgetall':
-          const allFields = await redis.hgetall(scopedKey);
-          result = {};
-          for (const [k, v] of Object.entries(allFields)) {
-            try { result[k] = JSON.parse(v as string); } catch { result[k] = v; }
+        case "publish": {
+          const { channel } = params;
+          if (!channel) {
+            return { success: false, error: "Channel is required for publish operation" };
           }
-          logger.debug({ scopedKey, fieldCount: Object.keys(result).length }, 'Redis HGETALL operation');
-          break;
+          
+          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          const subscribers = await redis.publish(channel, serialized);
+          
+          return {
+            success: true,
+            message: `Message published to ${subscribers} subscriber(s)`,
+            channel,
+            subscribers,
+          };
+        }
 
-        case 'incr':
-          result = await redis.incr(scopedKey);
-          logger.info({ scopedKey, newValue: result }, 'Redis INCR operation');
-          break;
-
-        case 'setnx':
-          const nxValue = typeof value === 'string' ? value : JSON.stringify(value);
-          const wasSet = await redis.setnx(scopedKey, nxValue);
-          if (wasSet && ttl > 0) await redis.expire(scopedKey, ttl);
-          result = { success: true, wasSet: wasSet === 1 };
-          logger.info({ scopedKey, wasSet: wasSet === 1, ttl }, 'Redis SETNX operation');
-          break;
+        case "push": {
+          const { pushDirection = "left" } = params;
+          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          const length = pushDirection === "left"
+            ? await redis.lpush(key, serialized)
+            : await redis.rpush(key, serialized);
+          
+          if (ttl && ttl > 0) {
+            await redis.expire(key, ttl);
+          }
+          
+          return {
+            success: true,
+            message: `Value pushed to ${pushDirection} of list`,
+            length,
+            key,
+          };
+        }
 
         default:
-          return { success: false, error: `Unknown operation: ${operation}` };
+          return { success: false, error: `Unsupported operation: ${operation}` };
       }
-
-      return { success: true, data: result };
-    } catch (error) {
-      logger.error({ err: error }, "Redis service error");
-      return {
-        success: false,
-        error: `Redis operation failed: ${error instanceof Error ? error.message : String(error)}`
-      };
+    } catch (error: any) {
+      logger.error({ err: error, operation: params.operation, key: params.key }, "Redis operation failed");
+      return { success: false, error: error.message };
     }
   }
 }

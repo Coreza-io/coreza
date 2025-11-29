@@ -84,17 +84,15 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "label": "Set Value", "value": "set" },
-        { "label": "Get Value", "value": "get" },
-        { "label": "Delete Key", "value": "delete" },
-        { "label": "Check Exists", "value": "exists" },
-        { "label": "Push to List", "value": "lpush" },
-        { "label": "Get List", "value": "lrange" },
-        { "label": "Set Hash Field", "value": "hset" },
-        { "label": "Get Hash Field", "value": "hget" },
-        { "label": "Get All Hash", "value": "hgetall" },
-        { "label": "Increment", "value": "incr" },
-        { "label": "Set If Not Exists", "value": "setnx" }
+        { "label": "Delete", "value": "delete", "description": "Delete a key from Redis" },
+        { "label": "Get", "value": "get", "description": "Get the value of a key from Redis" },
+        { "label": "Increment", "value": "increment", "description": "Atomically increments a key by 1. Creates the key if it does not exist" },
+        { "label": "Info", "value": "info", "description": "Returns generic information about the Redis instance" },
+        { "label": "Keys", "value": "keys", "description": "Returns all the keys matching a pattern" },
+        { "label": "Pop", "value": "pop", "description": "Pop data from a redis list" },
+        { "label": "Publish", "value": "publish", "description": "Publish message to redis channel" },
+        { "label": "Push", "value": "push", "description": "Push data to a redis list" },
+        { "label": "Set", "value": "set", "description": "Set the value of a key in redis" }
       ],
       "default": "set",
       "required": true
@@ -109,14 +107,56 @@
         { "label": "Global (shared across users)", "value": "global" }
       ],
       "default": "workflow",
-      "description": "Determines key namespace"
+      "description": "Determines key namespace",
+      "displayOptions": {
+        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push"] }
+      }
+    },
+    {
+      "key": "keyType",
+      "label": "Key Type",
+      "type": "select",
+      "options": [
+        { "label": "Automatic", "value": "automatic", "description": "Tries to figure out the type automatically depending on the data" },
+        { "label": "Hash", "value": "hash", "description": "Data in key is of type 'hash'" },
+        { "label": "List", "value": "list", "description": "Data in key is of type 'lists'" },
+        { "label": "Sets", "value": "sets", "description": "Data in key is of type 'sets'" },
+        { "label": "String", "value": "string", "description": "Data in key is of type 'string'" }
+      ],
+      "default": "automatic",
+      "displayOptions": {
+        "show": { "operation": ["get", "set", "delete"] }
+      }
     },
     {
       "key": "key",
       "label": "Key",
       "type": "text",
       "placeholder": "e.g., scanner:breakoutCandidates",
-      "required": true
+      "displayOptions": {
+        "show": { "operation": ["get", "set", "delete", "increment", "pop", "push"] }
+      }
+    },
+    {
+      "key": "pattern",
+      "label": "Pattern",
+      "type": "text",
+      "placeholder": "e.g., user:* or session:*",
+      "default": "*",
+      "description": "Pattern to match keys (supports * and ? wildcards)",
+      "displayOptions": {
+        "show": { "operation": ["keys"] }
+      }
+    },
+    {
+      "key": "channel",
+      "label": "Channel",
+      "type": "text",
+      "placeholder": "e.g., notifications or alerts",
+      "required": true,
+      "displayOptions": {
+        "show": { "operation": ["publish"] }
+      }
     },
     {
       "key": "value",
@@ -124,16 +164,57 @@
       "type": "textarea",
       "placeholder": "{{ $('Scanner').json.tickers }} or static value",
       "displayOptions": { 
-        "show": { "operation": ["set", "lpush", "hset", "setnx"] } 
+        "show": { "operation": ["set", "push", "publish"] } 
       }
     },
     {
-      "key": "field",
+      "key": "hashField",
       "label": "Hash Field",
       "type": "text",
       "placeholder": "Field name for hash operations",
       "displayOptions": { 
-        "show": { "operation": ["hset", "hget"] } 
+        "show": { 
+          "operation": ["get", "set"],
+          "keyType": ["hash"]
+        } 
+      }
+    },
+    {
+      "key": "setMember",
+      "label": "Set Member",
+      "type": "text",
+      "placeholder": "Member value for set operations",
+      "displayOptions": { 
+        "show": { 
+          "operation": ["set"],
+          "keyType": ["sets"]
+        } 
+      }
+    },
+    {
+      "key": "popDirection",
+      "label": "Pop Direction",
+      "type": "select",
+      "options": [
+        { "label": "Left (LPOP)", "value": "left" },
+        { "label": "Right (RPOP)", "value": "right" }
+      ],
+      "default": "left",
+      "displayOptions": {
+        "show": { "operation": ["pop"] }
+      }
+    },
+    {
+      "key": "pushDirection",
+      "label": "Push Direction",
+      "type": "select",
+      "options": [
+        { "label": "Left (LPUSH)", "value": "left" },
+        { "label": "Right (RPUSH)", "value": "right" }
+      ],
+      "default": "left",
+      "displayOptions": {
+        "show": { "operation": ["push"] }
       }
     },
     {
@@ -142,23 +223,10 @@
       "type": "number",
       "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
       "default": 0,
+      "description": "Time to live in seconds (0 = no expiry)",
       "displayOptions": { 
-        "show": { "operation": ["set", "lpush", "hset", "setnx"] } 
+        "show": { "operation": ["set", "push"] } 
       }
-    },
-    {
-      "key": "listStart",
-      "label": "List Start Index",
-      "type": "number",
-      "default": 0,
-      "displayOptions": { "show": { "operation": ["lrange"] } }
-    },
-    {
-      "key": "listEnd",
-      "label": "List End Index",
-      "type": "number",
-      "default": -1,
-      "displayOptions": { "show": { "operation": ["lrange"] } }
     }
   ]
 }

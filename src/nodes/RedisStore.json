@@ -7,16 +7,78 @@
   "category": "Data",
   "description": "Persistent key-value storage with TTL, lists, and hash support",
   "color": "text-red-500",
-  "size": { "width": 340, "height": 380 },
+  "size": { "width": 340, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Redis",
+      "placeholder": "e.g., Production Redis"
+    },
+    {
+      "key": "host",
+      "label": "Host",
+      "type": "text",
+      "placeholder": "localhost or redis-12345.cloud.redislabs.com",
+      "required": true
+    },
+    {
+      "key": "port",
+      "label": "Port",
+      "type": "text",
+      "default": "6379",
+      "placeholder": "6379"
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "type": "password",
+      "placeholder": "Redis password (leave blank if none)"
+    },
+    {
+      "key": "user",
+      "label": "User (optional)",
+      "type": "text",
+      "placeholder": "Leave blank for password-only auth"
+    },
+    {
+      "key": "database",
+      "label": "Database Number",
+      "type": "text",
+      "default": "0",
+      "placeholder": "0"
+    },
+    {
+      "key": "tls",
+      "label": "Use TLS/SSL",
+      "type": "select",
+      "options": [
+        { "label": "Yes (recommended for cloud)", "value": "true" },
+        { "label": "No", "value": "false" }
+      ],
+      "default": "true"
+    }
+  ],
+  "authAction": { "url": "/redis/auth", "method": "POST" },
   "action": {
     "url": "/redis/store",
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "credential_id",
+      "label": "Redis Connection",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select Redis account",
+      "required": true
+    },
     {
       "key": "operation",
       "label": "Operation",

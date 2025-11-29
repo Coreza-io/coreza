@@ -62,7 +62,20 @@ export class DataSourceExecutor implements INodeExecutor {
             userId: context?.userId || input.userId,
             workflowId: context?.workflowId || input.workflowId
           };
+          
+          const userId = context?.userId || input.userId;
+          const credentialId = resolvedParams.credential_id;
+          
+          if (!userId || !credentialId) {
+            return {
+              success: false,
+              error: "userId and credential_id are required for Redis operations"
+            };
+          }
+          
           result = await RedisService.execute({
+            userId,
+            credentialId,
             operation: resolvedParams.operation,
             scope: resolvedParams.scope,
             key: resolvedParams.key,

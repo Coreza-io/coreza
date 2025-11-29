@@ -1,6 +1,10 @@
-import { getRedis } from "../config/redis";
+import Redis from "ioredis";
 import logger from "../utils/logger";
 import { NodeResult } from "../nodes/types";
+import { CredentialManager } from "../utils/credentialManager";
+
+// Cache for user Redis connections
+const userRedisConnections = new Map<string, Redis>();
 
 interface RedisOperationParams {
   operation: string;
@@ -11,10 +15,54 @@ interface RedisOperationParams {
   ttl?: number;
   listStart?: number;
   listEnd?: number;
+  userId: string;
+  credentialId: string;
   context?: {
     userId?: string;
     workflowId?: string;
   };
+}
+
+// Helper to get or create user's Redis connection
+async function getUserRedis(userId: string, credentialId: string): Promise<Redis> {
+  const cacheKey = `${userId}:${credentialId}`;
+  
+  if (userRedisConnections.has(cacheKey)) {
+    const redis = userRedisConnections.get(cacheKey)!;
+    if (redis.status === 'ready' || redis.status === 'connecting') {
+      return redis;
+    }
+    userRedisConnections.delete(cacheKey);
+  }
+  
+  const { credentials } = await CredentialManager.getCredentials(userId, "redis", credentialId);
+  const creds = credentials?.client_json;
+  
+  if (!creds?.host) {
+    throw new Error("Invalid Redis credentials");
+  }
+  
+  const redis = new Redis({
+    host: creds.host,
+    port: parseInt(creds.port || "6379", 10),
+    password: creds.password || undefined,
+    username: creds.user || undefined,
+    db: parseInt(creds.database || "0", 10),
+    tls: creds.tls === "true" ? { rejectUnauthorized: false } : undefined,
+    maxRetriesPerRequest: 3,
+    connectTimeout: 10000,
+    lazyConnect: false,
+  });
+  
+  await new Promise((resolve, reject) => {
+    redis.once('ready', resolve);
+    redis.once('error', reject);
+    setTimeout(() => reject(new Error('Redis connection timeout')), 10000);
+  });
+  
+  userRedisConnections.set(cacheKey, redis);
+  logger.info({ userId, credentialId, host: creds.host }, 'User Redis connection established');
+  return redis;
 }
 
 export class RedisService {
@@ -32,8 +80,10 @@ export class RedisService {
 
   static async execute(params: RedisOperationParams): Promise<NodeResult> {
     try {
-      const { operation, scope = 'workflow', key, value, field, ttl = 0, listStart = 0, listEnd = -1, context = {} } = params;
-      const redis = getRedis();
+      const { userId, credentialId, operation, scope = 'workflow', key, value, field, ttl = 0, listStart = 0, listEnd = -1, context = {} } = params;
+      
+      // Get user's Redis connection
+      const redis = await getUserRedis(userId, credentialId);
       
       if (!key) {
         return { success: false, error: "key is required" };

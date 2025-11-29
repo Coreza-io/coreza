@@ -42,6 +42,8 @@ export class CredentialValidator {
       case "yahoo":
       case "yahoofinance":
         return this.validateYahooCredentials(credentials, result);
+      case "redis":
+        return this.validateRedisCredentials(credentials, result);
       default:
         result.warnings.push(`Unknown service type: ${serviceType}`);
         return result;
@@ -157,6 +159,34 @@ export class CredentialValidator {
       (typeof creds.api_key !== "string" || creds.api_key.length < 5)
     ) {
       result.warnings.push("Yahoo Finance API key format may be invalid");
+    }
+
+    return result;
+  }
+
+  private static validateRedisCredentials(
+    creds: any,
+    result: CredentialValidationResult
+  ): CredentialValidationResult {
+    if (!creds.host || typeof creds.host !== "string") {
+      result.isValid = false;
+      result.errors.push("Redis host is required");
+    }
+
+    if (creds.port) {
+      const port = parseInt(creds.port, 10);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        result.isValid = false;
+        result.errors.push("Redis port must be a valid number between 1 and 65535");
+      }
+    }
+
+    if (creds.database) {
+      const db = parseInt(creds.database, 10);
+      if (isNaN(db) || db < 0 || db > 15) {
+        result.isValid = false;
+        result.errors.push("Redis database must be a number between 0 and 15");
+      }
     }
 
     return result;

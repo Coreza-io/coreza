@@ -7,7 +7,10 @@
 import Redis from 'ioredis';
 import { createRedisPubSub } from '../config/redis';
 import logger from '../utils/logger';
-import { JobQueueManager } from './jobQueueManager';
+import { bullMqJobQueue } from './jobQueueManager';
+import { WorkflowJobData } from './queueInterface';
+import { v4 as uuidv4 } from 'uuid';
+import WorkflowCache from './WorkflowCache';
 
 interface Subscription {
   workflowId: string;
@@ -116,13 +119,25 @@ export class RedisPubSubSubscriber {
           pattern 
         }, 'Triggering workflow from Redis message');
 
-        // Queue workflow execution
-        await JobQueueManager.getInstance().addWorkflowJob({
+        // Fetch workflow definition from cache
+        const workflowDef = await WorkflowCache.getWorkflow(workflowId);
+        if (!workflowDef) {
+          logger.warn({ workflowId }, 'Workflow definition not found, skipping execution');
+          continue;
+        }
+
+        // Queue workflow execution with proper WorkflowJobData structure
+        const jobData: WorkflowJobData = {
+          runId: uuidv4(),
           workflowId,
           userId: subscription.userId,
-          initialInput: payload,
+          nodes: workflowDef.nodes || [],
+          edges: workflowDef.edges || [],
           trigger: 'redis_pubsub',
-        });
+          initialInput: payload,
+        };
+
+        await bullMqJobQueue.addWorkflowExecution(jobData);
       }
     } catch (error) {
       logger.error({ err: error, channel }, 'Error handling Redis message');

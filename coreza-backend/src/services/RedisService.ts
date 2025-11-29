@@ -411,6 +411,61 @@ export class RedisService {
           };
         }
 
+        case "hkeys": {
+          const fields = await redis.hkeys(key);
+          return { 
+            success: true, 
+            fields, 
+            count: fields.length, 
+            key,
+            message: `Found ${fields.length} field(s) in hash`
+          };
+        }
+
+        case "hvals": {
+          const values = await redis.hvals(key);
+          const parsed = values.map(v => {
+            try { return JSON.parse(v); } catch { return v; }
+          });
+          return { 
+            success: true, 
+            values: parsed, 
+            count: parsed.length, 
+            key,
+            message: `Found ${parsed.length} value(s) in hash`
+          };
+        }
+
+        case "hexists": {
+          const { hashField } = params;
+          if (!hashField) {
+            return { success: false, error: "Hash field is required for HEXISTS" };
+          }
+          const exists = await redis.hexists(key, hashField);
+          return { 
+            success: true, 
+            exists: exists === 1, 
+            field: hashField, 
+            key 
+          };
+        }
+
+        case "hincrby": {
+          const { hashField, incrementBy = 1 } = params;
+          if (!hashField) {
+            return { success: false, error: "Hash field is required for HINCRBY" };
+          }
+          const newValue = await redis.hincrby(key, hashField, incrementBy);
+          return { 
+            success: true, 
+            value: newValue, 
+            field: hashField, 
+            incrementBy,
+            key,
+            message: `Field '${hashField}' incremented by ${incrementBy}, new value: ${newValue}`
+          };
+        }
+
         default:
           return { success: false, error: `Unsupported operation: ${operation}` };
       }

@@ -95,6 +95,8 @@ export class DataSourceExecutor implements INodeExecutor {
             reverseOrder: resolvedParams.reverseOrder,
             minScore: resolvedParams.minScore,
             maxScore: resolvedParams.maxScore,
+            channelPattern: resolvedParams.channelPattern,
+            channels: resolvedParams.channels,
             workflowId: context?.workflowId || input.workflowId
           });
           break;

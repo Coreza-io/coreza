@@ -227,6 +227,8 @@ router.post("/store", async (req, res) => {
       reverseOrder,
       minScore,
       maxScore,
+      channelPattern,
+      channels,
       workflow_id,
     } = req.body;
 
@@ -266,6 +268,8 @@ router.post("/store", async (req, res) => {
       reverseOrder,
       minScore,
       maxScore,
+      channelPattern,
+      channels,
       workflowId: workflow_id,
     });
 

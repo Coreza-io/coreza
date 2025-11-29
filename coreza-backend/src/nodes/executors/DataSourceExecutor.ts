@@ -57,12 +57,6 @@ export class DataSourceExecutor implements INodeExecutor {
           );
           break;
         case "RedisStore":
-          // Build context for scoping
-          const scopeContext = {
-            userId: context?.userId || input.userId,
-            workflowId: context?.workflowId || input.workflowId
-          };
-          
           const userId = context?.userId || input.userId;
           const credentialId = resolvedParams.credential_id;
           
@@ -80,11 +74,15 @@ export class DataSourceExecutor implements INodeExecutor {
             scope: resolvedParams.scope,
             key: resolvedParams.key,
             value: resolvedParams.value,
-            field: resolvedParams.field,
+            keyType: resolvedParams.keyType,
+            pattern: resolvedParams.pattern,
+            channel: resolvedParams.channel,
+            hashField: resolvedParams.hashField,
+            setMember: resolvedParams.setMember,
+            popDirection: resolvedParams.popDirection,
+            pushDirection: resolvedParams.pushDirection,
             ttl: resolvedParams.ttl,
-            listStart: resolvedParams.listStart,
-            listEnd: resolvedParams.listEnd,
-            context: scopeContext
+            workflowId: context?.workflowId || input.workflowId
           });
           break;
         default:

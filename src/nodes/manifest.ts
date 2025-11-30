@@ -47,6 +47,7 @@ import WhatsAppDef from './WhatsApp.json'
 import RedisStoreDef from './RedisStore.json'
 import RedisTriggerDef from './RedisTrigger.json'
 import StoreDef from './Store.json'
+import WebhookTriggerDef from './WebhookTrigger.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -153,7 +154,8 @@ export const nodeManifest = {
   [WhatsAppDef.name]: WhatsAppDef,
   [RedisStoreDef.name]: RedisStoreDef,
   [RedisTriggerDef.name]: RedisTriggerDef,
-  [StoreDef.name]: StoreDef
+  [StoreDef.name]: StoreDef,
+  [WebhookTriggerDef.name]: WebhookTriggerDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

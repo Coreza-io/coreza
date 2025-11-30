@@ -632,18 +632,24 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       handleChange(varField.key, "");
                     });
                   }}
-                  disabled={loadingSelect[f.key]}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue
-                      placeholder={loadingSelect[f.key] ? "Loading workflows..." : f.placeholder || "Select workflow"}
+                      placeholder={
+                        loadingSelect[f.key]
+                          ? "Loading workflows..."
+                          : f.placeholder || "Select workflow"
+                      }
                     />
                   </SelectTrigger>
                   <SelectContent>
                     {(selectOptions[f.key] || []).length > 0 ? (
-                      selectOptions[f.key].map((workflow: any) => (
-                        <SelectItem key={workflow.id} value={workflow.id}>
-                          {workflow.name}
+                      (selectOptions[f.key] || []).map((workflow: any) => (
+                        <SelectItem 
+                          key={workflow.id || workflow.value} 
+                          value={workflow.id || workflow.value}
+                        >
+                          {workflow.name || workflow.label || workflow.id}
                         </SelectItem>
                       ))
                     ) : (

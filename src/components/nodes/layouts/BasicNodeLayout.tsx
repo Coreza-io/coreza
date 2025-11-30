@@ -372,6 +372,9 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         
         // Handle storeWorkflowsApi - workflows dropdown for Store node
         if (f.optionsSource === "storeWorkflowsApi") {
+          const options = selectOptions[f.key] || [];
+          const isLoading = loadingSelect[f.key];
+          
           return (
             <Select
               value={fieldState[f.key] || undefined}
@@ -385,23 +388,25 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                   handleChange(varField.key, "");
                 });
               }}
-              disabled={loadingSelect[f.key]}
             >
               <SelectTrigger className="w-full">
                 <SelectValue
-                  placeholder={loadingSelect[f.key] ? "Loading workflows..." : f.placeholder || "Select workflow"}
+                  placeholder={isLoading ? "Loading workflows..." : f.placeholder || "Select workflow"}
                 />
               </SelectTrigger>
               <SelectContent>
-                {(selectOptions[f.key] || []).length > 0 ? (
-                  selectOptions[f.key].map((workflow: any) => (
-                    <SelectItem key={workflow.id} value={workflow.id}>
-                      {workflow.name}
+                {options.length > 0 ? (
+                  options.map((workflow: any) => (
+                    <SelectItem 
+                      key={workflow.id || workflow.value} 
+                      value={workflow.id || workflow.value}
+                    >
+                      {workflow.name || workflow.label || workflow.id}
                     </SelectItem>
                   ))
                 ) : (
                   <SelectItem value="no-workflows" disabled>
-                    {loadingSelect[f.key] ? "Loading..." : "No workflows found"}
+                    {isLoading ? "Loading..." : "No workflows found"}
                   </SelectItem>
                 )}
               </SelectContent>

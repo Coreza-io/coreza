@@ -17,6 +17,10 @@
       "id": "output"
     }
   ],
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "webhookUrl",

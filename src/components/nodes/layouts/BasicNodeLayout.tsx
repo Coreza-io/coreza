@@ -26,6 +26,7 @@ interface BasicNodeLayoutProps extends BaseNodeRenderProps {
   workflowId?: string;
   nodeId?: string;
   handleChange: (key: string, value: any) => void;
+  handleFieldStateBatch: (updates: Record<string, any>) => void;
   handleSubmit: (e?: React.FormEvent) => void;
   handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
   getFieldPreview: (fieldKey: string) => string | null;
@@ -47,6 +48,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   workflowId,
   nodeId,
   handleChange,
+  handleFieldStateBatch,
   handleSubmit,
   handleDrop,
   getFieldPreview,
@@ -379,14 +381,18 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             <Select
               value={fieldState[f.key] || undefined}
               onValueChange={(val) => {
-                handleChange(f.key, val);
+                // Build batch update to avoid stale closure issue
+                const updates: Record<string, any> = { [f.key]: val };
+                
                 // Clear dependent variable fields when workflow changes
                 const variableFields = definition.fields?.filter(
                   (field: any) => field.optionsSource === "storeVariablesApi" && field.dependsOn === f.key
                 );
                 variableFields?.forEach((varField: any) => {
-                  handleChange(varField.key, "");
+                  updates[varField.key] = "";
                 });
+                
+                handleFieldStateBatch(updates);
               }}
             >
               <SelectTrigger className="w-full">

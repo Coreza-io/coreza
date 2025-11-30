@@ -370,6 +370,88 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           );
         }
         
+        // Handle storeWorkflowsApi - workflows dropdown for Store node
+        if (f.optionsSource === "storeWorkflowsApi") {
+          return (
+            <Select
+              value={fieldState[f.key]}
+              onValueChange={(val) => {
+                handleChange(f.key, val);
+                // Clear dependent variable fields when workflow changes
+                const variableFields = definition.fields?.filter(
+                  (field: any) => field.optionsSource === "storeVariablesApi" && field.dependsOn === f.key
+                );
+                variableFields?.forEach((varField: any) => {
+                  handleChange(varField.key, "");
+                });
+              }}
+              disabled={loadingSelect[f.key]}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={loadingSelect[f.key] ? "Loading workflows..." : f.placeholder || "Select workflow"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectOptions[f.key] || []).length > 0 ? (
+                  selectOptions[f.key].map((workflow: any) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-workflows" disabled>
+                    {loadingSelect[f.key] ? "Loading..." : "No workflows found"}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          );
+        }
+
+        // Handle storeVariablesApi - variables dropdown (depends on workflow selection)
+        if (f.optionsSource === "storeVariablesApi") {
+          const parentField = f.dependsOn;
+          const hasParentValue = !!fieldState[parentField];
+          
+          return (
+            <Select
+              value={fieldState[f.key]}
+              onValueChange={(val) => handleChange(f.key, val)}
+              disabled={loadingSelect[f.key] || !hasParentValue}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={
+                    !hasParentValue
+                      ? "Select workflow first"
+                      : loadingSelect[f.key]
+                      ? "Loading variables..."
+                      : f.placeholder || "Select variable"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectOptions[f.key] || []).length > 0 ? (
+                  selectOptions[f.key].map((variable: any) => (
+                    <SelectItem key={variable.id} value={variable.id}>
+                      {variable.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-variables" disabled>
+                    {!hasParentValue 
+                      ? "Select workflow first" 
+                      : loadingSelect[f.key] 
+                      ? "Loading..." 
+                      : "No variables found"}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          );
+        }
+        
         return (
           <Select
             value={fieldState[f.key]}

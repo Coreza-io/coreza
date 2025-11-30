@@ -31,7 +31,7 @@ export class WebhookService {
    * Generate callback URL for webhook
    */
   generateCallbackUrl(userId: string, workflowId: string, nodeId: string): string {
-    const baseUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+    const baseUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     return `${baseUrl}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`;
   }
 

@@ -618,8 +618,87 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 </div>
               )}
 
+              {/* --------- Store Workflows API Select Field --------- */}
+              {f.type === "select" && f.optionsSource === "storeWorkflowsApi" && (
+                <Select
+                  value={fieldState[f.key]}
+                  onValueChange={(val) => {
+                    handleChange(f.key, val);
+                    // Clear dependent variable fields when workflow changes
+                    const variableFields = definition.fields?.filter(
+                      (field: any) => field.optionsSource === "storeVariablesApi" && field.dependsOn === f.key
+                    );
+                    variableFields?.forEach((varField: any) => {
+                      handleChange(varField.key, "");
+                    });
+                  }}
+                  disabled={loadingSelect[f.key]}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={loadingSelect[f.key] ? "Loading workflows..." : f.placeholder || "Select workflow"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectOptions[f.key] || []).length > 0 ? (
+                      selectOptions[f.key].map((workflow: any) => (
+                        <SelectItem key={workflow.id} value={workflow.id}>
+                          {workflow.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-workflows" disabled>
+                        {loadingSelect[f.key] ? "Loading..." : "No workflows found"}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* --------- Store Variables API Select Field --------- */}
+              {f.type === "select" && f.optionsSource === "storeVariablesApi" && (
+                <Select
+                  value={fieldState[f.key]}
+                  onValueChange={(val) => handleChange(f.key, val)}
+                  disabled={loadingSelect[f.key] || !fieldState[f.dependsOn]}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        !fieldState[f.dependsOn]
+                          ? "Select workflow first"
+                          : loadingSelect[f.key]
+                          ? "Loading variables..."
+                          : f.placeholder || "Select variable"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectOptions[f.key] || []).length > 0 ? (
+                      selectOptions[f.key].map((variable: any) => (
+                        <SelectItem key={variable.id} value={variable.id}>
+                          {variable.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-variables" disabled>
+                        {!fieldState[f.dependsOn] 
+                          ? "Select workflow first" 
+                          : loadingSelect[f.key] 
+                          ? "Loading..." 
+                          : "No variables found"}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+
               {/* --------- Regular Select Field --------- */}
-              {f.type === "select" && f.optionsSource !== "credentialsApi" && f.optionsSource !== "dependentApi" && (
+              {f.type === "select" && 
+                f.optionsSource !== "credentialsApi" && 
+                f.optionsSource !== "dependentApi" && 
+                f.optionsSource !== "storeWorkflowsApi" && 
+                f.optionsSource !== "storeVariablesApi" && (
                 <Select
                   value={fieldState[f.key]}
                   onValueChange={(val) => {

@@ -269,7 +269,7 @@ export function useNodeExecution({
             status: "listening",
             message: "Waiting for webhook event...",
             startedAt: new Date().toISOString(),
-            callbackUrl: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`,
+            callbackUrl: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`,
             httpMethod: fieldState.httpMethod || 'POST',
             nodeId: nodeId,
           };

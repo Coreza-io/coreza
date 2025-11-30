@@ -172,7 +172,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     switch (f.type) {
       case "webhookUrl":
         // Generate the webhook URL
-        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
         const webhookUrl = workflowId && nodeId && user?.id
           ? `${baseUrl}/webhooks/incoming/${user.id}/${workflowId}/${nodeId}`
           : 'Webhook URL will be available after saving the workflow';

@@ -623,14 +623,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 <Select
                   value={fieldState[f.key] || undefined}
                   onValueChange={(val) => {
-                    handleChange(f.key, val);
+                    // Build batch update to avoid stale closure issue
+                    const updates: Record<string, any> = { [f.key]: val };
+                    
                     // Clear dependent variable fields when workflow changes
                     const variableFields = definition.fields?.filter(
                       (field: any) => field.optionsSource === "storeVariablesApi" && field.dependsOn === f.key
                     );
                     variableFields?.forEach((varField: any) => {
-                      handleChange(varField.key, "");
+                      updates[varField.key] = "";
                     });
+                    
+                    handleFieldStateBatch(updates);
                   }}
                 >
                   <SelectTrigger className="w-full">

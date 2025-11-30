@@ -78,6 +78,50 @@ export class TransformService {
         case 'lower':
           return { success: true, result: String(value).toLowerCase() };
 
+        case 'toJson': {
+          if (typeof value !== 'string') {
+            return { success: false, error: 'Value must be a string' };
+          }
+
+          let str = value.trim();
+
+          // Remove surrounding curly braces if present
+          if (str.startsWith('{') && str.endsWith('}')) {
+            str = str.slice(1, -1).trim();
+          }
+
+          // Split by comma to get key-value pairs
+          const pairs = str.split(',').map(p => p.trim()).filter(p => p);
+          const result: Record<string, any> = {};
+
+          for (const pair of pairs) {
+            // Split by first colon only (value might contain colons)
+            const colonIndex = pair.indexOf(':');
+            if (colonIndex === -1) {
+              continue; // Skip invalid pairs
+            }
+
+            const key = pair.substring(0, colonIndex).trim();
+            let val: any = pair.substring(colonIndex + 1).trim();
+
+            // Auto-detect and convert numeric values
+            if (!isNaN(Number(val)) && val !== '') {
+              val = Number(val);
+            } else if (val.toLowerCase() === 'true') {
+              val = true;
+            } else if (val.toLowerCase() === 'false') {
+              val = false;
+            } else if (val.toLowerCase() === 'null') {
+              val = null;
+            }
+            // Otherwise keep as string
+
+            result[key] = val;
+          }
+
+          return { success: true, result };
+        }
+
         default:
           return { success: false, error: `Unsupported operator: ${operator}` };
       }

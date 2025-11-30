@@ -39,7 +39,7 @@ export class WebhookService {
     nodeId: string,
     provider: string = "generic"
   ): string {
-    const baseUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    const baseUrl = process.env.BACKEND_URL || "https://localhost:8000";
     return `${baseUrl}/webhooks/${provider}/incoming/${userId}/${workflowId}/${nodeId}`;
   }
 
@@ -73,7 +73,7 @@ export class WebhookService {
 
     try {
       // Fetch credentials
-      const credentials = await CredentialManager.getCredentials(
+      const { credentials } = await CredentialManager.getCredentials(
         userId,
         provider,
         credentialId
@@ -82,17 +82,17 @@ export class WebhookService {
         return { success: false, message: "Credentials not found" };
       }
 
-      const botToken = credentials.bot_token;
-      if (!botToken) {
+      const creds = credentials?.client_json;
+      if (!creds) {
         return {
           success: false,
-          message: "Bot token not found in credentials",
+          message: "no credentials found",
         };
       }
 
       // Register webhook with provider
       const result = await providerConfig.externalApi.setWebhook({
-        botToken,
+        creds,
         callbackUrl,
         secretToken,
         allowedUpdates: updateTypes,

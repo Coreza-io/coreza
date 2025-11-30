@@ -50,7 +50,7 @@ router.post("/credentials", async (req, res) => {
       user_id,
       "telegram",
       credential_name,
-      bot_token
+      { bot_token }
     );
 
     logger.info(

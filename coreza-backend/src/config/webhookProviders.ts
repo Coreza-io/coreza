@@ -1,29 +1,29 @@
-import { createHmac } from 'crypto';
-import axios from 'axios';
+import { createHmac } from "crypto";
+import axios from "axios";
 
 export interface WebhookProviderConfig {
   id: string;
   name: string;
   incomingPath: string; // e.g., 'generic' or 'telegram'
-  
+
   verification: {
     headerName?: string; // e.g., 'x-telegram-bot-api-secret-token'
-    method: 'none' | 'direct' | 'hmac-sha256' | 'hmac-sha1';
+    method: "none" | "direct" | "hmac-sha256" | "hmac-sha1";
   };
-  
+
   externalApi?: {
     setWebhook?: (params: {
-      botToken: string;
+      creds: object;
       callbackUrl: string;
       secretToken?: string;
       allowedUpdates?: string[];
     }) => Promise<{ success: boolean; description?: string }>;
-    
+
     deleteWebhook?: (botToken: string) => Promise<boolean>;
-    
+
     getWebhookInfo?: (botToken: string) => Promise<any>;
   };
-  
+
   normalizePayload: (params: {
     method: string;
     headers: Record<string, any>;
@@ -34,19 +34,19 @@ export interface WebhookProviderConfig {
 
 export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
   generic: {
-    id: 'generic',
-    name: 'Generic Webhook',
-    incomingPath: 'generic',
+    id: "generic",
+    name: "Generic Webhook",
+    incomingPath: "generic",
     verification: {
-      method: 'hmac-sha256',
-      headerName: 'x-webhook-signature',
+      method: "hmac-sha256",
+      headerName: "x-webhook-signature",
     },
     normalizePayload: ({ method, headers, body, query }) => ({
       timestamp: new Date().toISOString(),
       method,
       headers: {
         ...headers,
-        authorization: headers.authorization ? '[REDACTED]' : undefined,
+        authorization: headers.authorization ? "[REDACTED]" : undefined,
       },
       body,
       query,
@@ -55,28 +55,34 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
   },
 
   telegram: {
-    id: 'telegram',
-    name: 'Telegram Bot',
-    incomingPath: 'telegram',
+    id: "telegram",
+    name: "Telegram Bot",
+    incomingPath: "telegram",
     verification: {
-      method: 'direct',
-      headerName: 'x-telegram-bot-api-secret-token',
+      method: "direct",
+      headerName: "x-telegram-bot-api-secret-token",
     },
     externalApi: {
-      setWebhook: async ({ botToken, callbackUrl, secretToken, allowedUpdates }) => {
+      setWebhook: async ({
+        creds,
+        callbackUrl,
+        secretToken,
+        allowedUpdates,
+      }) => {
         try {
+          const botToken = creds.bot_token;
           const url = `https://api.telegram.org/bot${botToken}/setWebhook`;
           const payload: any = {
             url: callbackUrl,
             allowed_updates: allowedUpdates || [],
           };
-          
+
           if (secretToken) {
             payload.secret_token = secretToken;
           }
-          
+
           const response = await axios.post(url, payload);
-          
+
           return {
             success: response.data.ok,
             description: response.data.description,
@@ -88,7 +94,7 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
           };
         }
       },
-      
+
       deleteWebhook: async (botToken: string) => {
         try {
           const url = `https://api.telegram.org/bot${botToken}/deleteWebhook`;
@@ -98,7 +104,7 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
           return false;
         }
       },
-      
+
       getWebhookInfo: async (botToken: string) => {
         try {
           const url = `https://api.telegram.org/bot${botToken}/getWebhookInfo`;
@@ -111,29 +117,41 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
     },
     normalizePayload: ({ body }) => {
       const update = body;
-      
+
       // Extract message type
-      const updateType = 
-        update.message ? 'message' :
-        update.edited_message ? 'edited_message' :
-        update.channel_post ? 'channel_post' :
-        update.edited_channel_post ? 'edited_channel_post' :
-        update.callback_query ? 'callback_query' :
-        update.inline_query ? 'inline_query' :
-        'unknown';
-      
+      const updateType = update.message
+        ? "message"
+        : update.edited_message
+        ? "edited_message"
+        : update.channel_post
+        ? "channel_post"
+        : update.edited_channel_post
+        ? "edited_channel_post"
+        : update.callback_query
+        ? "callback_query"
+        : update.inline_query
+        ? "inline_query"
+        : "unknown";
+
       // Extract chat and from
-      const messageObj = update.message || update.edited_message || update.channel_post || update.edited_channel_post;
+      const messageObj =
+        update.message ||
+        update.edited_message ||
+        update.channel_post ||
+        update.edited_channel_post;
       const chat = messageObj?.chat || update.callback_query?.message?.chat;
-      const from = messageObj?.from || update.callback_query?.from || update.inline_query?.from;
-      
+      const from =
+        messageObj?.from ||
+        update.callback_query?.from ||
+        update.inline_query?.from;
+
       // Extract text
-      const text = 
-        messageObj?.text || 
-        messageObj?.caption || 
-        update.callback_query?.data || 
+      const text =
+        messageObj?.text ||
+        messageObj?.caption ||
+        update.callback_query?.data ||
         update.inline_query?.query;
-      
+
       return {
         timestamp: new Date().toISOString(),
         updateType,
@@ -152,7 +170,9 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
   },
 };
 
-export function getProviderConfig(providerId: string): WebhookProviderConfig | null {
+export function getProviderConfig(
+  providerId: string
+): WebhookProviderConfig | null {
   return WEBHOOK_PROVIDERS[providerId] || null;
 }
 
@@ -162,34 +182,36 @@ export function verifyProviderSignature(
   headers: Record<string, any>,
   body: any
 ): boolean {
-  if (provider.verification.method === 'none') {
+  if (provider.verification.method === "none") {
     return true;
   }
-  
-  if (provider.verification.method === 'direct') {
-    const headerToken = headers[provider.verification.headerName || ''];
+
+  if (provider.verification.method === "direct") {
+    const headerToken = headers[provider.verification.headerName || ""];
     return secret === headerToken;
   }
-  
+
   // HMAC verification
-  const signatureHeader = headers[provider.verification.headerName || 'x-webhook-signature'];
+  const signatureHeader =
+    headers[provider.verification.headerName || "x-webhook-signature"];
   if (!signatureHeader) {
     return false;
   }
-  
+
   try {
-    const algorithm = provider.verification.method === 'hmac-sha1' ? 'sha1' : 'sha256';
-    const prefix = algorithm === 'sha1' ? 'sha1=' : 'sha256=';
-    
+    const algorithm =
+      provider.verification.method === "hmac-sha1" ? "sha1" : "sha256";
+    const prefix = algorithm === "sha1" ? "sha1=" : "sha256=";
+
     let expectedSignature = signatureHeader;
     if (signatureHeader.startsWith(prefix)) {
       expectedSignature = signatureHeader.slice(prefix.length);
     }
-    
+
     const hmac = createHmac(algorithm, secret);
     hmac.update(JSON.stringify(body));
-    const calculatedSignature = hmac.digest('hex');
-    
+    const calculatedSignature = hmac.digest("hex");
+
     return calculatedSignature === expectedSignature;
   } catch (error) {
     return false;

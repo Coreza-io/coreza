@@ -118,11 +118,9 @@ router.post("/:broker/:operation", async (req, res, next) => {
 
     const op = config.operations[operation];
     if (!op) {
-      return res
-        .status(400)
-        .json({
-          error: `Unsupported operation: ${operation} for broker: ${brokerKey}`,
-        });
+      return res.status(400).json({
+        error: `Unsupported operation: ${operation} for broker: ${brokerKey}`,
+      });
     }
 
     // Parse symbol if it's a JSON array string
@@ -146,7 +144,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     let creds = credentials?.client_json;
 
     // 2. Handle OAuth token refresh for any OAuth broker
-    if (config.authType === 'oauth') {
+    if (config.authType === "oauth") {
       creds = await refreshOAuthTokenIfNeeded(
         brokerKey,
         creds,

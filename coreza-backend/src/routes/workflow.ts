@@ -515,17 +515,21 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
     const alpacaNewsNode = workflow.nodes.find(
       (n: any) => n.name === "AlpacaNews"
     );
+    const webhookTriggerNode = workflow.nodes.find(
+      (n: any) => n.name === "WebhookTrigger"
+    );
 
-    if (!schedulerNode && !alpacaNewsNode) {
+    if (!schedulerNode && !alpacaNewsNode && !webhookTriggerNode) {
       throw createError(
-        "No trigger node (Scheduler or AlpacaNews) found in workflow",
+        "No trigger node (Scheduler, AlpacaNews, or WebhookTrigger) found in workflow",
         400
       );
     }
 
-    if (schedulerNode && alpacaNewsNode) {
+    const triggerCount = [schedulerNode, alpacaNewsNode, webhookTriggerNode].filter(Boolean).length;
+    if (triggerCount > 1) {
       throw createError(
-        "Workflow can only have one trigger type: either Scheduler or AlpacaNews, not both",
+        "Workflow can only have one trigger type: either Scheduler, AlpacaNews, or WebhookTrigger",
         400
       );
     }
@@ -609,10 +613,21 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           console.log(`📤 [Workflow Route] Published subscribe control message for alpaca_news:`, symbolArray);
           newsSubscription = { symbols: symbolArray };
         }
+
+        // Handle WebhookTrigger activation
+        if (webhookTriggerNode) {
+          // For WebhookTrigger - no external service to call
+          // The WebhookService.handleIncoming() will check is_active and route to BullMQ
+          console.log(`🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`);
+        }
       } else {
         // Deactivate - unschedule and unsubscribe
         if (schedulerNode) {
           await workflowScheduler.unscheduleWorkflow(workflowId);
+        }
+
+        if (webhookTriggerNode) {
+          console.log(`🪝 [Workflow Route] WebhookTrigger deactivated for workflow ${workflowId}`);
         }
 
         if (alpacaNewsNode) {
@@ -679,6 +694,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           parts.push(
             `subscribed to news for ${newsSubscription?.symbols.join(", ")}`
           );
+        if (webhookTriggerNode) parts.push("webhook listener activated");
         message = `Workflow ${parts.join(" and ")}`;
       } else {
         message = "Workflow deactivated";

@@ -36,7 +36,7 @@ export class WebhookService {
   }
 
   /**
-   * Handle incoming webhook request
+   * Handle incoming webhook request with dual execution paths
    */
   async handleIncoming(params: {
     userId: string;
@@ -78,7 +78,7 @@ export class WebhookService {
       }
 
       // Extract node configuration
-      const nodeConfig = node.data?.values || {};
+      const nodeConfig = node.data?.values || node.values || {};
 
       // Apply filters
       if (!this.applyFilters(nodeConfig, method, headers, body)) {
@@ -92,39 +92,69 @@ export class WebhookService {
       // Normalize payload
       const normalizedPayload = this.normalizePayload(method, headers, body, query);
 
-      // Create workflow run
-      const { data: run, error: runError } = await supabase
-        .from('workflow_runs')
-        .insert({
-          workflow_id: workflowId,
-          status: 'queued',
-          initiated_by: userId,
-        })
-        .select()
-        .single();
+      if (workflow.is_active) {
+        // MODE 2: Backend execution via BullMQ (Activated workflow)
+        logger.info(
+          { workflowId, nodeId, mode: 'backend' },
+          'Webhook triggering backend execution for active workflow'
+        );
 
-      if (runError) {
-        logger.error({ err: runError }, 'Failed to create workflow run');
-        return;
+        // Create workflow run
+        const { data: run, error: runError } = await supabase
+          .from('workflow_runs')
+          .insert({
+            workflow_id: workflowId,
+            status: 'queued',
+            initiated_by: userId,
+          })
+          .select()
+          .single();
+
+        if (runError) {
+          logger.error({ err: runError }, 'Failed to create workflow run');
+          return;
+        }
+
+        // Queue workflow execution with webhook payload as initial input
+        await bullMqJobQueue.addWorkflowExecution({
+          runId: run.id,
+          workflowId,
+          userId,
+          nodes: workflow.nodes,
+          edges: workflow.edges,
+          trigger: 'webhook',
+          initialInput: {
+            webhookPayload: normalizedPayload,
+          },
+        });
+
+        logger.info(
+          { workflowId, nodeId, runId: run.id },
+          'Workflow queued for backend execution'
+        );
+      } else {
+        // MODE 1: Push to frontend via WebSocket (Manual run)
+        logger.info(
+          { workflowId, nodeId, mode: 'frontend' },
+          'Webhook pushing to frontend for manual run'
+        );
+
+        const { getRedis } = await import('../config/redis');
+        const redis = getRedis();
+        
+        await redis.publish(`ws:user:${userId}`, JSON.stringify({
+          type: 'webhook_event',
+          workflowId,
+          nodeId,
+          payload: normalizedPayload,
+          timestamp: new Date().toISOString()
+        }));
+
+        logger.info(
+          { workflowId, nodeId, userId },
+          'Webhook data pushed to frontend via WebSocket'
+        );
       }
-
-      // Queue workflow execution with webhook payload as initial input
-      await bullMqJobQueue.addWorkflowExecution({
-        runId: run.id,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: 'webhook',
-        initialInput: {
-          webhookPayload: normalizedPayload,
-        },
-      });
-
-      logger.info(
-        { workflowId, nodeId, runId: run.id },
-        'Workflow queued for execution'
-      );
     } catch (error) {
       logger.error({ err: error }, 'Error handling incoming webhook');
       // Still return successfully to prevent external retries

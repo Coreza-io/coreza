@@ -69,6 +69,22 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
           
           console.log('📨 [ExecutionStore] Received WebSocket message:', message);
 
+          // Handle webhook events (manual run mode)
+          if (message.type === 'webhook_event' && message.payload) {
+            const { nodeId, payload } = message;
+            
+            if (nodeId && storeRef.current) {
+              storeRef.current.setNodeData(nodeId, {
+                output: {
+                  webhookPayload: payload,
+                  receivedAt: message.timestamp
+                }
+              });
+              setUpdateVersion(v => v + 1); // Trigger React re-render
+              console.log('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
+            }
+          }
+
           // Handle streaming market data updates (new Redis Pub/Sub format)
           if (message.type === 'market_data' && message.payload) {
             const { nodeId, data } = message.payload;

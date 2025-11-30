@@ -36,7 +36,8 @@
       "type": "select",
       "options": [],
       "required": true,
-      "dynamicOptions": {
+      "dependsOn": "dataType",
+      "conditionalOptions": {
         "string": [
           { "id": "set", "name": "Set Value" },
           { "id": "get", "name": "Get Value" },

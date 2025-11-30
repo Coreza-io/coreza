@@ -223,7 +223,7 @@ const calculateSmartPath = (
   nodes: any[],
   sourceNodeId: string,
   targetNodeId: string
-): string => {
+): { path: string; midX: number; midY: number } => {
   const turnOffset = 40; // Fixed n8n-style turn distance
   const radius = 20; // Larger corner radius for smooth n8n-style curves
   const nodePadding = 20;
@@ -265,7 +265,7 @@ const calculateSmartPath = (
         : Math.max(sourceBottom, targetBottom) + nodePadding;
       
       // Build 5-segment orthogonal path with rounded corners
-      return buildOrthogonalPath(
+      const path = buildOrthogonalPath(
         sourceX, sourceY,      // Start point
         exitX, sourceY,        // After first horizontal
         exitX, routeY,         // After first vertical
@@ -274,9 +274,15 @@ const calculateSmartPath = (
         targetX, targetY,      // End point
         radius
       );
+      
+      // Calculate midpoint on the horizontal routing segment
+      const midX = (exitX + entryX) / 2;
+      const midY = routeY;
+      
+      return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth n8n-style curve
-      return getBezierPath({
+      const path = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -284,6 +290,12 @@ const calculateSmartPath = (
         targetY,
         targetPosition,
       })[0];
+      
+      // Use simple average for forward connections
+      const midX = (sourceX + targetX) / 2;
+      const midY = (sourceY + targetY) / 2;
+      
+      return { path, midX, midY };
     }
   }
   
@@ -305,7 +317,7 @@ const calculateSmartPath = (
         ? Math.min(targetTop, sourceTop) - nodePadding
         : Math.max(sourceBottom, targetBottom) + nodePadding;
       
-      return buildOrthogonalPath(
+      const path = buildOrthogonalPath(
         sourceX, sourceY,
         exitX, sourceY,
         exitX, routeY,
@@ -314,9 +326,15 @@ const calculateSmartPath = (
         targetX, targetY,
         radius
       );
+      
+      // Calculate midpoint on the horizontal routing segment
+      const midX = (exitX + entryX) / 2;
+      const midY = routeY;
+      
+      return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth n8n-style curve
-      return getBezierPath({
+      const path = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -324,6 +342,12 @@ const calculateSmartPath = (
         targetY,
         targetPosition,
       })[0];
+      
+      // Use simple average for forward connections
+      const midX = (sourceX + targetX) / 2;
+      const midY = (sourceY + targetY) / 2;
+      
+      return { path, midX, midY };
     }
   }
 
@@ -345,7 +369,7 @@ const calculateSmartPath = (
         ? Math.min(targetLeft, sourceLeft) - nodePadding
         : Math.max(sourceRight, targetRight) + nodePadding;
       
-      return buildOrthogonalPath(
+      const path = buildOrthogonalPath(
         sourceX, sourceY,
         sourceX, exitY,
         routeX, exitY,
@@ -354,9 +378,15 @@ const calculateSmartPath = (
         targetX, targetY,
         radius
       );
+      
+      // Calculate midpoint on the vertical routing segment
+      const midX = routeX;
+      const midY = (exitY + entryY) / 2;
+      
+      return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth n8n-style curve
-      return getBezierPath({
+      const path = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -364,6 +394,12 @@ const calculateSmartPath = (
         targetY,
         targetPosition,
       })[0];
+      
+      // Use simple average for forward connections
+      const midX = (sourceX + targetX) / 2;
+      const midY = (sourceY + targetY) / 2;
+      
+      return { path, midX, midY };
     }
   }
 
@@ -385,7 +421,7 @@ const calculateSmartPath = (
         ? Math.min(targetLeft, sourceLeft) - nodePadding
         : Math.max(sourceRight, targetRight) + nodePadding;
       
-      return buildOrthogonalPath(
+      const path = buildOrthogonalPath(
         sourceX, sourceY,
         sourceX, exitY,
         routeX, exitY,
@@ -394,9 +430,15 @@ const calculateSmartPath = (
         targetX, targetY,
         radius
       );
+      
+      // Calculate midpoint on the vertical routing segment
+      const midX = routeX;
+      const midY = (exitY + entryY) / 2;
+      
+      return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth n8n-style curve
-      return getBezierPath({
+      const path = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
@@ -404,11 +446,17 @@ const calculateSmartPath = (
         targetY,
         targetPosition,
       })[0];
+      
+      // Use simple average for forward connections
+      const midX = (sourceX + targetX) / 2;
+      const midY = (sourceY + targetY) / 2;
+      
+      return { path, midX, midY };
     }
   }
 
   // Default fallback - use bezier for smooth curves
-  return getBezierPath({
+  const path = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -416,6 +464,12 @@ const calculateSmartPath = (
     targetY,
     targetPosition,
   })[0];
+  
+  // Use simple average for default case
+  const midX = (sourceX + targetX) / 2;
+  const midY = (sourceY + targetY) / 2;
+  
+  return { path, midX, midY };
 };
 
 export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
@@ -492,7 +546,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const extendedTargetY = targetPosition === "top" ? targetY - extensionDistance :
     targetPosition === "bottom" ? targetY + extensionDistance : targetY;
 
-  const edgePath = calculateSmartPath(
+  const { path: edgePath, midX, midY } = calculateSmartPath(
     extendedSourceX,
     extendedSourceY,
     extendedTargetX,
@@ -503,9 +557,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
     source,
     target
   );
-
-  const midX = (sourceX + targetX) / 2;
-  const midY = (sourceY + targetY) / 2;
 
   return (
     <g
@@ -827,7 +878,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
     }
   } else {
     // Regular edge path - use smart path calculation to route around nodes
-    pathD = calculateSmartPath(
+    const result = calculateSmartPath(
       sourceX,
       sourceY,
       targetX,
@@ -838,8 +889,9 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
       source,
       target
     );
-    midX = (sourceX + targetX) / 2;
-    midY = (sourceY + targetY) / 2;
+    pathD = result.path;
+    midX = result.midX;
+    midY = result.midY;
   }
 
   const [hovered, setHovered] = useState(false);

@@ -6,7 +6,7 @@ import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 
-const BACKEND_URL = import.meta.env.VITE_API_URL as string;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 // Generate array signature for loop tracking
 const makeArraySignature = (arr: any[]): string => {

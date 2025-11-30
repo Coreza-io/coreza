@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
 interface SchwabAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -73,7 +75,7 @@ export function SchwabAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/schwab/generate-auth-url`,
+        `${BACKEND_URL}/oauth/schwab/generate-auth-url`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,7 +121,7 @@ export function SchwabAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/schwab/exchange-token`,
+        `${BACKEND_URL}/oauth/schwab/exchange-token`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,0 +1,73 @@
+{
+  "name": "TelegramTrigger",
+  "type": "trigger",
+  "category": "Trigger",
+  "subCategory": "telegram",
+  "icon": "telegram",
+  "description": "Receive messages and updates from Telegram bots",
+  "color": "text-blue-400",
+  "size": {
+    "width": 360,
+    "height": 420
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "executionMode": "webhook_listening",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "Telegram Bot" },
+    { "key": "bot_token", "label": "Bot Token", "type": "password", "placeholder": "123456789:ABCdefGHI...", "required": true }
+  ],
+  "authAction": { "url": "/telegram/credentials", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Bot Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "required": true
+    },
+    {
+      "key": "updateTypes",
+      "label": "Update Types",
+      "type": "multiselect",
+      "options": [
+        { "label": "All Updates", "value": "all" },
+        { "label": "Messages", "value": "message" },
+        { "label": "Edited Messages", "value": "edited_message" },
+        { "label": "Channel Posts", "value": "channel_post" },
+        { "label": "Callback Queries", "value": "callback_query" },
+        { "label": "Inline Queries", "value": "inline_query" }
+      ],
+      "default": ["message"],
+      "required": false
+    },
+    {
+      "key": "secretToken",
+      "label": "Secret Token (Optional)",
+      "type": "password",
+      "placeholder": "For webhook verification (1-256 characters)",
+      "required": false
+    }
+  ],
+  "output": {
+    "update_id": "Telegram update ID",
+    "updateType": "Type of update (message, callback_query, etc.)",
+    "message": {
+      "chat": { "id": "Chat ID", "type": "Chat type" },
+      "from": { "id": "User ID", "username": "Username" },
+      "text": "Message text"
+    },
+    "chat": "Chat object with id and type",
+    "from": "User who sent the message",
+    "text": "Extracted text from message or query",
+    "callback_query": "Callback query data (if button pressed)",
+    "inline_query": "Inline query data (if inline query)",
+    "raw": "Complete Telegram Update object"
+  }
+}

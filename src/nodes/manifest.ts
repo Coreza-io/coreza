@@ -48,6 +48,7 @@ import RedisStoreDef from './RedisStore.json'
 import RedisTriggerDef from './RedisTrigger.json'
 import StoreDef from './Store.json'
 import WebhookTriggerDef from './WebhookTrigger.json'
+import TelegramTriggerDef from './TelegramTrigger.json'
 
 // Node configuration interface
 export interface NodeConfig {
@@ -155,7 +156,8 @@ export const nodeManifest = {
   [RedisStoreDef.name]: RedisStoreDef,
   [RedisTriggerDef.name]: RedisTriggerDef,
   [StoreDef.name]: StoreDef,
-  [WebhookTriggerDef.name]: WebhookTriggerDef
+  [WebhookTriggerDef.name]: WebhookTriggerDef,
+  [TelegramTriggerDef.name]: TelegramTriggerDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

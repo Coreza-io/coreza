@@ -263,15 +263,51 @@ export function useNodeExecution({
 
         let outputData: any;
 
-        // Handle WebhookTrigger - no backend call, just enter listening mode
+        // Handle webhook triggers - register ALL through backend
         if (definition?.executionMode === "webhook_listening") {
+          // Derive provider from node name (TelegramTrigger -> telegram, WebhookTrigger -> generic)
+          const provider = definition.name === "WebhookTrigger" 
+            ? "generic" 
+            : definition.name.replace('Trigger', '').toLowerCase();
+          
+          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+          
+          // Register webhook through backend (for ALL webhook types)
+          const registerResponse = await fetch(`${backendUrl}/webhooks/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider,
+              user_id: userId,
+              workflow_id: workflowId,
+              node_id: nodeId,
+              credential_id: fieldState.credential_id,
+              update_types: fieldState.updateTypes || fieldState.filterEvents,
+              secret_token: fieldState.secretToken || fieldState.secret,
+            }),
+          });
+          
+          if (!registerResponse.ok) {
+            const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));
+            throw new Error(errorData.error || `Failed to register ${provider} webhook`);
+          }
+          
+          const registerResult = await registerResponse.json();
+          
+          if (!registerResult.success) {
+            throw new Error(registerResult.error || `Failed to register ${provider} webhook`);
+          }
+          
+          console.log(`✅ Registered ${provider} webhook:`, registerResult.callback_url);
+          
           const listeningOutput = {
             status: "listening",
-            message: "Waiting for webhook event...",
+            message: registerResult.message || "Waiting for webhook event...",
             startedAt: new Date().toISOString(),
-            callbackUrl: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`,
+            callbackUrl: registerResult.callback_url,
             httpMethod: fieldState.httpMethod || 'POST',
             nodeId: nodeId,
+            provider,
           };
 
           setLastOutput(listeningOutput);

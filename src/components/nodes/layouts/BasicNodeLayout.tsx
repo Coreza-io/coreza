@@ -23,6 +23,8 @@ interface BasicNodeLayoutProps extends BaseNodeRenderProps {
   selectOptions: Record<string, any[]>;
   showAuth: boolean;
   selectedInputData: any;
+  workflowId?: string;
+  nodeId?: string;
   handleChange: (key: string, value: any) => void;
   handleSubmit: (e?: React.FormEvent) => void;
   handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string) => void;
@@ -42,6 +44,8 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
+  workflowId,
+  nodeId,
   handleChange,
   handleSubmit,
   handleDrop,
@@ -166,6 +170,42 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     };
 
     switch (f.type) {
+      case "webhookUrl":
+        // Generate the webhook URL
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+        const webhookUrl = workflowId && nodeId && user?.id
+          ? `${baseUrl}/webhooks/incoming/${user.id}/${workflowId}/${nodeId}`
+          : 'Webhook URL will be available after saving the workflow';
+        
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-1 text-xs font-semibold bg-primary/10 text-primary rounded">
+                {fieldState.httpMethod || 'POST'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input 
+                value={webhookUrl}
+                readOnly
+                className="text-xs font-mono bg-muted"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (webhookUrl && !webhookUrl.includes('will be available')) {
+                    navigator.clipboard.writeText(webhookUrl);
+                  }
+                }}
+                disabled={!webhookUrl || webhookUrl.includes('will be available')}
+              >
+                Copy
+              </Button>
+            </div>
+          </div>
+        );
+      
       case "text":
         return (
           <div

@@ -190,16 +190,15 @@ export class WebhookService {
       }
     }
 
-    // Filter by method if configured
-    if (nodeConfig.filterMethods && Array.isArray(nodeConfig.filterMethods)) {
-      if (!nodeConfig.filterMethods.includes(method)) {
-        logger.info({ method, allowed: nodeConfig.filterMethods }, 'Method not allowed');
-        return false;
-      }
+    // Filter by HTTP method (single selection or ALL)
+    const allowedMethod = nodeConfig.httpMethod || 'ALL';
+    if (allowedMethod !== 'ALL' && method.toUpperCase() !== allowedMethod) {
+      logger.info({ method, allowed: allowedMethod }, 'HTTP method not allowed');
+      return false;
     }
 
     // Filter by event type header if configured
-    if (nodeConfig.filterEvents && Array.isArray(nodeConfig.filterEvents)) {
+    if (nodeConfig.filterEvents && Array.isArray(nodeConfig.filterEvents) && nodeConfig.filterEvents.length > 0) {
       const eventType = headers['x-event-type'] || headers['x-github-event'];
       if (eventType && !nodeConfig.filterEvents.includes(eventType)) {
         logger.info({ eventType, allowed: nodeConfig.filterEvents }, 'Event type not allowed');

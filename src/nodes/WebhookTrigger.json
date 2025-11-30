@@ -8,7 +8,7 @@
   "color": "text-purple-500",
   "size": {
     "width": 360,
-    "height": 380
+    "height": 340
   },
   "handles": [
     {
@@ -19,33 +19,39 @@
   ],
   "fields": [
     {
+      "key": "webhookUrl",
+      "label": "Webhook URL",
+      "type": "webhookUrl",
+      "required": false
+    },
+    {
+      "key": "httpMethod",
+      "label": "HTTP Method",
+      "type": "select",
+      "options": [
+        { "label": "All Methods", "value": "ALL" },
+        { "label": "GET", "value": "GET" },
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" },
+        { "label": "HEAD", "value": "HEAD" }
+      ],
+      "default": "POST",
+      "required": false
+    },
+    {
       "key": "secret",
       "label": "Webhook Secret (Optional)",
       "type": "password",
-      "placeholder": "Enter secret for HMAC signature verification",
-      "required": false,
-      "default": ""
-    },
-    {
-      "key": "filterMethods",
-      "label": "Filter HTTP Methods",
-      "type": "multiselect",
-      "options": [
-        { "label": "POST", "value": "POST" },
-        { "label": "GET", "value": "GET" },
-        { "label": "PUT", "value": "PUT" },
-        { "label": "PATCH", "value": "PATCH" },
-        { "label": "DELETE", "value": "DELETE" }
-      ],
-      "placeholder": "Select HTTP methods to accept (empty = all)",
-      "required": false,
-      "default": []
+      "placeholder": "For HMAC signature verification",
+      "required": false
     },
     {
       "key": "filterEvents",
       "label": "Filter Event Types",
       "type": "tags",
-      "placeholder": "Enter event types (e.g., push, pull_request, issue)",
+      "placeholder": "e.g., push, pull_request",
       "required": false,
       "default": []
     }

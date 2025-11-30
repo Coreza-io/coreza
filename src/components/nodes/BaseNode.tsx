@@ -46,6 +46,8 @@ export interface BaseNodeRenderProps {
   selectedInputData: any;
   displayedData: any;
   isPinned: boolean;
+  workflowId?: string;
+  nodeId?: string;
   // Node name editing
   isEditing: boolean;
   editingName: string;
@@ -187,6 +189,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     selectedInputData,
     displayedData: outputHook.displayedData,
     isPinned: outputHook.isPinned,
+    workflowId,
+    nodeId: nodeId || undefined,
     // Node name editing
     isEditing: renamingHook.isEditing,
     editingName: renamingHook.editingName,

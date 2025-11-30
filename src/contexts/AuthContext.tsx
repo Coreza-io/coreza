@@ -181,7 +181,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearTimeout(inactivityTimerRef.current);
       inactivityTimerRef.current = null;
     }
-    await supabase.auth.signOut();
+    
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Sign out error (will clear local state anyway):', error);
+    }
+    
+    // ALWAYS clear local state, even if server signOut fails
+    // This handles the case where session is already expired on server
+    setSession(null);
+    setUser(null);
+    
+    // Force clear Supabase localStorage tokens to ensure clean state
+    localStorage.removeItem('sb-tiitofotheupylvxivge-auth-token');
   };
 
   const value = {

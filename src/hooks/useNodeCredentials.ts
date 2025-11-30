@@ -25,7 +25,7 @@ export function useNodeCredentials({
   definition,
   fieldState,
 }: UseNodeCredentialsProps): UseNodeCredentialsReturn {
-  const { user, session } = useAuth();
+  const { user, session, loading } = useAuth();
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>(
     {}
   );
@@ -45,9 +45,9 @@ export function useNodeCredentials({
           ""
         ).toLowerCase();
 
-        // Check if userId exists and is valid
-        if (!userId) {
-          console.log("No authenticated user, skipping credentials fetch");
+        // Check if userId AND access_token exist
+        if (!userId || !session?.access_token) {
+          console.log("No authenticated user or access token, skipping credentials fetch");
           setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
           return;
         }
@@ -236,8 +236,11 @@ export function useNodeCredentials({
     [user?.id, session?.access_token]
   );
 
-  // Load credentials and static options on mount
+  // Load credentials and static options on mount (wait for auth to be ready)
   useEffect(() => {
+    // Don't fetch until auth is resolved
+    if (loading) return;
+    
     (definition?.fields || []).forEach(async (f: any) => {
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
         fetchCredentials(f.key);
@@ -249,7 +252,7 @@ export function useNodeCredentials({
         setSelectOptions((opts) => ({ ...opts, [f.key]: f.options! }));
       }
     });
-  }, [definition?.fields, definition?.name, fetchCredentials, fetchStoreWorkflows]);
+  }, [definition?.fields, definition?.name, fetchCredentials, fetchStoreWorkflows, loading]);
 
   // Load dependent API options on mount or when parent field changes
   useEffect(() => {

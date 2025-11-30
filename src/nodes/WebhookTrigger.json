@@ -38,7 +38,7 @@
         { "label": "DELETE", "value": "DELETE" },
         { "label": "HEAD", "value": "HEAD" }
       ],
-      "default": "POST",
+      "default": "ALL",
       "required": false
     },
     {

@@ -33,7 +33,8 @@
         { "label": "Substring", "value": "substring" },
         { "label": "Trim", "value": "trim" },
         { "label": "To Upper", "value": "upper" },
-        { "label": "To Lower", "value": "lower" }
+        { "label": "To Lower", "value": "lower" },
+        { "label": "Parse to JSON", "value": "toJson" }
       ],
       "default": "len",
       "required": true

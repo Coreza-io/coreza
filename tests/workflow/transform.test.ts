@@ -29,4 +29,31 @@ describe('Transform node and API', () => {
     expect(result.success).toBe(true);
     expect(result.data.result).toBe(3);
   });
+
+  test('POST /comparator/transform parses key-value string to JSON', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/comparator', comparatorRoutes);
+
+    const res = await request(app)
+      .post('/comparator/transform')
+      .send({ value: 'ticker:AAPL, RSI:87', operator: 'toJson' })
+      .expect(200);
+    
+    expect(res.body).toHaveProperty('result');
+    expect(res.body.result).toEqual({ ticker: 'AAPL', RSI: 87 });
+  });
+
+  test('toJson handles curly braces format', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/comparator', comparatorRoutes);
+
+    const res = await request(app)
+      .post('/comparator/transform')
+      .send({ value: '{ticker:AAPL, RSI:87}', operator: 'toJson' })
+      .expect(200);
+    
+    expect(res.body.result).toEqual({ ticker: 'AAPL', RSI: 87 });
+  });
 });

@@ -8,7 +8,7 @@
   "subCategory": "Store",
   "description": "Save and retrieve variables using Coreza's built-in storage. No external Redis required.",
   "color": "text-purple-500",
-  "size": { "width": 320, "height": 280 },
+  "size": { "width": 340, "height": 340 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -29,12 +29,31 @@
       "required": true
     },
     {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow",
+      "required": true,
+      "displayOptions": { "show": { "operation": ["get", "delete", "list"] } }
+    },
+    {
+      "key": "variableNameSelect",
+      "label": "Variable Name",
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select variable",
+      "required": true,
+      "displayOptions": { "show": { "operation": ["get", "delete"] } }
+    },
+    {
       "key": "variableName",
       "label": "Variable Name",
       "type": "text",
       "placeholder": "e.g., scanner_tickers",
       "required": true,
-      "displayOptions": { "show": { "operation": ["set", "get", "delete"] } }
+      "displayOptions": { "show": { "operation": ["set"] } }
     },
     {
       "key": "value",

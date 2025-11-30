@@ -263,6 +263,98 @@ export function useNodeExecution({
 
         let outputData: any;
 
+        // Handle WebhookTrigger - no backend call, just enter listening mode
+        if (definition?.executionMode === "webhook_listening") {
+          const listeningOutput = {
+            status: "listening",
+            message: "Waiting for webhook event...",
+            startedAt: new Date().toISOString(),
+            callbackUrl: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`,
+            httpMethod: fieldState.httpMethod || 'POST',
+            nodeId: nodeId,
+          };
+
+          setLastOutput(listeningOutput);
+          executionStore.setNodeData(nodeId!, { output: listeningOutput });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: listeningOutput, isListening: true } }
+                : n
+            )
+          );
+
+          // Wait for webhook event via WebSocket (handled by ExecutionStoreContext)
+          const timeout = 300000; // 5 minutes
+          const startTime = Date.now();
+
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const checkInterval = setInterval(() => {
+                const nodeData = executionStore.getNodeData(nodeId!);
+                const output = nodeData?.output as any;
+
+                // Check if we received webhook data
+                if (output?.webhookPayload) {
+                  clearInterval(checkInterval);
+                  console.log("✅ Received webhook event:", output);
+                  outputData = output;
+                  resolve();
+                  return;
+                }
+
+                // Check timeout
+                if (Date.now() - startTime > timeout) {
+                  clearInterval(checkInterval);
+                  reject(new Error("Timeout waiting for webhook event after 5 minutes"));
+                }
+              }, 100);
+            });
+
+            // Clear listening state
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isListening: false } }
+                  : n
+              )
+            );
+          } catch (error: any) {
+            console.error("Webhook listening error:", error);
+            setError(error.message || "Failed to receive webhook");
+            outputData = {
+              ...listeningOutput,
+              status: "error",
+              message: error.message,
+            };
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, isListening: false } }
+                  : n
+              )
+            );
+          }
+
+          // Continue with normal output handling
+          setLastOutput(outputData);
+          const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+          data.output = finalOutput;
+          executionStore.setNodeData(nodeId!, {
+            input: effectiveInput,
+            output: finalOutput,
+          });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: finalOutput } }
+                : n
+            )
+          );
+          setIsSending(false);
+          return;
+        }
+
         // Handle Loop nodes specially
         if (definition?.name === "Loop") {
           const batchSize = parseInt(fieldState.batchSize) || 1;

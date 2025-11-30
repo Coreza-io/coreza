@@ -17,10 +17,7 @@
       "id": "output"
     }
   ],
-  "action": {
-    "url": "/webhooks/register",
-    "method": "POST"
-  },
+  "executionMode": "webhook_listening",
   "fields": [
     {
       "key": "webhookUrl",

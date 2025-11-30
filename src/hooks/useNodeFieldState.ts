@@ -32,12 +32,22 @@ export function useNodeFieldState({
 
     // Load defined fields from node definition
     const definedFields = Object.fromEntries(
-      definition.fields.map((f: any) => [
-        f.key,
-        f.type === "repeater"
-          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
-          : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
-      ])
+      definition.fields.map((f: any) => {
+        const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
+        
+        // For select fields, ensure we use default if saved value is empty/undefined
+        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+          return [f.key, f.default || ""];
+        }
+        
+        // For repeater fields
+        if (f.type === "repeater") {
+          return [f.key, savedValue || f.default || []];
+        }
+        
+        // For all other fields
+        return [f.key, savedValue ?? f.default ?? ""];
+      })
     );
 
     // Preserve additional dynamic fields (like logicalOps) from saved data
@@ -59,12 +69,22 @@ export function useNodeFieldState({
 
     // Load defined fields from node definition
     const definedFields = Object.fromEntries(
-      definition.fields.map((f: any) => [
-        f.key,
-        f.type === "repeater"
-          ? data.fieldState?.[f.key] || data.values?.[f.key] || f.default || []
-          : data.fieldState?.[f.key] || data.values?.[f.key] || f.default || "",
-      ])
+      definition.fields.map((f: any) => {
+        const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
+        
+        // For select fields, ensure we use default if saved value is empty/undefined
+        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+          return [f.key, f.default || ""];
+        }
+        
+        // For repeater fields
+        if (f.type === "repeater") {
+          return [f.key, savedValue || f.default || []];
+        }
+        
+        // For all other fields
+        return [f.key, savedValue ?? f.default ?? ""];
+      })
     );
 
     // Preserve additional dynamic fields (like logicalOps) from saved data

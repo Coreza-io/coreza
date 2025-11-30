@@ -621,7 +621,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               {/* --------- Store Workflows API Select Field --------- */}
               {f.type === "select" && f.optionsSource === "storeWorkflowsApi" && (
                 <Select
-                  value={fieldState[f.key]}
+                  value={fieldState[f.key] || undefined}
                   onValueChange={(val) => {
                     handleChange(f.key, val);
                     // Clear dependent variable fields when workflow changes
@@ -658,7 +658,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               {/* --------- Store Variables API Select Field --------- */}
               {f.type === "select" && f.optionsSource === "storeVariablesApi" && (
                 <Select
-                  value={fieldState[f.key]}
+                  value={fieldState[f.key] || undefined}
                   onValueChange={(val) => handleChange(f.key, val)}
                   disabled={loadingSelect[f.key] || !fieldState[f.dependsOn]}
                 >

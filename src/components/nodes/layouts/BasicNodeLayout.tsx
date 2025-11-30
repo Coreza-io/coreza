@@ -374,7 +374,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         if (f.optionsSource === "storeWorkflowsApi") {
           return (
             <Select
-              value={fieldState[f.key]}
+              value={fieldState[f.key] || undefined}
               onValueChange={(val) => {
                 handleChange(f.key, val);
                 // Clear dependent variable fields when workflow changes
@@ -416,7 +416,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           
           return (
             <Select
-              value={fieldState[f.key]}
+              value={fieldState[f.key] || undefined}
               onValueChange={(val) => handleChange(f.key, val)}
               disabled={loadingSelect[f.key] || !hasParentValue}
             >

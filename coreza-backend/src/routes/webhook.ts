@@ -48,7 +48,7 @@ router.post('/register', async (req, res) => {
 /**
  * Receive incoming webhook events (called by external services)
  */
-router.post('/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
+router.all('/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
   const { userId, workflowId, nodeId } = req.params;
 
   try {

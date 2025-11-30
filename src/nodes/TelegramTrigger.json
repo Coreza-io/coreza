@@ -1,6 +1,7 @@
 {
   "name": "TelegramTrigger",
   "type": "trigger",
+  "node_type": "trigger",
   "category": "Trigger",
   "subCategory": "telegram",
   "icon": "telegram",
@@ -20,8 +21,19 @@
   "executionMode": "webhook_listening",
   "auth": "GenericAuthModal",
   "authFields": [
-    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "Telegram Bot" },
-    { "key": "bot_token", "label": "Bot Token", "type": "password", "placeholder": "123456789:ABCdefGHI...", "required": true }
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Telegram Bot"
+    },
+    {
+      "key": "bot_token",
+      "label": "Bot Token",
+      "type": "password",
+      "placeholder": "123456789:ABCdefGHI...",
+      "required": true
+    }
   ],
   "authAction": { "url": "/telegram/credentials", "method": "POST" },
   "fields": [

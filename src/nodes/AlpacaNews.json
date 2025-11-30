@@ -1,7 +1,7 @@
 {
   "name": "AlpacaNews",
   "def": "Alpaca News",
-  "node_type": "main",
+  "node_type": "trigger",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
   "subCategory": "Alpaca",

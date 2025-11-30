@@ -26,7 +26,7 @@ import gmailRoutes from './routes/gmail';
 import oauthRoutes from './routes/oauth';
 import finnhubRoutes from './routes/finnhub';
 import whatsappRoutes from './routes/whatsapp';
-import webhookRoutes from './routes/webhooks';
+import webhookRoutes from './routes/webhook';
 import workflowRoutes from './routes/workflow';
 import yahoofinanceRoutes from './routes/yahoofinance';
 import httpRoutes from './routes/http';

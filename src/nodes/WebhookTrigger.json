@@ -1,0 +1,63 @@
+{
+  "name": "WebhookTrigger",
+  "type": "trigger",
+  "category": "Trigger",
+  "subCategory": "webhook",
+  "icon": "webhook",
+  "description": "Receive HTTP webhooks from external services",
+  "color": "text-purple-500",
+  "size": {
+    "width": 360,
+    "height": 380
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "fields": [
+    {
+      "key": "secret",
+      "label": "Webhook Secret (Optional)",
+      "type": "password",
+      "placeholder": "Enter secret for HMAC signature verification",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "filterMethods",
+      "label": "Filter HTTP Methods",
+      "type": "multiselect",
+      "options": [
+        { "label": "POST", "value": "POST" },
+        { "label": "GET", "value": "GET" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" }
+      ],
+      "placeholder": "Select HTTP methods to accept (empty = all)",
+      "required": false,
+      "default": []
+    },
+    {
+      "key": "filterEvents",
+      "label": "Filter Event Types",
+      "type": "tags",
+      "placeholder": "Enter event types (e.g., push, pull_request, issue)",
+      "required": false,
+      "default": []
+    }
+  ],
+  "output": {
+    "webhookPayload": {
+      "timestamp": "ISO 8601 timestamp",
+      "method": "HTTP method",
+      "headers": "Request headers (sensitive ones redacted)",
+      "body": "Request body",
+      "query": "Query parameters",
+      "raw": "Complete raw request data"
+    }
+  }
+}

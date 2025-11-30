@@ -55,6 +55,15 @@ export class TriggerExecutor implements INodeExecutor {
           );
           break;
 
+        case "WebhookTrigger":
+          result = await this.executeWebhookTrigger(
+            userId,
+            workflowId,
+            nodeId,
+            resolvedParams
+          );
+          break;
+
         default:
           return {
             success: false,
@@ -152,6 +161,48 @@ export class TriggerExecutor implements INodeExecutor {
       return {
         success: false,
         error: `Redis trigger failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
+
+  private async executeWebhookTrigger(
+    userId: string,
+    workflowId: string,
+    nodeId: string,
+    params: any
+  ): Promise<NodeResult> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
+
+      const response = await axios.post(
+        `${backendUrl}/webhooks/register`,
+        {
+          user_id: userId,
+          workflow_id: workflowId,
+          node_id: nodeId,
+        }
+      );
+
+      if (!response.data.success) {
+        return {
+          success: false,
+          error: response.data.error || "Webhook registration failed",
+        };
+      }
+
+      return {
+        success: true,
+        message: "Webhook endpoint is listening",
+        callback_url: response.data.callback_url,
+        status: "listening",
+      };
+    } catch (error) {
+      logger.error({ err: error }, "Webhook trigger execution failed");
+      return {
+        success: false,
+        error: `Webhook trigger failed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       };

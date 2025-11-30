@@ -1,8 +1,8 @@
-import { createHmac } from 'crypto';
 import { supabase } from '../config/supabase';
 import { bullMqJobQueue } from './jobQueueManager';
-import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../utils/logger';
+import { getProviderConfig, verifyProviderSignature } from '../config/webhookProviders';
+import { CredentialManager } from '../utils/credentialManager';
 
 const logger = createLogger('WebhookService');
 
@@ -30,15 +30,108 @@ export class WebhookService {
   /**
    * Generate callback URL for webhook
    */
-  generateCallbackUrl(userId: string, workflowId: string, nodeId: string): string {
+  generateCallbackUrl(userId: string, workflowId: string, nodeId: string, provider: string = 'generic'): string {
     const baseUrl = process.env.BACKEND_URL || 'http://localhost:8000';
-    return `${baseUrl}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`;
+    return `${baseUrl}/webhooks/${provider}/incoming/${userId}/${workflowId}/${nodeId}`;
+  }
+
+  /**
+   * Register webhook with external provider (if applicable)
+   */
+  async registerWithProvider(params: {
+    provider: string;
+    userId: string;
+    credentialId: string;
+    callbackUrl: string;
+    updateTypes?: string[];
+    secretToken?: string;
+  }): Promise<{ success: boolean; message?: string; webhookInfo?: any }> {
+    const { provider, userId, credentialId, callbackUrl, updateTypes, secretToken } = params;
+    
+    const providerConfig = getProviderConfig(provider);
+    if (!providerConfig || !providerConfig.externalApi?.setWebhook) {
+      return { success: true, message: 'Provider does not require external registration' };
+    }
+    
+    try {
+      // Fetch credentials
+      const credentials = await CredentialManager.getCredentials(userId, provider, credentialId);
+      if (!credentials) {
+        return { success: false, message: 'Credentials not found' };
+      }
+      
+      const botToken = credentials.bot_token;
+      if (!botToken) {
+        return { success: false, message: 'Bot token not found in credentials' };
+      }
+      
+      // Register webhook with provider
+      const result = await providerConfig.externalApi.setWebhook({
+        botToken,
+        callbackUrl,
+        secretToken,
+        allowedUpdates: updateTypes,
+      });
+      
+      return {
+        success: result.success,
+        message: result.description || (result.success ? 'Webhook registered successfully' : 'Failed to register webhook'),
+      };
+    } catch (error) {
+      logger.error({ err: error, provider }, 'Error registering webhook with provider');
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Unregister webhook from external provider
+   */
+  async unregisterFromProvider(params: {
+    provider: string;
+    userId: string;
+    credentialId: string;
+  }): Promise<{ success: boolean; message?: string }> {
+    const { provider, userId, credentialId } = params;
+    
+    const providerConfig = getProviderConfig(provider);
+    if (!providerConfig || !providerConfig.externalApi?.deleteWebhook) {
+      return { success: true, message: 'Provider does not require external unregistration' };
+    }
+    
+    try {
+      const credentials = await CredentialManager.getCredentials(userId, provider, credentialId);
+      if (!credentials) {
+        return { success: false, message: 'Credentials not found' };
+      }
+      
+      const botToken = credentials.bot_token;
+      if (!botToken) {
+        return { success: false, message: 'Bot token not found in credentials' };
+      }
+      
+      const success = await providerConfig.externalApi.deleteWebhook(botToken);
+      
+      return {
+        success,
+        message: success ? 'Webhook unregistered successfully' : 'Failed to unregister webhook',
+      };
+    } catch (error) {
+      logger.error({ err: error, provider }, 'Error unregistering webhook from provider');
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   /**
    * Handle incoming webhook request with dual execution paths
    */
   async handleIncoming(params: {
+    provider?: string;
     userId: string;
     workflowId: string;
     nodeId: string;
@@ -47,10 +140,10 @@ export class WebhookService {
     body: any;
     query: Record<string, any>;
   }): Promise<void> {
-    const { userId, workflowId, nodeId, method, headers, body, query } = params;
+    const { provider = 'generic', userId, workflowId, nodeId, method, headers, body, query } = params;
 
     logger.info(
-      { workflowId, nodeId, method },
+      { workflowId, nodeId, method, provider },
       'Incoming webhook request'
     );
 
@@ -80,17 +173,17 @@ export class WebhookService {
       // Extract node configuration
       const nodeConfig = node.data?.values || node.values || {};
 
-      // Apply filters
-      if (!this.applyFilters(nodeConfig, method, headers, body)) {
+      // Apply filters (provider-aware)
+      if (!this.applyFilters(nodeConfig, method, headers, body, provider)) {
         logger.info(
-          { workflowId, nodeId },
+          { workflowId, nodeId, provider },
           'Webhook filtered out by node configuration'
         );
         return;
       }
 
-      // Normalize payload
-      const normalizedPayload = this.normalizePayload(method, headers, body, query);
+      // Normalize payload (provider-aware)
+      const normalizedPayload = this.normalizePayload(method, headers, body, query, provider);
 
       if (workflow.is_active) {
         // MODE 2: Backend execution via BullMQ (Activated workflow)
@@ -162,39 +255,34 @@ export class WebhookService {
   }
 
   /**
-   * Apply filters based on node configuration
+   * Apply filters based on node configuration (provider-aware)
    */
   private applyFilters(
     nodeConfig: any,
     method: string,
     headers: Record<string, any>,
-    body: any
+    body: any,
+    provider: string = 'generic'
   ): boolean {
-    // Verify signature if secret is configured
-    if (nodeConfig.secret) {
-      const signature = headers['x-webhook-signature'] || headers['x-hub-signature-256'];
-      if (!signature) {
-        logger.warn('Missing signature header');
-        return false;
-      }
-
-      const isValid = this.verifySignature(
-        nodeConfig.secret,
-        JSON.stringify(body),
-        signature
-      );
-
+    const providerConfig = getProviderConfig(provider);
+    
+    // Verify signature/token if secret is configured
+    const secret = nodeConfig.secret || nodeConfig.secretToken;
+    if (secret && providerConfig) {
+      const isValid = verifyProviderSignature(providerConfig, secret, headers, body);
       if (!isValid) {
-        logger.warn('Invalid signature');
+        logger.warn({ provider }, 'Invalid signature/token');
         return false;
       }
     }
 
-    // Filter by HTTP method (single selection or ALL)
-    const allowedMethod = nodeConfig.httpMethod || 'ALL';
-    if (allowedMethod !== 'ALL' && method.toUpperCase() !== allowedMethod) {
-      logger.info({ method, allowed: allowedMethod }, 'HTTP method not allowed');
-      return false;
+    // Filter by HTTP method (single selection or ALL) - only for generic webhooks
+    if (provider === 'generic') {
+      const allowedMethod = nodeConfig.httpMethod || 'ALL';
+      if (allowedMethod !== 'ALL' && method.toUpperCase() !== allowedMethod) {
+        logger.info({ method, allowed: allowedMethod }, 'HTTP method not allowed');
+        return false;
+      }
     }
 
     // Filter by event type header if configured
@@ -206,64 +294,54 @@ export class WebhookService {
       }
     }
 
+    // Filter by Telegram update types if configured
+    if (provider === 'telegram' && nodeConfig.updateTypes && Array.isArray(nodeConfig.updateTypes)) {
+      if (!nodeConfig.updateTypes.includes('all')) {
+        const updateType = 
+          body.message ? 'message' :
+          body.edited_message ? 'edited_message' :
+          body.channel_post ? 'channel_post' :
+          body.callback_query ? 'callback_query' :
+          body.inline_query ? 'inline_query' :
+          'unknown';
+        
+        if (!nodeConfig.updateTypes.includes(updateType)) {
+          logger.info({ updateType, allowed: nodeConfig.updateTypes }, 'Update type not allowed');
+          return false;
+        }
+      }
+    }
+
     return true;
   }
 
   /**
-   * Verify HMAC signature
-   */
-  private verifySignature(secret: string, payload: string, signature: string): boolean {
-    try {
-      // Support multiple signature formats
-      const sha256Prefix = 'sha256=';
-      const sha1Prefix = 'sha1=';
-
-      let algorithm = 'sha256';
-      let expectedSignature = signature;
-
-      if (signature.startsWith(sha256Prefix)) {
-        expectedSignature = signature.slice(sha256Prefix.length);
-      } else if (signature.startsWith(sha1Prefix)) {
-        algorithm = 'sha1';
-        expectedSignature = signature.slice(sha1Prefix.length);
-      }
-
-      const hmac = createHmac(algorithm, secret);
-      hmac.update(payload);
-      const calculatedSignature = hmac.digest('hex');
-
-      return calculatedSignature === expectedSignature;
-    } catch (error) {
-      logger.error({ err: error }, 'Error verifying signature');
-      return false;
-    }
-  }
-
-  /**
-   * Normalize webhook payload to standard format
+   * Normalize webhook payload to standard format (provider-aware)
    */
   private normalizePayload(
     method: string,
     headers: Record<string, any>,
     body: any,
-    query: Record<string, any>
-  ): NormalizedWebhookPayload {
+    query: Record<string, any>,
+    provider: string = 'generic'
+  ): any {
+    const providerConfig = getProviderConfig(provider);
+    
+    if (providerConfig) {
+      return providerConfig.normalizePayload({ method, headers, body, query });
+    }
+    
+    // Fallback to generic normalization
     return {
       timestamp: new Date().toISOString(),
       method,
       headers: {
         ...headers,
-        // Remove sensitive headers
         authorization: headers.authorization ? '[REDACTED]' : undefined,
       },
       body,
       query,
-      raw: {
-        method,
-        headers,
-        body,
-        query,
-      },
+      raw: { method, headers, body, query },
     };
   }
 

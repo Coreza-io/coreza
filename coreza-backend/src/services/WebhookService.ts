@@ -39,7 +39,7 @@ export class WebhookService {
     nodeId: string,
     provider: string = "generic"
   ): string {
-    const baseUrl = process.env.BACKEND_URL || "https://localhost:8000";
+    const baseUrl = "https://e477f577a8ae.ngrok-free.app";
     return `${baseUrl}/webhooks/${provider}/incoming/${userId}/${workflowId}/${nodeId}`;
   }
 

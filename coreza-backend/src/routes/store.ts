@@ -96,7 +96,9 @@ router.post('/execute', async (req, res) => {
       dataType,
       operation, 
       variableName,
+      variableNameManual,
       variableNameSelect,
+      variableSource,
       sourceWorkflowId,
       value,
       hashField,
@@ -122,8 +124,14 @@ router.post('/execute', async (req, res) => {
     }
 
     const redis = getRedis();
-    const targetWorkflowId = sourceWorkflowId || workflow_id;
-    const varName = variableNameSelect || variableName;
+    
+    // Determine variable name: manual entry, dropdown select, or write operation
+    const varName = variableNameManual || variableNameSelect || variableName;
+    
+    // Determine workflow: for manual source, use current workflow; for store source, use selected workflow
+    const targetWorkflowId = (variableSource === 'store' && sourceWorkflowId) 
+      ? sourceWorkflowId 
+      : workflow_id;
 
     // Helper to apply TTL
     const applyTTL = async (key: string) => {

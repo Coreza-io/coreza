@@ -93,6 +93,35 @@
       }
     },
     {
+      "key": "variableSource",
+      "label": "Variable Source",
+      "type": "select",
+      "options": [
+        { "id": "manual", "name": "Manual Entry (Current Workflow)" },
+        { "id": "store", "name": "From Store (Another Workflow)" }
+      ],
+      "default": "manual",
+      "required": true,
+      "displayOptions": { 
+        "show": { 
+          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
+        } 
+      }
+    },
+    {
+      "key": "variableNameManual",
+      "label": "Variable Name",
+      "type": "text",
+      "placeholder": "e.g., scanner_tickers",
+      "required": true,
+      "displayOptions": { 
+        "show": { 
+          "variableSource": ["manual"],
+          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
+        } 
+      }
+    },
+    {
       "key": "sourceWorkflowId",
       "label": "Source Workflow",
       "type": "select",
@@ -101,7 +130,8 @@
       "required": true,
       "displayOptions": { 
         "show": { 
-          "operation": ["get", "delete", "lrange", "llen", "lindex", "lpop", "rpop", "hget", "hgetall", "hkeys", "hvals", "hexists", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "keys", "exists", "ttl"] 
+          "variableSource": ["store"],
+          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
         } 
       }
     },
@@ -115,7 +145,8 @@
       "required": true,
       "displayOptions": { 
         "show": { 
-          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "lset", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
+          "variableSource": ["store"],
+          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
         } 
       }
     },

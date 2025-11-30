@@ -84,16 +84,28 @@ router.get('/value', async (req, res) => {
 // POST /store/execute - Execute store operations for the current workflow
 router.post('/execute', async (req, res) => {
   try {
-    const { user_id, workflow_id, operation, variableName, value, ttl } = req.body;
+    const { 
+      user_id, 
+      workflow_id,        // Current workflow (for "set")
+      operation, 
+      variableName,       // For "set" operation
+      variableNameSelect, // For "get/delete" operations (from dropdown)
+      sourceWorkflowId,   // For "get/delete/list" operations
+      value, 
+      ttl 
+    } = req.body;
 
-    if (!user_id || !workflow_id) {
-      return res.status(400).json({ error: 'user_id and workflow_id are required' });
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
     }
 
     const redis = getRedis();
 
     switch (operation) {
       case 'set': {
+        if (!workflow_id) {
+          return res.status(400).json({ error: 'workflow_id is required for set' });
+        }
         if (!variableName) {
           return res.status(400).json({ error: 'variableName is required for set' });
         }
@@ -116,39 +128,51 @@ router.post('/execute', async (req, res) => {
       }
 
       case 'get': {
-        if (!variableName) {
-          return res.status(400).json({ error: 'variableName is required for get' });
+        const targetWorkflowId = sourceWorkflowId || workflow_id;
+        const targetVariable = variableNameSelect || variableName;
+        
+        if (!targetWorkflowId || !targetVariable) {
+          return res.status(400).json({ error: 'sourceWorkflowId and variableNameSelect are required for get' });
         }
 
-        const key = buildStoreKey(user_id, workflow_id, variableName);
+        const key = buildStoreKey(user_id, targetWorkflowId, targetVariable);
         const rawValue = await redis.get(key);
 
         return res.json({
           success: true,
           operation: 'get',
-          variableName,
+          variableName: targetVariable,
           value: parseStoredValue(rawValue),
         });
       }
 
       case 'delete': {
-        if (!variableName) {
-          return res.status(400).json({ error: 'variableName is required for delete' });
+        const targetWorkflowId = sourceWorkflowId || workflow_id;
+        const targetVariable = variableNameSelect || variableName;
+        
+        if (!targetWorkflowId || !targetVariable) {
+          return res.status(400).json({ error: 'sourceWorkflowId and variableNameSelect are required for delete' });
         }
 
-        const key = buildStoreKey(user_id, workflow_id, variableName);
+        const key = buildStoreKey(user_id, targetWorkflowId, targetVariable);
         await redis.del(key);
 
         return res.json({
           success: true,
           operation: 'delete',
-          variableName,
+          variableName: targetVariable,
           message: 'Variable deleted',
         });
       }
 
       case 'list': {
-        const pattern = buildStoreKey(user_id, workflow_id, '*');
+        const targetWorkflowId = sourceWorkflowId || workflow_id;
+        
+        if (!targetWorkflowId) {
+          return res.status(400).json({ error: 'sourceWorkflowId is required for list' });
+        }
+
+        const pattern = buildStoreKey(user_id, targetWorkflowId, '*');
         const keys = await redis.keys(pattern);
 
         return res.json({

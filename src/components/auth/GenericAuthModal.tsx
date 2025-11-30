@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import type { NodeConfig } from "@/nodes/manifest";
 
-const BACKEND_URL = import.meta.env.VITE_API_URL as string;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 interface GenericAuthModalProps {
   definition: NodeConfig;

@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
 interface GmailAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -75,7 +77,7 @@ export function GmailAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/gmail/generate-auth-url`,
+        `${BACKEND_URL}/oauth/gmail/generate-auth-url`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -125,7 +127,7 @@ export function GmailAuthModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/oauth/gmail/exchange-token`,
+        `${BACKEND_URL}/oauth/gmail/exchange-token`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

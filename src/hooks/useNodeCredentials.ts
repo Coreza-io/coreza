@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 
-const BACKEND_URL = import.meta.env.VITE_API_URL as string;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 interface UseNodeCredentialsProps {
   definition: any;

@@ -44,6 +44,8 @@ export class CredentialValidator {
         return this.validateYahooCredentials(credentials, result);
       case "redis":
         return this.validateRedisCredentials(credentials, result);
+      case "telegram":
+        return this.validateTelegramCredentials(credentials, result);
       default:
         result.warnings.push(`Unknown service type: ${serviceType}`);
         return result;
@@ -192,6 +194,26 @@ export class CredentialValidator {
     return result;
   }
 
+  private static validateTelegramCredentials(
+    creds: any,
+    result: CredentialValidationResult
+  ): CredentialValidationResult {
+    if (!creds.bot_token) {
+      result.isValid = false;
+      result.errors.push("Telegram bot token is required");
+    } else if (typeof creds.bot_token !== "string") {
+      result.isValid = false;
+      result.errors.push("Telegram bot token must be a string");
+    } else if (!/^\d+:[A-Za-z0-9_-]+$/.test(creds.bot_token)) {
+      // Telegram bot tokens follow format: <bot_id>:<token>
+      // e.g., "8581185452:AAHYQtntJ_s6C4RlalJu7LE71rUbPTNfTow"
+      result.isValid = false;
+      result.errors.push("Invalid Telegram bot token format (expected: <number>:<alphanumeric>)");
+    }
+
+    return result;
+  }
+
   /**
    * Sanitize credentials for logging (remove sensitive data)
    */
@@ -209,6 +231,7 @@ export class CredentialValidator {
       "client_secret",
       "password",
       "private_key",
+      "bot_token",
     ];
 
     sensitiveFields.forEach((field) => {

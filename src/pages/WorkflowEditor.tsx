@@ -53,8 +53,7 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 
 const API_BASE_URL =
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  "http://localhost:8000";
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 const resolveWebSocketUrl = (): string | null => {
   const explicit = import.meta.env.VITE_WS_URL as string | undefined;

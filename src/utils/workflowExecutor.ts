@@ -75,7 +75,7 @@ export class WorkflowExecutor {
   private isStreamingNode(nodeId: string): boolean {
     const node = this.context.nodes.find((n) => n.id === nodeId);
     const definition = node?.data?.definition as any;
-    return definition?.executionMode === "streaming";
+    return definition?.executionMode === "streaming" || definition?.executionMode === "webhook_listening";
   }
 
   private areDependenciesSatisfied(
@@ -438,10 +438,22 @@ export class WorkflowExecutor {
             output
           );
           resolve(output);
-        } else {
-          // Poll every 100ms
-          setTimeout(checkData, 100);
+          return;
         }
+
+        // Check for webhook data (TelegramTrigger, WebhookTrigger, etc.)
+        if (output?.webhookPayload) {
+          clearTimeout(timeoutId);
+          console.log(
+            `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
+            output
+          );
+          resolve(output);
+          return;
+        }
+
+        // Poll every 100ms
+        setTimeout(checkData, 100);
       };
 
       // Start polling after a brief delay to allow subscription to complete

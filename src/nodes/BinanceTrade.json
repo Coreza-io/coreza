@@ -104,14 +104,14 @@
     {
       "key": "quantity",
       "label": "Quantity",
-      "type": "number",
+      "type": "text",
       "placeholder": "Order quantity",
       "required": true
     },
     {
       "key": "price",
       "label": "Price",
-      "type": "number",
+      "type": "text",
       "placeholder": "Limit price",
       "displayOptions": {
         "show": {
@@ -122,11 +122,16 @@
     {
       "key": "stopPrice",
       "label": "Stop Price",
-      "type": "number",
+      "type": "text",
       "placeholder": "Stop price",
       "displayOptions": {
         "show": {
-          "type": ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"]
+          "type": [
+            "STOP_LOSS",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT",
+            "TAKE_PROFIT_LIMIT"
+          ]
         }
       }
     },
@@ -149,7 +154,7 @@
     {
       "key": "icebergQty",
       "label": "Iceberg Quantity",
-      "type": "number",
+      "type": "text",
       "placeholder": "Optional iceberg quantity",
       "displayOptions": {
         "show": {

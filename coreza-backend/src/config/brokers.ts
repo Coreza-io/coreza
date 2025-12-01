@@ -26,6 +26,30 @@ export interface BrokerConfig {
 }
 
 // ============================================
+// SHARED HELPERS
+// ============================================
+
+function signBinanceParams(
+  params: Record<string, any>,
+  secretKey: string
+): Record<string, any> {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      searchParams.append(key, String(value));
+    }
+  });
+
+  const signature = crypto
+    .createHmac('sha256', secretKey)
+    .update(searchParams.toString())
+    .digest('hex');
+
+  return { ...params, signature };
+}
+
+// ============================================
 // DATE CONVERSION UTILITY
 // ============================================
 
@@ -726,13 +750,12 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           const assetType = input?.asset_type || 'spot';
           const timestamp = getBinanceTimestamp(environment, assetType);
           const recvWindow = 5000;
-          const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
-          const signature = crypto
-            .createHmac('sha256', creds.secret_key)
-            .update(queryString)
-            .digest('hex');
-          
-          return { timestamp, recvWindow, signature };
+          const params = {
+            recvWindow,
+            timestamp,
+          };
+
+          return signBinanceParams(params, creds.secret_key);
         },
       },
       get_positions: {
@@ -743,21 +766,16 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           const assetType = input?.asset_type || 'spot';
           const timestamp = getBinanceTimestamp(environment, assetType);
           const recvWindow = 5000;
-          let queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
-          
+          const params: any = {};
+
           if (input.symbol) {
-            queryString = `symbol=${input.symbol}&${queryString}`;
+            params.symbol = input.symbol;
           }
-          
-          const signature = crypto
-            .createHmac('sha256', creds.secret_key)
-            .update(queryString)
-            .digest('hex');
-          
-          const params: any = { timestamp, recvWindow, signature };
-          if (input.symbol) params.symbol = input.symbol;
-          
-          return params;
+
+          params.recvWindow = recvWindow;
+          params.timestamp = timestamp;
+
+          return signBinanceParams(params, creds.secret_key);
         },
       },
       get_orders: {
@@ -772,23 +790,13 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           const timestamp = getBinanceTimestamp(environment, assetType);
           const recvWindow = 5000;
           const params: any = { recvWindow, timestamp };
-          
+
           if (input.symbol) params.symbol = input.symbol;
           if (input.limit) params.limit = input.limit;
           if (input.startTime) params.startTime = new Date(input.startTime).getTime();
           if (input.endTime) params.endTime = new Date(input.endTime).getTime();
-          
-          const queryString = Object.entries(params)
-            .map(([key, val]) => `${key}=${val}`)
-            .join('&');
-          
-          const signature = crypto
-            .createHmac('sha256', creds.secret_key)
-            .update(queryString)
-            .digest('hex');
-          
-          params.signature = signature;
-          return params;
+
+          return signBinanceParams(params, creds.secret_key);
         },
       },
       cancel_order: {
@@ -811,18 +819,8 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             recvWindow,
             timestamp,
           };
-          
-          const queryString = Object.entries(params)
-            .map(([key, val]) => `${key}=${val}`)
-            .join('&');
-          
-          const signature = crypto
-            .createHmac('sha256', creds.secret_key)
-            .update(queryString)
-            .digest('hex');
-          
-          params.signature = signature;
-          return params;
+
+          return signBinanceParams(params, creds.secret_key);
         },
       },
       get_candle: {
@@ -951,20 +949,8 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           // Add optional parameters
           if (icebergQty) params.icebergQty = String(icebergQty);
           if (newOrderRespType) params.newOrderRespType = newOrderRespType;
-          
-          // Generate signature
-          const queryString = Object.entries(params)
-            .map(([key, val]) => `${key}=${val}`)
-            .join('&');
-          
-          const signature = crypto
-            .createHmac('sha256', creds.secret_key)
-            .update(queryString)
-            .digest('hex');
-          
-          params.signature = signature;
-          
-          return params;
+
+          return signBinanceParams(params, creds.secret_key);
         },
         transformResult: (raw: any) => ({
           orderId: raw.orderId,

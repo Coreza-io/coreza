@@ -4,6 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { OAUTH_CONFIGS } from './oauth';
+import { getBinanceTimestamp } from '../utils/binanceTimeSync';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -721,22 +722,28 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           return assetType === 'futures' ? '/fapi/v2/account' : '/api/v3/account';
         },
         makeParams: (input: any, creds: any) => {
-          const timestamp = Date.now();
-          const queryString = `timestamp=${timestamp}`;
+          const environment = input?.environment || 'live';
+          const assetType = input?.asset_type || 'spot';
+          const timestamp = getBinanceTimestamp(environment, assetType);
+          const recvWindow = 5000;
+          const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
           const signature = crypto
             .createHmac('sha256', creds.secret_key)
             .update(queryString)
             .digest('hex');
           
-          return { timestamp, signature };
+          return { timestamp, recvWindow, signature };
         },
       },
       get_positions: {
         method: 'get',
         path: '/fapi/v2/positionRisk',
         makeParams: (input: any, creds: any) => {
-          const timestamp = Date.now();
-          let queryString = `timestamp=${timestamp}`;
+          const environment = input?.environment || 'live';
+          const assetType = input?.asset_type || 'spot';
+          const timestamp = getBinanceTimestamp(environment, assetType);
+          const recvWindow = 5000;
+          let queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
           
           if (input.symbol) {
             queryString = `symbol=${input.symbol}&${queryString}`;
@@ -747,7 +754,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             .update(queryString)
             .digest('hex');
           
-          const params: any = { timestamp, signature };
+          const params: any = { timestamp, recvWindow, signature };
           if (input.symbol) params.symbol = input.symbol;
           
           return params;
@@ -760,8 +767,11 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           return assetType === 'futures' ? '/fapi/v1/allOrders' : '/api/v3/allOrders';
         },
         makeParams: (input: any, creds: any) => {
-          const timestamp = Date.now();
-          const params: any = { timestamp };
+          const environment = input?.environment || 'live';
+          const assetType = input?.asset_type || 'spot';
+          const timestamp = getBinanceTimestamp(environment, assetType);
+          const recvWindow = 5000;
+          const params: any = { recvWindow, timestamp };
           
           if (input.symbol) params.symbol = input.symbol;
           if (input.limit) params.limit = input.limit;
@@ -791,10 +801,14 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           if (!input.symbol) throw new Error('symbol is required for cancel_order');
           if (!input.order_id) throw new Error('order_id is required for cancel_order');
           
-          const timestamp = Date.now();
+          const environment = input?.environment || 'live';
+          const assetType = input?.asset_type || 'spot';
+          const timestamp = getBinanceTimestamp(environment, assetType);
+          const recvWindow = 5000;
           const params: any = {
             symbol: input.symbol,
             orderId: input.order_id,
+            recvWindow,
             timestamp,
           };
           
@@ -904,12 +918,16 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           if (!type) throw new Error('type is required for place_order');
           if (!quantity) throw new Error('quantity is required for place_order');
           
-          const timestamp = Date.now();
+          const environment = input?.environment || 'live';
+          const assetType = input?.asset_type || 'spot';
+          const timestamp = getBinanceTimestamp(environment, assetType);
+          const recvWindow = 5000;
           const params: any = {
             symbol: symbol.toUpperCase(),
             side: side.toUpperCase(),
             type: type.toUpperCase(),
             quantity: String(quantity),
+            recvWindow,
             timestamp,
           };
           

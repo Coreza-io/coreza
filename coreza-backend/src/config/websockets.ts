@@ -168,7 +168,7 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
 
       if (assetType === "futures") {
         return isTestnet
-          ? "wss://stream.binancefuture.com/ws"
+          ? "wss://stream.testnet.binancefuture.com/ws"
           : "wss://fstream.binance.com/ws";
       }
 

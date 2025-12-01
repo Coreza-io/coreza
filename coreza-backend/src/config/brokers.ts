@@ -343,6 +343,10 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             body.extended_hours = true;
           }
 
+          if (input._idempotencyKey) {
+            body.client_order_id = input._idempotencyKey;
+          }
+
           return body;
         },
       },
@@ -424,7 +428,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
 
           return {
             dhanClientId: creds.client_id,
-            correlationId: uuidv4(),
+            correlationId: input._idempotencyKey || uuidv4(),
             transactionType,
             exchangeSegment: exchange_segment,
             productType,
@@ -942,12 +946,12 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             recvWindow,
             timestamp,
           };
-          
+
           // Add timeInForce for limit orders
           if (['LIMIT', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT_LIMIT'].includes(type.toUpperCase())) {
             params.timeInForce = timeInForce || 'GTC';
           }
-          
+
           // Add price for limit orders
           if (['LIMIT', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT_LIMIT'].includes(type.toUpperCase())) {
             if (!price) throw new Error('price is required for limit orders');
@@ -959,10 +963,11 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
             if (!stopPrice) throw new Error('stopPrice is required for stop orders');
             params.stopPrice = String(stopPrice);
           }
-          
+
           // Add optional parameters
           if (icebergQty) params.icebergQty = String(icebergQty);
           if (newOrderRespType) params.newOrderRespType = newOrderRespType;
+          if (input._idempotencyKey) params.newClientOrderId = input._idempotencyKey;
 
           return signBinanceParams(params, creds.secret_key);
         },

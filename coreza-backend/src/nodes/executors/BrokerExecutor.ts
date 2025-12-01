@@ -3,6 +3,12 @@ import axios from "axios";
 import { getBrokerConfig } from "../../config/brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
+import {
+  cacheOrderIntent,
+  generateIdempotencyKey,
+  getOrderFromCache,
+  updateOrderCache,
+} from "../../utils/orderIdempotency";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -12,6 +18,9 @@ export class BrokerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    let idempotencyKey: string | null = null;
+    let isPlaceOrder = false;
+
     try {
       const operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory?: string };
@@ -52,6 +61,48 @@ export class BrokerExecutor implements INodeExecutor {
       console.log(
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`
       );
+
+      isPlaceOrder = operation === "place_order";
+
+      if (isPlaceOrder) {
+        idempotencyKey = generateIdempotencyKey({
+          workflowId: context?.workflowId ?? "manual",
+          nodeId: node.id,
+          runId: context?.runId ?? `manual-${Date.now()}`,
+          symbol: resolvedParams.symbol ?? "",
+          side:
+            resolvedParams.side ??
+            resolvedParams.instruction ??
+            resolvedParams.transactionType ??
+            "",
+          quantity:
+            resolvedParams.quantity ??
+            resolvedParams.qty ??
+            resolvedParams.notional ??
+            "",
+        });
+
+        const cached = await getOrderFromCache(idempotencyKey);
+        if (cached) {
+          if (cached.status === "success") {
+            console.log(
+              `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`
+            );
+            return { success: true, data: cached.result, meta: { cached: true } };
+          }
+
+          if (cached.status === "pending") {
+            return {
+              success: false,
+              error: "Order is already being processed",
+              meta: { cached: true },
+            };
+          }
+        }
+
+        await cacheOrderIntent(idempotencyKey, broker);
+        resolvedParams._idempotencyKey = idempotencyKey;
+      }
 
       // Fetch credentials directly (no HTTP)
       const { credentials } = await CredentialManager.getCredentials(
@@ -121,12 +172,28 @@ export class BrokerExecutor implements INodeExecutor {
         ? op.transformResult(response.data, resolvedParams)
         : response.data;
 
+      if (isPlaceOrder && idempotencyKey) {
+        await updateOrderCache(
+          idempotencyKey,
+          "success",
+          data,
+          data?.orderId || data?.order_id
+        );
+      }
+
       return {
         success: true,
         data,
       };
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
+
+      if (isPlaceOrder && idempotencyKey) {
+        await updateOrderCache(idempotencyKey, "failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       return {
         success: false,
         error: `Broker execution failed: ${

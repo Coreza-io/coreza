@@ -11,7 +11,7 @@
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/binance/screener",
+    "url": "/screener/binance/{{filter_type}}",
     "method": "POST"
   },
   "fields": [
@@ -24,12 +24,23 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "name": "Testnet (Paper)", "id": "testnet" },
+        { "name": "Production (Live)", "id": "live" }
+      ],
+      "default": "testnet",
+      "required": true
+    },
+    {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "label": "Spot", "value": "spot" },
-        { "label": "Futures", "value": "futures" }
+        { "name": "Spot", "id": "spot" },
+        { "name": "Futures", "id": "futures" }
       ],
       "default": "spot",
       "required": true
@@ -39,10 +50,10 @@
       "label": "Filter Type",
       "type": "select",
       "options": [
-        { "label": "Top Gainers", "value": "top_gainers" },
-        { "label": "Top Losers", "value": "top_losers" },
-        { "label": "Most Active by Volume", "value": "most_active" },
-        { "label": "New Listings", "value": "new_listings" }
+        { "name": "Top Gainers", "id": "top_gainers" },
+        { "name": "Top Losers", "id": "top_losers" },
+        { "name": "Most Active by Volume", "id": "most_active" },
+        { "name": "New Listings", "id": "new_listings" }
       ],
       "default": "top_gainers",
       "required": true
@@ -60,10 +71,10 @@
       "label": "Quote Asset",
       "type": "select",
       "options": [
-        { "label": "USDT", "value": "USDT" },
-        { "label": "BUSD", "value": "BUSD" },
-        { "label": "BTC", "value": "BTC" },
-        { "label": "ETH", "value": "ETH" }
+        { "name": "USDT", "id": "USDT" },
+        { "name": "BUSD", "id": "BUSD" },
+        { "name": "BTC", "id": "BTC" },
+        { "name": "ETH", "id": "ETH" }
       ],
       "default": "USDT",
       "displayOptions": {

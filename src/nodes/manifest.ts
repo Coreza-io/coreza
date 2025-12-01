@@ -43,6 +43,7 @@ import SupportResistanceDef from './SupportResistance.json'
 import BinanceDef from './Binance.json'
 import BinanceTradeDef from './BinanceTrade.json'
 import BinanceScreenerDef from './BinanceScreener.json'
+import BinanceStreamDataDef from './BinanceStreamData.json'
 import WhatsAppDef from './WhatsApp.json'
 import RedisStoreDef from './RedisStore.json'
 import RedisTriggerDef from './RedisTrigger.json'
@@ -152,6 +153,7 @@ export const nodeManifest = {
   [BinanceDef.name]: BinanceDef,
   [BinanceTradeDef.name]: BinanceTradeDef,
   [BinanceScreenerDef.name]: BinanceScreenerDef,
+  [BinanceStreamDataDef.name]: BinanceStreamDataDef,
   [WhatsAppDef.name]: WhatsAppDef,
   [RedisStoreDef.name]: RedisStoreDef,
   [RedisTriggerDef.name]: RedisTriggerDef,

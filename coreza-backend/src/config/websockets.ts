@@ -158,6 +158,97 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
     maxReconnectAttempts: 5,
     reconnectDelay: 1000,
   },
+  binance_stream: {
+    id: "binance_stream",
+    credentialServiceType: "binance",
+    gatewaySource: "binance",
+    url: (creds: any) => {
+      const isTestnet = creds.environment === "testnet";
+      const assetType = creds.asset_type || "spot";
+
+      if (assetType === "futures") {
+        return isTestnet
+          ? "wss://stream.binancefuture.com/ws"
+          : "wss://fstream.binance.com/ws";
+      }
+
+      return isTestnet
+        ? "wss://testnet.binance.vision/ws"
+        : "wss://stream.binance.com:9443/ws";
+    },
+    parseMessage: defaultParser,
+    identifyMessageType: (msg) => msg.e || "result",
+    makeSubscribeMessage: (symbols, streamTypes = ["trade"]) => {
+      const params = symbols.flatMap((symbol) =>
+        streamTypes.map((type: string) => `${symbol.toLowerCase()}@${type}`)
+      );
+
+      return { method: "SUBSCRIBE", params, id: Date.now() };
+    },
+    makeUnsubscribeMessage: (symbols, streamTypes = ["trade"]) => {
+      const params = symbols.flatMap((symbol) =>
+        streamTypes.map((type: string) => `${symbol.toLowerCase()}@${type}`)
+      );
+
+      return { method: "UNSUBSCRIBE", params, id: Date.now() };
+    },
+    extractData: (msg) => {
+      if (msg.e === "trade") {
+        return {
+          type: "trade",
+          symbol: msg.s,
+          price: parseFloat(msg.p),
+          quantity: parseFloat(msg.q),
+          timestamp: msg.T,
+        };
+      }
+
+      if (msg.e === "kline") {
+        const k = msg.k;
+        return {
+          type: "kline",
+          symbol: msg.s,
+          interval: k.i,
+          open: parseFloat(k.o),
+          high: parseFloat(k.h),
+          low: parseFloat(k.l),
+          close: parseFloat(k.c),
+          volume: parseFloat(k.v),
+          isClosed: k.x,
+          timestamp: k.T,
+        };
+      }
+
+      if (msg.e === "bookTicker") {
+        return {
+          type: "bookTicker",
+          symbol: msg.s,
+          bidPrice: parseFloat(msg.b),
+          bidQty: parseFloat(msg.B),
+          askPrice: parseFloat(msg.a),
+          askQty: parseFloat(msg.A),
+        };
+      }
+
+      if (msg.e === "24hrTicker") {
+        return {
+          type: "ticker",
+          symbol: msg.s,
+          priceChange: parseFloat(msg.p),
+          priceChangePercent: parseFloat(msg.P),
+          lastPrice: parseFloat(msg.c),
+          volume: parseFloat(msg.v),
+        };
+      }
+
+      return msg;
+    },
+    extractSymbols: (msg) => [msg.s?.toUpperCase()],
+    shouldTriggerWorkflow: (msg) =>
+      ["trade", "kline", "bookTicker", "24hrTicker"].includes(msg.e),
+    maxReconnectAttempts: 5,
+    reconnectDelay: 1000,
+  },
 };
 
 export function getWebSocketConfig(

@@ -163,7 +163,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       typeof op.path === "function" ? op.path(req.body, creds) : op.path;
     const url = `${baseUrl}${path}`;
     const headers = await config.makeAuthHeaders(creds);
-    const params = op.makeParams?.(req.body) ?? {};
+    const params = op.makeParams?.(req.body, creds) ?? {};
     const body = op.makeBody ? await op.makeBody(req.body, creds) : undefined;
 
     // 3. Execute request

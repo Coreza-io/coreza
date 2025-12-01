@@ -3,7 +3,40 @@
   "def": "Execute Trade",
   "node_type": "main",
   "category": "Broker",
+  "subCategory": "Binance",
   "parentNode": "Binance",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Personal Binance"
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "name": "Testnet (Paper)", "id": "testnet" },
+        { "name": "Production (Live)", "id": "live" }
+      ],
+      "default": "testnet"
+    },
+    {
+      "key": "api_key",
+      "label": "Binance API Key",
+      "type": "password",
+      "placeholder": "API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Binance Secret Key",
+      "type": "password",
+      "placeholder": "Secret Key"
+    }
+  ],
+  "authAction": { "url": "/broker/binance/auth", "method": "POST" },
   "icon": "/assets/icons/binance.svg",
   "size": { "width": 340, "height": 340 },
   "handles": [
@@ -11,7 +44,7 @@
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/binance/place_order",
+    "url": "/broker/binance/place_order",
     "method": "POST"
   },
   "fields": [
@@ -28,9 +61,9 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "label": "Spot", "value": "spot" },
-        { "label": "Futures", "value": "futures" },
-        { "label": "Margin", "value": "margin" }
+        { "name": "Spot", "id": "spot" },
+        { "name": "Futures", "id": "futures" },
+        { "name": "Margin", "id": "margin" }
       ],
       "default": "spot",
       "required": true
@@ -47,8 +80,8 @@
       "label": "Side",
       "type": "select",
       "options": [
-        { "label": "Buy", "value": "buy" },
-        { "label": "Sell", "value": "sell" }
+        { "name": "Buy", "id": "BUY" },
+        { "name": "Sell", "id": "SELL" }
       ],
       "required": true
     },
@@ -57,14 +90,14 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "label": "Market", "value": "market" },
-        { "label": "Limit", "value": "limit" },
-        { "label": "Stop Loss", "value": "stop_loss" },
-        { "label": "Take Profit", "value": "take_profit" },
-        { "label": "Stop Loss Limit", "value": "stop_loss_limit" },
-        { "label": "Take Profit Limit", "value": "take_profit_limit" }
+        { "name": "Market", "id": "MARKET" },
+        { "name": "Limit", "id": "LIMIT" },
+        { "name": "Stop Loss", "id": "STOP_LOSS" },
+        { "name": "Stop Loss Limit", "id": "STOP_LOSS_LIMIT" },
+        { "name": "Take Profit", "id": "TAKE_PROFIT" },
+        { "name": "Take Profit Limit", "id": "TAKE_PROFIT_LIMIT" }
       ],
-      "default": "market",
+      "default": "MARKET",
       "required": true
     },
     {
@@ -81,7 +114,7 @@
       "placeholder": "Limit price",
       "displayOptions": {
         "show": {
-          "type": ["limit", "stop_loss_limit", "take_profit_limit"]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -92,7 +125,7 @@
       "placeholder": "Stop price",
       "displayOptions": {
         "show": {
-          "type": ["stop_loss", "take_profit", "stop_loss_limit", "take_profit_limit"]
+          "type": ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -101,14 +134,14 @@
       "label": "Time In Force",
       "type": "select",
       "options": [
-        { "label": "GTC (Good Till Cancel)", "value": "GTC" },
-        { "label": "IOC (Immediate Or Cancel)", "value": "IOC" },
-        { "label": "FOK (Fill Or Kill)", "value": "FOK" }
+        { "name": "GTC (Good Till Cancel)", "id": "GTC" },
+        { "name": "IOC (Immediate Or Cancel)", "id": "IOC" },
+        { "name": "FOK (Fill Or Kill)", "id": "FOK" }
       ],
       "default": "GTC",
       "displayOptions": {
         "show": {
-          "type": ["limit", "stop_loss_limit", "take_profit_limit"]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -119,7 +152,7 @@
       "placeholder": "Optional iceberg quantity",
       "displayOptions": {
         "show": {
-          "type": ["limit"]
+          "type": ["LIMIT"]
         }
       }
     },
@@ -128,9 +161,9 @@
       "label": "Response Type",
       "type": "select",
       "options": [
-        { "label": "ACK", "value": "ACK" },
-        { "label": "RESULT", "value": "RESULT" },
-        { "label": "FULL", "value": "FULL" }
+        { "name": "ACK", "id": "ACK" },
+        { "name": "RESULT", "id": "RESULT" },
+        { "name": "FULL", "id": "FULL" }
       ],
       "default": "RESULT"
     }

@@ -93,7 +93,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       const url = `${baseUrl}${path}`;
       const headers = await config.makeAuthHeaders(workingCreds);
-      const params = op.makeParams?.(resolvedParams) ?? {};
+      const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
       const body = op.makeBody
         ? await op.makeBody(resolvedParams, workingCreds)
         : undefined;

@@ -3,6 +3,7 @@
   "def": "Fetch Market Data",
   "node_type": "main",
   "category": "Broker",
+  "subCategory": "Binance",
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -16,8 +17,8 @@
       "label": "Environment",
       "type": "select",
       "options": [
-        { "label": "Testnet (Paper)", "value": "testnet" },
-        { "label": "Production (Live)", "value": "live" }
+        { "name": "Testnet (Paper)", "id": "testnet" },
+        { "name": "Production (Live)", "id": "live" }
       ],
       "default": "testnet"
     },
@@ -34,7 +35,7 @@
       "placeholder": "Secret Key"
     }
   ],
-  "authAction": { "url": "/binance/auth", "method": "POST" },
+  "authAction": { "url": "/broker/binance/auth", "method": "POST" },
   "icon": "/assets/icons/binance.svg",
   "size": { "width": 340, "height": 340 },
   "handles": [
@@ -59,8 +60,8 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "label": "Spot", "value": "spot" },
-        { "label": "Futures", "value": "futures" }
+        { "name": "Spot", "id": "spot" },
+        { "name": "Futures", "id": "futures" }
       ],
       "default": "spot",
       "required": true
@@ -70,13 +71,13 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "label": "Get Account", "value": "get_account" },
-        { "label": "Get Positions", "value": "get_positions" },
-        { "label": "Get Orders", "value": "get_orders" },
-        { "label": "Cancel Order", "value": "cancel_order" },
-        { "label": "Get Candle", "value": "get_candle" },
-        { "label": "Get Latest Bar", "value": "get_latest_bar" },
-        { "label": "Get Ticker", "value": "get_ticker" }
+        { "name": "Get Account", "id": "get_account" },
+        { "name": "Get Positions", "id": "get_positions" },
+        { "name": "Get Orders", "id": "get_orders" },
+        { "name": "Cancel Order", "id": "cancel_order" },
+        { "name": "Get Candle", "id": "get_candle" },
+        { "name": "Get Latest Bar", "id": "get_latest_bar" },
+        { "name": "Get Ticker", "id": "get_ticker" }
       ],
       "required": true,
       "default": "get_ticker"
@@ -109,14 +110,14 @@
       "label": "Interval",
       "type": "select",
       "options": [
-        { "label": "1 Minute", "value": "1m" },
-        { "label": "5 Minutes", "value": "5m" },
-        { "label": "15 Minutes", "value": "15m" },
-        { "label": "30 Minutes", "value": "30m" },
-        { "label": "1 Hour", "value": "1h" },
-        { "label": "4 Hours", "value": "4h" },
-        { "label": "1 Day", "value": "1d" },
-        { "label": "1 Week", "value": "1w" }
+        { "name": "1 Minute", "id": "1m" },
+        { "name": "5 Minutes", "id": "5m" },
+        { "name": "15 Minutes", "id": "15m" },
+        { "name": "30 Minutes", "id": "30m" },
+        { "name": "1 Hour", "id": "1h" },
+        { "name": "4 Hours", "id": "4h" },
+        { "name": "1 Day", "id": "1d" },
+        { "name": "1 Week", "id": "1w" }
       ],
       "default": "1h",
       "displayOptions": {

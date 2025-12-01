@@ -723,7 +723,9 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
     authType: 'api_key',
     baseUrl: (creds: any, input?: any) => {
       const isTestnet = input?.environment === 'testnet';
-      const assetType = input?.asset_type || 'spot';
+      const assetType =
+        input?.asset_type ||
+        (input?.operation === 'get_positions' ? 'futures' : 'spot');
       
       if (assetType === 'futures') {
         return isTestnet 
@@ -760,10 +762,22 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
       },
       get_positions: {
         method: 'get',
-        path: '/fapi/v2/positionRisk',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'futures';
+          if (assetType !== 'futures') {
+            throw new Error('get_positions is only supported for futures accounts');
+          }
+
+          return '/fapi/v2/positionRisk';
+        },
         makeParams: (input: any, creds: any) => {
           const environment = input?.environment || 'live';
-          const assetType = input?.asset_type || 'spot';
+          const assetType = input?.asset_type || 'futures';
+
+          if (assetType !== 'futures') {
+            throw new Error('get_positions is only supported for futures accounts');
+          }
+
           const timestamp = getBinanceTimestamp(environment, assetType);
           const recvWindow = 5000;
           const params: any = {};

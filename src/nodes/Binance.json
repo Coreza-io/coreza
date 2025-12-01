@@ -43,7 +43,7 @@
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/binance/{{operation}}",
+    "url": "/broker/binance/{{operation}}",
     "method": "POST"
   },
   "fields": [

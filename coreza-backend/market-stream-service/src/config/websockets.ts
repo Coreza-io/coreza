@@ -173,7 +173,7 @@ const WEBSOCKET_SOURCES: Record<string, WebSocketSourceConfig> = {
       }
 
       return isTestnet
-        ? "wss://testnet.binance.vision/ws"
+        ? "wss://stream.testnet.binance.vision/ws"
         : "wss://stream.binance.com:9443/ws";
     },
     parseMessage: defaultParser,

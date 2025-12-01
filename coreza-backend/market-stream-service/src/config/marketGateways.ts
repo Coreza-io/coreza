@@ -199,7 +199,7 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
       }
 
       return isTestnet
-        ? 'wss://testnet.binance.vision/ws'
+        ? 'wss://stream.testnet.binance.vision/ws'
         : 'wss://stream.binance.com:9443/ws';
     },
 

@@ -124,6 +124,44 @@ export class MarketControlHandler {
   }
 
   /**
+   * Map broker-specific stream types to normalized CorezaMarketEvent types
+   * This ensures MarketDataSubscriber filters work correctly
+   */
+  private normalizeEventTypes(source: string, eventTypes?: string[]): string[] | undefined {
+    if (!eventTypes || eventTypes.length === 0) return undefined;
+    
+    // Binance-specific mappings
+    if (source.includes('binance')) {
+      const normalized = eventTypes.map(type => {
+        // All kline types normalize to 'bar'
+        if (type.startsWith('kline')) return 'bar';
+        // bookTicker normalizes to 'quote'
+        if (type === 'bookTicker') return 'quote';
+        // ticker (24h) stays as 'ticker'
+        if (type === 'ticker') return 'ticker';
+        // trade stays as 'trade'
+        return type;
+      });
+      // Remove duplicates
+      return [...new Set(normalized)];
+    }
+    
+    // Alpaca-specific mappings (plural → singular)
+    if (source.includes('alpaca')) {
+      const normalized = eventTypes.map(type => {
+        if (type === 'trades') return 'trade';
+        if (type === 'quotes') return 'quote';
+        if (type === 'bars') return 'bar';
+        if (type === 'dailyBars') return 'daily_bar';
+        return type;
+      });
+      return [...new Set(normalized)];
+    }
+    
+    return eventTypes;
+  }
+
+  /**
    * Handle subscribe control message (with mutex protection)
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
@@ -155,6 +193,9 @@ export class MarketControlHandler {
           const wsConfig = getWebSocketConfig(source);
           const gatewaySource = (wsConfig?.gatewaySource || source) as MarketSource;
 
+          // Normalize event types for consistent filtering
+          const normalizedEventTypes = this.normalizeEventTypes(source, eventTypes);
+
           const subscriber = MarketDataSubscriber.getInstance();
           await subscriber.subscribe(
             workflowId,
@@ -163,10 +204,10 @@ export class MarketControlHandler {
             symbols,
             {
               source: gatewaySource,  // Use gatewaySource instead of raw source
-              eventTypes: eventTypes as any,
+              eventTypes: normalizedEventTypes as any,
             }
           );
-          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber (gatewaySource: ${gatewaySource})`);
+          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber (gatewaySource: ${gatewaySource}, normalized types: ${normalizedEventTypes?.join(', ')})`);
         }
 
         // Check if any symbols need new event types subscribed

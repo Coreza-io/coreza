@@ -194,7 +194,7 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
 
       if (assetType === 'futures') {
         return isTestnet
-          ? 'wss://stream.binancefuture.com/ws'
+          ? 'wss://stream.testnet.binancefuture.com/ws'
           : 'wss://fstream.binance.com/ws';
       }
 

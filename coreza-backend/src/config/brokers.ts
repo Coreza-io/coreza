@@ -1,6 +1,7 @@
 import fs from 'fs';
 import csv from 'csv-parser';
 import path from 'path';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { OAUTH_CONFIGS } from './oauth';
 
@@ -11,7 +12,7 @@ import { OAUTH_CONFIGS } from './oauth';
 export interface BrokerOperation {
   method: 'get' | 'post' | 'put' | 'delete';
   path: string | ((input: any, creds?: any) => string);
-  makeParams?: (input: any) => Record<string, any>;
+  makeParams?: (input: any, creds?: any) => Record<string, any>;
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
   transformResult?: (data: any, input: any) => any;
 }
@@ -691,21 +692,269 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   },
 
   // ============================================
-  // BINANCE (placeholder - add operations as needed)
+  // BINANCE
   // ============================================
   binance: {
     authType: 'api_key',
-    baseUrl: (creds: any, input?: any) =>
-      input?.environment === 'testnet'
+    baseUrl: (creds: any, input?: any) => {
+      const isTestnet = input?.environment === 'testnet';
+      const assetType = input?.asset_type || 'spot';
+      
+      if (assetType === 'futures') {
+        return isTestnet 
+          ? 'https://testnet.binancefuture.com'
+          : 'https://fapi.binance.com';
+      }
+      
+      return isTestnet 
         ? 'https://testnet.binance.vision'
-        : 'https://api.binance.com',
+        : 'https://api.binance.com';
+    },
     makeAuthHeaders: (creds: any) => ({
       'X-MBX-APIKEY': creds.api_key,
     }),
     operations: {
       get_account: {
         method: 'get',
-        path: '/api/v3/account',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v2/account' : '/api/v3/account';
+        },
+        makeParams: (input: any, creds: any) => {
+          const timestamp = Date.now();
+          const queryString = `timestamp=${timestamp}`;
+          const signature = crypto
+            .createHmac('sha256', creds.secret_key)
+            .update(queryString)
+            .digest('hex');
+          
+          return { timestamp, signature };
+        },
+      },
+      get_positions: {
+        method: 'get',
+        path: '/fapi/v2/positionRisk',
+        makeParams: (input: any, creds: any) => {
+          const timestamp = Date.now();
+          let queryString = `timestamp=${timestamp}`;
+          
+          if (input.symbol) {
+            queryString = `symbol=${input.symbol}&${queryString}`;
+          }
+          
+          const signature = crypto
+            .createHmac('sha256', creds.secret_key)
+            .update(queryString)
+            .digest('hex');
+          
+          const params: any = { timestamp, signature };
+          if (input.symbol) params.symbol = input.symbol;
+          
+          return params;
+        },
+      },
+      get_orders: {
+        method: 'get',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/allOrders' : '/api/v3/allOrders';
+        },
+        makeParams: (input: any, creds: any) => {
+          const timestamp = Date.now();
+          const params: any = { timestamp };
+          
+          if (input.symbol) params.symbol = input.symbol;
+          if (input.limit) params.limit = input.limit;
+          if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+          if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+          
+          const queryString = Object.entries(params)
+            .map(([key, val]) => `${key}=${val}`)
+            .join('&');
+          
+          const signature = crypto
+            .createHmac('sha256', creds.secret_key)
+            .update(queryString)
+            .digest('hex');
+          
+          params.signature = signature;
+          return params;
+        },
+      },
+      cancel_order: {
+        method: 'delete',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/order' : '/api/v3/order';
+        },
+        makeParams: (input: any, creds: any) => {
+          if (!input.symbol) throw new Error('symbol is required for cancel_order');
+          if (!input.order_id) throw new Error('order_id is required for cancel_order');
+          
+          const timestamp = Date.now();
+          const params: any = {
+            symbol: input.symbol,
+            orderId: input.order_id,
+            timestamp,
+          };
+          
+          const queryString = Object.entries(params)
+            .map(([key, val]) => `${key}=${val}`)
+            .join('&');
+          
+          const signature = crypto
+            .createHmac('sha256', creds.secret_key)
+            .update(queryString)
+            .digest('hex');
+          
+          params.signature = signature;
+          return params;
+        },
+      },
+      get_candle: {
+        method: 'get',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/klines' : '/api/v3/klines';
+        },
+        makeParams: (input: any) => {
+          if (!input.symbol) throw new Error('symbol is required for get_candle');
+          
+          const params: any = {
+            symbol: input.symbol,
+            interval: input.interval || '1h',
+          };
+          
+          if (input.limit) params.limit = input.limit;
+          if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+          if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+          
+          return params;
+        },
+        transformResult: (raw: any, input: any) => {
+          if (!Array.isArray(raw)) return { symbol: input.symbol, candles: [] };
+          
+          const candles = raw.map((kline: any) => ({
+            t: kline[0], // Open time
+            o: parseFloat(kline[1]), // Open
+            h: parseFloat(kline[2]), // High
+            l: parseFloat(kline[3]), // Low
+            c: parseFloat(kline[4]), // Close
+            v: parseFloat(kline[5]), // Volume
+          }));
+          
+          return { symbol: input.symbol, candles };
+        },
+      },
+      get_latest_bar: {
+        method: 'get',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+        },
+        makeParams: (input: any) => {
+          if (!input.symbol) throw new Error('symbol is required for get_latest_bar');
+          return { symbol: input.symbol };
+        },
+        transformResult: (raw: any, input: any) => ({
+          symbol: input.symbol,
+          bar: [{
+            t: raw.closeTime,
+            o: parseFloat(raw.openPrice),
+            h: parseFloat(raw.highPrice),
+            l: parseFloat(raw.lowPrice),
+            c: parseFloat(raw.lastPrice),
+            v: parseFloat(raw.volume),
+          }],
+        }),
+      },
+      get_ticker: {
+        method: 'get',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+        },
+        makeParams: (input: any) => {
+          const params: any = {};
+          if (input.symbol) params.symbol = input.symbol;
+          return params;
+        },
+      },
+      place_order: {
+        method: 'post',
+        path: (input: any) => {
+          const assetType = input?.asset_type || 'spot';
+          return assetType === 'futures' ? '/fapi/v1/order' : '/api/v3/order';
+        },
+        makeBody: (input: any, creds: any) => {
+          const {
+            symbol,
+            side,
+            type,
+            quantity,
+            price,
+            stopPrice,
+            timeInForce,
+            icebergQty,
+            newOrderRespType,
+          } = input;
+          
+          if (!symbol) throw new Error('symbol is required for place_order');
+          if (!side) throw new Error('side is required for place_order');
+          if (!type) throw new Error('type is required for place_order');
+          if (!quantity) throw new Error('quantity is required for place_order');
+          
+          const timestamp = Date.now();
+          const params: any = {
+            symbol: symbol.toUpperCase(),
+            side: side.toUpperCase(),
+            type: type.toUpperCase(),
+            quantity: String(quantity),
+            timestamp,
+          };
+          
+          // Add timeInForce for limit orders
+          if (['LIMIT', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT_LIMIT'].includes(type.toUpperCase())) {
+            params.timeInForce = timeInForce || 'GTC';
+          }
+          
+          // Add price for limit orders
+          if (['LIMIT', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT_LIMIT'].includes(type.toUpperCase())) {
+            if (!price) throw new Error('price is required for limit orders');
+            params.price = String(price);
+          }
+          
+          // Add stopPrice for stop orders
+          if (['STOP_LOSS', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT', 'TAKE_PROFIT_LIMIT'].includes(type.toUpperCase())) {
+            if (!stopPrice) throw new Error('stopPrice is required for stop orders');
+            params.stopPrice = String(stopPrice);
+          }
+          
+          // Add optional parameters
+          if (icebergQty) params.icebergQty = String(icebergQty);
+          if (newOrderRespType) params.newOrderRespType = newOrderRespType;
+          
+          // Generate signature
+          const queryString = Object.entries(params)
+            .map(([key, val]) => `${key}=${val}`)
+            .join('&');
+          
+          const signature = crypto
+            .createHmac('sha256', creds.secret_key)
+            .update(queryString)
+            .digest('hex');
+          
+          params.signature = signature;
+          
+          return params;
+        },
+        transformResult: (raw: any) => ({
+          orderId: raw.orderId,
+          symbol: raw.symbol,
+          status: raw.status,
+          executedQty: raw.executedQty,
+          price: raw.price,
+        }),
       },
     },
   },

@@ -14,16 +14,6 @@
       "default": "Personal Binance"
     },
     {
-      "key": "environment",
-      "label": "Environment",
-      "type": "select",
-      "options": [
-        { "name": "Testnet (Paper)", "id": "testnet" },
-        { "name": "Production (Live)", "id": "live" }
-      ],
-      "default": "testnet"
-    },
-    {
       "key": "api_key",
       "label": "Binance API Key",
       "type": "password",
@@ -54,6 +44,17 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "name": "Testnet (Paper)", "id": "testnet" },
+        { "name": "Production (Live)", "id": "live" }
+      ],
+      "default": "testnet",
       "required": true
     },
     {

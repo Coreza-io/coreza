@@ -61,7 +61,7 @@
     {
       "key": "limit",
       "label": "Limit",
-      "type": "number",
+      "type": "text",
       "default": 10,
       "placeholder": "Number of results",
       "required": true
@@ -86,7 +86,7 @@
     {
       "key": "min_volume",
       "label": "Min Volume (24h)",
-      "type": "number",
+      "type": "text",
       "placeholder": "Minimum 24h volume",
       "displayOptions": {
         "show": {
@@ -97,7 +97,7 @@
     {
       "key": "min_price_change",
       "label": "Min Price Change %",
-      "type": "number",
+      "type": "text",
       "placeholder": "Minimum price change percentage",
       "displayOptions": {
         "show": {

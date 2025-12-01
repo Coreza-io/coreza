@@ -90,7 +90,12 @@
       "placeholder": "e.g. BTCUSDT",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar", "get_ticker", "cancel_order"]
+          "operation": [
+            "get_candle",
+            "get_latest_bar",
+            "get_ticker",
+            "cancel_order"
+          ]
         }
       }
     },
@@ -130,7 +135,7 @@
     {
       "key": "limit",
       "label": "Limit",
-      "type": "number",
+      "type": "text",
       "default": 100,
       "placeholder": "Number of records",
       "displayOptions": {

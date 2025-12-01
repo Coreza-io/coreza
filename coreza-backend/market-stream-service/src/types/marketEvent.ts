@@ -1,5 +1,8 @@
 // Unified market event format - all sources normalize to this
-export type MarketEventType = 'trade' | 'quote' | 'bar' | 'daily_bar' | 'news';
+//
+// "ticker" covers summary-style updates (e.g., Binance 24h ticker) that provide
+// snapshot statistics instead of tick-level trades or quotes.
+export type MarketEventType = 'trade' | 'quote' | 'bar' | 'daily_bar' | 'news' | 'ticker';
 export type MarketSource = 'alpaca' | 'alpaca_news' | 'binance' | 'dhan' | 'schwab';
 export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
 

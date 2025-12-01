@@ -150,6 +150,12 @@ async function startServer() {
     initializeScreenerServices();
     initializeNodeExecutors();
 
+    // Initialize Binance time sync
+    logger.info('Initializing Binance time sync...');
+    const { initBinanceTimeSync } = await import('./utils/binanceTimeSync');
+    await initBinanceTimeSync();
+    logger.info('Binance time sync initialized');
+
     // Initialize BullMQ job queue workers
     logger.info('Starting BullMQ workers...');
     require('./services/jobQueueManager');

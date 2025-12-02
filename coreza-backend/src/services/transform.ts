@@ -441,29 +441,35 @@ export class TransformService {
 
         // ============== OBJECT OPERATIONS ==============
         case 'keys': {
-          const obj = TransformService.toObject(value);
-          return { success: true, result: Object.keys(obj) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: Object.keys(validation.object) };
         }
 
         case 'values': {
-          const obj = TransformService.toObject(value);
-          return { success: true, result: Object.values(obj) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: Object.values(validation.object) };
         }
 
         case 'entries': {
-          const obj = TransformService.toObject(value);
-          return { success: true, result: Object.entries(obj) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: Object.entries(validation.object) };
         }
 
         case 'getProperty': {
-          const obj = TransformService.toObject(value);
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const path = String(arg1 || '');
-          const result = TransformService.getNestedValue(obj, path);
+          const result = TransformService.getNestedValue(validation.object, path);
           return { success: true, result };
         }
 
         case 'setProperty': {
-          const obj = { ...TransformService.toObject(value) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const obj = { ...validation.object };
           const path = String(arg1 || '');
           const newValue = TransformService.parseValue(arg2);
           TransformService.setNestedValue(obj, path, newValue);
@@ -471,39 +477,47 @@ export class TransformService {
         }
 
         case 'deleteProperty': {
-          const obj = { ...TransformService.toObject(value) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const obj = { ...validation.object };
           const path = String(arg1 || '');
           TransformService.deleteNestedValue(obj, path);
           return { success: true, result: obj };
         }
 
         case 'hasProperty': {
-          const obj = TransformService.toObject(value);
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const path = String(arg1 || '');
-          const result = TransformService.getNestedValue(obj, path);
+          const result = TransformService.getNestedValue(validation.object, path);
           return { success: true, result: result !== undefined };
         }
 
         case 'merge': {
-          const obj1 = TransformService.toObject(value);
-          const obj2 = TransformService.toObject(arg1);
-          return { success: true, result: { ...obj1, ...obj2 } };
+          const validation1 = TransformService.validateObject(value);
+          if (!validation1.valid) return { success: false, error: validation1.error };
+          const validation2 = TransformService.validateObject(arg1);
+          if (!validation2.valid) return { success: false, error: 'Second value must be an object' };
+          return { success: true, result: { ...validation1.object, ...validation2.object } };
         }
 
         case 'pick': {
-          const obj = TransformService.toObject(value);
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const keys = String(arg1 || '').split(',').map(k => k.trim()).filter(Boolean);
           const result: Record<string, any> = {};
           for (const key of keys) {
-            if (key in obj) {
-              result[key] = obj[key];
+            if (key in validation.object) {
+              result[key] = validation.object[key];
             }
           }
           return { success: true, result };
         }
 
         case 'omit': {
-          const obj = { ...TransformService.toObject(value) };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const obj = { ...validation.object };
           const keys = String(arg1 || '').split(',').map(k => k.trim()).filter(Boolean);
           for (const key of keys) {
             delete obj[key];
@@ -512,8 +526,9 @@ export class TransformService {
         }
 
         case 'objectIsEmpty': {
-          const obj = TransformService.toObject(value);
-          return { success: true, result: Object.keys(obj).length === 0 };
+          const validation = TransformService.validateObject(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: Object.keys(validation.object).length === 0 };
         }
 
         default:
@@ -542,22 +557,22 @@ export class TransformService {
     return { valid: false, error: 'Value must be an array' };
   }
 
-  // Helper: Convert value to object
-  private static toObject(value: any): Record<string, any> {
+  // Helper: Validate and convert value to object (strict)
+  private static validateObject(value: any): { valid: true; object: Record<string, any> } | { valid: false; error: string } {
     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      return value;
+      return { valid: true, object: value };
     }
     if (typeof value === 'string') {
       try {
         const parsed = JSON.parse(value);
         if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-          return parsed;
+          return { valid: true, object: parsed };
         }
       } catch {
         // Not valid JSON
       }
     }
-    return {};
+    return { valid: false, error: 'Value must be an object' };
   }
 
   // Helper: Parse value (try JSON first)

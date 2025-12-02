@@ -1065,13 +1065,22 @@ const WorkflowEditorContent = () => {
         const existingNodeIds = new Set(nodes.map((node) => node.id));
         const existingEdgeIds = new Set(edges.map((edge) => edge.id));
 
-        const newNodes = copiedNodes.map((node, index) => {
-          let newId = `${node.id}_${timestamp}_${index}`;
+        const newNodes = copiedNodes.map((node) => {
+          const nodeType = node.type || "default";
+
+          const existingOfType = nodes.filter((n) => n.type === nodeType).length;
+          const alreadyAddedOfType = Object.values(nodeIdMap).filter(
+            (id) => id === nodeType || id.startsWith(nodeType)
+          ).length;
+
+          let count = existingOfType + alreadyAddedOfType;
+          let newId = count === 0 ? nodeType : `${nodeType}${count}`;
+
           while (existingNodeIds.has(newId)) {
-            newId = `${node.id}_${timestamp}_${index}_${Math.random()
-              .toString(36)
-              .slice(2, 6)}`;
+            count += 1;
+            newId = `${nodeType}${count}`;
           }
+
           existingNodeIds.add(newId);
           nodeIdMap[node.id] = newId;
 
@@ -1085,6 +1094,7 @@ const WorkflowEditorContent = () => {
             selected: true,
             data: {
               ...node.data,
+              displayName: newId,
               isExecuting: false,
             },
           };

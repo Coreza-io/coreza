@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,7 +43,12 @@ const Interface = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar />
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col relative">
+          {isWorkflowEditorPage && (
+            <div className="absolute top-4 left-4 z-30">
+              <SidebarTrigger className="bg-card border border-border rounded-md hover:bg-muted" />
+            </div>
+          )}
           {!isWorkflowEditorPage && <Header />}
           <main className={`flex-1 ${!isWorkflowEditorPage ? 'p-6' : ''}`}>
             <Routes>

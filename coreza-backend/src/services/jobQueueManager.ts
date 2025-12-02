@@ -56,7 +56,8 @@ const workflowWorker = new Worker(
         workflowId,
         userId,
         nodes,
-        edges
+        edges,
+        { initialInput: job.data.initialInput }
       );
 
       // Save successful result to database

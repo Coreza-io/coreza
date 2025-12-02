@@ -784,18 +784,25 @@ const WorkflowEditorContent = () => {
   // Handle node click from palette
   const handleNodeClick = useCallback(
     (nodeType: string) => {
-      // Position new node at center of viewport
-      const position = {
-        x: 250,
-        y: 250,
-      };
+      const workflowCanvas = document.querySelector(".workflow-canvas");
+
+      const position = workflowCanvas
+        ? (() => {
+            const rect = workflowCanvas.getBoundingClientRect();
+
+            return rf.screenToFlowPosition({
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+            });
+          })()
+        : { x: 250, y: 250 };
 
       createNode(nodeType, position);
 
       // Optionally hide palette after adding node
       setIsPaletteVisible(false);
     },
-    [createNode]
+    [createNode, rf]
   );
 
   // Check for user authentication and load latest workflow

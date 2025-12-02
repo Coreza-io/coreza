@@ -325,6 +325,7 @@ export class MarketDataSubscriber {
             const payload = JSON.stringify({
               type: "market_data",
               payload: {
+                nodeId: subscription.nodeId,
                 data: {
                   symbol,
                   [dataKey]: [cleanEventData],

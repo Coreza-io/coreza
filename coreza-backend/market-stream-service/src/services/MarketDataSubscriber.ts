@@ -310,7 +310,8 @@ export class MarketDataSubscriber {
             const userChannel = `ws:user:${subscription.userId}`;
             
             // Format event to match REST API response structure
-            const { symbol, type, source, ...eventData } = event;
+            // Strip metadata fields from eventData
+            const { symbol, type, source, timeframe, isClosed, ...cleanEventData } = event;
             const typeKeyMap: Record<string, string> = {
               'bar': 'bar',
               'daily_bar': 'bar',
@@ -324,13 +325,9 @@ export class MarketDataSubscriber {
             const payload = JSON.stringify({
               type: "market_data",
               payload: {
-                nodeId: subscription.nodeId,
                 data: {
-                  success: true,
-                  data: {
-                    symbol,
-                    [dataKey]: [eventData],
-                  },
+                  symbol,
+                  [dataKey]: [cleanEventData],
                 },
               },
             });

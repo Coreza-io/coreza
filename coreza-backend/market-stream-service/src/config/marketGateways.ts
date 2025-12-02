@@ -102,18 +102,58 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     identifyMessageType: (msg) => msg.T,
     shouldPublish: (msg) => ['t', 'q', 'b', 'd'].includes(msg.T),
     normalize: (msg) => {
-      const base = {
-        source: 'alpaca' as const,
-        symbol: msg.S?.toUpperCase(),
-        ts: msg.t ? new Date(msg.t).toISOString() : new Date().toISOString(),
-        raw: msg,
-      };
+      const symbol = msg.S?.toUpperCase();
+      const date = msg.t ? new Date(msg.t).toISOString() : new Date().toISOString();
       
       switch (msg.T) {
-        case 't': return { ...base, type: 'trade' as const, lastPrice: msg.p, size: msg.s, exchange: msg.x };
-        case 'q': return { ...base, type: 'quote' as const, bid: msg.bp, bidSize: msg.bs, ask: msg.ap, askSize: msg.as };
-        case 'b': return { ...base, type: 'bar' as const, o: msg.o, h: msg.h, l: msg.l, c: msg.c, v: msg.v, vwap: msg.vw, timeframe: '1m' as const };
-        case 'd': return { ...base, type: 'daily_bar' as const, o: msg.o, h: msg.h, l: msg.l, c: msg.c, v: msg.v, timeframe: '1d' as const };
+        case 't': 
+          return { 
+            source: 'alpaca' as const, 
+            symbol, 
+            date, 
+            type: 'trade' as const, 
+            price: msg.p, 
+            quantity: msg.s, 
+            exchange: msg.x 
+          };
+        case 'q': 
+          return { 
+            source: 'alpaca' as const, 
+            symbol, 
+            date, 
+            type: 'quote' as const, 
+            bidPrice: msg.bp, 
+            bidQuantity: msg.bs, 
+            askPrice: msg.ap, 
+            askQuantity: msg.as 
+          };
+        case 'b': 
+          return { 
+            source: 'alpaca' as const, 
+            symbol, 
+            date, 
+            type: 'bar' as const, 
+            open: msg.o, 
+            high: msg.h, 
+            low: msg.l, 
+            close: msg.c, 
+            volume: msg.v, 
+            vwap: msg.vw, 
+            timeframe: '1m' 
+          };
+        case 'd': 
+          return { 
+            source: 'alpaca' as const, 
+            symbol, 
+            date, 
+            type: 'daily_bar' as const, 
+            open: msg.o, 
+            high: msg.h, 
+            low: msg.l, 
+            close: msg.c, 
+            volume: msg.v, 
+            timeframe: '1d' 
+          };
         default: return null;
       }
     },
@@ -167,20 +207,14 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'alpaca_news' as const,
         symbol: msg.symbols?.[0]?.toUpperCase() || '*',
         type: 'news' as const,
-        ts: msg.created_at || new Date().toISOString(),
-        raw: {
-          id: msg.id,
-          headline: msg.headline,
-          summary: msg.summary,
-          author: msg.author,
-          url: msg.url,
-          symbols: msg.symbols,
-          source: msg.source,
-          created_at: msg.created_at,
-          updated_at: msg.updated_at,
-          content: msg.content,
-        },
-      };
+        date: msg.created_at || new Date().toISOString(),
+        headline: msg.headline,
+        summary: msg.summary,
+        author: msg.author,
+        url: msg.url,
+        symbols: msg.symbols,
+        newsSource: msg.source,
+      } as any;
     },
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,
@@ -332,18 +366,17 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'dhan' as const,
         symbol: msg.TradingSymbol || msg.SecurityId,
         type: 'trade' as const,
-        ts: new Date().toISOString(),
-        lastPrice: msg.LTP,
-        bid: msg.BidPrice,
-        bidSize: msg.BidQty,
-        ask: msg.AskPrice,
-        askSize: msg.AskQty,
-        o: msg.Open,
-        h: msg.High,
-        l: msg.Low,
-        c: msg.Close,
-        v: msg.Volume,
-        raw: msg,
+        date: new Date().toISOString(),
+        price: msg.LTP,
+        bidPrice: msg.BidPrice,
+        bidQuantity: msg.BidQty,
+        askPrice: msg.AskPrice,
+        askQuantity: msg.AskQty,
+        open: msg.Open,
+        high: msg.High,
+        low: msg.Low,
+        close: msg.Close,
+        volume: msg.Volume,
       };
     },
     
@@ -416,18 +449,17 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'schwab' as const,
         symbol: content.key?.toUpperCase() || content['0']?.toUpperCase(),
         type: 'quote' as const,
-        ts: new Date().toISOString(),
-        lastPrice: content['3'],
-        bid: content['1'],
-        bidSize: content['4'],
-        ask: content['2'],
-        askSize: content['5'],
-        o: content['28'],
-        h: content['12'],
-        l: content['13'],
-        c: content['15'],
-        v: content['8'],
-        raw: msg,
+        date: new Date().toISOString(),
+        price: content['3'],
+        bidPrice: content['1'],
+        bidQuantity: content['4'],
+        askPrice: content['2'],
+        askQuantity: content['5'],
+        open: content['28'],
+        high: content['12'],
+        low: content['13'],
+        close: content['15'],
+        volume: content['8'],
       };
     },
     

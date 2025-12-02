@@ -10,30 +10,34 @@ export interface CorezaMarketEvent {
   type: MarketEventType;
   
   // Timing (always UTC ISO)
-  ts: string;               // ISO 8601 timestamp
+  date: string;             // ISO 8601 timestamp
   
   // Trade data
-  lastPrice?: number;
-  size?: number;
+  price?: number;
+  quantity?: number;
   exchange?: string;
   
   // Quote data
-  bid?: number;
-  bidSize?: number;
-  ask?: number;
-  askSize?: number;
+  bidPrice?: number;
+  bidQuantity?: number;
+  askPrice?: number;
+  askQuantity?: number;
   
   // Bar/OHLCV data
-  o?: number;
-  h?: number;
-  l?: number;
-  c?: number;
-  v?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
   vwap?: number;
   
+  // Ticker data
+  priceChange?: number;
+  priceChangePercent?: number;
+  
   // Metadata
-  timeframe?: Timeframe;
-  raw?: any;                // Original message for debugging
+  timeframe?: string;
+  isClosed?: boolean;
 }
 
 export interface ControlMessage {

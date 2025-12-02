@@ -1,13 +1,13 @@
 {
   "name": "Transform",
   "label": "Transform",
-  "def": "Manipulate a value",
+  "def": "Transform values with type-specific operations",
   "node_type": "main",
   "icon": "/assets/icons/if.svg",
   "category": "Logic",
-  "description": "Value transformations like length, substring or trim",
+  "description": "Data transformations for strings, numbers, dates, arrays, objects and booleans",
   "color": "text-yellow-500",
-  "size": { "width": 300, "height": 240 },
+  "size": { "width": 320, "height": 280 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -25,33 +25,173 @@
       "required": true
     },
     {
-      "key": "operator",
-      "label": "Operation",
+      "key": "dataType",
+      "label": "Data Type",
       "type": "select",
       "options": [
-        { "label": "Length", "value": "len" },
-        { "label": "Substring", "value": "substring" },
-        { "label": "Trim", "value": "trim" },
-        { "label": "To Upper", "value": "upper" },
-        { "label": "To Lower", "value": "lower" },
-        { "label": "Parse to JSON", "value": "toJson" }
+        { "label": "String", "value": "string" },
+        { "label": "Number", "value": "number" },
+        { "label": "Date & Time", "value": "datetime" },
+        { "label": "Boolean", "value": "boolean" },
+        { "label": "Array", "value": "array" },
+        { "label": "Object", "value": "object" }
       ],
-      "default": "len",
+      "default": "string",
       "required": true
     },
     {
+      "key": "operator",
+      "label": "Operation",
+      "type": "select",
+      "options": [],
+      "default": "len",
+      "required": true,
+      "dynamicOptions": {
+        "dependsOn": "dataType",
+        "optionsByValue": {
+          "string": [
+            { "label": "Length", "value": "len" },
+            { "label": "Trim", "value": "trim" },
+            { "label": "To Upper", "value": "upper" },
+            { "label": "To Lower", "value": "lower" },
+            { "label": "Substring", "value": "substring" },
+            { "label": "Replace", "value": "replace" },
+            { "label": "Split", "value": "split" },
+            { "label": "Concat", "value": "concat" },
+            { "label": "Starts With", "value": "startsWith" },
+            { "label": "Ends With", "value": "endsWith" },
+            { "label": "Contains", "value": "contains" },
+            { "label": "Is Empty", "value": "isEmpty" },
+            { "label": "Parse to JSON", "value": "toJson" }
+          ],
+          "number": [
+            { "label": "Round", "value": "round" },
+            { "label": "Floor", "value": "floor" },
+            { "label": "Ceil", "value": "ceil" },
+            { "label": "Abs", "value": "abs" },
+            { "label": "Add", "value": "add" },
+            { "label": "Subtract", "value": "subtract" },
+            { "label": "Multiply", "value": "multiply" },
+            { "label": "Divide", "value": "divide" },
+            { "label": "Modulo", "value": "modulo" },
+            { "label": "To String", "value": "toString" }
+          ],
+          "datetime": [
+            { "label": "Format", "value": "formatDate" },
+            { "label": "Add Days", "value": "addDays" },
+            { "label": "Subtract Days", "value": "subtractDays" },
+            { "label": "Get Year", "value": "getYear" },
+            { "label": "Get Month", "value": "getMonth" },
+            { "label": "Get Day", "value": "getDay" },
+            { "label": "Get Hour", "value": "getHour" },
+            { "label": "Get Minute", "value": "getMinute" },
+            { "label": "To Timestamp", "value": "toTimestamp" },
+            { "label": "From Timestamp", "value": "fromTimestamp" }
+          ],
+          "boolean": [
+            { "label": "Not (Invert)", "value": "not" },
+            { "label": "To String", "value": "boolToString" },
+            { "label": "To Number", "value": "boolToNumber" }
+          ],
+          "array": [
+            { "label": "Length", "value": "arrayLength" },
+            { "label": "Push", "value": "push" },
+            { "label": "Pop", "value": "pop" },
+            { "label": "Shift", "value": "shift" },
+            { "label": "Unshift", "value": "unshift" },
+            { "label": "Concat", "value": "arrayConcat" },
+            { "label": "Slice", "value": "slice" },
+            { "label": "Reverse", "value": "reverse" },
+            { "label": "Sort", "value": "sort" },
+            { "label": "Unique", "value": "unique" },
+            { "label": "Flatten", "value": "flatten" },
+            { "label": "First", "value": "first" },
+            { "label": "Last", "value": "last" },
+            { "label": "Contains", "value": "arrayContains" },
+            { "label": "Is Empty", "value": "arrayIsEmpty" },
+            { "label": "Join", "value": "join" }
+          ],
+          "object": [
+            { "label": "Get Keys", "value": "keys" },
+            { "label": "Get Values", "value": "values" },
+            { "label": "Get Entries", "value": "entries" },
+            { "label": "Get Property", "value": "getProperty" },
+            { "label": "Set Property", "value": "setProperty" },
+            { "label": "Delete Property", "value": "deleteProperty" },
+            { "label": "Has Property", "value": "hasProperty" },
+            { "label": "Merge", "value": "merge" },
+            { "label": "Pick", "value": "pick" },
+            { "label": "Omit", "value": "omit" },
+            { "label": "Is Empty", "value": "objectIsEmpty" }
+          ]
+        }
+      }
+    },
+    {
       "key": "arg1",
-      "label": "Arg1",
+      "label": "Argument 1",
       "type": "text",
-      "placeholder": "Start index",
-      "displayOptions": { "show": { "operator": ["substring"] } }
+      "placeholder": "",
+      "displayOptions": {
+        "show": {
+          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addDays", "subtractDays", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit"]
+        }
+      },
+      "dynamicLabel": {
+        "dependsOn": "operator",
+        "labelsByValue": {
+          "substring": "Start Index",
+          "replace": "Search",
+          "split": "Delimiter",
+          "concat": "Append String",
+          "startsWith": "Prefix",
+          "endsWith": "Suffix",
+          "contains": "Substring",
+          "round": "Decimal Places",
+          "add": "Number",
+          "subtract": "Number",
+          "multiply": "Number",
+          "divide": "Number",
+          "modulo": "Number",
+          "formatDate": "Format (e.g. YYYY-MM-DD)",
+          "addDays": "Days",
+          "subtractDays": "Days",
+          "push": "Item to Add",
+          "unshift": "Item to Add",
+          "arrayConcat": "Array (JSON)",
+          "slice": "Start Index",
+          "sort": "Order (asc/desc)",
+          "arrayContains": "Item to Find",
+          "join": "Delimiter",
+          "getProperty": "Property Path",
+          "setProperty": "Property Path",
+          "deleteProperty": "Property Path",
+          "hasProperty": "Property Path",
+          "merge": "Object (JSON)",
+          "pick": "Keys (comma-separated)",
+          "omit": "Keys (comma-separated)"
+        }
+      }
     },
     {
       "key": "arg2",
-      "label": "Arg2",
+      "label": "Argument 2",
       "type": "text",
-      "placeholder": "Length",
-      "displayOptions": { "show": { "operator": ["substring"] } }
+      "placeholder": "",
+      "displayOptions": {
+        "show": {
+          "operator": ["substring", "replace", "slice", "setProperty"]
+        }
+      },
+      "dynamicLabel": {
+        "dependsOn": "operator",
+        "labelsByValue": {
+          "substring": "Length",
+          "replace": "Replace With",
+          "slice": "End Index",
+          "setProperty": "Value"
+        }
+      }
     }
   ]
 }

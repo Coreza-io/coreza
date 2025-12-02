@@ -463,6 +463,24 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           );
         }
         
+        // Determine options to display
+        let displayOptions: any[] = [];
+        
+        // Handle dynamicOptions (e.g., Transform node operator based on dataType)
+        if (f.dynamicOptions?.dependsOn && f.dynamicOptions?.optionsByValue) {
+          const parentValue = fieldState[f.dynamicOptions.dependsOn];
+          displayOptions = f.dynamicOptions.optionsByValue[parentValue] || [];
+        }
+        // Handle conditional options
+        else if (f.dependsOn && f.conditionalOptions) {
+          const parentValue = fieldState[f.dependsOn];
+          displayOptions = f.conditionalOptions[parentValue] || [];
+        }
+        // Handle regular options
+        else {
+          displayOptions = selectOptions[f.key] || f.options || [];
+        }
+
         return (
           <Select
             value={fieldState[f.key]}
@@ -489,27 +507,14 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               <SelectValue placeholder={f.placeholder || "Select option"} />
             </SelectTrigger>
             <SelectContent>
-              {(() => {
-                // Handle conditional options
-                if (f.dependsOn && f.conditionalOptions) {
-                  const parentValue = fieldState[f.dependsOn];
-                  const conditionalOptions = f.conditionalOptions[parentValue] || [];
-                  return conditionalOptions.map((option: any) => (
-                    <SelectItem key={option.id || option.value} value={option.id || option.value}>
-                      {option.name || option.label || option.id || option.value}
-                    </SelectItem>
-                  ));
-                }
-                // Handle regular options
-                return (selectOptions[f.key] || f.options || []).map((opt: any) => (
-                  <SelectItem
-                    key={opt.id || opt.value}
-                    value={opt.id || opt.value}
-                  >
-                    {opt.name || opt.label || opt.id || opt.value}
-                  </SelectItem>
-                ));
-              })()}
+              {displayOptions.map((opt: any) => (
+                <SelectItem
+                  key={opt.id || opt.value}
+                  value={opt.id || opt.value}
+                >
+                  {opt.name || opt.label || opt.id || opt.value}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         );
@@ -645,9 +650,16 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               if (!shouldShow) return null;
             }
 
+            // Determine dynamic label if configured
+            let displayLabel = f.label;
+            if (f.dynamicLabel?.dependsOn && f.dynamicLabel?.labelsByValue) {
+              const dependentValue = fieldState[f.dynamicLabel.dependsOn];
+              displayLabel = f.dynamicLabel.labelsByValue[dependentValue] || f.label;
+            }
+
             return (
               <div key={f.key}>
-                <Label>{f.label}</Label>
+                <Label>{displayLabel}</Label>
                 {renderField(f)}
               </div>
             );

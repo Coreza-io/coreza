@@ -134,10 +134,24 @@ export function useNodeFieldState({
     );
   }, [fieldState, nodeId, setNodes]);
 
-  // Handle single field change
+  // Handle single field change with dynamic options support
   const handleChange = useCallback(
     (key: string, value: any) => {
-      const newFieldState = { ...fieldState, [key]: value };
+      let newFieldState = { ...fieldState, [key]: value };
+      
+      // Check if any field has dynamicOptions that depends on this key
+      if (definition?.fields) {
+        for (const field of definition.fields) {
+          if (field.dynamicOptions?.dependsOn === key) {
+            // Reset the dependent field to first option of new dataType
+            const options = field.dynamicOptions.optionsByValue?.[value];
+            if (options && options.length > 0) {
+              newFieldState[field.key] = options[0].value;
+            }
+          }
+        }
+      }
+      
       setFieldState(newFieldState);
       setNodes((nds) =>
         nds.map((n) =>
@@ -146,7 +160,7 @@ export function useNodeFieldState({
                 ...n,
                 data: {
                   ...n.data,
-                  values: { ...((n.data as any)?.values || {}), [key]: value },
+                  values: newFieldState,
                   fieldState: newFieldState,
                 },
               }
@@ -154,7 +168,7 @@ export function useNodeFieldState({
         )
       );
     },
-    [fieldState, nodeId, setNodes]
+    [fieldState, nodeId, setNodes, definition?.fields]
   );
 
   // Handle batch field updates

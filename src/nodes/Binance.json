@@ -118,6 +118,7 @@
       "options": [
         { "name": "1 Minute", "id": "1m" },
         { "name": "5 Minutes", "id": "5m" },
+        { "name": "3 Minutes", "id": "3m" },
         { "name": "15 Minutes", "id": "15m" },
         { "name": "30 Minutes", "id": "30m" },
         { "name": "1 Hour", "id": "1h" },

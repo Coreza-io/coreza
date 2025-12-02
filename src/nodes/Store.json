@@ -102,10 +102,43 @@
       ],
       "default": "manual",
       "required": true,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get",
+            "delete",
+            "increment",
+            "append",
+            "lpop",
+            "rpop",
+            "lrange",
+            "llen",
+            "lindex",
+            "ltrim",
+            "hget",
+            "hgetall",
+            "hdel",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem",
+            "exists",
+            "expire",
+            "ttl"
+          ]
+        }
       }
     },
     {
@@ -114,11 +147,44 @@
       "type": "text",
       "placeholder": "e.g., scanner_tickers",
       "required": true,
-      "displayOptions": { 
-        "show": { 
+      "displayOptions": {
+        "show": {
           "variableSource": ["manual"],
-          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
-        } 
+          "operation": [
+            "get",
+            "delete",
+            "increment",
+            "append",
+            "lpop",
+            "rpop",
+            "lrange",
+            "llen",
+            "lindex",
+            "ltrim",
+            "hget",
+            "hgetall",
+            "hdel",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem",
+            "exists",
+            "expire",
+            "ttl"
+          ]
+        }
       }
     },
     {
@@ -128,11 +194,44 @@
       "optionsSource": "storeWorkflowsApi",
       "placeholder": "Select workflow",
       "required": true,
-      "displayOptions": { 
-        "show": { 
+      "displayOptions": {
+        "show": {
           "variableSource": ["store"],
-          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
-        } 
+          "operation": [
+            "get",
+            "delete",
+            "increment",
+            "append",
+            "lpop",
+            "rpop",
+            "lrange",
+            "llen",
+            "lindex",
+            "ltrim",
+            "hget",
+            "hgetall",
+            "hdel",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem",
+            "exists",
+            "expire",
+            "ttl"
+          ]
+        }
       }
     },
     {
@@ -143,11 +242,44 @@
       "dependsOn": "sourceWorkflowId",
       "placeholder": "Select variable",
       "required": true,
-      "displayOptions": { 
-        "show": { 
+      "displayOptions": {
+        "show": {
           "variableSource": ["store"],
-          "operation": ["get", "delete", "increment", "append", "lpop", "rpop", "lrange", "llen", "lindex", "ltrim", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "hincrby", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "zrange", "zscore", "zcount", "zincrby", "zrem", "exists", "expire", "ttl"] 
-        } 
+          "operation": [
+            "get",
+            "delete",
+            "increment",
+            "append",
+            "lpop",
+            "rpop",
+            "lrange",
+            "llen",
+            "lindex",
+            "ltrim",
+            "hget",
+            "hgetall",
+            "hdel",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem",
+            "exists",
+            "expire",
+            "ttl"
+          ]
+        }
       }
     },
     {
@@ -156,10 +288,19 @@
       "type": "text",
       "placeholder": "e.g., scanner_tickers",
       "required": true,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["set", "lpush", "rpush", "lset", "hset", "sadd", "zadd", "keys"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set",
+            "lpush",
+            "rpush",
+            "lset",
+            "hset",
+            "sadd",
+            "zadd",
+            "keys"
+          ]
+        }
       }
     },
     {
@@ -167,10 +308,10 @@
       "label": "Value",
       "type": "textarea",
       "placeholder": "Enter value or {{ $('Node').json.field }}",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["set", "append", "lpush", "rpush", "lset", "hset"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["set", "append", "lpush", "rpush", "lset", "hset"]
+        }
       }
     },
     {
@@ -179,10 +320,10 @@
       "type": "text",
       "placeholder": "field_name",
       "required": true,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["hset", "hget", "hdel", "hexists", "hincrby"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["hset", "hget", "hdel", "hexists", "hincrby"]
+        }
       }
     },
     {
@@ -190,10 +331,10 @@
       "label": "Members",
       "type": "textarea",
       "placeholder": "member1, member2, member3 (comma-separated)",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["sadd", "srem", "zrem"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["sadd", "srem", "zrem"]
+        }
       }
     },
     {
@@ -202,21 +343,21 @@
       "type": "text",
       "placeholder": "member_name",
       "required": true,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["sismember", "zscore", "zincrby"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["sismember", "zscore", "zincrby"]
+        }
       }
     },
     {
       "key": "score",
       "label": "Score",
-      "type": "number",
+      "type": "text",
       "placeholder": "0",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zadd"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zadd"]
+        }
       }
     },
     {
@@ -224,80 +365,80 @@
       "label": "Score:Member Pairs",
       "type": "textarea",
       "placeholder": "100:AAPL, 95:TSLA, 87:NVDA (score:member, comma-separated)",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zadd"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zadd"]
+        }
       }
     },
     {
       "key": "startIndex",
       "label": "Start Index/Rank",
-      "type": "number",
+      "type": "text",
       "placeholder": "0",
       "default": 0,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["lrange", "ltrim", "zrange"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["lrange", "ltrim", "zrange"]
+        }
       }
     },
     {
       "key": "endIndex",
       "label": "End Index/Rank",
-      "type": "number",
+      "type": "text",
       "placeholder": "-1 (all)",
       "default": -1,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["lrange", "ltrim", "zrange"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["lrange", "ltrim", "zrange"]
+        }
       }
     },
     {
       "key": "index",
       "label": "Index",
-      "type": "number",
+      "type": "text",
       "placeholder": "0",
       "required": true,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["lindex", "lset"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["lindex", "lset"]
+        }
       }
     },
     {
       "key": "incrementBy",
       "label": "Increment By",
-      "type": "number",
+      "type": "text",
       "placeholder": "1",
       "default": 1,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["increment", "hincrby", "zincrby"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["increment", "hincrby", "zincrby"]
+        }
       }
     },
     {
       "key": "minScore",
       "label": "Min Score",
-      "type": "number",
+      "type": "text",
       "placeholder": "-inf",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zcount"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zcount"]
+        }
       }
     },
     {
       "key": "maxScore",
       "label": "Max Score",
-      "type": "number",
+      "type": "text",
       "placeholder": "+inf",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zcount"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zcount"]
+        }
       }
     },
     {
@@ -306,10 +447,10 @@
       "type": "text",
       "placeholder": "* or prefix_*",
       "default": "*",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["keys"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["keys"]
+        }
       }
     },
     {
@@ -317,10 +458,10 @@
       "label": "Other Keys",
       "type": "textarea",
       "placeholder": "key1, key2, key3 (comma-separated variable names)",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["sinter", "sunion", "sdiff"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["sinter", "sunion", "sdiff"]
+        }
       }
     },
     {
@@ -328,10 +469,10 @@
       "label": "Include Scores",
       "type": "checkbox",
       "default": false,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zrange"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zrange"]
+        }
       }
     },
     {
@@ -339,22 +480,30 @@
       "label": "Reverse Order",
       "type": "checkbox",
       "default": false,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["zrange"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": ["zrange"]
+        }
       }
     },
     {
       "key": "ttl",
       "label": "TTL (seconds)",
-      "type": "number",
+      "type": "text",
       "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
       "default": 0,
-      "displayOptions": { 
-        "show": { 
-          "operation": ["set", "lpush", "rpush", "hset", "sadd", "zadd", "expire"] 
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set",
+            "lpush",
+            "rpush",
+            "hset",
+            "sadd",
+            "zadd",
+            "expire"
+          ]
+        }
       }
     }
   ]

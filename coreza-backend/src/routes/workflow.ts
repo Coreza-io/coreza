@@ -11,6 +11,13 @@ import { REDIS_CHANNELS } from "../config/redisChannels";
 
 const router = express.Router();
 
+// Map node names to WebSocket source IDs for control messages
+const nodeNameToSourceMap: Record<string, string> = {
+  "BinanceStreamData": "binance_stream",
+  "AlpacaStreamData": "alpaca_stream",
+  "AlpacaNews": "alpaca_news",
+};
+
 // Get all workflows for a user
 router.get("/:userId", async (req, res, next) => {
   try {
@@ -115,13 +122,15 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
       // Unschedule if has Scheduler node
       await workflowScheduler.unscheduleWorkflow(workflowId);
 
-      // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, etc.)
+      // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, BinanceStreamData, etc.)
       const streamingNodes = workflow.nodes?.filter(
         (n: any) =>
           n.name === "AlpacaNews" ||
           n.type === "AlpacaNews" ||
           n.name === "AlpacaStreamData" ||
-          n.type === "AlpacaStreamData"
+          n.type === "AlpacaStreamData" ||
+          n.name === "BinanceStreamData" ||
+          n.type === "BinanceStreamData"
       );
 
       if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
@@ -143,6 +152,9 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
                 : [];
 
             if (symbolArray.length > 0) {
+              // Map node name to WebSocket source ID
+              const source = nodeNameToSourceMap[node.name] || node.name;
+              
               // Publish control message to Redis for unsubscription
               const controlMessage = {
                 action: "unsubscribe",
@@ -150,7 +162,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
                 workflowId,
                 nodeId: node.id,
                 symbols: symbolArray,
-                source: "alpaca",
+                source,
               };
 
               await redis.publish(
@@ -159,7 +171,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
               );
 
               console.log(
-                `📤 [Workflow Delete] Published unsubscribe control message:`,
+                `📤 [Workflow Delete] Published unsubscribe control message for ${source}:`,
                 symbolArray
               );
             }
@@ -565,6 +577,12 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             triggerNode.values || triggerNode.data?.values || {};
           const credentialId = nodeValues.credential_id;
           const symbols = nodeValues.symbols;
+          
+          // Extract additional fields for streaming configuration
+          const streamTypes = nodeValues.stream_types;      // Event types for filtering
+          const feed = nodeValues.feed;                      // Alpaca feed selection (iex/sip)
+          const environment = nodeValues.environment;        // Binance: testnet/live
+          const assetType = nodeValues.asset_type;           // Binance: spot/futures
 
           if (!credentialId) {
             throw createError(
@@ -589,11 +607,14 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
 
           if (symbolArray.length === 0) {
             throw createError(
-              "At least one symbol is required for AlpacaNews",
+              "At least one symbol is required for streaming node",
               400
             );
           }
 
+          // Map node name to WebSocket source ID
+          const source = nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
+          
           // Publish control message to Redis for subscription
           // MarketControlHandler will orchestrate the connection
           const redis = getRedis();
@@ -603,8 +624,14 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             workflowId,
             nodeId: triggerNode.id,
             symbols: symbolArray,
-            source: triggerNode.name,
+            source,
             credentialId,
+            // Include event types for filtering (normalize to array)
+            eventTypes: Array.isArray(streamTypes) ? streamTypes : (streamTypes ? [streamTypes] : undefined),
+            // Include broker-specific fields
+            feed,              // Alpaca: iex or sip
+            environment,       // Binance: testnet or live
+            assetType,         // Binance: spot or futures
           };
 
           await redis.publish(
@@ -613,8 +640,8 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           );
 
           console.log(
-            `📤 [Workflow Route] Published subscribe control message for alpaca_news:`,
-            symbolArray
+            `📤 [Workflow Route] Published subscribe control message for ${source}:`,
+            { symbols: symbolArray, eventTypes: controlMessage.eventTypes, feed, environment, assetType }
           );
           newsSubscription = { symbols: symbolArray };
         }
@@ -665,6 +692,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
                 : [];
 
             if (symbolArray.length > 0) {
+              // Map node name to WebSocket source ID
+              const source = nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
+              
               // Publish control message to Redis for unsubscription
               const redis = getRedis();
               const controlMessage = {
@@ -673,7 +703,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
                 workflowId,
                 nodeId: triggerNode.id,
                 symbols: symbolArray,
-                source: triggerNode.name,
+                source,
               };
 
               await redis.publish(
@@ -682,7 +712,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
               );
 
               console.log(
-                `📤 [Workflow Route] Published unsubscribe control message for alpaca_news:`,
+                `📤 [Workflow Route] Published unsubscribe control message for ${source}:`,
                 symbolArray
               );
             }

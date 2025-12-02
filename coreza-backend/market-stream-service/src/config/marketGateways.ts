@@ -226,50 +226,59 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     },
 
     normalize: (msg) => {
-      const base = {
-        source: 'binance' as const,
-        symbol: msg.s?.toUpperCase(),
-        ts: new Date(msg.E || msg.T || Date.now()).toISOString(),
-        raw: msg,
-      };
+      const symbol = msg.s?.toUpperCase();
+      const date = new Date(msg.E || msg.T || Date.now()).toISOString();
 
       switch (msg.e) {
         case 'trade':
-          return { ...base, type: 'trade' as const, lastPrice: parseFloat(msg.p), size: parseFloat(msg.q) };
+          return {
+            symbol,
+            date,
+            price: parseFloat(msg.p),
+            quantity: parseFloat(msg.q),
+            type: 'trade' as const,
+            source: 'binance' as const,
+          };
 
         case 'kline': {
           const k = msg.k;
           return {
-            ...base,
-            type: 'bar' as const,
-            o: parseFloat(k.o),
-            h: parseFloat(k.h),
-            l: parseFloat(k.l),
-            c: parseFloat(k.c),
-            v: parseFloat(k.v),
+            symbol,
+            date,
+            open: parseFloat(k.o),
+            high: parseFloat(k.h),
+            low: parseFloat(k.l),
+            close: parseFloat(k.c),
+            volume: parseFloat(k.v),
             timeframe: k.i,
             isClosed: k.x,
+            type: 'bar' as const,
+            source: 'binance' as const,
           };
         }
 
         case 'bookTicker':
           return {
-            ...base,
+            symbol,
+            date,
+            bidPrice: parseFloat(msg.b),
+            bidQuantity: parseFloat(msg.B),
+            askPrice: parseFloat(msg.a),
+            askQuantity: parseFloat(msg.A),
             type: 'quote' as const,
-            bid: parseFloat(msg.b),
-            bidSize: parseFloat(msg.B),
-            ask: parseFloat(msg.a),
-            askSize: parseFloat(msg.A),
+            source: 'binance' as const,
           };
 
         case '24hrTicker':
           return {
-            ...base,
-            type: 'ticker' as const,
-            lastPrice: parseFloat(msg.c),
+            symbol,
+            date,
+            price: parseFloat(msg.c),
             priceChange: parseFloat(msg.p),
             priceChangePercent: parseFloat(msg.P),
-            v: parseFloat(msg.v),
+            volume: parseFloat(msg.v),
+            type: 'ticker' as const,
+            source: 'binance' as const,
           };
 
         default:

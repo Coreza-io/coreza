@@ -122,30 +122,78 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
   binance: {
     id: 'binance',
     wsUrl: 'wss://stream.binance.com:9443/ws',
-    makeSubscribeMessage: (symbols) => ({
+    makeSubscribeMessage: (symbols, types = ['trade']) => ({
       method: 'SUBSCRIBE',
-      params: symbols.map(s => `${s.toLowerCase()}@trade`),
+      params: symbols.flatMap(s => types.map(t => `${s.toLowerCase()}@${t}`)),
       id: Date.now(),
     }),
-    makeUnsubscribeMessage: (symbols) => ({
+    makeUnsubscribeMessage: (symbols, types = ['trade']) => ({
       method: 'UNSUBSCRIBE',
-      params: symbols.map(s => `${s.toLowerCase()}@trade`),
+      params: symbols.flatMap(s => types.map(t => `${s.toLowerCase()}@${t}`)),
       id: Date.now(),
     }),
     parseMessage: (buffer) => [JSON.parse(buffer.toString())],
-    identifyMessageType: (msg) => msg.e || 'unknown',
-    shouldPublish: (msg) => msg.e === 'trade',
+    identifyMessageType: (msg) => msg.e || (msg.result !== undefined ? 'result' : 'unknown'),
+    shouldPublish: (msg) => ['trade', 'kline', 'bookTicker', '24hrTicker'].includes(msg.e),
     normalize: (msg) => {
-      if (msg.e !== 'trade') return null;
-      return {
-        source: 'binance' as const,
-        symbol: msg.s?.toUpperCase(),
-        type: 'trade' as const,
-        ts: new Date(msg.T).toISOString(),
-        lastPrice: parseFloat(msg.p),
-        size: parseFloat(msg.q),
-        raw: msg,
-      };
+      const symbol = msg.s?.toUpperCase();
+      const date = new Date(msg.E || msg.T || Date.now()).toISOString();
+
+      switch (msg.e) {
+        case 'trade':
+          return {
+            symbol,
+            date,
+            price: parseFloat(msg.p),
+            quantity: parseFloat(msg.q),
+            type: 'trade' as const,
+            source: 'binance' as const,
+          };
+
+        case 'kline': {
+          const k = msg.k;
+          return {
+            symbol,
+            date,
+            open: parseFloat(k.o),
+            high: parseFloat(k.h),
+            low: parseFloat(k.l),
+            close: parseFloat(k.c),
+            volume: parseFloat(k.v),
+            timeframe: k.i,
+            isClosed: k.x,
+            type: 'bar' as const,
+            source: 'binance' as const,
+          };
+        }
+
+        case 'bookTicker':
+          return {
+            symbol,
+            date,
+            bidPrice: parseFloat(msg.b),
+            bidQuantity: parseFloat(msg.B),
+            askPrice: parseFloat(msg.a),
+            askQuantity: parseFloat(msg.A),
+            type: 'quote' as const,
+            source: 'binance' as const,
+          };
+
+        case '24hrTicker':
+          return {
+            symbol,
+            date,
+            price: parseFloat(msg.c),
+            priceChange: parseFloat(msg.p),
+            priceChangePercent: parseFloat(msg.P),
+            volume: parseFloat(msg.v),
+            type: 'ticker' as const,
+            source: 'binance' as const,
+          };
+
+        default:
+          return null;
+      }
     },
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,

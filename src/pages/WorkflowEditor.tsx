@@ -170,6 +170,7 @@ const WorkflowEditorContent = () => {
   const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const rf = useReactFlow();
+  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
 
   // Inject execution state into node data for visual feedback
   useEffect(() => {
@@ -1014,7 +1015,123 @@ const WorkflowEditorContent = () => {
   // Handle delete key to remove selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      //console.log("Key pressed:", event.key, "Code:", event.code, "Target:", event.target);
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isEditable =
+        (tagName === "input" || tagName === "textarea") ||
+        target?.isContentEditable;
+
+      if (isEditable) {
+        return;
+      }
+
+      const isModKey = event.metaKey || event.ctrlKey;
+
+      if (isModKey && event.key.toLowerCase() === "c") {
+        const selectedNodes = nodes.filter((node) => node.selected);
+        if (selectedNodes.length === 0) {
+          return;
+        }
+
+        const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+        const selectedEdges = edges.filter(
+          (edge) =>
+            selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+        );
+
+        const nodesCopy = selectedNodes.map((node) => ({
+          ...node,
+          data: { ...node.data },
+        }));
+
+        const edgesCopy = selectedEdges.map((edge) => ({
+          ...edge,
+          data: { ...edge.data },
+        }));
+
+        clipboardRef.current = { nodes: nodesCopy, edges: edgesCopy };
+        toast({ description: "Selection copied" });
+        return;
+      }
+
+      if (isModKey && event.key.toLowerCase() === "v") {
+        if (!clipboardRef.current) {
+          return;
+        }
+
+        const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+        const nodeIdMap: Record<string, string> = {};
+        const timestamp = Date.now();
+        const existingNodeIds = new Set(nodes.map((node) => node.id));
+        const existingEdgeIds = new Set(edges.map((edge) => edge.id));
+
+        const newNodes = copiedNodes.map((node, index) => {
+          let newId = `${node.id}_${timestamp}_${index}`;
+          while (existingNodeIds.has(newId)) {
+            newId = `${node.id}_${timestamp}_${index}_${Math.random()
+              .toString(36)
+              .slice(2, 6)}`;
+          }
+          existingNodeIds.add(newId);
+          nodeIdMap[node.id] = newId;
+
+          return {
+            ...node,
+            id: newId,
+            position: {
+              x: (node.position?.x ?? 0) + 50,
+              y: (node.position?.y ?? 0) + 50,
+            },
+            selected: true,
+            data: {
+              ...node.data,
+              isExecuting: false,
+            },
+          };
+        });
+
+        const newEdges = copiedEdges
+          .map((edge, index) => {
+            const newSource = nodeIdMap[edge.source];
+            const newTarget = nodeIdMap[edge.target];
+
+            if (!newSource || !newTarget) {
+              return null;
+            }
+
+            let newId = `edge_${timestamp}_${index}`;
+            while (existingEdgeIds.has(newId)) {
+              newId = `edge_${timestamp}_${index}_${Math.random()
+                .toString(36)
+                .slice(2, 6)}`;
+            }
+            existingEdgeIds.add(newId);
+
+            return {
+              ...edge,
+              id: newId,
+              source: newSource,
+              target: newTarget,
+              selected: true,
+              data: {
+                ...edge.data,
+                onRemoveEdge: () => removeEdge(newId),
+              },
+            } as Edge;
+          })
+          .filter((edge): edge is Edge => Boolean(edge));
+
+        setNodes((nds) => {
+          const deselected = nds.map((node) => ({ ...node, selected: false }));
+          return [...deselected, ...newNodes];
+        });
+
+        setEdges((eds) => [...eds, ...newEdges]);
+
+        toast({ description: "Selection pasted" });
+        return;
+      }
+
       if (event.key === "Delete") {
         //console.log("Delete key pressed - removing selected nodes");
 
@@ -1043,7 +1160,7 @@ const WorkflowEditorContent = () => {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [setNodes, setEdges, nodes]);
+  }, [setNodes, setEdges, nodes, edges, toast, removeEdge]);
 
   // Add visibility change handler to prevent state loss on tab switching
   useEffect(() => {

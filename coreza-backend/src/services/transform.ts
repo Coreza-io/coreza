@@ -47,64 +47,81 @@ export class TransformService {
         }
 
         case 'substring': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const start = Number(arg1) || 0;
           const length = arg2 !== undefined && arg2 !== '' ? Number(arg2) : undefined;
           return {
             success: true,
-            result: length !== undefined ? str.substring(start, start + length) : str.substring(start),
+            result: length !== undefined ? validation.string.substring(start, start + length) : validation.string.substring(start),
           };
         }
 
-        case 'trim':
-          return { success: true, result: String(value).trim() };
+        case 'trim': {
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.string.trim() };
+        }
 
-        case 'upper':
-          return { success: true, result: String(value).toUpperCase() };
+        case 'upper': {
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.string.toUpperCase() };
+        }
 
-        case 'lower':
-          return { success: true, result: String(value).toLowerCase() };
+        case 'lower': {
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.string.toLowerCase() };
+        }
 
         case 'replace': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const search = String(arg1 || '');
           const replacement = String(arg2 || '');
-          return { success: true, result: str.split(search).join(replacement) };
+          return { success: true, result: validation.string.split(search).join(replacement) };
         }
 
         case 'split': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const delimiter = arg1 !== undefined ? String(arg1) : ',';
-          return { success: true, result: str.split(delimiter) };
+          return { success: true, result: validation.string.split(delimiter) };
         }
 
         case 'concat': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const appendStr = String(arg1 || '');
-          return { success: true, result: str + appendStr };
+          return { success: true, result: validation.string + appendStr };
         }
 
         case 'startsWith': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const prefix = String(arg1 || '');
-          return { success: true, result: str.startsWith(prefix) };
+          return { success: true, result: validation.string.startsWith(prefix) };
         }
 
         case 'endsWith': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const suffix = String(arg1 || '');
-          return { success: true, result: str.endsWith(suffix) };
+          return { success: true, result: validation.string.endsWith(suffix) };
         }
 
         case 'contains': {
-          const str = String(value);
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const substring = String(arg1 || '');
-          return { success: true, result: str.includes(substring) };
+          return { success: true, result: validation.string.includes(substring) };
         }
 
         case 'isEmpty': {
-          const str = String(value);
-          return { success: true, result: str.trim().length === 0 };
+          const validation = TransformService.validateString(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.string.trim().length === 0 };
         }
 
         case 'toJson': {
@@ -573,6 +590,14 @@ export class TransformService {
       }
     }
     return { valid: false, error: 'Value must be an object' };
+  }
+
+  // Helper: Validate value is a string (strict)
+  private static validateString(value: any): { valid: true; string: string } | { valid: false; error: string } {
+    if (typeof value === 'string') {
+      return { valid: true, string: value };
+    }
+    return { valid: false, error: 'Value must be a string' };
   }
 
   // Helper: Parse value (try JSON first)

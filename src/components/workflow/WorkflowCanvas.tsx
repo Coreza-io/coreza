@@ -30,6 +30,7 @@ interface WorkflowCanvasProps {
   onNodeDoubleClick?: (event: React.MouseEvent, node: Node) => void;
   onDrop: (event: React.DragEvent) => void;
   onDragOver: (event: React.DragEvent) => void;
+  onMouseMove?: (event: React.MouseEvent) => void;
   onNodeClick: (nodeType: string) => void;
   isPaletteVisible: boolean;
   onTogglePalette: () => void;
@@ -60,6 +61,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
   onNodeDoubleClick,
   onDrop,
   onDragOver,
+  onMouseMove,
   onNodeClick,
   isPaletteVisible,
   onTogglePalette,
@@ -200,6 +202,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           onConnect={handleConnect}
           onDrop={onDrop}
           onDragOver={onDragOver}
+          onMouseMove={onMouseMove}
           onNodeDoubleClick={onNodeDoubleClick}
           onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}

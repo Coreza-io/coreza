@@ -171,6 +171,7 @@ const WorkflowEditorContent = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
 
   // Inject execution state into node data for visual feedback
   useEffect(() => {
@@ -723,6 +724,13 @@ const WorkflowEditorContent = () => {
     event.dataTransfer.dropEffect = "move";
   }, []);
 
+  const onMouseMove = useCallback((event: React.MouseEvent) => {
+    mousePosRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }, []);
+
   // Function to create a new node
   const createNode = useCallback(
     (nodeType: string, position: { x: number; y: number }) => {
@@ -1060,6 +1068,17 @@ const WorkflowEditorContent = () => {
         }
 
         const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+        if (copiedNodes.length === 0) {
+          return;
+        }
+
+        const flowPosition = rf.screenToFlowPosition({
+          x: mousePosRef.current.x,
+          y: mousePosRef.current.y,
+        });
+
+        const minX = Math.min(...copiedNodes.map((node) => node.position?.x ?? 0));
+        const minY = Math.min(...copiedNodes.map((node) => node.position?.y ?? 0));
         const nodeIdMap: Record<string, string> = {};
         const timestamp = Date.now();
         const existingNodeIds = new Set(nodes.map((node) => node.id));
@@ -1088,8 +1107,8 @@ const WorkflowEditorContent = () => {
             ...node,
             id: newId,
             position: {
-              x: (node.position?.x ?? 0) + 50,
-              y: (node.position?.y ?? 0) + 50,
+              x: flowPosition.x + ((node.position?.x ?? 0) - minX),
+              y: flowPosition.y + ((node.position?.y ?? 0) - minY),
             },
             selected: true,
             data: {
@@ -1270,6 +1289,7 @@ const WorkflowEditorContent = () => {
             onConnect={onConnect}
             onDrop={onDrop}
             onDragOver={onDragOver}
+            onMouseMove={onMouseMove}
             onNodeDoubleClick={onNodeDoubleClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}

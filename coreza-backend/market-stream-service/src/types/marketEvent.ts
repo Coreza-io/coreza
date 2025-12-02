@@ -1,4 +1,5 @@
 // Unified market event format - all sources normalize to this
+// Uses short field names to match REST API format (t, o, h, l, c, v)
 //
 // "ticker" covers summary-style updates (e.g., Binance 24h ticker) that provide
 // snapshot statistics instead of tick-level trades or quotes.
@@ -12,31 +13,31 @@ export interface CorezaMarketEvent {
   symbol: string;           // Normalized: "AAPL", "BTCUSD", "RELIANCE"
   type: MarketEventType;
   
-  // Timing (always UTC ISO)
-  date: string;             // ISO 8601 timestamp
+  // Timing (Unix timestamp ms or ISO string)
+  t?: number | string;
   
-  // Trade data
-  price?: number;
-  quantity?: number;
-  exchange?: string;
+  // Trade data (short names)
+  p?: number;               // price
+  q?: number;               // quantity
+  x?: string;               // exchange
   
-  // Quote data
-  bidPrice?: number;
-  bidQuantity?: number;
-  askPrice?: number;
-  askQuantity?: number;
+  // Quote data (short names)
+  b?: number;               // bid price
+  B?: number;               // bid quantity
+  a?: number;               // ask price
+  A?: number;               // ask quantity
   
-  // Bar/OHLCV data
-  open?: number;
-  high?: number;
-  low?: number;
-  close?: number;
-  volume?: number;
-  vwap?: number;
+  // Bar/OHLCV data (short names)
+  o?: number;               // open
+  h?: number;               // high
+  l?: number;               // low
+  c?: number;               // close
+  v?: number;               // volume
+  vw?: number;              // vwap
   
   // Ticker data
-  priceChange?: number;
-  priceChangePercent?: number;
+  pc?: number;              // price change
+  pcp?: number;             // price change percent
   
   // Metadata
   timeframe?: string;

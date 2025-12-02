@@ -187,7 +187,7 @@ export class MarketDataGateway {
             source: this.config.id,
             symbol: event.symbol,
             type: event.type,
-            price: event.price || event.close,
+            price: event.p || event.c,
           },
           "Market event published"
         );

@@ -117,16 +117,16 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
 
       // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, etc.)
       const streamingNodes = workflow.nodes?.filter(
-        (n: any) => 
-          n.name === "AlpacaNews" || 
+        (n: any) =>
+          n.name === "AlpacaNews" ||
           n.type === "AlpacaNews" ||
           n.name === "AlpacaStreamData" ||
           n.type === "AlpacaStreamData"
       );
-      
+
       if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
         const redis = getRedis();
-        
+
         for (const node of streamingNodes) {
           const nodeValues = node.values || node.data?.values || {};
           const symbols = nodeValues.symbols;
@@ -134,7 +134,10 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
           if (symbols) {
             const symbolArray =
               typeof symbols === "string"
-                ? symbols.split(",").map((s: string) => s.trim()).filter(Boolean)
+                ? symbols
+                    .split(",")
+                    .map((s: string) => s.trim())
+                    .filter(Boolean)
                 : Array.isArray(symbols)
                 ? symbols
                 : [];
@@ -142,12 +145,12 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
             if (symbolArray.length > 0) {
               // Publish control message to Redis for unsubscription
               const controlMessage = {
-                action: 'unsubscribe',
+                action: "unsubscribe",
                 userId,
                 workflowId,
                 nodeId: node.id,
                 symbols: symbolArray,
-                source: 'alpaca',
+                source: "alpaca",
               };
 
               await redis.publish(
@@ -155,7 +158,10 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
                 JSON.stringify(controlMessage)
               );
 
-              console.log(`📤 [Workflow Delete] Published unsubscribe control message:`, symbolArray);
+              console.log(
+                `📤 [Workflow Delete] Published unsubscribe control message:`,
+                symbolArray
+              );
             }
           }
         }
@@ -509,29 +515,19 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
     if (fetchError || !workflow) throw createError("Workflow not found", 404);
 
     // Detect trigger nodes
-    const schedulerNode = workflow.nodes.find(
-      (n: any) => n.name === "Scheduler"
-    );
-    const alpacaNewsNode = workflow.nodes.find(
-      (n: any) => n.name === "AlpacaNews"
-    );
-    const webhookTriggerNode = workflow.nodes.find(
-      (n: any) => n.name === "WebhookTrigger"
+    const triggerNode = workflow.nodes.filter(
+      (n: any) => n.node_type === "trigger"
     );
 
-    if (!schedulerNode && !alpacaNewsNode && !webhookTriggerNode) {
+    if (!triggerNode) {
       throw createError(
         "No trigger node (Scheduler, AlpacaNews, or WebhookTrigger) found in workflow",
         400
       );
     }
 
-    const triggerCount = [schedulerNode, alpacaNewsNode, webhookTriggerNode].filter(Boolean).length;
-    if (triggerCount > 1) {
-      throw createError(
-        "Workflow can only have one trigger type: either Scheduler, AlpacaNews, or WebhookTrigger",
-        400
-      );
+    if (triggerNode.length > 1) {
+      throw createError("Workflow can only contain one trigger node", 400);
     }
 
     let cronToSave: string | null = null;
@@ -542,7 +538,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
     try {
       if (is_active) {
         // Handle Scheduler activation
-        if (schedulerNode) {
+        if (triggerNode.name == "Scheduler") {
           const { cron, timezone, next } = computeCronFromSchedulerNodes(
             workflow.nodes
           );
@@ -561,17 +557,23 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
         }
 
         // Handle AlpacaNews activation
-        if (alpacaNewsNode) {
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.executionMode == "streaming"
+        ) {
           const nodeValues =
-            alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
+            triggerNode.values || triggerNode.data?.values || {};
           const credentialId = nodeValues.credential_id;
           const symbols = nodeValues.symbols;
 
           if (!credentialId) {
-            throw createError("AlpacaNews node missing credential_id", 400);
+            throw createError(
+              `'${triggerNode.id}' node missing credential_id`,
+              400
+            );
           }
           if (!symbols) {
-            throw createError("AlpacaNews node missing symbols", 400);
+            throw createError(`'${triggerNode.id}' node missing symbols`, 400);
           }
 
           // Parse symbols
@@ -596,12 +598,12 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           // MarketControlHandler will orchestrate the connection
           const redis = getRedis();
           const controlMessage = {
-            action: 'subscribe',
+            action: "subscribe",
             userId,
             workflowId,
-            nodeId: alpacaNewsNode.id,
+            nodeId: triggerNode.id,
             symbols: symbolArray,
-            source: 'alpaca',
+            source: triggerNode.name,
             credentialId,
           };
 
@@ -610,29 +612,45 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             JSON.stringify(controlMessage)
           );
 
-          console.log(`📤 [Workflow Route] Published subscribe control message for alpaca_news:`, symbolArray);
+          console.log(
+            `📤 [Workflow Route] Published subscribe control message for alpaca_news:`,
+            symbolArray
+          );
           newsSubscription = { symbols: symbolArray };
         }
 
         // Handle WebhookTrigger activation
-        if (webhookTriggerNode) {
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.subCategory == "webhook"
+        ) {
           // For WebhookTrigger - no external service to call
           // The WebhookService.handleIncoming() will check is_active and route to BullMQ
-          console.log(`🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`);
+          console.log(
+            `🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`
+          );
         }
       } else {
         // Deactivate - unschedule and unsubscribe
-        if (schedulerNode) {
+        if (triggerNode) {
           await workflowScheduler.unscheduleWorkflow(workflowId);
         }
 
-        if (webhookTriggerNode) {
-          console.log(`🪝 [Workflow Route] WebhookTrigger deactivated for workflow ${workflowId}`);
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.subCategory == "webhook"
+        ) {
+          console.log(
+            `🪝 [Workflow Route] WebhookTrigger deactivated for workflow ${workflowId}`
+          );
         }
 
-        if (alpacaNewsNode) {
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.executionMode == "streaming"
+        ) {
           const nodeValues =
-            alpacaNewsNode.values || alpacaNewsNode.data?.values || {};
+            triggerNode.values || triggerNode.data?.values || {};
           const symbols = nodeValues.symbols;
 
           if (symbols) {
@@ -650,12 +668,12 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
               // Publish control message to Redis for unsubscription
               const redis = getRedis();
               const controlMessage = {
-                action: 'unsubscribe',
+                action: "unsubscribe",
                 userId,
                 workflowId,
-                nodeId: alpacaNewsNode.id,
+                nodeId: triggerNode.id,
                 symbols: symbolArray,
-                source: 'alpaca',
+                source: triggerNode.name,
               };
 
               await redis.publish(
@@ -663,7 +681,10 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
                 JSON.stringify(controlMessage)
               );
 
-              console.log(`📤 [Workflow Route] Published unsubscribe control message for alpaca_news:`, symbolArray);
+              console.log(
+                `📤 [Workflow Route] Published unsubscribe control message for alpaca_news:`,
+                symbolArray
+              );
             }
           }
         }
@@ -689,12 +710,19 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
       let message = "";
       if (is_active) {
         const parts = [];
-        if (schedulerNode) parts.push("scheduled");
-        if (alpacaNewsNode)
+        if (triggerNode.name == "Scheduler") parts.push("scheduled");
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.executionMode == "streaming"
+        )
           parts.push(
             `subscribed to news for ${newsSubscription?.symbols.join(", ")}`
           );
-        if (webhookTriggerNode) parts.push("webhook listener activated");
+        if (
+          triggerNode.node_type == "trigger" &&
+          triggerNode.subCategory == "webhook"
+        )
+          parts.push("webhook listener activated");
         message = `Workflow ${parts.join(" and ")}`;
       } else {
         message = "Workflow deactivated";
@@ -725,27 +753,27 @@ router.get("/scheduler/status", async (req, res, next) => {
   try {
     const scheduledJobs = workflowScheduler.getScheduledJobs();
 
-      res.json({
-        status: "active",
-        scheduled_workflows: scheduledJobs.length,
-        jobs: scheduledJobs.map((job) => ({
-          workflow_id: job.workflowId,
-          user_id: job.userId,
-          cron_expression: job.cronExpression,
-          next_run: (() => {
-            const nextRunDate = workflowScheduler.getNextRunDate(job.job);
-            if (!nextRunDate) {
-              return null;
-            }
-            const timezone = job.timezone || "UTC";
-            return formatInTimeZone(
-              nextRunDate,
-              timezone,
-              "yyyy-MM-dd HH:mm:ssXXX"
-            );
-          })(),
-        })),
-      });
+    res.json({
+      status: "active",
+      scheduled_workflows: scheduledJobs.length,
+      jobs: scheduledJobs.map((job) => ({
+        workflow_id: job.workflowId,
+        user_id: job.userId,
+        cron_expression: job.cronExpression,
+        next_run: (() => {
+          const nextRunDate = workflowScheduler.getNextRunDate(job.job);
+          if (!nextRunDate) {
+            return null;
+          }
+          const timezone = job.timezone || "UTC";
+          return formatInTimeZone(
+            nextRunDate,
+            timezone,
+            "yyyy-MM-dd HH:mm:ssXXX"
+          );
+        })(),
+      })),
+    });
   } catch (error) {
     next(error);
   }

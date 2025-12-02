@@ -1172,6 +1172,9 @@ const WorkflowEditorContent = () => {
         const timestamp = Date.now();
         const existingNodeIds = new Set(nodes.map((node) => node.id));
         const existingEdgeIds = new Set(edges.map((edge) => edge.id));
+        const existingDisplayNames = new Set(
+          nodes.map((n) => n.data?.displayName || n.id)
+        );
 
         const newNodes = copiedNodes.map((node) => {
           const nodeType = node.type || "default";
@@ -1192,6 +1195,25 @@ const WorkflowEditorContent = () => {
           existingNodeIds.add(newId);
           nodeIdMap[node.id] = newId;
 
+          // Generate unique display name
+          const originalDisplayName = (node.data?.displayName || newId) as string;
+          let uniqueDisplayName = originalDisplayName;
+          
+          if (existingDisplayNames.has(uniqueDisplayName)) {
+            const baseMatch = originalDisplayName.match(/^(.+?)\s*\d*$/);
+            const baseName = baseMatch ? baseMatch[1].trim() : originalDisplayName;
+            
+            let displayCount = 2;
+            uniqueDisplayName = `${baseName} ${displayCount}`;
+            
+            while (existingDisplayNames.has(uniqueDisplayName)) {
+              displayCount++;
+              uniqueDisplayName = `${baseName} ${displayCount}`;
+            }
+          }
+          
+          existingDisplayNames.add(uniqueDisplayName);
+
           return {
             ...node,
             id: newId,
@@ -1202,7 +1224,7 @@ const WorkflowEditorContent = () => {
             selected: true,
             data: {
               ...node.data,
-              displayName: node.data?.displayName || newId,
+              displayName: uniqueDisplayName,
               isExecuting: false,
             },
           };

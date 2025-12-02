@@ -1202,7 +1202,7 @@ const WorkflowEditorContent = () => {
             selected: true,
             data: {
               ...node.data,
-              displayName: newId,
+              displayName: node.data?.displayName || newId,
               isExecuting: false,
             },
           };

@@ -1231,7 +1231,7 @@ const WorkflowEditorContent = () => {
   return (
     <div className="flex flex-col h-[calc(100vh)] w-full">
       {/* Workflow Header - Fixed at top */}
-      <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
+      <div className="flex items-center justify-between px-6 pl-16 py-2 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex flex-col gap-1">
             <Input

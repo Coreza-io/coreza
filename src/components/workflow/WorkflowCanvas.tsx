@@ -215,9 +215,9 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}
           elementsSelectable={!disabled}
-          panOnDrag={!disabled}
+          selectionOnDrag={!disabled}
+          panOnDrag={disabled ? false : [1, 2]}
           zoomOnScroll={!disabled}
-          selectNodesOnDrag={!disabled}
         >
           <Background 
             variant={BackgroundVariant.Dots} 

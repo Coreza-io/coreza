@@ -172,6 +172,28 @@ const WorkflowEditorContent = () => {
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
+  const historyRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
+
+  const cloneNodes = useCallback((sourceNodes: Node[]) => {
+    return sourceNodes.map((node) => ({
+      ...node,
+      data: { ...node.data },
+    }));
+  }, []);
+
+  const cloneEdges = useCallback((sourceEdges: Edge[]) => {
+    return sourceEdges.map((edge) => ({
+      ...edge,
+      data: { ...edge.data },
+    }));
+  }, []);
+
+  const saveHistorySnapshot = useCallback(() => {
+    historyRef.current.push({
+      nodes: cloneNodes(nodes),
+      edges: cloneEdges(edges),
+    });
+  }, [cloneEdges, cloneNodes, edges, nodes]);
 
   // Inject execution state into node data for visual feedback
   useEffect(() => {
@@ -1042,6 +1064,18 @@ const WorkflowEditorContent = () => {
 
       const isModKey = event.metaKey || event.ctrlKey;
 
+      if (isModKey && event.key.toLowerCase() === "z") {
+        const previousState = historyRef.current.pop();
+        if (!previousState) {
+          return;
+        }
+
+        setNodes(cloneNodes(previousState.nodes));
+        setEdges(cloneEdges(previousState.edges));
+        toast({ description: "Undid last change" });
+        return;
+      }
+
       if (isModKey && event.key.toLowerCase() === "c") {
         const selectedNodes = nodes.filter((node) => node.selected);
         if (selectedNodes.length === 0) {
@@ -1069,6 +1103,52 @@ const WorkflowEditorContent = () => {
         return;
       }
 
+      // Cut (Ctrl+X) - Copy to clipboard then delete
+      if (isModKey && event.key.toLowerCase() === "x") {
+        const selectedNodes = nodes.filter((node) => node.selected);
+        if (selectedNodes.length === 0) {
+          return;
+        }
+
+        // 1. Copy selected nodes to clipboard (same as Ctrl+C)
+        const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+        const selectedEdges = edges.filter(
+          (edge) =>
+            selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+        );
+
+        const nodesCopy = selectedNodes.map((node) => ({
+          ...node,
+          data: { ...node.data },
+        }));
+
+        const edgesCopy = selectedEdges.map((edge) => ({
+          ...edge,
+          data: { ...edge.data },
+        }));
+
+        clipboardRef.current = { nodes: nodesCopy, edges: edgesCopy };
+
+        // 2. Delete selected nodes from canvas (same as Delete key)
+        const selectedNodeIdArray = Array.from(selectedNodeIds);
+
+        saveHistorySnapshot();
+
+        setNodes((nds) => nds.filter((node) => !node.selected));
+
+        setEdges((eds) =>
+          eds.filter(
+            (edge) =>
+              !edge.selected &&
+              !selectedNodeIdArray.includes(edge.source) &&
+              !selectedNodeIdArray.includes(edge.target)
+          )
+        );
+
+        toast({ description: "Selection cut" });
+        return;
+      }
+
       if (isModKey && event.key.toLowerCase() === "v") {
         if (!clipboardRef.current) {
           return;
@@ -1078,6 +1158,8 @@ const WorkflowEditorContent = () => {
         if (copiedNodes.length === 0) {
           return;
         }
+
+        saveHistorySnapshot();
 
         const flowPosition = rf.screenToFlowPosition({
           x: mousePosRef.current.x,
@@ -1176,6 +1258,12 @@ const WorkflowEditorContent = () => {
           .filter((node) => node.selected)
           .map((node) => node.id);
 
+        if (selectedNodeIds.length === 0) {
+          return;
+        }
+
+        saveHistorySnapshot();
+
         // Remove selected nodes
         setNodes((nds) => nds.filter((node) => !node.selected));
 
@@ -1196,7 +1284,17 @@ const WorkflowEditorContent = () => {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [setNodes, setEdges, nodes, edges, toast, removeEdge]);
+  }, [
+    setNodes,
+    setEdges,
+    nodes,
+    edges,
+    toast,
+    removeEdge,
+    cloneEdges,
+    cloneNodes,
+    saveHistorySnapshot,
+  ]);
 
   // Add visibility change handler to prevent state loss on tab switching
   useEffect(() => {

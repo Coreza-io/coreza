@@ -308,56 +308,71 @@ export class TransformService {
 
         // ============== ARRAY OPERATIONS ==============
         case 'arrayLength': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: arr.length };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.array.length };
         }
 
         case 'push': {
-          const arr = [...TransformService.toArray(value)];
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const arr = [...validation.array];
           const item = TransformService.parseValue(arg1);
           arr.push(item);
           return { success: true, result: arr };
         }
 
         case 'pop': {
-          const arr = [...TransformService.toArray(value)];
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const arr = [...validation.array];
           const popped = arr.pop();
           return { success: true, result: { array: arr, popped } };
         }
 
         case 'shift': {
-          const arr = [...TransformService.toArray(value)];
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const arr = [...validation.array];
           const shifted = arr.shift();
           return { success: true, result: { array: arr, shifted } };
         }
 
         case 'unshift': {
-          const arr = [...TransformService.toArray(value)];
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const arr = [...validation.array];
           const item = TransformService.parseValue(arg1);
           arr.unshift(item);
           return { success: true, result: arr };
         }
 
         case 'arrayConcat': {
-          const arr1 = TransformService.toArray(value);
-          const arr2 = TransformService.toArray(arg1);
-          return { success: true, result: [...arr1, ...arr2] };
+          const validation1 = TransformService.validateArray(value);
+          if (!validation1.valid) return { success: false, error: validation1.error };
+          const validation2 = TransformService.validateArray(arg1);
+          if (!validation2.valid) return { success: false, error: 'Second value must be an array' };
+          return { success: true, result: [...validation1.array, ...validation2.array] };
         }
 
         case 'slice': {
-          const arr = TransformService.toArray(value);
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const start = arg1 !== undefined && arg1 !== '' ? Number(arg1) : 0;
           const end = arg2 !== undefined && arg2 !== '' ? Number(arg2) : undefined;
-          return { success: true, result: arr.slice(start, end) };
+          return { success: true, result: validation.array.slice(start, end) };
         }
 
         case 'reverse': {
-          const arr = [...TransformService.toArray(value)];
-          return { success: true, result: arr.reverse() };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: [...validation.array].reverse() };
         }
 
         case 'sort': {
-          const arr = [...TransformService.toArray(value)];
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          const arr = [...validation.array];
           const order = String(arg1 || 'asc').toLowerCase();
           arr.sort((a, b) => {
             if (typeof a === 'number' && typeof b === 'number') {
@@ -371,8 +386,9 @@ export class TransformService {
         }
 
         case 'unique': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: [...new Set(arr.map(item => 
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: [...new Set(validation.array.map(item => 
             typeof item === 'object' ? JSON.stringify(item) : item
           ))].map(item => {
             try { return JSON.parse(item as string); } catch { return item; }
@@ -380,24 +396,28 @@ export class TransformService {
         }
 
         case 'flatten': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: arr.flat(Infinity) };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.array.flat(Infinity) };
         }
 
         case 'first': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: arr[0] ?? null };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.array[0] ?? null };
         }
 
         case 'last': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: arr[arr.length - 1] ?? null };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.array[validation.array.length - 1] ?? null };
         }
 
         case 'arrayContains': {
-          const arr = TransformService.toArray(value);
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const item = TransformService.parseValue(arg1);
-          const found = arr.some(el => {
+          const found = validation.array.some(el => {
             if (typeof el === 'object' && typeof item === 'object') {
               return JSON.stringify(el) === JSON.stringify(item);
             }
@@ -407,14 +427,16 @@ export class TransformService {
         }
 
         case 'arrayIsEmpty': {
-          const arr = TransformService.toArray(value);
-          return { success: true, result: arr.length === 0 };
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
+          return { success: true, result: validation.array.length === 0 };
         }
 
         case 'join': {
-          const arr = TransformService.toArray(value);
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid) return { success: false, error: validation.error };
           const delimiter = arg1 !== undefined ? String(arg1) : ',';
-          return { success: true, result: arr.join(delimiter) };
+          return { success: true, result: validation.array.join(delimiter) };
         }
 
         // ============== OBJECT OPERATIONS ==============
@@ -502,18 +524,22 @@ export class TransformService {
     }
   }
 
-  // Helper: Convert value to array
-  private static toArray(value: any): any[] {
-    if (Array.isArray(value)) return value;
+  // Helper: Validate and convert value to array (strict)
+  private static validateArray(value: any): { valid: true; array: any[] } | { valid: false; error: string } {
+    if (Array.isArray(value)) {
+      return { valid: true, array: value };
+    }
     if (typeof value === 'string') {
       try {
         const parsed = JSON.parse(value);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return { valid: true, array: parsed };
+        }
       } catch {
-        // Not JSON, return as single-item array
+        // Not valid JSON
       }
     }
-    return value !== undefined && value !== null ? [value] : [];
+    return { valid: false, error: 'Value must be an array' };
   }
 
   // Helper: Convert value to object

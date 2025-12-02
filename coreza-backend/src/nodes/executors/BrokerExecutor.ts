@@ -154,10 +154,11 @@ export class BrokerExecutor implements INodeExecutor {
       );
 
       // Execute request to external broker (Alpaca/Dhan/Schwab/Binance)
+      // Only add Content-Type header when body exists (Binance requires no body for orders)
       const response = await axios({
         method: op.method,
         url,
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: body ? { ...headers, "Content-Type": "application/json" } : headers,
         params,
         data: body,
         timeout: 30000,

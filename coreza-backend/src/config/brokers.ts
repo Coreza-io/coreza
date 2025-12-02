@@ -916,7 +916,7 @@ export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
           const assetType = input?.asset_type || 'spot';
           return assetType === 'futures' ? '/fapi/v1/order' : '/api/v3/order';
         },
-        makeBody: (input: any, creds: any) => {
+        makeParams: (input: any, creds: any) => {
           const {
             symbol,
             side,

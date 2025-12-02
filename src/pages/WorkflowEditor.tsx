@@ -198,7 +198,7 @@ const WorkflowEditorContent = () => {
   // Inject execution state into node data for visual feedback
   useEffect(() => {
     if (nodes.length === 0) return;
-    
+
     setNodes((currentNodes) =>
       currentNodes.map((node) => ({
         ...node,
@@ -458,8 +458,8 @@ const WorkflowEditorContent = () => {
       if (wsRef.current) {
         try {
           wsRef.current.close(1000, "navigate/cleanup");
-        } catch (e){
-          console.log(e,'ERROR')
+        } catch (e) {
+          console.log(e, "ERROR");
         }
         wsRef.current = null;
       }
@@ -916,8 +916,10 @@ const WorkflowEditorContent = () => {
                 (node) => {
                   // Use node.name (new format) or node.id (old format) to look up the definition
                   const nodeName = (node as any).name || node.id;
-                  const definition = node.data?.definition || nodeManifest[nodeName as keyof typeof nodeManifest];
-                  
+                  const definition =
+                    node.data?.definition ||
+                    nodeManifest[nodeName as keyof typeof nodeManifest];
+
                   return {
                     ...node,
                     // Set React Flow's type to the manifest key for proper rendering
@@ -1055,7 +1057,8 @@ const WorkflowEditorContent = () => {
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
       const isEditable =
-        (tagName === "input" || tagName === "textarea") ||
+        tagName === "input" ||
+        tagName === "textarea" ||
         target?.isContentEditable;
 
       if (isEditable) {
@@ -1166,8 +1169,12 @@ const WorkflowEditorContent = () => {
           y: mousePosRef.current.y,
         });
 
-        const minX = Math.min(...copiedNodes.map((node) => node.position?.x ?? 0));
-        const minY = Math.min(...copiedNodes.map((node) => node.position?.y ?? 0));
+        const minX = Math.min(
+          ...copiedNodes.map((node) => node.position?.x ?? 0)
+        );
+        const minY = Math.min(
+          ...copiedNodes.map((node) => node.position?.y ?? 0)
+        );
         const nodeIdMap: Record<string, string> = {};
         const timestamp = Date.now();
         const existingNodeIds = new Set(nodes.map((node) => node.id));
@@ -1179,7 +1186,9 @@ const WorkflowEditorContent = () => {
         const newNodes = copiedNodes.map((node) => {
           const nodeType = node.type || "default";
 
-          const existingOfType = nodes.filter((n) => n.type === nodeType).length;
+          const existingOfType = nodes.filter(
+            (n) => n.type === nodeType
+          ).length;
           const alreadyAddedOfType = Object.values(nodeIdMap).filter(
             (id) => id === nodeType || id.startsWith(nodeType)
           ).length;
@@ -1196,22 +1205,25 @@ const WorkflowEditorContent = () => {
           nodeIdMap[node.id] = newId;
 
           // Generate unique display name
-          const originalDisplayName = (node.data?.displayName || newId) as string;
+          const originalDisplayName = (node.data?.displayName ||
+            newId) as string;
           let uniqueDisplayName = originalDisplayName;
-          
+
           if (existingDisplayNames.has(uniqueDisplayName)) {
             const baseMatch = originalDisplayName.match(/^(.+?)\s*\d*$/);
-            const baseName = baseMatch ? baseMatch[1].trim() : originalDisplayName;
-            
-            let displayCount = 2;
+            const baseName = baseMatch
+              ? baseMatch[1].trim()
+              : originalDisplayName;
+
+            let displayCount = 1;
             uniqueDisplayName = `${baseName} ${displayCount}`;
-            
+
             while (existingDisplayNames.has(uniqueDisplayName)) {
               displayCount++;
               uniqueDisplayName = `${baseName} ${displayCount}`;
             }
           }
-          
+
           existingDisplayNames.add(uniqueDisplayName);
 
           return {

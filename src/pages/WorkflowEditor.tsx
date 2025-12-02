@@ -1069,6 +1069,50 @@ const WorkflowEditorContent = () => {
         return;
       }
 
+      // Cut (Ctrl+X) - Copy to clipboard then delete
+      if (isModKey && event.key.toLowerCase() === "x") {
+        const selectedNodes = nodes.filter((node) => node.selected);
+        if (selectedNodes.length === 0) {
+          return;
+        }
+
+        // 1. Copy selected nodes to clipboard (same as Ctrl+C)
+        const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+        const selectedEdges = edges.filter(
+          (edge) =>
+            selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+        );
+
+        const nodesCopy = selectedNodes.map((node) => ({
+          ...node,
+          data: { ...node.data },
+        }));
+
+        const edgesCopy = selectedEdges.map((edge) => ({
+          ...edge,
+          data: { ...edge.data },
+        }));
+
+        clipboardRef.current = { nodes: nodesCopy, edges: edgesCopy };
+
+        // 2. Delete selected nodes from canvas (same as Delete key)
+        const selectedNodeIdArray = Array.from(selectedNodeIds);
+
+        setNodes((nds) => nds.filter((node) => !node.selected));
+
+        setEdges((eds) =>
+          eds.filter(
+            (edge) =>
+              !edge.selected &&
+              !selectedNodeIdArray.includes(edge.source) &&
+              !selectedNodeIdArray.includes(edge.target)
+          )
+        );
+
+        toast({ description: "Selection cut" });
+        return;
+      }
+
       if (isModKey && event.key.toLowerCase() === "v") {
         if (!clipboardRef.current) {
           return;

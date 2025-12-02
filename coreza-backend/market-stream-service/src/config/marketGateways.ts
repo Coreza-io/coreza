@@ -59,11 +59,9 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
       secret: creds.secret_key,
     }),
     isAuthSuccess: (msg) => {
-      // Alpaca sends [{ T: 'success', msg: 'authenticated' }]
       return Array.isArray(msg) ? msg.some(m => m.T === 'success') : msg.T === 'success';
     },
     isAuthError: (msg) => {
-      // Alpaca sends [{ T: 'error', msg: '...', code: ... }]
       return Array.isArray(msg) ? msg.some(m => m.T === 'error') : msg.T === 'error';
     },
     handleControlMessage: (msg, logger) => {
@@ -81,7 +79,7 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     makeSubscribeMessage: (symbols, types = ['trade']) => {
       const msg: any = { action: 'subscribe' };
       types.forEach(t => {
-        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;  // Map singular → plural
+        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
         msg[key] = symbols;
       });
       return msg;
@@ -89,69 +87,68 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     makeUnsubscribeMessage: (symbols, types = ['trade']) => {
       const msg: any = { action: 'unsubscribe' };
       types.forEach(t => {
-        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;  // Map singular → plural
+        const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
         msg[key] = symbols;
       });
       return msg;
     },
     parseMessage: (buffer) => {
       const parsed = JSON.parse(buffer.toString());
-      // Alpaca wraps messages in array
       return Array.isArray(parsed) ? parsed : [parsed];
     },
     identifyMessageType: (msg) => msg.T,
     shouldPublish: (msg) => ['t', 'q', 'b', 'd'].includes(msg.T),
     normalize: (msg) => {
       const symbol = msg.S?.toUpperCase();
-      const date = msg.t ? new Date(msg.t).toISOString() : new Date().toISOString();
+      const t = msg.t ? new Date(msg.t).getTime() : Date.now();
       
       switch (msg.T) {
         case 't': 
           return { 
             source: 'alpaca' as const, 
             symbol, 
-            date, 
+            t, 
             type: 'trade' as const, 
-            price: msg.p, 
-            quantity: msg.s, 
-            exchange: msg.x 
+            p: msg.p, 
+            q: msg.s, 
+            x: msg.x 
           };
         case 'q': 
           return { 
             source: 'alpaca' as const, 
             symbol, 
-            date, 
+            t, 
             type: 'quote' as const, 
-            bidPrice: msg.bp, 
-            bidQuantity: msg.bs, 
-            askPrice: msg.ap, 
-            askQuantity: msg.as 
+            b: msg.bp, 
+            B: msg.bs, 
+            a: msg.ap, 
+            A: msg.as 
           };
         case 'b': 
           return { 
             source: 'alpaca' as const, 
             symbol, 
-            date, 
+            t, 
             type: 'bar' as const, 
-            open: msg.o, 
-            high: msg.h, 
-            low: msg.l, 
-            close: msg.c, 
-            volume: msg.v, 
-            vwap: msg.vw, 
+            o: msg.o, 
+            h: msg.h, 
+            l: msg.l, 
+            c: msg.c, 
+            v: msg.v, 
+            vw: msg.vw, 
             timeframe: '1m' 
           };
         case 'd': 
           return { 
             source: 'alpaca' as const, 
             symbol, 
-            date, 
+            t, 
             type: 'daily_bar' as const, 
-            open: msg.o, 
-            high: msg.h, 
-            low: msg.l, 
-            close: msg.c, 
-            volume: msg.v, 
+            o: msg.o, 
+            h: msg.h, 
+            l: msg.l, 
+            c: msg.c, 
+            v: msg.v, 
             timeframe: '1d' 
           };
         default: return null;
@@ -207,7 +204,7 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'alpaca_news' as const,
         symbol: msg.symbols?.[0]?.toUpperCase() || '*',
         type: 'news' as const,
-        date: msg.created_at || new Date().toISOString(),
+        t: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
         headline: msg.headline,
         summary: msg.summary,
         author: msg.author,
@@ -261,15 +258,15 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
 
     normalize: (msg) => {
       const symbol = msg.s?.toUpperCase();
-      const date = new Date(msg.E || msg.T || Date.now()).toISOString();
+      const t = msg.E || msg.T || Date.now();
 
       switch (msg.e) {
         case 'trade':
           return {
             symbol,
-            date,
-            price: parseFloat(msg.p),
-            quantity: parseFloat(msg.q),
+            t,
+            p: parseFloat(msg.p),
+            q: parseFloat(msg.q),
             type: 'trade' as const,
             source: 'binance' as const,
           };
@@ -278,12 +275,12 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
           const k = msg.k;
           return {
             symbol,
-            date,
-            open: parseFloat(k.o),
-            high: parseFloat(k.h),
-            low: parseFloat(k.l),
-            close: parseFloat(k.c),
-            volume: parseFloat(k.v),
+            t: k.t,  // kline start time
+            o: parseFloat(k.o),
+            h: parseFloat(k.h),
+            l: parseFloat(k.l),
+            c: parseFloat(k.c),
+            v: parseFloat(k.v),
             timeframe: k.i,
             isClosed: k.x,
             type: 'bar' as const,
@@ -294,11 +291,11 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         case 'bookTicker':
           return {
             symbol,
-            date,
-            bidPrice: parseFloat(msg.b),
-            bidQuantity: parseFloat(msg.B),
-            askPrice: parseFloat(msg.a),
-            askQuantity: parseFloat(msg.A),
+            t,
+            b: parseFloat(msg.b),
+            B: parseFloat(msg.B),
+            a: parseFloat(msg.a),
+            A: parseFloat(msg.A),
             type: 'quote' as const,
             source: 'binance' as const,
           };
@@ -306,11 +303,11 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         case '24hrTicker':
           return {
             symbol,
-            date,
-            price: parseFloat(msg.c),
-            priceChange: parseFloat(msg.p),
-            priceChangePercent: parseFloat(msg.P),
-            volume: parseFloat(msg.v),
+            t,
+            c: parseFloat(msg.c),  // current/last price as close
+            pc: parseFloat(msg.p),
+            pcp: parseFloat(msg.P),
+            v: parseFloat(msg.v),
             type: 'ticker' as const,
             source: 'binance' as const,
           };
@@ -328,11 +325,9 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     id: 'dhan',
     wsUrl: (creds) => `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
     
-    // No separate auth message - auth is in URL
     makeAuthMessage: undefined,
     
     makeSubscribeMessage: (symbols, types = ['ticker']) => {
-      // Returns binary buffer via encoder
       return {
         RequestCode: 15,
         InstrumentCount: symbols.length,
@@ -366,17 +361,17 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'dhan' as const,
         symbol: msg.TradingSymbol || msg.SecurityId,
         type: 'trade' as const,
-        date: new Date().toISOString(),
-        price: msg.LTP,
-        bidPrice: msg.BidPrice,
-        bidQuantity: msg.BidQty,
-        askPrice: msg.AskPrice,
-        askQuantity: msg.AskQty,
-        open: msg.Open,
-        high: msg.High,
-        low: msg.Low,
-        close: msg.Close,
-        volume: msg.Volume,
+        t: Date.now(),
+        p: msg.LTP,
+        b: msg.BidPrice,
+        B: msg.BidQty,
+        a: msg.AskPrice,
+        A: msg.AskQty,
+        o: msg.Open,
+        h: msg.High,
+        l: msg.Low,
+        c: msg.Close,
+        v: msg.Volume,
       };
     },
     
@@ -390,7 +385,6 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     id: 'schwab',
     wsUrl: (creds) => creds.streamerSocketUrl,
     
-    // Pre-connect: Fetch streaming URL from OAuth'd session
     preConnect: async (creds) => {
       const { fetchSchwabStreamingConfig } = require('../utils/schwabStreamingSetup');
       return await fetchSchwabStreamingConfig(creds.access_token);
@@ -449,17 +443,17 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
         source: 'schwab' as const,
         symbol: content.key?.toUpperCase() || content['0']?.toUpperCase(),
         type: 'quote' as const,
-        date: new Date().toISOString(),
-        price: content['3'],
-        bidPrice: content['1'],
-        bidQuantity: content['4'],
-        askPrice: content['2'],
-        askQuantity: content['5'],
-        open: content['28'],
-        high: content['12'],
-        low: content['13'],
-        close: content['15'],
-        volume: content['8'],
+        t: Date.now(),
+        p: content['3'],
+        b: content['1'],
+        B: content['4'],
+        a: content['2'],
+        A: content['5'],
+        o: content['28'],
+        h: content['12'],
+        l: content['13'],
+        c: content['15'],
+        v: content['8'],
       };
     },
     

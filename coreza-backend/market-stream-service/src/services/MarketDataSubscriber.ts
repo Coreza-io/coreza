@@ -305,39 +305,16 @@ export class MarketDataSubscriber {
           )
             continue;
 
+          // Format event using shared helper (same format for frontend and backend)
+          const formattedPayload = this.formatMarketEventPayload(event, subscription.nodeId);
+
           // Publish market data to Redis for WebSocketManager to forward to frontend
           try {
             const userChannel = `ws:user:${subscription.userId}`;
 
-            // Format event to match REST API response structure
-            // Strip metadata fields from eventData
-            const {
-              symbol,
-              type,
-              source,
-              timeframe,
-              isClosed,
-              ...cleanEventData
-            } = event;
-            const typeKeyMap: Record<string, string> = {
-              bar: "bar",
-              daily_bar: "bar",
-              trade: "trade",
-              quote: "quote",
-              ticker: "ticker",
-              news: "news",
-            };
-            const dataKey = typeKeyMap[type] || type;
-
             const payload = JSON.stringify({
               type: "market_data",
-              payload: {
-                nodeId: subscription.nodeId,
-                data: {
-                  symbol,
-                  [dataKey]: [cleanEventData],
-                },
-              },
+              payload: formattedPayload,
             });
 
             await redisPublishBreaker.fire(userChannel, payload);
@@ -357,10 +334,12 @@ export class MarketDataSubscriber {
             );
           }
 
+          // Trigger backend workflow execution with same formatted payload
           await this.triggerWorkflowExecution(
             workflowId,
             subscription.userId,
-            event
+            event,
+            subscription.nodeId
           );
         }
       } catch (error) {
@@ -382,13 +361,43 @@ export class MarketDataSubscriber {
   }
 
   /**
+   * Format CorezaMarketEvent to REST-like structure
+   * Used for both frontend WebSocket and backend workflow execution
+   */
+  private formatMarketEventPayload(
+    event: CorezaMarketEvent,
+    nodeId: string
+  ): { nodeId: string; data: Record<string, any> } {
+    const { symbol, type, source, timeframe, isClosed, ...cleanEventData } = event;
+
+    const typeKeyMap: Record<string, string> = {
+      bar: "bar",
+      daily_bar: "bar",
+      trade: "trade",
+      quote: "quote",
+      ticker: "ticker",
+      news: "news",
+    };
+    const dataKey = typeKeyMap[type] || type;
+
+    return {
+      nodeId,
+      data: {
+        symbol,
+        [dataKey]: [cleanEventData],
+      },
+    };
+  }
+
+  /**
    * Trigger workflow execution with market event
    * Uses WorkflowCache to avoid repeated Supabase queries (60s cache)
    */
   private async triggerWorkflowExecution(
     workflowId: string,
     userId: string,
-    event: CorezaMarketEvent
+    event: CorezaMarketEvent,
+    nodeId: string
   ): Promise<void> {
     try {
       // Fetch workflow definition from cache (60s TTL)
@@ -434,7 +443,10 @@ export class MarketDataSubscriber {
 
       const runId = runData.id;
 
-      // Add job to BullMQ queue with market event as initial input
+      // Format market event to match frontend structure
+      const formattedPayload = this.formatMarketEventPayload(event, nodeId);
+
+      // Add job to BullMQ queue with formatted payload as initial input
       try {
         await bullMqJobQueue.addWorkflowExecution({
           runId,
@@ -442,8 +454,8 @@ export class MarketDataSubscriber {
           userId,
           nodes: workflow.nodes,
           edges: workflow.edges,
-          trigger: "webhook",
-          initialInput: { marketEvent: event },
+          trigger: "market_data",
+          initialInput: formattedPayload,
         });
 
         logger.info(

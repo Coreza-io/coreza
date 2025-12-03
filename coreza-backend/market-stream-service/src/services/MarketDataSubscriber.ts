@@ -308,20 +308,27 @@ export class MarketDataSubscriber {
           // Publish market data to Redis for WebSocketManager to forward to frontend
           try {
             const userChannel = `ws:user:${subscription.userId}`;
-            
+
             // Format event to match REST API response structure
             // Strip metadata fields from eventData
-            const { symbol, type, source, timeframe, isClosed, ...cleanEventData } = event;
+            const {
+              symbol,
+              type,
+              source,
+              timeframe,
+              isClosed,
+              ...cleanEventData
+            } = event;
             const typeKeyMap: Record<string, string> = {
-              'bar': 'bar',
-              'daily_bar': 'bar',
-              'trade': 'trade',
-              'quote': 'quote',
-              'ticker': 'ticker',
-              'news': 'news',
+              bar: "bar",
+              daily_bar: "bar",
+              trade: "trade",
+              quote: "quote",
+              ticker: "ticker",
+              news: "news",
             };
             const dataKey = typeKeyMap[type] || type;
-            
+
             const payload = JSON.stringify({
               type: "market_data",
               payload: {

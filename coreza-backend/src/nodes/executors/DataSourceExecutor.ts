@@ -65,14 +65,15 @@ export class DataSourceExecutor implements INodeExecutor {
         case "RedisStore":
           const userId = context?.userId || input.userId;
           const credentialId = resolvedParams.credential_id;
-          
+
           if (!userId || !credentialId) {
             return {
               success: false,
-              error: "userId and credential_id are required for Redis operations"
+              error:
+                "userId and credential_id are required for Redis operations",
             };
           }
-          
+
           result = await RedisService.execute({
             userId,
             credentialId,
@@ -103,7 +104,7 @@ export class DataSourceExecutor implements INodeExecutor {
             maxScore: resolvedParams.maxScore,
             channelPattern: resolvedParams.channelPattern,
             channels: resolvedParams.channels,
-            workflowId: context?.workflowId || input.workflowId
+            workflowId: context?.workflowId || input.workflowId,
           });
           break;
         case "Store":
@@ -140,10 +141,13 @@ export class DataSourceExecutor implements INodeExecutor {
     resolvedParams: any,
     context?: any
   ): Promise<NodeResult> {
-    const userId = context?.userId || resolvedParams.user_id || resolvedParams.userId;
+    const userId =
+      context?.userId || resolvedParams.user_id || resolvedParams.userId;
     const workflowId =
-      context?.workflowId || resolvedParams.workflow_id || resolvedParams.workflowId;
-    const operation = resolvedParams.operation || "set";
+      context?.workflowId ||
+      resolvedParams.workflow_id ||
+      resolvedParams.workflowId;
+    const operation = resolvedParams.operation;
     const variableName = resolvedParams.variableName;
     const value = resolvedParams.value;
     const ttl = resolvedParams.ttl;
@@ -167,7 +171,8 @@ export class DataSourceExecutor implements INodeExecutor {
         }
 
         const key = buildStoreKey(userId, workflowId, variableName);
-        const serialized = typeof value === "string" ? value : JSON.stringify(value);
+        const serialized =
+          typeof value === "string" ? value : JSON.stringify(value);
 
         if (ttl && ttl > 0) {
           await redis.setex(key, ttl, serialized);
@@ -213,7 +218,11 @@ export class DataSourceExecutor implements INodeExecutor {
 
         return {
           success: true,
-          data: { operation: "delete", variableName, message: "Variable deleted" },
+          data: {
+            operation: "delete",
+            variableName,
+            message: "Variable deleted",
+          },
         };
       }
       case "list": {
@@ -222,7 +231,10 @@ export class DataSourceExecutor implements INodeExecutor {
 
         return {
           success: true,
-          data: { operation: "list", variables: keys.map(extractVariableNameFromKey) },
+          data: {
+            operation: "list",
+            variables: keys.map(extractVariableNameFromKey),
+          },
         };
       }
       default:

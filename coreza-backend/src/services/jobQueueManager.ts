@@ -51,13 +51,17 @@ const workflowWorker = new Worker(
         .eq("id", runId);
 
       // Execute workflow using the unified engine
+      const input = job.data.initialInput;
+      const renamed = {
+        data: input.marketEvent ?? input.data ?? input,
+      };
       const result = await executeWorkflow(
         runId,
         workflowId,
         userId,
         nodes,
         edges,
-        { initialInput: job.data.initialInput }
+        { initialInput: renamed }
       );
 
       // Save successful result to database

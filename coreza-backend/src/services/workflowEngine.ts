@@ -91,7 +91,7 @@ export class WorkflowEngine {
     // Resolve all node.values parameters with reference resolution
     for (const [key, value] of Object.entries(nodeParams)) {
       // Skip operational fields that are handled separately
-      if (key === "credential_id" || key === "operation") continue;
+      if (key === "credential_id") continue;
       // Deeply resolve strings/arrays/objects
       resolvedParams[key] = this.resolveDeep(value, input, allNodeData);
     }
@@ -216,7 +216,7 @@ export class WorkflowEngine {
     // Seed queue with entry nodes
     for (const node of entryNodes) {
       // Skip Alpaca or any external listener node if it’s already active
-      if (node.name === "AlpacaNews") {
+      if (node.node_type === "trigger") {
         console.log(
           `🟡 Skipping re-run for ${node.name || node.node_type} node`
         );
@@ -429,7 +429,8 @@ export class WorkflowEngine {
         throw new Error(result.error || `Node execution failed: ${category}`);
       }
       // Return full result structure to preserve metadata
-      return { data: result.data, meta: result.meta };
+      //return { data: result.data, meta: result.meta };
+      return { data: result.data };
     }
 
     // For simple results, wrap in structure to maintain consistency

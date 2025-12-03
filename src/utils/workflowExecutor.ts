@@ -75,7 +75,10 @@ export class WorkflowExecutor {
   private isStreamingNode(nodeId: string): boolean {
     const node = this.context.nodes.find((n) => n.id === nodeId);
     const definition = node?.data?.definition as any;
-    return definition?.executionMode === "streaming" || definition?.executionMode === "webhook_listening";
+    return (
+      definition?.executionMode === "streaming" ||
+      definition?.executionMode === "webhook_listening"
+    );
   }
 
   private areDependenciesSatisfied(
@@ -666,8 +669,7 @@ export class WorkflowExecutor {
     const roots = this.context.nodes
       .filter(
         (n) =>
-          ((n.data.definition as any)?.node_type === "main" ||
-            (n.data.definition as any)?.node_type === "trigger") &&
+          (n.data.definition as any)?.node_type === "trigger" &&
           !this.context.edges.some((e) => e.target === n.id)
       )
       .map((n) => n.id);

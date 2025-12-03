@@ -55,11 +55,11 @@ export class NodeRouter {
     if (
       result &&
       typeof result === "object" &&
-      result.data &&
-      typeof result.data === "object" &&
-      ("true" in result.data || "false" in result.data)
+      result &&
+      typeof result === "object" &&
+      ("true" in result || "false" in result)
     ) {
-      const handles = Object.entries(result.data)
+      const handles = Object.entries(result)
         .filter(([, v]) => !!v)
         .map(([k]) => k);
 
@@ -88,7 +88,7 @@ export class NodeRouter {
 
     // Special handling for conditional nodes
     if (node.name === "If" || node.name === "Switch") {
-      const chosen = this.decideHandles(result);
+      const chosen = this.decideHandles(result.data);
       const allow = new Set(chosen);
 
       const selectedEdges = outgoingEdges.filter((e) => {

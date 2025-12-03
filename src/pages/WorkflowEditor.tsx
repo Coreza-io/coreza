@@ -550,20 +550,14 @@ const WorkflowEditorContent = () => {
       return;
     }
 
-    // 1) Turn each node into a "minimal" version without its definition
+    // Save node data with full definition for self-contained workflows
     const minimalNodes = nodes.map((n) => ({
       id: n.id,
       name: (n.data.definition as any)?.name,
-      node_type: (n.data.definition as any)?.node_type,
-      category: (n.data.definition as any)?.category,
-      subCategory: (n.data.definition as any)?.subCategory,
-      position: n.position,
-      sourcePosition: n.sourcePosition,
-      targetPosition: n.targetPosition,
-      // ONLY keep the user's inputs + last output (or whatever you actually need)
+      definition: n.data.definition,
       values: n.data.values,
-      // Save display name information for reference resolution
-      //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
+      position: n.position,
+      measured: n.measured,
     }));
 
     // Get existing node IDs
@@ -914,23 +908,20 @@ const WorkflowEditorContent = () => {
               // Restore node definitions from manifest when loading from database
               const restoredNodes = (data.nodes as unknown as Node[]).map(
                 (node) => {
-                  // Use node.name (new format) or node.id (old format) to look up the definition
-                  const nodeName = (node as any).name || node.id;
-                  const definition =
-                    node.data?.definition ||
-                    nodeManifest[nodeName as keyof typeof nodeManifest];
+                  const savedNode = node as any;
+                  // Use saved definition directly, fallback to manifest for old workflows
+                  const definition = savedNode.definition || 
+                    nodeManifest[savedNode.name as keyof typeof nodeManifest];
 
                   return {
-                    ...node,
-                    // Set React Flow's type to the manifest key for proper rendering
-                    type: nodeName,
+                    id: savedNode.id,
+                    type: savedNode.name || definition?.name,
+                    position: savedNode.position,
+                    measured: savedNode.measured,
                     data: {
-                      ...node.data,
                       definition,
-                      // Ensure values are properly mapped to data.values for BaseNode to use
-                      values: (node as any).values || node.data?.values || {},
-                      // Restore display name for backward compatibility
-                      displayName: node.id,
+                      values: savedNode.values || {},
+                      displayName: savedNode.id,
                     },
                   };
                 }

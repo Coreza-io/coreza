@@ -13,9 +13,9 @@ const router = express.Router();
 
 // Map node names to WebSocket source IDs for control messages
 const nodeNameToSourceMap: Record<string, string> = {
-  "BinanceStreamData": "binance_stream",
-  "AlpacaStreamData": "alpaca_stream",
-  "AlpacaNews": "alpaca_news",
+  BinanceStreamData: "binance_stream",
+  AlpacaStreamData: "alpaca_stream",
+  AlpacaNews: "alpaca_news",
 };
 
 // Get all workflows for a user
@@ -154,7 +154,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
             if (symbolArray.length > 0) {
               // Map node name to WebSocket source ID
               const source = nodeNameToSourceMap[node.name] || node.name;
-              
+
               // Publish control message to Redis for unsubscription
               const controlMessage = {
                 action: "unsubscribe",
@@ -527,20 +527,21 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
     if (fetchError || !workflow) throw createError("Workflow not found", 404);
 
     // Detect trigger nodes
-    const triggerNode = workflow.nodes.filter(
+    const triggerNodes = workflow.nodes.filter(
       (n: any) => n.node_type === "trigger"
     );
 
-    if (!triggerNode) {
+    if (!triggerNodes) {
       throw createError(
         "No trigger node (Scheduler, AlpacaNews, or WebhookTrigger) found in workflow",
         400
       );
     }
 
-    if (triggerNode.length > 1) {
+    if (triggerNodes.length > 1) {
       throw createError("Workflow can only contain one trigger node", 400);
     }
+    const triggerNode = triggerNodes[0];
 
     let cronToSave: string | null = null;
     let tzToUse = "UTC";
@@ -573,16 +574,15 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           triggerNode.node_type == "trigger" &&
           triggerNode.executionMode == "streaming"
         ) {
-          const nodeValues =
-            triggerNode.values || triggerNode.data?.values || {};
+          const nodeValues = triggerNode.values || {};
           const credentialId = nodeValues.credential_id;
           const symbols = nodeValues.symbols;
-          
+
           // Extract additional fields for streaming configuration
-          const streamTypes = nodeValues.stream_types;      // Event types for filtering
-          const feed = nodeValues.feed;                      // Alpaca feed selection (iex/sip)
-          const environment = nodeValues.environment;        // Binance: testnet/live
-          const assetType = nodeValues.asset_type;           // Binance: spot/futures
+          const streamTypes = nodeValues.stream_types; // Event types for filtering
+          const feed = nodeValues.feed; // Alpaca feed selection (iex/sip)
+          const environment = nodeValues.environment; // Binance: testnet/live
+          const assetType = nodeValues.asset_type; // Binance: spot/futures
 
           if (!credentialId) {
             throw createError(
@@ -613,13 +613,13 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           }
 
           // Map node name to WebSocket source ID
-          const source = nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
-          
+          const source = triggerNode.streamingConfig.sourceId;
+
           // Publish control message to Redis for subscription
           // MarketControlHandler will orchestrate the connection
           const redis = getRedis();
           const controlMessage = {
-            action: "subscribe",
+            action: triggerNode.values.operation,
             userId,
             workflowId,
             nodeId: triggerNode.id,
@@ -627,11 +627,15 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             source,
             credentialId,
             // Include event types for filtering (normalize to array)
-            eventTypes: Array.isArray(streamTypes) ? streamTypes : (streamTypes ? [streamTypes] : undefined),
+            eventTypes: Array.isArray(streamTypes)
+              ? streamTypes
+              : streamTypes
+              ? [streamTypes]
+              : undefined,
             // Include broker-specific fields
-            feed,              // Alpaca: iex or sip
-            environment,       // Binance: testnet or live
-            assetType,         // Binance: spot or futures
+            feed, // Alpaca: iex or sip
+            environment, // Binance: testnet or live
+            assetType, // Binance: spot or futures
           };
 
           await redis.publish(
@@ -641,7 +645,13 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
 
           console.log(
             `📤 [Workflow Route] Published subscribe control message for ${source}:`,
-            { symbols: symbolArray, eventTypes: controlMessage.eventTypes, feed, environment, assetType }
+            {
+              symbols: symbolArray,
+              eventTypes: controlMessage.eventTypes,
+              feed,
+              environment,
+              assetType,
+            }
           );
           newsSubscription = { symbols: symbolArray };
         }
@@ -649,7 +659,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
         // Handle WebhookTrigger activation
         if (
           triggerNode.node_type == "trigger" &&
-          triggerNode.subCategory == "webhook"
+          triggerNode.executionMode == "webhook_listening"
         ) {
           // For WebhookTrigger - no external service to call
           // The WebhookService.handleIncoming() will check is_active and route to BullMQ
@@ -693,8 +703,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
 
             if (symbolArray.length > 0) {
               // Map node name to WebSocket source ID
-              const source = nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
-              
+              const source =
+                nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
+
               // Publish control message to Redis for unsubscription
               const redis = getRedis();
               const controlMessage = {
@@ -750,7 +761,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           );
         if (
           triggerNode.node_type == "trigger" &&
-          triggerNode.subCategory == "webhook"
+          triggerNode.executionMode == "webhook_listening"
         )
           parts.push("webhook listener activated");
         message = `Workflow ${parts.join(" and ")}`;

@@ -562,6 +562,8 @@ const WorkflowEditorContent = () => {
       targetPosition: n.targetPosition,
       // ONLY keep the user's inputs + last output (or whatever you actually need)
       values: n.data.values,
+      executionMode: (n.data.definition as any)?.executionMode,
+      streamingConfig: (n.data.definition as any)?.streamingConfig,
       // Save display name information for reference resolution
       //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
     }));

@@ -1,9 +1,7 @@
 {
   "name": "WebhookTrigger",
-  "type": "trigger",
-  "category": "Trigger",
   "node_type": "trigger",
-  "subCategory": "webhook",
+  "category": "webhook",
   "icon": "webhook",
   "description": "Receive HTTP webhooks from external services",
   "color": "text-purple-500",

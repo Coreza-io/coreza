@@ -23,7 +23,15 @@ import {
   Globe
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { nodeManifest } from "@/nodes/manifest";
+import { 
+  nodeManifest, 
+  getNodeIcon, 
+  getNodeColor, 
+  getNodeDescription, 
+  getNodeDomain,
+  getNodeLabel,
+  NodeConfig 
+} from "@/nodes/manifest";
 
 // Helper function to get icon component from string
 const getIconComponent = (iconName: string) => {
@@ -57,13 +65,21 @@ interface NodePaletteProps {
 export function NodePalette({ onNodeClick }: NodePaletteProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredNodes = Object.entries(nodeManifest).filter(([nodeType, node]) =>
-    node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (node as any).description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (node as any).category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredNodes = Object.entries(nodeManifest).filter(([nodeType, node]) => {
+    const nodeDef = node as NodeConfig;
+    const label = getNodeLabel(nodeDef);
+    const description = getNodeDescription(nodeDef);
+    const domain = getNodeDomain(nodeDef);
+    
+    return label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      domain.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
-  const categories = Array.from(new Set(Object.values(nodeManifest).map(node => (node as any).category).filter(Boolean)));
+  // Get unique domains/categories
+  const domains = Array.from(new Set(
+    Object.values(nodeManifest).map(node => getNodeDomain(node as NodeConfig)).filter(Boolean)
+  ));
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -86,62 +102,72 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
       </div>
 
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-        {categories.map(category => {
-          const categoryNodes = filteredNodes.filter(([nodeType, node]) => (node as any).category === category);
-          if (categoryNodes.length === 0) return null;
+        {domains.map(domain => {
+          const domainNodes = filteredNodes.filter(([nodeType, node]) => 
+            getNodeDomain(node as NodeConfig) === domain
+          );
+          if (domainNodes.length === 0) return null;
 
           return (
-            <div key={category}>
+            <div key={domain}>
               <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
-                {category}
+                {domain}
               </h4>
               <div className="space-y-2">
-                {categoryNodes.map(([nodeType, node], index) => (
-                  <motion.div
-                    key={nodeType}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Card
-                      className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
-                      draggable
-                      onDragStart={(e) => onDragStart(e, nodeType)}
-                      onClick={() => onNodeClick?.(nodeType)}
+                {domainNodes.map(([nodeType, node], index) => {
+                  const nodeDef = node as NodeConfig;
+                  const icon = getNodeIcon(nodeDef);
+                  const color = getNodeColor(nodeDef);
+                  const description = getNodeDescription(nodeDef);
+                  const label = getNodeLabel(nodeDef);
+
+                  return (
+                    <motion.div
+                      key={nodeType}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
                     >
-                      <CardContent className="p-3">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg bg-muted/50 ${(node as any).color || ''} group-hover:shadow-glow transition-all`}>
-                            {(() => {
-                              // Handle SVG icons or Lucide icons
-                              if (node.icon?.startsWith('/assets/')) {
-                                return (
-                                  <img 
-                                    src={node.icon} 
-                                    alt={node.name} 
-                                    className="h-4 w-4" 
-                                    loading="eager"
-                                    style={{ imageRendering: 'auto' }}
-                                  />
-                                );
-                              } else {
-                                const IconComponent = getIconComponent(node.icon);
-                                return <IconComponent className="h-4 w-4" />;
-                              }
-                            })()}
+                      <Card
+                        className="cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, nodeType)}
+                        onClick={() => onNodeClick?.(nodeType)}
+                      >
+                        <CardContent className="p-3">
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2 rounded-lg bg-muted/50 ${color || ''} group-hover:shadow-glow transition-all`}>
+                              {(() => {
+                                // Handle SVG icons or Lucide icons
+                                if (icon?.startsWith('/assets/')) {
+                                  return (
+                                    <img 
+                                      src={icon} 
+                                      alt={nodeDef.name} 
+                                      className="h-4 w-4" 
+                                      loading="eager"
+                                      style={{ imageRendering: 'auto' }}
+                                    />
+                                  );
+                                } else {
+                                  const IconComponent = getIconComponent(icon || 'Database');
+                                  return <IconComponent className="h-4 w-4" />;
+                                }
+                              })()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h5 className="font-medium text-sm mb-1">{label}</h5>
+                               <p className="text-xs text-muted-foreground line-clamp-2">
+                                 {description || 'No description available'}
+                               </p>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h5 className="font-medium text-sm mb-1">{node.name}</h5>
-                             <p className="text-xs text-muted-foreground line-clamp-2">
-                               {(node as any).description || 'No description available'}
-                             </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           );

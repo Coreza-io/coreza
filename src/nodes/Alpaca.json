@@ -1,16 +1,31 @@
 {
+  "id": "alpaca",
   "name": "Alpaca",
-  "def": "Alpaca",
-  "node_type": "main",
-  "icon": "/assets/icons/alpaca.svg",
-  "category": "Broker",
-  "description": "Execute trades and get market data from Alpaca Markets",
-  "color": "text-green-600",
-  "size": { "width": 340, "height": 360 },
+  "label": "Alpaca Markets",
+
+  "meta": {
+    "role": "action",
+    "execution": "http",
+    "tier": "main",
+    "domain": "trading",
+    "provider": {
+      "type": "broker",
+      "name": "alpaca"
+    }
+  },
+
+  "ui": {
+    "icon": "/assets/icons/alpaca.svg",
+    "color": "text-green-600",
+    "size": { "width": 340, "height": 360 },
+    "description": "Execute trades and get market data from Alpaca Markets"
+  },
+
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
+
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -33,10 +48,12 @@
     }
   ],
   "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
+
   "action": {
     "url": "/broker/alpaca/{{operation}}",
     "method": "{{method}}"
   },
+
   "fields": [
     {
       "key": "credential_id",

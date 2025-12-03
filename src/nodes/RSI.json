@@ -1,20 +1,36 @@
 {
+  "id": "rsi",
   "name": "RSI",
-  "def": "Relative Strength Index technical indicator",
-  "node_type": "main",
-  "icon": "/assets/icons/rsi.svg",
-  "category": "Indicators",
-  "description": "Relative Strength Index indicator",
-  "color": "text-blue-500",
-  "size": { "width": 300, "height": 220 },
+  "label": "Relative Strength Index",
+
+  "meta": {
+    "role": "action",
+    "execution": "http",
+    "tier": "main",
+    "domain": "indicators",
+    "provider": {
+      "type": "internal",
+      "name": "indicators"
+    }
+  },
+
+  "ui": {
+    "icon": "/assets/icons/rsi.svg",
+    "color": "text-blue-500",
+    "size": { "width": 300, "height": 220 },
+    "description": "Relative Strength Index technical indicator"
+  },
+
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
+
   "action": {
     "url": "/indicators/rsi",
     "method": "POST"
   },
+
   "fields": [
     {
       "key": "candle_data",
@@ -24,10 +40,10 @@
     },
     {
       "key": "window",
-      "label": "EMA Window",
+      "label": "RSI Period",
       "type": "text",
-      "placeholder": "e.g. 20",
-      "default": "20",
+      "placeholder": "e.g. 14",
+      "default": "14",
       "required": true
     }
   ]

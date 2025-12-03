@@ -1,28 +1,36 @@
 {
+  "id": "alpaca_stream_data",
   "name": "AlpacaStreamData",
-  "def": "Alpaca Stream Data",
-  "node_type": "trigger",
-  "icon": "/assets/icons/alpaca.svg",
-  "category": "Broker",
-  "subCategory": "Alpaca",
-  "executionMode": "streaming",
-  "streamingConfig": {
-    "waitForFirstEvent": true,
+  "label": "Alpaca Stream Data",
+
+  "meta": {
+    "role": "trigger",
+    "execution": "stream",
+    "tier": "main",
+    "domain": "market_data",
+    "provider": {
+      "type": "broker",
+      "name": "alpaca"
+    }
+  },
+
+  "ui": {
+    "icon": "/assets/icons/alpaca.svg",
+    "color": "text-yellow-500",
+    "size": { "width": 380, "height": 420 },
+    "description": "Subscribe to real-time market data streams (trades, quotes, bars) from Alpaca"
+  },
+
+  "streaming": {
+    "sourceId": "alpaca_stream",
+    "waitForFirstEvent": false,
     "timeout": 300000
   },
-  "description": "Subscribe to real-time market data streams (trades, quotes, bars) from Alpaca",
-  "color": "text-yellow-500",
-  "size": {
-    "width": 380,
-    "height": 420
-  },
+
   "handles": [
-    {
-      "type": "source",
-      "position": "right",
-      "id": "output"
-    }
+    { "type": "source", "position": "right", "id": "output" }
   ],
+
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -48,10 +56,12 @@
     "url": "/broker/alpaca/auth",
     "method": "POST"
   },
+
   "action": {
     "url": "/websocket/alpaca_stream/{{operation}}",
     "method": "POST"
   },
+
   "fields": [
     {
       "key": "credential_id",
@@ -66,16 +76,8 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        {
-          "id": "subscribe",
-          "name": "Subscribe",
-          "method": "POST"
-        },
-        {
-          "id": "unsubscribe",
-          "name": "Unsubscribe",
-          "method": "POST"
-        }
+        { "id": "subscribe", "name": "Subscribe" },
+        { "id": "unsubscribe", "name": "Unsubscribe" }
       ],
       "required": true
     },
@@ -84,22 +86,10 @@
       "label": "Stream Types",
       "type": "multiselect",
       "options": [
-        {
-          "id": "trade",
-          "name": "Trades"
-        },
-        {
-          "id": "quote",
-          "name": "Quotes"
-        },
-        {
-          "id": "bar",
-          "name": "Minute Bars"
-        },
-        {
-          "id": "dailyBar",
-          "name": "Daily Bars"
-        }
+        { "id": "trade", "name": "Trades" },
+        { "id": "quote", "name": "Quotes" },
+        { "id": "bar", "name": "Minute Bars" },
+        { "id": "daily_bar", "name": "Daily Bars" }
       ],
       "default": ["trade"],
       "description": "Select data stream types to subscribe to",
@@ -149,14 +139,8 @@
       "label": "Data Feed",
       "type": "select",
       "options": [
-        {
-          "id": "iex",
-          "name": "IEX (Free - Regular Hours Only)"
-        },
-        {
-          "id": "sip",
-          "name": "SIP (Paid - Includes Pre/After Hours)"
-        }
+        { "id": "iex", "name": "IEX (Free - Regular Hours Only)" },
+        { "id": "sip", "name": "SIP (Paid - Includes Pre/After Hours)" }
       ],
       "default": "iex",
       "description": "SIP feed requires Alpaca subscription for pre-market/after-hours data",

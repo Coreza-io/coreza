@@ -1,36 +1,28 @@
 {
-  "id": "binance_stream_data",
   "name": "BinanceStreamData",
-  "label": "Binance Stream Data",
-
-  "meta": {
-    "role": "trigger",
-    "execution": "stream",
-    "tier": "main",
-    "domain": "market_data",
-    "provider": {
-      "type": "exchange",
-      "name": "binance"
-    }
-  },
-
-  "ui": {
-    "icon": "/assets/icons/binance.svg",
-    "color": "text-yellow-500",
-    "size": { "width": 380, "height": 440 },
-    "description": "Subscribe to real-time market data streams (trades, klines, ticker) from Binance"
-  },
-
-  "streaming": {
-    "sourceId": "binance_stream",
-    "waitForFirstEvent": false,
+  "def": "Binance Stream Data",
+  "node_type": "trigger",
+  "icon": "/assets/icons/binance.svg",
+  "category": "Broker",
+  "subCategory": "Binance",
+  "executionMode": "streaming",
+  "streamingConfig": {
+    "waitForFirstEvent": true,
     "timeout": 300000
   },
-
+  "description": "Subscribe to real-time market data streams (trades, klines, ticker) from Binance",
+  "color": "text-yellow-500",
+  "size": {
+    "width": 380,
+    "height": 440
+  },
   "handles": [
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
-
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -43,12 +35,10 @@
     { "key": "secret_key", "label": "Secret Key", "type": "password" }
   ],
   "authAction": { "url": "/broker/binance/auth", "method": "POST" },
-
   "action": {
     "url": "/websocket/binance_stream/{{operation}}",
     "method": "POST"
   },
-
   "fields": [
     {
       "key": "credential_id",

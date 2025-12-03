@@ -4,7 +4,7 @@ export interface WorkflowJobData {
   userId: string;
   nodes: any[];
   edges: any[];
-  trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub";
+  trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub" | "market_data";
   initialInput?: Record<string, unknown>;
 }
 

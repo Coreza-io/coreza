@@ -298,6 +298,78 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          created_at: string | null
+          current_period_end: string
+          current_period_start: string
+          id: string
+          status: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          tier: Database["public"]["Enums"]["subscription_tier"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      usage_metrics: {
+        Row: {
+          created_at: string | null
+          execution_count: number | null
+          id: string
+          overage_count: number | null
+          period_end: string
+          period_start: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          execution_count?: number | null
+          id?: string
+          overage_count?: number | null
+          period_end?: string
+          period_start?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          execution_count?: number | null
+          id?: string
+          overage_count?: number | null
+          period_end?: string
+          period_start?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_credentials: {
         Row: {
           auth_tag: string | null
@@ -512,10 +584,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_execution_limit: { Args: { p_user_id: string }; Returns: boolean }
+      get_current_usage: {
+        Args: { p_user_id: string }
+        Returns: {
+          execution_count: number
+          period_end: string
+          period_start: string
+        }[]
+      }
+      get_user_tier: {
+        Args: { p_user_id: string }
+        Returns: Database["public"]["Enums"]["subscription_tier"]
+      }
+      increment_execution_count: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
     }
     Enums: {
-      [_ in never]: never
+      subscription_status: "active" | "cancelled" | "expired" | "trial"
+      subscription_tier: "free" | "trader" | "professional" | "enterprise"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -642,6 +731,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      subscription_status: ["active", "cancelled", "expired", "trial"],
+      subscription_tier: ["free", "trader", "professional", "enterprise"],
+    },
   },
 } as const

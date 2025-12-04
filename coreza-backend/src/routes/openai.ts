@@ -18,6 +18,7 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import CredentialManager from "../utils/credentialManager";
 import { supabase } from "../config/supabase";
+import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = Router();
 
@@ -65,7 +66,7 @@ router.post("/auth", async (req: Request, res: Response, next) => {
   }
 });
 
-router.post("/chat", async (req: Request, res: Response) => {
+router.post("/chat", requireProfessional("LLM Features"), async (req: Request, res: Response) => {
   try {
     const {
       user_id,

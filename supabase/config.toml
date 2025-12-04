@@ -319,6 +319,9 @@ verify_jwt = false
 [functions.create-checkout]
 verify_jwt = true
 
+[functions.create-billing-portal]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

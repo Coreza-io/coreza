@@ -326,13 +326,13 @@ export function AppSidebar() {
               Settings
             </DropdownMenuItem>
 
-            {/* Analytics */}
+            {/* Subscription */}
             <DropdownMenuItem
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/dashboard/subscription')}
               className="cursor-pointer"
             >
               <BarChart2 className="h-4 w-4 mr-2" />
-              Analytics
+              Subscription
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

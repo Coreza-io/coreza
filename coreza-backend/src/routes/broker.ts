@@ -19,6 +19,7 @@ import axios, { AxiosRequestConfig } from "axios";
 import CredentialManager from "../utils/credentialManager";
 import { getBrokerConfig, isSupportedBroker } from "../config/brokers";
 import { refreshOAuthTokenIfNeeded } from "../utils/oauthTokenManager";
+import { requireTrader } from "../middleware/licenseCheck";
 
 const router = express.Router();
 
@@ -103,7 +104,7 @@ router.post("/:broker/auth", async (req, res, next) => {
 });
 
 // Dynamic broker operation endpoint
-router.post("/:broker/:operation", async (req, res, next) => {
+router.post("/:broker/:operation", requireTrader("Multi-Broker Trading"), async (req, res, next) => {
   try {
     const { broker, operation } = req.params;
     const brokerKey = normalizeBroker(broker);

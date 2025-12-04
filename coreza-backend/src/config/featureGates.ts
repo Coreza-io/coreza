@@ -38,6 +38,11 @@ export const FEATURE_GATES: FeatureGate[] = [
     description: 'Portfolio and trading risk analysis engine',
   },
   {
+    feature: 'LLM Features',
+    required_tier: ['professional', 'enterprise'],
+    description: 'OpenAI and other LLM integrations',
+  },
+  {
     feature: 'Screeners',
     required_tier: ['trader', 'professional', 'enterprise'],
     description: 'Market screeners and filtering tools',
@@ -46,6 +51,11 @@ export const FEATURE_GATES: FeatureGate[] = [
     feature: 'Real-time Streaming',
     required_tier: ['trader', 'professional', 'enterprise'],
     description: 'Live market data streaming',
+  },
+  {
+    feature: 'Multi-Broker Trading',
+    required_tier: ['trader', 'professional', 'enterprise'],
+    description: 'Execute trades across multiple brokers',
   },
   {
     feature: 'Telegram/WhatsApp',

@@ -32,6 +32,7 @@ import {
   Mail,
   MessageCircle,
   Clock,
+  ArrowUpRight,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -46,6 +47,8 @@ const Pricing = () => {
       featured: false,
       cta: "Start Free",
       ctaVariant: "outline" as const,
+      badges: ["Open Source"],
+      githubUrl: "https://github.com/coreza-io/coreza",
       features: [
         { text: "100 workflow executions/month", included: true },
         { text: "5 active workflows", included: true },
@@ -175,6 +178,20 @@ const Pricing = () => {
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
               Start free and scale as you grow. All plans include our powerful workflow builder and core features.
             </p>
+            <div className="flex items-center justify-center gap-3 mb-8">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-500 bg-emerald-500/10">
+                Source Available
+              </Badge>
+              <a
+                href="https://github.com/coreza-io/coreza"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+              >
+                View the code on GitHub
+                <ArrowUpRight className="h-4 w-4" />
+              </a>
+            </div>
 
             {/* Billing Toggle */}
             <div className="flex items-center justify-center gap-4 mb-12">
@@ -236,6 +253,15 @@ const Pricing = () => {
                   </div>
                   <CardTitle className="text-2xl">{plan.name}</CardTitle>
                   <CardDescription>{plan.description}</CardDescription>
+                  {plan.badges && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {plan.badges.map((badge) => (
+                        <Badge key={badge} variant="outline" className="border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
+                          {badge}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="flex-1">
                   <div className="mb-6">
@@ -270,7 +296,7 @@ const Pricing = () => {
                     ))}
                   </ul>
                 </CardContent>
-                <CardFooter>
+                <CardFooter className="flex flex-col gap-3">
                   <Link to="/signup" className="w-full">
                     <Button
                       variant={plan.ctaVariant}
@@ -279,6 +305,14 @@ const Pricing = () => {
                       {plan.cta}
                     </Button>
                   </Link>
+                  {plan.githubUrl && (
+                    <Button variant="ghost" className="w-full" asChild>
+                      <a href={plan.githubUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2">
+                        View on GitHub
+                        <ArrowUpRight className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             </motion.div>

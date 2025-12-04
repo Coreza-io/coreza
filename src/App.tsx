@@ -22,6 +22,7 @@ import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
+import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Landing from "./pages/Landing";
 import Pricing from "./pages/Pricing";
@@ -85,51 +86,53 @@ const PublicOnlyRoute = ({ children }: { children: React.ReactNode }) => {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <UserPreferencesProvider>
-        <ThemeProvider defaultTheme="dark" storageKey="coreza-theme">
-          <TooltipProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route element={<AppLayout />}>
-                  <Route
-                    path="/login"
-                    element={
-                      <PublicOnlyRoute>
-                        <Login />
-                      </PublicOnlyRoute>
-                    }
-                  />
-                  <Route
-                    path="/signup"
-                    element={
-                      <PublicOnlyRoute>
-                        <Signup />
-                      </PublicOnlyRoute>
-                    }
-                  />
-                  <Route
-                    path="/dashboard/*"
-                    element={
-                      <ProtectedRoute>
-                        <Interface />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route element={<MarketingLayout />}>
-                    <Route path="/" element={<Landing />} />
-                    <Route path="/pricing" element={<Pricing />} />
-                    <Route path="/documentation" element={<Documentation />} />
-                    <Route path="/support" element={<Support />} />
-                    <Route path="/privacy" element={<Privacy />} />
-                    <Route path="/terms" element={<Terms />} />
-                    <Route path="*" element={<NotFound />} />
+      <SubscriptionProvider>
+        <UserPreferencesProvider>
+          <ThemeProvider defaultTheme="dark" storageKey="coreza-theme">
+            <TooltipProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route element={<AppLayout />}>
+                    <Route
+                      path="/login"
+                      element={
+                        <PublicOnlyRoute>
+                          <Login />
+                        </PublicOnlyRoute>
+                      }
+                    />
+                    <Route
+                      path="/signup"
+                      element={
+                        <PublicOnlyRoute>
+                          <Signup />
+                        </PublicOnlyRoute>
+                      }
+                    />
+                    <Route
+                      path="/dashboard/*"
+                      element={
+                        <ProtectedRoute>
+                          <Interface />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route element={<MarketingLayout />}>
+                      <Route path="/" element={<Landing />} />
+                      <Route path="/pricing" element={<Pricing />} />
+                      <Route path="/documentation" element={<Documentation />} />
+                      <Route path="/support" element={<Support />} />
+                      <Route path="/privacy" element={<Privacy />} />
+                      <Route path="/terms" element={<Terms />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
                   </Route>
-                </Route>
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </ThemeProvider>
-      </UserPreferencesProvider>
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </ThemeProvider>
+        </UserPreferencesProvider>
+      </SubscriptionProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

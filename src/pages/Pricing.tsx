@@ -15,7 +15,7 @@
  */
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,20 +28,67 @@ import {
   BarChart3,
   Network,
   Brain,
-  Infinity,
   Mail,
-  MessageCircle,
   Clock,
   ArrowUpRight,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Pricing = () => {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
+  const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleCheckout = async (tier: string) => {
+    if (!user) {
+      navigate("/login", { state: { returnTo: "/pricing", tier } });
+      return;
+    }
+
+    if (tier === "free") {
+      navigate("/dashboard");
+      return;
+    }
+
+    if (tier === "enterprise") {
+      window.location.href = "mailto:sales@coreza.io?subject=Enterprise%20Plan%20Inquiry";
+      return;
+    }
+
+    setLoadingTier(tier);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: {
+          tier,
+          success_url: `${window.location.origin}/dashboard?checkout=success`,
+          cancel_url: `${window.location.origin}/pricing?checkout=cancelled`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error("No checkout URL returned");
+      }
+    } catch (error: any) {
+      console.error("Checkout error:", error);
+      toast.error(error.message || "Failed to start checkout");
+    } finally {
+      setLoadingTier(null);
+    }
+  };
 
   const plans = [
     {
       name: "Free",
+      tier: "free",
       description: "Perfect for testing and learning",
       price: { monthly: 0, annual: 0 },
       featured: false,
@@ -64,6 +111,7 @@ const Pricing = () => {
     },
     {
       name: "Trader",
+      tier: "trader",
       description: "For individual traders",
       price: { monthly: 29, annual: 280 },
       featured: false,
@@ -84,6 +132,7 @@ const Pricing = () => {
     },
     {
       name: "Professional",
+      tier: "professional",
       description: "For serious traders",
       price: { monthly: 79, annual: 760 },
       featured: true,
@@ -104,6 +153,7 @@ const Pricing = () => {
     },
     {
       name: "Enterprise",
+      tier: "enterprise",
       description: "For firms & teams",
       price: { monthly: null, annual: null },
       featured: false,
@@ -297,14 +347,21 @@ const Pricing = () => {
                   </ul>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-3">
-                  <Link to="/signup" className="w-full">
-                    <Button
-                      variant={plan.ctaVariant}
-                      className={`w-full ${plan.featured ? "bg-gradient-primary shadow-glow" : ""}`}
-                    >
-                      {plan.cta}
-                    </Button>
-                  </Link>
+                  <Button
+                    variant={plan.ctaVariant}
+                    className={`w-full ${plan.featured ? "bg-gradient-primary shadow-glow" : ""}`}
+                    onClick={() => handleCheckout(plan.tier)}
+                    disabled={loadingTier === plan.tier}
+                  >
+                    {loadingTier === plan.tier ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      plan.cta
+                    )}
+                  </Button>
                   {plan.githubUrl && (
                     <Button variant="ghost" className="w-full" asChild>
                       <a href={plan.githubUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2">

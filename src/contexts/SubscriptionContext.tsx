@@ -15,22 +15,28 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "./AuthContext";
 
 export type SubscriptionTier = "free" | "trader" | "professional" | "enterprise";
+export type SubscriptionStatus = "active" | "cancelled" | "expired" | "trial";
 
 export interface SubscriptionContextType {
   tier: SubscriptionTier;
+  status: SubscriptionStatus;
   features: string[];
   executionCount: number;
   executionLimit: number;
   canUse: (feature: string) => boolean;
   isTrialing: boolean;
   daysRemaining: number | null;
+  isLoading: boolean;
+  refreshSubscription: () => Promise<void>;
 }
 
 const tierOrder: SubscriptionTier[] = ["free", "trader", "professional", "enterprise"];
 
-const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit: number; trial: boolean }> = {
+const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit: number }> = {
   free: {
     features: [
       "category:Input",
@@ -41,7 +47,6 @@ const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit:
       "category:Data",
     ],
     executionLimit: 100,
-    trial: false,
   },
   trader: {
     features: [
@@ -57,7 +62,6 @@ const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit:
       "category:Trigger",
     ],
     executionLimit: 5000,
-    trial: true,
   },
   professional: {
     features: [
@@ -78,7 +82,6 @@ const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit:
       "category:Screener",
     ],
     executionLimit: 25000,
-    trial: true,
   },
   enterprise: {
     features: [
@@ -100,7 +103,6 @@ const tierConfig: Record<SubscriptionTier, { features: string[]; executionLimit:
       "category:webhook",
     ],
     executionLimit: 100000,
-    trial: false,
   },
 };
 
@@ -115,51 +117,100 @@ export const useSubscription = () => {
 };
 
 export const SubscriptionProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth();
   const [tier, setTier] = useState<SubscriptionTier>("free");
+  const [status, setStatus] = useState<SubscriptionStatus>("active");
   const [executionCount, setExecutionCount] = useState(0);
-  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
+  const [periodEnd, setPeriodEnd] = useState<Date | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  const fetchSubscription = useCallback(async () => {
+    if (!user?.id) {
+      setTier("free");
+      setStatus("active");
+      setExecutionCount(0);
+      setPeriodEnd(null);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Fetch subscription data
+      const { data: subscription } = await supabase
+        .from("subscriptions")
+        .select("tier, status, current_period_end")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (subscription) {
+        setTier(subscription.tier as SubscriptionTier);
+        setStatus(subscription.status as SubscriptionStatus);
+        setPeriodEnd(subscription.current_period_end ? new Date(subscription.current_period_end) : null);
+      } else {
+        // No subscription found, default to free
+        setTier("free");
+        setStatus("active");
+        setPeriodEnd(null);
+      }
+
+      // Fetch usage data using RPC function
+      const { data: usage } = await supabase.rpc("get_current_usage", { p_user_id: user.id });
+
+      if (usage && usage.length > 0) {
+        setExecutionCount(usage[0].execution_count || 0);
+      } else {
+        setExecutionCount(0);
+      }
+    } catch (error) {
+      console.error("Error fetching subscription:", error);
+      // Default to free on error
+      setTier("free");
+      setStatus("active");
+      setExecutionCount(0);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id]);
+
+  // Initial fetch and refetch when user changes
   useEffect(() => {
-    const storedTier = localStorage.getItem("coreza-subscription-tier") as SubscriptionTier | null;
-    const storedUsage = localStorage.getItem("coreza-subscription-usage");
+    fetchSubscription();
+  }, [fetchSubscription]);
 
-    if (storedTier && tierOrder.includes(storedTier)) {
-      setTier(storedTier);
-    }
+  // Subscribe to real-time updates for subscription changes
+  useEffect(() => {
+    if (!user?.id) return;
 
-    if (storedUsage) {
-      const parsed = parseInt(storedUsage, 10);
-      if (!Number.isNaN(parsed)) {
-        setExecutionCount(parsed);
-      }
-    }
-
-    if (tierConfig[tier].trial) {
-      const storedTrialEnd = localStorage.getItem("coreza-trial-end");
-      if (storedTrialEnd) {
-        const parsedDate = new Date(storedTrialEnd);
-        if (!Number.isNaN(parsedDate.getTime())) {
-          setTrialEndsAt(parsedDate);
-          return;
+    const channel = supabase
+      .channel("subscription-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "subscriptions",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchSubscription();
         }
-      }
+      )
+      .subscribe();
 
-      const nextTwoWeeks = new Date();
-      nextTwoWeeks.setDate(nextTwoWeeks.getDate() + 14);
-      setTrialEndsAt(nextTwoWeeks);
-      localStorage.setItem("coreza-trial-end", nextTwoWeeks.toISOString());
-    }
-  }, [tier]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, fetchSubscription]);
 
   const features = useMemo(() => tierConfig[tier].features, [tier]);
   const executionLimit = tierConfig[tier].executionLimit;
-  const isTrialing = tierConfig[tier].trial;
+  const isTrialing = status === "trial";
 
   const daysRemaining = useMemo(() => {
-    if (!trialEndsAt) return null;
-    const diff = trialEndsAt.getTime() - Date.now();
+    if (!periodEnd) return null;
+    const diff = periodEnd.getTime() - Date.now();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-  }, [trialEndsAt]);
+  }, [periodEnd]);
 
   const canUse = useCallback(
     (feature: string) => {
@@ -175,14 +226,17 @@ export const SubscriptionProvider = ({ children }: { children: React.ReactNode }
   const value = useMemo(
     () => ({
       tier,
+      status,
       features,
       executionCount,
       executionLimit,
       canUse,
       isTrialing,
       daysRemaining,
+      isLoading,
+      refreshSubscription: fetchSubscription,
     }),
-    [canUse, daysRemaining, executionCount, executionLimit, features, tier, isTrialing]
+    [canUse, daysRemaining, executionCount, executionLimit, features, tier, status, isTrialing, isLoading, fetchSubscription]
   );
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;

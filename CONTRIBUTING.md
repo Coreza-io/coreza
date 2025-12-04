@@ -170,7 +170,22 @@ coreza/
 
 ## 📜 License
 
-By contributing to Coreza, you agree that your contributions will be licensed under the Apache License 2.0.
+By contributing to Coreza, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) and become part of the open-source Coreza codebase. Commercial licensing options are available separately for customers who need alternative terms or private modifications.
+
+## 🧾 Contributor License Agreement (CLA)
+
+- All contributors must sign the Coreza CLA before pull requests can be merged. You will be prompted to review and sign the CLA as part of the PR workflow.
+- By signing the CLA, you affirm that you have the right to contribute the code and that Coreza can distribute it under the AGPL-3.0 license.
+- Contributions submitted under the CLA remain part of the open-source core and may also be incorporated into commercial offerings.
+
+## 🧭 Feature Request Prioritization
+
+We prioritize feature requests based on:
+
+- **Impact**: How many users and workflows will benefit from the change.
+- **Strategic alignment**: Relevance to Coreza’s roadmap for orchestrating trading and data automation.
+- **Security and reliability**: Enhancements that improve robustness, compliance, or observability are prioritized.
+- **Community signal**: Upvotes, discussions, and well-documented use cases help requests move up the queue.
 
 ## 🙏 Recognition
 

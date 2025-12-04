@@ -316,6 +316,9 @@ allow_dynamic_registration = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+[functions.create-checkout]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

@@ -306,7 +306,7 @@ export class MarketDataSubscriber {
             continue;
 
           // Format event using shared helper (same format for frontend and backend)
-          const formattedPayload = this.formatMarketEventPayload(event, subscription.nodeId);
+          const formattedPayload = this.formatMarketEventPayload(event);
 
           // Publish market data to Redis for WebSocketManager to forward to frontend
           try {
@@ -314,7 +314,10 @@ export class MarketDataSubscriber {
 
             const payload = JSON.stringify({
               type: "market_data",
-              payload: formattedPayload,
+              payload: {
+                nodeId: subscription.nodeId,
+                data: formattedPayload.data,
+              },
             });
 
             await redisPublishBreaker.fire(userChannel, payload);
@@ -364,11 +367,11 @@ export class MarketDataSubscriber {
    * Format CorezaMarketEvent to REST-like structure
    * Used for both frontend WebSocket and backend workflow execution
    */
-  private formatMarketEventPayload(
-    event: CorezaMarketEvent,
-    nodeId: string
-  ): { nodeId: string; data: Record<string, any> } {
-    const { symbol, type, source, timeframe, isClosed, ...cleanEventData } = event;
+  private formatMarketEventPayload(event: CorezaMarketEvent): {
+    data: Record<string, any>;
+  } {
+    const { symbol, type, source, timeframe, isClosed, ...cleanEventData } =
+      event;
 
     const typeKeyMap: Record<string, string> = {
       bar: "bar",
@@ -381,10 +384,9 @@ export class MarketDataSubscriber {
     const dataKey = typeKeyMap[type] || type;
 
     return {
-      nodeId,
       data: {
         symbol,
-        [dataKey]: [cleanEventData],
+        [dataKey]: cleanEventData,
       },
     };
   }
@@ -444,7 +446,7 @@ export class MarketDataSubscriber {
       const runId = runData.id;
 
       // Format market event to match frontend structure
-      const formattedPayload = this.formatMarketEventPayload(event, nodeId);
+      const formattedPayload = this.formatMarketEventPayload(event);
 
       // Add job to BullMQ queue with formatted payload as initial input
       try {

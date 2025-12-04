@@ -265,7 +265,7 @@ router.post("/transform", async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json({ success: true, data: result.result });
+    res.json(result);
   } catch (error) {
     console.error("Transform operation error:", error);
     res.status(500).json({

@@ -256,6 +256,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     if (!result.success) {
       return { success: false, error: result.error };
     }
+
     return result;
   }
 

@@ -16,10 +16,11 @@
 
 import express from "express";
 import { RiskEngineService } from "../services/risk";
+import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = express.Router();
 
-router.post("/engine", async (req, res) => {
+router.post("/engine", requireProfessional("Risk Engine"), async (req, res) => {
   try {
     const result = RiskEngineService.evaluate(req.body);
     if (!result.success) {

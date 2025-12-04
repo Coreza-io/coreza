@@ -17,11 +17,12 @@
 import { Router, Request, Response } from "express";
 import { AIAgentExecutor } from "../nodes/executors/AIAgentExecutor";
 import { WorkflowNode } from "../nodes/types";
+import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = Router();
 const aiAgentExecutor = new AIAgentExecutor();
 
-router.post("/execute", async (req: Request, res: Response) => {
+router.post("/execute", requireProfessional("AI Agent"), async (req: Request, res: Response) => {
   try {
     const {
       user_id,

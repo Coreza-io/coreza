@@ -15,12 +15,13 @@
  */
 
 import express from 'express';
+import { requireTrader } from '../middleware/licenseCheck';
 import { getScreenerService } from '../services/screeners/registry';
 
 const router = express.Router();
 
 // Generic screener endpoint - dynamic operation
-router.post('/:screener/:operation', async (req, res) => {
+router.post('/:screener/:operation', requireTrader('Screeners'), async (req, res) => {
   try {
     const { screener, operation } = req.params;
     const { user_id, credential_id, ...params } = req.body;
@@ -61,7 +62,7 @@ router.post('/:screener/:operation', async (req, res) => {
 });
 
 // Get user's screener credentials
-router.get('/:screener/credentials', async (req, res) => {
+router.get('/:screener/credentials', requireTrader('Screeners'), async (req, res) => {
   try {
     const { screener } = req.params;
     const { user_id } = req.query;

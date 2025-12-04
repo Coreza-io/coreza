@@ -27,6 +27,7 @@ import Workflows from "./Workflows";
 import WorkflowEditor from "./WorkflowEditor";
 import Profile from "./Profile";
 import Settings from "./Settings";
+import Subscription from "./Subscription";
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -75,6 +76,7 @@ const Interface = () => {
               <Route path="workflow/:id" element={<WorkflowEditor />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="subscription" element={<Subscription />} />
             </Routes>
           </main>
         </div>

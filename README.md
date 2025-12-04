@@ -1,8 +1,11 @@
 # Coreza Trading Platform
 
-![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Open Source](https://img.shields.io/badge/Open%20Source-AGPL--3.0-success)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)
+[![GitHub Repo stars](https://img.shields.io/github/stars/Coreza-io/coreza?style=social)](https://github.com/Coreza-io/coreza/stargazers)
+[![Sponsor Coreza](https://img.shields.io/badge/Sponsor-Coreza-ff69b4?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Coreza-io)
 
 An advanced, open-source trading platform that combines powerful workflow automation with institutional-level security. Built for traders, by traders - featuring multi-broker integration, real-time market data, technical analysis, and visual workflow orchestration.
 
@@ -12,7 +15,7 @@ An advanced, open-source trading platform that combines powerful workflow automa
 - **Multi-Broker Support**: Trade seamlessly across Alpaca, Dhan, and more brokers from a single platform
 - **Enterprise Security**: Bank-grade AES-256-GCM encryption and Row Level Security for credential management
 - **Real-Time Analytics**: Live market data, technical indicators, and risk management in one unified interface
-- **100% Open Source**: Fully transparent codebase under Apache 2.0 license - audit, customize, and extend freely
+- **100% Open Source**: Fully transparent codebase under AGPL-3.0 - audit, customize, and extend freely
 
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
 
@@ -82,6 +85,15 @@ The setup script will:
 - **Workflow automation** with visual editor
 - **Risk management** tools
 
+## 💡 Why Open Source?
+
+Coreza is built in the open to give traders and firms full control of their automation stack:
+
+- **Transparency by default**: Inspect, audit, and verify every component of the platform
+- **Security-first**: AGPL-3.0 ensures improvements to credential handling remain shared with the community
+- **Community velocity**: Shared workflows, connectors, and strategies accelerate what everyone can build
+- **Sustainable model**: Commercial licensing keeps paid features available for teams that need premium support
+
 ## 🛠️ Manual Setup
 
 If you prefer manual setup or the automated setup fails:
@@ -147,6 +159,25 @@ coreza/
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
 - [Security Guide](docs/SECURITY.md) - Security best practices
+- [Self-Hosting Guide](docs/SELF_HOSTING.md) - Host Coreza yourself
+- [Open Source Philosophy](docs/OPEN_SOURCE.md) - Governance and licensing
+- [Feature Comparison](docs/FEATURE_COMPARISON.md) - Free vs Paid capabilities
+- [Launch Checklist](docs/LAUNCH_CHECKLIST.md) - Final verification before announcing
+
+## 🔀 Feature Comparison (Free vs Paid)
+
+| Capability | Open Source (AGPL-3.0) | Commercial License |
+| --- | --- | --- |
+| Visual workflow builder | ✅ | ✅ (with advanced templates & SLA) |
+| Broker integrations (Alpaca, Dhan) | ✅ | ✅ (priority certifications) |
+| Real-time market data layer | ✅ | ✅ (with premium feeds) |
+| Role-based access control | ✅ | ✅ (with SSO/SCIM) |
+| Audit logging | ✅ (basic) | ✅ (advanced retention/export) |
+| White-label theming | ⚪️ | ✅ |
+| Dedicated support & onboarding | ⚪️ | ✅ |
+| Enterprise compliance reports | ⚪️ | ✅ |
+
+See [docs/FEATURE_COMPARISON.md](docs/FEATURE_COMPARISON.md) for details.
 
 ## 🤝 Contributing
 
@@ -155,32 +186,22 @@ coreza/
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+6. Follow our [Code of Conduct](CODE_OF_CONDUCT.md) in all interactions
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+- **Open Source License**: [GNU AGPL-3.0](LICENSE) for community use and contributions
+- **Commercial License**: [Coreza Commercial License](COMMERCIAL_LICENSE.md) for organizations needing paid features, private modifications, or commercial distribution rights
 
-```
-Copyright 2024 Coreza Trading Platform
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+Contact us to discuss commercial terms if your use case requires closed-source extensions or enterprise support.
 
 ## 🆘 Support
 
 - **Documentation**: Check our comprehensive docs in `/docs`
-- **Issues**: Report bugs via GitHub Issues
-- **Community**: Join our discussions
+- **Issues**: Report bugs via GitHub Issues using our templates
+- **Community**: Join [GitHub Discussions](https://github.com/Coreza-io/coreza/discussions) or our community channels
+- **Sponsor**: Support ongoing development via [GitHub Sponsors](https://github.com/sponsors/Coreza-io)
+- **Discord**: Real-time chat for contributors and operators (community invite available)
 
 ---
 

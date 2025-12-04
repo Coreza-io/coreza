@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/Coreza-io/coreza/discussions
+    about: Ask questions, share ideas, or get community support.
+  - name: Security Reports
+    url: mailto:security@coreza.io
+    about: Please report security vulnerabilities via email.

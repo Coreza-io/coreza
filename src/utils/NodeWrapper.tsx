@@ -349,12 +349,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               transform: `${iconTranslation} rotate(${rotation}deg)`,
             };
             
-            // Determine which icon to show - in readOnly mode, always show connected state
+            // Determine which icon to show - same logic for editor and execution view
             let handleIcon = null;
-            if (readOnly) {
-              // In readOnly mode, always show connected icon
-              handleIcon = <ConnectedSwitchIcon size={20} style={iconStyle} />;
-            } else if (isInputHandle) {
+            if (isInputHandle) {
               // For input handles: show ConnectedSwitchIcon if connected, otherwise FemalePlugIcon
               handleIcon = isConnected ? (
                 <ConnectedSwitchIcon size={20} style={iconStyle} />

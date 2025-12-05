@@ -24,14 +24,14 @@ import { cn } from "@/lib/utils";
 import { ExecutionRun, NodeExecutionLog } from "@/hooks/useExecutionHistory";
 import { NodeExecutionInspector } from "./NodeExecutionInspector";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
-import ExecutionNodeRenderer from "./ExecutionNodeRenderer";
+import ExecutionNodeWrapper from "./ExecutionNodeWrapper";
 import EdgeManager from "./EdgeManager";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Create execution-specific node types using ExecutionNodeRenderer for all node types
+// Create execution-specific node types using ExecutionNodeWrapper for all node types
 const executionNodeTypes = Object.fromEntries([
-  ...Object.keys(nodeManifest).map((key) => [key, ExecutionNodeRenderer]),
-  ...Object.values(nodeManifest).map((def: any) => [def.name, ExecutionNodeRenderer]),
+  ...Object.keys(nodeManifest).map((key) => [key, ExecutionNodeWrapper]),
+  ...Object.values(nodeManifest).map((def: any) => [def.name, ExecutionNodeWrapper]),
 ]);
 
 // Edge types for execution view

@@ -21,7 +21,8 @@ import { getRedis } from "../../config/redis";
 import {
   buildStoreKey,
   extractVariableNameFromKey,
-  parseStoredValue,
+  getStoreValue,
+  setStoreValue,
 } from "../../utils/store";
 
 export class DataSourceExecutor implements INodeExecutor {
@@ -187,14 +188,7 @@ export class DataSourceExecutor implements INodeExecutor {
         }
 
         const key = buildStoreKey(userId, workflowId, variableName);
-        const serialized =
-          typeof value === "string" ? value : JSON.stringify(value);
-
-        if (ttl && ttl > 0) {
-          await redis.setex(key, ttl, serialized);
-        } else {
-          await redis.set(key, serialized);
-        }
+        await setStoreValue(redis, key, value, ttl);
 
         return {
           success: true,
@@ -210,14 +204,13 @@ export class DataSourceExecutor implements INodeExecutor {
         }
 
         const key = buildStoreKey(userId, workflowId, variableName);
-        const rawValue = await redis.get(key);
 
         return {
           success: true,
           data: {
             operation: "get",
             variableName,
-            value: parseStoredValue(rawValue),
+            value: await getStoreValue(redis, key),
           },
         };
       }

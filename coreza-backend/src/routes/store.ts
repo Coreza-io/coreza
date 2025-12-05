@@ -21,9 +21,11 @@ import logger from "../utils/logger";
 import {
   buildStoreKey,
   extractVariableNameFromKey,
+  getStoreValue,
   parseStoredValue,
   parseMembers,
   parseScoreMembers,
+  setStoreValue,
 } from "../utils/store";
 
 const router = express.Router();
@@ -103,11 +105,10 @@ router.get("/value", async (req, res) => {
       workflow_id as string,
       variable_name as string
     );
-    const rawValue = await redis.get(key);
 
     res.json({
       success: true,
-      value: parseStoredValue(rawValue),
+      value: await getStoreValue(redis, key),
     });
   } catch (error) {
     logger.error({ err: error }, "Error fetching store value");
@@ -177,14 +178,7 @@ router.post("/execute", async (req, res) => {
           .json({ error: "workflow_id and variableName required for set" });
       }
       const key = buildStoreKey(user_id, workflow_id, variableName);
-      const serialized =
-        typeof value === "string" ? value : JSON.stringify(value);
-
-      if (ttl && ttl > 0) {
-        await redis.setex(key, ttl, serialized);
-      } else {
-        await redis.set(key, serialized);
-      }
+      await setStoreValue(redis, key, value, ttl);
 
       return res.json({
         success: true,
@@ -199,13 +193,12 @@ router.post("/execute", async (req, res) => {
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
       const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const rawValue = await redis.get(key);
       return res.json({
         success: true,
         data: {
           operation: operation,
           variableName: varName,
-          value: parseStoredValue(rawValue),
+          value: await getStoreValue(redis, key),
         },
       });
     }

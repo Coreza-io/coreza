@@ -6,12 +6,13 @@
  * (at your option) any later version.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { RefreshCw, Loader2, CalendarRange, Filter } from "lucide-react";
+import { RefreshCw, Loader2, CalendarRange, Filter, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ExecutionRun } from "@/hooks/useExecutionHistory";
 import {
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
@@ -44,6 +46,8 @@ interface ExecutionHistoryPanelProps {
   dateTo: Date | null;
   onDateToChange: (date: Date | null) => void;
   onClearFilters: () => void;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export function ExecutionHistoryPanel({
@@ -66,15 +70,26 @@ export function ExecutionHistoryPanel({
   dateTo,
   onDateToChange,
   onClearFilters,
+  error,
+  onRetry,
 }: ExecutionHistoryPanelProps) {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isFromOpen, setIsFromOpen] = useState(false);
   const [isToOpen, setIsToOpen] = useState(false);
+  const listParentRef = useRef<HTMLDivElement | null>(null);
 
   const filtersActive = useMemo(
     () => statusFilter !== "all" || !!dateFrom || !!dateTo,
     [dateFrom, dateTo, statusFilter]
   );
+
+  const shouldVirtualize = executions.length > 50;
+  const rowVirtualizer = useVirtualizer({
+    count: executions.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 72,
+    overscan: 6,
+  });
 
   const formatDateLabel = (date: Date | null) => {
     if (!date) return "Select date";
@@ -108,6 +123,27 @@ export function ExecutionHistoryPanel({
         return status;
     }
   };
+
+  const renderExecutionRow = (execution: ExecutionRun) => (
+    <button
+      key={execution.id}
+      onClick={() => onSelectExecution(execution)}
+      className={cn(
+        "w-full text-left p-3 mb-1 transition-colors border-l-4",
+        "hover:bg-muted/50",
+        getStatusAccent(execution.status),
+        selectedExecution?.id === execution.id && "bg-muted"
+      )}
+      aria-label={`Execution from ${format(new Date(execution.started_at), "MMM d, HH:mm:ss")}`}
+    >
+      <div className="text-sm font-medium">
+        {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
+      </div>
+      <div className="text-xs text-muted-foreground mt-1">
+        {getStatusLabel(execution.status)} in {getDuration(execution)}
+      </div>
+    </button>
+  );
 
   return (
     <div className="w-72 border-r border-border bg-card flex flex-col h-full">
@@ -249,33 +285,63 @@ export function ExecutionHistoryPanel({
       </div>
 
       {/* Execution List */}
-      <ScrollArea className="flex-1">
-        <div className="p-2">
-          {executions.length === 0 ? (
+      <div
+        ref={listParentRef}
+        className="flex-1 overflow-y-auto"
+        tabIndex={0}
+        aria-label="Execution history list"
+        aria-busy={loading}
+      >
+        <div className="p-2 space-y-2">
+          {loading && executions.length === 0 ? (
+            <div className="space-y-2" aria-live="polite">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="space-y-1">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Failed to load executions</AlertTitle>
+              <AlertDescription className="flex items-center gap-2">
+                <span className="text-xs">{error}</span>
+                {onRetry && (
+                  <Button size="sm" variant="outline" onClick={onRetry}>
+                    Retry
+                  </Button>
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : executions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground text-sm">
               No executions yet
             </div>
           ) : (
             <>
-              {executions.map((execution) => (
-                <button
-                  key={execution.id}
-                  onClick={() => onSelectExecution(execution)}
-                  className={cn(
-                    "w-full text-left p-3 mb-1 transition-colors border-l-4",
-                    "hover:bg-muted/50",
-                    getStatusAccent(execution.status),
-                    selectedExecution?.id === execution.id && "bg-muted"
-                  )}
+              {shouldVirtualize ? (
+                <div
+                  className="relative"
+                  style={{ height: rowVirtualizer.getTotalSize() }}
                 >
-                  <div className="text-sm font-medium">
-                    {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {getStatusLabel(execution.status)} in {getDuration(execution)}
-                  </div>
-                </button>
-              ))}
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const execution = executions[virtualRow.index];
+                    return (
+                      <div
+                        key={execution.id}
+                        className="absolute top-0 left-0 w-full"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      >
+                        {renderExecutionRow(execution)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                executions.map((execution) => renderExecutionRow(execution))
+              )}
               {hasMore && (
                 <Button
                   variant="outline"
@@ -283,6 +349,7 @@ export function ExecutionHistoryPanel({
                   className="w-full mt-2"
                   onClick={onLoadMore}
                   disabled={loadingMore}
+                  aria-label="Load more executions"
                 >
                   {loadingMore ? (
                     <>
@@ -297,7 +364,7 @@ export function ExecutionHistoryPanel({
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

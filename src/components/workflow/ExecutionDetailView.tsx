@@ -150,7 +150,7 @@ export function ExecutionDetailView({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 h-full overflow-hidden">
       {/* Execution Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/50">
         <div className="flex items-center gap-4">

@@ -57,7 +57,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ExecutionFilters, useExecutionHistory } from "@/hooks/useExecutionHistory";
+import {
+  ExecutionFilters,
+  ExecutionRun,
+  useExecutionHistory,
+} from "@/hooks/useExecutionHistory";
 import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 
@@ -183,6 +187,7 @@ const WorkflowEditorContent = () => {
   );
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingExecution, setLoadingExecution] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   const [executingNode, setExecutingNode] = useState<string | null>(null);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
@@ -229,6 +234,37 @@ const WorkflowEditorContent = () => {
     getNodeExecutions,
     error: executionsError,
   } = useExecutionHistory(workflowId, executionFilters);
+
+  const executionLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
+  const handleSelectExecution = useCallback(
+    (execution: ExecutionRun) => {
+      if (selectedExecution?.id === execution.id) return;
+
+      if (executionLoadingTimeoutRef.current) {
+        clearTimeout(executionLoadingTimeoutRef.current);
+      }
+
+      setLoadingExecution(true);
+      setSelectedExecution(execution);
+
+      executionLoadingTimeoutRef.current = setTimeout(
+        () => setLoadingExecution(false),
+        150
+      );
+    },
+    [selectedExecution?.id, setSelectedExecution]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (executionLoadingTimeoutRef.current) {
+        clearTimeout(executionLoadingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleClearFilters = useCallback(() => {
     setStatusFilter("all");
@@ -1559,7 +1595,7 @@ const WorkflowEditorContent = () => {
           <ExecutionHistoryPanel
             workflowId={workflowId}
             selectedExecution={selectedExecution}
-            onSelectExecution={setSelectedExecution}
+            onSelectExecution={handleSelectExecution}
             autoRefresh={autoRefresh}
             onAutoRefreshChange={setAutoRefresh}
             onRefresh={refreshExecutions}
@@ -1588,6 +1624,7 @@ const WorkflowEditorContent = () => {
               nodes={nodes}
               edges={edges}
               nodeExecutions={getNodeExecutions(selectedExecution)}
+              loading={loadingExecution}
               onCopyToEditor={() => setActiveTab("editor")}
             />
           ) : (

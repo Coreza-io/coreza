@@ -46,6 +46,7 @@ interface ExecutionDetailViewProps {
   edges: Edge[];
   nodeExecutions: NodeExecutionLog[];
   onCopyToEditor?: () => void;
+  loading?: boolean;
 }
 
 export function ExecutionDetailView({
@@ -54,6 +55,7 @@ export function ExecutionDetailView({
   edges,
   nodeExecutions,
   onCopyToEditor,
+  loading = false,
 }: ExecutionDetailViewProps) {
   const resolvedTheme = useResolvedTheme();
 
@@ -198,26 +200,41 @@ export function ExecutionDetailView({
       <div className="flex flex-1 overflow-hidden">
         {/* Canvas */}
         <div className="flex-1 bg-trading-grid relative">
-          {nodeExecutions.length === 0 && (
+          {loading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/80 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  Loading execution...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {!loading && nodeExecutions.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="bg-card/80 text-muted-foreground text-sm px-4 py-2 rounded-md border border-border">
                 No node execution details available for this run.
               </div>
             </div>
           )}
-            <ReactFlow
-              nodes={executionNodes}
-              edges={executionEdges}
-              nodeTypes={executionNodeTypes}
-              edgeTypes={executionEdgeTypes}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={true}
-              zoomOnDoubleClick={false}
-              fitView
-              className={cn("execution-canvas", resolvedTheme === "dark" && "dark")}
-              style={{ backgroundColor: "hsl(var(--trading-grid))" }}
-            >
+          <ReactFlow
+            nodes={executionNodes}
+            edges={executionEdges}
+            nodeTypes={executionNodeTypes}
+            edgeTypes={executionEdgeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={true}
+            zoomOnDoubleClick={false}
+            fitView
+            className={cn(
+              "execution-canvas",
+              resolvedTheme === "dark" && "dark",
+              loading && "opacity-50 pointer-events-none"
+            )}
+            style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+          >
             <Background
               variant={BackgroundVariant.Dots}
               gap={16}

@@ -6,13 +6,31 @@
  * (at your option) any later version.
  */
 
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import {
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
+  CalendarRange,
+  Filter,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { ExecutionRun, useExecutionHistory } from "@/hooks/useExecutionHistory";
+import { ExecutionRun } from "@/hooks/useExecutionHistory";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
@@ -27,6 +45,13 @@ interface ExecutionHistoryPanelProps {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  statusFilter: string;
+  onStatusFilterChange: (status: string) => void;
+  dateFrom: Date | null;
+  onDateFromChange: (date: Date | null) => void;
+  dateTo: Date | null;
+  onDateToChange: (date: Date | null) => void;
+  onClearFilters: () => void;
 }
 
 export function ExecutionHistoryPanel({
@@ -42,7 +67,27 @@ export function ExecutionHistoryPanel({
   hasMore,
   loadingMore,
   onLoadMore,
+  statusFilter,
+  onStatusFilterChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  onClearFilters,
 }: ExecutionHistoryPanelProps) {
+  const [isFromOpen, setIsFromOpen] = useState(false);
+  const [isToOpen, setIsToOpen] = useState(false);
+
+  const filtersActive = useMemo(
+    () => statusFilter !== "all" || !!dateFrom || !!dateTo,
+    [dateFrom, dateTo, statusFilter]
+  );
+
+  const formatDateLabel = (date: Date | null) => {
+    if (!date) return "Select date";
+    return format(date, "MMM d, yyyy");
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "success":
@@ -73,9 +118,12 @@ export function ExecutionHistoryPanel({
   return (
     <div className="w-72 border-r border-border bg-card flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-sm">Executions</h3>
+      <div className="p-4 border-b border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            Executions
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -86,15 +134,97 @@ export function ExecutionHistoryPanel({
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
           </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="auto-refresh"
-            checked={autoRefresh}
-            onCheckedChange={(checked) => onAutoRefreshChange(!!checked)}
-          />
-          <label htmlFor="auto-refresh" className="text-xs text-muted-foreground cursor-pointer">
-            Auto refresh
-          </label>
+
+        <div className="space-y-2 text-xs">
+          <div className="space-y-1.5">
+            <div className="text-muted-foreground">Status</div>
+            <Select
+              value={statusFilter}
+              onValueChange={onStatusFilterChange}
+              disabled={!workflowId}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent className="text-sm">
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="success">Succeeded</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Popover open={isFromOpen} onOpenChange={setIsFromOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 justify-start"
+                  disabled={!workflowId}
+                >
+                  <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <span className="truncate">From: {formatDateLabel(dateFrom)}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateFrom ?? undefined}
+                  onSelect={(date) => {
+                    onDateFromChange(date ?? null);
+                    setIsFromOpen(false);
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Popover open={isToOpen} onOpenChange={setIsToOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 justify-start"
+                  disabled={!workflowId}
+                >
+                  <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <span className="truncate">To: {formatDateLabel(dateTo)}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateTo ?? undefined}
+                  onSelect={(date) => {
+                    onDateToChange(date ?? null);
+                    setIsToOpen(false);
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="auto-refresh"
+                checked={autoRefresh}
+                onCheckedChange={(checked) => onAutoRefreshChange(!!checked)}
+              />
+              <label htmlFor="auto-refresh" className="text-xs text-muted-foreground cursor-pointer">
+                Auto refresh
+              </label>
+            </div>
+            {filtersActive && (
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onClearFilters}>
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

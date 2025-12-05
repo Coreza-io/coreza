@@ -11,6 +11,12 @@ import { supabase } from "@/integrations/supabase/client";
 
 const PAGE_SIZE = 20;
 
+export interface ExecutionFilters {
+  status?: "all" | "success" | "failed" | "running" | "pending";
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+}
+
 export interface NodeExecutionLog {
   nodeId: string;
   nodeName: string;
@@ -41,7 +47,10 @@ export interface ExecutionRun {
   initiated_by: string | null;
 }
 
-export function useExecutionHistory(workflowId: string | null) {
+export function useExecutionHistory(
+  workflowId: string | null,
+  filters: ExecutionFilters = {}
+) {
   const [executions, setExecutions] = useState<ExecutionRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -49,15 +58,54 @@ export function useExecutionHistory(workflowId: string | null) {
   const [selectedExecution, setSelectedExecution] = useState<ExecutionRun | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
+  const matchesFilters = useCallback(
+    (execution: ExecutionRun) => {
+      if (filters.status && filters.status !== "all" && execution.status !== filters.status) {
+        return false;
+      }
+
+      if (filters.dateFrom) {
+        const startDate = new Date(execution.started_at);
+        if (startDate < filters.dateFrom) return false;
+      }
+
+      if (filters.dateTo) {
+        const endDate = new Date(filters.dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        const startDate = new Date(execution.started_at);
+        if (startDate >= endDate) return false;
+      }
+
+      return true;
+    },
+    [filters.dateFrom, filters.dateTo, filters.status]
+  );
+
   const fetchExecutions = useCallback(async () => {
     if (!workflowId) return;
-    
+
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("workflow_runs")
         .select("*")
-        .eq("workflow_id", workflowId)
+        .eq("workflow_id", workflowId);
+
+      if (filters.status && filters.status !== "all") {
+        query = query.eq("status", filters.status);
+      }
+
+      if (filters.dateFrom) {
+        query = query.gte("started_at", filters.dateFrom.toISOString());
+      }
+
+      if (filters.dateTo) {
+        const endDate = new Date(filters.dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt("started_at", endDate.toISOString());
+      }
+
+      const { data, error } = await query
         .order("started_at", { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -70,31 +118,55 @@ export function useExecutionHistory(workflowId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [workflowId]);
+  }, [workflowId, filters.status, filters.dateFrom, filters.dateTo]);
 
   const loadMore = useCallback(async () => {
     if (!workflowId || !hasMore || loadingMore) return;
-    
+
     setLoadingMore(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("workflow_runs")
         .select("*")
-        .eq("workflow_id", workflowId)
+        .eq("workflow_id", workflowId);
+
+      if (filters.status && filters.status !== "all") {
+        query = query.eq("status", filters.status);
+      }
+
+      if (filters.dateFrom) {
+        query = query.gte("started_at", filters.dateFrom.toISOString());
+      }
+
+      if (filters.dateTo) {
+        const endDate = new Date(filters.dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt("started_at", endDate.toISOString());
+      }
+
+      const { data, error } = await query
         .order("started_at", { ascending: false })
         .range(executions.length, executions.length + PAGE_SIZE - 1);
 
       if (error) throw error;
-      
+
       const newData = (data as ExecutionRun[]) || [];
-      setExecutions(prev => [...prev, ...newData]);
+      setExecutions((prev) => [...prev, ...newData]);
       setHasMore(newData.length === PAGE_SIZE);
     } catch (error) {
       console.error("Failed to load more executions:", error);
     } finally {
       setLoadingMore(false);
     }
-  }, [workflowId, hasMore, loadingMore, executions.length]);
+  }, [
+    workflowId,
+    hasMore,
+    loadingMore,
+    executions.length,
+    filters.status,
+    filters.dateFrom,
+    filters.dateTo,
+  ]);
 
   // Initial fetch
   useEffect(() => {
@@ -116,14 +188,30 @@ export function useExecutionHistory(workflowId: string | null) {
           filter: `workflow_id=eq.${workflowId}`,
         },
         (payload) => {
+          const execution = payload.new as ExecutionRun;
+
           if (payload.eventType === "INSERT") {
-            setExecutions((prev) => [payload.new as ExecutionRun, ...prev].slice(0, 50));
+            if (!matchesFilters(execution)) return;
+
+            setExecutions((prev) => [execution, ...prev].slice(0, 50));
           } else if (payload.eventType === "UPDATE") {
-            setExecutions((prev) =>
-              prev.map((exec) =>
-                exec.id === payload.new.id ? (payload.new as ExecutionRun) : exec
-              )
-            );
+            if (!matchesFilters(execution)) {
+              setExecutions((prev) => prev.filter((exec) => exec.id !== execution.id));
+              if (selectedExecution?.id === execution.id) {
+                setSelectedExecution(null);
+              }
+              return;
+            }
+
+            setExecutions((prev) => {
+              const exists = prev.some((exec) => exec.id === execution.id);
+              if (exists) {
+                return prev.map((exec) =>
+                  exec.id === execution.id ? execution : exec
+                );
+              }
+              return [execution, ...prev].slice(0, 50);
+            });
             // Update selected execution if it's the one being updated
             if (selectedExecution?.id === payload.new.id) {
               setSelectedExecution(payload.new as ExecutionRun);
@@ -136,7 +224,11 @@ export function useExecutionHistory(workflowId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [workflowId, selectedExecution?.id]);
+  }, [
+    workflowId,
+    selectedExecution?.id,
+    matchesFilters,
+  ]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -181,6 +273,13 @@ export function useExecutionHistory(workflowId: string | null) {
     
     return [];
   }, []);
+
+  // Clear selection when filters change and current selection no longer matches
+  useEffect(() => {
+    if (selectedExecution && !matchesFilters(selectedExecution)) {
+      setSelectedExecution(null);
+    }
+  }, [matchesFilters, selectedExecution]);
 
   return {
     executions,

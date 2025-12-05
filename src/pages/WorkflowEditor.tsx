@@ -57,7 +57,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useExecutionHistory } from "@/hooks/useExecutionHistory";
+import { ExecutionFilters, useExecutionHistory } from "@/hooks/useExecutionHistory";
 import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 
@@ -188,6 +188,18 @@ const WorkflowEditorContent = () => {
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
+  const [statusFilter, setStatusFilter] = useState<ExecutionFilters["status"]>("all");
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
+
+  const executionFilters = useMemo(
+    () => ({
+      status: statusFilter,
+      dateFrom,
+      dateTo,
+    }),
+    [statusFilter, dateFrom, dateTo]
+  );
   
   // Execution history hook
   const {
@@ -203,7 +215,13 @@ const WorkflowEditorContent = () => {
     refresh: refreshExecutions,
     getDuration,
     getNodeExecutions,
-  } = useExecutionHistory(workflowId);
+  } = useExecutionHistory(workflowId, executionFilters);
+
+  const handleClearFilters = useCallback(() => {
+    setStatusFilter("all");
+    setDateFrom(null);
+    setDateTo(null);
+  }, []);
 
   const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -1536,6 +1554,15 @@ const WorkflowEditorContent = () => {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
+            statusFilter={statusFilter || "all"}
+            onStatusFilterChange={(status) =>
+              setStatusFilter(status as ExecutionFilters["status"])
+            }
+            dateFrom={dateFrom}
+            onDateFromChange={setDateFrom}
+            dateTo={dateTo}
+            onDateToChange={setDateTo}
+            onClearFilters={handleClearFilters}
           />
           
           {selectedExecution ? (

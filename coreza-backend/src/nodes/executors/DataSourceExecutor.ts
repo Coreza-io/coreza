@@ -204,13 +204,14 @@ export class DataSourceExecutor implements INodeExecutor {
         }
 
         const key = buildStoreKey(userId, workflowId, variableName);
+        const storedValue = await getStoreValue(redis, key);
 
         return {
           success: true,
           data: {
             operation: "get",
             variableName,
-            value: await getStoreValue(redis, key),
+            value: storedValue,
           },
         };
       }

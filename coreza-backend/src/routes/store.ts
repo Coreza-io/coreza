@@ -23,6 +23,8 @@ import {
   extractVariableNameFromKey,
   getStoreValue,
   parseStoredValue,
+  getStoreValue,
+  setStoreValue,
   parseMembers,
   parseScoreMembers,
   setStoreValue,
@@ -105,10 +107,11 @@ router.get("/value", async (req, res) => {
       workflow_id as string,
       variable_name as string
     );
+    const storedValue = await getStoreValue(redis, key);
 
     res.json({
       success: true,
-      value: await getStoreValue(redis, key),
+      value: storedValue,
     });
   } catch (error) {
     logger.error({ err: error }, "Error fetching store value");
@@ -193,12 +196,13 @@ router.post("/execute", async (req, res) => {
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
       const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const storedValue = await getStoreValue(redis, key);
       return res.json({
         success: true,
         data: {
           operation: operation,
           variableName: varName,
-          value: await getStoreValue(redis, key),
+          value: storedValue,
         },
       });
     }
@@ -213,7 +217,7 @@ router.post("/execute", async (req, res) => {
       await redis.del(key);
       return res.json({
         success: true,
-        darta: {
+        data: {
           operation: operation,
           variableName: varName,
           message: "Key deleted",

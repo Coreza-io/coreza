@@ -203,6 +203,7 @@ export function ExecutionDetailView({
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={true}
+              zoomOnDoubleClick={false}
               fitView
               className={cn("execution-canvas", resolvedTheme === "dark" && "dark")}
               style={{ backgroundColor: "hsl(var(--trading-grid))" }}

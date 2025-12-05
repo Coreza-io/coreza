@@ -29,6 +29,8 @@ export type OutputPanelProps = {
   onSave?: (data: any) => void;
   /** Callback when the pin/unpin button is toggled */
   onPinToggle?: () => void;
+  /** Read-only mode (for execution view) - hides edit/pin buttons */
+  readOnly?: boolean;
 };
 
 // Recursively render output data, modern UI with design system
@@ -93,6 +95,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   pinned = false,
   onSave = () => {},
   onPinToggle = () => {},
+  readOnly = false,
 }) => {
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
@@ -145,32 +148,35 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
         <div className="font-semibold text-foreground text-sm tracking-tight">
           Output Data
         </div>
-        <div className="flex items-center space-x-1">
-          {!isEditing && (
+        {/* Hide edit/pin buttons in readOnly mode */}
+        {!readOnly && (
+          <div className="flex items-center space-x-1">
+            {!isEditing && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground hover:bg-muted h-7 w-7 p-0"
+                onClick={handleEdit}
+                title="Edit Output"
+              >
+                <Edit2 className="w-3 h-3" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-foreground hover:bg-muted h-7 w-7 p-0"
-              onClick={handleEdit}
-              title="Edit Output"
+              className={`hover:bg-muted h-7 w-7 p-0 transition-colors ${
+                pinned 
+                  ? "text-primary hover:text-primary-glow" 
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={onPinToggle}
+              title={pinned ? "Unpin Output" : "Pin Output"}
             >
-              <Edit2 className="w-3 h-3" />
+              {pinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`hover:bg-muted h-7 w-7 p-0 transition-colors ${
-              pinned 
-                ? "text-primary hover:text-primary-glow" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={onPinToggle}
-            title={pinned ? "Unpin Output" : "Pin Output"}
-          >
-            {pinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
       
       <div className="p-3 h-[calc(100%-42px)] overflow-auto">

@@ -193,6 +193,9 @@ const WorkflowEditorContent = () => {
   const {
     executions,
     loading: executionsLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
     selectedExecution,
     setSelectedExecution,
     autoRefresh,
@@ -1530,6 +1533,9 @@ const WorkflowEditorContent = () => {
             executions={executions}
             loading={executionsLoading}
             getDuration={getDuration}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
           />
           
           {selectedExecution ? (

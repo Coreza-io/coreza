@@ -24,6 +24,9 @@ interface ExecutionHistoryPanelProps {
   executions: ExecutionRun[];
   loading: boolean;
   getDuration: (execution: ExecutionRun) => string;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }
 
 export function ExecutionHistoryPanel({
@@ -36,6 +39,9 @@ export function ExecutionHistoryPanel({
   executions,
   loading,
   getDuration,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: ExecutionHistoryPanelProps) {
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -100,33 +106,53 @@ export function ExecutionHistoryPanel({
               No executions yet
             </div>
           ) : (
-            executions.map((execution, index) => (
-              <button
-                key={execution.id}
-                onClick={() => onSelectExecution(execution)}
-                className={cn(
-                  "w-full text-left p-3 rounded-lg mb-1 transition-colors",
-                  "hover:bg-muted/50",
-                  selectedExecution?.id === execution.id && "bg-muted"
-                )}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(execution.status)}
-                    <span className="text-xs text-muted-foreground">
-                      #{executions.length - index}
-                    </span>
+            <>
+              {executions.map((execution, index) => (
+                <button
+                  key={execution.id}
+                  onClick={() => onSelectExecution(execution)}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg mb-1 transition-colors",
+                    "hover:bg-muted/50",
+                    selectedExecution?.id === execution.id && "bg-muted"
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(execution.status)}
+                      <span className="text-xs text-muted-foreground">
+                        #{executions.length - index}
+                      </span>
+                    </div>
+                    {getStatusBadge(execution.status)}
                   </div>
-                  {getStatusBadge(execution.status)}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Duration: {getDuration(execution)}
-                </div>
-              </button>
-            ))
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Duration: {getDuration(execution)}
+                  </div>
+                </button>
+              ))}
+              {hasMore && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    "Load more"
+                  )}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </ScrollArea>

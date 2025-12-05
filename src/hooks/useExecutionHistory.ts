@@ -9,6 +9,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+const PAGE_SIZE = 20;
+
 export interface NodeExecutionLog {
   nodeId: string;
   nodeName: string;
@@ -42,6 +44,8 @@ export interface ExecutionRun {
 export function useExecutionHistory(workflowId: string | null) {
   const [executions, setExecutions] = useState<ExecutionRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [selectedExecution, setSelectedExecution] = useState<ExecutionRun | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
 
@@ -55,16 +59,42 @@ export function useExecutionHistory(workflowId: string | null) {
         .select("*")
         .eq("workflow_id", workflowId)
         .order("started_at", { ascending: false })
-        .limit(50);
+        .limit(PAGE_SIZE);
 
       if (error) throw error;
-      setExecutions((data as ExecutionRun[]) || []);
+      const results = (data as ExecutionRun[]) || [];
+      setExecutions(results);
+      setHasMore(results.length === PAGE_SIZE);
     } catch (error) {
       console.error("Failed to fetch executions:", error);
     } finally {
       setLoading(false);
     }
   }, [workflowId]);
+
+  const loadMore = useCallback(async () => {
+    if (!workflowId || !hasMore || loadingMore) return;
+    
+    setLoadingMore(true);
+    try {
+      const { data, error } = await supabase
+        .from("workflow_runs")
+        .select("*")
+        .eq("workflow_id", workflowId)
+        .order("started_at", { ascending: false })
+        .range(executions.length, executions.length + PAGE_SIZE - 1);
+
+      if (error) throw error;
+      
+      const newData = (data as ExecutionRun[]) || [];
+      setExecutions(prev => [...prev, ...newData]);
+      setHasMore(newData.length === PAGE_SIZE);
+    } catch (error) {
+      console.error("Failed to load more executions:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [workflowId, hasMore, loadingMore, executions.length]);
 
   // Initial fetch
   useEffect(() => {
@@ -155,6 +185,9 @@ export function useExecutionHistory(workflowId: string | null) {
   return {
     executions,
     loading,
+    loadingMore,
+    hasMore,
+    loadMore,
     selectedExecution,
     setSelectedExecution,
     autoRefresh,

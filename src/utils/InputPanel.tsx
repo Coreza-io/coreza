@@ -22,6 +22,13 @@ import { useReactFlow } from "@xyflow/react";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 
+type NodeExecutionLog = {
+  nodeId: string;
+  nodeName: string;
+  output?: any;
+  input?: any;
+};
+
 type InputPanelProps = {
   nodeId?: string;
   nodes: Node<any>[];
@@ -39,6 +46,8 @@ type InputPanelProps = {
   // Read-only mode for execution view
   readOnly?: boolean;
   executionInput?: any;
+  // All node executions for dropdown in readOnly mode
+  allNodeExecutions?: NodeExecutionLog[];
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
@@ -53,6 +62,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   executionStore,
   readOnly = false,
   executionInput,
+  allNodeExecutions,
 }) => {
   // Always call hooks unconditionally (React rules), but use conditionally
   const reactFlowContext = useReactFlow();
@@ -95,9 +105,25 @@ const InputPanel: React.FC<InputPanelProps> = ({
     setSelectedPrevNodeId,
   ]);
 
+  // Set default selection in readOnly mode
+  useEffect(() => {
+    if (!readOnly || !allNodeExecutions || selectedPrevNodeId) return;
+    if (typeof setSelectedPrevNodeId !== "function") return;
+    
+    // Select the first executed node by default
+    if (allNodeExecutions.length > 0) {
+      setSelectedPrevNodeId(allNodeExecutions[0].nodeId);
+    }
+  }, [readOnly, allNodeExecutions, selectedPrevNodeId, setSelectedPrevNodeId]);
+
   // Get outputData - use executionInput directly in readOnly mode
   const outputData = useMemo(() => {
-    // In readOnly mode, show execution input directly
+    // In readOnly mode with allNodeExecutions, use selected node's output
+    if (readOnly && allNodeExecutions && selectedPrevNodeId) {
+      const selectedExec = allNodeExecutions.find(e => e.nodeId === selectedPrevNodeId);
+      return selectedExec?.output ?? {};
+    }
+    // Fallback to executionInput if no selection
     if (readOnly && executionInput !== undefined) {
       return executionInput;
     }
@@ -109,7 +135,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
       prevNode?.data?.input ??
       {};
     return result;
-  }, [selectedPrevNodeId, nodes, executionStore, readOnly, executionInput]);
+  }, [selectedPrevNodeId, nodes, executionStore, readOnly, executionInput, allNodeExecutions]);
 
   if (!isExpanded) return null;
 
@@ -133,13 +159,34 @@ const InputPanel: React.FC<InputPanelProps> = ({
       </div>
       <div className="p-3 h-[calc(100%-42px)] overflow-auto">
         {readOnly ? (
-          // In readOnly mode, show execution input directly without dropdown
-          <div className="mb-2">
-            <DraggableFieldsPanel
-              data={outputData}
-              onDragStart={handleDragStart ?? (() => {})}
-            />
-          </div>
+          // In readOnly mode, show dropdown with all executed nodes
+          <>
+            {allNodeExecutions && allNodeExecutions.length > 0 && setSelectedPrevNodeId && (
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-2 text-muted-foreground">
+                  Previous Node:
+                </label>
+                <select
+                  className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  value={selectedPrevNodeId || ""}
+                  onChange={(e) => setSelectedPrevNodeId(e.target.value)}
+                >
+                  <option value="">Select node...</option>
+                  {allNodeExecutions.map((exec) => (
+                    <option key={exec.nodeId} value={exec.nodeId}>
+                      {exec.nodeName || exec.nodeId}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="mb-2">
+              <DraggableFieldsPanel
+                data={outputData}
+                onDragStart={handleDragStart ?? (() => {})}
+              />
+            </div>
+          </>
         ) : previousNodes.length > 0 ? (
           <>
             {setSelectedPrevNodeId &&

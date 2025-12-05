@@ -150,10 +150,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
   
-  // Only use ReactFlow hooks in editor mode
-  const reactFlowContext = readOnly ? null : useReactFlow();
-  const setNodes = reactFlowContext?.setNodes;
-  const setEdges = reactFlowContext?.setEdges;
+  // Access ReactFlow hooks once and gate usage for readOnly mode to keep hook order stable
+  const reactFlowContext = useReactFlow();
+  const setNodes = readOnly ? undefined : reactFlowContext.setNodes;
+  const setEdges = readOnly ? undefined : reactFlowContext.setEdges;
 
   // Open delete confirmation dialog
   const handleDeleteClick = (e: React.MouseEvent) => {

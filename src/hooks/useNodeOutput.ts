@@ -43,11 +43,17 @@ export function useNodeOutput({
   const nodeId = useNodeId();
   const executionStore = useExecutionStore();
   const version = useExecutionStoreVersion();
-  const [lastOutput, setLastOutput] = useState<any>(() =>
-    definition?.name === "AlpacaNews"
-      ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined })
-      : { status: "pending" }
-  );
+  const [lastOutput, setLastOutput] = useState<any>(() => {
+    // In execution view (readOnly), data.output contains the actual execution result
+    if (data.output !== undefined && data.output !== null) {
+      return data.output;
+    }
+    // Default behavior for editor mode
+    if (definition?.name === "AlpacaNews") {
+      return createWaitingNewsOutput({ nodeId: nodeId ?? undefined });
+    }
+    return { status: "pending" };
+  });
   const [overrideOutput, setOverrideOutput] = useState<any | null>(null);
 
   // Save output data (pins it)

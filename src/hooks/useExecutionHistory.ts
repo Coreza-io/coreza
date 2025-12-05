@@ -276,6 +276,11 @@ export function useExecutionHistory(
         const output = resultData[nodeId];
         const outputData = output?.data ?? output;
         
+        // Derive input from previous node's output
+        const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
+        const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
+        const inputData = prevOutput?.data ?? prevOutput ?? {};
+        
         // Determine status based on execution result
         let status: "success" | "failed" | "skipped" = "success";
         if (execution.status === "failed") {
@@ -290,7 +295,7 @@ export function useExecutionHistory(
           completedAt: execution.completed_at || execution.started_at,
           durationMs: estimatedDurationPerNode,
           status,
-          input: {},
+          input: inputData,
           output: outputData,
           itemCount: Array.isArray(outputData) ? outputData.length : 
                      (outputData !== null && outputData !== undefined ? 1 : 0),

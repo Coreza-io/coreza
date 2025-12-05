@@ -54,13 +54,13 @@ const InputPanel: React.FC<InputPanelProps> = ({
   readOnly = false,
   executionInput,
 }) => {
-  // Only use ReactFlow hooks in editor mode
-  const reactFlowContext = readOnly ? null : useReactFlow();
+  // Always call hooks unconditionally (React rules), but use conditionally
+  const reactFlowContext = useReactFlow();
   const { timezone: userTimezone } = useUserPreferences();
 
   // Get fresh node/edge data on every render (only in editor mode)
-  const nodes = readOnly ? initialNodes : (reactFlowContext?.getNodes() || initialNodes);
-  const edges = readOnly ? initialEdges : (reactFlowContext?.getEdges() || initialEdges);
+  const nodes = readOnly ? initialNodes : (reactFlowContext.getNodes() || initialNodes);
+  const edges = readOnly ? initialEdges : (reactFlowContext.getEdges() || initialEdges);
 
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {

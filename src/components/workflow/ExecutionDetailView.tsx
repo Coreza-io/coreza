@@ -88,6 +88,8 @@ export function ExecutionDetailView({
           output: nodeExec?.output,
           // Use execution input for input panel
           executionInput: nodeExec?.input,
+          // Pass all node executions for dropdown in input panel
+          allNodeExecutions: nodeExecutions,
           // Display name from execution or original
           label: node.data?.displayName || (node.data?.definition as any)?.name,
         },

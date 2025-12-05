@@ -24,14 +24,14 @@ import { cn } from "@/lib/utils";
 import { ExecutionRun, NodeExecutionLog } from "@/hooks/useExecutionHistory";
 import { NodeExecutionInspector } from "./NodeExecutionInspector";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
-import ExecutionNodeWrapper from "./ExecutionNodeWrapper";
+import NodeRouter from "@/components/nodes/NodeRouter";
 import EdgeManager from "./EdgeManager";
 import { nodeManifest } from "@/nodes/manifest";
 
-// Create execution-specific node types using ExecutionNodeWrapper for all node types
+// Create execution-specific node types using NodeRouter for all node types
 const executionNodeTypes = Object.fromEntries([
-  ...Object.keys(nodeManifest).map((key) => [key, ExecutionNodeWrapper]),
-  ...Object.values(nodeManifest).map((def: any) => [def.name, ExecutionNodeWrapper]),
+  ...Object.keys(nodeManifest).map((key) => [key, NodeRouter]),
+  ...Object.values(nodeManifest).map((def: any) => [def.name, NodeRouter]),
 ]);
 
 // Edge types for execution view
@@ -68,7 +68,7 @@ export function ExecutionDetailView({
     return map;
   }, [nodeExecutions]);
 
-  // Transform nodes to show execution status
+  // Transform nodes to show execution status with readOnly mode
   const executionNodes = useMemo(() => {
     return nodes.map((node) => {
       const nodeExec = nodeExecutionMap.get(node.id);
@@ -78,11 +78,18 @@ export function ExecutionDetailView({
         ...node,
         data: {
           ...node.data,
+          // Enable read-only mode for execution view
+          readOnly: true,
+          // Pass execution-specific data
           executionStatus: status,
           executionDuration: nodeExec?.durationMs,
           itemCount: nodeExec?.itemCount || 0,
           hasError: !!nodeExec?.error,
           errorMessage: nodeExec?.error,
+          // Use execution output for output panel
+          output: nodeExec?.output,
+          // Display name from execution or original
+          label: node.data?.displayName || (node.data?.definition as any)?.name,
         },
       };
     });

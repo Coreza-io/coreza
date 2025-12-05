@@ -95,7 +95,7 @@ export function ExecutionDetailView({
         },
       };
     });
-  }, [nodes, nodeExecutionMap]);
+  }, [nodes, nodeExecutionMap, nodeExecutions]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {
@@ -105,9 +105,10 @@ export function ExecutionDetailView({
       
       return {
         ...edge,
+        type: edge.type || "default",
         label: itemCount > 0 ? `${itemCount} item${itemCount !== 1 ? "s" : ""}` : undefined,
-        labelStyle: { 
-          fill: "hsl(var(--muted-foreground))", 
+        labelStyle: {
+          fill: "hsl(var(--muted-foreground))",
           fontSize: 10,
           fontWeight: 500,
         },
@@ -196,7 +197,14 @@ export function ExecutionDetailView({
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Canvas */}
-        <div className="flex-1 bg-trading-grid">
+        <div className="flex-1 bg-trading-grid relative">
+          {nodeExecutions.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="bg-card/80 text-muted-foreground text-sm px-4 py-2 rounded-md border border-border">
+                No node execution details available for this run.
+              </div>
+            </div>
+          )}
             <ReactFlow
               nodes={executionNodes}
               edges={executionEdges}

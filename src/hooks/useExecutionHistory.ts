@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const PAGE_SIZE = 20;
+const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
 
 export interface ExecutionFilters {
   status?: "all" | "success" | "failed" | "running" | "pending";
@@ -24,9 +25,25 @@ export interface NodeExecutionLog {
   completedAt: string;
   durationMs: number;
   status: "success" | "failed" | "skipped";
-  input: any;
-  output: any;
+  input: unknown;
+  output: unknown;
   itemCount: number;
+  error?: string;
+}
+
+type ExecutionNodeResult =
+  | {
+      data?: unknown;
+      error?: string;
+      [key: string]: unknown;
+    }
+  | unknown;
+
+export interface ExecutionResultPayload {
+  success?: boolean;
+  result?: Record<string, ExecutionNodeResult>;
+  nodeExecutions?: NodeExecutionLog[];
+  executionOrder?: string[];
   error?: string;
 }
 
@@ -37,13 +54,7 @@ export interface ExecutionRun {
   started_at: string;
   completed_at: string | null;
   error_message: string | null;
-  result: {
-    success?: boolean;
-    result?: Record<string, any>;
-    nodeExecutions?: NodeExecutionLog[];
-    executionOrder?: string[];
-    error?: string;
-  } | null;
+  result: ExecutionResultPayload | null;
   initiated_by: string | null;
 }
 
@@ -57,6 +68,7 @@ export function useExecutionHistory(
   const [hasMore, setHasMore] = useState(false);
   const [selectedExecution, setSelectedExecution] = useState<ExecutionRun | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const matchesFilters = useCallback(
     (execution: ExecutionRun) => {
@@ -85,6 +97,7 @@ export function useExecutionHistory(
     if (!workflowId) return;
 
     setLoading(true);
+    setError(null);
     try {
       let query = supabase
         .from("workflow_runs")
@@ -113,8 +126,10 @@ export function useExecutionHistory(
       const results = (data as ExecutionRun[]) || [];
       setExecutions(results);
       setHasMore(results.length === PAGE_SIZE);
+      setError(null);
     } catch (error) {
       console.error("Failed to fetch executions:", error);
+      setError(error instanceof Error ? error.message : "Failed to fetch executions");
     } finally {
       setLoading(false);
     }
@@ -153,8 +168,10 @@ export function useExecutionHistory(
       const newData = (data as ExecutionRun[]) || [];
       setExecutions((prev) => [...prev, ...newData]);
       setHasMore(newData.length === PAGE_SIZE);
+      setError(null);
     } catch (error) {
       console.error("Failed to load more executions:", error);
+      setError(error instanceof Error ? error.message : "Failed to load more executions");
     } finally {
       setLoadingMore(false);
     }
@@ -193,7 +210,9 @@ export function useExecutionHistory(
           if (payload.eventType === "INSERT") {
             if (!matchesFilters(execution)) return;
 
-            setExecutions((prev) => [execution, ...prev].slice(0, 50));
+            setExecutions((prev) =>
+              [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS)
+            );
           } else if (payload.eventType === "UPDATE") {
             if (!matchesFilters(execution)) {
               setExecutions((prev) => prev.filter((exec) => exec.id !== execution.id));
@@ -210,7 +229,7 @@ export function useExecutionHistory(
                   exec.id === execution.id ? execution : exec
                 );
               }
-              return [execution, ...prev].slice(0, 50);
+              return [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS);
             });
             // Update selected execution if it's the one being updated
             if (selectedExecution?.id === payload.new.id) {
@@ -249,15 +268,17 @@ export function useExecutionHistory(
 
   const getNodeExecutions = useCallback((execution: ExecutionRun): NodeExecutionLog[] => {
     if (!execution.result) return [];
-    
+
     // Check if nodeExecutions exists in result
     if (execution.result.nodeExecutions && Array.isArray(execution.result.nodeExecutions)) {
       return execution.result.nodeExecutions;
     }
     
     // Enhanced fallback: extract from result object with better defaults
-    const resultData = execution.result.result || execution.result;
-    const executionOrder = execution.result.executionOrder || Object.keys(resultData || {});
+    const resultData =
+      (execution.result.result ?? execution.result) as Record<string, ExecutionNodeResult>;
+    const executionOrder =
+      execution.result.executionOrder || Object.keys(resultData || {});
     
     if (typeof resultData !== "object" || resultData === null) {
       return [];
@@ -274,12 +295,18 @@ export function useExecutionHistory(
       .filter((nodeId) => nodeId && typeof nodeId === "string")
       .map((nodeId, index) => {
         const output = resultData[nodeId];
-        const outputData = output?.data ?? output;
+        const outputData =
+          output && typeof output === "object" && "data" in output
+            ? (output as { data?: unknown }).data
+            : output;
         
         // Derive input from previous node's output
         const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
         const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
-        const inputData = prevOutput?.data ?? prevOutput ?? {};
+        const inputData =
+          prevOutput && typeof prevOutput === "object" && "data" in prevOutput
+            ? (prevOutput as { data?: unknown }).data
+            : prevOutput ?? {};
         
         // Determine status based on execution result
         let status: "success" | "failed" | "skipped" = "success";
@@ -297,8 +324,11 @@ export function useExecutionHistory(
           status,
           input: inputData,
           output: outputData,
-          itemCount: Array.isArray(outputData) ? outputData.length : 
-                     (outputData !== null && outputData !== undefined ? 1 : 0),
+          itemCount: Array.isArray(outputData)
+            ? outputData.length
+            : outputData !== null && outputData !== undefined
+            ? 1
+            : 0,
         };
       });
   }, []);
@@ -323,5 +353,6 @@ export function useExecutionHistory(
     refresh: fetchExecutions,
     getDuration,
     getNodeExecutions,
+    error,
   };
 }

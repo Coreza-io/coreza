@@ -189,16 +189,28 @@ const WorkflowEditorContent = () => {
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
   const [statusFilter, setStatusFilter] = useState<ExecutionFilters["status"]>("all");
-  const [dateFrom, setDateFrom] = useState<Date | null>(null);
-  const [dateTo, setDateTo] = useState<Date | null>(null);
+  const [dateFromInput, setDateFromInput] = useState<Date | null>(null);
+  const [dateToInput, setDateToInput] = useState<Date | null>(null);
+  const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
+  const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
+    return () => clearTimeout(timeout);
+  }, [dateFromInput]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDateToFilter(dateToInput), 400);
+    return () => clearTimeout(timeout);
+  }, [dateToInput]);
 
   const executionFilters = useMemo(
     () => ({
       status: statusFilter,
-      dateFrom,
-      dateTo,
+      dateFrom: dateFromFilter,
+      dateTo: dateToFilter,
     }),
-    [statusFilter, dateFrom, dateTo]
+    [statusFilter, dateFromFilter, dateToFilter]
   );
   
   // Execution history hook
@@ -215,12 +227,15 @@ const WorkflowEditorContent = () => {
     refresh: refreshExecutions,
     getDuration,
     getNodeExecutions,
+    error: executionsError,
   } = useExecutionHistory(workflowId, executionFilters);
 
   const handleClearFilters = useCallback(() => {
     setStatusFilter("all");
-    setDateFrom(null);
-    setDateTo(null);
+    setDateFromInput(null);
+    setDateToInput(null);
+    setDateFromFilter(null);
+    setDateToFilter(null);
   }, []);
 
   const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
@@ -1558,11 +1573,13 @@ const WorkflowEditorContent = () => {
             onStatusFilterChange={(status) =>
               setStatusFilter(status as ExecutionFilters["status"])
             }
-            dateFrom={dateFrom}
-            onDateFromChange={setDateFrom}
-            dateTo={dateTo}
-            onDateToChange={setDateTo}
+            dateFrom={dateFromInput}
+            onDateFromChange={setDateFromInput}
+            dateTo={dateToInput}
+            onDateToChange={setDateToInput}
             onClearFilters={handleClearFilters}
+            error={executionsError}
+            onRetry={refreshExecutions}
           />
           
           {selectedExecution ? (

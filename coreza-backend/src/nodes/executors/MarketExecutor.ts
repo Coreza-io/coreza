@@ -19,7 +19,7 @@ import { DataService } from '../../services/data';
 import { MarketSource } from '../../types/marketEvent';
 import { getRedis } from '../../config/redis';
 import { REDIS_CHANNELS } from '../../config/redisChannels';
-import { buildStoreKey, parseStoredValue } from '../../utils/store';
+import { buildStoreKey, getStoreValue } from '../../utils/store';
 
 export class MarketExecutor implements INodeExecutor {
   readonly category = 'Market';
@@ -106,7 +106,7 @@ export class MarketExecutor implements INodeExecutor {
         }
 
         const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
-        const storedValue = parseStoredValue(await redis.get(storeKey));
+        const storedValue = await getStoreValue(redis, storeKey);
 
         if (Array.isArray(storedValue)) {
           symbolArray = storedValue

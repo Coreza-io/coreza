@@ -24,6 +24,22 @@ import { cn } from "@/lib/utils";
 import { ExecutionRun, NodeExecutionLog } from "@/hooks/useExecutionHistory";
 import { NodeExecutionInspector } from "./NodeExecutionInspector";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import ExecutionNodeRenderer from "./ExecutionNodeRenderer";
+import EdgeManager from "./EdgeManager";
+import { nodeManifest } from "@/nodes/manifest";
+
+// Create execution-specific node types using ExecutionNodeRenderer for all node types
+const executionNodeTypes = Object.fromEntries([
+  ...Object.keys(nodeManifest).map((key) => [key, ExecutionNodeRenderer]),
+  ...Object.values(nodeManifest).map((def: any) => [def.name, ExecutionNodeRenderer]),
+]);
+
+// Edge types for execution view
+const executionEdgeTypes = {
+  default: EdgeManager.PlugEdge,
+  loop: EdgeManager.LoopEdge,
+  removable: EdgeManager.DefaultEdge,
+};
 
 interface ExecutionDetailViewProps {
   execution: ExecutionRun;
@@ -63,17 +79,11 @@ export function ExecutionDetailView({
         data: {
           ...node.data,
           executionStatus: status,
-          executionData: nodeExec,
+          executionDuration: nodeExec?.durationMs,
+          itemCount: nodeExec?.itemCount || 0,
+          hasError: !!nodeExec?.error,
+          errorMessage: nodeExec?.error,
         },
-        style: {
-          ...node.style,
-          opacity: nodeExec ? 1 : 0.5,
-        },
-        className: cn(
-          node.className,
-          status === "success" && "ring-2 ring-success ring-offset-2 ring-offset-background",
-          status === "failed" && "ring-2 ring-destructive ring-offset-2 ring-offset-background"
-        ),
       };
     });
   }, [nodes, nodeExecutionMap]);
@@ -185,6 +195,8 @@ export function ExecutionDetailView({
           <ReactFlow
             nodes={executionNodes}
             edges={executionEdges}
+            nodeTypes={executionNodeTypes}
+            edgeTypes={executionEdgeTypes}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             nodesDraggable={false}
             nodesConnectable={false}

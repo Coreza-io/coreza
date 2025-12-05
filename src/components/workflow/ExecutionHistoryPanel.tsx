@@ -8,15 +8,7 @@
 
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
-import {
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader2,
-  CalendarRange,
-  Filter,
-} from "lucide-react";
+import { RefreshCw, Loader2, CalendarRange, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -75,6 +67,7 @@ export function ExecutionHistoryPanel({
   onDateToChange,
   onClearFilters,
 }: ExecutionHistoryPanelProps) {
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isFromOpen, setIsFromOpen] = useState(false);
   const [isToOpen, setIsToOpen] = useState(false);
 
@@ -88,30 +81,31 @@ export function ExecutionHistoryPanel({
     return format(date, "MMM d, yyyy");
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusAccent = (status: string) => {
     switch (status) {
       case "success":
-        return <CheckCircle2 className="h-4 w-4 text-success" />;
+        return "border-l-success";
       case "failed":
-        return <XCircle className="h-4 w-4 text-destructive" />;
+        return "border-l-destructive";
       case "running":
-        return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
+        return "border-l-warning";
       default:
-        return <Clock className="h-4 w-4 text-muted-foreground" />;
+        return "border-l-muted";
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const baseClasses = "text-xs px-2 py-0.5 rounded-full font-medium";
+  const getStatusLabel = (status: string) => {
     switch (status) {
       case "success":
-        return <span className={cn(baseClasses, "bg-success/20 text-success")}>Succeeded</span>;
+        return "Succeeded";
       case "failed":
-        return <span className={cn(baseClasses, "bg-destructive/20 text-destructive")}>Failed</span>;
+        return "Failed";
       case "running":
-        return <span className={cn(baseClasses, "bg-primary/20 text-primary")}>Running</span>;
+        return "Running";
+      case "pending":
+        return "Pending";
       default:
-        return <span className={cn(baseClasses, "bg-muted text-muted-foreground")}>{status}</span>;
+        return status;
     }
   };
 
@@ -120,111 +114,137 @@ export function ExecutionHistoryPanel({
       {/* Header */}
       <div className="p-4 border-b border-border space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            Executions
+          <div>
+            <div className="text-sm font-semibold">Executions</div>
+            <div className="text-xs text-muted-foreground">No active executions</div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onRefresh}
+              disabled={!workflowId || loading}
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </Button>
+            <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-8 w-8"
+                  disabled={!workflowId}
+                >
+                  <Filter className="h-4 w-4" />
+                  {filtersActive && <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80" align="end" sideOffset={8}>
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Status</div>
+                    <Select
+                      value={statusFilter}
+                      onValueChange={onStatusFilterChange}
+                      disabled={!workflowId}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Any status" />
+                      </SelectTrigger>
+                      <SelectContent className="text-sm">
+                        <SelectItem value="all">Any status</SelectItem>
+                        <SelectItem value="success">Succeeded</SelectItem>
+                        <SelectItem value="failed">Failed</SelectItem>
+                        <SelectItem value="running">Running</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Execution start</div>
+                    <div className="flex items-center gap-2">
+                      <Popover open={isFromOpen} onOpenChange={setIsFromOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 justify-start"
+                            disabled={!workflowId}
+                          >
+                            <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
+                            <span className="truncate">Earliest: {formatDateLabel(dateFrom)}</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={dateFrom ?? undefined}
+                            onSelect={(date) => {
+                              onDateFromChange(date ?? null);
+                              setIsFromOpen(false);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+
+                      <Popover open={isToOpen} onOpenChange={setIsToOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 justify-start"
+                            disabled={!workflowId}
+                          >
+                            <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
+                            <span className="truncate">Latest: {formatDateLabel(dateTo)}</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={dateTo ?? undefined}
+                            onSelect={(date) => {
+                              onDateToChange(date ?? null);
+                              setIsToOpen(false);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+
+                  {filtersActive && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        onClearFilters();
+                        setIsFiltersOpen(false);
+                      }}
+                    >
+                      Reset filters
+                    </Button>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
-        <div className="space-y-2 text-xs">
-          <div className="space-y-1.5">
-            <div className="text-muted-foreground">Status</div>
-            <Select
-              value={statusFilter}
-              onValueChange={onStatusFilterChange}
-              disabled={!workflowId}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent className="text-sm">
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="success">Succeeded</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-                <SelectItem value="running">Running</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Popover open={isFromOpen} onOpenChange={setIsFromOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 justify-start"
-                  disabled={!workflowId}
-                >
-                  <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span className="truncate">From: {formatDateLabel(dateFrom)}</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateFrom ?? undefined}
-                  onSelect={(date) => {
-                    onDateFromChange(date ?? null);
-                    setIsFromOpen(false);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover open={isToOpen} onOpenChange={setIsToOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 justify-start"
-                  disabled={!workflowId}
-                >
-                  <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span className="truncate">To: {formatDateLabel(dateTo)}</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateTo ?? undefined}
-                  onSelect={(date) => {
-                    onDateToChange(date ?? null);
-                    setIsToOpen(false);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="auto-refresh"
-                checked={autoRefresh}
-                onCheckedChange={(checked) => onAutoRefreshChange(!!checked)}
-              />
-              <label htmlFor="auto-refresh" className="text-xs text-muted-foreground cursor-pointer">
-                Auto refresh
-              </label>
-            </div>
-            {filtersActive && (
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onClearFilters}>
-                Clear
-              </Button>
-            )}
-          </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="auto-refresh"
+            checked={autoRefresh}
+            onCheckedChange={(checked) => onAutoRefreshChange(!!checked)}
+          />
+          <label htmlFor="auto-refresh" className="text-sm text-muted-foreground cursor-pointer">
+            Auto refresh
+          </label>
         </div>
       </div>
 
@@ -237,30 +257,22 @@ export function ExecutionHistoryPanel({
             </div>
           ) : (
             <>
-              {executions.map((execution, index) => (
+              {executions.map((execution) => (
                 <button
                   key={execution.id}
                   onClick={() => onSelectExecution(execution)}
                   className={cn(
-                    "w-full text-left p-3 rounded-lg mb-1 transition-colors",
+                    "w-full text-left p-3 mb-1 transition-colors border-l-4",
                     "hover:bg-muted/50",
+                    getStatusAccent(execution.status),
                     selectedExecution?.id === execution.id && "bg-muted"
                   )}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(execution.status)}
-                      <span className="text-xs text-muted-foreground">
-                        #{executions.length - index}
-                      </span>
-                    </div>
-                    {getStatusBadge(execution.status)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="text-sm font-medium">
                     {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Duration: {getDuration(execution)}
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {getStatusLabel(execution.status)} in {getDuration(execution)}
                   </div>
                 </button>
               ))}

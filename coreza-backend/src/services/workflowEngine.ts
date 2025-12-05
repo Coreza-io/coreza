@@ -40,6 +40,20 @@ interface ExecutionContext {
   resolveNodeParameters: (node: WorkflowNode, input: any) => any;
 }
 
+// Node execution log for tracking detailed execution data
+export interface NodeExecutionLog {
+  nodeId: string;
+  nodeName: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  status: "success" | "failed" | "skipped";
+  input: any;
+  output: any;
+  itemCount: number;
+  error?: string;
+}
+
 export class WorkflowEngine {
   private router: NodeRouter;
   private queue: NodeQueueManager;
@@ -52,6 +66,10 @@ export class WorkflowEngine {
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
   private mode: "best-effort" | "fail-fast";
+  
+  // Execution tracking for n8n-style logs
+  private nodeExecutions: NodeExecutionLog[] = [];
+  private executionOrder: string[] = [];
 
   constructor(
     private runId: string,
@@ -203,7 +221,7 @@ export class WorkflowEngine {
 
   async execute(
     initialInput?: any
-  ): Promise<{ success: boolean; result?: any; error?: string }> {
+  ): Promise<{ success: boolean; result?: any; nodeExecutions?: NodeExecutionLog[]; executionOrder?: string[]; error?: string }> {
     try {
       console.log(
         `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`
@@ -213,11 +231,21 @@ export class WorkflowEngine {
       await this.run(initialInput);
 
       console.log(`✅ Workflow execution completed successfully`);
-      return { success: true, result: this.store.getAllResults() };
+      return { 
+        success: true, 
+        result: this.store.getAllResults(),
+        nodeExecutions: this.nodeExecutions,
+        executionOrder: this.executionOrder,
+      };
     } catch (error) {
       console.error("❌ Workflow execution failed:", error);
       const message = (error as Error).message;
-      return { success: false, error: message };
+      return { 
+        success: false, 
+        error: message,
+        nodeExecutions: this.nodeExecutions,
+        executionOrder: this.executionOrder,
+      };
     }
   }
 
@@ -280,6 +308,10 @@ export class WorkflowEngine {
       return;
     }
 
+    // Track execution timing
+    const startedAt = new Date().toISOString();
+    const startTime = Date.now();
+    
     try {
       // Create execution context with all necessary information
       const executionContext = {
@@ -298,6 +330,24 @@ export class WorkflowEngine {
       const fullResult = await this.executeNode(node, input, executionContext);
       const result = fullResult;
       console.log(`✅ Node ${nodeId} result:`, result);
+
+      // Record successful execution
+      const completedAt = new Date().toISOString();
+      const durationMs = Date.now() - startTime;
+      const outputData = result?.data ?? result;
+      
+      this.nodeExecutions.push({
+        nodeId,
+        nodeName: node.name || nodeId,
+        startedAt,
+        completedAt,
+        durationMs,
+        status: "success",
+        input,
+        output: outputData,
+        itemCount: Array.isArray(outputData) ? outputData.length : 1,
+      });
+      this.executionOrder.push(nodeId);
 
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
@@ -354,6 +404,25 @@ export class WorkflowEngine {
       this.clearIncomingEdgePayloads(nodeId);
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
+      
+      // Record failed execution
+      const completedAt = new Date().toISOString();
+      const durationMs = Date.now() - startTime;
+      
+      this.nodeExecutions.push({
+        nodeId,
+        nodeName: node.name || nodeId,
+        startedAt,
+        completedAt,
+        durationMs,
+        status: "failed",
+        input,
+        output: null,
+        itemCount: 0,
+        error: (error as Error).message,
+      });
+      this.executionOrder.push(nodeId);
+      
       this.failed.add(nodeId);
       this.store.setNodeError(nodeId, error);
 

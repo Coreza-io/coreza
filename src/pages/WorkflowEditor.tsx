@@ -47,6 +47,7 @@ import {
   ChevronRight,
   Loader2,
   Zap,
+  History,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
@@ -55,6 +56,10 @@ import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useExecutionHistory } from "@/hooks/useExecutionHistory";
+import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
+import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -182,6 +187,20 @@ const WorkflowEditorContent = () => {
   const [executingNode, setExecutingNode] = useState<string | null>(null);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
+  
+  // Execution history hook
+  const {
+    executions,
+    loading: executionsLoading,
+    selectedExecution,
+    setSelectedExecution,
+    autoRefresh,
+    setAutoRefresh,
+    refresh: refreshExecutions,
+    getDuration,
+    getNodeExecutions,
+  } = useExecutionHistory(workflowId);
 
   const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -1391,6 +1410,21 @@ const WorkflowEditorContent = () => {
               placeholder="Workflow name"
             />
           </div>
+          
+          {/* Editor/Executions Tabs */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "editor" | "executions")}>
+            <TabsList className="h-8">
+              <TabsTrigger value="editor" className="text-xs px-3 h-7">Editor</TabsTrigger>
+              <TabsTrigger value="executions" className="text-xs px-3 h-7">
+                Executions
+                {executions.length > 0 && (
+                  <span className="ml-1.5 bg-muted px-1.5 py-0.5 rounded text-[10px]">
+                    {executions.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1434,67 +1468,104 @@ const WorkflowEditorContent = () => {
         </div>
       </div>
 
-      {/* Main Content Area - Canvas + Palette */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ReactFlow Canvas */}
-        <div className="flex-1 bg-trading-grid">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onMouseMove={onMouseMove}
-            onNodeDoubleClick={onNodeDoubleClick}
-            onPaneClick={onPaneClick}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            connectionLineComponent={EdgeManager.PlugConnectionLine}
-            connectionLineType={ConnectionLineType.Bezier}
-            fitView
-            className={cn(
-              "workflow-canvas",
-              resolvedTheme === "dark" && "dark"
-            )}
-            style={{ backgroundColor: "hsl(var(--trading-grid))" }}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={16}
-              size={0.8}
-              color="hsl(var(--muted-foreground) / 0.60)"
-            />
-            <MiniMap
-              className="!bg-card !border-border"
-              maskColor="hsl(var(--muted) / 0.6)"
-            />
-            <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
-          </ReactFlow>
-        </div>
-
-        {/* Right Sidebar - Node Palette */}
-        {isPaletteVisible && (
-          <div className="w-80 border-l border-border bg-sidebar node-palette-container flex-shrink-0">
-            <NodePalette onNodeClick={handleNodeClick} />
+      {/* Main Content Area */}
+      {activeTab === "editor" ? (
+        // Editor View
+        <div className="flex flex-1 overflow-hidden">
+          {/* ReactFlow Canvas */}
+          <div className="flex-1 bg-trading-grid">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onMouseMove={onMouseMove}
+              onNodeDoubleClick={onNodeDoubleClick}
+              onPaneClick={onPaneClick}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              connectionLineComponent={EdgeManager.PlugConnectionLine}
+              connectionLineType={ConnectionLineType.Bezier}
+              fitView
+              className={cn(
+                "workflow-canvas",
+                resolvedTheme === "dark" && "dark"
+              )}
+              style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={16}
+                size={0.8}
+                color="hsl(var(--muted-foreground) / 0.60)"
+              />
+              <MiniMap
+                className="!bg-card !border-border"
+                maskColor="hsl(var(--muted) / 0.6)"
+              />
+              <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+            </ReactFlow>
           </div>
-        )}
-      </div>
 
-      {/* Toggle Arrow - positioned relative to main content area */}
-      <button
-        onClick={() => setIsPaletteVisible(!isPaletteVisible)}
-        className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${
-          isPaletteVisible ? "right-80" : "right-0"
-        }`}
-      >
-        {isPaletteVisible ? (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+          {/* Right Sidebar - Node Palette */}
+          {isPaletteVisible && (
+            <div className="w-80 border-l border-border bg-sidebar node-palette-container flex-shrink-0">
+              <NodePalette onNodeClick={handleNodeClick} />
+            </div>
+          )}
+        </div>
+      ) : (
+        // Executions View
+        <div className="flex flex-1 overflow-hidden">
+          <ExecutionHistoryPanel
+            workflowId={workflowId}
+            selectedExecution={selectedExecution}
+            onSelectExecution={setSelectedExecution}
+            autoRefresh={autoRefresh}
+            onAutoRefreshChange={setAutoRefresh}
+            onRefresh={refreshExecutions}
+            executions={executions}
+            loading={executionsLoading}
+            getDuration={getDuration}
+          />
+          
+          {selectedExecution ? (
+            <ExecutionDetailView
+              execution={selectedExecution}
+              nodes={nodes}
+              edges={edges}
+              nodeExecutions={getNodeExecutions(selectedExecution)}
+              onCopyToEditor={() => setActiveTab("editor")}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground bg-trading-grid">
+              <div className="text-center">
+                <p className="text-lg">Select an execution to view details</p>
+                <p className="text-sm mt-1">Click on any execution from the list on the left</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Toggle Arrow - positioned relative to main content area (only in editor mode) */}
+      {activeTab === "editor" && (
+        <button
+          onClick={() => setIsPaletteVisible(!isPaletteVisible)}
+          className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${
+            isPaletteVisible ? "right-80" : "right-0"
+          }`}
+        >
+          {isPaletteVisible ? (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+      )}
     </div>
   );
 };

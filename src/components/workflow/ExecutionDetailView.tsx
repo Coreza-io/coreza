@@ -6,7 +6,7 @@
  * (at your option) any later version.
  */
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ExecutionRun, NodeExecutionLog } from "@/hooks/useExecutionHistory";
-import { NodeExecutionInspector } from "./NodeExecutionInspector";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import EdgeManager from "./EdgeManager";
@@ -56,7 +55,6 @@ export function ExecutionDetailView({
   nodeExecutions,
   onCopyToEditor,
 }: ExecutionDetailViewProps) {
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const resolvedTheme = useResolvedTheme();
 
   // Get node execution data by nodeId
@@ -88,6 +86,8 @@ export function ExecutionDetailView({
           errorMessage: nodeExec?.error,
           // Use execution output for output panel
           output: nodeExec?.output,
+          // Use execution input for input panel
+          executionInput: nodeExec?.input,
           // Display name from execution or original
           label: node.data?.displayName || (node.data?.definition as any)?.name,
         },
@@ -126,10 +126,6 @@ export function ExecutionDetailView({
       };
     });
   }, [edges, nodeExecutionMap]);
-
-  const selectedNodeExecution = selectedNodeId 
-    ? nodeExecutionMap.get(selectedNodeId) 
-    : null;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -199,19 +195,18 @@ export function ExecutionDetailView({
       <div className="flex flex-1 overflow-hidden">
         {/* Canvas */}
         <div className="flex-1 bg-trading-grid">
-          <ReactFlow
-            nodes={executionNodes}
-            edges={executionEdges}
-            nodeTypes={executionNodeTypes}
-            edgeTypes={executionEdgeTypes}
-            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={true}
-            fitView
-            className={cn("execution-canvas", resolvedTheme === "dark" && "dark")}
-            style={{ backgroundColor: "hsl(var(--trading-grid))" }}
-          >
+            <ReactFlow
+              nodes={executionNodes}
+              edges={executionEdges}
+              nodeTypes={executionNodeTypes}
+              edgeTypes={executionEdgeTypes}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={true}
+              fitView
+              className={cn("execution-canvas", resolvedTheme === "dark" && "dark")}
+              style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+            >
             <Background
               variant={BackgroundVariant.Dots}
               gap={16}
@@ -225,14 +220,6 @@ export function ExecutionDetailView({
             <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
           </ReactFlow>
         </div>
-
-        {/* Node Inspector */}
-        {selectedNodeExecution && (
-          <NodeExecutionInspector
-            nodeExecution={selectedNodeExecution}
-            onClose={() => setSelectedNodeId(null)}
-          />
-        )}
       </div>
     </div>
   );

@@ -36,6 +36,9 @@ type InputPanelProps = {
   selectedPrevNodeId?: string;
   setSelectedPrevNodeId?: (id: string) => void;
   executionStore?: any;
+  // Read-only mode for execution view
+  readOnly?: boolean;
+  executionInput?: any;
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
@@ -48,13 +51,16 @@ const InputPanel: React.FC<InputPanelProps> = ({
   selectedPrevNodeId,
   setSelectedPrevNodeId,
   executionStore,
+  readOnly = false,
+  executionInput,
 }) => {
-  const { getNodes, getEdges } = useReactFlow();
+  // Only use ReactFlow hooks in editor mode
+  const reactFlowContext = readOnly ? null : useReactFlow();
   const { timezone: userTimezone } = useUserPreferences();
 
-  // Get fresh node/edge data on every render
-  const nodes = getNodes();
-  const edges = getEdges();
+  // Get fresh node/edge data on every render (only in editor mode)
+  const nodes = readOnly ? initialNodes : (reactFlowContext?.getNodes() || initialNodes);
+  const edges = readOnly ? initialEdges : (reactFlowContext?.getEdges() || initialEdges);
 
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {
@@ -89,8 +95,12 @@ const InputPanel: React.FC<InputPanelProps> = ({
     setSelectedPrevNodeId,
   ]);
 
-  // Get outputData prioritizing execution store
+  // Get outputData - use executionInput directly in readOnly mode
   const outputData = useMemo(() => {
+    // In readOnly mode, show execution input directly
+    if (readOnly && executionInput !== undefined) {
+      return executionInput;
+    }
     if (!selectedPrevNodeId) return {};
     const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
     const result =
@@ -99,7 +109,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
       prevNode?.data?.input ??
       {};
     return result;
-  }, [selectedPrevNodeId, nodes, executionStore]);
+  }, [selectedPrevNodeId, nodes, executionStore, readOnly, executionInput]);
 
   if (!isExpanded) return null;
 
@@ -122,7 +132,15 @@ const InputPanel: React.FC<InputPanelProps> = ({
         </div>
       </div>
       <div className="p-3 h-[calc(100%-42px)] overflow-auto">
-        {previousNodes.length > 0 ? (
+        {readOnly ? (
+          // In readOnly mode, show execution input directly without dropdown
+          <div className="mb-2">
+            <DraggableFieldsPanel
+              data={outputData}
+              onDragStart={handleDragStart ?? (() => {})}
+            />
+          </div>
+        ) : previousNodes.length > 0 ? (
           <>
             {setSelectedPrevNodeId &&
             typeof setSelectedPrevNodeId === "function" ? (

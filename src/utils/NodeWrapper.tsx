@@ -233,10 +233,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     nodes,
     edges,
     isExpanded,
+    readOnly,
     ...inputPanelProps,
   };
   const mergedOutputPanelProps = {
     isExpanded,
+    readOnly,
     ...outputPanelProps,
   };
 

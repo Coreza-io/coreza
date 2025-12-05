@@ -204,6 +204,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             selectedPrevNodeId: renderProps.selectedPrevNodeId,
             setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
             executionStore,
+            executionInput: data.executionInput,
           }}
           outputPanelProps={{
             data: renderProps.displayedData,

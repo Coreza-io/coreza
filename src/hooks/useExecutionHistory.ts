@@ -251,27 +251,51 @@ export function useExecutionHistory(
     if (!execution.result) return [];
     
     // Check if nodeExecutions exists in result
-    if (execution.result.nodeExecutions) {
+    if (execution.result.nodeExecutions && Array.isArray(execution.result.nodeExecutions)) {
       return execution.result.nodeExecutions;
     }
     
-    // Fallback: convert result object to execution logs
+    // Enhanced fallback: extract from result object with better defaults
     const resultData = execution.result.result || execution.result;
-    if (typeof resultData === "object" && resultData !== null) {
-      return Object.entries(resultData).map(([nodeId, output]) => ({
-        nodeId,
-        nodeName: nodeId,
-        startedAt: execution.started_at,
-        completedAt: execution.completed_at || execution.started_at,
-        durationMs: 0,
-        status: "success" as const,
-        input: {},
-        output,
-        itemCount: Array.isArray(output) ? output.length : 1,
-      }));
+    const executionOrder = execution.result.executionOrder || Object.keys(resultData || {});
+    
+    if (typeof resultData !== "object" || resultData === null) {
+      return [];
     }
     
-    return [];
+    // Calculate total duration for distribution
+    const totalDuration = execution.completed_at && execution.started_at 
+      ? new Date(execution.completed_at).getTime() - new Date(execution.started_at).getTime()
+      : 0;
+    const nodeCount = executionOrder.length || 1;
+    const estimatedDurationPerNode = Math.round(totalDuration / nodeCount);
+    
+    return executionOrder
+      .filter((nodeId) => nodeId && typeof nodeId === "string")
+      .map((nodeId, index) => {
+        const output = resultData[nodeId];
+        const outputData = output?.data ?? output;
+        
+        // Determine status based on execution result
+        let status: "success" | "failed" | "skipped" = "success";
+        if (execution.status === "failed") {
+          // If execution failed, mark the last node as failed
+          status = index === executionOrder.length - 1 ? "failed" : "success";
+        }
+        
+        return {
+          nodeId,
+          nodeName: nodeId,
+          startedAt: execution.started_at,
+          completedAt: execution.completed_at || execution.started_at,
+          durationMs: estimatedDurationPerNode,
+          status,
+          input: {},
+          output: outputData,
+          itemCount: Array.isArray(outputData) ? outputData.length : 
+                     (outputData !== null && outputData !== undefined ? 1 : 0),
+        };
+      });
   }, []);
 
   // Clear selection when filters change and current selection no longer matches

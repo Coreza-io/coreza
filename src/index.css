@@ -765,6 +765,11 @@
   z-index: 100 !important;
 }
 
+/* Elevate ReactFlow node wrapper when node is expanded */
+.react-flow__node:has(.node-expanded) {
+  z-index: 1000 !important;
+}
+
 .react-flow__edge-path {
   position: relative;
   z-index: 3 !important;

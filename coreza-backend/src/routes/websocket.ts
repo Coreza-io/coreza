@@ -26,7 +26,7 @@ import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
 import { getRedis } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
-import { buildStoreKey, parseStoredValue } from '../utils/store';
+import { buildStoreKey, getStoreValue } from '../utils/store';
 
 const router = express.Router();
 
@@ -68,7 +68,7 @@ router.post('/:source/subscribe', async (req, res) => {
       if (symbolSource === 'store') {
         const redis = getRedis();
         const storeKey = buildStoreKey(user_id, sourceWorkflowId, sourceVariable);
-        const storedValue = parseStoredValue(await redis.get(storeKey));
+        const storedValue = await getStoreValue(redis, storeKey);
 
         if (Array.isArray(storedValue)) {
           return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
@@ -179,7 +179,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
       if (symbolSource === 'store') {
         const redis = getRedis();
         const storeKey = buildStoreKey(user_id, sourceWorkflowId, sourceVariable);
-        const storedValue = parseStoredValue(await redis.get(storeKey));
+        const storedValue = await getStoreValue(redis, storeKey);
 
         if (Array.isArray(storedValue)) {
           return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);

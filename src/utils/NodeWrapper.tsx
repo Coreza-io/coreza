@@ -21,7 +21,7 @@ import { Handle, Position, useReactFlow } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Edit2, Trash2 } from "lucide-react";
+import { X, Edit2, Trash2, Loader2 } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import {
   FemalePlugIcon,
@@ -104,6 +104,11 @@ interface NodeWrapperProps {
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
+  // Read-only mode (for execution view)
+  readOnly?: boolean;
+  executionStatus?: "success" | "failed" | "pending" | "running" | "skipped";
+  executionDuration?: number;
+  itemCount?: number;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -134,12 +139,21 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
   isExecuting = false,
   isStreamingWaiting = false,
+  // Read-only mode props
+  readOnly = false,
+  executionStatus,
+  executionDuration,
+  itemCount,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
-  const { setNodes, setEdges } = useReactFlow();
+  
+  // Only use ReactFlow hooks in editor mode
+  const reactFlowContext = readOnly ? null : useReactFlow();
+  const setNodes = reactFlowContext?.setNodes;
+  const setEdges = reactFlowContext?.setEdges;
 
   // Open delete confirmation dialog
   const handleDeleteClick = (e: React.MouseEvent) => {
@@ -150,7 +164,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   // Confirm and delete node
   const confirmDeleteNode = () => {
-    if (!nodeId) return;
+    if (!nodeId || !setNodes || !setEdges) return;
 
     // Remove the node
     setNodes((nds) => nds.filter((node) => node.id !== nodeId));
@@ -198,6 +212,21 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     ? "border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse"
     : "";
 
+  // Execution status styling
+  const getExecutionStatusClass = () => {
+    if (!readOnly || !executionStatus) return "";
+    switch (executionStatus) {
+      case "success":
+        return "ring-2 ring-emerald-500/50";
+      case "failed":
+        return "ring-2 ring-destructive/50";
+      case "running":
+        return "ring-2 ring-primary/50 animate-pulse";
+      default:
+        return "";
+    }
+  };
+
   // Merge in exactly what was passed, plus our own flags
   const mergedInputPanelProps = {
     nodeId,
@@ -239,6 +268,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             : "border-border"
           }
           ${streamingClasses}
+          ${getExecutionStatusClass()}
           ${
             isDarkMode && categoryGradientClass
               ? categoryGradientClass
@@ -317,9 +347,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               transform: `${iconTranslation} rotate(${rotation}deg)`,
             };
             
-            // Determine which icon to show
+            // Determine which icon to show - in readOnly mode, always show connected state
             let handleIcon = null;
-            if (isInputHandle) {
+            if (readOnly) {
+              // In readOnly mode, always show connected icon
+              handleIcon = <ConnectedSwitchIcon size={20} style={iconStyle} />;
+            } else if (isInputHandle) {
               // For input handles: show ConnectedSwitchIcon if connected, otherwise FemalePlugIcon
               handleIcon = isConnected ? (
                 <ConnectedSwitchIcon size={20} style={iconStyle} />
@@ -356,8 +389,39 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {/* Collapsed View */}
         {!isExpanded && (
           <div className="flex flex-col items-center justify-center h-full p-4 select-none relative group">
-            {/* Delete button - appears on hover when selected */}
-            {selected && (
+            {/* Execution status badge - only in readOnly mode */}
+            {readOnly && executionStatus && (
+              <div className="absolute top-1 left-1 z-10">
+                {executionStatus === "success" && (
+                  <div className="h-5 w-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  </div>
+                )}
+                {executionStatus === "failed" && (
+                  <div className="h-5 w-5 rounded-full bg-destructive/20 flex items-center justify-center">
+                    <div className="h-2.5 w-2.5 rounded-full bg-destructive" />
+                  </div>
+                )}
+                {executionStatus === "running" && (
+                  <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center">
+                    <Loader2 className="h-3 w-3 text-primary animate-spin" />
+                  </div>
+                )}
+                {executionStatus === "pending" && (
+                  <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center">
+                    <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground/50" />
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Execution duration - only in readOnly mode */}
+            {readOnly && executionDuration !== undefined && executionDuration > 0 && (
+              <div className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                {executionDuration < 1000 ? `${executionDuration}ms` : `${(executionDuration / 1000).toFixed(1)}s`}
+              </div>
+            )}
+            {/* Delete button - appears on hover when selected (NOT in readOnly mode) */}
+            {!readOnly && selected && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -383,7 +447,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               )}
             </div>
             <div className="font-semibold text-sm text-foreground text-center leading-tight">
-              {isEditing && selected ? (
+              {isEditing && selected && !readOnly ? (
                 <Input
                   ref={editInputRef}
                   value={editingName}
@@ -414,20 +478,27 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 />
               ) : (
                 <div
-                  className="flex items-center justify-center gap-1 cursor-pointer group relative"
+                  className={`flex items-center justify-center gap-1 ${!readOnly ? 'cursor-pointer' : ''} group relative`}
                   onDoubleClick={(e) => {
+                    if (readOnly) return;
                     e.stopPropagation();
                     startEditing?.();
                   }}
-                  title={selected ? "Press F2 or double-click to rename" : ""}
+                  title={!readOnly && selected ? "Press F2 or double-click to rename" : ""}
                 >
                   {label}
-                  {selected && startEditing && (
+                  {!readOnly && selected && startEditing && (
                     <Edit2 className="w-3 h-3 opacity-30 group-hover:opacity-60 transition-opacity" />
                   )}
                 </div>
               )}
             </div>
+            {/* Item count badge - only in readOnly mode */}
+            {readOnly && itemCount !== undefined && itemCount > 0 && (
+              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                {itemCount} item{itemCount !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
         )}
 
@@ -465,31 +536,33 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Output Data Panel */}
       <OutputPanel {...mergedOutputPanelProps} />
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Node</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{label}"? This action cannot be undone.
-              All connections to this node will also be removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteNode}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete Node
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog - only in editor mode */}
+      {!readOnly && (
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent className="bg-card border-border">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Node</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{label}"? This action cannot be undone.
+                All connections to this node will also be removed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setIsDeleteDialogOpen(false)}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteNode}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete Node
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 };

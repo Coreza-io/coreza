@@ -41,6 +41,7 @@ interface BasicNodeLayoutProps extends BaseNodeRenderProps {
   selectedInputData: any;
   workflowId?: string;
   nodeId?: string;
+  readOnly?: boolean;
   handleChange: (key: string, value: any) => void;
   handleFieldStateBatch: (updates: Record<string, any>) => void;
   handleSubmit: (e?: React.FormEvent) => void;
@@ -63,6 +64,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectedInputData,
   workflowId,
   nodeId,
+  readOnly,
   handleChange,
   handleFieldStateBatch,
   handleSubmit,
@@ -687,24 +689,26 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             </div>
           )}
 
-          <Button
-            type="submit"
-            className="w-full bg-success hover:bg-success/90 text-success-foreground"
-            disabled={isSending}
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Running...
-              </>
-            ) : (
-              "Run"
-            )}
-          </Button>
+          {!readOnly && (
+            <Button
+              type="submit"
+              className="w-full bg-success hover:bg-success/90 text-success-foreground"
+              disabled={isSending}
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                "Run"
+              )}
+            </Button>
+          )}
         </form>
       )}
 
-      {showAuth && (
+      {!readOnly && showAuth && (
         <Suspense fallback={<div>Loading...</div>}>
           {definition.auth === 'SchwabAuthModal' ? (
             <SchwabAuthModal

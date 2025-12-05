@@ -188,13 +188,17 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   }
 
   return (
-    <BaseNode data={data} selected={selected}>
+    <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
       {(renderProps) => (
         <NodeWrapper
           nodeId={nodeId}
           nodes={nodes}
           edges={edges}
           selected={selected}
+          readOnly={data.readOnly}
+          executionStatus={data.executionStatus}
+          executionDuration={data.executionDuration}
+          itemCount={data.itemCount}
           inputPanelProps={{
             handleDragStart: renderProps.handleDragStart,
             selectedPrevNodeId: renderProps.selectedPrevNodeId,
@@ -240,7 +244,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
               />
             );
           })()}
-          label={renderProps.displayName}
+          label={data.label || renderProps.displayName}
           minWidth={dynamicSize.width}
           minHeight={dynamicSize.height}
           handles={dynamicHandles}

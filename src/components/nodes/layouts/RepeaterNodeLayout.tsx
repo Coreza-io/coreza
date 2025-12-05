@@ -55,6 +55,7 @@ const getDisplayName = (node: any, allNodes: any[]) => {
 
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
+  readOnly?: boolean;
 }
 
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
@@ -76,6 +77,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  readOnly,
 }) => {
   const { setNodes, setEdges, getNodes } = useReactFlow();
   const { user } = useAuth();
@@ -1138,23 +1140,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           })}
 
         {/* Submit Button */}
-        <div className="pt-2">
-          <Button
-            type="submit"
-            size="sm"
-            disabled={isSending}
-            className="w-full"
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              "Execute"
-            )}
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="pt-2">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isSending}
+              className="w-full"
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Executing...
+                </>
+              ) : (
+                "Execute"
+              )}
+            </Button>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -1166,7 +1170,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       {/* Auth Modal */}
       <Suspense fallback={<div>Loading modal...</div>}>
-        {showAuth && (
+        {!readOnly && showAuth && (
           definition.auth === 'SchwabAuthModal' ? (
             <SchwabAuthModal
               isOpen={showAuth}

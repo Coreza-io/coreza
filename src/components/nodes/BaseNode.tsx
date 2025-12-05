@@ -45,6 +45,7 @@ const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
 interface BaseNodeProps {
   data: any;
   selected: boolean;
+  readOnly?: boolean;
   children: (props: BaseNodeRenderProps) => React.ReactNode;
 }
 
@@ -64,6 +65,7 @@ export interface BaseNodeRenderProps {
   isPinned: boolean;
   workflowId?: string;
   nodeId?: string;
+  readOnly?: boolean;
   // Node name editing
   isEditing: boolean;
   editingName: string;
@@ -93,7 +95,7 @@ export interface BaseNodeRenderProps {
   referenceStyle: React.CSSProperties;
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
+const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, readOnly, children }) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();
@@ -207,6 +209,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, children }) => {
     isPinned: outputHook.isPinned,
     workflowId,
     nodeId: nodeId || undefined,
+    readOnly,
     // Node name editing
     isEditing: renamingHook.isEditing,
     editingName: renamingHook.editingName,

@@ -251,7 +251,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const shouldShowHandlesOutside = handles.length > 0;
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      style={{ zIndex: isExpanded ? 1000 : undefined }}
+    >
       {/* Input Data Panel */}
       <InputPanel {...mergedInputPanelProps} />
 

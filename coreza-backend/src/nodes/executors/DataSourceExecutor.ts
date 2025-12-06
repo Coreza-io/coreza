@@ -21,7 +21,7 @@ import { getRedis } from "../../config/redis";
 import {
   buildStoreKey,
   extractVariableNameFromKey,
-  parseStoredValue,
+  getStoreValue,
 } from "../../utils/store";
 
 export class DataSourceExecutor implements INodeExecutor {
@@ -210,14 +210,14 @@ export class DataSourceExecutor implements INodeExecutor {
         }
 
         const key = buildStoreKey(userId, workflowId, variableName);
-        const rawValue = await redis.get(key);
+        const value = await getStoreValue(redis, key);
 
         return {
           success: true,
           data: {
             operation: "get",
             variableName,
-            value: parseStoredValue(rawValue),
+            value,
           },
         };
       }

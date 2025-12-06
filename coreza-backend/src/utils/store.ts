@@ -60,3 +60,38 @@ export function parseScoreMembers(scoreMembersString: string): (number | string)
   }
   return result;
 }
+
+export async function getStoreValue(redis: import('ioredis').Redis, key: string): Promise<unknown> {
+  const keyType = await redis.type(key);
+
+  switch (keyType) {
+    case 'string': {
+      const value = await redis.get(key);
+      return parseStoredValue(value);
+    }
+    case 'list': {
+      const values = await redis.lrange(key, 0, -1);
+      return values.map(value => parseStoredValue(value));
+    }
+    case 'hash': {
+      const hash = await redis.hgetall(key);
+      const parsed: Record<string, unknown> = {};
+      for (const [field, value] of Object.entries(hash)) {
+        parsed[field] = parseStoredValue(value);
+      }
+      return parsed;
+    }
+    case 'set': {
+      const members = await redis.smembers(key);
+      return members.map(member => parseStoredValue(member));
+    }
+    case 'zset': {
+      const members = await redis.zrange(key, 0, -1);
+      return members.map(member => parseStoredValue(member));
+    }
+    case 'none':
+      return null;
+    default:
+      return null;
+  }
+}

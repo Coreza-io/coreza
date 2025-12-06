@@ -24,6 +24,7 @@ import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedis } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
+import { buildStoreKey, getStoreValue } from "../utils/store";
 
 const router = express.Router();
 
@@ -593,6 +594,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const nodeValues = triggerNode.values || {};
           const credentialId = nodeValues.credential_id;
           const symbols = nodeValues.symbols;
+          const symbolSource = nodeValues.symbolSource ?? "manual";
+          const sourceWorkflowId = nodeValues.sourceWorkflowId;
+          const sourceVariable = nodeValues.sourceVariable;
 
           // Extract additional fields for streaming configuration
           const streamTypes = nodeValues.stream_types; // Event types for filtering
@@ -606,13 +610,44 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
               400
             );
           }
-          if (!symbols) {
-            throw createError(`'${triggerNode.id}' node missing symbols`, 400);
+          if (
+            symbolSource === "store" && (!sourceWorkflowId || !sourceVariable)
+          ) {
+            throw createError(
+              "sourceWorkflowId and sourceVariable are required when using stored symbols",
+              400
+            );
           }
 
-          // Parse symbols
-          const symbolArray =
-            typeof symbols === "string"
+          // Resolve symbols from manual entry or stored values
+          const resolveSymbols = async (): Promise<string[]> => {
+            if (symbolSource === "store") {
+              const redis = getRedis();
+              const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
+              const storedValue = await getStoreValue(redis, storeKey);
+
+              if (Array.isArray(storedValue)) {
+                return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+              }
+
+              if (typeof storedValue === "string") {
+                return storedValue
+                  .split(",")
+                  .map((symbol) => symbol.trim())
+                  .filter(Boolean);
+              }
+
+              if (storedValue !== null && storedValue !== undefined) {
+                const coerced = String(storedValue).trim();
+                return coerced ? [coerced] : [];
+              }
+
+              return [];
+            }
+
+            if (!symbols) return [];
+
+            return typeof symbols === "string"
               ? symbols
                   .split(",")
                   .map((s: string) => s.trim())
@@ -620,6 +655,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
               : Array.isArray(symbols)
               ? symbols
               : [];
+          };
+
+          const symbolArray = await resolveSymbols();
 
           if (symbolArray.length === 0) {
             throw createError(
@@ -705,44 +743,83 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const nodeValues =
             triggerNode.values || triggerNode.data?.values || {};
           const symbols = nodeValues.symbols;
+          const symbolSource = nodeValues.symbolSource ?? "manual";
+          const sourceWorkflowId = nodeValues.sourceWorkflowId;
+          const sourceVariable = nodeValues.sourceVariable;
 
-          if (symbols) {
-            const symbolArray =
-              typeof symbols === "string"
-                ? symbols
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean)
-                : Array.isArray(symbols)
-                ? symbols
-                : [];
+          if (
+            symbolSource === "store" && (!sourceWorkflowId || !sourceVariable)
+          ) {
+            throw createError(
+              "sourceWorkflowId and sourceVariable are required when using stored symbols",
+              400
+            );
+          }
 
-            if (symbolArray.length > 0) {
-              // Map node name to WebSocket source ID
-              const source =
-                nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
-
-              // Publish control message to Redis for unsubscription
+          const resolveSymbols = async (): Promise<string[]> => {
+            if (symbolSource === "store") {
               const redis = getRedis();
-              const controlMessage = {
-                action: "unsubscribe",
-                userId,
-                workflowId,
-                nodeId: triggerNode.id,
-                symbols: symbolArray,
-                source,
-              };
+              const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
+              const storedValue = await getStoreValue(redis, storeKey);
 
-              await redis.publish(
-                REDIS_CHANNELS.controlUnsubscribe,
-                JSON.stringify(controlMessage)
-              );
+              if (Array.isArray(storedValue)) {
+                return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+              }
 
-              console.log(
-                `📤 [Workflow Route] Published unsubscribe control message for ${source}:`,
-                symbolArray
-              );
+              if (typeof storedValue === "string") {
+                return storedValue
+                  .split(",")
+                  .map((symbol) => symbol.trim())
+                  .filter(Boolean);
+              }
+
+              if (storedValue !== null && storedValue !== undefined) {
+                const coerced = String(storedValue).trim();
+                return coerced ? [coerced] : [];
+              }
+
+              return [];
             }
+
+            if (!symbols) return [];
+
+            return typeof symbols === "string"
+              ? symbols
+                  .split(",")
+                  .map((s: string) => s.trim())
+                  .filter(Boolean)
+              : Array.isArray(symbols)
+              ? symbols
+              : [];
+          };
+
+          const symbolArray = await resolveSymbols();
+
+          if (symbolArray.length > 0) {
+            // Map node name to WebSocket source ID
+            const source =
+              nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
+
+            // Publish control message to Redis for unsubscription
+            const redis = getRedis();
+            const controlMessage = {
+              action: "unsubscribe",
+              userId,
+              workflowId,
+              nodeId: triggerNode.id,
+              symbols: symbolArray,
+              source,
+            };
+
+            await redis.publish(
+              REDIS_CHANNELS.controlUnsubscribe,
+              JSON.stringify(controlMessage)
+            );
+
+            console.log(
+              `📤 [Workflow Route] Published unsubscribe control message for ${source}:`,
+              symbolArray
+            );
           }
         }
       }

@@ -16,7 +16,11 @@
 
 import type { Redis } from "ioredis";
 
-export function buildStoreKey(userId: string, workflowId: string, variableName: string): string {
+export function buildStoreKey(
+  userId: string,
+  workflowId: string,
+  variableName: string
+): string {
   return `store:${userId}:${workflowId}:${variableName}`;
 }
 
@@ -50,29 +54,26 @@ export async function setStoreValue(
   }
 }
 
-export async function getStoreValue(redis: Redis, key: string): Promise<unknown> {
-  const raw = await redis.get(key);
-  return raw ? JSON.parse(raw) : null;
-}
-
 export function parseMembers(membersString: string): string[] {
   if (!membersString) return [];
   return membersString
-    .split(',')
-    .map(m => m.trim())
-    .filter(m => m.length > 0);
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
 }
 
-export function parseScoreMembers(scoreMembersString: string): (number | string)[] {
+export function parseScoreMembers(
+  scoreMembersString: string
+): (number | string)[] {
   if (!scoreMembersString) return [];
   const pairs = scoreMembersString
-    .split(',')
-    .map(pair => pair.trim())
-    .filter(pair => pair.length > 0);
-  
+    .split(",")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.length > 0);
+
   const result: (number | string)[] = [];
   for (const pair of pairs) {
-    const [scoreStr, member] = pair.split(':').map(s => s.trim());
+    const [scoreStr, member] = pair.split(":").map((s) => s.trim());
     if (scoreStr && member) {
       const score = parseFloat(scoreStr);
       if (!isNaN(score)) {
@@ -83,19 +84,22 @@ export function parseScoreMembers(scoreMembersString: string): (number | string)
   return result;
 }
 
-export async function getStoreValue(redis: import('ioredis').Redis, key: string): Promise<unknown> {
+export async function getStoreValue(
+  redis: import("ioredis").Redis,
+  key: string
+): Promise<unknown> {
   const keyType = await redis.type(key);
 
   switch (keyType) {
-    case 'string': {
+    case "string": {
       const value = await redis.get(key);
       return parseStoredValue(value);
     }
-    case 'list': {
+    case "list": {
       const values = await redis.lrange(key, 0, -1);
-      return values.map(value => parseStoredValue(value));
+      return values.map((value) => parseStoredValue(value));
     }
-    case 'hash': {
+    case "hash": {
       const hash = await redis.hgetall(key);
       const parsed: Record<string, unknown> = {};
       for (const [field, value] of Object.entries(hash)) {
@@ -103,15 +107,15 @@ export async function getStoreValue(redis: import('ioredis').Redis, key: string)
       }
       return parsed;
     }
-    case 'set': {
+    case "set": {
       const members = await redis.smembers(key);
-      return members.map(member => parseStoredValue(member));
+      return members.map((member) => parseStoredValue(member));
     }
-    case 'zset': {
+    case "zset": {
       const members = await redis.zrange(key, 0, -1);
-      return members.map(member => parseStoredValue(member));
+      return members.map((member) => parseStoredValue(member));
     }
-    case 'none':
+    case "none":
       return null;
     default:
       return null;

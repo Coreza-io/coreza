@@ -14,6 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import type { Redis } from "ioredis";
+
 export function buildStoreKey(userId: string, workflowId: string, variableName: string): string {
   return `store:${userId}:${workflowId}:${variableName}`;
 }
@@ -31,6 +33,26 @@ export function parseStoredValue(raw: string | null): unknown {
 export function extractVariableNameFromKey(key: string): string {
   const parts = key.split(":");
   return parts[parts.length - 1];
+}
+
+export async function setStoreValue(
+  redis: Redis,
+  key: string,
+  value: unknown,
+  ttl?: number
+): Promise<void> {
+  const serialized = JSON.stringify(value);
+
+  if (ttl && ttl > 0) {
+    await redis.set(key, serialized, "EX", ttl);
+  } else {
+    await redis.set(key, serialized);
+  }
+}
+
+export async function getStoreValue(redis: Redis, key: string): Promise<unknown> {
+  const raw = await redis.get(key);
+  return raw ? JSON.parse(raw) : null;
 }
 
 export function parseMembers(membersString: string): string[] {

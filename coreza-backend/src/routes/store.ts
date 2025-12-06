@@ -23,8 +23,11 @@ import {
   extractVariableNameFromKey,
   getStoreValue,
   parseStoredValue,
+  getStoreValue,
+  setStoreValue,
   parseMembers,
   parseScoreMembers,
+  setStoreValue,
 } from "../utils/store";
 
 const router = express.Router();
@@ -104,11 +107,11 @@ router.get("/value", async (req, res) => {
       workflow_id as string,
       variable_name as string
     );
-    const value = await getStoreValue(redis, key);
+    const storedValue = await getStoreValue(redis, key);
 
     res.json({
       success: true,
-      value,
+      value: storedValue,
     });
   } catch (error) {
     logger.error({ err: error }, "Error fetching store value");
@@ -178,14 +181,7 @@ router.post("/execute", async (req, res) => {
           .json({ error: "workflow_id and variableName required for set" });
       }
       const key = buildStoreKey(user_id, workflow_id, variableName);
-      const serialized =
-        typeof value === "string" ? value : JSON.stringify(value);
-
-      if (ttl && ttl > 0) {
-        await redis.setex(key, ttl, serialized);
-      } else {
-        await redis.set(key, serialized);
-      }
+      await setStoreValue(redis, key, value, ttl);
 
       return res.json({
         success: true,
@@ -200,13 +196,13 @@ router.post("/execute", async (req, res) => {
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
       const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const value = await getStoreValue(redis, key);
+      const storedValue = await getStoreValue(redis, key);
       return res.json({
         success: true,
         data: {
           operation: operation,
           variableName: varName,
-          value,
+          value: storedValue,
         },
       });
     }
@@ -221,7 +217,7 @@ router.post("/execute", async (req, res) => {
       await redis.del(key);
       return res.json({
         success: true,
-        darta: {
+        data: {
           operation: operation,
           variableName: varName,
           message: "Key deleted",

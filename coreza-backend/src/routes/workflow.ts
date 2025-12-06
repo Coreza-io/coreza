@@ -822,6 +822,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             );
           }
         }
+        }
       }
 
       // Persist workflow state

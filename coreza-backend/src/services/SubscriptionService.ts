@@ -165,13 +165,12 @@ export class SubscriptionService {
       const eventTypes = this.processStreamTypes(streamTypes, source, klineInterval);
 
       // Build control message
-      // NOTE: workflowId is included for per-workflow symbol ownership tracking
-      // This enables proper cleanup when a workflow deactivates
-      // Data routing is still handled by StreamData trigger nodes via md:control:register_workflow
+      // NOTE: workflowId and nodeId are intentionally NOT included
+      // Subscribe nodes only manage gateway subscriptions, not data routing
+      // Data routing is handled by StreamData trigger nodes via md:control:register_workflow
       const controlMessage: Record<string, unknown> = {
         action: operation,
         userId,
-        workflowId: params.workflowId,
         symbols: symbolArray,
         source: `${source}_stream`,
         credentialId,

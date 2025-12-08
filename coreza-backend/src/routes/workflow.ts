@@ -548,9 +548,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
       (n: any) => n.node_type === "trigger"
     );
 
-    if (!triggerNodes) {
+    if (triggerNodes.length === 0) {
       throw createError(
-        "No trigger node (Scheduler, AlpacaNews, or WebhookTrigger) found in workflow",
+        "No trigger node (Scheduler, Streaming or WebhookTrigger) found in workflow",
         400
       );
     }
@@ -611,7 +611,8 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             );
           }
           if (
-            symbolSource === "store" && (!sourceWorkflowId || !sourceVariable)
+            symbolSource === "store" &&
+            (!sourceWorkflowId || !sourceVariable)
           ) {
             throw createError(
               "sourceWorkflowId and sourceVariable are required when using stored symbols",
@@ -623,11 +624,17 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const resolveSymbols = async (): Promise<string[]> => {
             if (symbolSource === "store") {
               const redis = getRedis();
-              const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
+              const storeKey = buildStoreKey(
+                userId,
+                sourceWorkflowId,
+                sourceVariable
+              );
               const storedValue = await getStoreValue(redis, storeKey);
 
               if (Array.isArray(storedValue)) {
-                return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+                return storedValue
+                  .map((symbol) => String(symbol).trim())
+                  .filter(Boolean);
               }
 
               if (typeof storedValue === "string") {
@@ -748,7 +755,8 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const sourceVariable = nodeValues.sourceVariable;
 
           if (
-            symbolSource === "store" && (!sourceWorkflowId || !sourceVariable)
+            symbolSource === "store" &&
+            (!sourceWorkflowId || !sourceVariable)
           ) {
             throw createError(
               "sourceWorkflowId and sourceVariable are required when using stored symbols",
@@ -759,11 +767,17 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const resolveSymbols = async (): Promise<string[]> => {
             if (symbolSource === "store") {
               const redis = getRedis();
-              const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
+              const storeKey = buildStoreKey(
+                userId,
+                sourceWorkflowId,
+                sourceVariable
+              );
               const storedValue = await getStoreValue(redis, storeKey);
 
               if (Array.isArray(storedValue)) {
-                return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
+                return storedValue
+                  .map((symbol) => String(symbol).trim())
+                  .filter(Boolean);
               }
 
               if (typeof storedValue === "string") {

@@ -153,7 +153,9 @@ const MarketSubscriptions = () => {
     setUnsubscribing(`symbol-${symbol}`);
     try {
       const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/market/${source}_stream/unsubscribe`, {
+      // Source may already have _stream suffix or not
+      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
+      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -188,7 +190,9 @@ const MarketSubscriptions = () => {
           headers: { 'Content-Type': 'application/json' },
         });
       } else {
-        response = await fetch(`${backendUrl}/market/${wf.source}_stream/unsubscribe`, {
+        // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
+        const sourceRoute = wf.source.endsWith('_stream') ? wf.source : `${wf.source}_stream`;
+        response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -217,7 +221,9 @@ const MarketSubscriptions = () => {
     setUnsubscribing(`source-${source}`);
     try {
       const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/market/${source}_stream/unsubscribe`, {
+      // Source may already have _stream suffix or not
+      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
+      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -307,6 +307,75 @@ router.post('/:source/unsubscribe', async (req, res) => {
   }
 });
 
+/**
+ * Unsubscribe a workflow by ID (fallback when source is unknown)
+ * DELETE /market/workflows/:workflowId/unsubscribe
+ */
+router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const { user_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id query parameter is required' });
+    }
+
+    const redis = getRedis();
+
+    // Look up the subscription to find the source
+    const subKey = `wf:sub:${workflowId}`;
+    const subStr = await redis.get(subKey);
+    
+    let source: MarketSource | null = null;
+    let symbols: string[] = [];
+    let nodeId: string | null = null;
+
+    if (subStr) {
+      try {
+        const sub = JSON.parse(subStr);
+        source = sub.source;
+        symbols = sub.symbols || [];
+        nodeId = sub.nodeId;
+      } catch (e) {
+        console.error('Error parsing subscription:', e);
+      }
+    }
+
+    // Remove workflow from active streaming workflows set
+    await redis.srem(`user:${user_id}:active_streaming_workflows`, workflowId);
+    await redis.del(`workflow:${workflowId}:stream_filter`);
+
+    // Publish unsubscribe message to market-stream-service
+    const unsubscribeMessage = {
+      action: 'unsubscribe',
+      userId: user_id,
+      workflowId,
+      nodeId: nodeId || '',
+      symbols,
+      source: source || 'streaming_workflow',
+    };
+    await redis.publish('md:control:unsubscribe', JSON.stringify(unsubscribeMessage));
+
+    // Delete the subscription key directly
+    await redis.del(subKey);
+
+    console.log(`📤 [Market Route] Unsubscribed workflow ${workflowId} from market data`);
+
+    res.json({
+      success: true,
+      message: `Workflow ${workflowId} unsubscribed successfully`,
+      workflow_id: workflowId,
+      source: source || 'unknown',
+    });
+  } catch (error) {
+    console.error('Workflow unsubscribe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Workflow unsubscribe failed',
+    });
+  }
+});
+
 // ============================================
 // MARKET DATA OPERATIONS
 // ============================================

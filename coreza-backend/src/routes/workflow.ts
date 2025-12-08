@@ -630,6 +630,10 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           };
           await setStoreValue(redis, `workflow:${workflowId}:stream_filter`, filterConfig);
 
+          // Map node name to source for proper subscription routing
+          const nodeName = triggerNode.name || '';
+          const source = nodeNameToSourceMap[nodeName] || nodeName.toLowerCase().replace('streamdata', '').replace('stream', '');
+
           // Publish registration message to market-stream-service
           // This allows the trading workflow to receive data from symbols subscribed by other workflows
           const registrationMessage = {
@@ -637,6 +641,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             userId,
             workflowId,
             nodeId: triggerNode.id,
+            source, // Include source for proper subscription routing
             filter_symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) : [],
             filter_types: filterTypes || [],
           };
@@ -645,6 +650,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
             {
+              source,
               filterSymbols,
               filterTypes,
             }

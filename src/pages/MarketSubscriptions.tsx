@@ -179,16 +179,26 @@ const MarketSubscriptions = () => {
     setUnsubscribing(`workflow-${wf.workflowId}-${wf.nodeId}`);
     try {
       const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/market/${wf.source}_stream/unsubscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          workflow_id: wf.workflowId,
-          node_id: wf.nodeId,
-          symbols: wf.symbols,
-        }),
-      });
+      
+      // Use fallback endpoint when source is unknown
+      let response: Response;
+      if (!wf.source || wf.source === 'unknown') {
+        response = await fetch(`${backendUrl}/market/workflows/${wf.workflowId}/unsubscribe?user_id=${user.id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } else {
+        response = await fetch(`${backendUrl}/market/${wf.source}_stream/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            workflow_id: wf.workflowId,
+            node_id: wf.nodeId,
+            symbols: wf.symbols,
+          }),
+        });
+      }
       
       if (!response.ok) throw new Error('Failed to unsubscribe');
       

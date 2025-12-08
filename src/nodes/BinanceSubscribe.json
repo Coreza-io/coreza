@@ -1,0 +1,121 @@
+{
+  "name": "BinanceSubscribe",
+  "def": "Binance Subscribe",
+  "node_type": "main",
+  "icon": "/assets/icons/binance.svg",
+  "category": "Broker",
+  "subCategory": "Binance",
+  "description": "Subscribe or unsubscribe to Binance real-time market data. Subscriptions persist and can be received by any activated BinanceStreamData trigger.",
+  "color": "text-yellow-500",
+  "size": { "width": 380, "height": 480 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "My Binance" },
+    { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+    { "key": "secret_key", "label": "Secret Key", "type": "password", "required": true }
+  ],
+  "authAction": { "url": "/broker/binance/auth", "method": "POST" },
+  "action": { "url": "/market/binance/subscribe", "method": "POST" },
+  "fields": [
+    { 
+      "key": "credential_id", 
+      "label": "Credential", 
+      "type": "select", 
+      "optionsSource": "credentialsApi", 
+      "placeholder": "Select credential",
+      "required": true 
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "id": "testnet", "name": "Testnet (Paper)" },
+        { "id": "live", "name": "Production (Live)" }
+      ],
+      "default": "testnet",
+      "required": true
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "id": "spot", "name": "Spot" },
+        { "id": "futures", "name": "Futures (USDT-M)" }
+      ],
+      "default": "spot",
+      "required": true
+    },
+    { 
+      "key": "operation", 
+      "label": "Operation", 
+      "type": "select",
+      "options": [
+        { "id": "subscribe", "name": "Subscribe" },
+        { "id": "unsubscribe", "name": "Unsubscribe" }
+      ],
+      "default": "subscribe",
+      "required": true
+    },
+    { 
+      "key": "stream_types", 
+      "label": "Stream Types", 
+      "type": "multiselect",
+      "options": [
+        { "id": "trade", "name": "Trades" },
+        { "id": "kline_1m", "name": "1-Minute Klines" },
+        { "id": "kline_5m", "name": "5-Minute Klines" },
+        { "id": "kline_15m", "name": "15-Minute Klines" },
+        { "id": "kline_1h", "name": "1-Hour Klines" },
+        { "id": "bookTicker", "name": "Book Ticker (Best Bid/Ask)" },
+        { "id": "ticker", "name": "24h Ticker" }
+      ],
+      "default": ["trade"],
+      "description": "Select Binance market data streams to subscribe to",
+      "required": true
+    },
+    { 
+      "key": "symbolSource", 
+      "label": "Symbol Source", 
+      "type": "select", 
+      "options": [
+        { "id": "manual", "name": "Enter Manually" },
+        { "id": "store", "name": "From Store Variable" },
+        { "id": "input", "name": "From Input" }
+      ],
+      "default": "manual", 
+      "required": true 
+    },
+    { 
+      "key": "symbols", 
+      "label": "Symbols", 
+      "type": "text", 
+      "placeholder": "BTCUSDT, ETHUSDT",
+      "description": "Comma-separated symbols (uppercase)",
+      "displayOptions": { "show": { "symbolSource": ["manual"] } }, 
+      "required": false 
+    },
+    { 
+      "key": "sourceWorkflowId", 
+      "label": "Source Workflow", 
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow containing symbols",
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
+    },
+    { 
+      "key": "sourceVariable", 
+      "label": "Variable Name", 
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select stored variable",
+      "displayOptions": { "show": { "symbolSource": ["store"] } }
+    }
+  ]
+}

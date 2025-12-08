@@ -19,6 +19,7 @@ import AlpacaDef from './Alpaca.json'
 import AlpacaTradeDef from './AlpacaTrade.json'
 import AlpacaNewsDef from './AlpacaNews.json'
 import AlpacaNewsRESTDef from './AlpacaNewsREST.json'
+import AlpacaSubscribeDef from './AlpacaSubscribe.json'
 import AlpacaStreamDataDef from './AlpacaStreamData.json'
 import DhanDef from './Dhan.json'
 import DhanTradeDef from './DhanTrade.json'
@@ -59,6 +60,7 @@ import SupportResistanceDef from './SupportResistance.json'
 import BinanceDef from './Binance.json'
 import BinanceTradeDef from './BinanceTrade.json'
 import BinanceScreenerDef from './BinanceScreener.json'
+import BinanceSubscribeDef from './BinanceSubscribe.json'
 import BinanceStreamDataDef from './BinanceStreamData.json'
 import WhatsAppDef from './WhatsApp.json'
 import RedisStoreDef from './RedisStore.json'
@@ -147,6 +149,7 @@ export const nodeManifest = {
   [AlpacaTradeDef.name]: AlpacaTradeDef,
   [AlpacaNewsDef.name]: AlpacaNewsDef,
   [AlpacaNewsRESTDef.name]: AlpacaNewsRESTDef,
+  [AlpacaSubscribeDef.name]: AlpacaSubscribeDef,
   [AlpacaStreamDataDef.name]: AlpacaStreamDataDef,
   [DhanTradeDef.name]: DhanTradeDef,
   [SchwabTradeDef.name]: SchwabTradeDef,
@@ -169,6 +172,7 @@ export const nodeManifest = {
   [BinanceDef.name]: BinanceDef,
   [BinanceTradeDef.name]: BinanceTradeDef,
   [BinanceScreenerDef.name]: BinanceScreenerDef,
+  [BinanceSubscribeDef.name]: BinanceSubscribeDef,
   [BinanceStreamDataDef.name]: BinanceStreamDataDef,
   [WhatsAppDef.name]: WhatsAppDef,
   [RedisStoreDef.name]: RedisStoreDef,

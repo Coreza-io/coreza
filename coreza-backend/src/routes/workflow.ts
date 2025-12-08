@@ -24,7 +24,7 @@ import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedis } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
-import { buildStoreKey, getStoreValue } from "../utils/store";
+import { buildStoreKey, getStoreValue, setStoreValue } from "../utils/store";
 
 const router = express.Router();
 
@@ -586,135 +586,41 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           );
         }
 
-        // Handle AlpacaNews activation
+        // Handle streaming trigger node activation (AlpacaStreamData, BinanceStreamData)
+        // These are now pure data receivers - subscriptions are managed by separate Subscribe nodes
         if (
           triggerNode.node_type == "trigger" &&
           triggerNode.executionMode == "streaming"
         ) {
           const nodeValues = triggerNode.values || {};
-          const credentialId = nodeValues.credential_id;
-          const symbols = nodeValues.symbols;
-          const symbolSource = nodeValues.symbolSource ?? "manual";
-          const sourceWorkflowId = nodeValues.sourceWorkflowId;
-          const sourceVariable = nodeValues.sourceVariable;
+          const filterSymbols = nodeValues.filter_symbols;
+          const filterTypes = nodeValues.filter_types;
 
-          // Extract additional fields for streaming configuration
-          const streamTypes = nodeValues.stream_types; // Event types for filtering
-          const feed = nodeValues.feed; // Alpaca feed selection (iex/sip)
-          const environment = nodeValues.environment; // Binance: testnet/live
-          const assetType = nodeValues.asset_type; // Binance: spot/futures
-
-          if (!credentialId) {
-            throw createError(
-              `'${triggerNode.id}' node missing credential_id`,
-              400
-            );
-          }
-          if (
-            symbolSource === "store" &&
-            (!sourceWorkflowId || !sourceVariable)
-          ) {
-            throw createError(
-              "sourceWorkflowId and sourceVariable are required when using stored symbols",
-              400
-            );
-          }
-
-          // Resolve symbols from manual entry or stored values
-          const resolveSymbols = async (): Promise<string[]> => {
-            if (symbolSource === "store") {
-              const redis = getRedis();
-              const storeKey = buildStoreKey(
-                userId,
-                sourceWorkflowId,
-                sourceVariable
-              );
-              const storedValue = await getStoreValue(redis, storeKey);
-
-              if (Array.isArray(storedValue)) {
-                return storedValue
-                  .map((symbol) => String(symbol).trim())
-                  .filter(Boolean);
-              }
-
-              if (typeof storedValue === "string") {
-                return storedValue
-                  .split(",")
-                  .map((symbol) => symbol.trim())
-                  .filter(Boolean);
-              }
-
-              if (storedValue !== null && storedValue !== undefined) {
-                const coerced = String(storedValue).trim();
-                return coerced ? [coerced] : [];
-              }
-
-              return [];
-            }
-
-            if (!symbols) return [];
-
-            return typeof symbols === "string"
-              ? symbols
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : Array.isArray(symbols)
-              ? symbols
-              : [];
-          };
-
-          const symbolArray = await resolveSymbols();
-
-          if (symbolArray.length === 0) {
-            throw createError(
-              "At least one symbol is required for streaming node",
-              400
-            );
-          }
-
-          // Map node name to WebSocket source ID
-          const source = triggerNode.streamingConfig.sourceId;
-
-          // Publish control message to Redis for subscription
-          // MarketControlHandler will orchestrate the connection
+          // Register workflow to receive market data for this user
+          // The workflow will receive ALL market data for symbols the user has subscribed via AlpacaSubscribe/BinanceSubscribe
           const redis = getRedis();
-          const controlMessage = {
-            action: triggerNode.values.operation,
-            userId,
-            workflowId,
-            nodeId: triggerNode.id,
-            symbols: symbolArray,
-            source,
-            credentialId,
-            // Include event types for filtering (normalize to array)
-            eventTypes: Array.isArray(streamTypes)
-              ? streamTypes
-              : streamTypes
-              ? [streamTypes]
-              : undefined,
-            // Include broker-specific fields
-            feed, // Alpaca: iex or sip
-            environment, // Binance: testnet or live
-            assetType, // Binance: spot or futures
-          };
-
-          await redis.publish(
-            REDIS_CHANNELS.controlSubscribe,
-            JSON.stringify(controlMessage)
-          );
+          
+          // Store workflow in active streaming workflows set for this user
+          await redis.sadd(`user:${userId}:active_streaming_workflows`, workflowId);
+          
+          // Store filter configuration for this workflow if specified
+          if (filterSymbols || (filterTypes && filterTypes.length > 0)) {
+            const filterConfig = {
+              filter_symbols: filterSymbols,
+              filter_types: filterTypes,
+              nodeId: triggerNode.id,
+            };
+            await setStoreValue(redis, `workflow:${workflowId}:stream_filter`, filterConfig);
+          }
 
           console.log(
-            `📤 [Workflow Route] Published subscribe control message for ${source}:`,
+            `📡 [Workflow Route] Streaming workflow ${workflowId} activated - will receive market data for all user subscriptions`,
             {
-              symbols: symbolArray,
-              eventTypes: controlMessage.eventTypes,
-              feed,
-              environment,
-              assetType,
+              filterSymbols,
+              filterTypes,
             }
           );
-          newsSubscription = { symbols: symbolArray };
+          newsSubscription = { symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim()) : [] };
         }
 
         // Handle WebhookTrigger activation
@@ -743,98 +649,21 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           );
         }
 
+        // Handle streaming trigger deactivation
         if (
           triggerNode.node_type == "trigger" &&
           triggerNode.executionMode == "streaming"
         ) {
-          const nodeValues =
-            triggerNode.values || triggerNode.data?.values || {};
-          const symbols = nodeValues.symbols;
-          const symbolSource = nodeValues.symbolSource ?? "manual";
-          const sourceWorkflowId = nodeValues.sourceWorkflowId;
-          const sourceVariable = nodeValues.sourceVariable;
+          // Remove workflow from active streaming workflows set
+          const redis = getRedis();
+          await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
+          
+          // Remove filter configuration
+          await redis.del(`workflow:${workflowId}:stream_filter`);
 
-          if (
-            symbolSource === "store" &&
-            (!sourceWorkflowId || !sourceVariable)
-          ) {
-            throw createError(
-              "sourceWorkflowId and sourceVariable are required when using stored symbols",
-              400
-            );
-          }
-
-          const resolveSymbols = async (): Promise<string[]> => {
-            if (symbolSource === "store") {
-              const redis = getRedis();
-              const storeKey = buildStoreKey(
-                userId,
-                sourceWorkflowId,
-                sourceVariable
-              );
-              const storedValue = await getStoreValue(redis, storeKey);
-
-              if (Array.isArray(storedValue)) {
-                return storedValue
-                  .map((symbol) => String(symbol).trim())
-                  .filter(Boolean);
-              }
-
-              if (typeof storedValue === "string") {
-                return storedValue
-                  .split(",")
-                  .map((symbol) => symbol.trim())
-                  .filter(Boolean);
-              }
-
-              if (storedValue !== null && storedValue !== undefined) {
-                const coerced = String(storedValue).trim();
-                return coerced ? [coerced] : [];
-              }
-
-              return [];
-            }
-
-            if (!symbols) return [];
-
-            return typeof symbols === "string"
-              ? symbols
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : Array.isArray(symbols)
-              ? symbols
-              : [];
-          };
-
-          const symbolArray = await resolveSymbols();
-
-          if (symbolArray.length > 0) {
-            // Map node name to WebSocket source ID
-            const source =
-              nodeNameToSourceMap[triggerNode.name] || triggerNode.name;
-
-            // Publish control message to Redis for unsubscription
-            const redis = getRedis();
-            const controlMessage = {
-              action: "unsubscribe",
-              userId,
-              workflowId,
-              nodeId: triggerNode.id,
-              symbols: symbolArray,
-              source,
-            };
-
-            await redis.publish(
-              REDIS_CHANNELS.controlUnsubscribe,
-              JSON.stringify(controlMessage)
-            );
-
-            console.log(
-              `📤 [Workflow Route] Published unsubscribe control message for ${source}:`,
-              symbolArray
-            );
-          }
+          console.log(
+            `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated`
+          );
         }
       }
 

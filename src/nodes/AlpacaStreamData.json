@@ -8,160 +8,34 @@
   "executionMode": "streaming",
   "streamingConfig": {
     "sourceId": "alpaca_stream",
-    "waitForFirstEvent": true,
+    "waitForFirstEvent": false,
     "timeout": 300000
   },
-  "description": "Subscribe to real-time market data streams (trades, quotes, bars) from Alpaca",
+  "description": "Receives real-time market data for symbols subscribed via AlpacaSubscribe. Activate this workflow to start receiving data.",
   "color": "text-yellow-500",
-  "size": {
-    "width": 380,
-    "height": 420
-  },
+  "size": { "width": 320, "height": 200 },
   "handles": [
-    {
-      "type": "source",
-      "position": "right",
-      "id": "output"
-    }
+    { "type": "source", "position": "right", "id": "output" }
   ],
-  "auth": "GenericAuthModal",
-  "authFields": [
-    {
-      "key": "credential_name",
-      "label": "Credential Label",
-      "type": "text",
-      "default": "My Alpaca"
-    },
-    {
-      "key": "api_key",
-      "label": "API Key",
-      "type": "password",
-      "placeholder": "Your Alpaca API Key"
-    },
-    {
-      "key": "secret_key",
-      "label": "Secret Key",
-      "type": "password",
-      "placeholder": "Your Alpaca Secret Key"
-    }
-  ],
-  "authAction": {
-    "url": "/broker/alpaca/auth",
-    "method": "POST"
-  },
-  "action": {
-    "url": "/websocket/alpaca_stream/{{operation}}",
-    "method": "POST"
-  },
   "fields": [
     {
-      "key": "credential_id",
-      "label": "Credential",
-      "type": "select",
-      "optionsSource": "credentialsApi",
-      "placeholder": "Select credential",
-      "required": true
+      "key": "filter_symbols",
+      "label": "Filter Symbols (Optional)",
+      "type": "text",
+      "placeholder": "AAPL, TSLA (leave empty for all)",
+      "description": "Only receive data for specific symbols. Leave empty to receive all subscribed symbols."
     },
     {
-      "key": "operation",
-      "label": "Operation",
-      "type": "select",
-      "options": [
-        {
-          "id": "subscribe",
-          "name": "Subscribe",
-          "method": "POST"
-        },
-        {
-          "id": "unsubscribe",
-          "name": "Unsubscribe",
-          "method": "POST"
-        }
-      ],
-      "required": true
-    },
-    {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "filter_types",
+      "label": "Filter Event Types (Optional)",
       "type": "multiselect",
       "options": [
-        {
-          "id": "trade",
-          "name": "Trades"
-        },
-        {
-          "id": "quote",
-          "name": "Quotes"
-        },
-        {
-          "id": "bar",
-          "name": "Minute Bars"
-        },
-        {
-          "id": "dailyBar",
-          "name": "Daily Bars"
-        }
+        { "id": "trade", "name": "Trades" },
+        { "id": "quote", "name": "Quotes" },
+        { "id": "bar", "name": "Bars" },
+        { "id": "daily_bar", "name": "Daily Bars" }
       ],
-      "default": ["trade"],
-      "description": "Select data stream types to subscribe to",
-      "required": true
-    },
-    {
-      "key": "symbolSource",
-      "label": "Symbol Source",
-      "type": "select",
-      "options": [
-        { "id": "manual", "name": "Manual Entry" },
-        { "id": "store", "name": "From Store (Another Workflow)" }
-      ],
-      "default": "manual",
-      "required": true
-    },
-    {
-      "key": "symbols",
-      "label": "Symbols",
-      "type": "text",
-      "placeholder": "e.g. AAPL,MSFT,TSLA or * for all",
-      "description": "Comma-separated symbols or * for all symbols",
-      "required": true,
-      "displayOptions": { "show": { "symbolSource": ["manual"] } }
-    },
-    {
-      "key": "sourceWorkflowId",
-      "label": "Source Workflow",
-      "type": "select",
-      "optionsSource": "storeWorkflowsApi",
-      "placeholder": "Select workflow containing symbols",
-      "required": true,
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
-    },
-    {
-      "key": "sourceVariable",
-      "label": "Variable Name",
-      "type": "select",
-      "optionsSource": "storeVariablesApi",
-      "dependsOn": "sourceWorkflowId",
-      "placeholder": "Select stored variable",
-      "required": true,
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
-    },
-    {
-      "key": "feed",
-      "label": "Data Feed",
-      "type": "select",
-      "options": [
-        {
-          "id": "iex",
-          "name": "IEX (Free - Regular Hours Only)"
-        },
-        {
-          "id": "sip",
-          "name": "SIP (Paid - Includes Pre/After Hours)"
-        }
-      ],
-      "default": "iex",
-      "description": "SIP feed requires Alpaca subscription for pre-market/after-hours data",
-      "required": true
+      "description": "Filter specific event types. Leave empty to receive all types."
     }
   ]
 }

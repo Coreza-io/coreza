@@ -596,25 +596,33 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const filterSymbols = nodeValues.filter_symbols;
           const filterTypes = nodeValues.filter_types;
 
-          // Register workflow to receive market data for this user
-          // The workflow will receive ALL market data for symbols the user has subscribed via AlpacaSubscribe/BinanceSubscribe
           const redis = getRedis();
           
           // Store workflow in active streaming workflows set for this user
           await redis.sadd(`user:${userId}:active_streaming_workflows`, workflowId);
           
-          // Store filter configuration for this workflow if specified
-          if (filterSymbols || (filterTypes && filterTypes.length > 0)) {
-            const filterConfig = {
-              filter_symbols: filterSymbols,
-              filter_types: filterTypes,
-              nodeId: triggerNode.id,
-            };
-            await setStoreValue(redis, `workflow:${workflowId}:stream_filter`, filterConfig);
-          }
+          // Store filter configuration for this workflow
+          const filterConfig = {
+            filter_symbols: filterSymbols || null,
+            filter_types: filterTypes || [],
+            nodeId: triggerNode.id,
+          };
+          await setStoreValue(redis, `workflow:${workflowId}:stream_filter`, filterConfig);
+
+          // Publish registration message to market-stream-service
+          // This allows the trading workflow to receive data from symbols subscribed by other workflows
+          const registrationMessage = {
+            action: 'register_streaming_workflow',
+            userId,
+            workflowId,
+            nodeId: triggerNode.id,
+            filter_symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) : [],
+            filter_types: filterTypes || [],
+          };
+          await redis.publish('md:control:register_workflow', JSON.stringify(registrationMessage));
 
           console.log(
-            `📡 [Workflow Route] Streaming workflow ${workflowId} activated - will receive market data for all user subscriptions`,
+            `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
             {
               filterSymbols,
               filterTypes,

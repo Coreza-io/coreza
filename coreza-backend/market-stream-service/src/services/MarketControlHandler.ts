@@ -71,12 +71,13 @@ export class MarketControlHandler {
       // Redis connections are already established by factory
       console.log('✅ [MarketControl] Using shared Redis connections');
 
-      // Subscribe to control channels
+      // Subscribe to control channels including workflow registration
       await this.redisSub.subscribe(
         REDIS_CHANNELS.controlSubscribe,
-        REDIS_CHANNELS.controlUnsubscribe
+        REDIS_CHANNELS.controlUnsubscribe,
+        'md:control:register_workflow'
       );
-      console.log('✅ [MarketControl] Subscribed to control channels');
+      console.log('✅ [MarketControl] Subscribed to control channels (including workflow registration)');
 
       // Set up message handler
       this.setupControlListeners();
@@ -98,20 +99,22 @@ export class MarketControlHandler {
   private setupControlListeners(): void {
     this.redisSub.on('message', async (channel, message) => {
       try {
-        const msg: ControlMessage = JSON.parse(message);
-        console.log(`📨 [MarketControl] Received ${msg.action} on ${channel}:`, {
+        const msg = JSON.parse(message);
+        console.log(`📨 [MarketControl] Received message on ${channel}:`, {
+          action: msg.action,
           source: msg.source,
           symbols: msg.symbols,
           workflowId: msg.workflowId,
           nodeId: msg.nodeId,
           userId: msg.userId,
-          credentialId: msg.credentialId
         });
 
         if (channel === REDIS_CHANNELS.controlSubscribe) {
-          await this.handleSubscribe(msg);
+          await this.handleSubscribe(msg as ControlMessage);
         } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
-          await this.handleUnsubscribe(msg);
+          await this.handleUnsubscribe(msg as ControlMessage);
+        } else if (channel === 'md:control:register_workflow') {
+          await this.handleRegisterStreamingWorkflow(msg);
         }
       } catch (error) {
         console.error(`❌ [MarketControl] Error processing message on ${channel}:`, error);
@@ -121,6 +124,100 @@ export class MarketControlHandler {
     this.redisSub.on('error', (error) => {
       console.error('❌ [MarketControl] Redis subscription error:', error);
     });
+  }
+
+  /**
+   * Handle registration of streaming workflows (from workflow activation)
+   * These workflows receive data for ALL symbols subscribed by the user
+   */
+  private async handleRegisterStreamingWorkflow(msg: {
+    action: string;
+    userId: string;
+    workflowId: string;
+    nodeId: string;
+    filter_symbols?: string[];
+    filter_types?: string[];
+  }): Promise<void> {
+    const { userId, workflowId, nodeId, filter_symbols, filter_types } = msg;
+
+    try {
+      console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId}`);
+
+      // Get all symbols currently subscribed for this user across all sources
+      const userSymbols = await this.getUserSubscribedSymbols(userId);
+
+      if (userSymbols.length === 0) {
+        console.log(`ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`);
+        
+        // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
+        const subscriber = MarketDataSubscriber.getInstance();
+        await subscriber.subscribe(
+          workflowId,
+          nodeId,
+          userId,
+          [], // No symbols yet
+          {
+            eventTypes: filter_types as any,
+          }
+        );
+        return;
+      }
+
+      // Register workflow to receive data for all user's subscribed symbols
+      const subscriber = MarketDataSubscriber.getInstance();
+      
+      // If filter_symbols specified, only subscribe to those that are in user's subscriptions
+      const symbolsToSubscribe = filter_symbols && filter_symbols.length > 0
+        ? userSymbols.filter(s => filter_symbols.map(fs => fs.toUpperCase()).includes(s.toUpperCase()))
+        : userSymbols;
+
+      await subscriber.subscribe(
+        workflowId,
+        nodeId,
+        userId,
+        symbolsToSubscribe,
+        {
+          eventTypes: filter_types as any,
+        }
+      );
+
+      console.log(`✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols`);
+    } catch (error) {
+      console.error(`❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`, error);
+    }
+  }
+
+  /**
+   * Get all symbols currently subscribed for a user across all sources
+   */
+  private async getUserSubscribedSymbols(userId: string): Promise<string[]> {
+    const allSymbols = new Set<string>();
+
+    // Check all gateway states for this user's subscriptions
+    for (const [source, state] of this.sourceStates) {
+      if (state.connectedUserId === userId) {
+        state.symbols.forEach(s => allSymbols.add(s));
+      }
+    }
+
+    // Also check Redis for persisted subscriptions
+    const sources: MarketSource[] = ['alpaca', 'alpaca_news', 'binance', 'dhan', 'schwab'];
+    for (const source of sources) {
+      const stateKey = REDIS_CHANNELS.gatewayState(source);
+      try {
+        const stateJson = await this.redisPub.get(stateKey);
+        if (stateJson) {
+          const stateData = JSON.parse(stateJson);
+          if (stateData.userId === userId && stateData.symbols) {
+            stateData.symbols.forEach((s: string) => allSymbols.add(s.toUpperCase()));
+          }
+        }
+      } catch (err) {
+        // Continue with other sources
+      }
+    }
+
+    return Array.from(allSymbols);
   }
 
   /**

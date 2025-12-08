@@ -41,6 +41,9 @@ export interface NodeExecutionData {
   done?: boolean;                            // fully finalized
   forwardedDone?: boolean;                   // optional: if you gate one-time forwarding
   _edgeBuf?: Record<string, any>;            // transient per-iteration edge payloads
+  
+  // Streaming state
+  isStreamingWaiting?: boolean;              // waiting for streaming data
 }
 
 export class ExecutionContext {

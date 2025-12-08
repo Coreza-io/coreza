@@ -707,6 +707,77 @@ export function useNodeExecution({
           } else {
             outputData = responseData;
           }
+        } else if (
+          definition?.executionMode === "streaming" &&
+          definition?.node_type === "trigger" &&
+          !definition?.action?.url
+        ) {
+          // Handle streaming TRIGGER nodes (passive receivers like BinanceStreamData, AlpacaStreamData)
+          // These nodes register with market-stream-service to receive market data
+          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+          
+          // Derive source from streamingConfig or node name
+          const source = definition?.streamingConfig?.sourceId || 
+            definition?.name?.toLowerCase().replace('streamdata', '_stream').replace('data', '');
+          
+          // Extract filter symbols and types from field state
+          const filterSymbols = fieldState.filter_symbols
+            ? (typeof fieldState.filter_symbols === 'string'
+                ? fieldState.filter_symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
+                : fieldState.filter_symbols)
+            : [];
+          const filterTypes = fieldState.filter_types || fieldState.stream_types || [];
+          
+          console.log(`📡 [Streaming Trigger] Registering ${definition?.name} node for streaming data`);
+          console.log(`📡 [Streaming Trigger] Source: ${source}, Symbols: ${filterSymbols}, Types: ${filterTypes}`);
+          
+          // Send registration message to market-stream-service via backend
+          const registerResponse = await fetch(`${backendUrl}/market/register-streaming-workflow`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: userId,
+              workflow_id: workflowId,
+              node_id: nodeId,
+              source,
+              filter_symbols: filterSymbols,
+              filter_types: filterTypes,
+            }),
+          });
+          
+          if (!registerResponse.ok) {
+            const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));
+            throw new Error(errorData.error || 'Failed to register streaming workflow');
+          }
+          
+          const registerResult = await registerResponse.json();
+          console.log(`✅ [Streaming Trigger] Registered:`, registerResult);
+
+          // Set initial waiting output
+          const waitingOutput = {
+            status: "waiting",
+            message: `Listening for ${definition?.name || 'streaming'} data...`,
+            registeredAt: new Date().toISOString(),
+            source,
+            nodeId,
+            filterSymbols,
+            filterTypes,
+          };
+          
+          outputData = waitingOutput;
+          setLastOutput(outputData);
+          executionStore.setNodeData(nodeId!, { output: outputData, isStreamingWaiting: true });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: outputData, isStreamingWaiting: true } }
+                : n
+            )
+          );
+          
+          // Let WebSocket handler update the output when data arrives - don't block here
+          setIsSending(false);
+          return;
         } else {
           outputData = payload;
         }

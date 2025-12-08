@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import logger from '../utils/logger';
 
 const RUN_TTL_SECONDS = 86400; // 24 hours - cleanup old runs if sync fails
@@ -27,7 +27,7 @@ export async function createRunInRedis(
   workflowId: string,
   userId: string
 ): Promise<void> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   
   const runData = {
     id: runId,
@@ -58,7 +58,7 @@ export async function updateRunStatusInRedis(
     errorMessage?: string;
   }
 ): Promise<void> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   
   const updates: Record<string, string> = {
     status,
@@ -85,6 +85,6 @@ export async function updateRunStatusInRedis(
  * Check if run exists in Redis
  */
 export async function runExistsInRedis(runId: string): Promise<boolean> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   return await redis.exists(`runs:data:${runId}`) === 1;
 }

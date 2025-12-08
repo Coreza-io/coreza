@@ -18,7 +18,7 @@ import { Queue, Worker, Job } from "bullmq";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "./workflowEngine";
 import { WebSocketManager } from "./websocketManager";
-import { getRedis } from "../config/redis";
+import { getRedisQueue } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 
@@ -36,7 +36,7 @@ const normalizeError = (error: unknown): Error => {
   }
 };
 
-const redis = getRedis();
+const redis = getRedisQueue();
 
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {

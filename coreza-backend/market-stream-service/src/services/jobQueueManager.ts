@@ -1,17 +1,17 @@
 import { Queue, Job } from "bullmq";
-import { getRedis } from "../config/redis";
+import { getRedisQueue } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
 import logger from "../utils/logger";
 import { workflowExecutionsCounter } from "../utils/metrics";
 
 // Lazy-initialized queue instances
-let redis: ReturnType<typeof getRedis> | null = null;
+let redis: ReturnType<typeof getRedisQueue> | null = null;
 let workflowQueue: Queue | null = null;
 let scheduledQueue: Queue | null = null;
 
 function ensureQueuesInitialized() {
   if (!redis) {
-    redis = getRedis();
+    redis = getRedisQueue();
   }
   if (!workflowQueue) {
     workflowQueue = new Queue("workflow-execution", { connection: redis });

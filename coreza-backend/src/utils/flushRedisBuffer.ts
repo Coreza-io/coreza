@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import { RedisBuffer } from '../services/RedisBuffer';
 import { redisPublishBreaker } from './redisCircuitBreaker';
 
@@ -27,7 +27,7 @@ export function setupBufferFlush(): void {
     console.log('🟢 [CircuitBreaker] Redis PUBLISH circuit restored, flushing buffer...');
     
     try {
-      const redis = getRedis();
+      const redis = getRedisCache();
       const flushed = await RedisBuffer.getInstance().flushToRedis(redis);
       
       if (flushed > 0) {

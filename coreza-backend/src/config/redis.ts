@@ -35,145 +35,144 @@ const normalizeRedisInput = (rawValue: string | undefined) => {
   };
 };
 
-let redisInstance: Redis | null = null;
-let redisPubInstance: Redis | null = null;
-let redisSubInstance: Redis | null = null;
+const resolveRedisConfig = (
+  primaryEnvVar: "REDIS_QUEUE_URL" | "REDIS_CACHE_URL",
+): { url: string | undefined; hasTlsFlag: boolean; sourceEnv: string } => {
+  const primary = normalizeRedisInput(process.env[primaryEnvVar]);
+  if (primary.url) {
+    return { ...primary, sourceEnv: primaryEnvVar };
+  }
+
+  const fallback = normalizeRedisInput(process.env.REDIS_URL);
+  return { ...fallback, sourceEnv: fallback.url ? "REDIS_URL" : primaryEnvVar };
+};
+
+const buildRedisOptions = (
+  redisUrl: string | undefined,
+  hasTlsFlag: boolean,
+): RedisOptions => {
+  const shouldUseTls =
+    process.env.REDIS_TLS === "true" ||
+    hasTlsFlag ||
+    (redisUrl?.startsWith("rediss://") ?? false);
+
+  return {
+    ...connectionOptions,
+    ...(shouldUseTls
+      ? {
+          tls: {
+            rejectUnauthorized:
+              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+          },
+        }
+      : {}),
+  };
+};
+
+const getRedisOrThrow = (
+  resolveResult: { url: string | undefined; hasTlsFlag: boolean },
+  usage: string,
+): { redisUrl: string; hasTlsFlag: boolean } => {
+  if (!resolveResult.url) {
+    throw new Error(`Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`);
+  }
+
+  return { redisUrl: resolveResult.url, hasTlsFlag: resolveResult.hasTlsFlag };
+};
+
+// ========== QUEUE REDIS (Latency-Critical) ==========
+let redisQueueInstance: Redis | null = null;
+let redisQueuePubInstance: Redis | null = null;
+let redisQueueSubInstance: Redis | null = null;
+
+// ========== CACHE REDIS (Medium-Latency) ==========
+let redisCacheInstance: Redis | null = null;
 
 export const connectionOptions: RedisOptions = {
   ...baseOptions,
 };
 
 /**
- * Get shared Redis connection for BullMQ and general use
+ * Get Redis for BullMQ queues + Pub/Sub (latency-critical)
+ * Uses REDIS_QUEUE_URL with fallback to REDIS_URL
  */
-export function getRedis(): Redis {
-  if (redisInstance) return redisInstance;
+export function getRedisQueue(): Redis {
+  if (redisQueueInstance) return redisQueueInstance;
 
-  const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
-    process.env.REDIS_URL,
-  );
+  const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
+  const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "BullMQ queue and pub/sub operations");
 
-  if (!redisUrl) {
-    throw new Error("REDIS_URL is required for BullMQ queue");
-  }
-
-  const shouldUseTls =
-    process.env.REDIS_TLS === "true" ||
-    hasTlsFlag ||
-    (redisUrl?.startsWith("rediss://") ?? false);
-
-  const options: RedisOptions = {
-    ...connectionOptions,
-    ...(shouldUseTls
-      ? {
-          tls: {
-            rejectUnauthorized:
-              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-          },
-        }
-      : {}),
-  };
-
-  redisInstance = redisUrl
-    ? new Redis(redisUrl, options)
-    : new Redis({
-        host: "localhost",
-        port: parseInt("6379", 10),
-        ...baseOptions,
-      });
-
-  return redisInstance;
+  redisQueueInstance = new Redis(redisUrl, buildRedisOptions(redisUrl, hasTlsFlag));
+  return redisQueueInstance;
 }
 
 /**
- * Get dedicated Redis connections for Pub/Sub
- * Pub/Sub requires separate connections (one for subscribe, one for publish)
+ * Get Redis Pub/Sub for market data streaming (latency-critical)
  */
-export function getRedisPubSub(): { pub: Redis; sub: Redis } {
-  if (redisPubInstance && redisSubInstance) {
-    return { pub: redisPubInstance, sub: redisSubInstance };
+export function getRedisQueuePubSub(): { pub: Redis; sub: Redis } {
+  if (redisQueuePubInstance && redisQueueSubInstance) {
+    return { pub: redisQueuePubInstance, sub: redisQueueSubInstance };
   }
 
-  const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
-    process.env.REDIS_URL,
-  );
+  const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
+  const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "Pub/Sub");
+  const options = buildRedisOptions(redisUrl, hasTlsFlag);
 
-  if (!redisUrl) {
-    throw new Error("REDIS_URL is required for Pub/Sub");
-  }
+  redisQueuePubInstance = new Redis(redisUrl, options);
+  redisQueueSubInstance = new Redis(redisUrl, options);
 
-  const shouldUseTls =
-    process.env.REDIS_TLS === "true" ||
-    hasTlsFlag ||
-    (redisUrl?.startsWith("rediss://") ?? false);
-
-  const options: RedisOptions = {
-    ...connectionOptions,
-    ...(shouldUseTls
-      ? {
-          tls: {
-            rejectUnauthorized:
-              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-          },
-        }
-      : {}),
-  };
-
-  // Create separate connections for pub and sub
-  redisPubInstance = new Redis(redisUrl, options);
-  redisSubInstance = new Redis(redisUrl, options);
-
-  return { pub: redisPubInstance, sub: redisSubInstance };
+  return { pub: redisQueuePubInstance, sub: redisQueueSubInstance };
 }
 
 /**
  * Create NEW Redis connections for Pub/Sub (not singletons)
  * Use this when services need isolated subscriber connections
  */
-export function createRedisPubSub(): { pub: Redis; sub: Redis } {
-  const { url: redisUrl, hasTlsFlag } = normalizeRedisInput(
-    process.env.REDIS_URL,
-  );
+export function createRedisQueuePubSub(): { pub: Redis; sub: Redis } {
+  const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
+  const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "Pub/Sub");
+  const options = buildRedisOptions(redisUrl, hasTlsFlag);
 
-  if (!redisUrl) {
-    throw new Error("REDIS_URL is required for Pub/Sub");
-  }
-
-  const shouldUseTls =
-    process.env.REDIS_TLS === "true" ||
-    hasTlsFlag ||
-    (redisUrl?.startsWith("rediss://") ?? false);
-
-  const options: RedisOptions = {
-    ...connectionOptions,
-    ...(shouldUseTls
-      ? {
-          tls: {
-            rejectUnauthorized:
-              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-          },
-        }
-      : {}),
-  };
-
-  // Create NEW connections (not singletons)
   return {
     pub: new Redis(redisUrl, options),
     sub: new Redis(redisUrl, options),
   };
 }
 
+/**
+ * Get Redis for caching (credentials, state, subscriptions)
+ * Uses REDIS_CACHE_URL with fallback to REDIS_URL
+ */
+export function getRedisCache(): Redis {
+  if (redisCacheInstance) return redisCacheInstance;
+
+  const resolved = resolveRedisConfig("REDIS_CACHE_URL");
+  const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "caching operations");
+
+  redisCacheInstance = new Redis(redisUrl, buildRedisOptions(redisUrl, hasTlsFlag));
+  return redisCacheInstance;
+}
+
+// Backward compatibility (deprecated, maps to getRedisQueue)
+export const getRedis = getRedisQueue;
+export const getRedisPubSub = getRedisQueuePubSub;
+export const createRedisPubSub = createRedisQueuePubSub;
+
 export async function closeRedis(): Promise<void> {
-  if (redisInstance) {
-    await redisInstance.quit();
-    redisInstance = null;
+  if (redisQueueInstance) {
+    await redisQueueInstance.quit();
+    redisQueueInstance = null;
   }
-  if (redisPubInstance) {
-    await redisPubInstance.quit();
-    redisPubInstance = null;
+  if (redisQueuePubInstance) {
+    await redisQueuePubInstance.quit();
+    redisQueuePubInstance = null;
   }
-  if (redisSubInstance) {
-    await redisSubInstance.quit();
-    redisSubInstance = null;
+  if (redisQueueSubInstance) {
+    await redisQueueSubInstance.quit();
+    redisQueueSubInstance = null;
+  }
+  if (redisCacheInstance) {
+    await redisCacheInstance.quit();
+    redisCacheInstance = null;
   }
 }

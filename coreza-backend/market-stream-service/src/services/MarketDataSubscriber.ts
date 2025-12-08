@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
-import { createRedisPubSub, getRedis } from "../config/redis";
+import { createRedisQueuePubSub, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
   CorezaMarketEvent,
@@ -47,7 +47,7 @@ export class MarketDataSubscriber {
 
   private ensureRedisConnections(): { pub: Redis; sub: Redis } {
     if (!this.redisSub || !this.redisPub) {
-      const { pub, sub } = createRedisPubSub();
+      const { pub, sub } = createRedisQueuePubSub();
       this.redisSub = sub;
       this.redisPub = pub;
     }
@@ -458,7 +458,7 @@ export class MarketDataSubscriber {
 
       // Generate run ID locally (no Supabase round-trip)
       const runId = uuidv4();
-      const redis = getRedis();
+      const redis = getRedisCache();
 
       // Store run metadata in Redis hash (instant, no DB latency)
       const runData = {

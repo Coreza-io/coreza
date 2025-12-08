@@ -91,6 +91,7 @@ export class MarketExecutor implements INodeExecutor {
         feed,
         environment,
         asset_type,
+        kline_interval,
       } = node.values;
       const { workflowId, userId, nodeId, initialInput } = context;
 
@@ -148,6 +149,13 @@ export class MarketExecutor implements INodeExecutor {
         };
       }
 
+      // Process event types - for Binance, combine kline with interval
+      let eventTypes = stream_types || ['trade'];
+      if (source === 'binance' && eventTypes.includes('kline')) {
+        const interval = kline_interval || '1m';
+        eventTypes = eventTypes.map((t: string) => t === 'kline' ? `kline_${interval}` : t);
+      }
+
       // Build control message
       const controlMessage: Record<string, any> = {
         action: operation,
@@ -157,7 +165,7 @@ export class MarketExecutor implements INodeExecutor {
         symbols: symbolArray,
         source: `${source}_stream`,
         credentialId: credential_id,
-        eventTypes: stream_types,
+        eventTypes,
       };
 
       // Add source-specific fields

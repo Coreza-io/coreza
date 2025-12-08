@@ -370,8 +370,7 @@ export class MarketDataSubscriber {
   private formatMarketEventPayload(event: CorezaMarketEvent): {
     data: Record<string, any>;
   } {
-    const { symbol, type, source, timeframe, isClosed, ...cleanEventData } =
-      event;
+    const { symbol, type, source, isClosed, ...cleanEventData } = event;
 
     const typeKeyMap: Record<string, string> = {
       bar: "bar",
@@ -383,9 +382,12 @@ export class MarketDataSubscriber {
     };
     const dataKey = typeKeyMap[type] || type;
 
+    // Include timeframe in the data payload (useful for kline interval)
     return {
       data: {
         symbol,
+        type,
+        timeframe: event.timeframe,
         [dataKey]: cleanEventData,
       },
     };

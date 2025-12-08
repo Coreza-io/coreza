@@ -18,17 +18,24 @@
  * ============================================
  * WEBSOCKET ROUTES - REDIS PUB/SUB ARCHITECTURE
  * ============================================
- * All WebSocket operations route through Redis Pub/Sub control channels.
+ * All WebSocket operations route through SubscriptionService.
  * MarketControlHandler orchestrates gateway connections and subscriptions.
  */
 
 import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
-import { getRedis } from '../config/redis';
-import { REDIS_CHANNELS } from '../config/redisChannels';
-import { buildStoreKey, getStoreValue } from '../utils/store';
+import { SubscriptionService } from '../services/SubscriptionService';
+import { MarketSource } from '../types/marketEvent';
 
 const router = express.Router();
+
+// Map route source param to MarketSource type
+const sourceToMarketSource: Record<string, MarketSource> = {
+  alpaca_stream: 'alpaca',
+  binance_stream: 'binance',
+  dhan_stream: 'dhan',
+  schwab_stream: 'schwab',
+};
 
 // ============================================
 // REDIS PUB/SUB WEBSOCKET OPERATIONS
@@ -48,7 +55,7 @@ router.post('/:source/subscribe', async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      symbolSource = 'manual',
+      symbolSource,
       sourceWorkflowId,
       sourceVariable,
       // Source-specific fields
@@ -62,98 +69,41 @@ router.post('/:source/subscribe', async (req, res) => {
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
 
-    if (symbolSource === 'store' && (!sourceWorkflowId || !sourceVariable)) {
-      return res.status(400).json({
-        error: 'sourceWorkflowId and sourceVariable are required when using stored symbols',
-      });
+    const marketSource = sourceToMarketSource[source];
+    if (!marketSource) {
+      return res.status(400).json({ error: `Unknown source: ${source}` });
     }
 
-    // Resolve symbols from manual entry or stored values
-    const resolveSymbols = async (): Promise<string[]> => {
-      if (symbolSource === 'store') {
-        const redis = getRedis();
-        const storeKey = buildStoreKey(user_id, sourceWorkflowId, sourceVariable);
-        const storedValue = await getStoreValue(redis, storeKey);
-
-        if (Array.isArray(storedValue)) {
-          return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
-        }
-
-        if (typeof storedValue === 'string') {
-          return storedValue
-            .split(',')
-            .map((symbol) => symbol.trim())
-            .filter(Boolean);
-        }
-
-        if (storedValue !== null && storedValue !== undefined) {
-          const coerced = String(storedValue).trim();
-          return coerced ? [coerced] : [];
-        }
-
-        return [];
-      }
-
-      if (!symbols) return [];
-
-      return typeof symbols === 'string'
-        ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : Array.isArray(symbols)
-        ? symbols
-        : [];
-    };
-
-    const symbolArray = await resolveSymbols();
-
-    if (symbolArray.length === 0) {
-      return res.status(400).json({ error: 'At least one symbol is required' });
-    }
-
-    // Parse stream types and handle kline interval for Binance
-    let streamTypes = stream_types
-      ? (typeof stream_types === 'string' 
-          ? stream_types.split(',').map((s: string) => s.trim()) 
-          : stream_types)
-      : undefined;
-
-    // For Binance kline streams, append the interval (e.g., kline -> kline_1m)
-    if (streamTypes && kline_interval) {
-      streamTypes = streamTypes.map((type: string) => 
-        type === 'kline' ? `kline_${kline_interval}` : type
-      );
-    }
-
-    // Publish control message to Redis
-    // MarketControlHandler will orchestrate gateway connection and subscription
-    const redis = getRedis();
-    const controlMessage: Record<string, unknown> = {
-      action: 'subscribe',
+    const result = await SubscriptionService.subscribe({
+      source: marketSource,
       userId: user_id,
       workflowId: workflow_id,
       nodeId: node_id,
-      symbols: symbolArray,
-      source,
       credentialId: credential_id,
-      eventTypes: streamTypes,
-    };
+      symbols,
+      symbolSource,
+      sourceWorkflowId,
+      sourceVariable,
+      streamTypes: stream_types
+        ? (typeof stream_types === 'string'
+            ? stream_types.split(',').map((s: string) => s.trim())
+            : stream_types)
+        : undefined,
+      feed,
+      environment,
+      assetType: asset_type,
+      klineInterval: kline_interval,
+    });
 
-    // Add source-specific fields
-    if (feed) controlMessage.feed = feed;                     // Alpaca
-    if (environment) controlMessage.environment = environment; // Binance
-    if (asset_type) controlMessage.assetType = asset_type;     // Binance
-
-    await redis.publish(
-      REDIS_CHANNELS.controlSubscribe,
-      JSON.stringify(controlMessage)
-    );
-
-    console.log(`📤 [WebSocket Route] Published subscribe control message for ${source}:`, symbolArray);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
 
     res.json({
       success: true,
-      message: `Subscription request sent for ${source}: ${symbolArray.join(', ')}`,
-      symbols: symbolArray,
-      stream_types: streamTypes,
+      message: result.data?.message,
+      symbols: result.data?.symbols,
+      stream_types: result.data?.streamTypes,
       node_id,
       workflow_id: workflow_id || null,
     });
@@ -179,90 +129,43 @@ router.post('/:source/unsubscribe', async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      symbolSource = 'manual',
+      symbolSource,
       sourceWorkflowId,
       sourceVariable,
     } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
-    if (symbolSource === 'store' && (!sourceWorkflowId || !sourceVariable)) {
-      return res.status(400).json({
-        error: 'sourceWorkflowId and sourceVariable are required when using stored symbols',
-      });
+    const marketSource = sourceToMarketSource[source];
+    if (!marketSource) {
+      return res.status(400).json({ error: `Unknown source: ${source}` });
     }
 
-    const resolveSymbols = async (): Promise<string[]> => {
-      if (symbolSource === 'store') {
-        const redis = getRedis();
-        const storeKey = buildStoreKey(user_id, sourceWorkflowId, sourceVariable);
-        const storedValue = await getStoreValue(redis, storeKey);
-
-        if (Array.isArray(storedValue)) {
-          return storedValue.map((symbol) => String(symbol).trim()).filter(Boolean);
-        }
-
-        if (typeof storedValue === 'string') {
-          return storedValue
-            .split(',')
-            .map((symbol) => symbol.trim())
-            .filter(Boolean);
-        }
-
-        if (storedValue !== null && storedValue !== undefined) {
-          const coerced = String(storedValue).trim();
-          return coerced ? [coerced] : [];
-        }
-
-        return [];
-      }
-
-      if (!symbols) return [];
-
-      return typeof symbols === 'string'
-        ? symbols.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : Array.isArray(symbols)
-        ? symbols
-        : [];
-    };
-
-    const symbolArray = await resolveSymbols();
-
-    if (symbolArray.length === 0) {
-      return res.status(400).json({ error: 'At least one symbol is required' });
-    }
-
-    // Parse stream types
-    const streamTypes = stream_types
-      ? (typeof stream_types === 'string'
-          ? stream_types.split(',').map((s: string) => s.trim())
-          : stream_types)
-      : undefined;
-
-    // Publish control message to Redis
-    const redis = getRedis();
-    const controlMessage = {
-      action: 'unsubscribe',
+    const result = await SubscriptionService.unsubscribe({
+      source: marketSource,
       userId: user_id,
       workflowId: workflow_id,
       nodeId: node_id,
-      symbols: symbolArray,
-      source,
-      eventTypes: streamTypes,
-    };
+      symbols,
+      symbolSource,
+      sourceWorkflowId,
+      sourceVariable,
+      streamTypes: stream_types
+        ? (typeof stream_types === 'string'
+            ? stream_types.split(',').map((s: string) => s.trim())
+            : stream_types)
+        : undefined,
+    });
 
-    await redis.publish(
-      REDIS_CHANNELS.controlUnsubscribe,
-      JSON.stringify(controlMessage)
-    );
-
-    console.log(`📤 [WebSocket Route] Published unsubscribe control message for ${source}:`, symbolArray);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
 
     res.json({
       success: true,
-      message: `Unsubscription request sent for ${source}: ${symbolArray.join(', ')}`,
-      symbols: symbolArray,
-      stream_types: streamTypes,
+      message: result.data?.message,
+      symbols: result.data?.symbols,
+      stream_types: result.data?.streamTypes,
       node_id: node_id ?? null,
       workflow_id: workflow_id || null,
     });

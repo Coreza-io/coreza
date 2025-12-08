@@ -17,9 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
 import { DataService } from '../../services/data';
 import { MarketSource } from '../../types/marketEvent';
-import { getRedis } from '../../config/redis';
-import { REDIS_CHANNELS } from '../../config/redisChannels';
-import { buildStoreKey, getStoreValue } from '../../utils/store';
+import { SubscriptionService } from '../../services/SubscriptionService';
 
 export class MarketExecutor implements INodeExecutor {
   readonly category = 'Market';
@@ -72,136 +70,48 @@ export class MarketExecutor implements INodeExecutor {
 
   /**
    * Handle subscription nodes (AlpacaSubscribe, BinanceSubscribe)
-   * These are ACTION nodes that manage subscriptions for the user
+   * Delegates to SubscriptionService for centralized logic
    */
   private async handleSubscriptionNode(
     node: WorkflowNode,
     context: any,
     source: MarketSource
   ): Promise<NodeResult> {
-    try {
-      const {
-        symbols,
-        stream_types,
-        operation,
-        credential_id,
-        symbolSource = 'manual',
-        sourceWorkflowId,
-        sourceVariable,
-        feed,
-        environment,
-        asset_type,
-        kline_interval,
-      } = node.values;
-      const { workflowId, userId, nodeId, initialInput } = context;
+    const {
+      symbols,
+      stream_types,
+      operation,
+      credential_id,
+      symbolSource,
+      sourceWorkflowId,
+      sourceVariable,
+      feed,
+      environment,
+      asset_type,
+      kline_interval,
+    } = node.values;
+    const { workflowId, userId, nodeId, initialInput } = context;
 
-      if (!userId) {
-        return {
-          success: false,
-          error: 'Missing userId in context'
-        };
-      }
+    const result = await SubscriptionService.execute({
+      source,
+      userId,
+      workflowId,
+      nodeId,
+      credentialId: credential_id,
+      operation: operation || 'subscribe',
+      symbols,
+      symbolSource,
+      sourceWorkflowId,
+      sourceVariable,
+      initialInput,
+      streamTypes: stream_types,
+      feed,
+      environment,
+      assetType: asset_type,
+      klineInterval: kline_interval,
+    });
 
-      const redis = getRedis();
-      let symbolArray: string[] = [];
-
-      // Resolve symbols based on source
-      if (symbolSource === 'store') {
-        if (!sourceWorkflowId || !sourceVariable) {
-          return {
-            success: false,
-            error: 'Source workflow and variable are required when using stored symbols',
-          };
-        }
-
-        const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
-        const storedValue = await getStoreValue(redis, storeKey);
-
-        if (Array.isArray(storedValue)) {
-          symbolArray = storedValue
-            .map((symbol) => String(symbol).trim())
-            .filter(Boolean);
-        } else if (typeof storedValue === 'string') {
-          symbolArray = storedValue
-            .split(',')
-            .map((symbol) => symbol.trim())
-            .filter(Boolean);
-        } else if (storedValue !== null && storedValue !== undefined) {
-          const coerced = String(storedValue).trim();
-          symbolArray = coerced ? [coerced] : [];
-        }
-      } else if (symbolSource === 'input' && initialInput?.symbols) {
-        // Symbols from workflow input
-        symbolArray = Array.isArray(initialInput.symbols) 
-          ? initialInput.symbols 
-          : String(initialInput.symbols).split(',').map((s: string) => s.trim()).filter(Boolean);
-      } else {
-        // Manual entry
-        symbolArray = typeof symbols === 'string'
-          ? symbols.split(',').map(s => s.trim()).filter(Boolean)
-          : Array.isArray(symbols) ? symbols : [];
-      }
-
-      if (symbolArray.length === 0) {
-        return {
-          success: false,
-          error: 'No symbols provided for subscription'
-        };
-      }
-
-      // Process event types - for Binance, combine kline with interval
-      let eventTypes = stream_types || ['trade'];
-      if (source === 'binance' && eventTypes.includes('kline')) {
-        const interval = kline_interval || '1m';
-        eventTypes = eventTypes.map((t: string) => t === 'kline' ? `kline_${interval}` : t);
-      }
-
-      // Build control message
-      const controlMessage: Record<string, any> = {
-        action: operation,
-        userId,
-        workflowId,
-        nodeId,
-        symbols: symbolArray,
-        source: `${source}_stream`,
-        credentialId: credential_id,
-        eventTypes,
-      };
-
-      // Add source-specific fields
-      if (source === 'alpaca' && feed) {
-        controlMessage.feed = feed;
-      }
-      if (source === 'binance') {
-        if (environment) controlMessage.environment = environment;
-        if (asset_type) controlMessage.assetType = asset_type;
-      }
-
-      // Publish to appropriate control channel
-      const channel = operation === 'subscribe' 
-        ? REDIS_CHANNELS.controlSubscribe 
-        : REDIS_CHANNELS.controlUnsubscribe;
-
-      await redis.publish(channel, JSON.stringify(controlMessage));
-
-      console.log(`📤 [MarketExecutor] Published ${operation} control message for ${source}:`, symbolArray);
-
-      return {
-        success: true,
-        data: {
-          status: operation === 'subscribe' ? 'subscribed' : 'unsubscribed',
-          source,
-          symbols: symbolArray,
-          stream_types,
-          message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`
-        }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Subscription error: ${error instanceof Error ? error.message : String(error)}`
-      };
-    }
+    return result;
   }
 
   /**

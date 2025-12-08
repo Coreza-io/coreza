@@ -294,10 +294,16 @@ router.post('/:source/subscribe', async (req, res) => {
       environment,    // Binance: testnet or live
       asset_type,     // Binance: spot or futures
       kline_interval, // Binance: 1m, 5m, 15m, etc.
-      // Subscription scope
-      subscription_scope,  // 'global' or 'workflow'
-      target_workflow_id,  // target workflow ID for workflow-scoped subscriptions
+      // Subscription scope - accept both snake_case and camelCase
+      subscription_scope,
+      subscriptionScope,
+      target_workflow_id,
+      targetWorkflowId,
     } = req.body;
+
+    // Use camelCase first (frontend convention), fallback to snake_case
+    const finalSubscriptionScope = subscriptionScope || subscription_scope || 'global';
+    const finalTargetWorkflowId = targetWorkflowId || target_workflow_id;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
@@ -327,8 +333,8 @@ router.post('/:source/subscribe', async (req, res) => {
       environment,
       assetType: asset_type,
       klineInterval: kline_interval,
-      subscriptionScope: subscription_scope || 'global',
-      targetWorkflowId: target_workflow_id,
+      subscriptionScope: finalSubscriptionScope,
+      targetWorkflowId: finalTargetWorkflowId,
     });
 
     if (!result.success) {

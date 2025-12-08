@@ -34,19 +34,28 @@ export class MarketDataSubscriber {
   // symbol → Set<workflowId> for fast lookup
   private symbolWorkflows = new Map<string, Set<string>>();
 
-  private redisSub: Redis;
-  private redisPub: Redis;
+  private redisSub: Redis | null = null;
+  private redisPub: Redis | null = null;
   private isInitialized = false;
   private messageHandler:
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
-  private workflowCache = WorkflowCache;
 
   private constructor() {
-    // Create isolated Redis connections for this service
-    const { pub, sub } = createRedisPubSub();
-    this.redisSub = sub; // Dedicated subscriber connection
-    this.redisPub = pub; // Dedicated publisher connection
+    // Lazy initialization - don't create Redis connections here
+  }
+
+  private ensureRedisConnections(): { pub: Redis; sub: Redis } {
+    if (!this.redisSub || !this.redisPub) {
+      const { pub, sub } = createRedisPubSub();
+      this.redisSub = sub;
+      this.redisPub = pub;
+    }
+    return { pub: this.redisPub, sub: this.redisSub };
+  }
+
+  private getWorkflowCache(): WorkflowCache {
+    return WorkflowCache.getInstance();
   }
 
   static getInstance(): MarketDataSubscriber {
@@ -117,7 +126,8 @@ export class MarketDataSubscriber {
 
           // Subscribe to Redis channel for this symbol
           const channel = REDIS_CHANNELS.marketData(symbol);
-          await this.redisSub.subscribe(channel);
+          const { sub } = this.ensureRedisConnections();
+          await sub.subscribe(channel);
           console.log(
             `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`
           );
@@ -173,7 +183,8 @@ export class MarketDataSubscriber {
           // If no more workflows need this symbol, unsubscribe from Redis
           if (workflows.size === 0) {
             const channel = REDIS_CHANNELS.marketData(symbol);
-            await this.redisSub.unsubscribe(channel);
+            const { sub } = this.ensureRedisConnections();
+            await sub.unsubscribe(channel);
             this.symbolWorkflows.delete(symbol);
             console.log(
               `📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`
@@ -186,7 +197,8 @@ export class MarketDataSubscriber {
       this.subscriptions.delete(workflowId);
 
       // Remove from Redis persistence
-      await this.redisPub.del(REDIS_CHANNELS.workflowSubscription(workflowId));
+      const { pub } = this.ensureRedisConnections();
+      await pub.del(REDIS_CHANNELS.workflowSubscription(workflowId));
 
       console.log(
         `✅ [MarketDataSubscriber] Workflow ${workflowId} unsubscribed successfully`
@@ -206,13 +218,14 @@ export class MarketDataSubscriber {
         `📊 [MarketDataSubscriber] Restoring subscriptions from Redis...`
       );
 
+      const { pub } = this.ensureRedisConnections();
       const pattern = "wf:sub:*";
-      const keys = await this.redisPub.keys(pattern);
+      const keys = await pub.keys(pattern);
 
       let restored = 0;
       for (const key of keys) {
         try {
-          const data = await this.redisPub.get(key);
+          const data = await pub.get(key);
           if (!data) continue;
 
           const subscription = JSON.parse(data) as {
@@ -225,7 +238,7 @@ export class MarketDataSubscriber {
           };
 
           // Verify workflow is still active (use cache)
-          const workflow = await this.workflowCache.getWorkflow(
+          const workflow = await this.getWorkflowCache().getWorkflow(
             subscription.workflowId
           );
 
@@ -233,7 +246,7 @@ export class MarketDataSubscriber {
             console.log(
               `⚠️  Skipping inactive workflow ${subscription.workflowId}`
             );
-            await this.redisPub.del(key);
+            await pub.del(key);
             continue;
           }
 
@@ -267,9 +280,11 @@ export class MarketDataSubscriber {
    * Setup Redis message handler with memory leak prevention
    */
   private setupMessageHandler(): void {
+    const { sub } = this.ensureRedisConnections();
+    
     // Remove existing handler to prevent duplicates
     if (this.messageHandler) {
-      this.redisSub.off("message", this.messageHandler);
+      sub.off("message", this.messageHandler);
     }
 
     // Create new handler
@@ -376,13 +391,11 @@ export class MarketDataSubscriber {
     };
 
     // Attach handler
-    this.redisSub.on("message", this.messageHandler);
+    sub.on("message", this.messageHandler);
     console.log(`✅ [MarketDataSubscriber] Message handler setup complete`);
 
     console.log(`🟡 [SUBSCRIBER] Handler attached to redisSub`);
-    console.log(`🟡 [SUBSCRIBER] redisSub.status: ${this.redisSub.status}`);
-
-    console.log(`✅ [MarketDataSubscriber] Message handler setup complete`);
+    console.log(`🟡 [SUBSCRIBER] redisSub.status: ${sub.status}`);
   }
 
   /**
@@ -427,7 +440,7 @@ export class MarketDataSubscriber {
   ): Promise<void> {
     try {
       // Fetch workflow definition from cache (60s TTL)
-      const workflow = await this.workflowCache.getWorkflow(workflowId);
+      const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
 
       if (!workflow) {
         console.error(
@@ -542,7 +555,8 @@ export class MarketDataSubscriber {
 
         // Subscribe to Redis channel for this symbol
         const channel = REDIS_CHANNELS.marketData(upperSymbol);
-        await this.redisSub.subscribe(channel);
+        const { sub } = this.ensureRedisConnections();
+        await sub.subscribe(channel);
         console.log(
           `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`
         );
@@ -614,13 +628,15 @@ export class MarketDataSubscriber {
     console.log(`📊 [MarketDataSubscriber] Cleaning up...`);
 
     // Remove message handler
-    if (this.messageHandler) {
+    if (this.messageHandler && this.redisSub) {
       this.redisSub.off("message", this.messageHandler);
       this.messageHandler = null;
     }
 
     // Unsubscribe from all channels
-    await this.redisSub.unsubscribe();
+    if (this.redisSub) {
+      await this.redisSub.unsubscribe();
+    }
 
     // Clear memory
     this.subscriptions.clear();

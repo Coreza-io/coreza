@@ -10,6 +10,9 @@ import { getRedis } from './config/redis';
 import { redisPublishBreaker } from './utils/redisCircuitBreaker';
 import { runStartupValidation } from './utils/startupValidation';
 
+// Lazy-initialized singleton instances (initialized after env validation)
+let workflowCacheInstance: ReturnType<typeof WorkflowCache.getInstance> | null = null;
+
 const PORT = process.env.MARKET_STREAM_PORT || 8090;
 
 async function startMarketStreamService() {
@@ -21,9 +24,10 @@ async function startMarketStreamService() {
     // Run startup validation (Redis, Supabase, env vars)
     await runStartupValidation();
 
-    // Initialize WorkflowCache cleanup
-    logger.info('Initializing WorkflowCache cleanup timer...');
-    WorkflowCache.startCleanupTimer();
+    // Initialize WorkflowCache (now safe - env vars are loaded)
+    logger.info('Initializing WorkflowCache...');
+    workflowCacheInstance = WorkflowCache.getInstance();
+    workflowCacheInstance.startCleanupTimer();
 
     // Initialize Redis buffer flush on circuit breaker recovery
     logger.info('Setting up Redis buffer flush on circuit breaker recovery...');
@@ -61,7 +65,7 @@ async function startMarketStreamService() {
       const controlStats = marketControlHandler.getStats();
       const subscriberStats = marketDataSubscriber.getStats();
       const redisPubSubStats = redisPubSubSubscriber.getStats();
-      const cacheStats = WorkflowCache.getStats();
+      const cacheStats = workflowCacheInstance?.getStats() || { size: 0, entries: [] };
       const bufferStats = RedisBuffer.getInstance().getStats();
 
       res.json({
@@ -121,7 +125,7 @@ async function startMarketStreamService() {
         logger.error({ err: error }, 'Error shutting down RedisPubSubSubscriber');
       }
 
-      WorkflowCache.stopCleanupTimer();
+      workflowCacheInstance?.stopCleanupTimer();
       logger.info('WorkflowCache cleanup timer stopped');
 
       process.exit(0);

@@ -16,171 +16,19 @@
 
 /**
  * ============================================
- * WEBSOCKET ROUTES - REDIS PUB/SUB ARCHITECTURE
+ * WEBSOCKET ROUTES - CONNECTION MANAGEMENT
  * ============================================
- * All WebSocket operations route through SubscriptionService.
- * MarketControlHandler orchestrates gateway connections and subscriptions.
+ * WebSocket connection status and messaging endpoints.
+ * Subscription operations have been moved to /market routes.
  */
 
 import express from 'express';
 import { WebSocketManager } from '../services/websocketManager';
-import { SubscriptionService } from '../services/SubscriptionService';
-import { MarketSource } from '../types/marketEvent';
 
 const router = express.Router();
 
-// Map route source param to MarketSource type
-const sourceToMarketSource: Record<string, MarketSource> = {
-  alpaca_stream: 'alpaca',
-  binance_stream: 'binance',
-  dhan_stream: 'dhan',
-  schwab_stream: 'schwab',
-};
-
 // ============================================
-// REDIS PUB/SUB WEBSOCKET OPERATIONS
-// ============================================
-
-/**
- * Subscribe to a market data source via Redis Pub/Sub
- * POST /websocket/:source/subscribe
- */
-router.post('/:source/subscribe', async (req, res) => {
-  try {
-    const { source } = req.params;
-    const {
-      user_id,
-      credential_id,
-      symbols,
-      node_id,
-      workflow_id,
-      stream_types,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
-      // Source-specific fields
-      feed,           // Alpaca: iex or sip
-      environment,    // Binance: testnet or live
-      asset_type,     // Binance: spot or futures
-      kline_interval, // Binance: 1m, 5m, 15m, etc.
-    } = req.body;
-
-    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
-    if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
-    if (!node_id) return res.status(400).json({ error: 'node_id is required' });
-
-    const marketSource = sourceToMarketSource[source];
-    if (!marketSource) {
-      return res.status(400).json({ error: `Unknown source: ${source}` });
-    }
-
-    const result = await SubscriptionService.subscribe({
-      source: marketSource,
-      userId: user_id,
-      workflowId: workflow_id,
-      nodeId: node_id,
-      credentialId: credential_id,
-      symbols,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
-      streamTypes: stream_types
-        ? (typeof stream_types === 'string'
-            ? stream_types.split(',').map((s: string) => s.trim())
-            : stream_types)
-        : undefined,
-      feed,
-      environment,
-      assetType: asset_type,
-      klineInterval: kline_interval,
-    });
-
-    if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
-    }
-
-    res.json({
-      success: true,
-      message: result.data?.message,
-      symbols: result.data?.symbols,
-      stream_types: result.data?.streamTypes,
-      node_id,
-      workflow_id: workflow_id || null,
-    });
-  } catch (error) {
-    console.error('Subscribe error:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Subscription failed',
-    });
-  }
-});
-
-/**
- * Unsubscribe from a market data source via Redis Pub/Sub
- * POST /websocket/:source/unsubscribe
- */
-router.post('/:source/unsubscribe', async (req, res) => {
-  try {
-    const { source } = req.params;
-    const {
-      user_id,
-      symbols,
-      node_id,
-      workflow_id,
-      stream_types,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
-    } = req.body;
-
-    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
-
-    const marketSource = sourceToMarketSource[source];
-    if (!marketSource) {
-      return res.status(400).json({ error: `Unknown source: ${source}` });
-    }
-
-    const result = await SubscriptionService.unsubscribe({
-      source: marketSource,
-      userId: user_id,
-      workflowId: workflow_id,
-      nodeId: node_id,
-      symbols,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
-      streamTypes: stream_types
-        ? (typeof stream_types === 'string'
-            ? stream_types.split(',').map((s: string) => s.trim())
-            : stream_types)
-        : undefined,
-    });
-
-    if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
-    }
-
-    res.json({
-      success: true,
-      message: result.data?.message,
-      symbols: result.data?.symbols,
-      stream_types: result.data?.streamTypes,
-      node_id: node_id ?? null,
-      workflow_id: workflow_id || null,
-    });
-  } catch (error) {
-    console.error('Unsubscribe error:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unsubscribe failed',
-    });
-  }
-});
-
-
-// ============================================
-// LEGACY ENDPOINTS (for backward compatibility)
+// WEBSOCKET STATUS & MESSAGING
 // ============================================
 
 // WebSocket status endpoint for debugging

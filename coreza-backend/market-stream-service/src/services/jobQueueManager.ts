@@ -4,20 +4,29 @@ import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
 import logger from "../utils/logger";
 import { workflowExecutionsCounter } from "../utils/metrics";
 
-const redis = getRedis();
+// Lazy-initialized queue instances
+let redis: ReturnType<typeof getRedis> | null = null;
+let workflowQueue: Queue | null = null;
+let scheduledQueue: Queue | null = null;
 
-// Queue instances
-const workflowQueue = new Queue("workflow-execution", {
-  connection: redis,
-});
-
-const scheduledQueue = new Queue("scheduled-workflows", {
-  connection: redis,
-});
+function ensureQueuesInitialized() {
+  if (!redis) {
+    redis = getRedis();
+  }
+  if (!workflowQueue) {
+    workflowQueue = new Queue("workflow-execution", { connection: redis });
+  }
+  if (!scheduledQueue) {
+    scheduledQueue = new Queue("scheduled-workflows", { connection: redis });
+  }
+  return { redis, workflowQueue, scheduledQueue };
+}
 
 // Queue management class (only adds jobs, does not execute them)
 export class BullMQJobQueue implements IWorkflowJobQueue {
   async addWorkflowExecution(data: WorkflowJobData): Promise<Job> {
+    const { workflowQueue } = ensureQueuesInitialized();
+    
     try {
       logger.debug(
         { workflowId: data.workflowId, runId: data.runId, trigger: data.trigger },
@@ -60,6 +69,8 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   }
 
   async getQueueStats() {
+    const { workflowQueue, scheduledQueue } = ensureQueuesInitialized();
+    
     try {
       const [workflowStats, scheduledStats] = await Promise.all([
         workflowQueue.getJobCounts(),
@@ -87,12 +98,14 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     try {
       logger.info('Cleaning up queues...');
       
-      await Promise.all([
-        workflowQueue.close(),
-        scheduledQueue.close(),
-      ]);
+      if (workflowQueue && scheduledQueue && redis) {
+        await Promise.all([
+          workflowQueue.close(),
+          scheduledQueue.close(),
+        ]);
 
-      await redis.quit();
+        await redis.quit();
+      }
       
       logger.info('Queue cleanup completed successfully');
     } catch (error) {

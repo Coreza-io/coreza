@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { getRedis } from "../config/redis";
+import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { GatewayConfig, GATEWAY_CONFIGS } from "../config/marketGateways";
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
@@ -25,7 +25,7 @@ export class MarketDataGateway {
   private subscribedSymbolTypes = new Map<string, Set<string>>(); // symbol → event types
   private isAuthenticated = false;
   private reconnectAttempts = 0;
-  private redis = getRedis();
+  private redis = getRedisQueue();
   private logger = createLogger("MarketDataGateway");
   private keepaliveInterval: NodeJS.Timeout | null = null;
 

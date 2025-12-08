@@ -19,7 +19,7 @@ import { IncomingMessage } from "http";
 import { URL } from "url";
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { Server } from "net";
-import { createRedisPubSub } from "../config/redis";
+import { createRedisQueuePubSub } from "../config/redis";
 import type Redis from "ioredis";
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -526,7 +526,7 @@ export class WebSocketManager {
   private setupRedisSubscription(): void {
     // Setup Redis subscriber for user-specific market data from market-stream-service
     // All market data now flows through: market-stream-service → ws:user:{userId} → WebSocketManager
-    const { sub } = createRedisPubSub();
+    const { sub } = createRedisQueuePubSub();
     this.redisSub = sub;
 
     // Subscribe to pattern ws:user:* to receive market data for all users

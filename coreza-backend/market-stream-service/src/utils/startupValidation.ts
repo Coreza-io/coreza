@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { getRedis } from '../config/redis';
+import { getRedisCache, getRedisQueue } from '../config/redis';
 import { supabase } from '../config/supabase';
 import logger from './logger';
 
@@ -8,10 +8,13 @@ const STARTUP_TIMEOUT_MS = 10000; // 10 second timeout for startup checks
 /**
  * Validate Redis connection is working
  */
-async function validateRedisConnection(): Promise<void> {
-  logger.info('Validating Redis connection...');
-  
-  const redis = getRedis();
+async function validateRedisConnection(
+  name: 'queue' | 'cache',
+  redisFactory: () => Redis
+): Promise<void> {
+  logger.info({ name }, 'Validating Redis connection...');
+
+  const redis = redisFactory();
   
   try {
     // Test PING command
@@ -49,10 +52,10 @@ async function validateRedisConnection(): Promise<void> {
       }
     }
     
-    logger.info('✅ Redis connection validated successfully');
+    logger.info({ name }, '✅ Redis connection validated successfully');
   } catch (error) {
-    logger.fatal({ err: error }, 'Redis connection validation failed');
-    throw new Error(`Redis validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    logger.fatal({ err: error, name }, 'Redis connection validation failed');
+    throw new Error(`Redis validation failed (${name}): ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -107,7 +110,6 @@ function validateEnvironmentVariables(): void {
   logger.info('Validating environment variables...');
   
   const required = [
-    'REDIS_URL',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
     'COREZA_ENCRYPTION_KEY',
@@ -121,6 +123,15 @@ function validateEnvironmentVariables(): void {
     }
   }
   
+  const hasRedisConfig =
+    !!process.env.REDIS_QUEUE_URL ||
+    !!process.env.REDIS_CACHE_URL ||
+    !!process.env.REDIS_URL;
+
+  if (!hasRedisConfig) {
+    missing.push('REDIS_QUEUE_URL or REDIS_CACHE_URL (or fallback REDIS_URL)');
+  }
+
   if (missing.length > 0) {
     const errorMsg = `Missing required environment variables: ${missing.join(', ')}`;
     logger.fatal({ missing }, errorMsg);
@@ -140,8 +151,9 @@ export async function runStartupValidation(): Promise<void> {
     // Step 1: Validate environment variables (fast, no I/O)
     validateEnvironmentVariables();
     
-    // Step 2: Validate Redis connection (network I/O)
-    await validateRedisConnection();
+    // Step 2: Validate Redis connections (network I/O)
+    await validateRedisConnection('queue', getRedisQueue);
+    await validateRedisConnection('cache', getRedisCache);
     
     // Step 3: Validate Supabase connection (network I/O)
     await validateSupabaseConnection();

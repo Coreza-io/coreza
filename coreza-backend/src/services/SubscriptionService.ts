@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 import { buildStoreKey, getStoreValue } from '../utils/store';
 import { MarketSource } from '../types/marketEvent';
@@ -74,7 +74,7 @@ export class SubscriptionService {
         throw new Error('Source workflow and variable are required when using stored symbols');
       }
 
-      const redis = getRedis();
+      const redis = getRedisCache();
       const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
       const storedValue = await getStoreValue(redis, storeKey);
 
@@ -207,7 +207,7 @@ export class SubscriptionService {
       }
 
       // Publish to appropriate control channel
-      const redis = getRedis();
+      const redis = getRedisCache();
       const channel = operation === 'subscribe'
         ? REDIS_CHANNELS.controlSubscribe
         : REDIS_CHANNELS.controlUnsubscribe;

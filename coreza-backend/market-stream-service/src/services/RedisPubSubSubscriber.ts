@@ -5,7 +5,7 @@
  */
 
 import Redis from 'ioredis';
-import { createRedisPubSub } from '../config/redis';
+import { createRedisQueuePubSub } from '../config/redis';
 import logger from '../utils/logger';
 import { bullMqJobQueue } from './jobQueueManager';
 import { WorkflowJobData } from './queueInterface';
@@ -41,7 +41,7 @@ export class RedisPubSubSubscriber {
 
   private ensureRedisConnections(): { pub: Redis; sub: Redis } {
     if (!this.redisSub || !this.redisPub) {
-      const { pub, sub } = createRedisPubSub();
+      const { pub, sub } = createRedisQueuePubSub();
       this.redisPub = pub;
       this.redisSub = sub;
     }

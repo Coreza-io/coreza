@@ -6,7 +6,7 @@
 
 import Redis from "ioredis";
 import { Mutex } from "async-mutex";
-import { createRedisPubSub } from "../config/redis";
+import { createRedisQueuePubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
@@ -50,7 +50,7 @@ export class MarketControlHandler {
 
   private constructor() {
     // Create isolated Redis connections for this service
-    const { pub, sub } = createRedisPubSub();
+    const { pub, sub } = createRedisQueuePubSub();
     this.redisPub = pub;
     this.redisSub = sub;
   }

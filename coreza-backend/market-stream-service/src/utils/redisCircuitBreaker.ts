@@ -1,5 +1,5 @@
 import CircuitBreaker from 'opossum';
-import { getRedisPubSub } from '../config/redis';
+import { getRedisQueuePubSub } from '../config/redis';
 import { createLogger } from './logger';
 import { alertRedisCircuitOpen } from './alerting';
 import { redisOperationsCounter } from './metrics';
@@ -18,7 +18,7 @@ let redisPub: any = null;
 
 function getRedisConnection() {
   if (!redisPub) {
-    const { pub } = getRedisPubSub();
+    const { pub } = getRedisQueuePubSub();
     redisPub = pub;
   }
   return redisPub;

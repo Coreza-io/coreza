@@ -15,7 +15,7 @@
  */
 
 import CircuitBreaker from 'opossum';
-import { getRedisPubSub } from '../config/redis';
+import { getRedisQueuePubSub } from '../config/redis';
 import { createLogger } from './logger';
 import { alertRedisCircuitOpen } from './alerting';
 import { redisOperationsCounter } from './metrics';
@@ -30,7 +30,7 @@ const circuitBreakerOptions = {
 };
 
 // Get dedicated pub connection for Redis operations (never used for subscribe)
-const { pub: redisPub } = getRedisPubSub();
+const { pub: redisPub } = getRedisQueuePubSub();
 
 /**
  * Circuit breaker for Redis PUBLISH operations

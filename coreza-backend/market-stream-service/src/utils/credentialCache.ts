@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import Redis from "ioredis";
-import { getRedis } from "../config/redis";
+import { getRedisCache } from "../config/redis";
 import { createLogger } from "./logger";
 
 const logger = createLogger("CredentialCache");
@@ -43,7 +43,7 @@ export class CredentialCache {
 
   private ensureRedis(): Redis {
     if (!this.redis) {
-      this.redis = getRedis();
+      this.redis = getRedisCache();
     }
     return this.redis;
   }

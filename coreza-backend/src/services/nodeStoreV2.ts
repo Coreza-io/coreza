@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 
 type LoopState = {
   loopItems: any[];
@@ -189,39 +189,39 @@ export class NodeStoreV2 {
 
   // Persistent value management (for Edit Fields nodes)
   async getPersistentValue(workflowId: string, key: string): Promise<any> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const redisKey = `workflow:${workflowId}:persistent:${key}`;
     const value = await redis.get(redisKey);
     return value ? JSON.parse(value) : null;
   }
 
   async setPersistentValue(workflowId: string, key: string, value: any): Promise<void> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const redisKey = `workflow:${workflowId}:persistent:${key}`;
     await redis.set(redisKey, JSON.stringify(value));
   }
 
   // Redis persistence methods (legacy compatibility)
   async setNodeStateRedis(nodeId: string, state: string): Promise<void> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     await redis.hset(key, 'state', state);
   }
 
   async getNodeStateRedis(nodeId: string): Promise<string | null> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     return await redis.hget(key, 'state');
   }
 
   async setNodeOutput(nodeId: string, output: any): Promise<void> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     await redis.hset(key, 'output', JSON.stringify(output ?? null));
   }
 
   async getNodeOutput(nodeId: string): Promise<any> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const key = `workflow:${this.runId}:node:${nodeId}`;
     const value = await redis.hget(key, 'output');
     return value ? JSON.parse(value) : null;

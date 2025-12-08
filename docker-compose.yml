@@ -18,8 +18,8 @@ services:
       - NODE_ENV=production
       - PORT=8000
       - WEBSOCKET_PORT=8081
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_QUEUE_URL=redis://redis-queue:6379
+      - REDIS_CACHE_URL=redis://redis-cache:6379
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
@@ -28,7 +28,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - COREZA_ENCRYPTION_KEY=${COREZA_ENCRYPTION_KEY}
     depends_on:
-      redis:
+      redis-queue:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     networks:
       - coreza-network
@@ -63,14 +65,16 @@ services:
     environment:
       - NODE_ENV=production
       - MARKET_STREAM_PORT=8090
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_QUEUE_URL=redis://redis-queue:6379
+      - REDIS_CACHE_URL=redis://redis-cache:6379
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - COREZA_ENCRYPTION_KEY=${COREZA_ENCRYPTION_KEY}
     depends_on:
-      redis:
+      redis-queue:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     networks:
       - coreza-network
@@ -93,29 +97,37 @@ services:
           cpus: '0.25'
 
   # =============================================================================
-  # Redis Service for Queues
+  # Redis Services
   # =============================================================================
-  redis:
+  # QUEUE REDIS - Latency Critical (NO PERSISTENCE)
+  redis-queue:
     image: redis:7-alpine
-    container_name: coreza-redis
+    container_name: coreza-redis-queue
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-defaultpassword}
-    volumes:
-      - redis-data:/data
+    command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - coreza-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 3s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25'
+
+  # CACHE REDIS - Medium Latency (Optional Persistence)
+  redis-cache:
+    image: redis:7-alpine
+    container_name: coreza-redis-cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy volatile-lru
+    volumes:
+      - redis-cache-data:/data
+    networks:
+      - coreza-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
 
   # =============================================================================
   # Development Services (only for development)
@@ -131,9 +143,11 @@ services:
       - "9229:9229"  # Debug port
     environment:
       - NODE_ENV=development
-      - REDIS_HOST=redis
+      - REDIS_QUEUE_URL=redis://redis-queue:6379
+      - REDIS_CACHE_URL=redis://redis-cache:6379
     depends_on:
-      - redis
+      - redis-queue
+      - redis-cache
     networks:
       - coreza-network
     volumes:
@@ -228,6 +242,6 @@ networks:
     driver: bridge
 
 volumes:
-  redis-data:
+  redis-cache-data:
   prometheus-data:
   grafana-data:

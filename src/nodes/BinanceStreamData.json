@@ -102,6 +102,18 @@
       "displayOptions": { "show": { "mode": ["subscribe"] } }
     },
     {
+      "key": "subscriptionMode",
+      "label": "Subscription Mode",
+      "type": "select",
+      "options": [
+        { "id": "workflow", "name": "Only This Workflow's Subscriptions" },
+        { "id": "global", "name": "All My Subscriptions" }
+      ],
+      "default": "workflow",
+      "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
+      "displayOptions": { "show": { "mode": ["listen"] } }
+    },
+    {
       "key": "filter_symbols",
       "label": "Filter Symbols (Optional)",
       "type": "text",

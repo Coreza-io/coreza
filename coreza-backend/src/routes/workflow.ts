@@ -634,6 +634,9 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const nodeName = triggerNode.name || '';
           const source = nodeNameToSourceMap[nodeName] || nodeName.toLowerCase().replace('streamdata', '').replace('stream', '');
 
+          // Get subscription mode - determines whether to receive global or workflow-scoped data only
+          const subscriptionMode = nodeValues.subscriptionMode || 'workflow';
+
           // Publish registration message to market-stream-service
           // This allows the trading workflow to receive data from symbols subscribed by other workflows
           const registrationMessage = {
@@ -644,6 +647,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
             source, // Include source for proper subscription routing
             filter_symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) : [],
             filter_types: filterTypes || [],
+            subscriptionMode, // NEW: controls whether to receive global or workflow-scoped symbols
           };
           await redis.publish('md:control:register_workflow', JSON.stringify(registrationMessage));
 

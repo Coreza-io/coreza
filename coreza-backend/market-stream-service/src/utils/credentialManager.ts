@@ -7,8 +7,8 @@ import crypto from "crypto";
 import { supabase } from "../config/supabase";
 import EnvelopeEncryptionUtil from "./envelopeEncryption";
 import DecryptionUtil from "./decryption";
-import { CredentialValidator } from "./credentialValidator";
 import ClientEncryption from "./ClientEncryption"; // ⬅️ ensure this exists (frontend-style encryptor)
+import CredentialCache from "./credentialCache";
 
 export interface UserCredential {
   id: string;
@@ -187,6 +187,15 @@ class CredentialManager {
     credentialName?: string
   ): Promise<{ credentials?: any; error?: string }> {
     try {
+      const cache = CredentialCache.getInstance();
+      const cached = await cache.get(userId, serviceType, credentialName);
+      if (cached !== null) {
+        console.log(`📦 Cache HIT: ${serviceType}:${credentialName || "_default"}`);
+        return { credentials: cached };
+      }
+
+      console.log(`📦 Cache MISS: ${serviceType}:${credentialName || "_default"}`);
+
       let query = supabase
         .from("user_credentials")
         .select("*")
@@ -205,6 +214,7 @@ class CredentialManager {
       }
 
       const credential = data[0];
+      let credentials: any | null = null;
 
       // Legacy single-field client_json (string: base64(iv+cipher+tag))
       if (
@@ -214,19 +224,16 @@ class CredentialManager {
         try {
           const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
           if (!encryptionKey) throw new Error("Encryption key not available");
-          const creds = await this.decryptClientData(
+          credentials = await this.decryptClientData(
             credential.client_json,
             encryptionKey
           );
-          return { credentials: creds };
         } catch (e) {
           console.error("Failed to decrypt client_json:", e);
           return { error: "Failed to decrypt credentials" };
         }
-      }
-
-      // Frontend v2 format (separate bytea/base64 fields)
-      if (
+      } else if (
+        // Frontend v2 format (separate bytea/base64 fields)
         credential.is_encrypted &&
         credential.enc_version === 2 &&
         credential.key_ref === "user:v2"
@@ -235,21 +242,18 @@ class CredentialManager {
           const encPayload = this.bufferToBase64(credential.enc_payload);
           const iv = this.bufferToBase64(credential.iv);
           const authTag = this.bufferToBase64(credential.auth_tag);
-          const creds = await this.decryptFrontendData(
+          credentials = await this.decryptFrontendData(
             userId,
             encPayload,
             iv,
             authTag
           );
-          return { credentials: creds };
         } catch (e: any) {
           console.error("Failed to decrypt frontend data:", e);
           return { error: `Frontend decryption failed: ${e.message}` };
         }
-      }
-
-      // Envelope v1 (backend)
-      if (
+      } else if (
+        // Envelope v1 (backend)
         credential.is_encrypted &&
         credential.enc_payload &&
         credential.enc_version === 1
@@ -264,14 +268,17 @@ class CredentialManager {
             userId,
             credentialId: credential.id,
           });
-          return { credentials: { ...payload.client, ...payload.token } };
+          credentials = { ...payload.client, ...payload.token };
         } catch (e) {
           console.error("Failed envelope decryption:", e);
           return { error: "Failed to decrypt envelope credentials" };
         }
       }
 
-      return { error: "No valid credential data found" };
+      if (!credentials) return { error: "No valid credential data found" };
+
+      await cache.set(userId, serviceType, credentialName, credentials);
+      return { credentials };
     } catch (error: any) {
       return { error: error?.message ?? "Unknown error" };
     }
@@ -406,85 +413,25 @@ class CredentialManager {
     } | null;
   }> {
     try {
-      const { data, error } = await supabase
-        .from("user_credentials")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("name", credentialName)
-        .eq("service_type", serviceType)
-        .single();
-
-      if (error || !data) return { credentials: null };
-
-      let decrypted: Record<string, any> = {};
-
-      if (data.is_encrypted) {
-        if (data.enc_version === 2 && data.key_ref === "user:v2") {
-          console.log(`🔓 Decrypt v2 (frontend) for ${serviceType}`);
-          const res = await this.getDecryptedCredentials(
-            userId,
-            serviceType,
-            data.name
-          );
-          if (res.error) throw new Error(res.error);
-          if (!res.credentials)
-            throw new Error("Decrypted credentials not available");
-          decrypted = res.credentials;
-        } else if (data.enc_payload) {
-          console.log(`🔓 Decrypt envelope for ${serviceType}`);
-          const payload = EnvelopeEncryptionUtil.decrypt({
-            encPayload: data.enc_payload,
-            iv: data.iv,
-            authTag: data.auth_tag,
-            dekWrapped: data.dek_wrapped,
-            keyRef: data.key_ref || "env:v1",
-            userId,
-            credentialId: data.id,
-          });
-          decrypted = { ...payload.client, ...payload.token };
-        }
-      } else {
-        console.log(`🔓 Decrypt legacy for ${serviceType}`);
-        const client = { ...(data.client_json || {}) };
-        const token = { ...(data.token_json || {}) };
-
-        const sensitive = [
-          "api_key",
-          "secret_key",
-          "access_token",
-          "refresh_token",
-          "client_secret",
-        ];
-
-        for (const f of sensitive) {
-          if (client[f] && DecryptionUtil.isEncrypted(client[f])) {
-            client[f] = await DecryptionUtil.decrypt(client[f]);
-          }
-          if (token[f] && DecryptionUtil.isEncrypted(token[f])) {
-            token[f] = await DecryptionUtil.decrypt(token[f]);
-          }
-        }
-
-        decrypted = { ...client, ...token };
+      const cache = CredentialCache.getInstance();
+      const cached = await cache.get(userId, serviceType, credentialName);
+      if (cached !== null) {
+        console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
+        return { credentials: { client_json: cached, token_json: {} } };
       }
 
-      const validation = CredentialValidator.validateCredentials(
+      console.log(`📦 Cache MISS: ${serviceType}:${credentialName}`);
+      const result = await this.getDecryptedCredentials(
+        userId,
         serviceType,
-        decrypted
+        credentialName
       );
-      if (!validation.isValid) {
-        throw new Error(
-          `Invalid ${serviceType} credentials: ${validation.errors.join(", ")}`
-        );
-      }
-      if (validation.warnings.length > 0) {
-        console.warn(
-          `${serviceType} credential warnings:`,
-          validation.warnings
-        );
+
+      if (result.error || !result.credentials) {
+        return { credentials: null };
       }
 
-      return { credentials: { client_json: decrypted, token_json: {} } };
+      return { credentials: { client_json: result.credentials, token_json: {} } };
     } catch (e: any) {
       throw new Error(
         `Failed to get ${serviceType} credentials: ${

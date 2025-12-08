@@ -78,6 +78,7 @@ interface SubscriptionStats {
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
+  userSubscriptions: Record<string, string[]>;  // source → symbols from Subscribe nodes
   stats: SubscriptionStats;
   symbolSourceMap: Record<string, string[]>;
 }
@@ -619,19 +620,78 @@ const MarketSubscriptions = () => {
         </Card>
       </motion.div>
 
-      {/* Subscribed Symbols */}
+      {/* User Symbol Subscriptions (from Subscribe nodes) */}
+      {data?.userSubscriptions && Object.keys(data.userSubscriptions).length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Radio className="h-5 w-5 text-primary" />
+                User Symbol Subscriptions
+              </CardTitle>
+              <CardDescription>Symbols subscribed via Subscribe nodes (independent of workflows)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {Object.entries(data.userSubscriptions).map(([source, symbols]) => (
+                  <div key={source} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={sourceColors[source] || 'bg-muted'}>
+                        {sourceIcons[source] || '📡'} {source}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {symbols.length} symbol{symbols.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pl-2">
+                      {symbols
+                        .filter(sym => symbolFilter === "" || sym.toLowerCase().includes(symbolFilter.toLowerCase()))
+                        .map(symbol => (
+                          <Badge 
+                            key={`${source}-${symbol}`} 
+                            variant="outline" 
+                            className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+                          >
+                            {symbol}
+                            <button
+                              onClick={() => confirmUnsubscribeSymbol(symbol, source)}
+                              disabled={unsubscribing === `symbol-${symbol}`}
+                              className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                            >
+                              {unsubscribing === `symbol-${symbol}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                            </button>
+                          </Badge>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* All Subscribed Symbols */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.4 }}
       >
         <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
-              Subscribed Symbols
+              All Subscribed Symbols
             </CardTitle>
-            <CardDescription>All symbols currently being streamed</CardDescription>
+            <CardDescription>All symbols currently being streamed across all sources</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">

@@ -290,6 +290,19 @@ router.post('/:source/unsubscribe', async (req, res) => {
       return res.status(400).json({ success: false, error: result.error });
     }
 
+    // Direct Redis cleanup for immediate effect (market-stream-service may not process message immediately)
+    if (workflow_id) {
+      const redis = getRedis();
+      const subKey = `wf:sub:${workflow_id}`;
+      await redis.del(subKey);
+      
+      // Also remove from active streaming workflows set and stream filter
+      await redis.srem(`user:${user_id}:active_streaming_workflows`, workflow_id);
+      await redis.del(`workflow:${workflow_id}:stream_filter`);
+      
+      console.log(`📤 [Market Route] Direct cleanup for workflow ${workflow_id}`);
+    }
+
     res.json({
       success: true,
       message: result.data?.message,

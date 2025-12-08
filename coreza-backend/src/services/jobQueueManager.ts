@@ -20,6 +20,7 @@ import { executeWorkflow } from "./workflowEngine";
 import { WebSocketManager } from "./websocketManager";
 import { getRedis } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
+import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -55,21 +56,25 @@ interface ScheduledWorkflowJobData {
 const workflowWorker = new Worker(
   "workflow-execution",
   async (job: Job<WorkflowJobData>) => {
-    const { runId, nodes, edges, userId, workflowId } = job.data;
+    const { runId, nodes, edges, userId, workflowId, useRedisStorage } = job.data;
 
-    console.log(`🚀 Processing workflow job ${job.id} for run ${runId}`);
+    console.log(`🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`);
 
     try {
       // Update run status to running
-      await supabase
-        .from("workflow_runs")
-        .update({ status: "running" })
-        .eq("id", runId);
+      if (useRedisStorage) {
+        await updateRunStatusInRedis(runId, 'running');
+      } else {
+        await supabase
+          .from("workflow_runs")
+          .update({ status: "running" })
+          .eq("id", runId);
+      }
 
       // Execute workflow using the unified engine
       const input = job.data.initialInput;
       const renamed = {
-        data: input.marketEvent ?? input.data ?? input,
+        data: input?.marketEvent ?? input?.data ?? input,
       };
       const result = await executeWorkflow(
         runId,
@@ -80,15 +85,19 @@ const workflowWorker = new Worker(
         { initialInput: renamed }
       );
 
-      // Save successful result to database
-      await supabase
-        .from("workflow_runs")
-        .update({
-          status: "success",
-          result: result,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", runId);
+      // Save successful result
+      if (useRedisStorage) {
+        await updateRunStatusInRedis(runId, 'success', { result });
+      } else {
+        await supabase
+          .from("workflow_runs")
+          .update({
+            status: "success",
+            result: result,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+      }
 
       console.log(`✅ Workflow run ${runId} completed successfully`);
       return result;
@@ -99,15 +108,19 @@ const workflowWorker = new Worker(
         normalized
       );
 
-      // Save error to database
-      await supabase
-        .from("workflow_runs")
-        .update({
-          status: "failed",
-          error_message: normalized.message,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", runId);
+      // Save error
+      if (useRedisStorage) {
+        await updateRunStatusInRedis(runId, 'failed', { errorMessage: normalized.message });
+      } else {
+        await supabase
+          .from("workflow_runs")
+          .update({
+            status: "failed",
+            error_message: normalized.message,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+      }
 
       throw normalized;
     }

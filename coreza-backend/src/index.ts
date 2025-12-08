@@ -68,6 +68,7 @@ import WorkflowCache from './services/WorkflowCache';
 import { redisPublishBreaker, redisGetBreaker, redisSetBreaker } from './utils/redisCircuitBreaker';
 import { RedisBuffer } from './services/RedisBuffer';
 import { setupBufferFlush } from './utils/flushRedisBuffer';
+import RunSyncService from './services/RunSyncService';
 
 
 const app = express();
@@ -88,7 +89,8 @@ app.use(metricsMiddleware);
 app.locals.supabase = supabase;
 
 // Health check with circuit breaker and cache stats
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const runSyncStats = await RunSyncService.getStats();
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -100,6 +102,7 @@ app.get('/health', (req, res) => {
         set: redisSetBreaker.opened ? 'OPEN' : redisSetBreaker.halfOpen ? 'HALF-OPEN' : 'CLOSED',
       },
       buffer: RedisBuffer.getInstance().getStats(),
+      pendingRunSync: runSyncStats.pendingCount,
     },
     workflowCache: WorkflowCache.getStats(),
   });
@@ -189,6 +192,11 @@ async function startServer() {
     setupBufferFlush();
     logger.debug('Redis buffer flush setup complete');
 
+    // Start RunSyncService for periodic workflow_runs sync (Redis → Supabase)
+    logger.info('Starting RunSyncService...');
+    RunSyncService.start();
+    logger.info('RunSyncService started (syncing every 10s)');
+
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || '8081', 10);
     await WebSocketManager.initialize(wsPort);
@@ -208,6 +216,10 @@ async function startServer() {
       
       // Stop WorkflowCache cleanup timer
       WorkflowCache.stopCleanupTimer();
+      
+      // Stop RunSyncService and flush remaining runs
+      RunSyncService.stop();
+      await RunSyncService.flushAll();
       
       // Close WebSocket server
       await WebSocketManager.shutdown();

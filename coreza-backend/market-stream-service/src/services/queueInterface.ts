@@ -6,6 +6,8 @@ export interface WorkflowJobData {
   edges: any[];
   trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub" | "market_data";
   initialInput?: Record<string, unknown>;
+  /** If true, use Redis storage instead of direct Supabase writes */
+  useRedisStorage?: boolean;
 }
 
 export interface IWorkflowJobQueue {

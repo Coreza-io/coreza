@@ -120,9 +120,13 @@
       "key": "targetWorkflowId", 
       "label": "Target Workflow", 
       "type": "select",
+      "options": [
+        { "id": "__current__", "name": "This Workflow (Current)" }
+      ],
       "optionsSource": "storeWorkflowsApi",
       "placeholder": "Select workflow to receive data",
-      "displayOptions": { "show": { "subscriptionScope": ["workflow"] } }
+      "displayOptions": { "show": { "subscriptionScope": ["workflow"] } },
+      "default": "__current__"
     }
   ]
 }

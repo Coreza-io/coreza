@@ -132,9 +132,10 @@ export class MarketControlHandler {
 
   /**
    * Handle registration of streaming workflows (from workflow activation)
-   * These workflows receive data for:
-   * 1. ALL symbols subscribed globally by the user
-   * 2. Symbols specifically scoped to this workflow
+   * 
+   * Subscription mode controls which symbols the workflow receives:
+   * - 'workflow' (default): ONLY symbols specifically scoped to this workflow
+   * - 'global': ALL symbols subscribed globally by the user + workflow-specific symbols
    */
   private async handleRegisterStreamingWorkflow(msg: {
     action: string;
@@ -144,19 +145,22 @@ export class MarketControlHandler {
     source?: string;
     filter_symbols?: string[];
     filter_types?: string[];
+    subscriptionMode?: 'workflow' | 'global';
   }): Promise<void> {
-    const { userId, workflowId, nodeId, source, filter_symbols, filter_types } = msg;
+    const { userId, workflowId, nodeId, source, filter_symbols, filter_types, subscriptionMode = 'workflow' } = msg;
 
     try {
-      console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${source || 'all'})`);
-
-      // Get global symbols subscribed for this user across all sources
-      const globalSymbols = await this.getUserSubscribedSymbols(userId);
+      console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${source || 'all'}, mode: ${subscriptionMode})`);
 
       // Get workflow-specific symbols (scoped subscriptions targeting this workflow)
       const workflowSpecificSymbols = await this.getWorkflowScopedSymbols(workflowId, source);
 
-      // Merge both global and workflow-specific symbols
+      // Only get global symbols if subscription mode is 'global'
+      const globalSymbols = subscriptionMode === 'global' 
+        ? await this.getUserSubscribedSymbols(userId)
+        : [];
+
+      // Merge based on subscription mode
       const allAvailableSymbols = [...new Set([...globalSymbols, ...workflowSpecificSymbols])];
 
       // Normalize event types for proper filtering

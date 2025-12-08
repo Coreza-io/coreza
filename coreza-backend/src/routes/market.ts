@@ -374,6 +374,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
       symbolSource,
       sourceWorkflowId,
       sourceVariable,
+      subscription_scope,  // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
@@ -403,16 +404,35 @@ router.post('/:source/unsubscribe', async (req, res) => {
       return res.status(400).json({ success: false, error: result.error });
     }
 
-    // Direct Redis cleanup for immediate effect (market-stream-service may not process message immediately)
-    if (workflow_id) {
-      const redis = getRedis();
+    // Direct Redis cleanup for immediate effect
+    const redis = getRedis();
+    const resolvedSymbols = Array.isArray(symbols) ? symbols : [];
+    
+    // Normalize source for Redis key (remove _stream suffix if present)
+    const normalizedSource = source.replace(/_stream$/, '');
+    
+    // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
+    if (subscription_scope === 'workflow' && workflow_id && resolvedSymbols.length > 0) {
+      const workflowSubKey = `workflow:${workflow_id}:subscribed_symbols:${normalizedSource}`;
+      for (const sym of resolvedSymbols) {
+        await redis.srem(workflowSubKey, sym.toUpperCase());
+      }
+      console.log(`📤 [Market Route] Removed ${resolvedSymbols.join(', ')} from workflow-scoped key: ${workflowSubKey}`);
+    }
+    // Handle global symbol unsubscription (user-level)
+    else if (resolvedSymbols.length > 0 && !workflow_id) {
+      const userSubKey = `user:${user_id}:subscribed_symbols:${normalizedSource}`;
+      for (const sym of resolvedSymbols) {
+        await redis.srem(userSubKey, sym.toUpperCase());
+      }
+      console.log(`📤 [Market Route] Removed ${resolvedSymbols.join(', ')} from global key: ${userSubKey}`);
+    }
+    // Handle full workflow cleanup (when removing entire workflow subscription)
+    else if (workflow_id && resolvedSymbols.length === 0) {
       const subKey = `wf:sub:${workflow_id}`;
       await redis.del(subKey);
-      
-      // Also remove from active streaming workflows set and stream filter
       await redis.srem(`user:${user_id}:active_streaming_workflows`, workflow_id);
       await redis.del(`workflow:${workflow_id}:stream_filter`);
-      
       console.log(`📤 [Market Route] Direct cleanup for workflow ${workflow_id}`);
     }
 

@@ -51,6 +51,11 @@ router.post('/:source/subscribe', async (req, res) => {
       symbolSource = 'manual',
       sourceWorkflowId,
       sourceVariable,
+      // Source-specific fields
+      feed,           // Alpaca: iex or sip
+      environment,    // Binance: testnet or live
+      asset_type,     // Binance: spot or futures
+      kline_interval, // Binance: 1m, 5m, 15m, etc.
     } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
@@ -104,17 +109,24 @@ router.post('/:source/subscribe', async (req, res) => {
       return res.status(400).json({ error: 'At least one symbol is required' });
     }
 
-    // Parse stream types
-    const streamTypes = stream_types
+    // Parse stream types and handle kline interval for Binance
+    let streamTypes = stream_types
       ? (typeof stream_types === 'string' 
           ? stream_types.split(',').map((s: string) => s.trim()) 
           : stream_types)
       : undefined;
 
+    // For Binance kline streams, append the interval (e.g., kline -> kline_1m)
+    if (streamTypes && kline_interval) {
+      streamTypes = streamTypes.map((type: string) => 
+        type === 'kline' ? `kline_${kline_interval}` : type
+      );
+    }
+
     // Publish control message to Redis
     // MarketControlHandler will orchestrate gateway connection and subscription
     const redis = getRedis();
-    const controlMessage = {
+    const controlMessage: Record<string, unknown> = {
       action: 'subscribe',
       userId: user_id,
       workflowId: workflow_id,
@@ -124,6 +136,11 @@ router.post('/:source/subscribe', async (req, res) => {
       credentialId: credential_id,
       eventTypes: streamTypes,
     };
+
+    // Add source-specific fields
+    if (feed) controlMessage.feed = feed;                     // Alpaca
+    if (environment) controlMessage.environment = environment; // Binance
+    if (asset_type) controlMessage.assetType = asset_type;     // Binance
 
     await redis.publish(
       REDIS_CHANNELS.controlSubscribe,

@@ -234,30 +234,19 @@ export class MarketControlHandler {
   }
 
   /**
-   * Get all symbols currently subscribed for a user across all sources
+   * Get all GLOBAL symbols currently subscribed for a user across all sources
+   * Only reads from user-level (global) subscription keys, NOT gateway state
    */
   private async getUserSubscribedSymbols(userId: string): Promise<string[]> {
     const allSymbols = new Set<string>();
 
-    // Check all gateway states for this user's subscriptions
-    for (const [source, state] of this.sourceStates) {
-      if (state.connectedUserId === userId) {
-        state.symbols.forEach(s => allSymbols.add(s));
-      }
-    }
-
-    // Also check Redis for persisted subscriptions
+    // Only read from global subscription keys (user-level)
     const sources: MarketSource[] = ['alpaca', 'alpaca_news', 'binance', 'dhan', 'schwab'];
     for (const source of sources) {
-      const stateKey = REDIS_CHANNELS.gatewayState(source);
+      const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
       try {
-        const stateJson = await this.redisPub.get(stateKey);
-        if (stateJson) {
-          const stateData = JSON.parse(stateJson);
-          if (stateData.userId === userId && stateData.symbols) {
-            stateData.symbols.forEach((s: string) => allSymbols.add(s.toUpperCase()));
-          }
-        }
+        const symbols = await this.redisPub.smembers(userSubKey);
+        symbols.forEach(s => allSymbols.add(s.toUpperCase()));
       } catch (err) {
         // Continue with other sources
       }
@@ -267,15 +256,31 @@ export class MarketControlHandler {
   }
 
   /**
-   * Update all active streaming workflows for a user with newly subscribed symbols
+   * Update active streaming workflows for a user with newly subscribed symbols
    * This ensures workflows activated BEFORE symbols were subscribed still receive data
+   * 
+   * IMPORTANT: Respects subscription scope:
+   * - 'workflow' scope: ONLY updates the target workflow
+   * - 'global' scope: Updates ALL active streaming workflows for the user
    */
   private async updateActiveStreamingWorkflows(
     userId: string,
-    newSymbols: string[]
+    newSymbols: string[],
+    subscriptionScope: 'global' | 'workflow' = 'global',
+    targetWorkflowId?: string
   ): Promise<void> {
     try {
-      // Get all active streaming workflows for this user from Redis
+      const subscriber = MarketDataSubscriber.getInstance();
+
+      // If workflow-scoped, only update the target workflow
+      if (subscriptionScope === 'workflow' && targetWorkflowId) {
+        console.log(`📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`);
+        await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
+        console.log(`✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`);
+        return;
+      }
+
+      // Global scope: update all active workflows for this user
       const activeWorkflowsKey = `user:${userId}:active_streaming_workflows`;
       const activeWorkflowIds = await this.redisPub.smembers(activeWorkflowsKey);
 
@@ -284,9 +289,7 @@ export class MarketControlHandler {
         return;
       }
 
-      console.log(`📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new symbols:`, newSymbols);
-
-      const subscriber = MarketDataSubscriber.getInstance();
+      console.log(`📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL symbols:`, newSymbols);
 
       for (const workflowId of activeWorkflowIds) {
         try {
@@ -421,8 +424,10 @@ export class MarketControlHandler {
           await this.persistState(source);
           console.log(`✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`);
 
-          // Notify all active streaming workflows about new symbols
-          await this.updateActiveStreamingWorkflows(userId, subscriptionNeeded);
+          // Notify active streaming workflows about new symbols (respecting scope)
+          const subscriptionScope = msg.subscriptionScope || 'global';
+          const targetWorkflowId = msg.targetWorkflowId;
+          await this.updateActiveStreamingWorkflows(userId, subscriptionNeeded, subscriptionScope, targetWorkflowId);
         } else {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
         }

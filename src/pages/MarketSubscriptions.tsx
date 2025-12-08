@@ -21,6 +21,16 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Radio, 
   Activity, 
@@ -30,7 +40,9 @@ import {
   Search,
   ExternalLink,
   Loader2,
-  TrendingUp
+  TrendingUp,
+  X,
+  Trash2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -67,6 +79,7 @@ interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
   stats: SubscriptionStats;
+  symbolSourceMap: Record<string, string[]>;
 }
 
 const sourceColors: Record<string, string> = {
@@ -90,6 +103,14 @@ const MarketSubscriptions = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<SubscriptionStatus | null>(null);
   const [symbolFilter, setSymbolFilter] = useState("");
+  const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: 'symbol' | 'workflow' | 'source';
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({ open: false, type: 'symbol', title: '', description: '', onConfirm: () => {} });
 
   const fetchStatus = useCallback(async (showRefreshToast = false) => {
     if (!user) return;
@@ -126,6 +147,116 @@ const MarketSubscriptions = () => {
     }
   }, [user, toast]);
 
+  const handleUnsubscribeSymbol = useCallback(async (symbol: string, source: string) => {
+    if (!user) return;
+    
+    setUnsubscribing(`symbol-${symbol}`);
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const response = await fetch(`${backendUrl}/market/${source}_stream/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          symbols: [symbol],
+        }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to unsubscribe');
+      
+      toast({ title: "Unsubscribed", description: `Removed ${symbol} from ${source}` });
+      fetchStatus(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to unsubscribe symbol", variant: "destructive" });
+    } finally {
+      setUnsubscribing(null);
+    }
+  }, [user, toast, fetchStatus]);
+
+  const handleUnsubscribeWorkflow = useCallback(async (wf: WorkflowSubscription) => {
+    if (!user) return;
+    
+    setUnsubscribing(`workflow-${wf.workflowId}-${wf.nodeId}`);
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const response = await fetch(`${backendUrl}/market/${wf.source}_stream/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          workflow_id: wf.workflowId,
+          node_id: wf.nodeId,
+          symbols: wf.symbols,
+        }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to unsubscribe');
+      
+      toast({ title: "Unsubscribed", description: `${wf.workflowName} removed from market data` });
+      fetchStatus(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to unsubscribe workflow", variant: "destructive" });
+    } finally {
+      setUnsubscribing(null);
+    }
+  }, [user, toast, fetchStatus]);
+
+  const handleClearSource = useCallback(async (source: string, symbols: string[]) => {
+    if (!user || symbols.length === 0) return;
+    
+    setUnsubscribing(`source-${source}`);
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const response = await fetch(`${backendUrl}/market/${source}_stream/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          symbols: symbols,
+        }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to unsubscribe');
+      
+      toast({ title: "Cleared", description: `All ${source} subscriptions removed` });
+      fetchStatus(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to clear source", variant: "destructive" });
+    } finally {
+      setUnsubscribing(null);
+    }
+  }, [user, toast, fetchStatus]);
+
+  const confirmUnsubscribeSymbol = (symbol: string, source: string) => {
+    setConfirmDialog({
+      open: true,
+      type: 'symbol',
+      title: `Unsubscribe ${symbol}?`,
+      description: `This will stop streaming ${symbol} data from ${source}. Any workflows using this symbol will no longer receive updates.`,
+      onConfirm: () => handleUnsubscribeSymbol(symbol, source),
+    });
+  };
+
+  const confirmUnsubscribeWorkflow = (wf: WorkflowSubscription) => {
+    setConfirmDialog({
+      open: true,
+      type: 'workflow',
+      title: `Unsubscribe ${wf.workflowName}?`,
+      description: `This will stop ${wf.workflowName} from receiving market data for ${wf.symbols.length} symbol(s).`,
+      onConfirm: () => handleUnsubscribeWorkflow(wf),
+    });
+  };
+
+  const confirmClearSource = (source: string, symbols: string[]) => {
+    setConfirmDialog({
+      open: true,
+      type: 'source',
+      title: `Clear all ${source} subscriptions?`,
+      description: `This will unsubscribe all ${symbols.length} symbol(s) from ${source}. All workflows using these symbols will stop receiving data.`,
+      onConfirm: () => handleClearSource(source, symbols),
+    });
+  };
+
   useEffect(() => {
     fetchStatus();
     
@@ -159,6 +290,28 @@ const MarketSubscriptions = () => {
 
   return (
     <div className="space-y-6">
+      {/* Confirmation Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.onConfirm();
+                setConfirmDialog(prev => ({ ...prev, open: false }));
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Unsubscribe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -301,6 +454,22 @@ const MarketSubscriptions = () => {
                               )}
                             </div>
                           )}
+                          {sourceData.symbols.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full mt-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => confirmClearSource(source, sourceData.symbols)}
+                              disabled={unsubscribing === `source-${source}`}
+                            >
+                              {unsubscribing === `source-${source}` ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3 w-3 mr-1" />
+                              )}
+                              Clear All
+                            </Button>
+                          )}
                         </div>
                       )}
                     </CardContent>
@@ -397,11 +566,26 @@ const MarketSubscriptions = () => {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Link to={`/dashboard/workflow/${wf.workflowId}`}>
-                            <Button variant="ghost" size="sm">
-                              <ExternalLink className="h-4 w-4" />
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => confirmUnsubscribeWorkflow(wf)}
+                              disabled={unsubscribing === `workflow-${wf.workflowId}-${wf.nodeId}`}
+                            >
+                              {unsubscribing === `workflow-${wf.workflowId}-${wf.nodeId}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <X className="h-4 w-4" />
+                              )}
                             </Button>
-                          </Link>
+                            <Link to={`/dashboard/workflow/${wf.workflowId}`}>
+                              <Button variant="ghost" size="sm">
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -436,15 +620,31 @@ const MarketSubscriptions = () => {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {filteredSymbols.length > 0 ? (
-                filteredSymbols.map(symbol => (
-                  <Badge 
-                    key={symbol} 
-                    variant="outline" 
-                    className="px-3 py-1 text-sm font-mono"
-                  >
-                    {symbol}
-                  </Badge>
-                ))
+                filteredSymbols.map(symbol => {
+                  const sources = data?.symbolSourceMap?.[symbol] || [];
+                  const primarySource = sources[0] || 'alpaca';
+                  
+                  return (
+                    <Badge 
+                      key={symbol} 
+                      variant="outline" 
+                      className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+                    >
+                      {symbol}
+                      <button
+                        onClick={() => confirmUnsubscribeSymbol(symbol, primarySource)}
+                        disabled={unsubscribing === `symbol-${symbol}`}
+                        className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                      >
+                        {unsubscribing === `symbol-${symbol}` ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <X className="h-3 w-3" />
+                        )}
+                      </button>
+                    </Badge>
+                  );
+                })
               ) : (
                 <p className="text-muted-foreground">
                   {symbolFilter ? "No matching symbols found" : "No symbols subscribed"}

@@ -391,3 +391,44 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
     requiresPreConnect: true,
   },
 };
+
+// ============================================================
+// Source Mapping: Maps frontend/control message source IDs to gateway sources
+// This consolidates the mapping previously in websockets.ts
+// ============================================================
+
+export interface SourceMapping {
+  credentialServiceType: string;
+  gatewaySource: MarketSource;
+}
+
+export const SOURCE_MAPPING: Record<string, SourceMapping> = {
+  // Frontend stream node IDs → gateway sources
+  'alpaca_stream': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
+  'alpaca_news': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca_news' },
+  'binance_stream': { credentialServiceType: 'binance', gatewaySource: 'binance' },
+  'dhan_stream': { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
+  'schwab_stream': { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
+  
+  // Direct gateway names (already normalized)
+  'alpaca': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
+  'binance': { credentialServiceType: 'binance', gatewaySource: 'binance' },
+  'dhan': { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
+  'schwab': { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
+};
+
+/**
+ * Get source mapping for a given source ID.
+ * Maps frontend/control message source IDs to credential service types and gateway sources.
+ * 
+ * Examples:
+ *   - 'binance_stream' → { credentialServiceType: 'binance', gatewaySource: 'binance' }
+ *   - 'alpaca_news' → { credentialServiceType: 'alpaca', gatewaySource: 'alpaca_news' }
+ *   - 'binance' → { credentialServiceType: 'binance', gatewaySource: 'binance' }
+ */
+export function getSourceMapping(source: string): SourceMapping {
+  return SOURCE_MAPPING[source] || { 
+    credentialServiceType: source, 
+    gatewaySource: source as MarketSource 
+  };
+}

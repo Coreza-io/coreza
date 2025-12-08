@@ -89,6 +89,8 @@ export class MarketExecutor implements INodeExecutor {
       environment,
       asset_type,
       kline_interval,
+      subscriptionScope,
+      targetWorkflowId,
     } = node.values;
     const { workflowId, userId, nodeId, initialInput } = context;
 
@@ -109,6 +111,8 @@ export class MarketExecutor implements INodeExecutor {
       environment,
       assetType: asset_type,
       klineInterval: kline_interval,
+      subscriptionScope,
+      targetWorkflowId,
     });
 
     return result;

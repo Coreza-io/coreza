@@ -138,7 +138,7 @@ router.get('/subscriptions/status', async (req, res) => {
     }
 
     // Get workflow-scoped subscriptions (from Subscribe nodes - workflow scope)
-    const workflowSubKeys = await redis.keys(`workflow:*:subscribed_symbols:*`);
+    const scopedSubKeys = await redis.keys(`workflow:*:subscribed_symbols:*`);
     const workflowScopedSubscriptions: Array<{
       workflowId: string;
       workflowName?: string;
@@ -147,7 +147,7 @@ router.get('/subscriptions/status', async (req, res) => {
     }> = [];
     const scopedWorkflowIds = new Set<string>();
 
-    for (const key of workflowSubKeys) {
+    for (const key of scopedSubKeys) {
       // Pattern: workflow:{workflowId}:subscribed_symbols:{source}
       const match = key.match(/workflow:([^:]+):subscribed_symbols:(\w+)/);
       if (match) {

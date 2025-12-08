@@ -27,6 +27,8 @@ interface ControlMessage {
   feed?: string;
   environment?: string;  // For Binance: testnet/live
   assetType?: string;    // For Binance: spot/futures
+  subscriptionScope?: 'global' | 'workflow';
+  targetWorkflowId?: string;
 }
 
 interface SourceState {
@@ -130,7 +132,9 @@ export class MarketControlHandler {
 
   /**
    * Handle registration of streaming workflows (from workflow activation)
-   * These workflows receive data for ALL symbols subscribed by the user
+   * These workflows receive data for:
+   * 1. ALL symbols subscribed globally by the user
+   * 2. Symbols specifically scoped to this workflow
    */
   private async handleRegisterStreamingWorkflow(msg: {
     action: string;
@@ -146,13 +150,19 @@ export class MarketControlHandler {
     try {
       console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${source || 'all'})`);
 
-      // Get all symbols currently subscribed for this user across all sources
-      const userSymbols = await this.getUserSubscribedSymbols(userId);
+      // Get global symbols subscribed for this user across all sources
+      const globalSymbols = await this.getUserSubscribedSymbols(userId);
+
+      // Get workflow-specific symbols (scoped subscriptions targeting this workflow)
+      const workflowSpecificSymbols = await this.getWorkflowScopedSymbols(workflowId, source);
+
+      // Merge both global and workflow-specific symbols
+      const allAvailableSymbols = [...new Set([...globalSymbols, ...workflowSpecificSymbols])];
 
       // Normalize event types for proper filtering
       const normalizedEventTypes = source ? this.normalizeEventTypes(source, filter_types) : filter_types;
 
-      if (userSymbols.length === 0) {
+      if (allAvailableSymbols.length === 0) {
         console.log(`ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`);
         
         // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
@@ -170,13 +180,13 @@ export class MarketControlHandler {
         return;
       }
 
-      // Register workflow to receive data for all user's subscribed symbols
+      // Register workflow to receive data for all available symbols
       const subscriber = MarketDataSubscriber.getInstance();
       
-      // If filter_symbols specified, only subscribe to those that are in user's subscriptions
+      // If filter_symbols specified, only subscribe to those that are in available subscriptions
       const symbolsToSubscribe = filter_symbols && filter_symbols.length > 0
-        ? userSymbols.filter(s => filter_symbols.map(fs => fs.toUpperCase()).includes(s.toUpperCase()))
-        : userSymbols;
+        ? allAvailableSymbols.filter(s => filter_symbols.map(fs => fs.toUpperCase()).includes(s.toUpperCase()))
+        : allAvailableSymbols;
 
       await subscriber.subscribe(
         workflowId,
@@ -189,10 +199,38 @@ export class MarketControlHandler {
         }
       );
 
-      console.log(`✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols (source: ${source || 'all'})`);
+      console.log(`✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols (${globalSymbols.length} global + ${workflowSpecificSymbols.length} workflow-specific, source: ${source || 'all'})`);
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`, error);
     }
+  }
+
+  /**
+   * Get symbols specifically scoped to a workflow
+   */
+  private async getWorkflowScopedSymbols(workflowId: string, source?: string): Promise<string[]> {
+    const allSymbols = new Set<string>();
+
+    try {
+      // If source specified, only check that source
+      if (source) {
+        const key = `workflow:${workflowId}:subscribed_symbols:${source}`;
+        const symbols = await this.redisPub.smembers(key);
+        symbols.forEach(s => allSymbols.add(s.toUpperCase()));
+      } else {
+        // Check all sources for this workflow
+        const pattern = `workflow:${workflowId}:subscribed_symbols:*`;
+        const keys = await this.redisPub.keys(pattern);
+        for (const key of keys) {
+          const symbols = await this.redisPub.smembers(key);
+          symbols.forEach(s => allSymbols.add(s.toUpperCase()));
+        }
+      }
+    } catch (err) {
+      console.error(`❌ [MarketControl] Failed to get workflow-scoped symbols for ${workflowId}:`, err);
+    }
+
+    return Array.from(allSymbols);
   }
 
   /**
@@ -389,10 +427,21 @@ export class MarketControlHandler {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
         }
 
-        // Persist user-level subscriptions for dashboard visibility (from Subscribe nodes)
-        const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
-        await this.redisPub.sadd(userSubKey, ...symbols.map(s => s.toUpperCase()));
-        console.log(`📊 [MarketControl] Persisted ${symbols.length} user-level subscriptions for ${source}`);
+        // Persist subscriptions based on scope
+        const subscriptionScope = msg.subscriptionScope || 'global';
+        const targetWorkflowId = msg.targetWorkflowId;
+
+        if (subscriptionScope === 'workflow' && targetWorkflowId) {
+          // Workflow-scoped subscription: only target workflow can access
+          const workflowSubKey = `workflow:${targetWorkflowId}:subscribed_symbols:${source}`;
+          await this.redisPub.sadd(workflowSubKey, ...symbols.map(s => s.toUpperCase()));
+          console.log(`📊 [MarketControl] Persisted ${symbols.length} workflow-scoped subscriptions for ${source} → ${targetWorkflowId}`);
+        } else {
+          // Global subscription: all workflows can access
+          const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
+          await this.redisPub.sadd(userSubKey, ...symbols.map(s => s.toUpperCase()));
+          console.log(`📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`);
+        }
       });
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to handle subscribe for ${source}:`, error);

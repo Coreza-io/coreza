@@ -123,7 +123,7 @@ router.get('/subscriptions/status', async (req, res) => {
       workflowName: workflowNames[sub.workflowId] || 'Unknown Workflow'
     }));
 
-    // Get user-level symbol subscriptions (from Subscribe nodes)
+    // Get user-level symbol subscriptions (from Subscribe nodes - global scope)
     const userSubKeys = await redis.keys(`user:${user_id}:subscribed_symbols:*`);
     const userSubscriptions: Record<string, string[]> = {};
 
@@ -133,6 +133,48 @@ router.get('/subscriptions/status', async (req, res) => {
         const symbols = await redis.smembers(key);
         if (symbols.length > 0) {
           userSubscriptions[sourceMatch[1]] = symbols;
+        }
+      }
+    }
+
+    // Get workflow-scoped subscriptions (from Subscribe nodes - workflow scope)
+    const workflowSubKeys = await redis.keys(`workflow:*:subscribed_symbols:*`);
+    const workflowScopedSubscriptions: Array<{
+      workflowId: string;
+      workflowName?: string;
+      source: string;
+      symbols: string[];
+    }> = [];
+    const scopedWorkflowIds = new Set<string>();
+
+    for (const key of workflowSubKeys) {
+      // Pattern: workflow:{workflowId}:subscribed_symbols:{source}
+      const match = key.match(/workflow:([^:]+):subscribed_symbols:(\w+)/);
+      if (match) {
+        const [, wfId, source] = match;
+        const symbols = await redis.smembers(key);
+        if (symbols.length > 0) {
+          workflowScopedSubscriptions.push({
+            workflowId: wfId,
+            source,
+            symbols
+          });
+          scopedWorkflowIds.add(wfId);
+        }
+      }
+    }
+
+    // Fetch workflow names for scoped subscriptions
+    if (scopedWorkflowIds.size > 0) {
+      const { data: scopedWorkflows } = await supabase
+        .from('workflows')
+        .select('id, name')
+        .in('id', Array.from(scopedWorkflowIds));
+      
+      if (scopedWorkflows) {
+        for (const sub of workflowScopedSubscriptions) {
+          const wf = scopedWorkflows.find(w => w.id === sub.workflowId);
+          sub.workflowName = wf?.name || 'Unknown Workflow';
         }
       }
     }
@@ -162,10 +204,20 @@ router.get('/subscriptions/status', async (req, res) => {
       });
     });
 
+    // Add workflow-scoped subscriptions to symbol counts
+    workflowScopedSubscriptions.forEach(sub => {
+      sub.symbols.forEach(sym => {
+        allSymbols.add(sym);
+        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
+        if (!symbolSourceMap[sym].includes(sub.source)) symbolSourceMap[sym].push(sub.source);
+      });
+    });
+
     res.json({
       sources,
       workflows: workflowsWithNames,
-      userSubscriptions,  // NEW: symbols subscribed via Subscribe nodes
+      userSubscriptions,  // Global subscriptions from Subscribe nodes
+      workflowScopedSubscriptions,  // Workflow-scoped subscriptions from Subscribe nodes
       stats: {
         totalSources: sources.filter(s => s.connected).length,
         totalSymbols: allSymbols.size,
@@ -216,6 +268,9 @@ router.post('/:source/subscribe', async (req, res) => {
       environment,    // Binance: testnet or live
       asset_type,     // Binance: spot or futures
       kline_interval, // Binance: 1m, 5m, 15m, etc.
+      // Subscription scope
+      subscription_scope,  // 'global' or 'workflow'
+      target_workflow_id,  // target workflow ID for workflow-scoped subscriptions
     } = req.body;
 
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
@@ -246,6 +301,8 @@ router.post('/:source/subscribe', async (req, res) => {
       environment,
       assetType: asset_type,
       klineInterval: kline_interval,
+      subscriptionScope: subscription_scope || 'global',
+      targetWorkflowId: target_workflow_id,
     });
 
     if (!result.success) {

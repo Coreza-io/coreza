@@ -40,6 +40,9 @@ export interface SubscriptionParams {
   environment?: string;
   assetType?: string;
   klineInterval?: string;
+  // Subscription scope
+  subscriptionScope?: 'global' | 'workflow';
+  targetWorkflowId?: string;
 }
 
 export interface SubscriptionResult {
@@ -144,6 +147,8 @@ export class SubscriptionService {
         environment,
         assetType,
         klineInterval,
+        subscriptionScope = 'global',
+        targetWorkflowId,
       } = params;
 
       if (!userId) {
@@ -175,7 +180,13 @@ export class SubscriptionService {
         source: `${source}_stream`,
         credentialId,
         eventTypes,
+        subscriptionScope,
       };
+
+      // Add target workflow ID for workflow-scoped subscriptions
+      if (subscriptionScope === 'workflow' && targetWorkflowId) {
+        controlMessage.targetWorkflowId = targetWorkflowId;
+      }
 
       // Add source-specific fields
       if (source === 'alpaca' && feed) {

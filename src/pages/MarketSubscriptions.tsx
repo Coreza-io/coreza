@@ -75,10 +75,18 @@ interface SubscriptionStats {
   connectedSources: string[];
 }
 
+interface WorkflowScopedSubscription {
+  workflowId: string;
+  workflowName?: string;
+  source: string;
+  symbols: string[];
+}
+
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
-  userSubscriptions: Record<string, string[]>;  // source → symbols from Subscribe nodes
+  userSubscriptions: Record<string, string[]>;  // source → symbols (global scope)
+  workflowScopedSubscriptions: WorkflowScopedSubscription[];  // workflow-scoped subscriptions
   stats: SubscriptionStats;
   symbolSourceMap: Record<string, string[]>;
 }
@@ -620,7 +628,7 @@ const MarketSubscriptions = () => {
         </Card>
       </motion.div>
 
-      {/* User Symbol Subscriptions (from Subscribe nodes) */}
+      {/* User Symbol Subscriptions - Global (from Subscribe nodes) */}
       {data?.userSubscriptions && Object.keys(data.userSubscriptions).length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -631,9 +639,9 @@ const MarketSubscriptions = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Radio className="h-5 w-5 text-primary" />
-                User Symbol Subscriptions
+                Global Symbol Subscriptions
               </CardTitle>
-              <CardDescription>Symbols subscribed via Subscribe nodes (independent of workflows)</CardDescription>
+              <CardDescription>Symbols available to all workflows (subscribed via Subscribe nodes with Global scope)</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -659,6 +667,77 @@ const MarketSubscriptions = () => {
                             {symbol}
                             <button
                               onClick={() => confirmUnsubscribeSymbol(symbol, source)}
+                              disabled={unsubscribing === `symbol-${symbol}`}
+                              className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                            >
+                              {unsubscribing === `symbol-${symbol}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                            </button>
+                          </Badge>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Workflow-Scoped Subscriptions */}
+      {data?.workflowScopedSubscriptions && data.workflowScopedSubscriptions.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+        >
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-chart-2" />
+                Workflow-Scoped Subscriptions
+              </CardTitle>
+              <CardDescription>Symbols only accessible by specific workflows (subscribed via Subscribe nodes with Workflow scope)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {data.workflowScopedSubscriptions
+                  .filter(sub => 
+                    symbolFilter === "" || 
+                    sub.symbols.some(s => s.toLowerCase().includes(symbolFilter.toLowerCase())) ||
+                    (sub.workflowName?.toLowerCase().includes(symbolFilter.toLowerCase()))
+                  )
+                  .map((sub, idx) => (
+                  <div key={`${sub.workflowId}-${sub.source}-${idx}`} className="space-y-2 p-3 rounded-lg border border-border bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={sourceColors[sub.source] || 'bg-muted'}>
+                          {sourceIcons[sub.source] || '📡'} {sub.source}
+                        </Badge>
+                        <span className="text-sm font-medium">→</span>
+                        <Link to={`/dashboard/workflow/${sub.workflowId}`} className="text-sm text-primary hover:underline">
+                          {sub.workflowName || sub.workflowId}
+                        </Link>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {sub.symbols.length} symbol{sub.symbols.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pl-2">
+                      {sub.symbols
+                        .filter(sym => symbolFilter === "" || sym.toLowerCase().includes(symbolFilter.toLowerCase()))
+                        .map(symbol => (
+                          <Badge 
+                            key={`${sub.workflowId}-${sub.source}-${symbol}`} 
+                            variant="outline" 
+                            className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+                          >
+                            {symbol}
+                            <button
+                              onClick={() => confirmUnsubscribeSymbol(symbol, sub.source)}
                               disabled={unsubscribing === `symbol-${symbol}`}
                               className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                             >

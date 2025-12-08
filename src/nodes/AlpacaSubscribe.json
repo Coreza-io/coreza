@@ -103,6 +103,26 @@
       "default": "iex",
       "description": "SIP feed requires Alpaca subscription for pre/after-market data",
       "required": true
+    },
+    { 
+      "key": "subscriptionScope", 
+      "label": "Subscription Scope", 
+      "type": "select",
+      "options": [
+        { "id": "global", "name": "Global (All Workflows)" },
+        { "id": "workflow", "name": "Specific Workflow Only" }
+      ],
+      "default": "global",
+      "description": "Choose who can access this subscription",
+      "required": true
+    },
+    { 
+      "key": "targetWorkflowId", 
+      "label": "Target Workflow", 
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow to receive data",
+      "displayOptions": { "show": { "subscriptionScope": ["workflow"] } }
     }
   ]
 }

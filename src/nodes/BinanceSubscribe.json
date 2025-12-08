@@ -131,6 +131,26 @@
       "dependsOn": "sourceWorkflowId",
       "placeholder": "Select stored variable",
       "displayOptions": { "show": { "symbolSource": ["store"] } }
+    },
+    { 
+      "key": "subscriptionScope", 
+      "label": "Subscription Scope", 
+      "type": "select",
+      "options": [
+        { "id": "global", "name": "Global (All Workflows)" },
+        { "id": "workflow", "name": "Specific Workflow Only" }
+      ],
+      "default": "global",
+      "description": "Choose who can access this subscription",
+      "required": true
+    },
+    { 
+      "key": "targetWorkflowId", 
+      "label": "Target Workflow", 
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow to receive data",
+      "displayOptions": { "show": { "subscriptionScope": ["workflow"] } }
     }
   ]
 }

@@ -25,6 +25,8 @@ interface ControlMessage {
   credentialId?: string;
   eventTypes?: string[];
   feed?: string;
+  environment?: string;  // For Binance: testnet/live
+  assetType?: string;    // For Binance: spot/futures
 }
 
 interface SourceState {
@@ -316,7 +318,7 @@ export class MarketControlHandler {
    * Handle subscribe control message (with mutex protection)
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
-    const { source, userId, workflowId, nodeId, symbols, eventTypes, feed } = msg;
+    const { source, userId, workflowId, nodeId, symbols, eventTypes, feed, environment, assetType } = msg;
 
     try {
       // Acquire mutex to prevent concurrent gateway connections
@@ -326,7 +328,7 @@ export class MarketControlHandler {
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
-          await this.connectGateway(source, userId, msg.credentialId, feed);
+          await this.connectGateway(source, userId, msg.credentialId, feed, environment, assetType);
           state = this.sourceStates.get(source)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
@@ -465,7 +467,9 @@ export class MarketControlHandler {
     source: MarketSource,
     userId: string,
     credentialId?: string,
-    feed?: string
+    feed?: string,
+    environment?: string,
+    assetType?: string
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
@@ -504,10 +508,20 @@ export class MarketControlHandler {
         creds = credentials;
       }
 
-      // Add feed parameter to credentials if provided
+      // Add feed parameter to credentials if provided (for Alpaca)
       if (feed) {
         creds = { ...creds, feed };
         console.log(`📡 [MarketControl] Using ${feed.toUpperCase()} feed for ${source}`);
+      }
+
+      // Add environment and asset type for Binance
+      if (environment) {
+        creds = { ...creds, environment };
+        console.log(`🌐 [MarketControl] Using ${environment} environment for ${source}`);
+      }
+      if (assetType) {
+        creds = { ...creds, assetType };
+        console.log(`📊 [MarketControl] Using ${assetType} asset type for ${source}`);
       }
 
       // Get or create gateway instance using mapped gateway source

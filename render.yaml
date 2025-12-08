@@ -13,6 +13,17 @@ services:
     buildCommand: "cd coreza-backend && npm install && npm run build"
     startCommand: "cd coreza-backend && npm start"
     envVars:
+      # Dual Redis: Queue for BullMQ/Pub-Sub, Cache for state/credentials
+      # For production with external Redis, set both REDIS_QUEUE_URL and REDIS_CACHE_URL
+      - key: REDIS_QUEUE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: REDIS_CACHE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      # Fallback for backward compatibility (deprecated, use explicit URLs above)
       - key: REDIS_URL
         fromDatabase:
           name: coreza-redis
@@ -42,6 +53,16 @@ services:
     buildCommand: "cd coreza-backend/market-stream-service && npm install && npm run build"
     startCommand: "cd coreza-backend/market-stream-service && npm start"
     envVars:
+      # Dual Redis: Queue for BullMQ/Pub-Sub, Cache for state/credentials
+      - key: REDIS_QUEUE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: REDIS_CACHE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      # Fallback for backward compatibility (deprecated)
       - key: REDIS_URL
         fromDatabase:
           name: coreza-redis
@@ -66,6 +87,16 @@ services:
     plan: starter
     dockerfilePath: ./coreza-backend/Dockerfile.worker
     envVars:
+      # Dual Redis: Queue for BullMQ, Cache for state
+      - key: REDIS_QUEUE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      - key: REDIS_CACHE_URL
+        fromDatabase:
+          name: coreza-redis
+          property: connectionString
+      # Fallback for backward compatibility (deprecated)
       - key: REDIS_URL
         fromDatabase:
           name: coreza-redis

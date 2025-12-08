@@ -537,7 +537,7 @@ router.post('/register-streaming-workflow', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: user_id, workflow_id, node_id' });
     }
     
-    const redis = getRedis();
+    const redis = getRedisCache();
     
     // Add to active streaming workflows
     await redis.sadd(`user:${user_id}:active_streaming_workflows`, workflow_id);

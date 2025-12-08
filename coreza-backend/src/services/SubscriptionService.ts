@@ -127,14 +127,16 @@ export class SubscriptionService {
 
   /**
    * Subscribe or unsubscribe from market data
+   * 
+   * IMPORTANT: Subscribe nodes ONLY manage gateway subscriptions.
+   * They do NOT register for data delivery - that's handled by StreamData trigger nodes.
+   * workflowId/nodeId are intentionally NOT sent to avoid routing data to Subscribe nodes.
    */
   static async execute(params: SubscriptionParams): Promise<SubscriptionResult> {
     try {
       const {
         source,
         userId,
-        workflowId,
-        nodeId,
         credentialId,
         operation,
         streamTypes,
@@ -163,11 +165,12 @@ export class SubscriptionService {
       const eventTypes = this.processStreamTypes(streamTypes, source, klineInterval);
 
       // Build control message
+      // NOTE: workflowId and nodeId are intentionally NOT included
+      // Subscribe nodes only manage gateway subscriptions, not data routing
+      // Data routing is handled by StreamData trigger nodes via md:control:register_workflow
       const controlMessage: Record<string, unknown> = {
         action: operation,
         userId,
-        workflowId,
-        nodeId,
         symbols: symbolArray,
         source: `${source}_stream`,
         credentialId,

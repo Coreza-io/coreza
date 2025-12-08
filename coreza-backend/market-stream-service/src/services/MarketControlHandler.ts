@@ -221,6 +221,60 @@ export class MarketControlHandler {
   }
 
   /**
+   * Update all active streaming workflows for a user with newly subscribed symbols
+   * This ensures workflows activated BEFORE symbols were subscribed still receive data
+   */
+  private async updateActiveStreamingWorkflows(
+    userId: string,
+    newSymbols: string[]
+  ): Promise<void> {
+    try {
+      // Get all active streaming workflows for this user from Redis
+      const activeWorkflowsKey = `user:${userId}:active_streaming_workflows`;
+      const activeWorkflowIds = await this.redisPub.smembers(activeWorkflowsKey);
+
+      if (activeWorkflowIds.length === 0) {
+        console.log(`ℹ️ [MarketControl] No active streaming workflows for user ${userId}`);
+        return;
+      }
+
+      console.log(`📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new symbols:`, newSymbols);
+
+      const subscriber = MarketDataSubscriber.getInstance();
+
+      for (const workflowId of activeWorkflowIds) {
+        try {
+          // Get workflow's filter config from Redis (stored during activation)
+          const filterKey = `workflow:${workflowId}:stream_filter`;
+          const filterJson = await this.redisPub.get(filterKey);
+          const filterConfig = filterJson ? JSON.parse(filterJson) : {};
+
+          // Apply symbol filter if specified
+          let symbolsToAdd = newSymbols;
+          if (filterConfig.filter_symbols && filterConfig.filter_symbols.length > 0) {
+            const allowedSymbols = filterConfig.filter_symbols.map((s: string) => s.toUpperCase());
+            symbolsToAdd = newSymbols.filter(s => allowedSymbols.includes(s.toUpperCase()));
+
+            if (symbolsToAdd.length === 0) {
+              console.log(`ℹ️ [MarketControl] Workflow ${workflowId} filters exclude new symbols, skipping`);
+              continue;
+            }
+          }
+
+          // Add new symbols to existing subscription
+          await subscriber.addSymbolsToSubscription(workflowId, symbolsToAdd);
+
+          console.log(`✅ [MarketControl] Added ${symbolsToAdd.length} symbols to workflow ${workflowId}`);
+        } catch (err) {
+          console.error(`❌ [MarketControl] Failed to update workflow ${workflowId}:`, err);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [MarketControl] Failed to update active streaming workflows:`, error);
+    }
+  }
+
+  /**
    * Map broker-specific stream types to normalized CorezaMarketEvent types
    * This ensures MarketDataSubscriber filters work correctly
    */
@@ -334,6 +388,9 @@ export class MarketControlHandler {
           // Persist to Redis
           await this.persistState(source);
           console.log(`✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`);
+
+          // Notify all active streaming workflows about new symbols
+          await this.updateActiveStreamingWorkflows(userId, subscriptionNeeded);
         } else {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
         }

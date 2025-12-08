@@ -487,6 +487,61 @@ export class MarketDataSubscriber {
   }
 
   /**
+   * Add new symbols to an existing workflow subscription
+   * Used when new symbols are subscribed after a streaming workflow is already active
+   */
+  async addSymbolsToSubscription(
+    workflowId: string,
+    newSymbols: string[]
+  ): Promise<void> {
+    const subscription = this.subscriptions.get(workflowId);
+
+    if (!subscription) {
+      console.warn(
+        `⚠️ [MarketDataSubscriber] No subscription found for workflow ${workflowId}`
+      );
+      return;
+    }
+
+    console.log(
+      `➕ [MarketDataSubscriber] Adding symbols to workflow ${workflowId}:`,
+      newSymbols
+    );
+
+    for (const symbol of newSymbols) {
+      const upperSymbol = symbol.toUpperCase();
+
+      // Skip if already subscribed
+      if (subscription.symbols.has(upperSymbol)) {
+        continue;
+      }
+
+      // Add to subscription's symbol set
+      subscription.symbols.add(upperSymbol);
+
+      // Update symbol→workflow mapping
+      if (!this.symbolWorkflows.has(upperSymbol)) {
+        this.symbolWorkflows.set(upperSymbol, new Set());
+
+        // Subscribe to Redis channel for this symbol
+        const channel = REDIS_CHANNELS.marketData(upperSymbol);
+        await this.redisSub.subscribe(channel);
+        console.log(
+          `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`
+        );
+      }
+      this.symbolWorkflows.get(upperSymbol)!.add(workflowId);
+    }
+
+    // Persist updated subscription to Redis
+    await this.persistSubscription(subscription);
+
+    console.log(
+      `✅ [MarketDataSubscriber] Added ${newSymbols.length} symbols to workflow ${workflowId}`
+    );
+  }
+
+  /**
    * Persist subscription to Redis (with circuit breaker)
    */
   private async persistSubscription(

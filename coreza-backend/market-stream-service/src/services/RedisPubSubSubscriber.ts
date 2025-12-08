@@ -22,16 +22,14 @@ interface Subscription {
 
 export class RedisPubSubSubscriber {
   private static instance: RedisPubSubSubscriber;
-  private redisSub: Redis;
-  private redisPub: Redis;
+  private redisSub: Redis | null = null;
+  private redisPub: Redis | null = null;
   private subscriptions = new Map<string, Subscription>(); // workflowId -> subscription
   private channelWorkflows = new Map<string, Set<string>>(); // channel -> workflowIds
   private initialized = false;
 
   private constructor() {
-    const { pub, sub } = createRedisPubSub();
-    this.redisPub = pub;
-    this.redisSub = sub;
+    // Lazy initialization - don't create Redis connections here
   }
 
   static getInstance(): RedisPubSubSubscriber {
@@ -41,6 +39,15 @@ export class RedisPubSubSubscriber {
     return RedisPubSubSubscriber.instance;
   }
 
+  private ensureRedisConnections(): { pub: Redis; sub: Redis } {
+    if (!this.redisSub || !this.redisPub) {
+      const { pub, sub } = createRedisPubSub();
+      this.redisPub = pub;
+      this.redisSub = sub;
+    }
+    return { pub: this.redisPub, sub: this.redisSub };
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) {
       logger.warn('RedisPubSubSubscriber already initialized');
@@ -48,6 +55,9 @@ export class RedisPubSubSubscriber {
     }
 
     try {
+      // Ensure Redis connections exist
+      this.ensureRedisConnections();
+      
       // Set up message handlers
       this.setupMessageHandlers();
       
@@ -63,17 +73,19 @@ export class RedisPubSubSubscriber {
   }
 
   private setupMessageHandlers(): void {
+    const { sub } = this.ensureRedisConnections();
+    
     // Handle messages from exact channels (SUBSCRIBE)
-    this.redisSub.on('message', async (channel, message) => {
+    sub.on('message', async (channel, message) => {
       await this.handleMessage(channel, message, 'channel');
     });
 
     // Handle messages from pattern subscriptions (PSUBSCRIBE)
-    this.redisSub.on('pmessage', async (pattern, channel, message) => {
+    sub.on('pmessage', async (pattern, channel, message) => {
       await this.handleMessage(channel, message, 'pattern', pattern);
     });
 
-    this.redisSub.on('error', (error) => {
+    sub.on('error', (error) => {
       logger.error({ err: error }, 'Redis subscription error');
     });
   }
@@ -120,7 +132,7 @@ export class RedisPubSubSubscriber {
         }, 'Triggering workflow from Redis message');
 
         // Fetch workflow definition from cache
-        const workflowDef = await WorkflowCache.getWorkflow(workflowId);
+        const workflowDef = await WorkflowCache.getInstance().getWorkflow(workflowId);
         if (!workflowDef) {
           logger.warn({ workflowId }, 'Workflow definition not found, skipping execution');
           continue;
@@ -151,6 +163,8 @@ export class RedisPubSubSubscriber {
     channels: string[],
     type: 'channel' | 'pattern' = 'channel'
   ): Promise<void> {
+    const { pub, sub } = this.ensureRedisConnections();
+    
     try {
       // Store subscription
       const subscription: Subscription = {
@@ -173,11 +187,11 @@ export class RedisPubSubSubscriber {
 
         // Subscribe to Redis
         if (type === 'pattern') {
-          await this.redisSub.psubscribe(channel);
+          await sub.psubscribe(channel);
           logger.info({ workflowId, pattern: channel }, 
             'Subscribed to Redis pattern');
         } else {
-          await this.redisSub.subscribe(channel);
+          await sub.subscribe(channel);
           logger.info({ workflowId, channel }, 
             'Subscribed to Redis channel');
         }
@@ -200,6 +214,8 @@ export class RedisPubSubSubscriber {
   }
 
   async unsubscribe(workflowId: string): Promise<void> {
+    const { pub, sub } = this.ensureRedisConnections();
+    
     try {
       const subscription = this.subscriptions.get(workflowId);
       if (!subscription) {
@@ -216,11 +232,11 @@ export class RedisPubSubSubscriber {
           // If no more workflows for this channel, unsubscribe from Redis
           if (workflows.size === 0) {
             if (subscription.type === 'pattern') {
-              await this.redisSub.punsubscribe(channel);
+              await sub.punsubscribe(channel);
               logger.info({ pattern: channel }, 
                 'Unsubscribed from Redis pattern (no more workflows)');
             } else {
-              await this.redisSub.unsubscribe(channel);
+              await sub.unsubscribe(channel);
               logger.info({ channel }, 
                 'Unsubscribed from Redis channel (no more workflows)');
             }
@@ -233,7 +249,7 @@ export class RedisPubSubSubscriber {
       this.subscriptions.delete(workflowId);
 
       // Remove from Redis persistence
-      await this.redisPub.del(`redis:sub:${workflowId}`);
+      await pub.del(`redis:sub:${workflowId}`);
 
       logger.info({ workflowId }, 'Redis Pub/Sub subscription removed');
     } catch (error) {
@@ -246,8 +262,10 @@ export class RedisPubSubSubscriber {
     workflowId: string, 
     subscription: Subscription
   ): Promise<void> {
+    const { pub } = this.ensureRedisConnections();
+    
     try {
-      await this.redisPub.set(
+      await pub.set(
         `redis:sub:${workflowId}`,
         JSON.stringify(subscription),
         'EX',
@@ -260,16 +278,18 @@ export class RedisPubSubSubscriber {
   }
 
   private async restoreSubscriptions(): Promise<void> {
+    const { pub } = this.ensureRedisConnections();
+    
     try {
       logger.info('Restoring Redis Pub/Sub subscriptions...');
       
       // Scan for subscription keys
-      const keys = await this.redisPub.keys('redis:sub:*');
+      const keys = await pub.keys('redis:sub:*');
       
       let restoredCount = 0;
       for (const key of keys) {
         try {
-          const data = await this.redisPub.get(key);
+          const data = await pub.get(key);
           if (!data) continue;
 
           const subscription: Subscription = JSON.parse(data);
@@ -315,13 +335,16 @@ export class RedisPubSubSubscriber {
     try {
       logger.info('Shutting down RedisPubSubSubscriber...');
       
-      // Unsubscribe from all
-      await this.redisSub.unsubscribe();
-      await this.redisSub.punsubscribe();
+      if (this.redisSub) {
+        // Unsubscribe from all
+        await this.redisSub.unsubscribe();
+        await this.redisSub.punsubscribe();
+        await this.redisSub.quit();
+      }
       
-      // Close connections
-      await this.redisSub.quit();
-      await this.redisPub.quit();
+      if (this.redisPub) {
+        await this.redisPub.quit();
+      }
       
       this.initialized = false;
       logger.info('RedisPubSubSubscriber shut down');

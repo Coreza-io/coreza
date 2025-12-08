@@ -388,6 +388,11 @@ export class MarketControlHandler {
         } else {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
         }
+
+        // Persist user-level subscriptions for dashboard visibility (from Subscribe nodes)
+        const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
+        await this.redisPub.sadd(userSubKey, ...symbols.map(s => s.toUpperCase()));
+        console.log(`📊 [MarketControl] Persisted ${symbols.length} user-level subscriptions for ${source}`);
       });
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to handle subscribe for ${source}:`, error);
@@ -437,6 +442,13 @@ export class MarketControlHandler {
         state.gateway.unsubscribeSymbols(toRemove);
         await this.persistState(source);
         console.log(`✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`);
+      }
+
+      // Remove user-level subscriptions
+      if (symbols.length > 0) {
+        const userSubKey = `user:${msg.userId}:subscribed_symbols:${source}`;
+        await this.redisPub.srem(userSubKey, ...symbols.map(s => s.toUpperCase()));
+        console.log(`📊 [MarketControl] Removed ${symbols.length} user-level subscriptions from ${source}`);
       }
 
       // Disconnect if no more symbols

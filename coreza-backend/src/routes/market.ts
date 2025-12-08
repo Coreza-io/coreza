@@ -123,6 +123,20 @@ router.get('/subscriptions/status', async (req, res) => {
       workflowName: workflowNames[sub.workflowId] || 'Unknown Workflow'
     }));
 
+    // Get user-level symbol subscriptions (from Subscribe nodes)
+    const userSubKeys = await redis.keys(`user:${user_id}:subscribed_symbols:*`);
+    const userSubscriptions: Record<string, string[]> = {};
+
+    for (const key of userSubKeys) {
+      const sourceMatch = key.match(/user:.*:subscribed_symbols:(\w+)/);
+      if (sourceMatch) {
+        const symbols = await redis.smembers(key);
+        if (symbols.length > 0) {
+          userSubscriptions[sourceMatch[1]] = symbols;
+        }
+      }
+    }
+
     // Calculate stats and build symbol-source map
     const allSymbols = new Set<string>();
     const symbolSourceMap: Record<string, string[]> = {};
@@ -139,9 +153,19 @@ router.get('/subscriptions/status', async (req, res) => {
       if (!symbolSourceMap[sym].includes(w.source)) symbolSourceMap[sym].push(w.source);
     }));
 
+    // Add user-level subscriptions to symbol counts
+    Object.entries(userSubscriptions).forEach(([source, symbols]) => {
+      symbols.forEach(sym => {
+        allSymbols.add(sym);
+        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
+        if (!symbolSourceMap[sym].includes(source)) symbolSourceMap[sym].push(source);
+      });
+    });
+
     res.json({
       sources,
       workflows: workflowsWithNames,
+      userSubscriptions,  // NEW: symbols subscribed via Subscribe nodes
       stats: {
         totalSources: sources.filter(s => s.connected).length,
         totalSymbols: allSymbols.size,

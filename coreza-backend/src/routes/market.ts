@@ -18,8 +18,133 @@ import express from 'express';
 import { DataService } from '../services/data';
 import { SubscriptionService } from '../services/SubscriptionService';
 import { MarketSource } from '../types/marketEvent';
+import { getRedis } from '../config/redis';
+import { supabase } from '../config/supabase';
 
 const router = express.Router();
+
+// ============================================
+// MARKET DATA SUBSCRIPTION STATUS
+// ============================================
+
+/**
+ * Get all active market data subscriptions and their status
+ * GET /market/subscriptions/status
+ */
+router.get('/subscriptions/status', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
+    }
+
+    const redis = getRedis();
+    
+    // Get all gateway states
+    const gatewayKeys = await redis.keys('md:gateway:*:state');
+    const sources: any[] = [];
+    
+    for (const key of gatewayKeys) {
+      const stateStr = await redis.get(key);
+      if (stateStr) {
+        try {
+          const state = JSON.parse(stateStr);
+          const sourceMatch = key.match(/md:gateway:(\w+):state/);
+          if (sourceMatch) {
+            sources.push({
+              source: sourceMatch[1],
+              connected: state.connected || false,
+              symbols: state.symbols || [],
+              eventTypes: state.eventTypes || [],
+              connectedAt: state.connectedAt || null,
+              lastMessageAt: state.lastMessageAt || null
+            });
+          }
+        } catch (e) {
+          console.error('Error parsing gateway state:', key, e);
+        }
+      }
+    }
+
+    // Get workflow subscriptions for this user
+    const workflowSubKeys = await redis.keys(`wf:sub:*`);
+    const workflowSubs: any[] = [];
+    const workflowIds = new Set<string>();
+    
+    for (const key of workflowSubKeys) {
+      const subStr = await redis.get(key);
+      if (subStr) {
+        try {
+          const sub = JSON.parse(subStr);
+          if (sub.userId === user_id) {
+            workflowSubs.push({
+              workflowId: sub.workflowId,
+              nodeId: sub.nodeId,
+              symbols: sub.symbols || [],
+              eventTypes: sub.eventTypes || [],
+              source: sub.source || 'unknown',
+              isActive: true
+            });
+            if (sub.workflowId) {
+              workflowIds.add(sub.workflowId);
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing workflow subscription:', key, e);
+        }
+      }
+    }
+
+    // Also check active streaming workflows set
+    const activeStreamingWorkflows = await redis.smembers(`user:${user_id}:active_streaming_workflows`);
+    for (const workflowId of activeStreamingWorkflows) {
+      workflowIds.add(workflowId);
+    }
+
+    // Fetch workflow names from Supabase
+    const workflowNames: Record<string, string> = {};
+    if (workflowIds.size > 0) {
+      const { data: workflows } = await supabase
+        .from('workflows')
+        .select('id, name')
+        .in('id', Array.from(workflowIds));
+      
+      if (workflows) {
+        for (const wf of workflows) {
+          workflowNames[wf.id] = wf.name;
+        }
+      }
+    }
+
+    // Add workflow names to subscriptions
+    const workflowsWithNames = workflowSubs.map(sub => ({
+      ...sub,
+      workflowName: workflowNames[sub.workflowId] || 'Unknown Workflow'
+    }));
+
+    // Calculate stats
+    const allSymbols = new Set<string>();
+    sources.forEach(s => s.symbols.forEach((sym: string) => allSymbols.add(sym)));
+    workflowSubs.forEach(w => w.symbols.forEach((sym: string) => allSymbols.add(sym)));
+
+    res.json({
+      sources,
+      workflows: workflowsWithNames,
+      stats: {
+        totalSources: sources.filter(s => s.connected).length,
+        totalSymbols: allSymbols.size,
+        totalWorkflows: workflowSubs.length,
+        connectedSources: sources.filter(s => s.connected).map(s => s.source)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscription status:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to fetch subscription status'
+    });
+  }
+});
 
 // Map route source param to MarketSource type
 const sourceToMarketSource: Record<string, MarketSource> = {

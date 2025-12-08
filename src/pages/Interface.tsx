@@ -28,6 +28,7 @@ import WorkflowEditor from "./WorkflowEditor";
 import Profile from "./Profile";
 import Settings from "./Settings";
 import Subscription from "./Subscription";
+import MarketSubscriptions from "./MarketSubscriptions";
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -77,6 +78,7 @@ const Interface = () => {
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
               <Route path="subscription" element={<Subscription />} />
+              <Route path="market-subscriptions" element={<MarketSubscriptions />} />
             </Routes>
           </main>
         </div>

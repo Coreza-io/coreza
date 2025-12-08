@@ -503,6 +503,66 @@ router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
 });
 
 // ============================================
+// STREAMING WORKFLOW REGISTRATION (for frontend manual runs)
+// ============================================
+
+/**
+ * Register a streaming workflow to receive market data
+ * Called when user manually runs a streaming trigger node (BinanceStreamData, AlpacaStreamData)
+ * POST /market/register-streaming-workflow
+ */
+router.post('/register-streaming-workflow', async (req, res) => {
+  try {
+    const { user_id, workflow_id, node_id, source, filter_symbols, filter_types } = req.body;
+    
+    if (!user_id || !workflow_id || !node_id) {
+      return res.status(400).json({ error: 'Missing required fields: user_id, workflow_id, node_id' });
+    }
+    
+    const redis = getRedis();
+    
+    // Add to active streaming workflows
+    await redis.sadd(`user:${user_id}:active_streaming_workflows`, workflow_id);
+    
+    // Store filter configuration
+    const filterConfig = {
+      filter_symbols: filter_symbols || [],
+      filter_types: filter_types || [],
+      nodeId: node_id,
+      source: source || 'unknown',
+    };
+    await redis.set(`workflow:${workflow_id}:stream_filter`, JSON.stringify(filterConfig));
+    
+    // Publish registration message to market-stream-service
+    const registrationMessage = {
+      action: 'register_streaming_workflow',
+      userId: user_id,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      source: source || 'binance_stream',
+      filter_symbols: filter_symbols || [],
+      filter_types: filter_types || [],
+    };
+    await redis.publish('md:control:register_workflow', JSON.stringify(registrationMessage));
+    
+    console.log(`📡 [Market Route] Streaming workflow ${workflow_id} registered manually for frontend (source: ${source})`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Streaming workflow registered',
+      workflowId: workflow_id,
+      nodeId: node_id,
+      source,
+    });
+  } catch (error) {
+    console.error('Failed to register streaming workflow:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to register streaming workflow' 
+    });
+  }
+});
+
+// ============================================
 // MARKET DATA OPERATIONS
 // ============================================
 

@@ -240,21 +240,25 @@ export class MarketControlHandler {
 
   /**
    * Get all GLOBAL symbols currently subscribed for a user across all sources
-   * Only reads from user-level (global) subscription keys, NOT gateway state
+   * Uses pattern matching to find ALL subscription keys (handles _stream suffix variants)
    */
   private async getUserSubscribedSymbols(userId: string): Promise<string[]> {
     const allSymbols = new Set<string>();
 
-    // Only read from global subscription keys (user-level)
-    const sources: MarketSource[] = ['alpaca', 'alpaca_news', 'binance', 'dhan', 'schwab'];
-    for (const source of sources) {
-      const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
-      try {
-        const symbols = await this.redisPub.smembers(userSubKey);
+    try {
+      // Use pattern matching to find ALL subscription keys for this user
+      const pattern = `user:${userId}:subscribed_symbols:*`;
+      const keys = await this.redisPub.keys(pattern);
+      
+      console.log(`🔍 [MarketControl] Found ${keys.length} global subscription keys for user ${userId}`);
+      
+      for (const key of keys) {
+        const symbols = await this.redisPub.smembers(key);
+        console.log(`🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`, symbols);
         symbols.forEach(s => allSymbols.add(s.toUpperCase()));
-      } catch (err) {
-        // Continue with other sources
       }
+    } catch (err) {
+      console.error(`❌ [MarketControl] Failed to get user subscribed symbols:`, err);
     }
 
     return Array.from(allSymbols);

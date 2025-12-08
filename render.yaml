@@ -28,8 +28,17 @@ services:
         fromDatabase:
           name: coreza-redis
           property: connectionString
-      - key: SECRET_KEY
-        generateValue: true
+      # Redis Sentinel for HA (optional - set these for production HA deployments)
+      # - key: REDIS_SENTINEL_HOSTS
+      #   value: "sentinel1:26379,sentinel2:26379,sentinel3:26379"
+      # - key: REDIS_SENTINEL_MASTER_QUEUE
+      #   value: "mymaster-queue"
+      # - key: REDIS_SENTINEL_MASTER_CACHE
+      #   value: "mymaster-cache"
+      # - key: REDIS_SENTINEL_PASSWORD
+      #   value: ""
+      # - key: REDIS_PASSWORD
+      #   value: ""
       - key: SUPABASE_URL
         value: "YOUR_SUPABASE_URL"
       - key: SUPABASE_ANON_KEY

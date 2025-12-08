@@ -26,17 +26,20 @@ export class MarketExecutor implements INodeExecutor {
 
   async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
     try {
-      const nodeType = node.node_type || node.type;
+      const nodeName = node.name;
 
-      // Handle streaming nodes (AlpacaStreamData, BinanceStreamData, etc.)
-      if (nodeType === 'AlpacaStreamData') {
-        return this.handleStreamingNode(node, context, 'alpaca');
-      } else if (nodeType === 'BinanceStreamData') {
-        return this.handleStreamingNode(node, context, 'binance');
-      } else if (nodeType === 'DhanStreamData') {
-        return this.handleStreamingNode(node, context, 'dhan');
-      } else if (nodeType === 'SchwabStreamData') {
-        return this.handleStreamingNode(node, context, 'schwab');
+      // Handle subscription nodes (ACTION nodes that manage subscriptions)
+      if (nodeName === 'AlpacaSubscribe') {
+        return this.handleSubscriptionNode(node, context, 'alpaca');
+      } else if (nodeName === 'BinanceSubscribe') {
+        return this.handleSubscriptionNode(node, context, 'binance');
+      }
+
+      // Handle streaming trigger nodes (pure data receivers)
+      if (nodeName === 'AlpacaStreamData') {
+        return this.handleStreamingTrigger(node, context);
+      } else if (nodeName === 'BinanceStreamData') {
+        return this.handleStreamingTrigger(node, context);
       }
 
       // Default: historical/REST market data
@@ -68,9 +71,10 @@ export class MarketExecutor implements INodeExecutor {
   }
 
   /**
-   * Handle streaming market data nodes
+   * Handle subscription nodes (AlpacaSubscribe, BinanceSubscribe)
+   * These are ACTION nodes that manage subscriptions for the user
    */
-  private async handleStreamingNode(
+  private async handleSubscriptionNode(
     node: WorkflowNode,
     context: any,
     source: MarketSource
@@ -84,19 +88,23 @@ export class MarketExecutor implements INodeExecutor {
         symbolSource = 'manual',
         sourceWorkflowId,
         sourceVariable,
+        feed,
+        environment,
+        asset_type,
       } = node.values;
-      const { workflowId, userId, nodeId } = context;
+      const { workflowId, userId, nodeId, initialInput } = context;
 
-      if (!workflowId || !userId || !nodeId) {
+      if (!userId) {
         return {
           success: false,
-          error: 'Missing workflow context (workflowId, userId, or nodeId)'
+          error: 'Missing userId in context'
         };
       }
 
       const redis = getRedis();
       let symbolArray: string[] = [];
 
+      // Resolve symbols based on source
       if (symbolSource === 'store') {
         if (!sourceWorkflowId || !sourceVariable) {
           return {
@@ -121,7 +129,13 @@ export class MarketExecutor implements INodeExecutor {
           const coerced = String(storedValue).trim();
           symbolArray = coerced ? [coerced] : [];
         }
+      } else if (symbolSource === 'input' && initialInput?.symbols) {
+        // Symbols from workflow input
+        symbolArray = Array.isArray(initialInput.symbols) 
+          ? initialInput.symbols 
+          : String(initialInput.symbols).split(',').map((s: string) => s.trim()).filter(Boolean);
       } else {
+        // Manual entry
         symbolArray = typeof symbols === 'string'
           ? symbols.split(',').map(s => s.trim()).filter(Boolean)
           : Array.isArray(symbols) ? symbols : [];
@@ -134,83 +148,100 @@ export class MarketExecutor implements INodeExecutor {
         };
       }
 
-      // Handle subscribe operation via Redis control channel
-      if (operation === 'subscribe') {
-        if (!credential_id) {
-          return {
-            success: false,
-            error: 'No credential selected for subscription'
-          };
-        }
+      // Build control message
+      const controlMessage: Record<string, any> = {
+        action: operation,
+        userId,
+        workflowId,
+        nodeId,
+        symbols: symbolArray,
+        source: `${source}_stream`,
+        credentialId: credential_id,
+        eventTypes: stream_types,
+      };
 
-        // Publish control message to Redis
-        // MarketControlHandler will orchestrate gateway connection and subscription
-        const controlMessage = {
-          action: 'subscribe',
-          userId,
-          workflowId,
-          nodeId,
-          symbols: symbolArray,
-          source,
-          credentialId: credential_id,
-          eventTypes: stream_types,
-        };
-
-        await redis.publish(
-          REDIS_CHANNELS.controlSubscribe,
-          JSON.stringify(controlMessage)
-        );
-
-        console.log(`📤 [MarketExecutor] Published subscribe control message for ${source}:`, symbolArray);
-
-        return {
-          success: true,
-          data: {
-            status: 'subscribed',
-            source,
-            symbols: symbolArray,
-            stream_types,
-          }
-        };
+      // Add source-specific fields
+      if (source === 'alpaca' && feed) {
+        controlMessage.feed = feed;
       }
-      // Handle unsubscribe operation via Redis control channel
-      else if (operation === 'unsubscribe') {
-        // Publish control message to Redis
-        const controlMessage = {
-          action: 'unsubscribe',
-          userId,
-          workflowId,
-          nodeId,
-          symbols: symbolArray,
-          source,
-        };
-
-        await redis.publish(
-          REDIS_CHANNELS.controlUnsubscribe,
-          JSON.stringify(controlMessage)
-        );
-
-        console.log(`📤 [MarketExecutor] Published unsubscribe control message for ${source}:`, symbolArray);
-
-        return {
-          success: true,
-          data: {
-            status: 'unsubscribed',
-            source,
-            symbols: symbolArray,
-          }
-        };
+      if (source === 'binance') {
+        if (environment) controlMessage.environment = environment;
+        if (asset_type) controlMessage.assetType = asset_type;
       }
+
+      // Publish to appropriate control channel
+      const channel = operation === 'subscribe' 
+        ? REDIS_CHANNELS.controlSubscribe 
+        : REDIS_CHANNELS.controlUnsubscribe;
+
+      await redis.publish(channel, JSON.stringify(controlMessage));
+
+      console.log(`📤 [MarketExecutor] Published ${operation} control message for ${source}:`, symbolArray);
 
       return {
-        success: false,
-        error: `Unknown operation: ${operation}`
+        success: true,
+        data: {
+          status: operation === 'subscribe' ? 'subscribed' : 'unsubscribed',
+          source,
+          symbols: symbolArray,
+          stream_types,
+          message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`
+        }
       };
     } catch (error) {
       return {
         success: false,
-        error: `Streaming node error: ${error instanceof Error ? error.message : String(error)}`
+        error: `Subscription error: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+
+  /**
+   * Handle streaming trigger nodes (AlpacaStreamData, BinanceStreamData)
+   * These are pure data receivers - they don't manage subscriptions
+   */
+  private handleStreamingTrigger(
+    node: WorkflowNode,
+    context: any
+  ): NodeResult {
+    const { initialInput } = context || {};
+    const { filter_symbols, filter_types } = node.values || {};
+
+    // When triggered by market data, initialInput contains the event
+    if (initialInput?.marketEvent) {
+      const event = initialInput.marketEvent;
+      
+      // Apply optional symbol filter
+      if (filter_symbols) {
+        const allowed = filter_symbols.split(',').map((s: string) => s.trim().toUpperCase());
+        if (!allowed.includes(event.symbol?.toUpperCase())) {
+          return { success: true, data: null };  // Filtered out
+        }
+      }
+      
+      // Apply optional event type filter
+      if (filter_types && filter_types.length > 0 && !filter_types.includes(event.type)) {
+        return { success: true, data: null };  // Filtered out
+      }
+
+      return {
+        success: true,
+        data: {
+          symbol: event.symbol,
+          type: event.type,
+          [event.type]: event.data,
+          timestamp: event.timestamp,
+        }
+      };
+    }
+
+    // No market event - waiting state
+    return {
+      success: true,
+      data: { 
+        status: 'waiting', 
+        message: 'Waiting for market data. Ensure symbols are subscribed via AlpacaSubscribe/BinanceSubscribe node.' 
+      }
+    };
   }
 }

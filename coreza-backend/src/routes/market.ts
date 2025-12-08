@@ -408,12 +408,10 @@ router.post('/:source/unsubscribe', async (req, res) => {
     const redis = getRedis();
     const resolvedSymbols = Array.isArray(symbols) ? symbols : [];
     
-    // Normalize source for Redis key (remove _stream suffix if present)
-    const normalizedSource = source.replace(/_stream$/, '');
-    
+    // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
     // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
     if (subscription_scope === 'workflow' && workflow_id && resolvedSymbols.length > 0) {
-      const workflowSubKey = `workflow:${workflow_id}:subscribed_symbols:${normalizedSource}`;
+      const workflowSubKey = `workflow:${workflow_id}:subscribed_symbols:${source}`;
       for (const sym of resolvedSymbols) {
         await redis.srem(workflowSubKey, sym.toUpperCase());
       }
@@ -421,7 +419,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
     }
     // Handle global symbol unsubscription (user-level)
     else if (resolvedSymbols.length > 0 && !workflow_id) {
-      const userSubKey = `user:${user_id}:subscribed_symbols:${normalizedSource}`;
+      const userSubKey = `user:${user_id}:subscribed_symbols:${source}`;
       for (const sym of resolvedSymbols) {
         await redis.srem(userSubKey, sym.toUpperCase());
       }

@@ -15,7 +15,7 @@ import {
 } from "../utils/redisCircuitBreaker";
 import logger from "../utils/logger";
 import { retrySupabaseOperation } from "../utils/retryHelper";
-import { getWebSocketConfig } from "../config/websockets";
+import { getSourceMapping } from "../config/marketGateways";
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -70,14 +70,9 @@ export class MarketDataSubscriber {
   private normalizeSource(source?: string): MarketSource | undefined {
     if (!source) return undefined;
     
-    // Check if this is a WebSocket source ID that has a gatewaySource mapping
-    const wsConfig = getWebSocketConfig(source);
-    if (wsConfig?.gatewaySource) {
-      return wsConfig.gatewaySource as MarketSource;
-    }
-    
-    // Already a broker/gateway source name
-    return source as MarketSource;
+    // Use centralized source mapping from marketGateways.ts
+    const { gatewaySource } = getSourceMapping(source);
+    return gatewaySource;
   }
 
   /**

@@ -12,7 +12,7 @@ import { MarketDataGateway } from './MarketDataGateway';
 import { MarketDataSubscriber } from './MarketDataSubscriber';
 import CredentialManager from '../utils/credentialManager';
 import { redisSetBreaker } from '../utils/redisCircuitBreaker';
-import { getWebSocketConfig } from '../config/websockets';
+import { getSourceMapping } from '../config/marketGateways';
 import type { MarketSource } from '../types/marketEvent';
 
 interface ControlMessage {
@@ -542,9 +542,7 @@ export class MarketControlHandler {
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
-      const wsConfig = getWebSocketConfig(source);
-      const serviceType = wsConfig?.credentialServiceType || source;
-      const gatewaySource = (wsConfig?.gatewaySource || source) as MarketSource;
+      const { credentialServiceType: serviceType, gatewaySource } = getSourceMapping(source);
 
       let creds: any;
 

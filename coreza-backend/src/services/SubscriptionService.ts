@@ -162,7 +162,8 @@ export class SubscriptionService {
       // Resolve symbols
       const symbolArray = await this.resolveSymbols(params);
 
-      if (symbolArray.length === 0) {
+      // For unsubscribe, allow empty symbols if workflowId is provided (workflow cleanup)
+      if (symbolArray.length === 0 && operation === 'subscribe') {
         return { success: false, error: 'No symbols provided for subscription' };
       }
 

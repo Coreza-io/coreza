@@ -493,6 +493,8 @@ class CredentialManager {
         throw new Error(`Failed to store credentials: ${error.message}`);
       }
 
+      // Invalidate cache after successful store
+      await CredentialCache.getInstance().invalidate(userId, sanitizedServiceType, sanitizedCredentialName);
       console.log(
         `✅ Successfully stored encrypted credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`
       );
@@ -542,6 +544,9 @@ class CredentialManager {
         .eq("id", credentialId);
 
       if (error) throw new Error("Failed to delete credential");
+      
+      // Invalidate all cache for user after delete
+      await CredentialCache.getInstance().invalidate(userId);
       console.log(`🗑️ Deleted credential ${credentialId}`);
     } catch (e) {
       console.error("Error in deleteCredential:", e);

@@ -35,7 +35,7 @@ interface SourceState {
   credentialId: string;
   symbols: Set<string>;
   symbolTypes: Map<string, Set<string>>; // symbol → event types
-  workflowSymbols: Map<string, Set<string>>; // workflowId → symbols
+  symbolRefCounts: Map<string, number>; // symbol → reference count for proper lifecycle management
 }
 
 export class MarketControlHandler {
@@ -320,9 +320,11 @@ export class MarketControlHandler {
    * IMPORTANT: Subscribe nodes ONLY manage gateway subscriptions.
    * They do NOT register for data delivery - that's handled by StreamData trigger nodes.
    * Data routing is managed by md:control:register_workflow channel.
+   * 
+   * Uses reference counting: symbols are only unsubscribed from gateway when refCount reaches 0.
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
-    const { source, userId, workflowId, nodeId, symbols, eventTypes, feed, environment, assetType } = msg;
+    const { source, userId, symbols, eventTypes, feed, environment, assetType } = msg;
 
     try {
       // Acquire mutex to prevent concurrent gateway connections
@@ -337,18 +339,6 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
-        // Track workflow symbols (for reference counting only, NOT for data routing)
-        if (workflowId) {
-          const currentSymbols = state.workflowSymbols.get(workflowId) || new Set();
-          symbols.forEach(s => currentSymbols.add(s.toUpperCase()));
-          state.workflowSymbols.set(workflowId, currentSymbols);
-        }
-
-        // NOTE: We do NOT register with MarketDataSubscriber here anymore
-        // Subscribe nodes only manage gateway connections
-        // StreamData trigger nodes register via md:control:register_workflow channel
-        // This ensures data flows to the correct StreamData nodes, not Subscribe nodes
-
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];
         const requestedTypes = eventTypes || ['trades'];
@@ -356,6 +346,11 @@ export class MarketControlHandler {
         for (const symbol of symbols) {
           const upperSymbol = symbol.toUpperCase();
           const existingTypes = state.symbolTypes.get(upperSymbol) || new Set();
+          
+          // Increment reference count for this symbol
+          const currentRefCount = state.symbolRefCounts.get(upperSymbol) || 0;
+          state.symbolRefCounts.set(upperSymbol, currentRefCount + 1);
+          console.log(`📊 [MarketControl] Symbol ${upperSymbol} refCount: ${currentRefCount} → ${currentRefCount + 1}`);
           
           // Check if any requested type is new for this symbol
           const hasNewTypes = requestedTypes.some(t => !existingTypes.has(t));
@@ -381,6 +376,8 @@ export class MarketControlHandler {
           await this.updateActiveStreamingWorkflows(userId, subscriptionNeeded);
         } else {
           console.log(`ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`);
+          // Still persist updated ref counts
+          await this.persistState(source);
         }
       });
     } catch (error) {
@@ -391,46 +388,58 @@ export class MarketControlHandler {
 
   /**
    * Handle unsubscribe control message
+   * 
+   * Uses reference counting: symbols are only unsubscribed from gateway when refCount reaches 0.
+   * Special handling for 'streaming_workflow' source which only unregisters from MarketDataSubscriber.
    */
   private async handleUnsubscribe(msg: ControlMessage): Promise<void> {
     const { source, workflowId, symbols } = msg;
 
     try {
+      // Special handling for streaming workflow deactivation
+      // This only unregisters from MarketDataSubscriber, does NOT affect gateway subscriptions
+      if (source === 'streaming_workflow' && workflowId) {
+        const subscriber = MarketDataSubscriber.getInstance();
+        await subscriber.unsubscribe(workflowId);
+        console.log(`✅ [MarketControl] Unregistered streaming workflow ${workflowId} from MarketDataSubscriber`);
+        return; // No gateway unsubscription needed
+      }
+
       const state = this.sourceStates.get(source);
       if (!state) {
         console.log(`⚠️ [MarketControl] No gateway state found for ${source}`);
         return;
       }
 
-      // Unregister workflow from MarketDataSubscriber
-      if (workflowId) {
-        const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.unsubscribe(workflowId);
-        console.log(`✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`);
+      // Decrement reference counts and collect symbols to unsubscribe
+      const toRemove: string[] = [];
+      
+      for (const symbol of symbols) {
+        const upperSymbol = symbol.toUpperCase();
+        const currentRefCount = state.symbolRefCounts.get(upperSymbol) || 0;
+        
+        if (currentRefCount > 1) {
+          // Still other subscribers, just decrement
+          state.symbolRefCounts.set(upperSymbol, currentRefCount - 1);
+          console.log(`📊 [MarketControl] Symbol ${upperSymbol} refCount: ${currentRefCount} → ${currentRefCount - 1}`);
+        } else {
+          // Last subscriber, remove completely
+          state.symbolRefCounts.delete(upperSymbol);
+          state.symbols.delete(upperSymbol);
+          state.symbolTypes.delete(upperSymbol);
+          toRemove.push(upperSymbol);
+          console.log(`📊 [MarketControl] Symbol ${upperSymbol} refCount: ${currentRefCount} → 0 (removing)`);
+        }
       }
-
-      // Remove workflow tracking
-      if (workflowId) {
-        state.workflowSymbols.delete(workflowId);
-        console.log(`🗑️ [MarketControl] Removed workflow ${workflowId} from ${source}`);
-      }
-
-      // Recalculate needed symbols from all remaining workflows
-      const neededSymbols = new Set<string>();
-      for (const wfSymbols of state.workflowSymbols.values()) {
-        wfSymbols.forEach(s => neededSymbols.add(s.toUpperCase()));
-      }
-
-      // Find symbols to unsubscribe
-      const toRemove = symbols
-        .filter(s => !neededSymbols.has(s.toUpperCase()) && state.symbols.has(s.toUpperCase()));
 
       if (toRemove.length > 0) {
         console.log(`➖ [MarketControl] Unsubscribing from symbols on ${source}:`, toRemove);
-        toRemove.forEach(s => state.symbols.delete(s.toUpperCase()));
         state.gateway.unsubscribeSymbols(toRemove);
         await this.persistState(source);
         console.log(`✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`);
+      } else {
+        console.log(`ℹ️ [MarketControl] Symbols still have active subscribers, not unsubscribing from gateway`);
+        await this.persistState(source); // Still persist updated ref counts
       }
 
       // Disconnect if no more symbols
@@ -523,7 +532,7 @@ export class MarketControlHandler {
         credentialId: credentialId || 'default',
         symbols: new Set(),
         symbolTypes: new Map(),
-        workflowSymbols: new Map(),
+        symbolRefCounts: new Map(),
       });
 
       console.log(`✅ [MarketControl] Gateway ${source} connected for user ${userId}`);
@@ -548,9 +557,9 @@ export class MarketControlHandler {
         symbol,
         types: Array.from(types),
       })),
-      workflowSymbols: Array.from(state.workflowSymbols.entries()).map(([wfId, symbols]) => ({
-        workflowId: wfId,
-        symbols: Array.from(symbols),
+      symbolRefCounts: Array.from(state.symbolRefCounts.entries()).map(([symbol, count]) => ({
+        symbol,
+        count,
       })),
       timestamp: new Date().toISOString(),
     };
@@ -594,7 +603,7 @@ export class MarketControlHandler {
             console.log(`📦 [MarketControl] Found saved state for ${source}:`, {
               userId: stateData.userId,
               symbolCount: stateData.symbols?.length || 0,
-              workflowCount: stateData.workflowSymbols?.length || 0,
+              refCountEntries: stateData.symbolRefCounts?.length || 0,
             });
 
             // Reconnect gateway
@@ -634,14 +643,17 @@ export class MarketControlHandler {
               stateData.symbols.forEach((s: string) => state.symbols.add(s.toUpperCase()));
             }
 
-            // Restore workflow mappings
-            if (stateData.workflowSymbols && Array.isArray(stateData.workflowSymbols)) {
-              stateData.workflowSymbols.forEach((wf: any) => {
-                const symbols = new Set<string>();
-                if (wf.symbols && Array.isArray(wf.symbols)) {
-                  wf.symbols.forEach((s: string) => symbols.add(s.toUpperCase()));
+            // Restore reference counts
+            if (stateData.symbolRefCounts && Array.isArray(stateData.symbolRefCounts)) {
+              stateData.symbolRefCounts.forEach((entry: any) => {
+                state.symbolRefCounts.set(entry.symbol.toUpperCase(), entry.count || 1);
+              });
+            } else {
+              // Backward compatibility: if no ref counts, initialize all symbols with count 1
+              state.symbols.forEach(s => {
+                if (!state.symbolRefCounts.has(s)) {
+                  state.symbolRefCounts.set(s, 1);
                 }
-                state.workflowSymbols.set(wf.workflowId, symbols);
               });
             }
 
@@ -672,11 +684,7 @@ export class MarketControlHandler {
         userId: state.connectedUserId,
         symbolCount: state.symbols.size,
         symbols: Array.from(state.symbols),
-        workflowCount: state.workflowSymbols.size,
-        workflows: Array.from(state.workflowSymbols.entries()).map(([wfId, symbols]) => ({
-          workflowId: wfId,
-          symbolCount: symbols.size,
-        })),
+        symbolRefCounts: Object.fromEntries(state.symbolRefCounts),
       };
     }
 

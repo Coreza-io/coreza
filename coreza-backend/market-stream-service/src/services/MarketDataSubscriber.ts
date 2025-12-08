@@ -15,6 +15,7 @@ import {
 } from "../utils/redisCircuitBreaker";
 import logger from "../utils/logger";
 import { retrySupabaseOperation } from "../utils/retryHelper";
+import { getWebSocketConfig } from "../config/websockets";
 
 interface WorkflowSubscription {
   workflowId: string;
@@ -57,6 +58,29 @@ export class MarketDataSubscriber {
   }
 
   /**
+   * Normalize WebSocket source IDs to gateway/broker source names.
+   * This ensures subscription.source matches CorezaMarketEvent.source.
+   * 
+   * Examples:
+   *   - 'binance_stream' → 'binance'
+   *   - 'alpaca_stream' → 'alpaca'  
+   *   - 'alpaca_news' → 'alpaca_news' (same, news has dedicated gateway)
+   *   - 'binance' → 'binance' (already normalized)
+   */
+  private normalizeSource(source?: string): MarketSource | undefined {
+    if (!source) return undefined;
+    
+    // Check if this is a WebSocket source ID that has a gatewaySource mapping
+    const wsConfig = getWebSocketConfig(source);
+    if (wsConfig?.gatewaySource) {
+      return wsConfig.gatewaySource as MarketSource;
+    }
+    
+    // Already a broker/gateway source name
+    return source as MarketSource;
+  }
+
+  /**
    * Subscribe a workflow to market data streams
    */
   async subscribe(
@@ -65,7 +89,7 @@ export class MarketDataSubscriber {
     userId: string,
     symbols: string[],
     options?: {
-      source?: MarketSource;
+      source?: MarketSource | string;
       eventTypes?: MarketEventType[];
     }
   ): Promise<void> {
@@ -75,13 +99,17 @@ export class MarketDataSubscriber {
         symbols
       );
 
+      // Normalize source from gateway ID to broker name (e.g., 'binance_stream' → 'binance')
+      const normalizedSource = this.normalizeSource(options?.source);
+      console.log(`📊 [MarketDataSubscriber] Normalized source: ${options?.source} → ${normalizedSource}`);
+
       // Create subscription object
       const subscription: WorkflowSubscription = {
         workflowId,
         nodeId,
         userId,
         symbols: new Set(symbols.map((s) => s.toUpperCase())),
-        source: options?.source,
+        source: normalizedSource,
         eventTypes: options?.eventTypes,
       };
 

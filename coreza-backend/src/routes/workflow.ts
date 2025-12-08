@@ -620,8 +620,11 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           await redis.sadd(`user:${userId}:active_streaming_workflows`, workflowId);
           
           // Store filter configuration for this workflow
+          // Parse filter_symbols to array for consistent format with updateActiveStreamingWorkflows
           const filterConfig = {
-            filter_symbols: filterSymbols || null,
+            filter_symbols: filterSymbols 
+              ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) 
+              : [],
             filter_types: filterTypes || [],
             nodeId: triggerNode.id,
           };

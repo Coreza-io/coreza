@@ -17,7 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DataService } from "../../services/data";
 import { RedisService } from "../../services/RedisService";
-import { getRedis } from "../../config/redis";
+import { getRedisCache } from "../../config/redis";
 import {
   buildStoreKey,
   extractVariableNameFromKey,
@@ -176,7 +176,7 @@ export class DataSourceExecutor implements INodeExecutor {
       };
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
 
     switch (operation) {
       case "set": {

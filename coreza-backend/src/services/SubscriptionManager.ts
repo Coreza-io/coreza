@@ -15,7 +15,7 @@
  */
 
 import Redis from 'ioredis';
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import { REDIS_CHANNELS } from '../config/redisChannels';
 
 export class SubscriptionManager {
@@ -30,8 +30,8 @@ export class SubscriptionManager {
   private redisPub: Redis;
   
   private constructor() {
-    this.redisSub = getRedis().duplicate();
-    this.redisPub = getRedis();
+    this.redisSub = getRedisCache().duplicate();
+    this.redisPub = getRedisCache();
     console.log('✅ SubscriptionManager initialized');
   }
   

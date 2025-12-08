@@ -15,7 +15,7 @@
  */
 
 import express from "express";
-import { getRedis } from "../config/redis";
+import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
 import {
@@ -72,7 +72,7 @@ router.get("/variables", async (req, res) => {
         .json({ error: "user_id and workflow_id are required" });
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
     const pattern = buildStoreKey(
       user_id as string,
       workflow_id as string,
@@ -101,7 +101,7 @@ router.get("/value", async (req, res) => {
         .json({ error: "user_id, workflow_id, and variable_name required" });
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
     const key = buildStoreKey(
       user_id as string,
       workflow_id as string,
@@ -155,7 +155,7 @@ router.post("/execute", async (req, res) => {
       return res.status(400).json({ error: "user_id is required" });
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
 
     // Determine variable name: manual entry, dropdown select, or write operation
     const varName = variableNameManual || variableNameSelect || variableName;

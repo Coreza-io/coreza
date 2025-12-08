@@ -22,7 +22,7 @@ import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { getRedis } from "../config/redis";
+import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { buildStoreKey, getStoreValue, setStoreValue } from "../utils/store";
 
@@ -136,7 +136,7 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
 
     // Clean up active subscriptions before deletion
     if (workflow) {
-      const redis = getRedis();
+      const redis = getRedisCache();
       
       // Unschedule if has Scheduler node
       await workflowScheduler.unscheduleWorkflow(workflowId);

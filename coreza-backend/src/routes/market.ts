@@ -18,7 +18,7 @@ import express from 'express';
 import { DataService } from '../services/data';
 import { SubscriptionService } from '../services/SubscriptionService';
 import { MarketSource } from '../types/marketEvent';
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
 
 const router = express.Router();
@@ -39,7 +39,7 @@ router.get('/subscriptions/status', async (req, res) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
     
     // Get all gateway states
     const gatewayKeys = await redis.keys('md:gateway:*:state');
@@ -405,7 +405,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
     }
 
     // Direct Redis cleanup for immediate effect
-    const redis = getRedis();
+    const redis = getRedisCache();
     const resolvedSymbols = Array.isArray(symbols) ? symbols : [];
     
     // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
@@ -464,7 +464,7 @@ router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
       return res.status(400).json({ error: 'user_id query parameter is required' });
     }
 
-    const redis = getRedis();
+    const redis = getRedisCache();
 
     // Look up the subscription to find the source
     const subKey = `wf:sub:${workflowId}`;

@@ -310,8 +310,8 @@ export class WebhookService {
           "Webhook pushing to frontend for manual run"
         );
 
-        const { getRedis } = await import("../config/redis");
-        const redis = getRedis();
+        const { getRedisQueue } = await import("../config/redis");
+        const redis = getRedisQueue();
 
         await redis.publish(
           `ws:user:${userId}`,

@@ -614,7 +614,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           const filterSymbols = nodeValues.filter_symbols;
           const filterTypes = nodeValues.filter_types;
 
-          const redis = getRedis();
+          const redis = getRedisCache();
           
           // Store workflow in active streaming workflows set for this user
           await redis.sadd(`user:${userId}:active_streaming_workflows`, workflowId);
@@ -693,7 +693,7 @@ router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
           triggerNode.node_type == "trigger" &&
           triggerNode.executionMode == "streaming"
         ) {
-          const redis = getRedis();
+          const redis = getRedisCache();
           
           // Remove workflow from active streaming workflows set
           await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);

@@ -1,7 +1,27 @@
 import Redis, { RedisOptions } from "ioredis";
 
+// ========== PRODUCTION REDIS OPTIONS ==========
 const baseOptions: RedisOptions = {
   maxRetriesPerRequest: null,
+  family: 4, // Force IPv4 to prevent localhost resolution issues
+  keepAlive: 30000, // Keep connections alive
+};
+
+// Queue Redis: Optimized for latency-critical BullMQ and Pub/Sub operations
+const queueOptions: RedisOptions = {
+  ...baseOptions,
+  enableReadyCheck: false, // BullMQ requirement
+  connectTimeout: 5000, // Fast connect for queue operations
+  commandTimeout: 3000, // Fast timeout for queue commands
+  lazyConnect: false, // Connect immediately
+};
+
+// Cache Redis: Optimized for medium-latency caching operations
+const cacheOptions: RedisOptions = {
+  ...baseOptions,
+  enableReadyCheck: true, // Verify connection before use
+  connectTimeout: 10000, // More tolerance for cache
+  commandTimeout: 5000, // More tolerance for cache commands
 };
 
 const normalizeRedisInput = (rawValue: string | undefined) => {
@@ -31,27 +51,6 @@ const resolveRedisConfig = (
   return { ...fallback, sourceEnv: fallback.url ? "REDIS_URL" : primaryEnvVar };
 };
 
-const buildRedisOptions = (
-  redisUrl: string | undefined,
-  hasTlsFlag: boolean,
-): RedisOptions => {
-  const shouldUseTls =
-    process.env.REDIS_TLS === "true" ||
-    hasTlsFlag ||
-    (redisUrl?.startsWith("rediss://") ?? false);
-
-  return {
-    ...connectionOptions,
-    ...(shouldUseTls
-      ? {
-          tls: {
-            rejectUnauthorized:
-              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
-          },
-        }
-      : {}),
-  };
-};
 
 const getRedisOrThrow = (
   resolveResult: { url: string | undefined; hasTlsFlag: boolean },
@@ -72,8 +71,55 @@ let redisQueueSubInstance: Redis | null = null;
 // ========== CACHE REDIS (Medium-Latency) ==========
 let redisCacheInstance: Redis | null = null;
 
+// Legacy export for backward compatibility
 export const connectionOptions: RedisOptions = {
   ...baseOptions,
+};
+
+// Build options for Queue Redis (latency-critical)
+const buildQueueOptions = (
+  redisUrl: string | undefined,
+  hasTlsFlag: boolean,
+): RedisOptions => {
+  const shouldUseTls =
+    process.env.REDIS_TLS === "true" ||
+    hasTlsFlag ||
+    (redisUrl?.startsWith("rediss://") ?? false);
+
+  return {
+    ...queueOptions,
+    ...(shouldUseTls
+      ? {
+          tls: {
+            rejectUnauthorized:
+              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+          },
+        }
+      : {}),
+  };
+};
+
+// Build options for Cache Redis (medium-latency)
+const buildCacheOptions = (
+  redisUrl: string | undefined,
+  hasTlsFlag: boolean,
+): RedisOptions => {
+  const shouldUseTls =
+    process.env.REDIS_TLS === "true" ||
+    hasTlsFlag ||
+    (redisUrl?.startsWith("rediss://") ?? false);
+
+  return {
+    ...cacheOptions,
+    ...(shouldUseTls
+      ? {
+          tls: {
+            rejectUnauthorized:
+              process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== "false",
+          },
+        }
+      : {}),
+  };
 };
 
 /**
@@ -86,7 +132,8 @@ export function getRedisQueue(): Redis {
   const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "BullMQ queue and pub/sub operations");
 
-  redisQueueInstance = new Redis(redisUrl, buildRedisOptions(redisUrl, hasTlsFlag));
+  redisQueueInstance = new Redis(redisUrl, buildQueueOptions(redisUrl, hasTlsFlag));
+  console.log(`[Redis] Queue connection established (source: ${resolved.sourceEnv})`);
   return redisQueueInstance;
 }
 
@@ -100,11 +147,12 @@ export function getRedisQueuePubSub(): { pub: Redis; sub: Redis } {
 
   const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "Pub/Sub");
-  const options = buildRedisOptions(redisUrl, hasTlsFlag);
+  const options = buildQueueOptions(redisUrl, hasTlsFlag);
 
   redisQueuePubInstance = new Redis(redisUrl, options);
   redisQueueSubInstance = new Redis(redisUrl, options);
 
+  console.log(`[Redis] Queue Pub/Sub connections established (source: ${resolved.sourceEnv})`);
   return { pub: redisQueuePubInstance, sub: redisQueueSubInstance };
 }
 
@@ -115,7 +163,7 @@ export function getRedisQueuePubSub(): { pub: Redis; sub: Redis } {
 export function createRedisQueuePubSub(): { pub: Redis; sub: Redis } {
   const resolved = resolveRedisConfig("REDIS_QUEUE_URL");
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "Pub/Sub");
-  const options = buildRedisOptions(redisUrl, hasTlsFlag);
+  const options = buildQueueOptions(redisUrl, hasTlsFlag);
 
   return {
     pub: new Redis(redisUrl, options),
@@ -133,7 +181,8 @@ export function getRedisCache(): Redis {
   const resolved = resolveRedisConfig("REDIS_CACHE_URL");
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, "caching operations");
 
-  redisCacheInstance = new Redis(redisUrl, buildRedisOptions(redisUrl, hasTlsFlag));
+  redisCacheInstance = new Redis(redisUrl, buildCacheOptions(redisUrl, hasTlsFlag));
+  console.log(`[Redis] Cache connection established (source: ${resolved.sourceEnv})`);
   return redisCacheInstance;
 }
 

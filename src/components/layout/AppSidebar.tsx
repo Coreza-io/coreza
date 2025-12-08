@@ -42,6 +42,7 @@ import {
   ChevronUp,
   Settings,
   BarChart2,
+  Radio,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -90,6 +91,7 @@ const menuItems: MenuItem[] = [
     icon: Activity,
     matchPaths: [`${DASHBOARD_BASE_PATH}/workflow`],
   },
+  { title: "Market Data", url: `${DASHBOARD_BASE_PATH}/market-subscriptions`, icon: Radio },
 ];
 
 export function AppSidebar() {

@@ -1,12 +1,12 @@
 import Redis from "ioredis";
-import { createRedisPubSub } from "../config/redis";
+import { v4 as uuidv4 } from "uuid";
+import { createRedisPubSub, getRedis } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
   CorezaMarketEvent,
   MarketSource,
   MarketEventType,
 } from "../types/marketEvent";
-import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "./jobQueueManager";
 import WorkflowCache from "./WorkflowCache";
 import {
@@ -14,7 +14,6 @@ import {
   redisSetBreaker,
 } from "../utils/redisCircuitBreaker";
 import logger from "../utils/logger";
-import { retrySupabaseOperation } from "../utils/retryHelper";
 import { getSourceMapping } from "../config/marketGateways";
 
 interface WorkflowSubscription {
@@ -418,7 +417,7 @@ export class MarketDataSubscriber {
 
   /**
    * Trigger workflow execution with market event
-   * Uses WorkflowCache to avoid repeated Supabase queries (60s cache)
+   * Uses Redis-first storage for high-frequency performance
    */
   private async triggerWorkflowExecution(
     workflowId: string,
@@ -444,36 +443,29 @@ export class MarketDataSubscriber {
         return;
       }
 
-      // Create workflow run entry with retry logic
-      const { data: runData, error: runError } = await retrySupabaseOperation(
-        async () => {
-          return await supabase
-            .from("workflow_runs")
-            .insert({
-              workflow_id: workflowId,
-              initiated_by: userId,
-              status: "queued",
-            })
-            .select("id")
-            .single();
-        },
-        "Create workflow_runs entry"
-      );
+      // Generate run ID locally (no Supabase round-trip)
+      const runId = uuidv4();
+      const redis = getRedis();
 
-      if (runError || !runData) {
-        logger.error(
-          { err: runError, workflowId, userId },
-          "Failed to create workflow run after retries"
-        );
-        return;
-      }
+      // Store run metadata in Redis hash (instant, no DB latency)
+      const runData = {
+        id: runId,
+        workflow_id: workflowId,
+        initiated_by: userId,
+        status: 'queued',
+        started_at: new Date().toISOString(),
+      };
 
-      const runId = runData.id;
+      await redis.hset(`runs:data:${runId}`, runData);
+      await redis.expire(`runs:data:${runId}`, 86400); // 24 hour TTL
+
+      // Add to pending sync list
+      await redis.lpush('runs:pending:all', runId);
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
 
-      // Add job to BullMQ queue with formatted payload as initial input
+      // Add job to BullMQ queue with Redis storage flag
       try {
         await bullMqJobQueue.addWorkflowExecution({
           runId,
@@ -483,23 +475,25 @@ export class MarketDataSubscriber {
           edges: workflow.edges,
           trigger: "market_data",
           initialInput: formattedPayload,
+          useRedisStorage: true, // Use Redis instead of direct Supabase
         });
 
-        logger.info(
+        logger.debug(
           {
             workflowId,
             runId,
-            workflowName: workflow.name,
             symbol: event.symbol,
           },
-          "Queued workflow execution successfully"
+          "Queued workflow execution (Redis-first)"
         );
       } catch (queueError) {
         logger.error(
           { err: queueError, workflowId, runId },
           "Failed to add workflow to execution queue"
         );
-        // Don't throw - workflow_runs entry already created, just log the failure
+        // Clean up Redis entry on queue failure
+        await redis.del(`runs:data:${runId}`);
+        await redis.lrem('runs:pending:all', 1, runId);
       }
     } catch (error) {
       logger.error(

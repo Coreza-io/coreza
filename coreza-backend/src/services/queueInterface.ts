@@ -20,8 +20,10 @@ export interface WorkflowJobData {
   userId: string;
   nodes: any[];
   edges: any[];
-  trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub";
+  trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub" | "market_data";
   initialInput?: any;
+  /** If true, skip all database logging for this run (high-frequency optimization) */
+  useRedisStorage?: boolean;
 }
 
 export interface IWorkflowJobQueue {

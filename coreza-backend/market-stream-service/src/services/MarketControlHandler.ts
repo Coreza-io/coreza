@@ -316,6 +316,10 @@ export class MarketControlHandler {
 
   /**
    * Handle subscribe control message (with mutex protection)
+   * 
+   * IMPORTANT: Subscribe nodes ONLY manage gateway subscriptions.
+   * They do NOT register for data delivery - that's handled by StreamData trigger nodes.
+   * Data routing is managed by md:control:register_workflow channel.
    */
   private async handleSubscribe(msg: ControlMessage): Promise<void> {
     const { source, userId, workflowId, nodeId, symbols, eventTypes, feed, environment, assetType } = msg;
@@ -333,35 +337,17 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
-        // Track workflow symbols
+        // Track workflow symbols (for reference counting only, NOT for data routing)
         if (workflowId) {
           const currentSymbols = state.workflowSymbols.get(workflowId) || new Set();
           symbols.forEach(s => currentSymbols.add(s.toUpperCase()));
           state.workflowSymbols.set(workflowId, currentSymbols);
         }
 
-        // Register workflow with MarketDataSubscriber FIRST (before gateway starts sending data)
-        if (workflowId && nodeId) {
-          // Compute gatewaySource for proper filtering
-          const wsConfig = getWebSocketConfig(source);
-          const gatewaySource = (wsConfig?.gatewaySource || source) as MarketSource;
-
-          // Normalize event types for consistent filtering
-          const normalizedEventTypes = this.normalizeEventTypes(source, eventTypes);
-
-          const subscriber = MarketDataSubscriber.getInstance();
-          await subscriber.subscribe(
-            workflowId,
-            nodeId,
-            userId,
-            symbols,
-            {
-              source: gatewaySource,  // Use gatewaySource instead of raw source
-              eventTypes: normalizedEventTypes as any,
-            }
-          );
-          console.log(`✅ [MarketControl] Registered workflow ${workflowId} with MarketDataSubscriber (gatewaySource: ${gatewaySource}, normalized types: ${normalizedEventTypes?.join(', ')})`);
-        }
+        // NOTE: We do NOT register with MarketDataSubscriber here anymore
+        // Subscribe nodes only manage gateway connections
+        // StreamData trigger nodes register via md:control:register_workflow channel
+        // This ensures data flows to the correct StreamData nodes, not Subscribe nodes
 
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];

@@ -123,10 +123,21 @@ router.get('/subscriptions/status', async (req, res) => {
       workflowName: workflowNames[sub.workflowId] || 'Unknown Workflow'
     }));
 
-    // Calculate stats
+    // Calculate stats and build symbol-source map
     const allSymbols = new Set<string>();
-    sources.forEach(s => s.symbols.forEach((sym: string) => allSymbols.add(sym)));
-    workflowSubs.forEach(w => w.symbols.forEach((sym: string) => allSymbols.add(sym)));
+    const symbolSourceMap: Record<string, string[]> = {};
+    
+    sources.forEach(s => s.symbols.forEach((sym: string) => {
+      allSymbols.add(sym);
+      if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
+      if (!symbolSourceMap[sym].includes(s.source)) symbolSourceMap[sym].push(s.source);
+    }));
+    
+    workflowSubs.forEach(w => w.symbols.forEach((sym: string) => {
+      allSymbols.add(sym);
+      if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
+      if (!symbolSourceMap[sym].includes(w.source)) symbolSourceMap[sym].push(w.source);
+    }));
 
     res.json({
       sources,
@@ -136,7 +147,8 @@ router.get('/subscriptions/status', async (req, res) => {
         totalSymbols: allSymbols.size,
         totalWorkflows: workflowSubs.length,
         connectedSources: sources.filter(s => s.connected).map(s => s.source)
-      }
+      },
+      symbolSourceMap
     });
   } catch (error) {
     console.error('Error fetching subscription status:', error);

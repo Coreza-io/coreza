@@ -23,6 +23,7 @@ import express from 'express';
 import { z } from 'zod';
 import { supabase } from '../config/supabase';
 import CredentialManager from '../utils/credentialManager';
+import CredentialCache from '../utils/credentialCache';
 // Security monitoring integrated into EnhancedCredentialManager
 
 const router = express.Router();
@@ -181,6 +182,7 @@ router.delete('/', requireAuth, async (req, res) => {
     const { credential_id } = validation.data;
 
     await CredentialManager.deleteCredential(userId, credential_id);
+    await CredentialCache.getInstance().invalidate(userId);
 
     res.json({
       success: true,

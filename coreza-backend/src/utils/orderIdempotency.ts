@@ -15,7 +15,7 @@
  */
 
 import crypto from "crypto";
-import { getRedis } from "../config/redis";
+import { getRedisCache } from "../config/redis";
 
 export interface OrderIdempotencyParams {
   workflowId: string;
@@ -65,7 +65,7 @@ export function generateIdempotencyKey(params: OrderIdempotencyParams): string {
 export async function getOrderFromCache(
   idempotencyKey: string
 ): Promise<CachedOrder | null> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   const cached = await redis.get(`order:${idempotencyKey}`);
   return cached ? JSON.parse(cached) : null;
 }
@@ -77,7 +77,7 @@ export async function cacheOrderIntent(
   idempotencyKey: string,
   broker: string
 ): Promise<void> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   const order: CachedOrder = {
     idempotencyKey,
     status: "pending",
@@ -96,7 +96,7 @@ export async function updateOrderCache(
   result: any,
   orderId?: string
 ): Promise<void> {
-  const redis = getRedis();
+  const redis = getRedisCache();
   const existing = await getOrderFromCache(idempotencyKey);
   if (existing) {
     const updated: CachedOrder = {

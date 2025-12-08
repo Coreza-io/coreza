@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedis } from '../config/redis';
+import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
 import logger from '../utils/logger';
 
@@ -83,7 +83,7 @@ export class RunSyncService {
     }
 
     this.isRunning = true;
-    const redis = getRedis();
+    const redis = getRedisCache();
 
     try {
       // Get pending run IDs from Redis list
@@ -182,7 +182,7 @@ export class RunSyncService {
     // Keep syncing until no more pending runs
     let hasMore = true;
     while (hasMore) {
-      const redis = getRedis();
+      const redis = getRedisCache();
       const count = await redis.llen('runs:pending:all');
       if (count === 0) {
         hasMore = false;
@@ -198,7 +198,7 @@ export class RunSyncService {
    * Get stats about pending runs
    */
   async getStats(): Promise<{ pendingCount: number }> {
-    const redis = getRedis();
+    const redis = getRedisCache();
     const pendingCount = await redis.llen('runs:pending:all');
     return { pendingCount };
   }

@@ -6,7 +6,7 @@ import { MarketDataSubscriber } from './services/MarketDataSubscriber';
 import { RedisPubSubSubscriber } from './services/RedisPubSubSubscriber';
 import WorkflowCache from './services/WorkflowCache';
 import { RedisBuffer } from './services/RedisBuffer';
-import { getRedis } from './config/redis';
+import { getRedisQueue } from './config/redis';
 import { redisPublishBreaker } from './utils/redisCircuitBreaker';
 import { runStartupValidation } from './utils/startupValidation';
 
@@ -34,7 +34,7 @@ async function startMarketStreamService() {
     redisPublishBreaker.on('close', async () => {
       logger.info('Redis circuit breaker closed (recovered), flushing buffer...');
       try {
-        const redis = getRedis();
+        const redis = getRedisQueue();
         const flushed = await RedisBuffer.getInstance().flushToRedis(redis);
         logger.info({ flushed }, 'Successfully flushed buffered messages to Redis');
       } catch (error) {

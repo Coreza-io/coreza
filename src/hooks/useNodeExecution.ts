@@ -712,26 +712,74 @@ export function useNodeExecution({
           definition?.node_type === "trigger" &&
           !definition?.action?.url
         ) {
-          // Handle streaming TRIGGER nodes (passive receivers like BinanceStreamData, AlpacaStreamData)
-          // These nodes register with market-stream-service to receive market data
+          // Handle streaming TRIGGER nodes (BinanceStreamData, AlpacaStreamData)
+          // Supports two modes: "listen" (passive) and "subscribe" (self-contained)
           const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
           
           // Derive source from streamingConfig or node name
           const source = definition?.streamingConfig?.sourceId || 
             definition?.name?.toLowerCase().replace('streamdata', '_stream').replace('data', '');
           
-          // Extract filter symbols and types from field state
-          const filterSymbols = fieldState.filter_symbols
+          const mode = fieldState.mode || 'listen';
+          
+          if (mode === 'subscribe') {
+            // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
+            const symbols = fieldState.symbols
+              ? (typeof fieldState.symbols === 'string'
+                  ? fieldState.symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
+                  : fieldState.symbols)
+              : [];
+            
+            if (symbols.length === 0) {
+              throw new Error('Subscribe mode requires at least one symbol');
+            }
+            
+            const streamTypes = fieldState.stream_types || ['trade'];
+            
+            console.log(`📡 [Streaming Trigger] Subscribe mode - subscribing ${symbols.length} symbols`);
+            
+            // First, subscribe symbols (like Subscribe node does)
+            const subscribeResponse = await fetch(`${backendUrl}/market/${source}/subscribe`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_id: userId,
+                workflow_id: workflowId,
+                node_id: nodeId,
+                credential_id: fieldState.credential_id,
+                symbols,
+                stream_types: streamTypes,
+                environment: fieldState.environment || 'testnet',
+                asset_type: fieldState.asset_type || 'spot',
+                feed: fieldState.feed || 'iex',
+                kline_interval: fieldState.kline_interval || '1m',
+                subscriptionScope: 'workflow',
+                targetWorkflowId: workflowId,
+              }),
+            });
+            
+            if (!subscribeResponse.ok) {
+              const errorData = await subscribeResponse.json().catch(() => ({ error: 'Subscription failed' }));
+              throw new Error(errorData.error || 'Failed to subscribe symbols');
+            }
+            
+            console.log(`✅ [Streaming Trigger] Subscribe mode: Subscribed ${symbols.length} symbols`);
+          }
+          
+          // Extract filter symbols and types based on mode
+          const filterSymbols = mode === 'listen' && fieldState.filter_symbols
             ? (typeof fieldState.filter_symbols === 'string'
                 ? fieldState.filter_symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
                 : fieldState.filter_symbols)
             : [];
-          const filterTypes = fieldState.filter_types || fieldState.stream_types || [];
+          const filterTypes = mode === 'listen' 
+            ? (fieldState.filter_types || [])
+            : (fieldState.stream_types || []);
           
-          console.log(`📡 [Streaming Trigger] Registering ${definition?.name} node for streaming data`);
-          console.log(`📡 [Streaming Trigger] Source: ${source}, Symbols: ${filterSymbols}, Types: ${filterTypes}`);
+          console.log(`📡 [Streaming Trigger] Registering ${definition?.name} (mode: ${mode})`);
+          console.log(`📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`);
           
-          // Send registration message to market-stream-service via backend
+          // Register workflow to receive streaming data
           const registerResponse = await fetch(`${backendUrl}/market/register-streaming-workflow`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -756,8 +804,11 @@ export function useNodeExecution({
           // Set initial waiting output
           const waitingOutput = {
             status: "waiting",
-            message: `Listening for ${definition?.name || 'streaming'} data...`,
+            message: mode === 'subscribe' 
+              ? `Subscribed and listening for ${definition?.name || 'streaming'} data...`
+              : `Listening for ${definition?.name || 'streaming'} data...`,
             registeredAt: new Date().toISOString(),
+            mode,
             source,
             nodeId,
             filterSymbols,

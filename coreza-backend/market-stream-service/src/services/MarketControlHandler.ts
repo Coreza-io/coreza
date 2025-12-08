@@ -137,16 +137,20 @@ export class MarketControlHandler {
     userId: string;
     workflowId: string;
     nodeId: string;
+    source?: string;
     filter_symbols?: string[];
     filter_types?: string[];
   }): Promise<void> {
-    const { userId, workflowId, nodeId, filter_symbols, filter_types } = msg;
+    const { userId, workflowId, nodeId, source, filter_symbols, filter_types } = msg;
 
     try {
-      console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId}`);
+      console.log(`📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${source || 'all'})`);
 
       // Get all symbols currently subscribed for this user across all sources
       const userSymbols = await this.getUserSubscribedSymbols(userId);
+
+      // Normalize event types for proper filtering
+      const normalizedEventTypes = source ? this.normalizeEventTypes(source, filter_types) : filter_types;
 
       if (userSymbols.length === 0) {
         console.log(`ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`);
@@ -159,7 +163,8 @@ export class MarketControlHandler {
           userId,
           [], // No symbols yet
           {
-            eventTypes: filter_types as any,
+            source: source as MarketSource | undefined,
+            eventTypes: normalizedEventTypes as any,
           }
         );
         return;
@@ -179,11 +184,12 @@ export class MarketControlHandler {
         userId,
         symbolsToSubscribe,
         {
-          eventTypes: filter_types as any,
+          source: source as MarketSource | undefined,
+          eventTypes: normalizedEventTypes as any,
         }
       );
 
-      console.log(`✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols`);
+      console.log(`✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols (source: ${source || 'all'})`);
     } catch (error) {
       console.error(`❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`, error);
     }

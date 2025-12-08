@@ -184,6 +184,36 @@ const MarketSubscriptions = () => {
     }
   }, [user, toast, fetchStatus]);
 
+  // Handler for workflow-scoped symbol unsubscription (needs workflowId to target correct Redis key)
+  const handleUnsubscribeWorkflowScopedSymbol = useCallback(async (symbol: string, source: string, workflowId: string) => {
+    if (!user) return;
+    
+    setUnsubscribing(`symbol-${workflowId}-${symbol}`);
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
+      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          workflow_id: workflowId,  // Include workflowId for workflow-scoped removal
+          symbols: [symbol],
+          subscription_scope: 'workflow',  // Tell backend this is workflow-scoped
+        }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to unsubscribe');
+      
+      toast({ title: "Unsubscribed", description: `Removed ${symbol} from workflow` });
+      fetchStatus(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to unsubscribe symbol", variant: "destructive" });
+    } finally {
+      setUnsubscribing(null);
+    }
+  }, [user, toast, fetchStatus]);
+
   const handleUnsubscribeWorkflow = useCallback(async (wf: WorkflowSubscription) => {
     if (!user) return;
     
@@ -252,13 +282,17 @@ const MarketSubscriptions = () => {
     }
   }, [user, toast, fetchStatus]);
 
-  const confirmUnsubscribeSymbol = (symbol: string, source: string) => {
+  const confirmUnsubscribeSymbol = (symbol: string, source: string, workflowId?: string) => {
     setConfirmDialog({
       open: true,
       type: 'symbol',
       title: `Unsubscribe ${symbol}?`,
-      description: `This will stop streaming ${symbol} data from ${source}. Any workflows using this symbol will no longer receive updates.`,
-      onConfirm: () => handleUnsubscribeSymbol(symbol, source),
+      description: workflowId 
+        ? `This will stop streaming ${symbol} data for this specific workflow.`
+        : `This will stop streaming ${symbol} data from ${source}. Any workflows using this symbol will no longer receive updates.`,
+      onConfirm: () => workflowId 
+        ? handleUnsubscribeWorkflowScopedSymbol(symbol, source, workflowId)
+        : handleUnsubscribeSymbol(symbol, source),
     });
   };
 
@@ -737,11 +771,11 @@ const MarketSubscriptions = () => {
                           >
                             {symbol}
                             <button
-                              onClick={() => confirmUnsubscribeSymbol(symbol, sub.source)}
-                              disabled={unsubscribing === `symbol-${symbol}`}
+                              onClick={() => confirmUnsubscribeSymbol(symbol, sub.source, sub.workflowId)}
+                              disabled={unsubscribing === `symbol-${sub.workflowId}-${symbol}`}
                               className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                             >
-                              {unsubscribing === `symbol-${symbol}` ? (
+                              {unsubscribing === `symbol-${sub.workflowId}-${symbol}` ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : (
                                 <X className="h-3 w-3" />

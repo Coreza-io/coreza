@@ -57,8 +57,7 @@ const baseOptions: RedisOptions = {
 const queueOptions: RedisOptions = {
   ...baseOptions,
   enableReadyCheck: false, // BullMQ requirement
-  connectTimeout: 5000, // Fast connect for queue operations
-  commandTimeout: 3000, // Fast timeout for queue commands
+  connectTimeout: 10000, // 10s connect timeout
   lazyConnect: false, // Connect immediately
 };
 
@@ -66,8 +65,7 @@ const queueOptions: RedisOptions = {
 const cacheOptions: RedisOptions = {
   ...baseOptions,
   enableReadyCheck: true, // Verify connection before use
-  connectTimeout: 10000, // More tolerance for cache
-  commandTimeout: 5000, // More tolerance for cache commands
+  connectTimeout: 15000, // 15s connect timeout (more tolerance)
 };
 
 const normalizeRedisInput = (rawValue: string | undefined) => {

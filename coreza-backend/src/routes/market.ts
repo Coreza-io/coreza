@@ -96,10 +96,36 @@ router.get('/subscriptions/status', async (req, res) => {
       }
     }
 
-    // Also check active streaming workflows set
+    // Also check active streaming workflows set and include those not in wf:sub:*
     const activeStreamingWorkflows = await redis.smembers(`user:${user_id}:active_streaming_workflows`);
     for (const workflowId of activeStreamingWorkflows) {
       workflowIds.add(workflowId);
+      
+      // Check if this workflow is already in workflowSubs
+      const alreadyIncluded = workflowSubs.some(sub => sub.workflowId === workflowId);
+      if (!alreadyIncluded) {
+        // Try to get additional info from stream filter
+        const filterStr = await redis.get(`workflow:${workflowId}:stream_filter`);
+        let source = 'unknown';
+        let eventTypes: string[] = [];
+        
+        if (filterStr) {
+          try {
+            const filter = JSON.parse(filterStr);
+            source = filter.source || 'unknown';
+            eventTypes = filter.eventTypes || [];
+          } catch (e) { /* ignore parse errors */ }
+        }
+        
+        workflowSubs.push({
+          workflowId,
+          nodeId: '',
+          symbols: [],  // May not have explicit symbols
+          eventTypes,
+          source,
+          isActive: true
+        });
+      }
     }
 
     // Fetch workflow names from Supabase

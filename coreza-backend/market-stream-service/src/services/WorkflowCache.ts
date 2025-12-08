@@ -18,16 +18,23 @@ interface CachedWorkflow {
 export class WorkflowCache {
   private static instance: WorkflowCache;
   private cache = new Map<string, CachedWorkflow>();
-  private supabase: SupabaseClient;
+  private supabase: SupabaseClient | null = null;
   private readonly DEFAULT_TTL_MS = 60000; // 60 seconds
   private readonly MAX_CACHE_SIZE = 1000;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   private constructor() {
-    this.supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-    );
+    // Lazy initialization - don't create Supabase client here
+  }
+
+  private getSupabase(): SupabaseClient {
+    if (!this.supabase) {
+      this.supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+      );
+    }
+    return this.supabase;
   }
 
   static getInstance(): WorkflowCache {
@@ -55,7 +62,7 @@ export class WorkflowCache {
     logger.debug({ workflowId }, 'Cache MISS - fetching from database');
     
     try {
-      const { data: workflow, error } = await this.supabase
+      const { data: workflow, error } = await this.getSupabase()
         .from('workflows')
         .select('*')
         .eq('id', workflowId)
@@ -178,4 +185,4 @@ export class WorkflowCache {
   }
 }
 
-export default WorkflowCache.getInstance();
+export default WorkflowCache;

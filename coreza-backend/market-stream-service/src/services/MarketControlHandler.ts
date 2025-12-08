@@ -215,14 +215,19 @@ export class MarketControlHandler {
       // If source specified, only check that source
       if (source) {
         const key = `workflow:${workflowId}:subscribed_symbols:${source}`;
+        console.log(`🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`);
         const symbols = await this.redisPub.smembers(key);
+        console.log(`🔍 [MarketControl] Found ${symbols.length} workflow-scoped symbols:`, symbols);
         symbols.forEach(s => allSymbols.add(s.toUpperCase()));
       } else {
         // Check all sources for this workflow
         const pattern = `workflow:${workflowId}:subscribed_symbols:*`;
+        console.log(`🔍 [MarketControl] Checking workflow-scoped symbols with pattern: ${pattern}`);
         const keys = await this.redisPub.keys(pattern);
+        console.log(`🔍 [MarketControl] Found ${keys.length} keys matching pattern`);
         for (const key of keys) {
           const symbols = await this.redisPub.smembers(key);
+          console.log(`🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`, symbols);
           symbols.forEach(s => allSymbols.add(s.toUpperCase()));
         }
       }
@@ -439,6 +444,8 @@ export class MarketControlHandler {
         if (subscriptionScope === 'workflow' && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
           const workflowSubKey = `workflow:${targetWorkflowId}:subscribed_symbols:${source}`;
+          console.log(`📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`);
+          console.log(`📝 [MarketControl] Symbols being written:`, symbols.map(s => s.toUpperCase()));
           await this.redisPub.sadd(workflowSubKey, ...symbols.map(s => s.toUpperCase()));
           console.log(`📊 [MarketControl] Persisted ${symbols.length} workflow-scoped subscriptions for ${source} → ${targetWorkflowId}`);
         } else {

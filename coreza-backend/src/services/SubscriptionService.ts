@@ -140,6 +140,7 @@ export class SubscriptionService {
       const {
         source,
         userId,
+        workflowId,
         credentialId,
         operation,
         streamTypes,
@@ -150,6 +151,13 @@ export class SubscriptionService {
         subscriptionScope = 'global',
         targetWorkflowId,
       } = params;
+
+      // Resolve __current__ placeholder to actual workflowId from context
+      let resolvedTargetWorkflowId = targetWorkflowId;
+      if (targetWorkflowId === '__current__' && workflowId) {
+        resolvedTargetWorkflowId = workflowId;
+        console.log(`📝 [SubscriptionService] Resolved __current__ to workflowId: ${workflowId}`);
+      }
 
       if (!userId) {
         return { success: false, error: 'Missing userId' };
@@ -185,8 +193,8 @@ export class SubscriptionService {
       };
 
       // Add target workflow ID for workflow-scoped subscriptions
-      if (subscriptionScope === 'workflow' && targetWorkflowId) {
-        controlMessage.targetWorkflowId = targetWorkflowId;
+      if (subscriptionScope === 'workflow' && resolvedTargetWorkflowId) {
+        controlMessage.targetWorkflowId = resolvedTargetWorkflowId;
       }
 
       // Add source-specific fields

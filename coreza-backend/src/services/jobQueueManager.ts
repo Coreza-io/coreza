@@ -201,6 +201,11 @@ const workflowWorker = new Worker(
     // Handle aggregator (parent job that waits for all children)
     if (isLoopAggregator) {
       console.log(`📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`);
+      
+      // Extract continuation metadata
+      const doneEdges = (job.data as any).doneEdges || [];
+      const parentNodes = (job.data as any).parentNodes || [];
+      const parentEdges = (job.data as any).parentEdges || [];
 
       try {
         // Collect ordered results from Redis hash (more reliable than getChildrenValues)
@@ -230,7 +235,46 @@ const workflowWorker = new Worker(
         }));
         await redis.expire(aggregatedKey, 3600);
 
-        // Signal completion via Redis pub/sub for parent workflow continuation
+        console.log(`✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`);
+        
+        // Queue continuation jobs for done edges (parent workflow continuation)
+        if (doneEdges.length > 0 && parentNodes.length > 0) {
+          console.log(`🔗 Queuing ${doneEdges.length} continuation jobs from loop ${loopId}`);
+          
+          for (const edge of doneEdges) {
+            const continuationRunId = uuidv4();
+            
+            await workflowQueue.add('workflow-continuation', {
+              runId: continuationRunId,
+              workflowId,
+              userId,
+              nodes: parentNodes,
+              edges: parentEdges,
+              trigger: 'loop_continuation',
+              initialInput: { 
+                data: aggregatedOutput,
+                $loopResult: {
+                  loopId,
+                  totalItems,
+                  successCount: totalItems! - errorCount,
+                  errorCount,
+                  hasErrors,
+                },
+              },
+              // Start execution from the done edge target node
+              startNodeId: edge.target,
+              parentRunId,
+              loopId,
+            } as WorkflowJobData & { startNodeId: string }, {
+              removeOnComplete: 50,
+              removeOnFail: 100,
+            });
+            
+            console.log(`📤 Queued continuation to node ${edge.target}`);
+          }
+        }
+
+        // Signal completion via Redis pub/sub (for monitoring/debugging)
         await redis.publish('loop:completed', JSON.stringify({
           parentRunId,
           loopId,
@@ -240,9 +284,8 @@ const workflowWorker = new Worker(
           successCount: totalItems! - errorCount,
           errorCount,
           hasErrors,
+          continuationQueued: doneEdges.length > 0,
         }));
-
-        console.log(`✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`);
         
         // Cleanup Redis keys after successful aggregation
         await cleanupLoopKeys(parentRunId!, loopId!);
@@ -252,6 +295,7 @@ const workflowWorker = new Worker(
           count: results.length,
           successCount: totalItems! - errorCount,
           errorCount,
+          continuationQueued: doneEdges.length > 0,
         };
       } catch (error) {
         const normalized = normalizeError(error);
@@ -264,6 +308,34 @@ const workflowWorker = new Worker(
           error: normalized.message,
         }));
         
+        throw normalized;
+      }
+    }
+
+    // Handle loop continuation (resuming parent workflow after parallel loop completes)
+    if (trigger === 'loop_continuation') {
+      const startNodeId = (job.data as any).startNodeId;
+      console.log(`🔗 Continuing workflow from node ${startNodeId} after parallel loop ${loopId}`);
+      
+      try {
+        // Execute continuation workflow starting from the done edge target
+        const result = await executeWorkflow(
+          runId,
+          workflowId,
+          userId,
+          nodes,
+          edges,
+          { 
+            initialInput: job.data.initialInput,
+            startNodeId, // Pass start node to workflow engine
+          }
+        );
+
+        console.log(`✅ Workflow continuation completed from node ${startNodeId}`);
+        return result;
+      } catch (error) {
+        const normalized = normalizeError(error);
+        console.error(`❌ Workflow continuation failed from node ${startNodeId}:`, normalized.message);
         throw normalized;
       }
     }
@@ -534,7 +606,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         nodes: [],
         edges: [],
         continueOnError,
-      } as WorkflowJobData,
+        // Include continuation metadata for done edge routing
+        doneEdges: options.doneEdges || [],
+        parentNodes: options.parentNodes || [],
+        parentEdges: options.parentEdges || [],
+      } as WorkflowJobData & { doneEdges: any[]; parentNodes: any[]; parentEdges: any[] },
       opts: {
         removeOnComplete: 50,
         removeOnFail: 100,

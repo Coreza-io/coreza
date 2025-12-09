@@ -20,14 +20,41 @@ export interface WorkflowJobData {
   userId: string;
   nodes: any[];
   edges: any[];
-  trigger?: "manual" | "scheduled" | "webhook" | "redis_pubsub" | "market_data";
+  trigger?:
+    | "manual"
+    | "scheduled"
+    | "webhook"
+    | "redis_pubsub"
+    | "market_data"
+    | "loop_parallel";
   initialInput?: any;
   /** If true, skip all database logging for this run (high-frequency optimization) */
   useRedisStorage?: boolean;
+
+  /** Parent workflow run that spawned this parallel loop item */
+  parentRunId?: string;
+  /** Loop node id that created this job */
+  loopId?: string;
+  /** Index of the current loop item (for ordered aggregation) */
+  itemIndex?: number;
+  /** Total number of loop items */
+  totalItems?: number;
+  /** Marker for aggregator jobs that collate child results */
+  isLoopAggregator?: boolean;
 }
 
 export interface IWorkflowJobQueue {
   addWorkflowExecution(data: WorkflowJobData): Promise<any>;
+  addParallelLoopExecution(
+    parentRunId: string,
+    loopId: string,
+    workflowId: string,
+    userId: string,
+    subgraphNodes: any[],
+    subgraphEdges: any[],
+    items: any[],
+    useRedisStorage?: boolean
+  ): Promise<void>;
   getQueueStats(): Promise<any>;
   cleanup(): Promise<void>;
 }

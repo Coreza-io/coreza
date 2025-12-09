@@ -44,6 +44,14 @@
       "description": "Run all iterations concurrently"
     },
     {
+      "key": "maxConcurrency",
+      "label": "Max Parallel Workers",
+      "type": "text",
+      "placeholder": "10",
+      "default": "10",
+      "description": "Maximum concurrent BullMQ workers for parallel execution"
+    },
+    {
       "key": "continueOnError",
       "label": "Continue On Error",
       "type": "checkbox",

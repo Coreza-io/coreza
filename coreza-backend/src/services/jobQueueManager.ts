@@ -14,13 +14,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Queue, Worker, Job } from "bullmq";
+import { Queue, Worker, Job, FlowProducer } from "bullmq";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "./workflowEngine";
 import { WebSocketManager } from "./websocketManager";
 import { getRedisQueue } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
+import { randomUUID } from "crypto";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -37,6 +38,14 @@ const normalizeError = (error: unknown): Error => {
 };
 
 const redis = getRedisQueue();
+const flowProducer = new FlowProducer({ connection: redis });
+
+const normalizeInitialInput = (input: any) => {
+  const data = input?.marketEvent ?? input?.data ?? input;
+  return typeof input === "object" && input !== null
+    ? { ...input, data }
+    : { data };
+};
 
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
@@ -56,14 +65,140 @@ interface ScheduledWorkflowJobData {
 const workflowWorker = new Worker(
   "workflow-execution",
   async (job: Job<WorkflowJobData>) => {
+    const { isLoopAggregator, trigger } = job.data;
+
+    // Child loop execution jobs
+    if (trigger === "loop_parallel") {
+      const {
+        runId,
+        nodes,
+        edges,
+        userId,
+        workflowId,
+        useRedisStorage,
+        parentRunId,
+        loopId,
+        itemIndex,
+        totalItems,
+      } = job.data;
+
+      console.log(
+        `🔄 Processing loop item ${(itemIndex ?? 0) + 1}/${totalItems ?? 0} for run ${parentRunId}`
+      );
+
+      try {
+        if (useRedisStorage) {
+          await updateRunStatusInRedis(runId, "running");
+        } else {
+          await supabase
+            .from("workflow_runs")
+            .update({ status: "running" })
+            .eq("id", runId);
+        }
+
+        const result = await executeWorkflow(
+          runId,
+          workflowId,
+          userId,
+          nodes,
+          edges,
+          { initialInput: normalizeInitialInput(job.data.initialInput) }
+        );
+
+        if (parentRunId && loopId) {
+          const key = `loop:${parentRunId}:${loopId}:results`;
+          await redis.hset(key, String(itemIndex ?? 0), JSON.stringify(result));
+          await redis.expire(key, 3600);
+        }
+
+        if (useRedisStorage) {
+          await updateRunStatusInRedis(runId, "success", { result });
+        } else {
+          await supabase
+            .from("workflow_runs")
+            .update({
+              status: "success",
+              result: result,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", runId);
+        }
+
+        return result;
+      } catch (error) {
+        const normalized = normalizeError(error);
+        console.error(`❌ Loop item execution failed for ${runId}:`, normalized);
+
+        if (useRedisStorage) {
+          await updateRunStatusInRedis(runId, "failed", {
+            errorMessage: normalized.message,
+          });
+        } else {
+          await supabase
+            .from("workflow_runs")
+            .update({
+              status: "failed",
+              error_message: normalized.message,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", runId);
+        }
+
+        throw normalized;
+      }
+    }
+
+    // Aggregator jobs wait for all children and collate results
+    if (isLoopAggregator) {
+      const { parentRunId, loopId, totalItems } = job.data;
+      console.log(`📊 Aggregating ${totalItems ?? 0} parallel loop results`);
+
+      const resultsKey = `loop:${parentRunId}:${loopId}:results`;
+      const aggregatedKey = `loop:${parentRunId}:${loopId}:aggregated`;
+
+      const storedResults = await redis.hgetall(resultsKey);
+      let orderedResults: any[] = Object.entries(storedResults)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([, value]) => {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return value;
+          }
+        });
+
+      // Fallback to BullMQ children API if Redis cache is empty
+      if (orderedResults.length === 0) {
+        const childValues = await job.getChildrenValues();
+        orderedResults = Object.values(childValues ?? {});
+      }
+
+      await redis.set(aggregatedKey, JSON.stringify(orderedResults));
+      await redis.expire(resultsKey, 3600);
+      await redis.expire(aggregatedKey, 3600);
+
+      await redis.publish(
+        "loop:completed",
+        JSON.stringify({
+          parentRunId,
+          loopId,
+          resultCount: orderedResults.length,
+        })
+      );
+
+      return { aggregated: orderedResults, count: orderedResults.length };
+    }
+
     const { runId, nodes, edges, userId, workflowId, useRedisStorage } = job.data;
 
-    console.log(`🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`);
+    console.log(
+      `🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`
+    );
 
     try {
       // Update run status to running
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'running');
+        await updateRunStatusInRedis(runId, "running");
       } else {
         await supabase
           .from("workflow_runs")
@@ -72,22 +207,18 @@ const workflowWorker = new Worker(
       }
 
       // Execute workflow using the unified engine
-      const input = job.data.initialInput;
-      const renamed = {
-        data: input?.marketEvent ?? input?.data ?? input,
-      };
       const result = await executeWorkflow(
         runId,
         workflowId,
         userId,
         nodes,
         edges,
-        { initialInput: renamed }
+        { initialInput: normalizeInitialInput(job.data.initialInput) }
       );
 
       // Save successful result
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'success', { result });
+        await updateRunStatusInRedis(runId, "success", { result });
       } else {
         await supabase
           .from("workflow_runs")
@@ -110,7 +241,7 @@ const workflowWorker = new Worker(
 
       // Save error
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'failed', { errorMessage: normalized.message });
+        await updateRunStatusInRedis(runId, "failed", { errorMessage: normalized.message });
       } else {
         await supabase
           .from("workflow_runs")
@@ -210,6 +341,57 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     });
   }
 
+  async addParallelLoopExecution(
+    parentRunId: string,
+    loopId: string,
+    workflowId: string,
+    userId: string,
+    subgraphNodes: any[],
+    subgraphEdges: any[],
+    items: any[],
+    useRedisStorage = true
+  ): Promise<void> {
+    await flowProducer.add({
+      name: `loop-aggregator-${loopId}`,
+      queueName: "workflow-execution",
+      data: {
+        isLoopAggregator: true,
+        parentRunId,
+        loopId,
+        workflowId,
+        userId,
+        totalItems: items.length,
+        useRedisStorage,
+      },
+      children: items.map((item: any, index: number) => ({
+        name: `loop-item-${loopId}-${index}`,
+        queueName: "workflow-execution",
+        data: {
+          runId: randomUUID(),
+          workflowId,
+          userId,
+          nodes: subgraphNodes,
+          edges: subgraphEdges,
+          initialInput: {
+            data: item,
+            $loopContext: {
+              itemIndex: index,
+              totalItems: items.length,
+              isFirstItem: index === 0,
+              isLastItem: index === items.length - 1,
+            },
+          },
+          trigger: "loop_parallel",
+          parentRunId,
+          loopId,
+          itemIndex: index,
+          totalItems: items.length,
+          useRedisStorage,
+        },
+      })),
+    });
+  }
+
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
@@ -267,7 +449,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   async cleanup(): Promise<void> {
     console.log("🧹 Cleaning up queues...");
-    await Promise.all([workflowWorker.close(), scheduledWorker.close()]);
+    await Promise.all([
+      workflowWorker.close(),
+      scheduledWorker.close(),
+      flowProducer.close(),
+    ]);
 
     await redis.quit();
     console.log("✅ Queue cleanup completed");

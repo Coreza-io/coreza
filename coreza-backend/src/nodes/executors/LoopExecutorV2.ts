@@ -14,7 +14,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutorV2, WorkflowNode, Item, NodeExecutionOutput, ControlFlags } from '../types';
+import { bullMqJobQueue } from '../../services/jobQueueManager';
+import { extractLoopBodySubgraph } from '../../services/loopSubgraphExtractor';
+import { INodeExecutorV2, WorkflowEdge, WorkflowNode, Item, NodeExecutionOutput, ControlFlags } from '../types';
 
 /**
  * Experimental Loop executor for EngineV2.
@@ -28,17 +30,70 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     node: WorkflowNode,
     params: any,
     input: Item[],
-    context: { getState: (k: string) => any; setState: (k: string, v: any) => void }
+    context: {
+      getState: (k: string) => any;
+      setState: (k: string, v: any) => void;
+      runId?: string;
+      workflowId?: string;
+      userId?: string;
+      nodes?: WorkflowNode[];
+      edges?: WorkflowEdge[];
+    }
   ): Promise<NodeExecutionOutput> {
     // Items come either from params or upstream input
-    const items: Item[] = Array.isArray(params.items) ? params.items : input;
+    const configuredItems: Item[] = Array.isArray(params.items)
+      ? params.items
+      : input;
+    const items: Item[] = Array.isArray(configuredItems)
+      ? configuredItems
+      : configuredItems
+      ? [configuredItems]
+      : [];
     const batchSize: number = Number(params.batchSize) || 1;
     const aggregate: boolean = !!params.aggregate;
+    const parallel: boolean = !!params.parallel;
     const throttleMs: number = Number(params.throttleMs) || 0;
 
     let startIndex: number = context.getState('startIndex') || 0;
     let aggregation: Item[] | undefined = context.getState('aggregation');
     if (aggregate && !aggregation) aggregation = [];
+
+    const canDistribute =
+      parallel &&
+      items.length > 1 &&
+      context.runId &&
+      context.workflowId &&
+      context.userId &&
+      context.nodes &&
+      context.edges;
+
+    if (canDistribute) {
+      const subgraph = extractLoopBodySubgraph(
+        node.id,
+        context.nodes!,
+        context.edges!
+      );
+
+      await bullMqJobQueue.addParallelLoopExecution(
+        context.runId!,
+        node.id,
+        context.workflowId!,
+        context.userId!,
+        subgraph.nodes,
+        subgraph.edges,
+        items,
+        true
+      );
+
+      const control: ControlFlags = {
+        setState: {
+          startIndex: undefined,
+          aggregation: undefined,
+        },
+      };
+
+      return { output: [], control };
+    }
 
     const batch = items.slice(startIndex, startIndex + batchSize);
     startIndex += batch.length;

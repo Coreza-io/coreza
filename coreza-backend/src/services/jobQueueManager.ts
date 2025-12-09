@@ -21,6 +21,7 @@ import { executeWorkflow } from "./workflowEngine";
 import { getRedisQueue } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData, ParallelLoopOptions } from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
+import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 
 const normalizeError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -235,6 +236,13 @@ async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<voi
 const workflowWorker = new Worker(
   "workflow-execution",
   async (job: Job<WorkflowJobData>) => {
+    // Ensure node executors are registered (handles circular dependency race condition)
+    const registeredCategories = getAllRegisteredCategories();
+    if (registeredCategories.length === 0) {
+      console.log('🔧 Initializing node executors from worker...');
+      initializeNodeExecutors();
+    }
+
     const { 
       runId, 
       nodes, 

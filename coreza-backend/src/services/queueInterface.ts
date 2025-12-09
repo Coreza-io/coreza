@@ -59,6 +59,8 @@ export interface ParallelLoopOptions {
   parentNodes?: any[];
   /** Full workflow edges for continuation context */
   parentEdges?: any[];
+  /** Parent workflow store data (all node outputs) for child context */
+  parentStoreData?: Record<string, any>;
 }
 
 export interface IWorkflowJobQueue {

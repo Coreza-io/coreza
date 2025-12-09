@@ -722,6 +722,9 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               isFirstItem: i === 0,
               isLastItem: i === items.length - 1,
             },
+            // Share parent workflow's accumulated node outputs with child
+            // Allows child jobs to reference ANY upstream node via {{ $('NodeName').json.* }}
+            $parentStore: options.parentStoreData || {},
           },
           trigger: 'loop_parallel',
           parentRunId,

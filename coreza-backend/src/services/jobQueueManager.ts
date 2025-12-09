@@ -125,11 +125,6 @@ async function collectOrderedResults(
 }
 
 /**
- * Cleans up Redis keys after loop aggregation completes.
- */
-async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<void> {
-
-/**
  * Pre-resolves loop-related template expressions for a single loop item.
  * Replaces $('Loop') and $loopContext references with actual item values.
  * This is critical for parallel execution where child workers don't have access to parent Loop node store.
@@ -221,6 +216,11 @@ function preResolveSubgraphForItem(
     values: resolveLoopTemplatesForItem(node.values || {}, item, itemIndex, totalItems),
   }));
 }
+
+/**
+ * Cleans up Redis keys after loop aggregation completes.
+ */
+async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<void> {
   const keysToDelete = [
     `loop:${parentRunId}:${loopId}:results`,
     `loop:${parentRunId}:${loopId}:aggregated`,

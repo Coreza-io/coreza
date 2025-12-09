@@ -79,6 +79,30 @@ export interface ControlFlags {
   setState?: Record<string, any>;
   /** Convenience branch decision for conditional nodes. */
   branch?: "true" | "false";
+  
+  // Unified loop control flags
+  /** Loop completed all items - route to "done" handle */
+  loopCompleted?: boolean;
+  /** Loop iteration in progress - route to "loop" handle */
+  loopIteration?: boolean;
+  /** Items distributed to BullMQ for parallel execution */
+  parallelDistributed?: boolean;
+  /** Explicit source handle for routing */
+  sourceHandle?: string;
+  /** Current iteration index for sequential loops */
+  currentIndex?: number;
+  /** Whether this is the last batch in sequential mode */
+  isLastBatch?: boolean;
+  
+  // Parallel distribution metadata
+  /** Number of items being processed */
+  itemCount?: number;
+  /** ID of the loop node */
+  loopId?: string;
+  /** Max concurrent workers for parallel execution */
+  maxConcurrency?: number;
+  /** Continue processing on individual item errors */
+  continueOnError?: boolean;
 }
 
 /**

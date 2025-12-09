@@ -166,7 +166,11 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     if (startIndex < items.length) {
       // More items remain – persist start index and re-queue
       context.setState('startIndex', startIndex);
-      control.requeueSelf = true;
+      // Unified loop control flags
+      control.loopIteration = true;
+      control.sourceHandle = 'loop';
+      control.currentIndex = startIndex - batch.length;
+      control.requeueSelf = true; // Keep for EngineV2 backward compatibility
       if (throttleMs > 0) {
         control.throttleUntil = Date.now() + throttleMs;
       }
@@ -181,12 +185,19 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       context.setState('aggregation', undefined);
     }
     
+    // Final batch - use unified completion flags
+    const completionControl: ControlFlags = {
+      loopCompleted: true,
+      sourceHandle: 'done',
+      isLastBatch: true,
+    };
+    
     // Include error summary if continueOnError was used
     if (continueOnError && errors && errors.length > 0) {
       context.setState('errors', undefined);
       return { 
         output, 
-        control: {},
+        control: completionControl,
         meta: {
           errorCount: errors.length,
           errors,
@@ -194,7 +205,7 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       };
     }
 
-    return { output, control };
+    return { output, control: completionControl };
   }
 }
 

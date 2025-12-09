@@ -789,7 +789,10 @@ const WorkflowEditorContent = () => {
         `${API_URL}/workflows/${authUser.id}/${workflowId}/schedule`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
           body: JSON.stringify({
             is_active: newStatus,
           }),

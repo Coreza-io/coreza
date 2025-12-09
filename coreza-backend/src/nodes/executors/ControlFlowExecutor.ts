@@ -397,18 +397,14 @@ export class ControlFlowExecutor implements INodeExecutor {
       context?.setState("aggregatedResults", undefined);
       context?.setState("isCompleted", undefined);
 
-      const result: any = {
+      return {
         success: true,
         data: aggregatedResults,
+        control: {
+          loopCompleted: true,
+          sourceHandle: "done",
+        },
       };
-
-      // Add metadata for WorkflowEngine routing
-      result.meta = {
-        sourceHandle: "done",
-        isLoopCompleted: true,
-      };
-
-      return result;
     }
 
     // Get current batch
@@ -432,21 +428,16 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     // Return current batch for loop body execution
-    const result: any = {
+    return {
       success: true,
       data: currentBatch.length === 1 ? currentBatch[0] : currentBatch,
+      control: {
+        loopIteration: true,
+        sourceHandle: "loop",
+        currentIndex,
+        isLastBatch,
+      },
     };
-
-    // Add metadata for WorkflowEngine routing
-    result.meta = {
-      sourceHandle: "loop",
-      isLoopIteration: true,
-      currentIndex,
-      isLastBatch,
-      loopConfig: { batchSize, parallel, continueOnError, throttleMs },
-    };
-
-    return result;
   }
 
   private evaluateCondition(

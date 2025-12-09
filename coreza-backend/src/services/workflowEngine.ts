@@ -393,27 +393,28 @@ export class WorkflowEngine {
         fullResult &&
         typeof fullResult === "object"
       ) {
-        // Handle parallelDistributed control flag - aggregator will handle continuation
+        // Unified control-based loop handling
         if (fullResult.control?.parallelDistributed) {
+          // Parallel mode - aggregator will handle continuation
           console.log(`🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`);
           console.log(`   Items: ${fullResult.control.itemCount}, MaxConcurrency: ${fullResult.control.maxConcurrency}`);
-          console.log(`   Workflow will continue via aggregator when all items complete`);
-          // Don't route to done edges - aggregator will queue continuation jobs
           return;
         }
         
-        if (fullResult.meta?.isLoopCompleted) {
+        if (fullResult.control?.loopCompleted) {
+          // Sequential mode - loop completed, route to done edges
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
             await this.routeEdge(edge, result, meta);
           }
-        } else if (fullResult.meta?.isLoopIteration) {
+        } else if (fullResult.control?.loopIteration) {
+          // Sequential mode - loop iteration, route to loop body edges
           const loopEdges = this.router.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
             const iterMeta: IterMeta = {
               ...(meta || {}),
               originLoopId: nodeId,
-              iterIndex: fullResult.meta.currentIndex,
+              iterIndex: fullResult.control.currentIndex,
             };
             await this.routeEdge(edge, result, iterMeta);
           }

@@ -786,7 +786,7 @@ const WorkflowEditorContent = () => {
 
       // Call the correct backend endpoint
       const res = await fetch(
-        `${API_URL}/workflows/${authUser.id}/${workflowId}/schedule`,
+        `${API_URL}/workflows/${workflowId}/schedule`,
         {
           method: "PUT",
           headers: {

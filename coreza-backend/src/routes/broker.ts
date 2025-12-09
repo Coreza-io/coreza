@@ -20,6 +20,7 @@ import CredentialManager from "../utils/credentialManager";
 import { getBrokerConfig, isSupportedBroker } from "../config/brokers";
 import { refreshOAuthTokenIfNeeded } from "../utils/oauthTokenManager";
 import { requireTrader } from "../middleware/licenseCheck";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
 
@@ -27,23 +28,25 @@ function normalizeBroker(broker: string) {
   return broker?.toLowerCase();
 }
 
+router.use(requireAuth);
+
 // Get user credentials list for any broker
 router.get("/:broker/credentials", async (req, res, next) => {
   try {
     const { broker } = req.params;
-    const { user_id } = req.query;
     const brokerKey = normalizeBroker(broker);
+    const userId = req.user?.id;
 
     if (!brokerKey) {
       return res.status(400).json({ error: "broker is required" });
     }
 
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const credentials = await CredentialManager.listCredentials(
-      user_id as string,
+      userId,
       brokerKey
     );
 
@@ -73,20 +76,21 @@ router.post("/:broker/auth", async (req, res, next) => {
   try {
     const { broker } = req.params;
     const brokerKey = normalizeBroker(broker);
-    const { user_id, credential_name, ...credentials } = req.body;
+    const { credential_name, ...credentials } = req.body;
+    const userId = req.user?.id;
 
     if (!brokerKey) {
       return res.status(400).json({ error: "broker is required" });
     }
 
-    if (!user_id || !credential_name) {
+    if (!userId || !credential_name) {
       return res
         .status(400)
-        .json({ error: "user_id and credential_name are required" });
+        .json({ error: "credential_name is required" });
     }
 
     const credentialId = await CredentialManager.saveCredentials(
-      user_id,
+      userId,
       brokerKey,
       credential_name,
       credentials,
@@ -108,7 +112,8 @@ router.post("/:broker/:operation", requireTrader("Multi-Broker Trading"), async 
   try {
     const { broker, operation } = req.params;
     const brokerKey = normalizeBroker(broker);
-    const { user_id, credential_id } = req.body;
+    const { credential_id } = req.body;
+    const userId = req.user?.id;
 
     if (!brokerKey) {
       return res.status(400).json({ error: "broker is required" });
@@ -120,10 +125,10 @@ router.post("/:broker/:operation", requireTrader("Multi-Broker Trading"), async 
         .json({ error: `Unsupported broker: ${brokerKey}` });
     }
 
-    if (!user_id || !credential_id) {
+    if (!userId || !credential_id) {
       return res
         .status(400)
-        .json({ error: "user_id and credential_id are required" });
+        .json({ error: "credential_id is required" });
     }
 
     const config = getBrokerConfig(brokerKey);
@@ -154,7 +159,7 @@ router.post("/:broker/:operation", requireTrader("Multi-Broker Trading"), async 
 
     // 1. Get credentials
     const { credentials } = await CredentialManager.getCredentials(
-      user_id,
+      userId,
       brokerKey,
       credential_id
     );
@@ -165,7 +170,7 @@ router.post("/:broker/:operation", requireTrader("Multi-Broker Trading"), async 
       creds = await refreshOAuthTokenIfNeeded(
         brokerKey,
         creds,
-        user_id,
+        userId,
         credential_id
       );
     }

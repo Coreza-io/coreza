@@ -90,6 +90,13 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
 
       console.log(`📦 Loop ${node.id}: Extracted subgraph with ${subgraph.nodes.length} nodes and ${subgraph.edges.length} edges`);
 
+      // Extract "done" edges from this loop node for continuation after aggregation
+      const doneEdges = context.edges.filter(
+        (e: WorkflowEdge) => e.source === node.id && e.sourceHandle === 'done'
+      );
+
+      console.log(`🔗 Loop ${node.id}: Found ${doneEdges.length} done edges for continuation`);
+
       // Create N BullMQ jobs (one per item) with aggregator parent
       await bullMqJobQueue.addParallelLoopExecution(
         context.runId,
@@ -102,7 +109,10 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
         {
           maxConcurrency,
           continueOnError,
-          useRedisStorage: true, // High-frequency optimization
+          useRedisStorage: true,
+          doneEdges,
+          parentNodes: context.nodes,
+          parentEdges: context.edges,
         }
       );
 

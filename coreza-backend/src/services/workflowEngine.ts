@@ -220,15 +220,16 @@ export class WorkflowEngine {
   }
 
   async execute(
-    initialInput?: any
+    initialInput?: any,
+    startNodeId?: string
   ): Promise<{ success: boolean; result?: any; nodeExecutions?: NodeExecutionLog[]; executionOrder?: string[]; error?: string }> {
     try {
       console.log(
-        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}`
+        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${startNodeId ? ` from node ${startNodeId}` : ''}`
       );
       this.MAX_RETRIES = this.nodes.length * 2;
 
-      await this.run(initialInput);
+      await this.run(initialInput, startNodeId);
 
       console.log(`✅ Workflow execution completed successfully`);
       return { 
@@ -249,31 +250,37 @@ export class WorkflowEngine {
     }
   }
 
-  async run(initialInput: any = []): Promise<void> {
-    // Find entry nodes (no incoming edges)
-    const entryNodes = this.nodes.filter(
-      (n) =>
-        n.node_type === "trigger" && // ✅ only include main nodes
-        !this.edges.some((e) => e.target === n.id)
-    );
-
-    // Seed queue with entry nodes
-    for (const node of entryNodes) {
-      // Skip Alpaca or any external listener node if it’s already active
-      if (node.node_type === "trigger") {
-        console.log(
-          `🟡 Skipping re-run for ${node.name || node.node_type} node`
-        );
-        const edges = this.router.select(node, initialInput);
-        for (const edge of edges) {
-          this.store.setNodeResult(node.id, initialInput);
-          this.executed.add(node.id);
-          await this.routeEdge(edge, initialInput);
-        }
-      } else {
-        this.enqueue({ nodeId: node.id, input: initialInput });
+  async run(initialInput: any = [], startNodeId?: string): Promise<void> {
+    // If startNodeId is provided (loop continuation), start from that specific node
+    if (startNodeId) {
+      const startNode = this.nodes.find(n => n.id === startNodeId);
+      if (startNode) {
+        console.log(`🔗 Starting execution from continuation node: ${startNodeId}`);
+        this.enqueue({ nodeId: startNodeId, input: initialInput });
       }
-      //this.enqueue({ nodeId: node.id, input: initialInput });
+    }
+    
+    // Only find entry nodes if we didn't have a specific start node
+    if (!startNodeId || this.queue.length === 0) {
+      const entryNodes = this.nodes.filter(
+        (n) =>
+          n.node_type === "trigger" &&
+          !this.edges.some((e) => e.target === n.id)
+      );
+
+      for (const node of entryNodes) {
+        if (node.node_type === "trigger") {
+          console.log(`🟡 Skipping re-run for ${node.name || node.node_type} node`);
+          const edges = this.router.select(node, initialInput);
+          for (const edge of edges) {
+            this.store.setNodeResult(node.id, initialInput);
+            this.executed.add(node.id);
+            await this.routeEdge(edge, initialInput);
+          }
+        } else {
+          this.enqueue({ nodeId: node.id, input: initialInput });
+        }
+      }
     }
 
     // Process queue until empty
@@ -357,6 +364,15 @@ export class WorkflowEngine {
         fullResult &&
         typeof fullResult === "object"
       ) {
+        // Handle parallelDistributed control flag - aggregator will handle continuation
+        if (fullResult.control?.parallelDistributed) {
+          console.log(`🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`);
+          console.log(`   Items: ${fullResult.control.itemCount}, MaxConcurrency: ${fullResult.control.maxConcurrency}`);
+          console.log(`   Workflow will continue via aggregator when all items complete`);
+          // Don't route to done edges - aggregator will queue continuation jobs
+          return;
+        }
+        
         if (fullResult.meta?.isLoopCompleted) {
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
@@ -529,6 +545,8 @@ export class WorkflowEngine {
 export type ExecutionOptions = {
   mode?: "best-effort" | "fail-fast";
   initialInput?: any;
+  /** Start execution from a specific node (for loop continuation) */
+  startNodeId?: string;
 };
 
 export async function executeWorkflow(
@@ -547,5 +565,5 @@ export async function executeWorkflow(
     edges,
     opts?.mode
   );
-  return await workflowEngine.execute(opts?.initialInput);
+  return await workflowEngine.execute(opts?.initialInput, opts?.startNodeId);
 }

@@ -22,7 +22,16 @@ export interface NodeResult {
   success?: boolean;
   data?: any;
   error?: string;
+  /** 
+   * Execution context metadata (e.g., error summaries, timing info).
+   * For loop iteration context, use IterMeta in QueueItem.
+   */
   meta?: Record<string, any>;
+  /** 
+   * Engine routing signals (loopCompleted, loopIteration, sourceHandle, etc.)
+   * that tell the workflow engine what action to take.
+   */
+  control?: ControlFlags;
 }
 
 export interface INodeExecutor {

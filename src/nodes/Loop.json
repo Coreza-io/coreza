@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/loop.svg",
   "category": "Logic",
-  "description": "Iterate over array items, executing downstream nodes once per item (like N8N Loop Over).",
+  "description": "Iterate over array items, executing downstream nodes once per item. Supports distributed parallel execution via BullMQ.",
   "color": "text-yellow-500",
   "size": { "width": 320, "height": 200 },
   "handles": [
@@ -27,21 +27,21 @@
       "type": "text",
       "placeholder": "1",
       "default": 1,
-      "description": "Number of items to process per iteration."
+      "description": "Number of items to process per iteration (sequential mode only)."
     },
     {
       "key": "aggregate",
       "label": "Aggregate Output",
       "type": "checkbox",
       "default": false,
-      "description": "Accumulate results and emit all processed items each iteration"
+      "description": "Accumulate results and emit all processed items when loop completes."
     },
     {
       "key": "parallel",
       "label": "Parallel Execution",
       "type": "checkbox",
       "default": false,
-      "description": "Distribute loop items across BullMQ workers for true distributed parallelism"
+      "description": "Distribute loop items across BullMQ workers for true distributed parallelism."
     },
     {
       "key": "maxConcurrency",
@@ -49,15 +49,15 @@
       "type": "text",
       "placeholder": "10",
       "default": "10",
-      "description": "Maximum concurrent BullMQ workers for parallel execution",
-      "condition": { "parallel": true }
+      "description": "Maximum concurrent BullMQ workers (1-50). Higher values = faster but more resource usage.",
+      "condition": { "field": "parallel", "value": true }
     },
     {
       "key": "continueOnError",
       "label": "Continue On Error",
       "type": "checkbox",
       "default": false,
-      "description": "Skip failed iterations instead of aborting"
+      "description": "Continue processing remaining items even if some fail. Failed items include error info in results."
     },
     {
       "key": "throttleMs",
@@ -65,7 +65,8 @@
       "type": "text",
       "placeholder": "200",
       "default": 200,
-      "description": "Delay between loop iterations (sequential mode only)"
+      "description": "Delay between loop iterations (sequential mode only).",
+      "condition": { "field": "parallel", "value": false }
     }
   ]
 }

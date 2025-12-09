@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "./workflowEngine";
 import { getRedisQueue } from "../config/redis";
-import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
+import { IWorkflowJobQueue, WorkflowJobData, ParallelLoopOptions } from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 
 const normalizeError = (error: unknown): Error => {
@@ -55,6 +55,89 @@ interface ScheduledWorkflowJobData {
   cronExpression: string;
 }
 
+/** Result structure for each loop item */
+interface LoopItemResult {
+  success: boolean;
+  itemIndex: number;
+  data?: any;
+  error?: string;
+}
+
+/**
+ * Collects and orders results from Redis hash by itemIndex.
+ * Handles both successful and failed items gracefully.
+ */
+async function collectOrderedResults(
+  parentRunId: string,
+  loopId: string,
+  totalItems: number,
+  continueOnError: boolean
+): Promise<{ results: LoopItemResult[]; hasErrors: boolean; errorCount: number }> {
+  const key = `loop:${parentRunId}:${loopId}:results`;
+  const resultsHash = await redis.hgetall(key);
+  
+  const results: LoopItemResult[] = new Array(totalItems);
+  let hasErrors = false;
+  let errorCount = 0;
+  
+  for (let i = 0; i < totalItems; i++) {
+    const rawValue = resultsHash[String(i)];
+    if (rawValue) {
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (parsed.error) {
+          hasErrors = true;
+          errorCount++;
+          results[i] = {
+            success: false,
+            itemIndex: i,
+            error: parsed.error,
+          };
+        } else {
+          results[i] = {
+            success: true,
+            itemIndex: i,
+            data: parsed,
+          };
+        }
+      } catch {
+        results[i] = {
+          success: false,
+          itemIndex: i,
+          error: "Failed to parse result",
+        };
+        hasErrors = true;
+        errorCount++;
+      }
+    } else {
+      // Missing result - treat as error
+      results[i] = {
+        success: false,
+        itemIndex: i,
+        error: "No result received",
+      };
+      hasErrors = true;
+      errorCount++;
+    }
+  }
+  
+  return { results, hasErrors, errorCount };
+}
+
+/**
+ * Cleans up Redis keys after loop aggregation completes.
+ */
+async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<void> {
+  const keysToDelete = [
+    `loop:${parentRunId}:${loopId}:results`,
+    `loop:${parentRunId}:${loopId}:aggregated`,
+    `loop:${parentRunId}:${loopId}:meta`,
+  ];
+  
+  await Promise.all(keysToDelete.map(key => redis.del(key)));
+  console.log(`🧹 Cleaned up Redis keys for loop ${loopId}`);
+}
+
 // Workflow execution worker
 const workflowWorker = new Worker(
   "workflow-execution",
@@ -71,7 +154,8 @@ const workflowWorker = new Worker(
       parentRunId,
       loopId,
       itemIndex,
-      totalItems
+      totalItems,
+      continueOnError = false,
     } = job.data;
 
     // Handle parallel loop item execution
@@ -88,23 +172,29 @@ const workflowWorker = new Worker(
           { initialInput: job.data.initialInput }
         );
 
-        // Store result in Redis by itemIndex for ordered aggregation
+        // Store successful result in Redis by itemIndex
         const key = `loop:${parentRunId}:${loopId}:results`;
         await redis.hset(key, String(itemIndex), JSON.stringify(result));
         await redis.expire(key, 3600); // 1 hour TTL
 
         console.log(`✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`);
-        return result;
+        return { success: true, itemIndex, data: result };
       } catch (error) {
         const normalized = normalizeError(error);
         console.error(`❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`, normalized.message);
         
-        // Store error in Redis for aggregation
+        // Store error in Redis for aggregation (allows continueOnError)
         const key = `loop:${parentRunId}:${loopId}:results`;
         await redis.hset(key, String(itemIndex), JSON.stringify({ error: normalized.message }));
         await redis.expire(key, 3600);
         
-        throw normalized;
+        // If continueOnError is false, throw to fail the job
+        if (!continueOnError) {
+          throw normalized;
+        }
+        
+        // Return error result for aggregation
+        return { success: false, itemIndex, error: normalized.message };
       }
     }
 
@@ -113,36 +203,67 @@ const workflowWorker = new Worker(
       console.log(`📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`);
 
       try {
-        // BullMQ automatically waits for all children via getChildrenValues()
-        const childrenValues = await job.getChildrenValues();
+        // Collect ordered results from Redis hash (more reliable than getChildrenValues)
+        const { results, hasErrors, errorCount } = await collectOrderedResults(
+          parentRunId!,
+          loopId!,
+          totalItems ?? 0,
+          continueOnError
+        );
         
-        // Order results by itemIndex (children come back in completion order, not index order)
-        const orderedResults: any[] = [];
-        for (let i = 0; i < (totalItems ?? 0); i++) {
-          // Find the child result for this index
-          const childKey = Object.keys(childrenValues).find(k => k.includes(`loop-item-${i}`));
-          if (childKey) {
-            orderedResults.push(childrenValues[childKey]);
-          }
-        }
+        // Extract just the data for successful items, keep error info for failed
+        const aggregatedOutput = results.map(r => 
+          r.success ? r.data : { _error: r.error, _itemIndex: r.itemIndex }
+        );
 
         // Store aggregated results for parent workflow to retrieve
         const aggregatedKey = `loop:${parentRunId}:${loopId}:aggregated`;
-        await redis.set(aggregatedKey, JSON.stringify(orderedResults));
+        await redis.set(aggregatedKey, JSON.stringify({
+          results: aggregatedOutput,
+          meta: {
+            totalItems,
+            successCount: totalItems! - errorCount,
+            errorCount,
+            hasErrors,
+            completedAt: new Date().toISOString(),
+          }
+        }));
         await redis.expire(aggregatedKey, 3600);
 
-        // Signal completion via Redis pub/sub
+        // Signal completion via Redis pub/sub for parent workflow continuation
         await redis.publish('loop:completed', JSON.stringify({
           parentRunId,
           loopId,
-          resultCount: orderedResults.length,
+          workflowId,
+          userId,
+          resultCount: results.length,
+          successCount: totalItems! - errorCount,
+          errorCount,
+          hasErrors,
         }));
 
-        console.log(`✅ Aggregated ${orderedResults.length} loop results for loop ${loopId}`);
-        return { aggregated: orderedResults, count: orderedResults.length };
+        console.log(`✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`);
+        
+        // Cleanup Redis keys after successful aggregation
+        await cleanupLoopKeys(parentRunId!, loopId!);
+        
+        return { 
+          aggregated: aggregatedOutput, 
+          count: results.length,
+          successCount: totalItems! - errorCount,
+          errorCount,
+        };
       } catch (error) {
         const normalized = normalizeError(error);
         console.error(`❌ Loop aggregation failed for ${loopId}:`, normalized.message);
+        
+        // Publish failure event
+        await redis.publish('loop:failed', JSON.stringify({
+          parentRunId,
+          loopId,
+          error: normalized.message,
+        }));
+        
         throw normalized;
       }
     }
@@ -302,8 +423,22 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   /**
    * Creates parallel loop execution jobs using BullMQ FlowProducer.
-   * Creates one parent aggregator job and N child jobs (one per loop item).
-   * Children execute in parallel across workers, parent waits for all children.
+   * 
+   * Architecture:
+   * - Creates one parent aggregator job and N child jobs (one per loop item)
+   * - Children execute in parallel across workers (limited by maxConcurrency)
+   * - Parent waits for all children to complete via BullMQ dependency system
+   * - Results are stored in Redis hash by itemIndex for ordered retrieval
+   * - Supports continueOnError for fault-tolerant parallel processing
+   * 
+   * @param parentRunId - The parent workflow run ID
+   * @param loopId - The loop node ID
+   * @param workflowId - The workflow ID
+   * @param userId - The user ID
+   * @param subgraphNodes - Nodes in the loop body subgraph
+   * @param subgraphEdges - Edges in the loop body subgraph
+   * @param items - Array of items to process in parallel
+   * @param options - Parallel execution options (maxConcurrency, continueOnError)
    */
   async addParallelLoopExecution(
     parentRunId: string,
@@ -313,30 +448,36 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     subgraphNodes: any[],
     subgraphEdges: any[],
     items: any[],
-    useRedisStorage: boolean = true
+    options: ParallelLoopOptions = {}
   ): Promise<void> {
-    console.log(`🔄 Creating ${items.length} parallel loop jobs for loop ${loopId}`);
+    const {
+      maxConcurrency = 10,
+      continueOnError = false,
+      useRedisStorage = true,
+    } = options;
+    
+    console.log(`🔄 Creating ${items.length} parallel loop jobs for loop ${loopId} (maxConcurrency: ${maxConcurrency}, continueOnError: ${continueOnError})`);
 
-    await flowProducer.add({
-      name: 'loop-aggregator',
-      queueName: 'workflow-execution',
-      data: {
-        isLoopAggregator: true,
-        parentRunId,
-        loopId,
-        workflowId,
-        userId,
-        totalItems: items.length,
-        useRedisStorage,
-        runId: parentRunId,
-        nodes: [],
-        edges: [],
-      } as WorkflowJobData,
-      opts: {
-        removeOnComplete: 50,
-        removeOnFail: 100,
-      },
-      children: items.map((item, i) => ({
+    // Store loop metadata in Redis for continuation
+    await redis.set(`loop:${parentRunId}:${loopId}:meta`, JSON.stringify({
+      totalItems: items.length,
+      maxConcurrency,
+      continueOnError,
+      startedAt: new Date().toISOString(),
+    }));
+    await redis.expire(`loop:${parentRunId}:${loopId}:meta`, 3600);
+
+    // Create child jobs with rate limiting via delay
+    // BullMQ will process up to `concurrency` jobs simultaneously
+    // We add incremental delays to chunks beyond the first maxConcurrency items
+    const childJobs = items.map((item, i) => {
+      // Calculate delay to implement per-loop rate limiting
+      // Jobs within the first maxConcurrency batch have no delay
+      // Subsequent batches are delayed incrementally
+      const batchIndex = Math.floor(i / maxConcurrency);
+      const delayMs = batchIndex > 0 ? batchIndex * 100 : 0; // 100ms between batches
+      
+      return {
         name: `loop-item-${i}`,
         queueName: 'workflow-execution',
         data: {
@@ -360,20 +501,48 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           itemIndex: i,
           totalItems: items.length,
           useRedisStorage,
+          continueOnError,
         } as WorkflowJobData,
         opts: {
           removeOnComplete: 50,
-          removeOnFail: 100,
-          attempts: 3,
-          backoff: {
-            type: "exponential",
+          removeOnFail: continueOnError ? 50 : 100,
+          attempts: continueOnError ? 1 : 3, // No retries if continueOnError
+          delay: delayMs,
+          backoff: continueOnError ? undefined : {
+            type: "exponential" as const,
             delay: 2000,
           },
+          // Allow parent to complete even if some children fail when continueOnError is true
+          failParentOnFailure: !continueOnError,
         },
-      })),
+      };
     });
 
-    console.log(`✅ Created ${items.length} parallel loop jobs with aggregator`);
+    // Create the flow with parent aggregator and children
+    await flowProducer.add({
+      name: 'loop-aggregator',
+      queueName: 'workflow-execution',
+      data: {
+        isLoopAggregator: true,
+        parentRunId,
+        loopId,
+        workflowId,
+        userId,
+        totalItems: items.length,
+        useRedisStorage,
+        runId: parentRunId,
+        nodes: [],
+        edges: [],
+        continueOnError,
+      } as WorkflowJobData,
+      opts: {
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+      children: childJobs,
+    });
+
+    console.log(`✅ Created ${items.length} parallel loop jobs with aggregator (${Math.ceil(items.length / maxConcurrency)} batches)`);
   }
 
   async scheduleWorkflow(

@@ -1,6 +1,6 @@
 import { Queue, Job } from "bullmq";
 import { getRedisQueue } from "../config/redis";
-import { IWorkflowJobQueue, WorkflowJobData } from "./queueInterface";
+import { IWorkflowJobQueue, WorkflowJobData, ParallelLoopOptions } from "./queueInterface";
 import logger from "../utils/logger";
 import { workflowExecutionsCounter } from "../utils/metrics";
 
@@ -80,10 +80,10 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     subgraphNodes: any[],
     subgraphEdges: any[],
     items: any[],
-    useRedisStorage?: boolean
+    options?: ParallelLoopOptions
   ): Promise<void> {
     logger.warn(
-      { parentRunId, loopId, workflowId, itemCount: items.length },
+      { parentRunId, loopId, workflowId, itemCount: items.length, options },
       'addParallelLoopExecution called on market-stream-service - this is handled by main backend'
     );
     throw new Error('Parallel loop execution should be handled by main backend jobQueueManager');

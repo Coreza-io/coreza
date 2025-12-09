@@ -22,7 +22,7 @@ export { NodeQueueManager } from './nodeQueueManager';
 export { BullMQJobQueue } from './jobQueueManager';
 export { bullMqJobQueue as jobQueue } from './jobQueueManager';
 export { NodeRouter } from './router';
-export { LoopHandler } from './loopHandler';
+
 export { NodeStoreV2 } from './nodeStoreV2';
 
 // Export Market Data services (Redis Pub/Sub architecture)

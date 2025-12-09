@@ -255,6 +255,9 @@ const workflowWorker = new Worker(
     if (trigger === 'loop_parallel' && !isLoopAggregator) {
       console.log(`🔄 Processing loop item ${(itemIndex ?? 0) + 1}/${totalItems} for loop ${loopId}`);
       
+      const startNodeId = (job.data as any).startNodeId;
+      console.log(`🎯 Loop item starting from node: ${startNodeId || 'auto-detect'}`);
+      
       try {
         const result = await executeWorkflow(
           runId,
@@ -262,7 +265,10 @@ const workflowWorker = new Worker(
           userId,
           nodes,
           edges,
-          { initialInput: job.data.initialInput }
+          { 
+            initialInput: job.data.initialInput,
+            startNodeId, // Pass entry point to workflow engine
+          }
         );
 
         // Store successful result in Redis by itemIndex
@@ -681,6 +687,16 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       // This converts "{{ $('Loop').json.data.[0] }}" → actual item value (e.g., "AAPL")
       const resolvedNodes = preResolveSubgraphForItem(subgraphNodes, item, i, items.length);
       
+      // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
+      const loopBodyEntryEdges = subgraphEdges.filter(
+        (e) => e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
+      );
+      const startNodeId = loopBodyEntryEdges[0]?.target;
+      
+      if (!startNodeId) {
+        console.warn(`⚠️ No entry node found for loop ${loopId} - loop body may be empty`);
+      }
+      
       return {
         name: `loop-item-${i}`,
         queueName: 'workflow-execution',
@@ -706,6 +722,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           totalItems: items.length,
           useRedisStorage,
           continueOnError,
+          startNodeId, // Entry point for loop body execution
         } as WorkflowJobData,
         opts: {
           removeOnComplete: 50,

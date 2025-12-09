@@ -251,17 +251,22 @@ export class WorkflowEngine {
   }
 
   async run(initialInput: any = [], startNodeId?: string): Promise<void> {
-    // If startNodeId is provided (loop continuation), start from that specific node
+    let startedFromSpecificNode = false;
+    
+    // If startNodeId is provided (loop continuation or parallel loop item), start from that specific node
     if (startNodeId) {
       const startNode = this.nodes.find(n => n.id === startNodeId);
       if (startNode) {
-        console.log(`🔗 Starting execution from continuation node: ${startNodeId}`);
+        console.log(`🔗 Starting execution from specific node: ${startNodeId} (${startNode.name || startNode.node_type})`);
         this.enqueue({ nodeId: startNodeId, input: initialInput });
+        startedFromSpecificNode = true;
+      } else {
+        console.warn(`⚠️ Start node ${startNodeId} not found in nodes list, falling back to entry nodes`);
       }
     }
     
-    // Only find entry nodes if we didn't have a specific start node
-    if (!startNodeId || this.queue.length === 0) {
+    // Only find entry nodes if we didn't successfully start from a specific node
+    if (!startedFromSpecificNode) {
       const entryNodes = this.nodes.filter(
         (n) =>
           n.node_type === "trigger" &&

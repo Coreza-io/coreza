@@ -17,7 +17,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNodeId } from "@xyflow/react";
 import { createWaitingNewsOutput } from "@/utils/alpacaNews";
-import { useExecutionStore, useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
+import {
+  useExecutionStore,
+  useExecutionStoreVersion,
+} from "@/contexts/ExecutionStoreContext";
 
 interface UseNodeOutputProps {
   data: any;
@@ -36,6 +39,7 @@ interface UseNodeOutputReturn {
  * Custom hook to manage node output display and pinning
  * Handles output updates, pinning, and special cases like AlpacaNews
  */
+
 export function useNodeOutput({
   data,
   definition,
@@ -100,7 +104,15 @@ export function useNodeOutput({
     } else if (data.output) {
       setLastOutput(data.output);
     }
-  }, [version, data.output, definition?.name, isPinned, lastOutput?.status, nodeId, executionStore]);
+  }, [
+    version,
+    data.output,
+    definition?.name,
+    isPinned,
+    lastOutput?.status,
+    nodeId,
+    executionStore,
+  ]);
 
   return {
     displayedData,
@@ -110,4 +122,3 @@ export function useNodeOutput({
     setLastOutput,
   };
 }
-

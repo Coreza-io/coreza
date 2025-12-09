@@ -126,96 +126,30 @@ async function collectOrderedResults(
 }
 
 /**
- * Pre-resolves loop-related template expressions for a single loop item.
- * Replaces $('Loop') and $loopContext references with actual item values.
- * This is critical for parallel execution where child workers don't have access to parent Loop node store.
+ * Creates per-item parent store with Loop node output injected for current item.
+ * This replaces pre-resolution - resolveReferences() will handle template resolution at runtime.
  */
-function resolveLoopTemplatesForItem(
-  values: Record<string, any>,
+function createItemParentStore(
+  parentStoreData: Record<string, any>,
+  loopId: string,
   item: any,
   itemIndex: number,
   totalItems: number
 ): Record<string, any> {
-  const loopContext = {
-    itemIndex,
-    totalItems,
-    isFirstItem: itemIndex === 0,
-    isLastItem: itemIndex === totalItems - 1,
+  return {
+    ...parentStoreData,
+    // Override Loop node's output with current item (not the full array)
+    // This allows {{ $('Loop').json.data }} to resolve to current item during execution
+    [loopId]: {
+      data: item,
+      $loopContext: {
+        itemIndex,
+        totalItems,
+        isFirstItem: itemIndex === 0,
+        isLastItem: itemIndex === totalItems - 1,
+      },
+    },
   };
-  
-  function resolveValue(val: any): any {
-    if (typeof val !== 'string') return val;
-    
-    // Serialize item for replacement
-    const itemStr = typeof item === 'object' ? JSON.stringify(item) : String(item);
-    
-    // Replace $('Loop').json.data patterns (various accessor styles)
-    let resolved = val
-      // $('Loop').json.data.[0] or $('Loop').json.data[0] → item itself
-      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\.data\.?\[0\]\s*\}\}/gi, itemStr)
-      // $('Loop').json.data → full item
-      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\.data\s*\}\}/gi, itemStr)
-      // $('Loop').json → full item (common shorthand)
-      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\s*\}\}/gi, itemStr)
-      // $loopContext patterns
-      .replace(/\{\{\s*\$loopContext\.itemIndex\s*\}\}/gi, String(itemIndex))
-      .replace(/\{\{\s*\$loopContext\.isFirstItem\s*\}\}/gi, String(loopContext.isFirstItem))
-      .replace(/\{\{\s*\$loopContext\.isLastItem\s*\}\}/gi, String(loopContext.isLastItem))
-      .replace(/\{\{\s*\$loopContext\.totalItems\s*\}\}/gi, String(totalItems));
-    
-    // Handle nested property access like $('Loop').json.data.[0].symbol
-    // Pattern: {{ $('Loop').json.data.[0].propertyPath }}
-    resolved = resolved.replace(
-      /\{\{\s*\$\(['"]Loop['"]\)\.json\.data\.?\[0\]\.([a-zA-Z0-9_.]+)\s*\}\}/gi,
-      (match, propertyPath) => {
-        try {
-          const keys = propertyPath.split('.');
-          let value = item;
-          for (const key of keys) {
-            if (value && typeof value === 'object' && key in value) {
-              value = value[key];
-            } else {
-              return match; // Property not found, leave unchanged
-            }
-          }
-          return typeof value === 'object' ? JSON.stringify(value) : String(value);
-        } catch {
-          return match;
-        }
-      }
-    );
-    
-    return resolved;
-  }
-  
-  function resolveDeep(obj: any): any {
-    if (typeof obj === 'string') return resolveValue(obj);
-    if (Array.isArray(obj)) return obj.map(resolveDeep);
-    if (obj && typeof obj === 'object') {
-      return Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => [k, resolveDeep(v)])
-      );
-    }
-    return obj;
-  }
-  
-  return resolveDeep(values);
-}
-
-/**
- * Pre-resolves loop templates in all subgraph nodes for a specific item.
- * Returns a new array of nodes with resolved values.
- */
-function preResolveSubgraphForItem(
-  subgraphNodes: any[],
-  item: any,
-  itemIndex: number,
-  totalItems: number
-): any[] {
-  return subgraphNodes.map(node => ({
-    ...node,
-    values: resolveLoopTemplatesForItem(node.values || {}, item, itemIndex, totalItems),
-  }));
 }
 
 /**
@@ -679,31 +613,36 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     }));
     await redis.expire(`loop:${parentRunId}:${loopId}:meta`, 3600);
 
+    // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
+    const loopBodyEntryEdges = subgraphEdges.filter(
+      (e) => e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
+    );
+    const startNodeId = loopBodyEntryEdges[0]?.target;
+    
+    if (!startNodeId) {
+      console.warn(`⚠️ No entry node found for loop ${loopId} - loop body may be empty`);
+    }
+
     // Create child jobs with rate limiting via delay
     // BullMQ will process up to `concurrency` jobs simultaneously
     // We add incremental delays to chunks beyond the first maxConcurrency items
-    // CRITICAL: Pre-resolve loop templates in each node's values before creating child jobs
-    // This ensures $('Loop').json.data references resolve to actual item values
     const childJobs = items.map((item, i) => {
       // Calculate delay to implement per-loop rate limiting
-      // Jobs within the first maxConcurrency batch have no delay
-      // Subsequent batches are delayed incrementally
       const batchIndex = Math.floor(i / maxConcurrency);
       const delayMs = batchIndex > 0 ? batchIndex * 100 : 0; // 100ms between batches
       
-      // Pre-resolve loop templates in subgraph nodes for this specific item
-      // This converts "{{ $('Loop').json.data.[0] }}" → actual item value (e.g., "AAPL")
-      const resolvedNodes = preResolveSubgraphForItem(subgraphNodes, item, i, items.length);
-      
-      // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
-      const loopBodyEntryEdges = subgraphEdges.filter(
-        (e) => e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
+      // Create per-item parent store with Loop node output as current item (not full array)
+      // This allows resolveReferences() to handle ALL templates at runtime, including:
+      // - {{ $('Loop').json.data }} → current item
+      // - {{ $('RSI').json.result }} → upstream node output
+      // - {{ $loopContext.itemIndex }} → loop context
+      const itemParentStore = createItemParentStore(
+        options.parentStoreData || {},
+        loopId,
+        item,
+        i,
+        items.length
       );
-      const startNodeId = loopBodyEntryEdges[0]?.target;
-      
-      if (!startNodeId) {
-        console.warn(`⚠️ No entry node found for loop ${loopId} - loop body may be empty`);
-      }
       
       return {
         name: `loop-item-${i}`,
@@ -712,7 +651,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           runId: uuidv4(),
           workflowId,
           userId,
-          nodes: resolvedNodes, // Use pre-resolved nodes instead of raw subgraphNodes
+          nodes: subgraphNodes, // Original nodes - no pre-resolution needed
           edges: subgraphEdges,
           initialInput: {
             data: item,
@@ -722,9 +661,8 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               isFirstItem: i === 0,
               isLastItem: i === items.length - 1,
             },
-            // Share parent workflow's accumulated node outputs with child
-            // Allows child jobs to reference ANY upstream node via {{ $('NodeName').json.* }}
-            $parentStore: options.parentStoreData || {},
+            // Per-item parent store with Loop output = current item
+            $parentStore: itemParentStore,
           },
           trigger: 'loop_parallel',
           parentRunId,
@@ -733,24 +671,23 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           totalItems: items.length,
           useRedisStorage,
           continueOnError,
-          startNodeId, // Entry point for loop body execution
+          startNodeId,
         } as WorkflowJobData,
         opts: {
           removeOnComplete: 50,
           removeOnFail: continueOnError ? 50 : 100,
-          attempts: continueOnError ? 1 : 3, // No retries if continueOnError
+          attempts: continueOnError ? 1 : 3,
           delay: delayMs,
           backoff: continueOnError ? undefined : {
             type: "exponential" as const,
             delay: 2000,
           },
-          // Allow parent to complete even if some children fail when continueOnError is true
           failParentOnFailure: !continueOnError,
         },
       };
     });
     
-    console.log(`📝 Pre-resolved loop templates for ${items.length} child jobs`);
+    console.log(`📦 Created ${items.length} child jobs with per-item store injection`);
 
     // Create the flow with parent aggregator and children
     await flowProducer.add({

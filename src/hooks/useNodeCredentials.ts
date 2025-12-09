@@ -16,8 +16,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+import { apiClient } from "@/lib/apiClient";
 
 interface UseNodeCredentialsProps {
   definition: any;
@@ -69,18 +68,11 @@ export function useNodeCredentials({
         }
 
         // Use credentials API for security
-        const url = `${BACKEND_URL}/credentials/list?service_type=${apiName}`;
+        const url = `/credentials/list?service_type=${apiName}`;
         console.log("Fetching credentials from:", url);
         console.log("API name:", apiName, "User ID:", userId);
 
-        const res = await fetch(url, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-            "user-id": userId,
-          },
-        });
+        const res = await apiClient.get(url, session?.access_token);
         console.log("Response status:", res.status);
 
         if (!res.ok) {
@@ -114,13 +106,9 @@ export function useNodeCredentials({
       }
 
       try {
-        const response = await fetch(
-          `${BACKEND_URL}/store/workflows?user_id=${userId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session?.access_token}`,
-            },
-          },
+        const response = await apiClient.get(
+          `/store/workflows?user_id=${userId}`,
+          session?.access_token
         );
 
         if (!response.ok) {
@@ -155,13 +143,9 @@ export function useNodeCredentials({
       }
 
       try {
-        const response = await fetch(
-          `${BACKEND_URL}/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session?.access_token}`,
-            },
-          },
+        const response = await apiClient.get(
+          `/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
+          session?.access_token
         );
 
         if (!response.ok) {
@@ -209,18 +193,11 @@ export function useNodeCredentials({
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
 
       try {
-        const url = `${BACKEND_URL}${field.optionsApiUrl}`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
-            user_id: user?.id,
-            credential_id: parentValue,
-          }),
-        });
+        const response = await apiClient.post(
+          field.optionsApiUrl,
+          { user_id: user?.id, credential_id: parentValue },
+          session?.access_token
+        );
 
         console.log(`[DEPENDENT-API] Response status:`, response.status);
 

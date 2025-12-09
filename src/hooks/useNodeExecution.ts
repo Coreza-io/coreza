@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
+import { apiClient } from "@/lib/apiClient";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -282,24 +283,19 @@ export function useNodeExecution({
             ? "generic" 
             : definition.name.replace('Trigger', '').toLowerCase();
           
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-          
           // Register webhook through backend (for ALL webhook types)
-          const registerResponse = await fetch(`${backendUrl}/webhooks/register`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token}`,
-            },
-            body: JSON.stringify({
+          const registerResponse = await apiClient.post(
+            '/webhooks/register',
+            {
               provider,
               workflow_id: workflowId,
               node_id: nodeId,
               credential_id: fieldState.credential_id,
               update_types: fieldState.updateTypes || fieldState.filterEvents,
               secret_token: fieldState.secretToken || fieldState.secret,
-            }),
-          });
+            },
+            session?.access_token
+          );
           
           if (!registerResponse.ok) {
             const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));
@@ -599,7 +595,10 @@ export function useNodeExecution({
             console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
           }
 
-          const res = await fetch(fullUrl, fetchOptions);
+          const res = await apiClient.request(fullUrl, {
+            ...fetchOptions,
+            token: session?.access_token,
+          });
           const responseData = await res.json();
           if (!res.ok) throw new Error(responseData || "Action failed");
 
@@ -718,7 +717,6 @@ export function useNodeExecution({
         ) {
           // Handle streaming TRIGGER nodes (BinanceStreamData, AlpacaStreamData)
           // Supports two modes: "listen" (passive) and "subscribe" (self-contained)
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
           
           // Derive source from streamingConfig or node name
           const source = definition?.streamingConfig?.sourceId || 
@@ -727,7 +725,7 @@ export function useNodeExecution({
           const mode = fieldState.mode || 'listen';
           
           if (mode === 'subscribe') {
-            // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
+          // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
             const symbols = fieldState.symbols
               ? (typeof fieldState.symbols === 'string'
                   ? fieldState.symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
@@ -743,13 +741,9 @@ export function useNodeExecution({
             console.log(`📡 [Streaming Trigger] Subscribe mode - subscribing ${symbols.length} symbols`);
             
             // First, subscribe symbols (like Subscribe node does)
-            const subscribeResponse = await fetch(`${backendUrl}/market/${source}/subscribe`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`,
-              },
-              body: JSON.stringify({
+            const subscribeResponse = await apiClient.post(
+              `/market/${source}/subscribe`,
+              {
                 workflow_id: workflowId,
                 node_id: nodeId,
                 credential_id: fieldState.credential_id,
@@ -761,8 +755,9 @@ export function useNodeExecution({
                 kline_interval: fieldState.kline_interval || '1m',
                 subscriptionScope: 'workflow',
                 targetWorkflowId: workflowId,
-              }),
-            });
+              },
+              session?.access_token
+            );
             
             if (!subscribeResponse.ok) {
               const errorData = await subscribeResponse.json().catch(() => ({ error: 'Subscription failed' }));
@@ -786,20 +781,17 @@ export function useNodeExecution({
           console.log(`📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`);
           
           // Register workflow to receive streaming data
-          const registerResponse = await fetch(`${backendUrl}/market/register-streaming-workflow`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token}`,
-            },
-            body: JSON.stringify({
+          const registerResponse = await apiClient.post(
+            '/market/register-streaming-workflow',
+            {
               workflow_id: workflowId,
               node_id: nodeId,
               source,
               filter_symbols: filterSymbols,
               filter_types: filterTypes,
-            }),
-          });
+            },
+            session?.access_token
+          );
           
           if (!registerResponse.ok) {
             const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));

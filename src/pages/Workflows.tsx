@@ -42,6 +42,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiClient } from "@/lib/apiClient";
 
 interface Workflow {
   id: string;
@@ -147,39 +148,26 @@ const Workflows = () => {
 
   const handleToggleActive = async (workflowId: string, currentStatus: boolean) => {
     try {
-      const API_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      
       // Check backend health first for both activation and deactivation
       try {
-        const healthCheck = await fetch(`${API_URL}/health`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
-        });
+        const healthCheck = await apiClient.get('/health', session?.access_token);
         
         if (!healthCheck.ok) {
           throw new Error("Backend server is not responding");
         }
       } catch (healthError: any) {
         console.error("Backend health check failed:", healthError);
-        throw new Error(`Backend server is not available. Please ensure your backend is running on ${API_URL}`);
+        throw new Error("Backend server is not available. Please ensure your backend is running.");
       }
 
       const newStatus = !currentStatus;
       
       // Call the correct backend endpoint
-      const res = await fetch(`${API_URL}/workflows/${user?.id}/${workflowId}/schedule`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          is_active: newStatus
-        }),
-      });
+      const res = await apiClient.put(
+        `/workflows/${user?.id}/${workflowId}/schedule`,
+        { is_active: newStatus },
+        session?.access_token
+      );
 
       if (!res.ok) {
         const errorText = await res.text();

@@ -21,9 +21,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiClient } from "@/lib/apiClient";
 import type { NodeConfig } from "@/nodes/manifest";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 interface GenericAuthModalProps {
   definition: NodeConfig;
@@ -88,16 +87,10 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         throw new Error("Backend authentication endpoint not configured for this service");
       }
 
-      // Build full backend URL
-      const backendUrl = `${BACKEND_URL}${backendPath}`;
-
       // Send plaintext credentials to backend over HTTPS (backend will encrypt)
-      const response = await fetch(backendUrl, {
+      const response = await apiClient.request(backendPath, {
         method: definition.authAction?.method || 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
+        token: session?.access_token,
         body: JSON.stringify({
           credential_name: fields.credential_name || `${definition.name} Account`,
           ...credentials // spread individual credential fields

@@ -76,6 +76,7 @@ import {
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/apiClient";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -335,15 +336,15 @@ const WorkflowEditorContent = () => {
 
       if (symbols.length) {
         try {
-          await fetch(`${API_BASE_URL}/alpaca-news/unsubscribe`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          await apiClient.post(
+            '/alpaca-news/unsubscribe',
+            {
               user_id: authUser.id,
               symbols,
               node_id: nodeId,
-            }),
-          });
+            },
+            session?.access_token
+          );
         } catch (error) {
           console.error(
             "Failed to unsubscribe Alpaca news for node",

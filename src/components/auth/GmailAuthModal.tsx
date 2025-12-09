@@ -29,8 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+import { apiClient } from "@/lib/apiClient";
 
 interface GmailAuthModalProps {
   isOpen: boolean;
@@ -94,16 +93,12 @@ export function GmailAuthModal({
 
     setLoading(true);
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/oauth/gmail/generate-auth-url`,
+      const response = await apiClient.post(
+        '/oauth/gmail/generate-auth-url',
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-          }),
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
         }
       );
 
@@ -153,20 +148,14 @@ export function GmailAuthModal({
 
     setLoading(true);
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/oauth/gmail/exchange-token`,
+      const response = await apiClient.post(
+        '/oauth/gmail/exchange-token',
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
-            temp_id: tempId,
-            code: authCode.trim(),
-            credential_name: credentialName,
-          }),
-        }
+          temp_id: tempId,
+          code: authCode.trim(),
+          credential_name: credentialName,
+        },
+        session?.access_token
       );
 
       const data = await response.json();

@@ -128,6 +128,99 @@ async function collectOrderedResults(
  * Cleans up Redis keys after loop aggregation completes.
  */
 async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<void> {
+
+/**
+ * Pre-resolves loop-related template expressions for a single loop item.
+ * Replaces $('Loop') and $loopContext references with actual item values.
+ * This is critical for parallel execution where child workers don't have access to parent Loop node store.
+ */
+function resolveLoopTemplatesForItem(
+  values: Record<string, any>,
+  item: any,
+  itemIndex: number,
+  totalItems: number
+): Record<string, any> {
+  const loopContext = {
+    itemIndex,
+    totalItems,
+    isFirstItem: itemIndex === 0,
+    isLastItem: itemIndex === totalItems - 1,
+  };
+  
+  function resolveValue(val: any): any {
+    if (typeof val !== 'string') return val;
+    
+    // Serialize item for replacement
+    const itemStr = typeof item === 'object' ? JSON.stringify(item) : String(item);
+    
+    // Replace $('Loop').json.data patterns (various accessor styles)
+    let resolved = val
+      // $('Loop').json.data.[0] or $('Loop').json.data[0] → item itself
+      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\.data\.?\[0\]\s*\}\}/gi, itemStr)
+      // $('Loop').json.data → full item
+      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\.data\s*\}\}/gi, itemStr)
+      // $('Loop').json → full item (common shorthand)
+      .replace(/\{\{\s*\$\(['"]Loop['"]\)\.json\s*\}\}/gi, itemStr)
+      // $loopContext patterns
+      .replace(/\{\{\s*\$loopContext\.itemIndex\s*\}\}/gi, String(itemIndex))
+      .replace(/\{\{\s*\$loopContext\.isFirstItem\s*\}\}/gi, String(loopContext.isFirstItem))
+      .replace(/\{\{\s*\$loopContext\.isLastItem\s*\}\}/gi, String(loopContext.isLastItem))
+      .replace(/\{\{\s*\$loopContext\.totalItems\s*\}\}/gi, String(totalItems));
+    
+    // Handle nested property access like $('Loop').json.data.[0].symbol
+    // Pattern: {{ $('Loop').json.data.[0].propertyPath }}
+    resolved = resolved.replace(
+      /\{\{\s*\$\(['"]Loop['"]\)\.json\.data\.?\[0\]\.([a-zA-Z0-9_.]+)\s*\}\}/gi,
+      (match, propertyPath) => {
+        try {
+          const keys = propertyPath.split('.');
+          let value = item;
+          for (const key of keys) {
+            if (value && typeof value === 'object' && key in value) {
+              value = value[key];
+            } else {
+              return match; // Property not found, leave unchanged
+            }
+          }
+          return typeof value === 'object' ? JSON.stringify(value) : String(value);
+        } catch {
+          return match;
+        }
+      }
+    );
+    
+    return resolved;
+  }
+  
+  function resolveDeep(obj: any): any {
+    if (typeof obj === 'string') return resolveValue(obj);
+    if (Array.isArray(obj)) return obj.map(resolveDeep);
+    if (obj && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj).map(([k, v]) => [k, resolveDeep(v)])
+      );
+    }
+    return obj;
+  }
+  
+  return resolveDeep(values);
+}
+
+/**
+ * Pre-resolves loop templates in all subgraph nodes for a specific item.
+ * Returns a new array of nodes with resolved values.
+ */
+function preResolveSubgraphForItem(
+  subgraphNodes: any[],
+  item: any,
+  itemIndex: number,
+  totalItems: number
+): any[] {
+  return subgraphNodes.map(node => ({
+    ...node,
+    values: resolveLoopTemplatesForItem(node.values || {}, item, itemIndex, totalItems),
+  }));
+}
   const keysToDelete = [
     `loop:${parentRunId}:${loopId}:results`,
     `loop:${parentRunId}:${loopId}:aggregated`,
@@ -542,12 +635,18 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     // Create child jobs with rate limiting via delay
     // BullMQ will process up to `concurrency` jobs simultaneously
     // We add incremental delays to chunks beyond the first maxConcurrency items
+    // CRITICAL: Pre-resolve loop templates in each node's values before creating child jobs
+    // This ensures $('Loop').json.data references resolve to actual item values
     const childJobs = items.map((item, i) => {
       // Calculate delay to implement per-loop rate limiting
       // Jobs within the first maxConcurrency batch have no delay
       // Subsequent batches are delayed incrementally
       const batchIndex = Math.floor(i / maxConcurrency);
       const delayMs = batchIndex > 0 ? batchIndex * 100 : 0; // 100ms between batches
+      
+      // Pre-resolve loop templates in subgraph nodes for this specific item
+      // This converts "{{ $('Loop').json.data.[0] }}" → actual item value (e.g., "AAPL")
+      const resolvedNodes = preResolveSubgraphForItem(subgraphNodes, item, i, items.length);
       
       return {
         name: `loop-item-${i}`,
@@ -556,7 +655,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           runId: uuidv4(),
           workflowId,
           userId,
-          nodes: subgraphNodes,
+          nodes: resolvedNodes, // Use pre-resolved nodes instead of raw subgraphNodes
           edges: subgraphEdges,
           initialInput: {
             data: item,
@@ -589,6 +688,8 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         },
       };
     });
+    
+    console.log(`📝 Pre-resolved loop templates for ${items.length} child jobs`);
 
     // Create the flow with parent aggregator and children
     await flowProducer.add({

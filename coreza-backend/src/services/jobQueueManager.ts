@@ -365,6 +365,39 @@ const workflowWorker = new Worker(
             
             console.log(`📤 Queued continuation to node ${edge.target}`);
           }
+        } else {
+          // No done edges - Loop is a terminal node, complete the parent workflow run with aggregated result
+          console.log(`📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`);
+          
+          const finalResult = {
+            finalOutput: aggregatedOutput,
+            loopResult: {
+              loopId,
+              totalItems,
+              successCount: totalItems! - errorCount,
+              errorCount,
+              hasErrors,
+              completedAt: new Date().toISOString(),
+            }
+          };
+          
+          if (useRedisStorage) {
+            // Update Redis-stored run
+            await redis.hset(`runs:data:${parentRunId}`, {
+              status: 'success',
+              result: JSON.stringify(finalResult),
+              completed_at: new Date().toISOString(),
+            });
+            console.log(`✅ Parent run ${parentRunId} completed in Redis with loop result`);
+          } else {
+            // Update Supabase directly
+            await supabase.from('workflow_runs').update({
+              status: 'success',
+              result: finalResult,
+              completed_at: new Date().toISOString(),
+            }).eq('id', parentRunId);
+            console.log(`✅ Parent run ${parentRunId} completed in Supabase with loop result`);
+          }
         }
 
         // Signal completion via Redis pub/sub (for monitoring/debugging)

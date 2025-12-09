@@ -70,7 +70,7 @@ export function useNodeExecution({
   const nodes = useNodes();
   const edges = useEdges();
   const { setNodes } = useReactFlow();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const executionStore = useExecutionStore();
 
   const [error, setError] = useState("");
@@ -119,8 +119,7 @@ export function useNodeExecution({
     (
       fieldState: Record<string, any>,
       supportData: Record<string, any>,
-      selectedInputData: Record<string, any>,
-      userId: string
+      selectedInputData: Record<string, any>
     ): Record<string, any> => {
       // Create a map of all upstream node data by display name
       const allNodeData: Record<string, any> = {};
@@ -184,7 +183,6 @@ export function useNodeExecution({
       return {
         ...payload,
         ...(Array.isArray(supportData) ? supportData[0] || {} : supportData),
-        user_id: userId,
       };
     },
     [definition, previousNodes, executionStore, resolveDeep, nodes, edges]
@@ -253,10 +251,8 @@ export function useNodeExecution({
         const payload = buildPayload(
           fieldState,
           supportData,
-          effectiveInput,
-          userId
+          effectiveInput
         );
-        payload.user_id = userId;
         payload.node_id = nodeId;
         payload.workflow_id = workflowId;
 
@@ -291,10 +287,12 @@ export function useNodeExecution({
           // Register webhook through backend (for ALL webhook types)
           const registerResponse = await fetch(`${backendUrl}/webhooks/register`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+            },
             body: JSON.stringify({
               provider,
-              user_id: userId,
               workflow_id: workflowId,
               node_id: nodeId,
               credential_id: fieldState.credential_id,
@@ -573,15 +571,21 @@ export function useNodeExecution({
 
           if (method === "GET") {
             params = new URLSearchParams();
-            params.append("user_id", userId);
             params.append("credential_id", fieldState.credential_id ?? "");
             fullUrl += `?${params.toString()}`;
           }
 
-          const fetchOptions: RequestInit = { method };
+          const fetchOptions: RequestInit = {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session?.access_token}`,
+            },
+          };
           if (method !== "GET") {
-            fetchOptions.headers = { "Content-Type": "application/json" };
             fetchOptions.body = JSON.stringify(payload);
+          } else if (fetchOptions.headers) {
+            delete (fetchOptions.headers as Record<string, string>)["Content-Type"];
           }
 
           // Log the payload and request details
@@ -741,9 +745,11 @@ export function useNodeExecution({
             // First, subscribe symbols (like Subscribe node does)
             const subscribeResponse = await fetch(`${backendUrl}/market/${source}/subscribe`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`,
+              },
               body: JSON.stringify({
-                user_id: userId,
                 workflow_id: workflowId,
                 node_id: nodeId,
                 credential_id: fieldState.credential_id,
@@ -782,9 +788,11 @@ export function useNodeExecution({
           // Register workflow to receive streaming data
           const registerResponse = await fetch(`${backendUrl}/market/register-streaming-workflow`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+            },
             body: JSON.stringify({
-              user_id: userId,
               workflow_id: workflowId,
               node_id: nodeId,
               source,

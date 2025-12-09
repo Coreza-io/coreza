@@ -785,18 +785,10 @@ const WorkflowEditorContent = () => {
       const newStatus = !isActive;
 
       // Call the correct backend endpoint
-      const res = await fetch(
-        `${API_URL}/workflows/${workflowId}/schedule`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
-            is_active: newStatus,
-          }),
-        }
+      const res = await apiClient.put(
+        `/workflows/${workflowId}/schedule`,
+        { is_active: newStatus },
+        session?.access_token
       );
 
       if (!res.ok) {

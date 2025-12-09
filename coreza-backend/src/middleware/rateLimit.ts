@@ -10,6 +10,7 @@ import { getRedisCache } from '../config/redis';
 import { ENDPOINT_LIMITS, TIER_MULTIPLIERS, EndpointCategory, RATE_LIMIT_WHITELIST, SERVICE_SECRET } from '../config/rateLimits';
 import { isIpWhitelisted, getClientIp } from '../utils/ipUtils';
 import logger from '../utils/logger';
+import { rateLimitHitsCounter, rateLimitBypassCounter } from '../utils/metrics';
 
 // Extended request type with user info from JWT
 interface AuthenticatedRequest extends Request {
@@ -49,7 +50,16 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false,
     handler: (req: AuthenticatedRequest, res: Response) => {
-      const key = keyGenerator(req);
+      const key = keyGenerator(req, res);
+      const keyType = req.user?.id ? 'user' : 'ip';
+      
+      // Increment Prometheus counter
+      rateLimitHitsCounter.inc({
+        category,
+        tier: req.user?.tier || 'free',
+        key_type: keyType,
+      });
+      
       logger.warn({
         category,
         key,
@@ -68,12 +78,14 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
     skip: (req: Request) => {
       // 1. Check whitelisted paths
       if (RATE_LIMIT_WHITELIST.paths.some(p => req.path === p || req.path.startsWith(p))) {
+        rateLimitBypassCounter.inc({ category, reason: 'whitelisted_path' });
         return true;
       }
       
       // 2. Check IP whitelist (exact match + CIDR ranges)
       const clientIp = getClientIp(req);
       if (isIpWhitelisted(clientIp, RATE_LIMIT_WHITELIST)) {
+        rateLimitBypassCounter.inc({ category, reason: 'whitelisted_ip' });
         logger.debug({ ip: clientIp, path: req.path }, 'Rate limit bypassed: whitelisted IP');
         return true;
       }
@@ -87,6 +99,7 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
         serviceSecret === SERVICE_SECRET &&
         RATE_LIMIT_WHITELIST.services.includes(serviceName as string)
       ) {
+        rateLimitBypassCounter.inc({ category, reason: 'trusted_service' });
         logger.debug({ service: serviceName, path: req.path }, 'Rate limit bypassed: trusted service');
         return true;
       }
@@ -96,6 +109,7 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
       if (envWhitelist) {
         const additionalIps = envWhitelist.split(',').map(ip => ip.trim());
         if (additionalIps.includes(clientIp)) {
+          rateLimitBypassCounter.inc({ category, reason: 'env_whitelist' });
           logger.debug({ ip: clientIp, path: req.path }, 'Rate limit bypassed: env whitelist');
           return true;
         }

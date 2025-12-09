@@ -15,6 +15,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import { requireAuth } from "../middleware/jwtAuth";
 import { AIAgentExecutor } from "../nodes/executors/AIAgentExecutor";
 import { WorkflowNode } from "../nodes/types";
 import { requireProfessional } from "../middleware/licenseCheck";
@@ -22,10 +23,17 @@ import { requireProfessional } from "../middleware/licenseCheck";
 const router = Router();
 const aiAgentExecutor = new AIAgentExecutor();
 
+// Apply JWT auth to all routes
+router.use(requireAuth);
+
 router.post("/execute", requireProfessional("AI Agent"), async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       systemPrompt,
       userPrompt,
       temperature,
@@ -37,16 +45,9 @@ router.post("/execute", requireProfessional("AI Agent"), async (req: Request, re
     } = req.body;
 
     console.log("🤖 [AI AGENT ROUTE] Received execution request");
-    console.log("🤖 [AI AGENT ROUTE] User ID:", user_id);
+    console.log("🤖 [AI AGENT ROUTE] User ID:", userId);
     console.log("🤖 [AI AGENT ROUTE] Nodes count:", workflowNodes?.length || 0);
     console.log("🤖 [AI AGENT ROUTE] Edges count:", workflowEdges?.length || 0);
-
-    if (!user_id) {
-      return res.status(400).json({
-        success: false,
-        error: "user_id is required",
-      });
-    }
 
     if (!userPrompt) {
       return res.status(400).json({
@@ -94,8 +95,8 @@ router.post("/execute", requireProfessional("AI Agent"), async (req: Request, re
 
     // Create execution context with all necessary data
     const context = {
-      user_id,
-      userId: user_id,
+      user_id: userId,
+      userId,
       nodes: workflowNodes,
       edges: workflowEdges,
       // Add a simple resolver function

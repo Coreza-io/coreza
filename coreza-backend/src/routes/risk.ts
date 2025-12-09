@@ -15,10 +15,14 @@
  */
 
 import express from "express";
+import { requireAuth } from "../middleware/jwtAuth";
 import { RiskEngineService } from "../services/risk";
 import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = express.Router();
+
+// Apply JWT auth to all routes
+router.use(requireAuth);
 
 router.post("/engine", requireProfessional("Risk Engine"), async (req, res) => {
   try {

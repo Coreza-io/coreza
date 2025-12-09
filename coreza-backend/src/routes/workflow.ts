@@ -17,6 +17,7 @@
 import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
+import { requireAuth } from "../middleware/jwtAuth";
 import { workflowScheduler } from "../services/scheduler";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import CredentialManager from "../utils/credentialManager";
@@ -28,6 +29,9 @@ import { buildStoreKey, getStoreValue, setStoreValue } from "../utils/store";
 
 const router = express.Router();
 
+// Apply JWT auth to all routes
+router.use(requireAuth);
+
 // Map node names to WebSocket source IDs for control messages
 const nodeNameToSourceMap: Record<string, string> = {
   BinanceStreamData: "binance_stream",
@@ -36,9 +40,12 @@ const nodeNameToSourceMap: Record<string, string> = {
 };
 
 // Get all workflows for a user
-router.get("/:userId", async (req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
     const { data, error } = await supabase
       .from("workflows")
@@ -57,9 +64,13 @@ router.get("/:userId", async (req, res, next) => {
 });
 
 // Create a new workflow
-router.post("/:userId", async (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { name, nodes, edges, project_id, schedule_cron } = req.body;
 
     if (!name || !nodes || !edges) {
@@ -91,9 +102,14 @@ router.post("/:userId", async (req, res, next) => {
 });
 
 // Update a workflow
-router.put("/:userId/:workflowId", async (req, res, next) => {
+router.put("/:workflowId", async (req, res, next) => {
   try {
-    const { userId, workflowId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId } = req.params;
     const updates = req.body;
 
     const { data, error } = await supabase
@@ -122,9 +138,14 @@ router.put("/:userId/:workflowId", async (req, res, next) => {
 });
 
 // Delete a workflow
-router.delete("/:userId/:workflowId", async (req, res, next) => {
+router.delete("/:workflowId", async (req, res, next) => {
   try {
-    const { userId, workflowId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId } = req.params;
 
     // Fetch workflow to check for active subscriptions
     const { data: workflow } = await supabase
@@ -232,9 +253,14 @@ router.delete("/:userId/:workflowId", async (req, res, next) => {
 });
 
 // Get workflow runs
-router.get("/:userId/:workflowId/runs", async (req, res, next) => {
+router.get("/:workflowId/runs", async (req, res, next) => {
   try {
-    const { userId, workflowId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId } = req.params;
 
     // First verify workflow belongs to user
     const { data: workflow } = await supabase
@@ -265,9 +291,14 @@ router.get("/:userId/:workflowId/runs", async (req, res, next) => {
 });
 
 // Execute workflow
-router.post("/:userId/:workflowId/execute", async (req, res, next) => {
+router.post("/:workflowId/execute", async (req, res, next) => {
   try {
-    const { userId, workflowId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId } = req.params;
     const { input_data = {} } = req.body;
 
     // First verify workflow belongs to user and is active
@@ -396,12 +427,6 @@ function computeCronFromSchedulerNodes(nodes: any[]): {
       `✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`
     );
   }
-
-  // Format the next execution time in the user's timezone
-  //const nextFormatted = format(next, "yyyy-MM-dd HH:mm:ss zzz", {
-  //  timeZone: tz
-  //});
-  //const nextFormatted = formatInTimeZone(next, tz, "yyyy-MM-dd HH:mm:ssXXX");
 
   return { cron, timezone: tz, next: nextInTZ.toISOString() };
 }
@@ -546,9 +571,14 @@ function validateCronForFutureExecution(cronExpression: string): {
 }
 
 // Activate/Deactivate workflow scheduling and triggers
-router.put("/:userId/:workflowId/schedule", async (req, res, next) => {
+router.put("/:workflowId/schedule", async (req, res, next) => {
   try {
-    const { userId, workflowId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId } = req.params;
     const { is_active } = req.body ?? {};
 
     // Fetch workflow
@@ -809,10 +839,15 @@ router.get("/scheduler/status", async (req, res, next) => {
 
 // Get node execution details for a workflow run
 router.get(
-  "/:userId/:workflowId/runs/:runId/executions",
+  "/:workflowId/runs/:runId/executions",
   async (req, res, next) => {
     try {
-      const { userId, workflowId, runId } = req.params;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { workflowId, runId } = req.params;
 
       // Verify workflow belongs to user
       const { data: workflow } = await supabase
@@ -846,10 +881,15 @@ router.get(
 
 // Get workflow run status
 router.get(
-  "/:userId/:workflowId/runs/:runId/status",
+  "/:workflowId/runs/:runId/status",
   async (req, res, next) => {
     try {
-      const { userId, workflowId, runId } = req.params;
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { workflowId, runId } = req.params;
 
       // Verify workflow belongs to user
       const { data: workflow } = await supabase

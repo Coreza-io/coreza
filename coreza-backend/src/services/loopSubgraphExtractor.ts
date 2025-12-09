@@ -19,12 +19,18 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 /**
  * Extracts the loop body subgraph (all nodes reachable from the loop handle).
  * Edges that exit via the "done" handle are intentionally excluded.
+ * 
+ * @param loopId - The ID of the loop node
+ * @param allNodes - All nodes in the workflow
+ * @param allEdges - All edges in the workflow
+ * @returns The subgraph containing only nodes and edges within the loop body
  */
 export function extractLoopBodySubgraph(
   loopId: string,
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[]
 ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  // Get edges from the "loop" handle (not the "done" handle)
   const bodyEdges = allEdges.filter(
     (edge) => edge.source === loopId && (!edge.sourceHandle || edge.sourceHandle === "loop")
   );
@@ -34,6 +40,7 @@ export function extractLoopBodySubgraph(
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
 
+  // BFS to find all reachable nodes from the loop body
   while (queue.length > 0) {
     const nodeId = queue.shift();
     if (!nodeId || visited.has(nodeId) || nodeId === loopId) continue;
@@ -42,6 +49,7 @@ export function extractLoopBodySubgraph(
     const node = allNodes.find((n) => n.id === nodeId);
     if (node) nodes.push(node);
 
+    // Get outgoing edges (except those going back to the loop node)
     const outgoing = allEdges.filter(
       (edge) => edge.source === nodeId && edge.target !== loopId
     );
@@ -54,6 +62,6 @@ export function extractLoopBodySubgraph(
     }
   }
 
+  // Include the initial body edges connecting loop to first nodes
   return { nodes, edges: [...bodyEdges, ...edges] };
 }
-

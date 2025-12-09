@@ -68,6 +68,27 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     }
   }
 
+  /**
+   * Note: Parallel loop execution is handled by the main backend's jobQueueManager.
+   * This market-stream-service only adds regular workflow jobs, not parallel loop jobs.
+   */
+  async addParallelLoopExecution(
+    parentRunId: string,
+    loopId: string,
+    workflowId: string,
+    userId: string,
+    subgraphNodes: any[],
+    subgraphEdges: any[],
+    items: any[],
+    useRedisStorage?: boolean
+  ): Promise<void> {
+    logger.warn(
+      { parentRunId, loopId, workflowId, itemCount: items.length },
+      'addParallelLoopExecution called on market-stream-service - this is handled by main backend'
+    );
+    throw new Error('Parallel loop execution should be handled by main backend jobQueueManager');
+  }
+
   async getQueueStats() {
     const { workflowQueue, scheduledQueue } = ensureQueuesInitialized();
     

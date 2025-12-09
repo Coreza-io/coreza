@@ -253,6 +253,19 @@ export class WorkflowEngine {
   async run(initialInput: any = [], startNodeId?: string): Promise<void> {
     let startedFromSpecificNode = false;
     
+    // Pre-populate store from parent workflow context if provided (parallel loop child jobs)
+    // This allows child jobs to reference ANY upstream node via {{ $('NodeName').json.* }}
+    if (initialInput?.$parentStore && typeof initialInput.$parentStore === 'object') {
+      const parentStore = initialInput.$parentStore;
+      const nodeCount = Object.keys(parentStore).length;
+      if (nodeCount > 0) {
+        console.log(`📥 Pre-populating store with ${nodeCount} parent node outputs`);
+        for (const [nodeId, result] of Object.entries(parentStore)) {
+          this.store.setNodeResult(nodeId, result);
+        }
+      }
+    }
+    
     // If startNodeId is provided (loop continuation or parallel loop item), start from that specific node
     if (startNodeId) {
       const startNode = this.nodes.find(n => n.id === startNodeId);
@@ -346,6 +359,8 @@ export class WorkflowEngine {
         getState: (key: string) => this.store.getNodeState(nodeId, key),
         setState: (key: string, value: any) =>
           this.store.setNodeState(nodeId, key, value),
+        // Allow parallel loop to capture and share parent workflow context with child jobs
+        getAllNodeResults: () => this.store.getAllResults(),
       };
 
       const fullResult = await this.executeNode(node, input, executionContext);

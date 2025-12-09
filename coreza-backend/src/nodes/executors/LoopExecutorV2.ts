@@ -54,6 +54,8 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       userId?: string;
       nodes?: WorkflowNode[];
       edges?: WorkflowEdge[];
+      /** Get all node results accumulated so far (for parent context sharing) */
+      getAllNodeResults?: () => Record<string, any>;
     }
   ): Promise<NodeExecutionOutput> {
     // Items come either from params or upstream input
@@ -74,6 +76,10 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     // DISTRIBUTED PARALLEL MODE
     // When parallel=true and we have context for BullMQ, distribute items across workers
     if (parallel && items.length > 1 && context.runId && context.workflowId && context.userId && context.nodes && context.edges) {
+      // Capture parent workflow store data for child context
+      // This allows child jobs to reference ANY upstream node's output
+      const parentStoreData = context.getAllNodeResults ? context.getAllNodeResults() : {};
+      console.log(`📦 Loop ${node.id}: Captured parent store with ${Object.keys(parentStoreData).length} node outputs for child context`);
       console.log(`🔄 Loop ${node.id}: Distributing ${items.length} items across BullMQ workers (maxConcurrency: ${maxConcurrency})`);
 
       // Extract the loop body subgraph (nodes connected to "loop" handle)
@@ -113,6 +119,7 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
           doneEdges,
           parentNodes: context.nodes,
           parentEdges: context.edges,
+          parentStoreData, // Share parent workflow context with children
         }
       );
 

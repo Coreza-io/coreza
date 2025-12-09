@@ -44,121 +44,136 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
     const connectWebSocket = async () => {
       if (!shouldReconnectRef.current) return;
-      
+
       // Get JWT token from Supabase session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        console.error('❌ [ExecutionStore] No access token found');
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          if ((error as { code?: string }).code === 'refresh_token_not_found') {
+            console.warn('⚠️ [ExecutionStore] Missing refresh token. Skipping WebSocket connection until user re-authenticates.');
+          } else {
+            console.error('❌ [ExecutionStore] Failed to retrieve session for WebSocket:', error);
+          }
+          return;
+        }
+
+        if (!session?.access_token) {
+          console.error('❌ [ExecutionStore] No access token found');
+          return;
+        }
+
+        const wsUrl = `${BACKEND_WS_URL}?token=${session.access_token}`;
+        console.log('📡 [ExecutionStore] Connecting to WebSocket:', BACKEND_WS_URL);
+
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('✅ [ExecutionStore] WebSocket connected');
+
+          // Start keepalive - send ping every 25 seconds
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+          }
+          keepaliveRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping' }));
+              console.log('💓 [ExecutionStore] Sent keepalive ping');
+            }
+          }, 25000);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+
+            // Ignore pong messages (keepalive response)
+            if (message.type === 'pong') {
+              console.log('💓 [ExecutionStore] Received pong');
+              return;
+            }
+
+            console.log('📨 [ExecutionStore] Received WebSocket message:', message);
+
+            // Handle webhook events (manual run mode)
+            if (message.type === 'webhook_event' && message.payload) {
+              const { nodeId, payload } = message;
+
+              if (nodeId && storeRef.current) {
+                storeRef.current.setNodeData(nodeId, {
+                  output: {
+                    webhookPayload: payload,
+                    receivedAt: message.timestamp
+                  }
+                });
+                setUpdateVersion(v => v + 1); // Trigger React re-render
+                console.log('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
+              }
+            }
+
+            // Handle streaming market data updates (new Redis Pub/Sub format)
+            if (message.type === 'market_data' && message.payload) {
+              const { nodeId, data } = message.payload;
+
+              if (nodeId && storeRef.current) {
+                storeRef.current.setNodeData(nodeId, {
+                  output: {
+                    status: 'streaming',
+                    data,
+                    lastUpdate: new Date().toISOString()
+                  }
+                });
+                setUpdateVersion(v => v + 1); // Trigger React re-render
+                console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
+              }
+            }
+
+            // Handle legacy streaming format (WebSocketClient broadcasts)
+            if (message.status === 'streaming' && message.payload?.nodeId) {
+              const { nodeId, data } = message.payload;
+
+              if (storeRef.current) {
+                storeRef.current.setNodeData(nodeId, {
+                  output: {
+                    status: 'streaming',
+                    data,
+                    streamType: message.type,
+                    receivedAt: new Date().toISOString()
+                  }
+                });
+                setUpdateVersion(v => v + 1); // Trigger React re-render
+                console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
+              }
+            }
+          } catch (error) {
+            console.error('❌ [ExecutionStore] Failed to parse WebSocket message:', error);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('❌ [ExecutionStore] WebSocket error:', error);
+        };
+
+        ws.onclose = () => {
+          console.log('🔌 [ExecutionStore] WebSocket disconnected');
+
+          // Clear keepalive interval
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+            keepaliveRef.current = null;
+          }
+
+          // Only reconnect if flag allows (not during cleanup)
+          if (shouldReconnectRef.current) {
+            console.log('🔄 [ExecutionStore] Reconnecting in 3s...');
+            setTimeout(() => connectWebSocket(), 3000);
+          }
+        };
+      } catch (error) {
+        console.error('❌ [ExecutionStore] Unexpected error while establishing WebSocket:', error);
         return;
       }
-
-      const wsUrl = `${BACKEND_WS_URL}?token=${session.access_token}`;
-      console.log('📡 [ExecutionStore] Connecting to WebSocket:', BACKEND_WS_URL);
-      
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('✅ [ExecutionStore] WebSocket connected');
-        
-        // Start keepalive - send ping every 25 seconds
-        if (keepaliveRef.current) {
-          clearInterval(keepaliveRef.current);
-        }
-        keepaliveRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }));
-            console.log('💓 [ExecutionStore] Sent keepalive ping');
-          }
-        }, 25000);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          
-          // Ignore pong messages (keepalive response)
-          if (message.type === 'pong') {
-            console.log('💓 [ExecutionStore] Received pong');
-            return;
-          }
-          
-          console.log('📨 [ExecutionStore] Received WebSocket message:', message);
-
-          // Handle webhook events (manual run mode)
-          if (message.type === 'webhook_event' && message.payload) {
-            const { nodeId, payload } = message;
-            
-            if (nodeId && storeRef.current) {
-              storeRef.current.setNodeData(nodeId, {
-                output: {
-                  webhookPayload: payload,
-                  receivedAt: message.timestamp
-                }
-              });
-              setUpdateVersion(v => v + 1); // Trigger React re-render
-              console.log('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
-            }
-          }
-
-          // Handle streaming market data updates (new Redis Pub/Sub format)
-          if (message.type === 'market_data' && message.payload) {
-            const { nodeId, data } = message.payload;
-            
-            if (nodeId && storeRef.current) {
-              storeRef.current.setNodeData(nodeId, {
-                output: {
-                  status: 'streaming',
-                  data,
-                  lastUpdate: new Date().toISOString()
-                }
-              });
-              setUpdateVersion(v => v + 1); // Trigger React re-render
-              console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
-            }
-          }
-
-          // Handle legacy streaming format (WebSocketClient broadcasts)
-          if (message.status === 'streaming' && message.payload?.nodeId) {
-            const { nodeId, data } = message.payload;
-            
-            if (storeRef.current) {
-              storeRef.current.setNodeData(nodeId, {
-                output: {
-                  status: 'streaming',
-                  data,
-                  streamType: message.type,
-                  receivedAt: new Date().toISOString()
-                }
-              });
-              setUpdateVersion(v => v + 1); // Trigger React re-render
-              console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
-            }
-          }
-        } catch (error) {
-          console.error('❌ [ExecutionStore] Failed to parse WebSocket message:', error);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('❌ [ExecutionStore] WebSocket error:', error);
-      };
-
-      ws.onclose = () => {
-        console.log('🔌 [ExecutionStore] WebSocket disconnected');
-        
-        // Clear keepalive interval
-        if (keepaliveRef.current) {
-          clearInterval(keepaliveRef.current);
-          keepaliveRef.current = null;
-        }
-        
-        // Only reconnect if flag allows (not during cleanup)
-        if (shouldReconnectRef.current) {
-          console.log('🔄 [ExecutionStore] Reconnecting in 3s...');
-          setTimeout(() => connectWebSocket(), 3000);
-        }
-      };
     };
 
     shouldReconnectRef.current = true;

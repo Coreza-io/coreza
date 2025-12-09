@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -45,6 +45,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const userRef = useRef<User | null>(null);
+
+  const clearLocalSessionState = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+
+    setSession(null);
+    setUser(null);
+
+    // Force clear Supabase localStorage tokens to ensure clean state
+    localStorage.removeItem('sb-tiitofotheupylvxivge-auth-token');
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Sign out error (will clear local state anyway):', error);
+    }
+
+    // ALWAYS clear local state, even if server signOut fails
+    // This handles the case where session is already expired on server
+    clearLocalSessionState();
+  }, [clearLocalSessionState]);
+
+  const handleSessionError = useCallback(async (error: unknown) => {
+    const authError = error as { code?: string; message?: string } | null;
+
+    if (authError?.code === 'refresh_token_not_found') {
+      console.warn('Supabase session is stale (refresh token missing). Signing out.');
+      await signOut();
+      setLoading(false);
+      return true;
+    }
+
+    return false;
+  }, [signOut]);
 
   // Keep userRef in sync with user state
   useEffect(() => {
@@ -151,27 +189,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
 
     // Get initial session and check expiration
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        const expiresAt = session.expires_at;
-        if (expiresAt && expiresAt * 1000 < Date.now()) {
-          console.log('Session expired, signing out');
-          supabase.auth.signOut();
-        } else {
-          setSession(session);
-          setUser(session.user);
-          // Timer will be started by the activity tracking useEffect
+    const initializeSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          const handled = await handleSessionError(error);
+          if (!handled) {
+            console.error('Error retrieving initial session:', error);
+          }
+          setLoading(false);
+          return;
         }
-      } else {
-        setSession(null);
-        setUser(null);
+
+        if (session) {
+          const expiresAt = session.expires_at;
+          if (expiresAt && expiresAt * 1000 < Date.now()) {
+            console.log('Session expired, signing out');
+            supabase.auth.signOut();
+          } else {
+            setSession(session);
+            setUser(session.user);
+            // Timer will be started by the activity tracking useEffect
+          }
+        } else {
+          setSession(null);
+          setUser(null);
+        }
+      } catch (error) {
+        const handled = await handleSessionError(error);
+        if (!handled) {
+          console.error('Unexpected error retrieving initial session:', error);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+
+    initializeSession();
 
     // Periodically check session expiration (every 5 minutes)
-    const expirationCheckInterval = setInterval(() => {
-      supabase.auth.getSession().then(({ data: { session } }) => {
+    const checkSessionExpiration = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          const handled = await handleSessionError(error);
+          if (!handled) {
+            console.error('Error during periodic session check:', error);
+          }
+          return;
+        }
+
         if (session) {
           const expiresAt = session.expires_at;
           if (expiresAt && expiresAt * 1000 < Date.now()) {
@@ -179,7 +248,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             supabase.auth.signOut();
           }
         }
-      });
+      } catch (error) {
+        const handled = await handleSessionError(error);
+        if (!handled) {
+          console.error('Unexpected error during periodic session check:', error);
+        }
+      }
+    };
+
+    const expirationCheckInterval = setInterval(() => {
+      checkSessionExpiration();
     }, 5 * 60 * 1000); // Check every 5 minutes
 
     return () => {
@@ -190,28 +268,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         inactivityTimerRef.current = null;
       }
     };
-  }, []); // No dependencies - runs once on mount
-
-  const signOut = async () => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
-    
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Sign out error (will clear local state anyway):', error);
-    }
-    
-    // ALWAYS clear local state, even if server signOut fails
-    // This handles the case where session is already expired on server
-    setSession(null);
-    setUser(null);
-    
-    // Force clear Supabase localStorage tokens to ensure clean state
-    localStorage.removeItem('sb-tiitofotheupylvxivge-auth-token');
-  };
+  }, [handleSessionError]); // handleSessionError is stable via useCallback
 
   const value = {
     user,

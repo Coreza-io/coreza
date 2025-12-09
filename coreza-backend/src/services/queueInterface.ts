@@ -26,7 +26,8 @@ export interface WorkflowJobData {
     | "webhook"
     | "redis_pubsub"
     | "market_data"
-    | "loop_parallel";
+    | "loop_parallel"
+    | "loop_continuation";
   initialInput?: any;
   /** If true, skip all database logging for this run (high-frequency optimization) */
   useRedisStorage?: boolean;

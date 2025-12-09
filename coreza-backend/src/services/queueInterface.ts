@@ -41,6 +41,18 @@ export interface WorkflowJobData {
   totalItems?: number;
   /** Marker for aggregator jobs that collate child results */
   isLoopAggregator?: boolean;
+  /** Continue processing even if some items fail */
+  continueOnError?: boolean;
+}
+
+/** Options for parallel loop execution */
+export interface ParallelLoopOptions {
+  /** Maximum concurrent workers for this loop (default: 10) */
+  maxConcurrency?: number;
+  /** Continue processing remaining items even if some fail */
+  continueOnError?: boolean;
+  /** Use Redis storage for high-frequency runs (default: true) */
+  useRedisStorage?: boolean;
 }
 
 export interface IWorkflowJobQueue {
@@ -53,7 +65,7 @@ export interface IWorkflowJobQueue {
     subgraphNodes: any[],
     subgraphEdges: any[],
     items: any[],
-    useRedisStorage?: boolean
+    options?: ParallelLoopOptions
   ): Promise<void>;
   getQueueStats(): Promise<any>;
   cleanup(): Promise<void>;

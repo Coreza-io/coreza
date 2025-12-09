@@ -3,7 +3,7 @@
  * Redis-backed rate limiting middleware with tier-aware limits
  */
 
-import rateLimit, { Options } from 'express-rate-limit';
+import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { Request, Response } from 'express';
 import { getRedisCache } from '../config/redis';
@@ -24,17 +24,13 @@ function getTierMultiplier(tier?: string): number {
 }
 
 // Key generator - uses user ID for authenticated requests, IP for others
-function keyGenerator(req: AuthenticatedRequest): string {
+function keyGenerator(req: AuthenticatedRequest, res: Response): string {
   const userId = req.user?.id;
   if (userId) {
     return `user:${userId}`;
   }
-  // Fallback to IP for unauthenticated requests
-  const forwarded = req.headers['x-forwarded-for'];
-  const ip = typeof forwarded === 'string' 
-    ? forwarded.split(',')[0].trim() 
-    : req.ip || req.socket.remoteAddress || 'unknown';
-  return `ip:${ip}`;
+  // Use the built-in ipKeyGenerator helper for proper IPv6 handling
+  return `ip:${ipKeyGenerator(req, res)}`;
 }
 
 // Create a rate limiter for a specific endpoint category

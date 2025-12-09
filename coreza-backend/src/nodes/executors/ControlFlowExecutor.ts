@@ -17,6 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { MathService } from "../../services/math";
 import { TransformService } from "../../services/transform";
+import { LoopExecutorV2 } from "./LoopExecutorV2";
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
@@ -308,6 +309,45 @@ export class ControlFlowExecutor implements INodeExecutor {
     const parallel = !!resolvedParams.parallel;
     const continueOnError = !!resolvedParams.continueOnError;
     const throttleMs = Number(resolvedParams.throttleMs) || 200;
+    const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
+
+    // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution
+    if (parallel && context?.runId && context?.workflowId && context?.userId && context?.nodes && context?.edges) {
+      console.log(`🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`);
+      
+      const loopExecutorV2 = new LoopExecutorV2();
+      
+      // Parse items first for LoopExecutorV2
+      let items = resolvedParams?.inputArray || [];
+      try {
+        if (typeof items === "string") {
+          const parsed = JSON.parse(items);
+          items = Array.isArray(parsed) ? parsed : [parsed];
+        } else if (!Array.isArray(items)) {
+          items = items ? [items] : [];
+        }
+      } catch (e) {
+        items = Array.isArray(items) ? items : [items];
+      }
+
+      // Convert items to Item[] format expected by LoopExecutorV2
+      const itemsAsInput = Array.isArray(items) ? items.map((i: any) => ({ json: i })) : [];
+
+      const v2Result = await loopExecutorV2.execute(
+        node,
+        { ...resolvedParams, items, batchSize, parallel, continueOnError, throttleMs, maxConcurrency },
+        itemsAsInput,
+        context
+      );
+
+      // Convert v2 output format to NodeResult format
+      return {
+        success: true,
+        data: v2Result.output,
+        control: v2Result.control,
+        meta: v2Result.meta,
+      };
+    }
 
     // Extract array items from input
     let items = resolvedParams?.inputArray || [];

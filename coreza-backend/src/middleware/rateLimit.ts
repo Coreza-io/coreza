@@ -7,7 +7,8 @@ import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { Request, Response } from 'express';
 import { getRedisCache } from '../config/redis';
-import { ENDPOINT_LIMITS, TIER_MULTIPLIERS, EndpointCategory } from '../config/rateLimits';
+import { ENDPOINT_LIMITS, TIER_MULTIPLIERS, EndpointCategory, RATE_LIMIT_WHITELIST, SERVICE_SECRET } from '../config/rateLimits';
+import { isIpWhitelisted, getClientIp } from '../utils/ipUtils';
 import logger from '../utils/logger';
 
 // Extended request type with user info from JWT
@@ -65,8 +66,42 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
       });
     },
     skip: (req: Request) => {
-      // Skip rate limiting for health checks and metrics
-      return req.path === '/health' || req.path === '/metrics';
+      // 1. Check whitelisted paths
+      if (RATE_LIMIT_WHITELIST.paths.some(p => req.path === p || req.path.startsWith(p))) {
+        return true;
+      }
+      
+      // 2. Check IP whitelist (exact match + CIDR ranges)
+      const clientIp = getClientIp(req);
+      if (isIpWhitelisted(clientIp, RATE_LIMIT_WHITELIST)) {
+        logger.debug({ ip: clientIp, path: req.path }, 'Rate limit bypassed: whitelisted IP');
+        return true;
+      }
+      
+      // 3. Check trusted service header (with secret verification)
+      const serviceName = req.headers['x-service-name'];
+      const serviceSecret = req.headers['x-service-secret'];
+      if (
+        serviceName && 
+        SERVICE_SECRET && 
+        serviceSecret === SERVICE_SECRET &&
+        RATE_LIMIT_WHITELIST.services.includes(serviceName as string)
+      ) {
+        logger.debug({ service: serviceName, path: req.path }, 'Rate limit bypassed: trusted service');
+        return true;
+      }
+      
+      // 4. Check environment variable for additional IPs
+      const envWhitelist = process.env.RATE_LIMIT_WHITELIST_IPS;
+      if (envWhitelist) {
+        const additionalIps = envWhitelist.split(',').map(ip => ip.trim());
+        if (additionalIps.includes(clientIp)) {
+          logger.debug({ ip: clientIp, path: req.path }, 'Rate limit bypassed: env whitelist');
+          return true;
+        }
+      }
+      
+      return false;
     },
   };
 

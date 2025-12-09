@@ -19,21 +19,28 @@ import axios from "axios";
 import CredentialManager from "../utils/credentialManager";
 import { supabase } from "../config/supabase";
 import { requireProfessional } from "../middleware/licenseCheck";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = Router();
 
-// POST /auth-url - Store OpenAI credentials securely
+// Apply JWT authentication to all routes
+router.use(requireAuth);
+
+// POST /auth - Store OpenAI credentials securely
 router.post("/auth", async (req: Request, res: Response, next) => {
   try {
-    const { user_id, credential_name, apiKey } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_name || !apiKey) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Missing required parameters: user_id, credential_name, apiKey",
-        });
+    const { credential_name, apiKey } = req.body;
+
+    if (!credential_name || !apiKey) {
+      return res.status(400).json({
+        error: "Missing required parameters: credential_name, apiKey",
+      });
     }
 
     // Store credentials using CredentialManager (v2 encryption)
@@ -68,8 +75,13 @@ router.post("/auth", async (req: Request, res: Response, next) => {
 
 router.post("/chat", requireProfessional("LLM Features"), async (req: Request, res: Response) => {
   try {
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       credential_id,
       model,
       prompt,

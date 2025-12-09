@@ -17,6 +17,7 @@
 import express from "express";
 import { CommunicationService } from "../services/communications";
 import CredentialManager from "../utils/credentialManager";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const DEFAULT_WHATSAPP_USER_ID = process.env.WHATSAPP_DEFAULT_USER_ID;
 const DEFAULT_WHATSAPP_CREDENTIAL_ID =
@@ -24,39 +25,7 @@ const DEFAULT_WHATSAPP_CREDENTIAL_ID =
 
 const router = express.Router();
 
-// Save WhatsApp credentials
-router.post("/credentials", async (req, res, next) => {
-  try {
-    const { user_id, credential_name, access_token, phone_number_id } = req.body;
-
-    if (!user_id || !credential_name || !access_token || !phone_number_id) {
-      return res.status(400).json({
-        error:
-          "user_id, credential_name, access_token, and phone_number_id are required",
-      });
-    }
-
-    const credentialId = await CredentialManager.saveCredentials(
-      user_id,
-      "whatsapp",
-      credential_name,
-      {
-        access_token,
-        phone_number_id,
-      }
-    );
-
-    res.json({
-      success: true,
-      credential_id: credentialId,
-      message: "WhatsApp credentials saved successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Webhook verification (GET)
+// Webhook verification (GET) - Must be public for WhatsApp to verify
 router.get("/webhook", async (req, res) => {
   const {
     "hub.mode": mode,
@@ -83,7 +52,7 @@ router.get("/webhook", async (req, res) => {
   }
 });
 
-// Webhook event handling (POST)
+// Webhook event handling (POST) - Must be public for WhatsApp to send events
 router.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
@@ -118,19 +87,6 @@ async function handleWhatsAppMessage(value: any): Promise<void> {
           `📱 Received WhatsApp message from ${phoneNumber}: ${messageText}`
         );
 
-        // // Queue message processing
-        // await QueueManager.addNotification({
-        //   userId: 'system', // TODO: Map phone number to user ID
-        //   type: 'websocket',
-        //   data: {
-        //     type: 'whatsapp_message_received',
-        //     from: phoneNumber,
-        //     message: messageText,
-        //     messageType,
-        //     timestamp: new Date().toISOString()
-        //   }
-        // });
-
         // Auto-reply example
         if (
           messageText.toLowerCase().includes("hello") &&
@@ -160,15 +116,60 @@ async function handleWhatsAppMessage(value: any): Promise<void> {
   }
 }
 
+// Apply JWT authentication to all routes below this point
+router.use(requireAuth);
+
+// Save WhatsApp credentials
+router.post("/credentials", async (req, res, next) => {
+  try {
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { credential_name, access_token, phone_number_id } = req.body;
+
+    if (!credential_name || !access_token || !phone_number_id) {
+      return res.status(400).json({
+        error:
+          "credential_name, access_token, and phone_number_id are required",
+      });
+    }
+
+    const credentialId = await CredentialManager.saveCredentials(
+      user_id,
+      "whatsapp",
+      credential_name,
+      {
+        access_token,
+        phone_number_id,
+      }
+    );
+
+    res.json({
+      success: true,
+      credential_id: credentialId,
+      message: "WhatsApp credentials saved successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Send WhatsApp message
 router.post("/send", async (req, res, next) => {
   try {
-    const { user_id, credential_id, to, message, type = "text" } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "user_id and credential_id are required" });
+    const { credential_id, to, message, type = "text" } = req.body;
+
+    if (!credential_id) {
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     const result = await CommunicationService.execute(
@@ -196,8 +197,13 @@ router.post("/send", async (req, res, next) => {
 // Send WhatsApp template message
 router.post("/send-template", async (req, res, next) => {
   try {
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       credential_id,
       to,
       template_name,
@@ -205,10 +211,8 @@ router.post("/send-template", async (req, res, next) => {
       parameters = [],
     } = req.body;
 
-    if (!user_id || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "user_id and credential_id are required" });
+    if (!credential_id) {
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     const result = await CommunicationService.execute(
@@ -237,8 +241,13 @@ router.post("/send-template", async (req, res, next) => {
 // Send WhatsApp media message
 router.post("/send-media", async (req, res, next) => {
   try {
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       credential_id,
       to,
       media_type,
@@ -246,10 +255,8 @@ router.post("/send-media", async (req, res, next) => {
       caption = "",
     } = req.body;
 
-    if (!user_id || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "user_id and credential_id are required" });
+    if (!credential_id) {
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     const result = await CommunicationService.execute(
@@ -278,13 +285,16 @@ router.post("/send-media", async (req, res, next) => {
 // Get WhatsApp message templates
 router.get("/templates", async (req, res, next) => {
   try {
-    const user_id = req.query.user_id as string | undefined;
+    // Use authenticated user ID from JWT, not from query params
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const credential_id = req.query.credential_id as string | undefined;
 
-    if (!user_id || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "user_id and credential_id are required" });
+    if (!credential_id) {
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     const result = await CommunicationService.execute(

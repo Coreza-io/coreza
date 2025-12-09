@@ -15,8 +15,12 @@
  */
 
 import express from 'express';
+import { requireAuth } from '../middleware/jwtAuth';
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // Loop configuration helper
 function getByPath(obj: any, path: string): any {

@@ -18,6 +18,7 @@ import express from "express";
 import CredentialManager from "../utils/credentialManager";
 import axios from "axios";
 import { z } from "zod";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
 
@@ -36,17 +37,20 @@ const searchQuerySchema = z.object({
   numResults: z.number().int().min(1).max(10).optional(),
 });
 
+// Apply JWT authentication to all routes
+router.use(requireAuth);
+
 // Get user credentials list
 router.get("/credentials", async (req, res, next) => {
   try {
-    const { user_id } = req.query;
-
+    // Use authenticated user ID from JWT, not from query params
+    const user_id = req.user?.id;
     if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const credentials = await CredentialManager.listCredentials(
-      user_id as string,
+      user_id,
       "googlesearch"
     );
 
@@ -62,9 +66,15 @@ router.get("/credentials", async (req, res, next) => {
 // Save and validate credentials
 router.post("/auth", async (req, res, next) => {
   try {
-    const { user_id, credential_name, api_key, search_engine_id } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_name || !api_key || !search_engine_id) {
+    const { credential_name, api_key, search_engine_id } = req.body;
+
+    if (!credential_name || !api_key || !search_engine_id) {
       return res.status(400).json({ error: "Missing required parameters" });
     }
 
@@ -126,12 +136,18 @@ router.post("/auth", async (req, res, next) => {
 // Execute search
 router.post("/execute", async (req, res, next) => {
   try {
-    const { user_id, credential_id, query, numResults = 10 } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_id || !query) {
+    const { credential_id, query, numResults = 10 } = req.body;
+
+    if (!credential_id || !query) {
       return res
         .status(400)
-        .json({ error: "user_id, credential_id, and query are required" });
+        .json({ error: "credential_id and query are required" });
     }
 
     // Validate input

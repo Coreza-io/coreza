@@ -16,8 +16,12 @@
 
 import express from "express";
 import { DataService } from "../services/data";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // Get candle/historical data
 router.post("/get-candle", async (req, res, next) => {

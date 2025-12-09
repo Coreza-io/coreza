@@ -18,21 +18,34 @@ import express from "express";
 import CredentialManager from "../utils/credentialManager";
 import { createLogger } from "../utils/logger";
 import axios from "axios";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
 const logger = createLogger("telegram-routes");
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 /**
  * Store Telegram bot credentials
  */
 router.post("/credentials", async (req, res) => {
   try {
-    const { user_id, credential_name, bot_token } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
 
-    if (!user_id || !credential_name || !bot_token) {
+    const { credential_name, bot_token } = req.body;
+
+    if (!credential_name || !bot_token) {
       return res.status(400).json({
         success: false,
-        error: "user_id, credential_name, and bot_token are required",
+        error: "credential_name and bot_token are required",
       });
     }
 

@@ -19,8 +19,12 @@ import { ComparatorService, ComparatorInput } from "../services/comparator";
 import { MathService } from "../services/math";
 import { TransformService } from "../services/transform";
 import { DateService } from "../services/date";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // If/Then conditional logic with logicalOp support
 router.post("/if", async (req, res) => {

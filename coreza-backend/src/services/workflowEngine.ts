@@ -258,6 +258,15 @@ export class WorkflowEngine {
       const startNode = this.nodes.find(n => n.id === startNodeId);
       if (startNode) {
         console.log(`🔗 Starting execution from specific node: ${startNodeId} (${startNode.name || startNode.node_type})`);
+        
+        // Pre-mark all incoming edge payloads so dependency check passes
+        // This simulates what would have happened if the parent node (Loop) had executed and routed to us
+        const incomingEdges = this.getIncomingEdges(startNodeId);
+        for (const edge of incomingEdges) {
+          console.log(`📌 Pre-marking edge payload: ${edge.source} → ${edge.target}`);
+          this.markEdgePayload(edge.id, initialInput);
+        }
+        
         this.enqueue({ nodeId: startNodeId, input: initialInput });
         startedFromSpecificNode = true;
       } else {

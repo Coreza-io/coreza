@@ -16,7 +16,10 @@
 
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { AUTH_EXPIRED_EVENT } from '@/lib/apiClient';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -45,6 +48,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const userRef = useRef<User | null>(null);
+  
+  // Navigation for redirects - wrapped in try/catch for cases outside Router
+  let navigate: ReturnType<typeof useNavigate> | null = null;
+  let location: ReturnType<typeof useLocation> | null = null;
+  try {
+    navigate = useNavigate();
+    location = useLocation();
+  } catch {
+    // Component is used outside of Router context (e.g., in tests)
+  }
 
   const clearLocalSessionState = useCallback(() => {
     if (inactivityTimerRef.current) {
@@ -83,6 +96,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return false;
   }, [signOut]);
+
+  // Listen for global 401 responses from API calls
+  useEffect(() => {
+    const handleAuthExpired = async () => {
+      console.warn('Auth expired event received - signing out');
+      await signOut();
+      
+      // Show toast notification
+      toast.error('Session expired', {
+        description: 'Please log in again to continue.',
+      });
+      
+      // Redirect to login if not already there
+      if (navigate && location?.pathname !== '/login') {
+        navigate('/login', { replace: true });
+      }
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    };
+  }, [signOut, navigate, location?.pathname]);
 
   // Keep userRef in sync with user state
   useEffect(() => {

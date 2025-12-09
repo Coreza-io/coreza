@@ -653,17 +653,9 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           userId,
           nodes: subgraphNodes, // Original nodes - no pre-resolution needed
           edges: subgraphEdges,
-          initialInput: {
-            data: item,
-            $loopContext: {
-              itemIndex: i,
-              totalItems: items.length,
-              isFirstItem: i === 0,
-              isLastItem: i === items.length - 1,
-            },
-            // Per-item parent store with Loop output = current item
-            $parentStore: itemParentStore,
-          },
+          // All data accessible via $parentStore.Loop (data + $loopContext)
+          // No redundant top-level fields needed
+          initialInput: { $parentStore: itemParentStore },
           trigger: 'loop_parallel',
           parentRunId,
           loopId,

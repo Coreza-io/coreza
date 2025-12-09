@@ -15,9 +15,13 @@
  */
 
 import express from "express";
+import { requireAuth } from "../middleware/jwtAuth";
 import logger from "../utils/logger";
 
 const router = express.Router();
+
+// Apply JWT auth to all routes
+router.use(requireAuth);
 
 /**
  * POST /redis/trigger/subscribe
@@ -26,8 +30,12 @@ const router = express.Router();
  */
 router.post("/subscribe", async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       workflow_id,
       node_id,
       credential_id,
@@ -35,9 +43,9 @@ router.post("/subscribe", async (req, res) => {
       channels,
     } = req.body;
 
-    if (!user_id || !workflow_id || !node_id || !credential_id || !channels) {
+    if (!workflow_id || !node_id || !credential_id || !channels) {
       return res.status(400).json({
-        error: "user_id, workflow_id, node_id, credential_id, and channels are required",
+        error: "workflow_id, node_id, credential_id, and channels are required",
       });
     }
 
@@ -60,7 +68,7 @@ router.post("/subscribe", async (req, res) => {
     await subscriber.subscribe(
       workflow_id,
       node_id,
-      user_id,
+      userId,
       channels,
       subscription_type as "channel" | "pattern"
     );
@@ -69,7 +77,7 @@ router.post("/subscribe", async (req, res) => {
       {
         workflowId: workflow_id,
         nodeId: node_id,
-        userId: user_id,
+        userId,
         channels,
         type: subscription_type,
       },

@@ -21,22 +21,22 @@
 
 import express from 'express';
 import { z } from 'zod';
-import { supabase } from '../config/supabase';
+import { requireAuth } from '../middleware/jwtAuth';
 import CredentialManager from '../utils/credentialManager';
 import CredentialCache from '../utils/credentialCache';
-// Security monitoring integrated into EnhancedCredentialManager
 
 const router = express.Router();
 
-// Request validation schemas
-const storeCredentialsSchema = z.object({
-  service_type: z.string().min(1),
-  name: z.string().min(1),
-  client_data: z.record(z.any()),
-  token_data: z.record(z.any()).optional().default({}),
-  scopes: z.string().optional()
+// Apply JWT auth to all routes except health check
+router.use((req, res, next) => {
+  // Skip auth for health check
+  if (req.path === '/health') {
+    return next();
+  }
+  return requireAuth(req, res, next);
 });
 
+// Request validation schemas
 const getCredentialsSchema = z.object({
   service_type: z.string().min(1),
   name: z.string().optional()
@@ -52,36 +52,10 @@ const migrateCredentialSchema = z.object({
   name: z.string().min(1)
 });
 
-// Auth middleware with proper JWT validation
-const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    
-    if (error || !user) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-
-    req.userId = user.id;
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
-  }
-};
-
-// Note: Frontend now handles credential storage directly via Supabase client
-// This route is deprecated in favor of client-side encryption and storage
-
 // Get credentials with dual-read capability
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -135,9 +109,9 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // List credentials metadata
-router.get('/list', requireAuth, async (req, res) => {
+router.get('/list', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -164,9 +138,9 @@ router.get('/list', requireAuth, async (req, res) => {
 });
 
 // Delete credential
-router.delete('/', requireAuth, async (req, res) => {
+router.delete('/', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -199,9 +173,9 @@ router.delete('/', requireAuth, async (req, res) => {
 });
 
 // Migrate single credential to envelope encryption
-router.post('/migrate', requireAuth, async (req, res) => {
+router.post('/migrate', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -242,9 +216,9 @@ router.post('/migrate', requireAuth, async (req, res) => {
 });
 
 // Batch migrate all user credentials
-router.post('/migrate-all', requireAuth, async (req, res) => {
+router.post('/migrate-all', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -269,9 +243,9 @@ router.post('/migrate-all', requireAuth, async (req, res) => {
 });
 
 // Get migration status
-router.get('/migration-status', requireAuth, async (req, res) => {
+router.get('/migration-status', async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -292,7 +266,7 @@ router.get('/migration-status', requireAuth, async (req, res) => {
   }
 });
 
-// Health check for encryption system
+// Health check for encryption system (no auth required)
 router.get('/health', async (req, res) => {
   try {
     res.json({

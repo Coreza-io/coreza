@@ -16,12 +16,16 @@
 
 import express from "express";
 import Redis from "ioredis";
+import { requireAuth } from "../middleware/jwtAuth";
 import { getRedis } from "../config/redis";
 import logger from "../utils/logger";
 import CredentialManager from "../utils/credentialManager";
 import { CredentialValidator } from "../utils/credentialValidator";
 
 const router = express.Router();
+
+// Apply JWT auth to all routes
+router.use(requireAuth);
 
 // Cache for user Redis connections (reuse connections per user+credential)
 const userRedisConnections = new Map<string, Redis>();
@@ -144,10 +148,6 @@ async function testRedisConnection(
       });
     });
 
-    // NOW connect (after listeners are attached)
-    // Let connection errors propagate naturally - they'll be caught by error listener or outer try-catch
-    //await testRedis.connect();
-
     // Wait for connection
     await connectionPromise;
 
@@ -198,14 +198,13 @@ function buildKey(
 // GET /redis/credentials - List user's Redis credentials
 router.get("/credentials", async (req, res) => {
   try {
-    const { user_id } = req.query;
-
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const credentials = await CredentialManager.listCredentials(
-      user_id as string,
+      userId,
       "redis"
     );
 
@@ -229,8 +228,12 @@ router.get("/credentials", async (req, res) => {
 // POST /redis/auth - Store Redis credentials with connection validation
 router.post("/auth", async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       credential_name,
       host,
       port,
@@ -240,10 +243,10 @@ router.post("/auth", async (req, res) => {
       tls,
     } = req.body;
 
-    if (!user_id || !credential_name || !host) {
+    if (!credential_name || !host) {
       return res
         .status(400)
-        .json({ error: "user_id, credential_name, and host are required" });
+        .json({ error: "credential_name and host are required" });
     }
 
     const credentials = { host, port, password, user, database, tls };
@@ -261,7 +264,7 @@ router.post("/auth", async (req, res) => {
     }
 
     // Test connection before saving
-    logger.info({ user_id, credential_name, host }, "Testing Redis connection");
+    logger.info({ userId, credential_name, host }, "Testing Redis connection");
     const testResult = await testRedisConnection(credentials);
 
     if (!testResult.success) {
@@ -274,7 +277,7 @@ router.post("/auth", async (req, res) => {
 
     // Save credentials
     const credentialId = await CredentialManager.saveCredentials(
-      user_id,
+      userId,
       "redis",
       credential_name,
       credentials,
@@ -282,7 +285,7 @@ router.post("/auth", async (req, res) => {
     );
 
     logger.info(
-      { user_id, credential_name, credentialId },
+      { userId, credential_name, credentialId },
       "Redis credentials saved successfully"
     );
 
@@ -303,8 +306,12 @@ router.post("/auth", async (req, res) => {
 // POST /redis/store - Execute Redis operations using user's Redis connection
 router.post("/store", async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       credential_id,
       operation,
       scope,
@@ -336,17 +343,17 @@ router.post("/store", async (req, res) => {
       workflow_id,
     } = req.body;
 
-    if (!user_id || !credential_id || !operation) {
+    if (!credential_id || !operation) {
       return res
         .status(400)
-        .json({ error: "user_id, credential_id, and operation are required" });
+        .json({ error: "credential_id and operation are required" });
     }
 
     const RedisService = (await import("../services/RedisService"))
       .RedisService;
 
     const result = await RedisService.execute({
-      userId: user_id,
+      userId,
       credentialId: credential_id,
       operation,
       scope,

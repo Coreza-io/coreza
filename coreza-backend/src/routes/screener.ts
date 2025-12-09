@@ -15,25 +15,27 @@
  */
 
 import express from 'express';
+import { requireAuth } from '../middleware/jwtAuth';
 import { requireTrader } from '../middleware/licenseCheck';
 import { getScreenerService } from '../services/screeners/registry';
 
 const router = express.Router();
 
+// Apply JWT auth to all routes
+router.use(requireAuth);
+
 // Generic screener endpoint - dynamic operation
 router.post('/:screener/:operation', requireTrader('Screeners'), async (req, res) => {
   try {
-    const { screener, operation } = req.params;
-    const { user_id, credential_id, ...params } = req.body;
-
-    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} request:`, { user_id, credential_id, params });
-
-    if (!user_id) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'user_id is required' 
-      });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    const { screener, operation } = req.params;
+    const { credential_id, ...params } = req.body;
+
+    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} request:`, { userId, credential_id, params });
 
     const screenerService = getScreenerService(screener);
     if (!screenerService) {
@@ -44,7 +46,7 @@ router.post('/:screener/:operation', requireTrader('Screeners'), async (req, res
     }
 
     const result = await screenerService.execute({
-      user_id,
+      user_id: userId,
       credential_id,
       operation,
       ...params
@@ -64,17 +66,17 @@ router.post('/:screener/:operation', requireTrader('Screeners'), async (req, res
 // Get user's screener credentials
 router.get('/:screener/credentials', requireTrader('Screeners'), async (req, res) => {
   try {
-    const { screener } = req.params;
-    const { user_id } = req.query;
-
-    if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    const { screener } = req.params;
 
     const { BrokerService } = await import('../services/brokers');
     const credentials = await BrokerService.getCredentialsList(
       screener,
-      user_id as string
+      userId
     );
 
     res.json(credentials);

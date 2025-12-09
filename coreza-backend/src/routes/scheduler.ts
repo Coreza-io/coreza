@@ -15,9 +15,13 @@
  */
 
 import express from "express";
+import { requireAuth } from "../middleware/jwtAuth";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 
 const router = express.Router();
+
+// Apply JWT auth to all routes
+router.use(requireAuth);
 
 // Scheduler execution handler
 router.post("/scheduler", async (req, res) => {

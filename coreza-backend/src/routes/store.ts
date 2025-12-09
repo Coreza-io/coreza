@@ -15,6 +15,7 @@
  */
 
 import express from "express";
+import { requireAuth } from "../middleware/jwtAuth";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
@@ -23,28 +24,28 @@ import {
   extractVariableNameFromKey,
   getStoreValue,
   parseStoredValue,
-  getStoreValue,
   setStoreValue,
   parseMembers,
   parseScoreMembers,
-  setStoreValue,
 } from "../utils/store";
 
 const router = express.Router();
 
+// Apply JWT auth to all routes
+router.use(requireAuth);
+
 // GET /store/workflows - List workflows for the authenticated user
 router.get("/workflows", async (req, res) => {
   try {
-    const { user_id } = req.query;
-
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const { data, error } = await supabase
       .from("workflows")
       .select("id, name")
-      .eq("user_id", user_id)
+      .eq("user_id", userId)
       .order("name", { ascending: true });
 
     if (error) throw error;
@@ -64,17 +65,22 @@ router.get("/workflows", async (req, res) => {
 // GET /store/variables - List stored variable names for a workflow
 router.get("/variables", async (req, res) => {
   try {
-    const { user_id, workflow_id } = req.query;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !workflow_id) {
+    const { workflow_id } = req.query;
+
+    if (!workflow_id) {
       return res
         .status(400)
-        .json({ error: "user_id and workflow_id are required" });
+        .json({ error: "workflow_id is required" });
     }
 
     const redis = getRedisCache();
     const pattern = buildStoreKey(
-      user_id as string,
+      userId,
       workflow_id as string,
       "*"
     );
@@ -93,17 +99,22 @@ router.get("/variables", async (req, res) => {
 // GET /store/value - Retrieve a value from another workflow
 router.get("/value", async (req, res) => {
   try {
-    const { user_id, workflow_id, variable_name } = req.query;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !workflow_id || !variable_name) {
+    const { workflow_id, variable_name } = req.query;
+
+    if (!workflow_id || !variable_name) {
       return res
         .status(400)
-        .json({ error: "user_id, workflow_id, and variable_name required" });
+        .json({ error: "workflow_id and variable_name required" });
     }
 
     const redis = getRedisCache();
     const key = buildStoreKey(
-      user_id as string,
+      userId,
       workflow_id as string,
       variable_name as string
     );
@@ -122,8 +133,12 @@ router.get("/value", async (req, res) => {
 // POST /store/execute - Execute comprehensive store operations
 router.post("/execute", async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
-      user_id,
       workflow_id,
       dataType,
       operation,
@@ -151,10 +166,6 @@ router.post("/execute", async (req, res) => {
       ttl,
     } = req.body;
 
-    if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
-    }
-
     const redis = getRedisCache();
 
     // Determine variable name: manual entry, dropdown select, or write operation
@@ -180,7 +191,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id and variableName required for set" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
+      const key = buildStoreKey(userId, workflow_id, variableName);
       await setStoreValue(redis, key, value, ttl);
 
       return res.json({
@@ -195,7 +206,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const storedValue = await getStoreValue(redis, key);
       return res.json({
         success: true,
@@ -213,7 +224,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.del(key);
       return res.json({
         success: true,
@@ -231,7 +242,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = incrementBy || 1;
       const newValue = await redis.incrby(key, amount);
       return res.json({
@@ -246,7 +257,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.append(key, value || "");
       return res.json({
         success: true,
@@ -265,7 +276,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id and variableName required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
+      const key = buildStoreKey(userId, workflow_id, variableName);
       const serialized =
         typeof value === "string" ? value : JSON.stringify(value);
       await redis.lpush(key, serialized);
@@ -286,7 +297,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id and variableName required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
+      const key = buildStoreKey(userId, workflow_id, variableName);
       const serialized =
         typeof value === "string" ? value : JSON.stringify(value);
       await redis.rpush(key, serialized);
@@ -307,7 +318,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const popped = await redis.lpop(key);
       return res.json({
         success: true,
@@ -325,7 +336,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const popped = await redis.rpop(key);
       return res.json({
         success: true,
@@ -343,7 +354,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = startIndex ?? 0;
       const end = endIndex ?? -1;
       const items = await redis.lrange(key, start, end);
@@ -363,7 +374,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const length = await redis.llen(key);
       return res.json({
         success: true,
@@ -377,7 +388,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const item = await redis.lindex(key, index ?? 0);
       return res.json({
         success: true,
@@ -395,7 +406,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id and variableName required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
+      const key = buildStoreKey(userId, workflow_id, variableName);
       const serialized =
         typeof value === "string" ? value : JSON.stringify(value);
       await redis.lset(key, index ?? 0, serialized);
@@ -415,7 +426,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = startIndex ?? 0;
       const end = endIndex ?? -1;
       await redis.ltrim(key, start, end);
@@ -436,7 +447,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id, variableName, and hashField required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
+      const key = buildStoreKey(userId, workflow_id, variableName);
       const serialized =
         typeof value === "string" ? value : JSON.stringify(value);
       await redis.hset(key, hashField, serialized);
@@ -461,7 +472,7 @@ router.post("/execute", async (req, res) => {
               "sourceWorkflowId, variableNameSelect, and hashField required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const fieldValue = await redis.hget(key, hashField);
       return res.json({
         success: true,
@@ -480,7 +491,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const hash = await redis.hgetall(key);
       const parsed: Record<string, any> = {};
       for (const [field, val] of Object.entries(hash)) {
@@ -501,7 +512,7 @@ router.post("/execute", async (req, res) => {
               "sourceWorkflowId, variableNameSelect, and hashField required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.hdel(key, hashField);
       return res.json({
         success: true,
@@ -520,7 +531,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const keys = await redis.hkeys(key);
       return res.json({
         success: true,
@@ -534,7 +545,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const vals = await redis.hvals(key);
       return res.json({
         success: true,
@@ -555,7 +566,7 @@ router.post("/execute", async (req, res) => {
               "sourceWorkflowId, variableNameSelect, and hashField required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const exists = await redis.hexists(key, hashField);
       return res.json({
         success: true,
@@ -577,7 +588,7 @@ router.post("/execute", async (req, res) => {
               "sourceWorkflowId, variableNameSelect, and hashField required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = incrementBy || 1;
       const newValue = await redis.hincrby(key, hashField, amount);
       return res.json({
@@ -593,42 +604,46 @@ router.post("/execute", async (req, res) => {
 
     // ============ SET OPERATIONS ============
     if (operation === "sadd") {
-      if (!workflow_id || !variableName || !members) {
+      if (!workflow_id || !variableName) {
         return res
           .status(400)
-          .json({ error: "workflow_id, variableName, and members required" });
+          .json({ error: "workflow_id and variableName required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
-      const memberArray = parseMembers(members);
-      await redis.sadd(key, ...memberArray);
+      const key = buildStoreKey(userId, workflow_id, variableName);
+      const memberList = parseMembers(members);
+      if (memberList.length === 0) {
+        return res.status(400).json({ error: "members required for sadd" });
+      }
+      await redis.sadd(key, ...memberList);
       await applyTTL(key);
       return res.json({
         success: true,
         data: {
           operation: "sadd",
           variableName,
-          message: "Members added to set",
+          message: `Added ${memberList.length} member(s)`,
         },
       });
     }
 
     if (operation === "srem") {
-      if (!targetWorkflowId || !varName || !members) {
+      if (!targetWorkflowId || !varName) {
         return res
           .status(400)
-          .json({
-            error: "sourceWorkflowId, variableNameSelect, and members required",
-          });
+          .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const memberArray = parseMembers(members);
-      await redis.srem(key, ...memberArray);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const memberList = parseMembers(members);
+      if (memberList.length === 0) {
+        return res.status(400).json({ error: "members required for srem" });
+      }
+      await redis.srem(key, ...memberList);
       return res.json({
         success: true,
         data: {
           operation: "srem",
           variableName: varName,
-          message: "Members removed from set",
+          message: `Removed ${memberList.length} member(s)`,
         },
       });
     }
@@ -639,14 +654,14 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const memberSet = await redis.smembers(key);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const setMembers = await redis.smembers(key);
       return res.json({
         success: true,
         data: {
           operation: "smembers",
           variableName: varName,
-          value: memberSet,
+          value: setMembers.map(parseStoredValue),
         },
       });
     }
@@ -659,7 +674,7 @@ router.post("/execute", async (req, res) => {
             error: "sourceWorkflowId, variableNameSelect, and member required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const isMember = await redis.sismember(key, member);
       return res.json({
         success: true,
@@ -678,7 +693,7 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const count = await redis.scard(key);
       return res.json({
         success: true,
@@ -686,67 +701,32 @@ router.post("/execute", async (req, res) => {
       });
     }
 
-    if (operation === "sinter") {
-      if (!targetWorkflowId || !varName || !otherKeys) {
+    if (operation === "sinter" || operation === "sunion" || operation === "sdiff") {
+      if (!targetWorkflowId || !varName) {
         return res
           .status(400)
-          .json({
-            error:
-              "sourceWorkflowId, variableNameSelect, and otherKeys required",
-          });
+          .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const otherKeyArray = parseMembers(otherKeys).map((k) =>
-        buildStoreKey(user_id, targetWorkflowId, k)
-      );
-      const intersection = await redis.sinter(key, ...otherKeyArray);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const otherKeysList = Array.isArray(otherKeys) ? otherKeys : [];
+      const allKeys = [key, ...otherKeysList.map((k: string) => buildStoreKey(userId, targetWorkflowId, k))];
+      
+      let result: string[];
+      if (operation === "sinter") {
+        result = await redis.sinter(...allKeys);
+      } else if (operation === "sunion") {
+        result = await redis.sunion(...allKeys);
+      } else {
+        result = await redis.sdiff(...allKeys);
+      }
+      
       return res.json({
         success: true,
         data: {
-          operation: "sinter",
+          operation,
           variableName: varName,
-          value: intersection,
+          value: result.map(parseStoredValue),
         },
-      });
-    }
-
-    if (operation === "sunion") {
-      if (!targetWorkflowId || !varName || !otherKeys) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "sourceWorkflowId, variableNameSelect, and otherKeys required",
-          });
-      }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const otherKeyArray = parseMembers(otherKeys).map((k) =>
-        buildStoreKey(user_id, targetWorkflowId, k)
-      );
-      const union = await redis.sunion(key, ...otherKeyArray);
-      return res.json({
-        success: true,
-        data: { operation: "sunion", variableName: varName, value: union },
-      });
-    }
-
-    if (operation === "sdiff") {
-      if (!targetWorkflowId || !varName || !otherKeys) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "sourceWorkflowId, variableNameSelect, and otherKeys required",
-          });
-      }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const otherKeyArray = parseMembers(otherKeys).map((k) =>
-        buildStoreKey(user_id, targetWorkflowId, k)
-      );
-      const diff = await redis.sdiff(key, ...otherKeyArray);
-      return res.json({
-        success: true,
-        data: { operation: "sdiff", variableName: varName, value: diff },
       });
     }
 
@@ -757,28 +737,19 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "workflow_id and variableName required" });
       }
-      const key = buildStoreKey(user_id, workflow_id, variableName);
-
-      if (scoreMembers) {
-        const pairs = parseScoreMembers(scoreMembers);
-        await redis.zadd(key, ...pairs);
-      } else if (score !== undefined && member) {
-        await redis.zadd(key, score, member);
-      } else {
-        return res
-          .status(400)
-          .json({
-            error: "Either scoreMembers or (score and member) required",
-          });
+      const key = buildStoreKey(userId, workflow_id, variableName);
+      const scoreMembersList = parseScoreMembers(scoreMembers);
+      if (scoreMembersList.length === 0) {
+        return res.status(400).json({ error: "scoreMembers required for zadd" });
       }
-
+      await redis.zadd(key, ...scoreMembersList);
       await applyTTL(key);
       return res.json({
         success: true,
         data: {
           operation: "zadd",
           variableName,
-          message: "Members added to sorted set",
+          message: `Added ${scoreMembersList.length / 2} member(s)`,
         },
       });
     }
@@ -789,37 +760,28 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = startIndex ?? 0;
       const end = endIndex ?? -1;
-
-      let result;
-      if (withScores) {
-        const itemsWithScores = await redis.zrange(
-          key,
-          start,
-          end,
-          "WITHSCORES"
-        );
-        const formatted = [];
-        for (let i = 0; i < itemsWithScores.length; i += 2) {
-          formatted.push({
-            member: itemsWithScores[i],
-            score: parseFloat(itemsWithScores[i + 1]),
-          });
-        }
-        result = formatted;
-      } else {
-        result = await redis.zrange(key, start, end);
-      }
-
+      
+      let result: string[];
       if (reverseOrder) {
-        result = result.reverse();
+        result = withScores
+          ? await redis.zrevrange(key, start, end, "WITHSCORES")
+          : await redis.zrevrange(key, start, end);
+      } else {
+        result = withScores
+          ? await redis.zrange(key, start, end, "WITHSCORES")
+          : await redis.zrange(key, start, end);
       }
-
+      
       return res.json({
         success: true,
-        data: { operation: "zrange", variableName: varName, value: result },
+        data: {
+          operation: "zrange",
+          variableName: varName,
+          value: result.map(parseStoredValue),
+        },
       });
     }
 
@@ -831,15 +793,15 @@ router.post("/execute", async (req, res) => {
             error: "sourceWorkflowId, variableNameSelect, and member required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const memberScore = await redis.zscore(key, member);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const scoreVal = await redis.zscore(key, member);
       return res.json({
         success: true,
         data: {
           operation: "zscore",
           variableName: varName,
           member,
-          value: memberScore ? parseFloat(memberScore) : null,
+          value: scoreVal ? parseFloat(scoreVal) : null,
         },
       });
     }
@@ -850,9 +812,9 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const min = minScore !== undefined ? minScore.toString() : "-inf";
-      const max = maxScore !== undefined ? maxScore.toString() : "+inf";
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const min = minScore ?? "-inf";
+      const max = maxScore ?? "+inf";
       const count = await redis.zcount(key, min, max);
       return res.json({
         success: true,
@@ -868,7 +830,7 @@ router.post("/execute", async (req, res) => {
             error: "sourceWorkflowId, variableNameSelect, and member required",
           });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = incrementBy || 1;
       const newScore = await redis.zincrby(key, amount, member);
       return res.json({
@@ -883,40 +845,38 @@ router.post("/execute", async (req, res) => {
     }
 
     if (operation === "zrem") {
-      if (!targetWorkflowId || !varName || !members) {
+      if (!targetWorkflowId || !varName) {
         return res
           .status(400)
-          .json({
-            error: "sourceWorkflowId, variableNameSelect, and members required",
-          });
+          .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const memberArray = parseMembers(members);
-      await redis.zrem(key, ...memberArray);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const memberList = parseMembers(members);
+      if (memberList.length === 0) {
+        return res.status(400).json({ error: "members required for zrem" });
+      }
+      await redis.zrem(key, ...memberList);
       return res.json({
         success: true,
         data: {
           operation: "zrem",
           variableName: varName,
-          message: "Members removed from sorted set",
+          message: `Removed ${memberList.length} member(s)`,
         },
       });
     }
 
     // ============ UTILITY OPERATIONS ============
     if (operation === "keys") {
-      if (!workflow_id || !variableName) {
-        return res
-          .status(400)
-          .json({ error: "workflow_id and variableName required" });
-      }
-      const searchPattern = pattern || "*";
-      const fullPattern = buildStoreKey(user_id, workflow_id, searchPattern);
+      const keyPattern = pattern || "*";
+      const keyPrefix = buildStoreKey(userId, targetWorkflowId || workflow_id || "", "");
+      const fullPattern = keyPrefix + keyPattern;
       const matchedKeys = await redis.keys(fullPattern);
       return res.json({
         success: true,
         data: {
           operation: "keys",
+          pattern: keyPattern,
           value: matchedKeys.map(extractVariableNameFromKey),
         },
       });
@@ -928,30 +888,27 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const exists = await redis.exists(key);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const existsResult = await redis.exists(key);
       return res.json({
         success: true,
         data: {
           operation: "exists",
           variableName: varName,
-          value: exists === 1,
+          value: existsResult === 1,
         },
       });
     }
 
     if (operation === "expire") {
-      if (!targetWorkflowId || !varName) {
+      if (!targetWorkflowId || !varName || !ttl) {
         return res
           .status(400)
-          .json({ error: "sourceWorkflowId and variableNameSelect required" });
+          .json({
+            error: "sourceWorkflowId, variableNameSelect, and ttl required",
+          });
       }
-      if (!ttl || ttl <= 0) {
-        return res
-          .status(400)
-          .json({ error: "ttl must be greater than 0 for expire operation" });
-      }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.expire(key, ttl);
       return res.json({
         success: true,
@@ -969,18 +926,18 @@ router.post("/execute", async (req, res) => {
           .status(400)
           .json({ error: "sourceWorkflowId and variableNameSelect required" });
       }
-      const key = buildStoreKey(user_id, targetWorkflowId, varName);
-      const remaining = await redis.ttl(key);
+      const key = buildStoreKey(userId, targetWorkflowId, varName);
+      const ttlValue = await redis.ttl(key);
       return res.json({
         success: true,
-        data: { operation: "ttl", variableName: varName, value: remaining },
+        data: { operation: "ttl", variableName: varName, value: ttlValue },
       });
     }
 
     return res.status(400).json({ error: `Unknown operation: ${operation}` });
   } catch (error) {
-    logger.error({ err: error }, "Store operation error");
-    res.status(500).json({ error: "Store operation failed" });
+    logger.error({ err: error }, "Error executing store operation");
+    res.status(500).json({ error: "Failed to execute store operation" });
   }
 });
 

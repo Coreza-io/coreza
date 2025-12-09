@@ -15,6 +15,7 @@
  */
 
 import express from 'express';
+import { requireAuth } from '../middleware/jwtAuth';
 import { webhookService } from '../services/WebhookService';
 import { createLogger } from '../utils/logger';
 
@@ -23,20 +24,26 @@ const logger = createLogger('webhook-routes');
 
 /**
  * Register webhook - generates callback URL and optionally registers with external provider
+ * REQUIRES AUTH
  */
-router.post('/register', async (req, res) => {
+router.post('/register', requireAuth, async (req, res) => {
   try {
-    const { provider = 'generic', user_id, workflow_id, node_id, credential_id, update_types, secret_token } = req.body;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-    if (!user_id || !workflow_id || !node_id) {
+    const { provider = 'generic', workflow_id, node_id, credential_id, update_types, secret_token } = req.body;
+
+    if (!workflow_id || !node_id) {
       return res.status(400).json({
         success: false,
-        error: 'user_id, workflow_id, and node_id are required',
+        error: 'workflow_id and node_id are required',
       });
     }
 
     const callbackUrl = webhookService.generateCallbackUrl(
-      user_id,
+      userId,
       workflow_id,
       node_id,
       provider
@@ -47,7 +54,7 @@ router.post('/register', async (req, res) => {
     if (provider !== 'generic' && credential_id) {
       providerRegistration = await webhookService.registerWithProvider({
         provider,
-        userId: user_id,
+        userId,
         credentialId: credential_id,
         callbackUrl,
         updateTypes: update_types,
@@ -56,7 +63,7 @@ router.post('/register', async (req, res) => {
     }
 
     logger.info(
-      { userId: user_id, workflowId: workflow_id, nodeId: node_id, provider },
+      { userId, workflowId: workflow_id, nodeId: node_id, provider },
       'Webhook registered'
     );
 
@@ -78,26 +85,32 @@ router.post('/register', async (req, res) => {
 
 /**
  * Unregister webhook from external provider
+ * REQUIRES AUTH
  */
-router.post('/unregister', async (req, res) => {
+router.post('/unregister', requireAuth, async (req, res) => {
   try {
-    const { provider, user_id, credential_id } = req.body;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-    if (!provider || !user_id || !credential_id) {
+    const { provider, credential_id } = req.body;
+
+    if (!provider || !credential_id) {
       return res.status(400).json({
         success: false,
-        error: 'provider, user_id, and credential_id are required',
+        error: 'provider and credential_id are required',
       });
     }
 
     const result = await webhookService.unregisterFromProvider({
       provider,
-      userId: user_id,
+      userId,
       credentialId: credential_id,
     });
 
     logger.info(
-      { userId: user_id, provider },
+      { userId, provider },
       'Webhook unregistered'
     );
 
@@ -113,6 +126,7 @@ router.post('/unregister', async (req, res) => {
 
 /**
  * Receive incoming webhook events - provider-specific route
+ * NO AUTH - External services call this endpoint
  */
 router.all('/:provider/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
   const { provider, userId, workflowId, nodeId } = req.params;
@@ -142,6 +156,7 @@ router.all('/:provider/incoming/:userId/:workflowId/:nodeId', async (req, res) =
 
 /**
  * Receive incoming webhook events - generic route (backward compatibility)
+ * NO AUTH - External services call this endpoint
  */
 router.all('/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
   const { userId, workflowId, nodeId } = req.params;
@@ -167,8 +182,9 @@ router.all('/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
 
 /**
  * Get webhook status
+ * REQUIRES AUTH
  */
-router.get('/status/:workflowId/:nodeId', async (req, res) => {
+router.get('/status/:workflowId/:nodeId', requireAuth, async (req, res) => {
   try {
     const { workflowId, nodeId } = req.params;
 

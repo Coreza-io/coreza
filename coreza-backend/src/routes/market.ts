@@ -15,6 +15,7 @@
  */
 
 import express from 'express';
+import { requireAuth } from '../middleware/jwtAuth';
 import { DataService } from '../services/data';
 import { SubscriptionService } from '../services/SubscriptionService';
 import { MarketSource } from '../types/marketEvent';
@@ -22,6 +23,9 @@ import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
 
 const router = express.Router();
+
+// Apply JWT auth to all routes
+router.use(requireAuth);
 
 // ============================================
 // MARKET DATA SUBSCRIPTION STATUS
@@ -33,10 +37,9 @@ const router = express.Router();
  */
 router.get('/subscriptions/status', async (req, res) => {
   try {
-    const { user_id } = req.query;
-    
-    if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const redis = getRedisCache();
@@ -77,7 +80,7 @@ router.get('/subscriptions/status', async (req, res) => {
       if (subStr) {
         try {
           const sub = JSON.parse(subStr);
-          if (sub.userId === user_id) {
+          if (sub.userId === userId) {
             workflowSubs.push({
               workflowId: sub.workflowId,
               nodeId: sub.nodeId,
@@ -97,7 +100,7 @@ router.get('/subscriptions/status', async (req, res) => {
     }
 
     // Also check active streaming workflows set and include those not in wf:sub:*
-    const activeStreamingWorkflows = await redis.smembers(`user:${user_id}:active_streaming_workflows`);
+    const activeStreamingWorkflows = await redis.smembers(`user:${userId}:active_streaming_workflows`);
     for (const workflowId of activeStreamingWorkflows) {
       workflowIds.add(workflowId);
       
@@ -150,7 +153,7 @@ router.get('/subscriptions/status', async (req, res) => {
     }));
 
     // Get user-level symbol subscriptions (from Subscribe nodes - global scope)
-    const userSubKeys = await redis.keys(`user:${user_id}:subscribed_symbols:*`);
+    const userSubKeys = await redis.keys(`user:${userId}:subscribed_symbols:*`);
     const userSubscriptions: Record<string, string[]> = {};
 
     for (const key of userSubKeys) {
@@ -278,9 +281,13 @@ const sourceToMarketSource: Record<string, MarketSource> = {
  */
 router.post('/:source/subscribe', async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { source } = req.params;
     const {
-      user_id,
       credential_id,
       symbols,
       node_id,
@@ -305,7 +312,6 @@ router.post('/:source/subscribe', async (req, res) => {
     const finalSubscriptionScope = subscriptionScope || subscription_scope || 'global';
     const finalTargetWorkflowId = targetWorkflowId || target_workflow_id;
 
-    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
 
@@ -316,7 +322,7 @@ router.post('/:source/subscribe', async (req, res) => {
 
     const result = await SubscriptionService.subscribe({
       source: marketSource,
-      userId: user_id,
+      userId,
       workflowId: workflow_id,
       nodeId: node_id,
       credentialId: credential_id,
@@ -364,9 +370,13 @@ router.post('/:source/subscribe', async (req, res) => {
  */
 router.post('/:source/unsubscribe', async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { source } = req.params;
     const {
-      user_id,
       symbols,
       node_id,
       workflow_id,
@@ -377,8 +387,6 @@ router.post('/:source/unsubscribe', async (req, res) => {
       subscription_scope,  // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
-
     const marketSource = sourceToMarketSource[source];
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
@@ -386,7 +394,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
 
     const result = await SubscriptionService.unsubscribe({
       source: marketSource,
-      userId: user_id,
+      userId,
       workflowId: workflow_id,
       nodeId: node_id,
       symbols,
@@ -419,7 +427,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
     }
     // Handle global symbol unsubscription (user-level)
     else if (resolvedSymbols.length > 0 && !workflow_id) {
-      const userSubKey = `user:${user_id}:subscribed_symbols:${source}`;
+      const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
       for (const sym of resolvedSymbols) {
         await redis.srem(userSubKey, sym.toUpperCase());
       }
@@ -429,7 +437,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
     else if (workflow_id && resolvedSymbols.length === 0) {
       const subKey = `wf:sub:${workflow_id}`;
       await redis.del(subKey);
-      await redis.srem(`user:${user_id}:active_streaming_workflows`, workflow_id);
+      await redis.srem(`user:${userId}:active_streaming_workflows`, workflow_id);
       await redis.del(`workflow:${workflow_id}:stream_filter`);
       console.log(`📤 [Market Route] Direct cleanup for workflow ${workflow_id}`);
     }
@@ -457,13 +465,12 @@ router.post('/:source/unsubscribe', async (req, res) => {
  */
 router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
   try {
-    const { workflowId } = req.params;
-    const { user_id } = req.query;
-
-    if (!user_id) {
-      return res.status(400).json({ error: 'user_id query parameter is required' });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const { workflowId } = req.params;
     const redis = getRedisCache();
 
     // Look up the subscription to find the source
@@ -486,129 +493,37 @@ router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
     }
 
     // Remove workflow from active streaming workflows set
-    await redis.srem(`user:${user_id}:active_streaming_workflows`, workflowId);
+    await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
     await redis.del(`workflow:${workflowId}:stream_filter`);
 
     // Publish unsubscribe message to market-stream-service
     const unsubscribeMessage = {
       action: 'unsubscribe',
-      userId: user_id,
+      userId,
       workflowId,
       nodeId: nodeId || '',
       symbols,
       source: source || 'streaming_workflow',
     };
-    await redis.publish('md:control:unsubscribe', JSON.stringify(unsubscribeMessage));
 
-    // Delete the subscription key directly
+    await redis.publish('md:control:unsubscribe', JSON.stringify(unsubscribeMessage));
+    
+    // Clean up subscription data
     await redis.del(subKey);
 
-    console.log(`📤 [Market Route] Unsubscribed workflow ${workflowId} from market data`);
+    console.log(`📤 [Market Route] Unsubscribed workflow ${workflowId} via DELETE endpoint`);
 
     res.json({
       success: true,
-      message: `Workflow ${workflowId} unsubscribed successfully`,
-      workflow_id: workflowId,
-      source: source || 'unknown',
+      message: `Workflow ${workflowId} unsubscribed from market data`,
+      source,
+      symbols_unsubscribed: symbols.length
     });
   } catch (error) {
     console.error('Workflow unsubscribe error:', error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Workflow unsubscribe failed',
-    });
-  }
-});
-
-// ============================================
-// STREAMING WORKFLOW REGISTRATION (for frontend manual runs)
-// ============================================
-
-/**
- * Register a streaming workflow to receive market data
- * Called when user manually runs a streaming trigger node (BinanceStreamData, AlpacaStreamData)
- * POST /market/register-streaming-workflow
- */
-router.post('/register-streaming-workflow', async (req, res) => {
-  try {
-    const { user_id, workflow_id, node_id, source, filter_symbols, filter_types } = req.body;
-    
-    if (!user_id || !workflow_id || !node_id) {
-      return res.status(400).json({ error: 'Missing required fields: user_id, workflow_id, node_id' });
-    }
-    
-    const redis = getRedisCache();
-    
-    // Add to active streaming workflows
-    await redis.sadd(`user:${user_id}:active_streaming_workflows`, workflow_id);
-    
-    // Store filter configuration
-    const filterConfig = {
-      filter_symbols: filter_symbols || [],
-      filter_types: filter_types || [],
-      nodeId: node_id,
-      source: source || 'unknown',
-    };
-    await redis.set(`workflow:${workflow_id}:stream_filter`, JSON.stringify(filterConfig));
-    
-    // Publish registration message to market-stream-service
-    const registrationMessage = {
-      action: 'register_streaming_workflow',
-      userId: user_id,
-      workflowId: workflow_id,
-      nodeId: node_id,
-      source: source || 'binance_stream',
-      filter_symbols: filter_symbols || [],
-      filter_types: filter_types || [],
-    };
-    await redis.publish('md:control:register_workflow', JSON.stringify(registrationMessage));
-    
-    console.log(`📡 [Market Route] Streaming workflow ${workflow_id} registered manually for frontend (source: ${source})`);
-    
-    res.json({ 
-      success: true, 
-      message: 'Streaming workflow registered',
-      workflowId: workflow_id,
-      nodeId: node_id,
-      source,
-    });
-  } catch (error) {
-    console.error('Failed to register streaming workflow:', error);
-    res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Failed to register streaming workflow' 
-    });
-  }
-});
-
-// ============================================
-// MARKET DATA OPERATIONS
-// ============================================
-
-// Get candle data from Yahoo Finance
-router.post('/get-candle', async (req, res) => {
-  try {
-    const { ticker, interval = '1d', lookback = 100 } = req.body;
-
-    if (!ticker) {
-      return res.status(400).json({ error: 'Ticker symbol is required' });
-    }
-
-    const result = await DataService.execute('market', 'get_candle', {
-      ticker,
-      interval,
-      lookback
-    });
-
-    if (!result.success) {
-      return res.status(result.error?.includes('not found') ? 404 : 500).json({ error: result.error });
-    }
-
-    res.json(result.data);
-  } catch (error) {
-    console.error('Market data API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch market data',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unsubscribe failed',
     });
   }
 });

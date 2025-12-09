@@ -48,6 +48,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
+import { apiClient } from "@/lib/apiClient";
 
 interface SourceStatus {
   source: string;
@@ -127,13 +128,10 @@ const MarketSubscriptions = () => {
     try {
       if (showRefreshToast) setRefreshing(true);
       
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/market/subscriptions/status`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-      });
+      const response = await apiClient.get(
+        '/market/subscriptions/status',
+        session?.access_token
+      );
       
       if (!response.ok) {
         throw new Error('Failed to fetch subscription status');
@@ -166,19 +164,13 @@ const MarketSubscriptions = () => {
     
     setUnsubscribing(`symbol-${symbol}`);
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       // Source may already have _stream suffix or not
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          symbols: [symbol],
-        }),
-      });
+      const response = await apiClient.post(
+        `/market/${sourceRoute}/unsubscribe`,
+        { symbols: [symbol] },
+        session?.access_token
+      );
       
       if (!response.ok) throw new Error('Failed to unsubscribe');
       
@@ -197,20 +189,16 @@ const MarketSubscriptions = () => {
     
     setUnsubscribing(`symbol-${workflowId}-${symbol}`);
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
+      const response = await apiClient.post(
+        `/market/${sourceRoute}/unsubscribe`,
+        {
           workflow_id: workflowId,  // Include workflowId for workflow-scoped removal
           symbols: [symbol],
           subscription_scope: 'workflow',  // Tell backend this is workflow-scoped
-        }),
-      });
+        },
+        session?.access_token
+      );
       
       if (!response.ok) throw new Error('Failed to unsubscribe');
       
@@ -228,33 +216,25 @@ const MarketSubscriptions = () => {
     
     setUnsubscribing(`workflow-${wf.workflowId}-${wf.nodeId}`);
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      
       // Use fallback endpoint when source is unknown
       let response: Response;
       if (!wf.source || wf.source === 'unknown') {
-        response = await fetch(`${backendUrl}/market/workflows/${wf.workflowId}/unsubscribe`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-        });
+        response = await apiClient.delete(
+          `/market/workflows/${wf.workflowId}/unsubscribe`,
+          session?.access_token
+        );
       } else {
         // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
         const sourceRoute = wf.source.endsWith('_stream') ? wf.source : `${wf.source}_stream`;
-        response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
+        response = await apiClient.post(
+          `/market/${sourceRoute}/unsubscribe`,
+          {
             workflow_id: wf.workflowId,
             node_id: wf.nodeId,
             symbols: wf.symbols,
-          }),
-        });
+          },
+          session?.access_token
+        );
       }
       
       if (!response.ok) throw new Error('Failed to unsubscribe');
@@ -273,19 +253,13 @@ const MarketSubscriptions = () => {
     
     setUnsubscribing(`source-${source}`);
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       // Source may already have _stream suffix or not
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          symbols: symbols,
-        }),
-      });
+      const response = await apiClient.post(
+        `/market/${sourceRoute}/unsubscribe`,
+        { symbols },
+        session?.access_token
+      );
       
       if (!response.ok) throw new Error('Failed to unsubscribe');
       

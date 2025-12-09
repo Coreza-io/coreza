@@ -93,9 +93,13 @@ export class EngineV2 {
       if (node.name === 'If' || legacyType === 'If') {
         await this.propagate(node.id, result.control?.branch ?? 'true', result);
       } else if (node.name === 'Loop' || legacyType === 'Loop') {
-        const handle = result.control?.requeueSelf ? 'loop' : 'done';
+        // Support both old (requeueSelf) and new unified (loopIteration/loopCompleted) patterns
+        const isIteration = result.control?.requeueSelf || result.control?.loopIteration;
+        const handle = result.control?.sourceHandle || (isIteration ? 'loop' : 'done');
+        
         await this.propagate(node.id, handle, result);
-        if (result.control?.requeueSelf) {
+        
+        if (isIteration) {
           await this.scheduler.enqueue(node.id, result.control?.throttleUntil);
         }
       } else {

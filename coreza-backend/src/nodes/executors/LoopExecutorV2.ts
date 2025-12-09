@@ -14,14 +14,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { INodeExecutorV2, WorkflowNode, WorkflowEdge, Item, NodeExecutionOutput, ControlFlags } from '../types';
 import { bullMqJobQueue } from '../../services/jobQueueManager';
 import { extractLoopBodySubgraph } from '../../services/loopSubgraphExtractor';
-import { INodeExecutorV2, WorkflowEdge, WorkflowNode, Item, NodeExecutionOutput, ControlFlags } from '../types';
 
 /**
  * Experimental Loop executor for EngineV2.
- * Processes items in batches and re-queues itself until completion.
- * Maintains `startIndex` and optional aggregation in node state.
+ * Supports two execution modes:
+ * 1. Sequential: Processes items in batches and re-queues itself until completion.
+ * 2. Parallel (BullMQ Distributed): Creates separate BullMQ jobs per item for true distributed parallelism.
  */
 export class LoopExecutorV2 implements INodeExecutorV2 {
   readonly category = 'control';
@@ -30,8 +31,8 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     node: WorkflowNode,
     params: any,
     input: Item[],
-    context: {
-      getState: (k: string) => any;
+    context: { 
+      getState: (k: string) => any; 
       setState: (k: string, v: any) => void;
       runId?: string;
       workflowId?: string;
@@ -41,59 +42,60 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     }
   ): Promise<NodeExecutionOutput> {
     // Items come either from params or upstream input
-    const configuredItems: Item[] = Array.isArray(params.items)
-      ? params.items
-      : input;
-    const items: Item[] = Array.isArray(configuredItems)
-      ? configuredItems
-      : configuredItems
-      ? [configuredItems]
-      : [];
+    const items: Item[] = Array.isArray(params.items) ? params.items : input;
     const batchSize: number = Number(params.batchSize) || 1;
     const aggregate: boolean = !!params.aggregate;
     const parallel: boolean = !!params.parallel;
     const throttleMs: number = Number(params.throttleMs) || 0;
+    const maxConcurrency: number = Number(params.maxConcurrency) || 10;
 
-    let startIndex: number = context.getState('startIndex') || 0;
-    let aggregation: Item[] | undefined = context.getState('aggregation');
-    if (aggregate && !aggregation) aggregation = [];
+    // DISTRIBUTED PARALLEL MODE
+    // When parallel=true and we have context for BullMQ, distribute items across workers
+    if (parallel && items.length > 1 && context.runId && context.workflowId && context.userId && context.nodes && context.edges) {
+      console.log(`🔄 Loop ${node.id}: Distributing ${items.length} items across BullMQ workers`);
 
-    const canDistribute =
-      parallel &&
-      items.length > 1 &&
-      context.runId &&
-      context.workflowId &&
-      context.userId &&
-      context.nodes &&
-      context.edges;
-
-    if (canDistribute) {
+      // Extract the loop body subgraph (nodes connected to "loop" handle)
       const subgraph = extractLoopBodySubgraph(
         node.id,
-        context.nodes!,
-        context.edges!
+        context.nodes,
+        context.edges
       );
 
+      if (subgraph.nodes.length === 0) {
+        console.warn(`⚠️ Loop ${node.id}: No nodes found in loop body, skipping parallel execution`);
+        return { output: items, control: {} };
+      }
+
+      console.log(`📦 Loop ${node.id}: Extracted subgraph with ${subgraph.nodes.length} nodes and ${subgraph.edges.length} edges`);
+
+      // Create N BullMQ jobs (one per item) with aggregator parent
       await bullMqJobQueue.addParallelLoopExecution(
-        context.runId!,
+        context.runId,
         node.id,
-        context.workflowId!,
-        context.userId!,
+        context.workflowId,
+        context.userId,
         subgraph.nodes,
         subgraph.edges,
         items,
-        true
+        true // useRedisStorage for high-frequency
       );
 
-      const control: ControlFlags = {
-        setState: {
-          startIndex: undefined,
-          aggregation: undefined,
-        },
+      // Return control flag indicating parallel distribution
+      // The aggregator job will handle collecting results
+      return { 
+        output: [], 
+        control: { 
+          parallelDistributed: true,
+          itemCount: items.length,
+          loopId: node.id,
+        } 
       };
-
-      return { output: [], control };
     }
+
+    // SEQUENTIAL MODE (existing logic)
+    let startIndex: number = context.getState('startIndex') || 0;
+    let aggregation: Item[] | undefined = context.getState('aggregation');
+    if (aggregate && !aggregation) aggregation = [];
 
     const batch = items.slice(startIndex, startIndex + batchSize);
     startIndex += batch.length;

@@ -41,7 +41,7 @@
       "label": "Parallel Execution",
       "type": "checkbox",
       "default": false,
-      "description": "Run all iterations concurrently"
+      "description": "Distribute loop items across BullMQ workers for true distributed parallelism"
     },
     {
       "key": "maxConcurrency",
@@ -49,7 +49,8 @@
       "type": "text",
       "placeholder": "10",
       "default": "10",
-      "description": "Maximum concurrent BullMQ workers for parallel execution"
+      "description": "Maximum concurrent BullMQ workers for parallel execution",
+      "condition": { "parallel": true }
     },
     {
       "key": "continueOnError",
@@ -64,7 +65,7 @@
       "type": "text",
       "placeholder": "200",
       "default": 200,
-      "description": "Delay between loop iterations"
+      "description": "Delay between loop iterations (sequential mode only)"
     }
   ]
 }

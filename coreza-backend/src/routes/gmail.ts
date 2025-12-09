@@ -16,22 +16,26 @@
 
 import express from "express";
 import { CommunicationService } from "../services/communications";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // Get user credentials list for Gmail
 router.get("/credentials", async (req, res, next) => {
   try {
-    const { user_id } = req.query;
-
+    // Use authenticated user ID from JWT, not from query params
+    const user_id = req.user?.id;
     if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const result = await CommunicationService.execute(
       "gmail",
       "list_credentials",
-      { user_id: user_id as string }
+      { user_id }
     );
 
     if (!result.success) {
@@ -50,7 +54,13 @@ router.get("/credentials", async (req, res, next) => {
 // Send email
 router.post("/send", async (req, res, next) => {
   try {
-    const { user_id, credential_id, to, subject, body, html } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { credential_id, to, subject, body, html } = req.body;
 
     const result = await CommunicationService.execute("gmail", "send_email", {
       user_id,
@@ -76,7 +86,13 @@ router.post("/send", async (req, res, next) => {
 // Get emails
 router.post("/messages", async (req, res, next) => {
   try {
-    const { user_id, credential_id, query, max_results } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { credential_id, query, max_results } = req.body;
 
     const result = await CommunicationService.execute("gmail", "get_messages", {
       user_id,
@@ -100,8 +116,14 @@ router.post("/messages", async (req, res, next) => {
 // Get specific email content
 router.post("/message/:messageId", async (req, res, next) => {
   try {
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { messageId } = req.params;
-    const { user_id, credential_id } = req.body;
+    const { credential_id } = req.body;
 
     const result = await CommunicationService.execute("gmail", "get_message", {
       user_id,

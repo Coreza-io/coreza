@@ -16,8 +16,12 @@
 
 import express from 'express';
 import { HttpService } from '../services/http';
+import { requireAuth } from '../middleware/jwtAuth';
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // HTTP Request handler
 router.post('/request', async (req, res) => {

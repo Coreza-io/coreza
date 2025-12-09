@@ -16,9 +16,13 @@
 
 import express from 'express';
 import { requireTrader } from '../middleware/licenseCheck';
+import { requireAuth } from '../middleware/jwtAuth';
 import { IndicatorService } from '../services/indicators';
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // RSI endpoint
 router.post('/rsi', async (req, res, next) => {

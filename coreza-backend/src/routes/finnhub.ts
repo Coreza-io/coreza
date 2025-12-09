@@ -16,20 +16,24 @@
 
 import express from "express";
 import { DataService } from "../services/data";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
+
+// Apply JWT authentication to all routes
+router.use(requireAuth);
 
 // Get user credentials list for FinnHub
 router.get("/credentials", async (req, res, next) => {
   try {
-    const { user_id } = req.query;
-
+    // Use authenticated user ID from JWT, not from query params
+    const user_id = req.user?.id;
     if (!user_id) {
-      return res.status(400).json({ error: "user_id is required" });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const result = await DataService.execute("finnhub", "list_credentials", {
-      userId: user_id as string,
+      userId: user_id,
     });
 
     if (!result.success) {
@@ -48,9 +52,15 @@ router.get("/credentials", async (req, res, next) => {
 // Save and validate credentials (authAction)
 router.post("/auth", async (req, res, next) => {
   try {
-    const { user_id, credential_name, api_key } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_name || !api_key) {
+    const { credential_name, api_key } = req.body;
+
+    if (!credential_name || !api_key) {
       return res.status(400).json({ error: "Missing required parameters" });
     }
 
@@ -73,12 +83,18 @@ router.post("/auth", async (req, res, next) => {
 // Get quote data (main action)
 router.post("/get-quote", async (req, res, next) => {
   try {
-    const { user_id, credential_id, ticker } = req.body;
+    // Use authenticated user ID from JWT, not from request body
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!user_id || !credential_id || !ticker) {
+    const { credential_id, ticker } = req.body;
+
+    if (!credential_id || !ticker) {
       return res
         .status(400)
-        .json({ error: "user_id, credential_id, and ticker are required" });
+        .json({ error: "credential_id and ticker are required" });
     }
 
     const result = await DataService.execute("finnhub", "get_quote", {

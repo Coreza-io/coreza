@@ -32,7 +32,7 @@ interface GenericAuthModalProps {
 
 const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose }) => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [fields, setFields] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       (definition.authFields || []).map(f =>
@@ -96,9 +96,9 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         method: definition.authAction?.method || 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
-          user_id: user.id,
           credential_name: fields.credential_name || `${definition.name} Account`,
           ...credentials // spread individual credential fields
         })

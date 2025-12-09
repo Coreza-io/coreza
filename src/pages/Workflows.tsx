@@ -64,7 +64,7 @@ const Workflows = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const projectId = searchParams.get('project');
 
@@ -153,7 +153,10 @@ const Workflows = () => {
       try {
         const healthCheck = await fetch(`${API_URL}/health`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
         });
         
         if (!healthCheck.ok) {
@@ -169,8 +172,11 @@ const Workflows = () => {
       // Call the correct backend endpoint
       const res = await fetch(`${API_URL}/workflows/${user?.id}/${workflowId}/schedule`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
           is_active: newStatus
         }),
       });

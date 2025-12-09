@@ -106,7 +106,7 @@ const sourceIcons: Record<string, string> = {
 };
 
 const MarketSubscriptions = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,7 +128,12 @@ const MarketSubscriptions = () => {
       if (showRefreshToast) setRefreshing(true);
       
       const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/market/subscriptions/status?user_id=${user.id}`);
+      const response = await fetch(`${backendUrl}/market/subscriptions/status`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+      });
       
       if (!response.ok) {
         throw new Error('Failed to fetch subscription status');
@@ -166,9 +171,11 @@ const MarketSubscriptions = () => {
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
       const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
-          user_id: user.id,
           symbols: [symbol],
         }),
       });
@@ -194,9 +201,11 @@ const MarketSubscriptions = () => {
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
       const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
-          user_id: user.id,
           workflow_id: workflowId,  // Include workflowId for workflow-scoped removal
           symbols: [symbol],
           subscription_scope: 'workflow',  // Tell backend this is workflow-scoped
@@ -224,18 +233,23 @@ const MarketSubscriptions = () => {
       // Use fallback endpoint when source is unknown
       let response: Response;
       if (!wf.source || wf.source === 'unknown') {
-        response = await fetch(`${backendUrl}/market/workflows/${wf.workflowId}/unsubscribe?user_id=${user.id}`, {
+        response = await fetch(`${backendUrl}/market/workflows/${wf.workflowId}/unsubscribe`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
         });
       } else {
         // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
         const sourceRoute = wf.source.endsWith('_stream') ? wf.source : `${wf.source}_stream`;
         response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
           body: JSON.stringify({
-            user_id: user.id,
             workflow_id: wf.workflowId,
             node_id: wf.nodeId,
             symbols: wf.symbols,
@@ -264,9 +278,11 @@ const MarketSubscriptions = () => {
       const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
       const response = await fetch(`${backendUrl}/market/${sourceRoute}/unsubscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
-          user_id: user.id,
           symbols: symbols,
         }),
       });

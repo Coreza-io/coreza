@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -48,6 +49,7 @@ export function SchwabAuthModal({
 }: SchwabAuthModalProps) {
   const [step, setStep] = useState<Step>("credentials");
   const [loading, setLoading] = useState(false);
+  const { session } = useAuth();
 
   // Step 1: Credentials
   const [credentialName, setCredentialName] = useState("My Schwab Account");
@@ -134,18 +136,29 @@ export function SchwabAuthModal({
       return;
     }
 
+    if (!userId) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in again to complete the connection",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch(
         `${BACKEND_URL}/oauth/schwab/exchange-token`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
           body: JSON.stringify({
             temp_id: tempId,
             redirect_url: redirectUrl,
             credential_name: credentialName,
-            user_id: userId,
           }),
         }
       );

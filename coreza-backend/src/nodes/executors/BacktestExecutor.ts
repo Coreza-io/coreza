@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
 import { SimBroker, SimBrokerConfig, Bar } from '../../services/simBroker';
-import { getSupabase } from '../../config/supabase';
+import { supabase } from '../../config/supabase';
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = 'Backtest';
@@ -75,8 +75,8 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       // Create backtest session in Supabase
-      const supabase = getSupabase();
-      const { data: backtest, error: insertError } = await supabase
+      const supabaseClient = supabase;
+      const { data: backtest, error: insertError } = await supabaseClient
         .from('backtests')
         .insert({
           user_id: userId,
@@ -295,10 +295,10 @@ export class BacktestExecutor implements INodeExecutor {
       const portfolioState = await simBroker.getPortfolioState();
 
       // Persist to Supabase
-      const supabase = getSupabase();
+      const supabaseClient = supabase;
 
       // Update backtest status
-      await supabase
+      await supabaseClient
         .from('backtests')
         .update({
           status: 'completed',
@@ -307,7 +307,7 @@ export class BacktestExecutor implements INodeExecutor {
         .eq('id', backtestId);
 
       // Insert backtest results
-      await supabase.from('backtest_results').insert({
+      await supabaseClient.from('backtest_results').insert({
         backtest_id: backtestId,
         total_return: metrics.totalReturnPct,
         annualized_return: metrics.annualizedReturn,
@@ -337,7 +337,7 @@ export class BacktestExecutor implements INodeExecutor {
           portfolio_value_after: null,
         }));
 
-        await supabase.from('backtest_trades').insert(tradeRows);
+        await supabaseClient.from('backtest_trades').insert(tradeRows);
       }
 
       // Insert equity curve samples (limit to avoid too many rows)
@@ -356,7 +356,7 @@ export class BacktestExecutor implements INodeExecutor {
           daily_return: null, // Could calculate
         }));
 
-        await supabase.from('backtest_portfolio_snapshots').insert(snapshotRows);
+        await supabaseClient.from('backtest_portfolio_snapshots').insert(snapshotRows);
       }
 
       // Cleanup Redis state

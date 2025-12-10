@@ -551,6 +551,44 @@ export class TransformService {
           return { success: true, data: validation.array.join(delimiter) };
         }
 
+        case "find": {
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid)
+            return { success: false, error: validation.error };
+          const propertyName = String(arg1 || "");
+          const matchValue = TransformService.parseValue(arg2);
+          const found = validation.array.find((item) => {
+            if (item && typeof item === "object") {
+              const itemValue = item[propertyName];
+              if (typeof itemValue === "object" && typeof matchValue === "object") {
+                return JSON.stringify(itemValue) === JSON.stringify(matchValue);
+              }
+              return itemValue === matchValue;
+            }
+            return false;
+          });
+          return { success: true, data: found ?? null };
+        }
+
+        case "filter": {
+          const validation = TransformService.validateArray(value);
+          if (!validation.valid)
+            return { success: false, error: validation.error };
+          const propertyName = String(arg1 || "");
+          const matchValue = TransformService.parseValue(arg2);
+          const filtered = validation.array.filter((item) => {
+            if (item && typeof item === "object") {
+              const itemValue = item[propertyName];
+              if (typeof itemValue === "object" && typeof matchValue === "object") {
+                return JSON.stringify(itemValue) === JSON.stringify(matchValue);
+              }
+              return itemValue === matchValue;
+            }
+            return false;
+          });
+          return { success: true, data: filtered };
+        }
+
         // ============== OBJECT OPERATIONS ==============
         case "keys": {
           const validation = TransformService.validateObject(value);

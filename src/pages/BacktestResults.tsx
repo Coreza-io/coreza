@@ -1,0 +1,143 @@
+import { Link, useParams } from "react-router-dom";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EquityCurveChart } from "@/components/backtest/EquityCurveChart";
+import { PerformanceMetricsCard } from "@/components/backtest/PerformanceMetricsCard";
+import { TradesTable } from "@/components/backtest/TradesTable";
+import { PortfolioTimeline } from "@/components/backtest/PortfolioTimeline";
+import { useBacktestResults } from "@/hooks/useBacktestResults";
+import { ArrowLeft, Download, Workflow, Clock3 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  pending: 'outline',
+  running: 'secondary',
+  completed: 'default',
+  failed: 'destructive',
+};
+
+const BacktestResults = () => {
+  const { id } = useParams();
+  const { backtest, metrics, trades, snapshots, loading } = useBacktestResults(id);
+
+  const renderHeader = () => {
+    if (loading || !backtest) {
+      return (
+        <div className="space-y-3">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-3xl font-bold">{backtest.name}</h1>
+          <Badge variant={statusVariants[backtest.status] || 'outline'} className="capitalize">{backtest.status}</Badge>
+          <Badge variant="outline" className="gap-1">
+            <Clock3 className="h-4 w-4" />
+            {backtest.started_at ? new Date(backtest.started_at).toLocaleString() : 'Not started'}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Workflow className="h-4 w-4" />
+            <span>Workflow:</span>
+            <Link to={`/dashboard/workflow/${backtest.workflow_id}`} className="text-primary hover:underline">
+              {backtest.workflow_id}
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const metricCards = [
+    { label: 'Total Return', value: metrics?.total_return, format: 'percent' },
+    { label: 'Sharpe Ratio', value: metrics?.sharpe_ratio },
+    { label: 'Max Drawdown', value: metrics?.max_drawdown, format: 'percent' },
+    { label: 'Win Rate', value: metrics?.win_rate, format: 'percent' },
+  ];
+
+  const formatMetric = (value?: number, format: 'percent' | 'number' = 'number') => {
+    if (value === undefined || value === null) return '—';
+    return format === 'percent' ? `${value.toFixed(2)}%` : value.toFixed(2);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" asChild>
+            <Link to="/dashboard/backtests" className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </Link>
+          </Button>
+          {renderHeader()}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary">
+            <Download className="h-4 w-4 mr-2" /> Export
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {metricCards.map((metric) => (
+          <Card key={metric.label}>
+            <CardHeader className="pb-2">
+              <CardDescription>{metric.label}</CardDescription>
+              <CardTitle className="text-2xl">{formatMetric(metric.value, metric.format as any)}</CardTitle>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+
+      <EquityCurveChart snapshots={snapshots} />
+
+      <Tabs defaultValue="performance" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="trades">Trades</TabsTrigger>
+          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="performance" className="space-y-4">
+          <PerformanceMetricsCard metrics={metrics} />
+        </TabsContent>
+
+        <TabsContent value="trades">
+          <TradesTable trades={trades} />
+        </TabsContent>
+
+        <TabsContent value="portfolio">
+          <PortfolioTimeline snapshots={snapshots} />
+        </TabsContent>
+
+        <TabsContent value="settings">
+          <Card>
+            <CardHeader>
+              <CardTitle>Backtest Configuration</CardTitle>
+              <CardDescription>Read-only settings used during this backtest run.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {backtest?.config ? (
+                <pre className="bg-muted rounded-lg p-4 text-sm overflow-auto">
+                  {JSON.stringify(backtest.config, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">No configuration available.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+export default BacktestResults;

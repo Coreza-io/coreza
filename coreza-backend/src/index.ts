@@ -60,6 +60,7 @@ import brokerRoutes from './routes/broker';
 import redisRoutes from './routes/redis';
 import redisTriggerRoutes from './routes/redisTrigger';
 import storeRoutes from './routes/store';
+import backtestRoutes from './routes/backtest';
 
 // Import rate limiters
 import {
@@ -178,6 +179,7 @@ app.use('/googlesearch', apiLimiter, googleSearchRoutes);
 app.use('/redis', apiLimiter, redisRoutes);
 app.use('/redis/trigger', apiLimiter, redisTriggerRoutes);
 app.use('/store', apiLimiter, storeRoutes);
+app.use('/backtest', apiLimiter, backtestRoutes);
 
 logger.info('All routes mounted with rate limiting');
 

@@ -22,12 +22,16 @@ export const PortfolioTimeline = ({ snapshots }: PortfolioTimelineProps) => {
                 className="flex items-center justify-between rounded-lg border p-3 bg-muted/30"
               >
                 <div>
-                  <p className="text-sm font-medium">{new Date(snapshot.timestamp).toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">Daily return: {snapshot.daily_return ? `${snapshot.daily_return.toFixed(2)}%` : '—'}</p>
+                  <p className="text-sm font-medium">{new Date(snapshot.date).toLocaleDateString()}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Daily return: {snapshot.daily_return !== null && snapshot.daily_return !== undefined ? `${snapshot.daily_return.toFixed(2)}%` : '—'}
+                  </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold">${snapshot.equity.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">Cash: ${snapshot.cash?.toLocaleString() || '—'} | Positions: ${snapshot.positions_value?.toLocaleString() || '—'}</p>
+                  <p className="text-lg font-semibold">${snapshot.total_value.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Cash: ${snapshot.cash_balance?.toLocaleString() || '—'} | Stocks: ${snapshot.stock_value?.toLocaleString() || '—'}
+                  </p>
                 </div>
               </div>
             ))}

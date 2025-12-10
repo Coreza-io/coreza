@@ -19,51 +19,44 @@ export const TradesTable = ({ trades }: TradesTableProps) => {
         </div>
       </CardHeader>
       <CardContent className="overflow-auto">
-        <div className="min-w-[800px]">
+        <div className="min-w-[700px]">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Symbol</TableHead>
-                <TableHead>Side</TableHead>
-                <TableHead>Entry</TableHead>
-                <TableHead>Exit</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Price</TableHead>
                 <TableHead>Qty</TableHead>
-                <TableHead>Gross P&amp;L</TableHead>
                 <TableHead>Commission</TableHead>
-                <TableHead>Net P&amp;L</TableHead>
-                <TableHead>Entry Time</TableHead>
-                <TableHead>Exit Time</TableHead>
+                <TableHead>Slippage</TableHead>
+                <TableHead>Portfolio Before</TableHead>
+                <TableHead>Portfolio After</TableHead>
+                <TableHead>Time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {trades.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
                     No trades yet.
                   </TableCell>
                 </TableRow>
               ) : (
                 trades.map((trade) => {
-                  const netPl = trade.net_pl ?? trade.gross_pl - (trade.commission || 0);
-                  const isProfit = netPl >= 0;
+                  const isBuy = trade.action?.toLowerCase() === 'buy';
                   return (
                     <TableRow key={trade.id} className="text-sm">
                       <TableCell className="font-medium">{trade.symbol}</TableCell>
                       <TableCell>
-                        <Badge variant={trade.side?.toLowerCase() === 'buy' ? 'secondary' : 'outline'}>{trade.side}</Badge>
+                        <Badge variant={isBuy ? 'secondary' : 'outline'}>{trade.action}</Badge>
                       </TableCell>
-                      <TableCell>{formatCurrency(trade.entry_price)}</TableCell>
-                      <TableCell>{formatCurrency(trade.exit_price)}</TableCell>
+                      <TableCell>{formatCurrency(trade.price)}</TableCell>
                       <TableCell>{trade.quantity}</TableCell>
-                      <TableCell className={isProfit ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {formatCurrency(trade.gross_pl)}
-                      </TableCell>
                       <TableCell>{trade.commission ? formatCurrency(trade.commission) : '-'}</TableCell>
-                      <TableCell className={isProfit ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {formatCurrency(netPl)}
-                      </TableCell>
-                      <TableCell>{trade.entry_time ? new Date(trade.entry_time).toLocaleString() : '-'}</TableCell>
-                      <TableCell>{trade.exit_time ? new Date(trade.exit_time).toLocaleString() : '-'}</TableCell>
+                      <TableCell>{trade.slippage ? formatCurrency(trade.slippage) : '-'}</TableCell>
+                      <TableCell>{trade.portfolio_value_before ? formatCurrency(trade.portfolio_value_before) : '-'}</TableCell>
+                      <TableCell>{trade.portfolio_value_after ? formatCurrency(trade.portfolio_value_after) : '-'}</TableCell>
+                      <TableCell>{new Date(trade.timestamp).toLocaleString()}</TableCell>
                     </TableRow>
                   );
                 })

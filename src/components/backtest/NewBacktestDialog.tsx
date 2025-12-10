@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 interface WorkflowOption {
   id: string;
@@ -29,11 +34,11 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
   const [formData, setFormData] = useState({
     name: '',
     workflowId: '',
+    startDate: undefined as Date | undefined,
+    endDate: undefined as Date | undefined,
     initialCapital: 10000,
-    commissionType: 'none',
-    commissionValue: 0,
-    slippageType: 'none',
-    slippageValue: 0,
+    commissionRate: 0.001,
+    slippageRate: 0.001,
     notes: '',
   });
 
@@ -53,11 +58,11 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
   }, [user]);
 
   const canSubmit = useMemo(() => {
-    return !!formData.name && !!formData.workflowId && !loading;
-  }, [formData.name, formData.workflowId, loading]);
+    return !!formData.name && !!formData.workflowId && !!formData.startDate && !!formData.endDate && !loading;
+  }, [formData.name, formData.workflowId, formData.startDate, formData.endDate, loading]);
 
   const handleSubmit = async () => {
-    if (!user) return;
+    if (!user || !formData.startDate || !formData.endDate) return;
     setLoading(true);
 
     try {
@@ -66,18 +71,13 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
         workflow_id: formData.workflowId,
         user_id: user.id,
         status: 'pending',
-        config: {
-          initial_capital: formData.initialCapital,
-          commission: {
-            type: formData.commissionType,
-            value: Number(formData.commissionValue),
-          },
-          slippage: {
-            type: formData.slippageType,
-            value: Number(formData.slippageValue),
-          },
-          notes: formData.notes,
-        },
+        start_date: format(formData.startDate, 'yyyy-MM-dd'),
+        end_date: format(formData.endDate, 'yyyy-MM-dd'),
+        initial_capital: formData.initialCapital,
+        commission_rate: formData.commissionRate,
+        slippage_rate: formData.slippageRate,
+        description: formData.notes || null,
+        data_frequency: '1d',
       };
 
       const { error } = await supabase.from('backtests').insert(payload);
@@ -89,11 +89,11 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
       setFormData({
         name: '',
         workflowId: '',
+        startDate: undefined,
+        endDate: undefined,
         initialCapital: 10000,
-        commissionType: 'none',
-        commissionValue: 0,
-        slippageType: 'none',
-        slippageValue: 0,
+        commissionRate: 0.001,
+        slippageRate: 0.001,
         notes: '',
       });
     } catch (err: any) {
@@ -147,6 +147,61 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
+              <Label>Start Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.startDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.startDate ? format(formData.startDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={formData.startDate}
+                    onSelect={(date) => setFormData({ ...formData, startDate: date })}
+                    initialFocus
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>End Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.endDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.endDate ? format(formData.endDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={formData.endDate}
+                    onSelect={(date) => setFormData({ ...formData, endDate: date })}
+                    initialFocus
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
               <Label htmlFor="initial-capital">Initial Capital</Label>
               <Input
                 id="initial-capital"
@@ -156,71 +211,35 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="commission-type">Commission Type</Label>
-              <Select
-                value={formData.commissionType}
-                onValueChange={(value) => setFormData({ ...formData, commissionType: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="per_share">Per Share</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="commission-rate">Commission Rate</Label>
+              <Input
+                id="commission-rate"
+                type="number"
+                step="0.0001"
+                value={formData.commissionRate}
+                onChange={(e) => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="slippage-rate">Slippage Rate</Label>
+              <Input
+                id="slippage-rate"
+                type="number"
+                step="0.0001"
+                value={formData.slippageRate}
+                onChange={(e) => setFormData({ ...formData, slippageRate: Number(e.target.value) })}
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="commission-value">Commission Value</Label>
-              <Input
-                id="commission-value"
-                type="number"
-                value={formData.commissionValue}
-                onChange={(e) => setFormData({ ...formData, commissionValue: Number(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="slippage-type">Slippage Type</Label>
-              <Select
-                value={formData.slippageType}
-                onValueChange={(value) => setFormData({ ...formData, slippageType: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="slippage-value">Slippage Value</Label>
-              <Input
-                id="slippage-value"
-                type="number"
-                value={formData.slippageValue}
-                onChange={(e) => setFormData({ ...formData, slippageValue: Number(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                placeholder="Optional notes about this backtest"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="notes">Notes</Label>
+            <Textarea
+              id="notes"
+              placeholder="Optional notes about this backtest"
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            />
           </div>
         </div>
 

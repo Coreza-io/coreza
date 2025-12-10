@@ -9,49 +9,56 @@ export interface BacktestResultMetrics {
   sharpe_ratio?: number;
   max_drawdown?: number;
   win_rate?: number;
-  sortino_ratio?: number;
-  calmar_ratio?: number;
-  cagr?: number;
-  volatility?: number;
   total_trades?: number;
-  profit_factor?: number;
+  profitable_trades?: number;
   average_trade_return?: number;
   largest_win?: number;
   largest_loss?: number;
+  final_portfolio_value?: number;
 }
 
+// Matches backtest_trades table schema
 export interface BacktestTrade {
   id: string;
+  backtest_id: string;
   symbol: string;
-  side: string;
-  entry_price: number;
-  exit_price: number;
+  action: string;
   quantity: number;
-  gross_pl: number;
+  price: number;
+  timestamp: string;
   commission?: number;
-  net_pl?: number;
-  entry_time?: string;
-  exit_time?: string;
+  slippage?: number;
+  portfolio_value_before?: number;
+  portfolio_value_after?: number;
 }
 
+// Matches backtest_portfolio_snapshots table schema
 export interface PortfolioSnapshot {
   id: string;
-  timestamp: string;
-  equity: number;
-  drawdown?: number;
-  cash?: number;
-  positions_value?: number;
+  backtest_id: string;
+  date: string;
+  cash_balance: number;
+  stock_value: number;
+  total_value: number;
   daily_return?: number;
 }
 
+// Matches backtests table schema
 export interface BacktestWithRelations {
   id: string;
   name: string;
   workflow_id: string;
   status: BacktestStatus;
+  description?: string;
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  commission_rate?: number;
+  slippage_rate?: number;
+  data_frequency?: string;
   started_at?: string;
   completed_at?: string;
-  config?: any;
+  error_message?: string;
 }
 
 export const useBacktestResults = (id?: string) => {
@@ -70,7 +77,7 @@ export const useBacktestResults = (id?: string) => {
     try {
       const { data: backtestData, error: backtestError } = await supabase
         .from('backtests')
-        .select('id, name, workflow_id, status, started_at, completed_at, config')
+        .select('id, name, workflow_id, status, description, start_date, end_date, initial_capital, commission_rate, slippage_rate, data_frequency, started_at, completed_at, error_message')
         .eq('user_id', user.id)
         .eq('id', id)
         .single();
@@ -80,8 +87,8 @@ export const useBacktestResults = (id?: string) => {
 
       const [{ data: metricsData }, { data: tradesData }, { data: snapshotsData }] = await Promise.all([
         supabase.from('backtest_results').select('*').eq('backtest_id', id).maybeSingle(),
-        supabase.from('backtest_trades').select('*').eq('backtest_id', id).order('entry_time', { ascending: true }),
-        supabase.from('backtest_portfolio_snapshots').select('*').eq('backtest_id', id).order('timestamp', { ascending: true }),
+        supabase.from('backtest_trades').select('*').eq('backtest_id', id).order('timestamp', { ascending: true }),
+        supabase.from('backtest_portfolio_snapshots').select('*').eq('backtest_id', id).order('date', { ascending: true }),
       ]);
 
       if (metricsData) {

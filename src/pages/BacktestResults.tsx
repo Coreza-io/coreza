@@ -8,7 +8,7 @@ import { PerformanceMetricsCard } from "@/components/backtest/PerformanceMetrics
 import { TradesTable } from "@/components/backtest/TradesTable";
 import { PortfolioTimeline } from "@/components/backtest/PortfolioTimeline";
 import { useBacktestResults } from "@/hooks/useBacktestResults";
-import { ArrowLeft, Download, Workflow, Clock3 } from "lucide-react";
+import { ArrowLeft, Download, Workflow, Clock3, Calendar, DollarSign } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -122,13 +122,38 @@ const BacktestResults = () => {
           <Card>
             <CardHeader>
               <CardTitle>Backtest Configuration</CardTitle>
-              <CardDescription>Read-only settings used during this backtest run.</CardDescription>
+              <CardDescription>Settings used during this backtest run.</CardDescription>
             </CardHeader>
             <CardContent>
-              {backtest?.config ? (
-                <pre className="bg-muted rounded-lg p-4 text-sm overflow-auto">
-                  {JSON.stringify(backtest.config, null, 2)}
-                </pre>
+              {backtest ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="p-3 rounded-lg border bg-muted/40">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range</p>
+                    <p className="text-sm font-medium">{backtest.start_date} to {backtest.end_date}</p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/40">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Initial Capital</p>
+                    <p className="text-sm font-medium">${backtest.initial_capital?.toLocaleString() || '10,000'}</p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Data Frequency</p>
+                    <p className="text-sm font-medium">{backtest.data_frequency || '1d'}</p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Commission Rate</p>
+                    <p className="text-sm font-medium">{((backtest.commission_rate || 0) * 100).toFixed(2)}%</p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/40">
+                    <p className="text-xs text-muted-foreground">Slippage Rate</p>
+                    <p className="text-sm font-medium">{((backtest.slippage_rate || 0) * 100).toFixed(2)}%</p>
+                  </div>
+                  {backtest.description && (
+                    <div className="p-3 rounded-lg border bg-muted/40 col-span-full">
+                      <p className="text-xs text-muted-foreground">Description</p>
+                      <p className="text-sm font-medium">{backtest.description}</p>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No configuration available.</p>
               )}

@@ -5,10 +5,11 @@ interface PerformanceMetricsCardProps {
   metrics?: BacktestResultMetrics | null;
 }
 
-const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number; format?: 'number' | 'percent' }) => {
+const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' }) => {
   const formatValue = () => {
     if (value === undefined || value === null) return '—';
     if (format === 'percent') return `${value.toFixed(2)}%`;
+    if (format === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);
   };
 
@@ -31,18 +32,15 @@ export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps)
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <MetricItem label="Total Return" value={metrics.total_return} format="percent" />
             <MetricItem label="Annualized Return" value={metrics.annualized_return} format="percent" />
-            <MetricItem label="CAGR" value={metrics.cagr} format="percent" />
-            <MetricItem label="Volatility" value={metrics.volatility} format="percent" />
             <MetricItem label="Sharpe Ratio" value={metrics.sharpe_ratio} />
-            <MetricItem label="Sortino Ratio" value={metrics.sortino_ratio} />
-            <MetricItem label="Calmar Ratio" value={metrics.calmar_ratio} />
             <MetricItem label="Max Drawdown" value={metrics.max_drawdown} format="percent" />
             <MetricItem label="Win Rate" value={metrics.win_rate} format="percent" />
-            <MetricItem label="Profit Factor" value={metrics.profit_factor} />
             <MetricItem label="Average Trade" value={metrics.average_trade_return} format="percent" />
             <MetricItem label="Largest Win" value={metrics.largest_win} format="percent" />
             <MetricItem label="Largest Loss" value={metrics.largest_loss} format="percent" />
             <MetricItem label="Total Trades" value={metrics.total_trades} />
+            <MetricItem label="Profitable Trades" value={metrics.profitable_trades} />
+            <MetricItem label="Final Portfolio Value" value={metrics.final_portfolio_value} format="currency" />
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No performance metrics available yet.</p>

@@ -1,0 +1,31 @@
+{
+  "name": "BacktestPortfolio",
+  "def": "Backtest Portfolio",
+  "node_type": "main",
+  "icon": "/assets/icons/backtest.svg",
+  "category": "Backtest",
+  "description": "Query current portfolio state (cash, positions, equity)",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 200 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/backtest/portfolio", "method": "POST" },
+  "fields": [
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "{{ $('BacktestInit').json.backtest_id }}",
+      "required": true
+    },
+    {
+      "key": "prices",
+      "label": "Current Prices (JSON)",
+      "type": "text",
+      "placeholder": "Optional: {\"AAPL\": 150.00} for position valuation",
+      "required": false
+    }
+  ]
+}

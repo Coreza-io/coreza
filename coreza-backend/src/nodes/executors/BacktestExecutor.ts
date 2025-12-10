@@ -37,6 +37,8 @@ export class BacktestExecutor implements INodeExecutor {
         return this.executeBacktestSnapshot(node, input, context);
       case 'BacktestResults':
         return this.executeBacktestResults(node, input, context);
+      case 'BacktestPortfolio':
+        return this.executeBacktestPortfolio(node, input, context);
       default:
         return {
           success: false,
@@ -439,6 +441,67 @@ export class BacktestExecutor implements INodeExecutor {
       return {
         success: false,
         error: `BacktestResults failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
+  // ============== BACKTEST PORTFOLIO ==============
+  private async executeBacktestPortfolio(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    try {
+      const params = context?.resolveNodeParameters
+        ? context.resolveNodeParameters(node, input)
+        : { ...node.values, ...input };
+
+      const backtestId = params.backtest_id;
+      if (!backtestId) {
+        return { success: false, error: 'backtest_id is required' };
+      }
+
+      const simBroker = new SimBroker(backtestId);
+
+      const cash = await simBroker.getCash();
+      const positions = await simBroker.getPositions();
+      const pendingOrders = await simBroker.getPendingOrders();
+      const portfolioState = await simBroker.getPortfolioState();
+
+      // Calculate positions value if prices provided
+      let positionsValue = 0;
+      let prices: Record<string, number> = {};
+      
+      if (params.prices) {
+        try {
+          prices = typeof params.prices === 'string' ? JSON.parse(params.prices) : params.prices;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      for (const [symbol, pos] of Object.entries(positions)) {
+        const position = pos as any;
+        const price = prices[symbol] || position.avgPrice || position.marketPrice || 0;
+        positionsValue += position.quantity * price;
+      }
+
+      return {
+        success: true,
+        data: {
+          cash,
+          positions,
+          positions_value: positionsValue,
+          total_equity: cash + positionsValue,
+          pending_orders: pendingOrders,
+          initial_capital: portfolioState?.initialCapital || 0,
+        },
+      };
+    } catch (error) {
+      console.error('[BacktestExecutor] BacktestPortfolio failed:', error);
+      return {
+        success: false,
+        error: `BacktestPortfolio failed: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }

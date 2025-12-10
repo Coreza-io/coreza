@@ -72,6 +72,7 @@ import BacktestInitDef from './BacktestInit.json'
 import BacktestTradeDef from './BacktestTrade.json'
 import BacktestSnapshotDef from './BacktestSnapshot.json'
 import BacktestResultsDef from './BacktestResults.json'
+import BacktestPortfolioDef from './BacktestPortfolio.json'
 // Node configuration interface
 export interface NodeConfig {
   name: string;
@@ -186,7 +187,8 @@ export const nodeManifest = {
   [BacktestInitDef.name]: BacktestInitDef,
   [BacktestTradeDef.name]: BacktestTradeDef,
   [BacktestSnapshotDef.name]: BacktestSnapshotDef,
-  [BacktestResultsDef.name]: BacktestResultsDef
+  [BacktestResultsDef.name]: BacktestResultsDef,
+  [BacktestPortfolioDef.name]: BacktestPortfolioDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

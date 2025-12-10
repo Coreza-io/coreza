@@ -190,6 +190,42 @@ router.post('/results', async (req: Request, res: Response) => {
   }
 });
 
+// POST /backtest/portfolio - Get current portfolio state
+router.post('/portfolio', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { backtest_id, prices } = req.body;
+
+    if (!backtest_id) {
+      return res.status(400).json({ error: 'backtest_id is required' });
+    }
+
+    const result = await backtestExecutor.execute(
+      { 
+        id: 'api-portfolio', 
+        name: 'BacktestPortfolio', 
+        node_type: 'BacktestPortfolio',
+        values: { backtest_id, prices }
+      } as any,
+      {},
+      { userId }
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    return res.json(result.data);
+  } catch (error) {
+    console.error('[BacktestRoutes] /portfolio error:', error);
+    return res.status(500).json({ error: 'Failed to get portfolio state' });
+  }
+});
+
 // GET /backtest/:id - Get backtest details
 router.get('/:id', async (req: Request, res: Response) => {
   try {

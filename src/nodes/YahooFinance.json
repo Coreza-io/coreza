@@ -4,7 +4,7 @@
   "node_type": "main",
   "category": "Data",
   "icon": "/assets/icons/YahooFinance.svg",
-  "size": { "width": 340, "height": 340 },
+  "size": { "width": 340, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -36,11 +36,51 @@
       "required": true
     },
     {
+      "key": "date_mode",
+      "label": "Date Mode",
+      "type": "select",
+      "options": [
+        { "id": "lookback", "name": "Lookback (Bars)" },
+        { "id": "range", "name": "Date Range" }
+      ],
+      "default": "lookback",
+      "required": true
+    },
+    {
       "key": "lookback",
       "label": "Bars to Fetch",
       "type": "text",
       "placeholder": "e.g. 100",
-      "required": true
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "date_mode": ["lookback"]
+        }
+      }
+    },
+    {
+      "key": "start_date",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "e.g. 2023-01-01 or {{ $('BacktestInit').json.start_date }}",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "date_mode": ["range"]
+        }
+      }
+    },
+    {
+      "key": "end_date",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "e.g. 2024-01-01 or {{ $('BacktestInit').json.end_date }}",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "date_mode": ["range"]
+        }
+      }
     }
   ]
 }

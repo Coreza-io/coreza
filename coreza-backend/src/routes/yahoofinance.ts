@@ -26,32 +26,53 @@ router.use(requireAuth);
 // Get candle/historical data
 router.post("/get-candle", async (req, res, next) => {
   try {
-    const { symbol, interval = "1d", lookback = 100 } = req.body;
+    const { symbol, interval = "1d", lookback = 100, date_mode = "lookback", start_date, end_date } = req.body;
 
     if (!symbol) {
       return res.status(400).json({ error: "ticker is required" });
     }
 
-    // Calculate date range based on lookback
-    const end = new Date();
-    const start = new Date();
+    let start: Date;
+    let end: Date;
 
-    // Calculate start date based on interval and lookback
-    const lookbackNum = parseInt(lookback);
-    switch (interval) {
-      case "1m":
-      case "5m":
-      case "15m":
-        start.setMinutes(end.getMinutes() - lookbackNum * parseInt(interval));
-        break;
-      case "60m":
-        start.setHours(end.getHours() - lookbackNum);
-        break;
-      case "1d":
-      default:
-        start.setDate(end.getDate() - lookbackNum);
-        break;
+    // Use explicit date range if provided
+    if (date_mode === "range" && start_date && end_date) {
+      start = new Date(start_date);
+      end = new Date(end_date);
+      
+      // Validate dates
+      if (isNaN(start.getTime())) {
+        return res.status(400).json({ error: `Invalid start_date: ${start_date}` });
+      }
+      if (isNaN(end.getTime())) {
+        return res.status(400).json({ error: `Invalid end_date: ${end_date}` });
+      }
+      if (start >= end) {
+        return res.status(400).json({ error: "start_date must be before end_date" });
+      }
+    } else {
+      // Calculate date range based on lookback
+      end = new Date();
+      start = new Date();
+
+      const lookbackNum = parseInt(lookback) || 100;
+      switch (interval) {
+        case "1m":
+        case "5m":
+        case "15m":
+          start.setMinutes(end.getMinutes() - lookbackNum * parseInt(interval));
+          break;
+        case "60m":
+          start.setHours(end.getHours() - lookbackNum);
+          break;
+        case "1d":
+        default:
+          start.setDate(end.getDate() - lookbackNum);
+          break;
+      }
     }
+
+    console.log(`[YahooFinance] Fetching ${symbol} from ${start.toISOString()} to ${end.toISOString()} interval=${interval}`);
 
     const result = await DataService.execute("yahoofinance", "get_history", {
       symbol: symbol,

@@ -112,6 +112,8 @@ export class BacktestExecutor implements INodeExecutor {
         data: {
           backtest_id: backtestId,
           initial_capital: config.initialCapital,
+          start_date: params.start_date || new Date().toISOString().split('T')[0],
+          end_date: params.end_date || new Date().toISOString().split('T')[0],
           config: {
             fill_model: config.fillModel,
             slippage_model: config.slippageModel,

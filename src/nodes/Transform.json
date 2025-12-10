@@ -109,7 +109,9 @@
             { "label": "Last", "value": "last" },
             { "label": "Contains", "value": "arrayContains" },
             { "label": "Is Empty", "value": "arrayIsEmpty" },
-            { "label": "Join", "value": "join" }
+            { "label": "Join", "value": "join" },
+            { "label": "Find", "value": "find" },
+            { "label": "Filter", "value": "filter" }
           ],
           "object": [
             { "label": "Get Keys", "value": "keys" },
@@ -134,7 +136,7 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addDays", "subtractDays", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit"]
+          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addDays", "subtractDays", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit", "find", "filter"]
         }
       },
       "dynamicLabel": {
@@ -169,7 +171,9 @@
           "hasProperty": "Property Path",
           "merge": "Object (JSON)",
           "pick": "Keys (comma-separated)",
-          "omit": "Keys (comma-separated)"
+          "omit": "Keys (comma-separated)",
+          "find": "Property Name",
+          "filter": "Property Name"
         }
       }
     },
@@ -180,7 +184,7 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "slice", "setProperty"]
+          "operator": ["substring", "replace", "slice", "setProperty", "find", "filter"]
         }
       },
       "dynamicLabel": {
@@ -189,7 +193,9 @@
           "substring": "Length",
           "replace": "Replace With",
           "slice": "End Index",
-          "setProperty": "Value"
+          "setProperty": "Value",
+          "find": "Match Value",
+          "filter": "Match Value"
         }
       }
     }

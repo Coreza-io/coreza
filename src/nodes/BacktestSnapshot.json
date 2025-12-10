@@ -1,0 +1,52 @@
+{
+  "name": "BacktestSnapshot",
+  "def": "Backtest Snapshot",
+  "node_type": "main",
+  "icon": "/assets/icons/backtest.svg",
+  "category": "Backtest",
+  "description": "Record portfolio equity at current bar for equity curve",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 280 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/backtest/snapshot", "method": "POST" },
+  "fields": [
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "From BacktestInit output",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": false
+    },
+    {
+      "key": "current_bar",
+      "label": "Current Bar Data",
+      "type": "text",
+      "placeholder": "Pass bar from loop iteration",
+      "required": false
+    },
+    {
+      "key": "timestamp",
+      "label": "Timestamp",
+      "type": "text",
+      "placeholder": "Auto from bar if not provided",
+      "required": false
+    },
+    {
+      "key": "prices",
+      "label": "Prices (JSON)",
+      "type": "text",
+      "placeholder": "{\"AAPL\": 150.00, \"MSFT\": 300.00}",
+      "required": false
+    }
+  ]
+}

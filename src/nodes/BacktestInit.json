@@ -1,0 +1,116 @@
+{
+  "name": "BacktestInit",
+  "def": "Backtest Init",
+  "node_type": "main",
+  "icon": "/assets/icons/backtest.svg",
+  "category": "Backtest",
+  "description": "Initialize a backtest session with capital and simulation settings",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 420 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/backtest/init", "method": "POST" },
+  "fields": [
+    {
+      "key": "name",
+      "label": "Backtest Name",
+      "type": "text",
+      "placeholder": "My Strategy Backtest",
+      "required": false
+    },
+    {
+      "key": "description",
+      "label": "Description",
+      "type": "text",
+      "placeholder": "Optional description",
+      "required": false
+    },
+    {
+      "key": "initial_capital",
+      "label": "Initial Capital ($)",
+      "type": "text",
+      "placeholder": "10000",
+      "default": "10000",
+      "required": true
+    },
+    {
+      "key": "start_date",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2023-01-01",
+      "required": false
+    },
+    {
+      "key": "end_date",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2024-01-01",
+      "required": false
+    },
+    {
+      "key": "fill_model",
+      "label": "Fill Model",
+      "type": "select",
+      "options": [
+        { "id": "next_bar_open", "name": "Next Bar Open (Realistic)" },
+        { "id": "immediate", "name": "Immediate (Current Close)" }
+      ],
+      "default": "next_bar_open",
+      "required": true
+    },
+    {
+      "key": "slippage_model",
+      "label": "Slippage Model",
+      "type": "select",
+      "options": [
+        { "id": "none", "name": "None" },
+        { "id": "fixed", "name": "Fixed ($)" },
+        { "id": "percentage", "name": "Percentage (%)" }
+      ],
+      "default": "percentage",
+      "required": true
+    },
+    {
+      "key": "slippage_value",
+      "label": "Slippage Value",
+      "type": "text",
+      "placeholder": "0.001 (0.1%)",
+      "default": "0.001",
+      "required": false
+    },
+    {
+      "key": "commission_model",
+      "label": "Commission Model",
+      "type": "select",
+      "options": [
+        { "id": "none", "name": "None (Zero Commission)" },
+        { "id": "per_share", "name": "Per Share ($)" },
+        { "id": "percentage", "name": "Percentage (%)" },
+        { "id": "fixed", "name": "Fixed Per Trade ($)" }
+      ],
+      "default": "per_share",
+      "required": true
+    },
+    {
+      "key": "commission_value",
+      "label": "Commission Value",
+      "type": "text",
+      "placeholder": "0.01 ($0.01/share)",
+      "default": "0.01",
+      "required": false
+    },
+    {
+      "key": "allow_short",
+      "label": "Allow Short Selling",
+      "type": "select",
+      "options": [
+        { "id": "false", "name": "No" },
+        { "id": "true", "name": "Yes" }
+      ],
+      "default": "false",
+      "required": false
+    }
+  ]
+}

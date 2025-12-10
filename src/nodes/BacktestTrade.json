@@ -1,0 +1,93 @@
+{
+  "name": "BacktestTrade",
+  "def": "Backtest Trade",
+  "node_type": "main",
+  "icon": "/assets/icons/backtest.svg",
+  "category": "Backtest",
+  "description": "Execute a simulated trade in the backtest session",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 360 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/backtest/trade", "method": "POST" },
+  "fields": [
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "From BacktestInit output",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        { "id": "buy", "name": "Buy" },
+        { "id": "sell", "name": "Sell" }
+      ],
+      "default": "buy",
+      "required": true
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 10",
+      "required": true
+    },
+    {
+      "key": "order_type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        { "id": "market", "name": "Market Order" },
+        { "id": "limit", "name": "Limit Order" },
+        { "id": "stop", "name": "Stop Order" },
+        { "id": "stop_limit", "name": "Stop Limit Order" }
+      ],
+      "default": "market",
+      "required": true
+    },
+    {
+      "key": "limit_price",
+      "label": "Limit Price",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g. 150.00",
+      "displayOptions": {
+        "show": {
+          "order_type": ["limit", "stop_limit"]
+        }
+      }
+    },
+    {
+      "key": "stop_price",
+      "label": "Stop Price",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g. 145.00",
+      "displayOptions": {
+        "show": {
+          "order_type": ["stop", "stop_limit"]
+        }
+      }
+    },
+    {
+      "key": "current_bar",
+      "label": "Current Bar Data",
+      "type": "text",
+      "placeholder": "Pass bar from loop iteration",
+      "required": false
+    }
+  ]
+}

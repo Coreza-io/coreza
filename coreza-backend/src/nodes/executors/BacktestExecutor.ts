@@ -182,7 +182,41 @@ export class BacktestExecutor implements INodeExecutor {
         return { success: false, error: orderResult.error };
       }
 
-      // Get updated state
+      // For immediate fills, process the newly placed order right away
+      // This allows market orders to fill at current bar's close price
+      if (currentBar && orderResult.status === 'pending') {
+        const fills = await simBroker.onBar(symbol, currentBar);
+        
+        // If order was filled, return fill details
+        if (fills.length > 0) {
+          const fill = fills.find(f => f.orderId === orderResult.orderId);
+          if (fill) {
+            const cash = await simBroker.getCash();
+            const positions = await simBroker.getPositions();
+            
+            return {
+              success: true,
+              data: {
+                order_id: orderResult.orderId,
+                order_status: 'filled',
+                fill_price: fill.price,
+                fill_quantity: fill.quantity,
+                commission: fill.commission,
+                slippage: fill.slippage,
+                symbol,
+                side,
+                quantity,
+                order_type: orderType,
+                cash,
+                positions,
+                pending_orders: 0,
+              },
+            };
+          }
+        }
+      }
+
+      // Get updated state (for pending orders that weren't filled)
       const cash = await simBroker.getCash();
       const positions = await simBroker.getPositions();
       const pendingOrders = await simBroker.getPendingOrders();

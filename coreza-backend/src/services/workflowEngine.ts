@@ -66,7 +66,7 @@ export class WorkflowEngine {
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
   private mode: "best-effort" | "fail-fast";
-  
+
   // Execution tracking for n8n-style logs
   private nodeExecutions: NodeExecutionLog[] = [];
   private executionOrder: string[] = [];
@@ -222,18 +222,26 @@ export class WorkflowEngine {
   async execute(
     initialInput?: any,
     startNodeId?: string
-  ): Promise<{ success: boolean; result?: any; nodeExecutions?: NodeExecutionLog[]; executionOrder?: string[]; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    result?: any;
+    nodeExecutions?: NodeExecutionLog[];
+    executionOrder?: string[];
+    error?: string;
+  }> {
     try {
       console.log(
-        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${startNodeId ? ` from node ${startNodeId}` : ''}`
+        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
+          startNodeId ? ` from node ${startNodeId}` : ""
+        }`
       );
       this.MAX_RETRIES = this.nodes.length * 2;
 
       await this.run(initialInput, startNodeId);
 
       console.log(`✅ Workflow execution completed successfully`);
-      return { 
-        success: true, 
+      return {
+        success: true,
         result: this.store.getAllResults(),
         nodeExecutions: this.nodeExecutions,
         executionOrder: this.executionOrder,
@@ -241,8 +249,8 @@ export class WorkflowEngine {
     } catch (error) {
       console.error("❌ Workflow execution failed:", error);
       const message = (error as Error).message;
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: message,
         nodeExecutions: this.nodeExecutions,
         executionOrder: this.executionOrder,
@@ -252,41 +260,54 @@ export class WorkflowEngine {
 
   async run(initialInput: any = [], startNodeId?: string): Promise<void> {
     let startedFromSpecificNode = false;
-    
+
     // Pre-populate store from parent workflow context if provided (parallel loop child jobs)
     // This allows child jobs to reference ANY upstream node via {{ $('NodeName').json.* }}
-    if (initialInput?.$parentStore && typeof initialInput.$parentStore === 'object') {
+    if (
+      initialInput?.$parentStore &&
+      typeof initialInput.$parentStore === "object"
+    ) {
       const parentStore = initialInput.$parentStore;
       const nodeCount = Object.keys(parentStore).length;
       if (nodeCount > 0) {
-        console.log(`📥 Pre-populating store with ${nodeCount} parent node outputs`);
+        console.log(
+          `📥 Pre-populating store with ${nodeCount} parent node outputs`
+        );
         for (const [nodeId, result] of Object.entries(parentStore)) {
           this.store.setNodeResult(nodeId, result);
         }
       }
     }
-    
+
     // If startNodeId is provided (loop continuation or parallel loop item), start from that specific node
     if (startNodeId) {
-      const startNode = this.nodes.find(n => n.id === startNodeId);
+      const startNode = this.nodes.find((n) => n.id === startNodeId);
       if (startNode) {
-        console.log(`🔗 Starting execution from specific node: ${startNodeId} (${startNode.name || startNode.node_type})`);
-        
+        console.log(
+          `🔗 Starting execution from specific node: ${startNodeId} (${
+            startNode.name || startNode.node_type
+          })`
+        );
+
         // Pre-mark all incoming edge payloads so dependency check passes
         // This simulates what would have happened if the parent node (Loop) had executed and routed to us
         const incomingEdges = this.getIncomingEdges(startNodeId);
         for (const edge of incomingEdges) {
-          console.log(`📌 Pre-marking edge payload: ${edge.source} → ${edge.target}`);
+          console.log(
+            `📌 Pre-marking edge payload: ${edge.source} → ${edge.target}`
+          );
           this.markEdgePayload(edge.id, initialInput);
         }
-        
+
         this.enqueue({ nodeId: startNodeId, input: initialInput });
         startedFromSpecificNode = true;
       } else {
-        console.warn(`⚠️ Start node ${startNodeId} not found in nodes list, falling back to entry nodes`);
+        console.warn(
+          `⚠️ Start node ${startNodeId} not found in nodes list, falling back to entry nodes`
+        );
       }
     }
-    
+
     // Only find entry nodes if we didn't successfully start from a specific node
     if (!startedFromSpecificNode) {
       const entryNodes = this.nodes.filter(
@@ -297,7 +318,9 @@ export class WorkflowEngine {
 
       for (const node of entryNodes) {
         if (node.node_type === "trigger") {
-          console.log(`🟡 Skipping re-run for ${node.name || node.node_type} node`);
+          console.log(
+            `🟡 Skipping re-run for ${node.name || node.node_type} node`
+          );
           const edges = this.router.select(node, initialInput);
           for (const edge of edges) {
             this.store.setNodeResult(node.id, initialInput);
@@ -345,7 +368,7 @@ export class WorkflowEngine {
     // Track execution timing
     const startedAt = new Date().toISOString();
     const startTime = Date.now();
-    
+
     try {
       // Create execution context with all necessary information
       const executionContext = {
@@ -371,7 +394,7 @@ export class WorkflowEngine {
       const completedAt = new Date().toISOString();
       const durationMs = Date.now() - startTime;
       const outputData = result?.data ?? result;
-      
+
       this.nodeExecutions.push({
         nodeId,
         nodeName: node.name || nodeId,
@@ -396,11 +419,15 @@ export class WorkflowEngine {
         // Unified control-based loop handling
         if (fullResult.control?.parallelDistributed) {
           // Parallel mode - aggregator will handle continuation
-          console.log(`🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`);
-          console.log(`   Items: ${fullResult.control.itemCount}, MaxConcurrency: ${fullResult.control.maxConcurrency}`);
+          console.log(
+            `🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`
+          );
+          console.log(
+            `   Items: ${fullResult.control.itemCount}, MaxConcurrency: ${fullResult.control.maxConcurrency}`
+          );
           return;
         }
-        
+
         if (fullResult.control?.loopCompleted) {
           // Sequential mode - loop completed, route to done edges
           const doneEdges = this.router.doneEdges(nodeId);
@@ -450,11 +477,11 @@ export class WorkflowEngine {
       this.clearIncomingEdgePayloads(nodeId);
     } catch (error) {
       console.error(`❌ Node ${nodeId} failed:`, error);
-      
+
       // Record failed execution
       const completedAt = new Date().toISOString();
       const durationMs = Date.now() - startTime;
-      
+
       this.nodeExecutions.push({
         nodeId,
         nodeName: node.name || nodeId,
@@ -468,7 +495,7 @@ export class WorkflowEngine {
         error: (error as Error).message,
       });
       this.executionOrder.push(nodeId);
-      
+
       this.failed.add(nodeId);
       this.store.setNodeError(nodeId, error);
 
@@ -559,13 +586,15 @@ export class WorkflowEngine {
       if (!result.success) {
         throw new Error(result.error || `Node execution failed: ${category}`);
       }
-      // Return full result structure to preserve metadata
-      //return { data: result.data, meta: result.meta };
-      return { data: result.data };
+      // Remove fields only useful for error
+      const { success, error, ...rest } = result;
+
+      // Return everything else exactly as provided
+      return rest;
     }
 
     // For simple results, wrap in structure to maintain consistency
-    return { data: result.data };
+    return { data: result?.data ?? result };
   }
 }
 

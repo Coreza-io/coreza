@@ -471,10 +471,10 @@ export class BacktestExecutor implements INodeExecutor {
       // Convert positions object to array format
       const positionsArray = Object.values(portfolioState.positions);
       
-      // Calculate positions value from stored market values
-      const positionsValue = positionsArray.reduce(
-        (sum, pos) => sum + pos.marketValue, 0
-      );
+      // Calculate positions value and P&L totals from stored values
+      const positionsValue = positionsArray.reduce((sum, pos) => sum + pos.marketValue, 0);
+      const unrealizedPnlTotal = positionsArray.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+      const realizedPnlTotal = positionsArray.reduce((sum, pos) => sum + pos.realizedPnl, 0);
 
       return {
         success: true,
@@ -484,6 +484,8 @@ export class BacktestExecutor implements INodeExecutor {
           positions: positionsArray,
           positions_count: positionsArray.length,
           positions_value: positionsValue,
+          unrealized_pnl: unrealizedPnlTotal,
+          realized_pnl: realizedPnlTotal,
           total_equity: portfolioState.cash + positionsValue,
           pending_orders: portfolioState.pendingOrders,
           pending_orders_count: portfolioState.pendingOrders.length,

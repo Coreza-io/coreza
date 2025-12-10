@@ -468,8 +468,11 @@ export class BacktestExecutor implements INodeExecutor {
         return { success: false, error: 'Portfolio not found - run BacktestInit first' };
       }
 
+      // Convert positions object to array format
+      const positionsArray = Object.values(portfolioState.positions);
+      
       // Calculate positions value from stored market values
-      const positionsValue = Object.values(portfolioState.positions).reduce(
+      const positionsValue = positionsArray.reduce(
         (sum, pos) => sum + pos.marketValue, 0
       );
 
@@ -477,11 +480,14 @@ export class BacktestExecutor implements INodeExecutor {
         success: true,
         data: {
           cash: portfolioState.cash,
-          positions: portfolioState.positions,
+          initial_capital: portfolioState.initialCapital,
+          positions: positionsArray,
+          positions_count: positionsArray.length,
           positions_value: positionsValue,
           total_equity: portfolioState.cash + positionsValue,
           pending_orders: portfolioState.pendingOrders,
-          initial_capital: portfolioState.initialCapital,
+          pending_orders_count: portfolioState.pendingOrders.length,
+          trades: portfolioState.trades,
           trades_count: portfolioState.trades.length,
         },
       };

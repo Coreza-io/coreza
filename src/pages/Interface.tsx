@@ -29,6 +29,8 @@ import Profile from "./Profile";
 import Settings from "./Settings";
 import Subscription from "./Subscription";
 import MarketSubscriptions from "./MarketSubscriptions";
+import Backtests from "./Backtests";
+import BacktestResults from "./BacktestResults";
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -75,6 +77,8 @@ const Interface = () => {
               <Route path="workflows" element={<Workflows />} />
               <Route path="workflow/new" element={<WorkflowEditor />} />
               <Route path="workflow/:id" element={<WorkflowEditor />} />
+              <Route path="backtests" element={<Backtests />} />
+              <Route path="backtests/:id" element={<BacktestResults />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
               <Route path="subscription" element={<Subscription />} />

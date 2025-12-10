@@ -462,39 +462,27 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const simBroker = new SimBroker(backtestId);
-
-      const cash = await simBroker.getCash();
-      const positions = await simBroker.getPositions();
-      const pendingOrders = await simBroker.getPendingOrders();
       const portfolioState = await simBroker.getPortfolioState();
 
-      // Calculate positions value if prices provided
-      let positionsValue = 0;
-      let prices: Record<string, number> = {};
-      
-      if (params.prices) {
-        try {
-          prices = typeof params.prices === 'string' ? JSON.parse(params.prices) : params.prices;
-        } catch {
-          // Ignore parse errors
-        }
+      if (!portfolioState) {
+        return { success: false, error: 'Portfolio not found - run BacktestInit first' };
       }
 
-      for (const [symbol, pos] of Object.entries(positions)) {
-        const position = pos as any;
-        const price = prices[symbol] || position.avgPrice || position.marketPrice || 0;
-        positionsValue += position.quantity * price;
-      }
+      // Calculate positions value from stored market values
+      const positionsValue = Object.values(portfolioState.positions).reduce(
+        (sum, pos) => sum + pos.marketValue, 0
+      );
 
       return {
         success: true,
         data: {
-          cash,
-          positions,
+          cash: portfolioState.cash,
+          positions: portfolioState.positions,
           positions_value: positionsValue,
-          total_equity: cash + positionsValue,
-          pending_orders: pendingOrders,
-          initial_capital: portfolioState?.initialCapital || 0,
+          total_equity: portfolioState.cash + positionsValue,
+          pending_orders: portfolioState.pendingOrders,
+          initial_capital: portfolioState.initialCapital,
+          trades_count: portfolioState.trades.length,
         },
       };
     } catch (error) {

@@ -29,6 +29,7 @@ import { AIAgentExecutor } from './executors/AIAgentExecutor';
 import { ToolExecutor } from './executors/ToolExecutor';
 import { ScreenerExecutor } from './executors/ScreenerExecutor';
 import { TriggerExecutor } from './executors/TriggerExecutor';
+import { BacktestExecutor } from './executors/BacktestExecutor';
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -47,6 +48,7 @@ export function initializeNodeExecutors() {
     new ToolExecutor(),
     new ScreenerExecutor(),
     new TriggerExecutor(),
+    new BacktestExecutor(),
   ];
 
   executors.forEach(executor => {

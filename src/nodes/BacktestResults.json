@@ -1,0 +1,24 @@
+{
+  "name": "BacktestResults",
+  "def": "Backtest Results",
+  "node_type": "main",
+  "icon": "/assets/icons/backtest.svg",
+  "category": "Backtest",
+  "description": "Calculate final metrics and persist backtest results to database",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 200 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/backtest/results", "method": "POST" },
+  "fields": [
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "From BacktestInit output",
+      "required": true
+    }
+  ]
+}

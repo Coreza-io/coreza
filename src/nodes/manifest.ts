@@ -68,7 +68,10 @@ import RedisTriggerDef from './RedisTrigger.json'
 import StoreDef from './Store.json'
 import WebhookTriggerDef from './WebhookTrigger.json'
 import TelegramTriggerDef from './TelegramTrigger.json'
-
+import BacktestInitDef from './BacktestInit.json'
+import BacktestTradeDef from './BacktestTrade.json'
+import BacktestSnapshotDef from './BacktestSnapshot.json'
+import BacktestResultsDef from './BacktestResults.json'
 // Node configuration interface
 export interface NodeConfig {
   name: string;
@@ -179,7 +182,11 @@ export const nodeManifest = {
   [RedisTriggerDef.name]: RedisTriggerDef,
   [StoreDef.name]: StoreDef,
   [WebhookTriggerDef.name]: WebhookTriggerDef,
-  [TelegramTriggerDef.name]: TelegramTriggerDef
+  [TelegramTriggerDef.name]: TelegramTriggerDef,
+  [BacktestInitDef.name]: BacktestInitDef,
+  [BacktestTradeDef.name]: BacktestTradeDef,
+  [BacktestSnapshotDef.name]: BacktestSnapshotDef,
+  [BacktestResultsDef.name]: BacktestResultsDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

@@ -94,8 +94,11 @@ export interface OrderResult {
 
 // ============== POSITIONS ==============
 
+export type PositionSide = 'long' | 'short';
+
 export interface Position {
   symbol: string;
+  side: PositionSide; // 'long' for positive qty, 'short' for negative qty
   quantity: number; // Positive for long, negative for short
   avgEntryPrice: number;
   currentPrice: number;

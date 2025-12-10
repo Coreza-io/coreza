@@ -277,12 +277,14 @@ export class SimBroker {
         const totalCostBasis = existing.avgEntryPrice * existing.quantity + price * quantity;
         existing.avgEntryPrice = totalCostBasis / totalQty;
         existing.quantity = totalQty;
+        existing.side = totalQty >= 0 ? 'long' : 'short';
         existing.currentPrice = price;
         existing.marketValue = totalQty * price;
         existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
       } else {
         state.positions[order.symbol] = {
           symbol: order.symbol,
+          side: quantity >= 0 ? 'long' : 'short',
           quantity,
           avgEntryPrice: price,
           currentPrice: price,

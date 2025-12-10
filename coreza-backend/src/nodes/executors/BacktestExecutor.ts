@@ -411,15 +411,27 @@ export class BacktestExecutor implements INodeExecutor {
   private parseBar(data: any): Bar | null {
     if (!data) return null;
 
+    // Handle JSON string input
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return null;
+      }
+    }
+
     // Handle various input formats
     if (data.bar) {
       data = data.bar;
     }
 
-    if (data.timestamp && data.open !== undefined && data.high !== undefined && 
+    // Get timestamp from multiple possible field names
+    const timestamp = data.timestamp || data.date || data.t;
+
+    if (timestamp && data.open !== undefined && data.high !== undefined && 
         data.low !== undefined && data.close !== undefined) {
       return {
-        timestamp: data.timestamp || data.t,
+        timestamp: timestamp,
         open: parseFloat(data.open || data.o),
         high: parseFloat(data.high || data.h),
         low: parseFloat(data.low || data.l),

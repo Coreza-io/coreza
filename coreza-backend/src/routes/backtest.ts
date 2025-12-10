@@ -9,7 +9,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/jwtAuth';
 import { BacktestExecutor } from '../nodes/executors/BacktestExecutor';
-import { getSupabase } from '../config/supabase';
+import { supabase } from '../config/supabase';
 import { SimBroker } from '../services/simBroker';
 
 const router = Router();
@@ -199,7 +199,6 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
-    const supabase = getSupabase();
 
     const { data: backtest, error } = await supabase
       .from('backtests')
@@ -228,7 +227,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
-    const supabase = getSupabase();
 
     // Verify ownership
     const { data: backtest, error: fetchError } = await supabase

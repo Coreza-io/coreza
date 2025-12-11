@@ -27,7 +27,7 @@ export class ScreenerExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       const operation = node.values?.operation;
-      const screener = node.subCategory ?? node.name ?? node.node_type;
+      const screener = node.subCategory ?? node.name;
       const credential_id = node.values?.credential_id;
 
       // Credential is optional for manual screeners

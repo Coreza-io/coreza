@@ -312,7 +312,7 @@ export class WorkflowEngine {
     if (!startedFromSpecificNode) {
       const entryNodes = this.nodes.filter(
         (n) =>
-          n.node_type === "trigger" &&
+          (n.node_type === "trigger" || n.node_type === "backtest") &&
           !this.edges.some((e) => e.target === n.id)
       );
 

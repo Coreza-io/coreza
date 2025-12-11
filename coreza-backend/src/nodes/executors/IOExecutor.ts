@@ -14,44 +14,49 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
+import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 
 export class IOExecutor implements INodeExecutor {
-  readonly category = 'IO';
+  readonly category = "IO";
 
   async execute(node: WorkflowNode, input: NodeInput): Promise<NodeResult> {
     try {
       // Handle different IO node types
-      const nodeType = node.name || node.node_type;
-      
-      switch (nodeType) {
-        case 'ChatInput':
+      const nodeName = node.name;
+
+      switch (nodeName) {
+        case "ChatInput":
           return this.executeChatInput(node, input);
         default:
-          return { 
-            success: false, 
-            error: `Unsupported IO node type: ${nodeType}` 
+          return {
+            success: false,
+            error: `Unsupported IO node type: ${nodeName}`,
           };
       }
     } catch (error) {
-      return { 
-        success: false, 
-        error: `IO execution failed: ${error instanceof Error ? error.message : String(error)}` 
+      return {
+        success: false,
+        error: `IO execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
 
-  private async executeChatInput(node: WorkflowNode, input: NodeInput): Promise<NodeResult> {
+  private async executeChatInput(
+    node: WorkflowNode,
+    input: NodeInput
+  ): Promise<NodeResult> {
     // Handle chat input logic
-    const message = node.values?.message || input.message || '';
-    
+    const message = node.values?.message || input.message || "";
+
     return {
       success: true,
       data: {
         message,
         timestamp: new Date().toISOString(),
-        source: 'chat_input'
-      }
+        source: "chat_input",
+      },
     };
   }
 }

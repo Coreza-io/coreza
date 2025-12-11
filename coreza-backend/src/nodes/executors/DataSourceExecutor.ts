@@ -35,7 +35,7 @@ export class DataSourceExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
-      const nodeType = node.type || node.name;
+      const nodeName = node.name;
       const operation = node.values?.operation || "get_quote";
 
       // Resolve and merge node parameters with input data
@@ -58,12 +58,12 @@ export class DataSourceExecutor implements INodeExecutor {
       };
 
       console.log(
-        `🔍 [DataSource] Executing ${nodeType} with params:`,
+        `🔍 [DataSource] Executing ${nodeName} with params:`,
         combinedInput
       );
 
       let result;
-      switch (nodeType) {
+      switch (nodeName) {
         case "FinnHub":
           result = await DataService.execute(
             "finnhub",
@@ -130,7 +130,7 @@ export class DataSourceExecutor implements INodeExecutor {
         default:
           return {
             success: false,
-            error: `Unsupported data source node type: ${nodeType}`,
+            error: `Unsupported data source node type: ${nodeName}`,
           };
       }
 
@@ -139,7 +139,7 @@ export class DataSourceExecutor implements INodeExecutor {
           success: false,
           error:
             result.error ||
-            `${nodeType} ${resolvedParams.operation} operation failed`,
+            `${nodeName} ${resolvedParams.operation} operation failed`,
         };
       }
 

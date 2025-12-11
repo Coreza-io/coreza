@@ -31,7 +31,7 @@ export class TriggerExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.type || node.name;
+      const nodeName = node.name;
       const userId = context?.userId || input.userId;
       const workflowId = context?.workflowId || input.workflowId;
       const nodeId = node.id;
@@ -54,14 +54,11 @@ export class TriggerExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      logger.info(
-        { nodeType, workflowId, nodeId },
-        "Executing trigger node"
-      );
+      logger.info({ nodeName, workflowId, nodeId }, "Executing trigger node");
 
       let result: NodeResult;
 
-      switch (nodeType) {
+      switch (nodeName) {
         case "RedisTrigger":
           result = await this.executeRedisTrigger(
             userId,
@@ -83,13 +80,13 @@ export class TriggerExecutor implements INodeExecutor {
         default:
           return {
             success: false,
-            error: `Unsupported trigger node type: ${nodeType}`,
+            error: `Unsupported trigger node type: ${nodeName}`,
           };
       }
 
       if (!result.success) {
         logger.error(
-          { nodeType, error: result.error },
+          { nodeName, error: result.error },
           "Trigger node execution failed"
         );
       }
@@ -145,7 +142,7 @@ export class TriggerExecutor implements INodeExecutor {
       // Send subscription request to market-stream-service
       // Using control message pattern similar to market data
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
-      
+
       const response = await axios.post(
         `${backendUrl}/redis/trigger/subscribe`,
         {
@@ -192,14 +189,11 @@ export class TriggerExecutor implements INodeExecutor {
     try {
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
 
-      const response = await axios.post(
-        `${backendUrl}/webhooks/register`,
-        {
-          user_id: userId,
-          workflow_id: workflowId,
-          node_id: nodeId,
-        }
-      );
+      const response = await axios.post(`${backendUrl}/webhooks/register`, {
+        user_id: userId,
+        workflow_id: workflowId,
+        node_id: nodeId,
+      });
 
       if (!response.data.success) {
         return {

@@ -14,19 +14,26 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
-import { RiskEngineService } from '../../services/risk';
+import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { RiskEngineService } from "../../services/risk";
 
 export class RiskExecutor implements INodeExecutor {
-  readonly category = 'Risk Management';
+  readonly category = "Risk Management";
 
-  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  async execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     try {
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      console.log(`⚖️ Executing ${node.name || node.node_type} node with params:`, resolvedParams);
+      console.log(
+        `⚖️ Executing ${node.name} node with params:`,
+        resolvedParams
+      );
       const result = RiskEngineService.evaluate(resolvedParams);
       if (!result.success) {
         return { success: false, error: result.error };
@@ -35,7 +42,9 @@ export class RiskExecutor implements INodeExecutor {
     } catch (error) {
       return {
         success: false,
-        error: `Risk engine execution failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Risk engine execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }

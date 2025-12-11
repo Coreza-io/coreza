@@ -14,89 +14,111 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
+import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 
 export class UtilityExecutor implements INodeExecutor {
-  readonly category = 'Utility';
+  readonly category = "Utility";
 
-  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  async execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     try {
-      const nodeType = node.name || node.node_type;
-      
-      switch (nodeType) {
-        case 'Scheduler':
-        case 'trigger':
+      const nodeName = node.name;
+
+      switch (nodeName) {
+        case "Scheduler":
+        case "trigger":
           return this.executeSchedulerNode(node, input, context);
-        case 'Visualize':
+        case "Visualize":
           return this.executeVisualizeNode(node, input, context);
-        case 'webhook':
+        case "webhook":
           return this.executeWebhookNode(node, input, context);
-        case 'httprequest':
+        case "httprequest":
           return this.executeHttpNode(node, input, context);
         default:
           return {
             success: false,
-            error: `Unsupported utility node type: ${nodeType}`
+            error: `Unsupported utility node type: ${nodeName}`,
           };
       }
     } catch (error) {
       return {
         success: false,
-        error: `Utility execution failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Utility execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
 
-  private async executeSchedulerNode(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  private async executeSchedulerNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     // Scheduler nodes typically just pass through data since they're triggered externally
     return {
       success: true,
       data: {
         ...input,
         triggered_at: new Date().toISOString(),
-        node_id: node.id
-      }
+        node_id: node.id,
+      },
     };
   }
 
-  private async executeVisualizeNode(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
-    const resolvedParams = context?.resolveNodeParameters ? 
-      context.resolveNodeParameters(node, input) : 
-      { ...node.values, ...input };
+  private async executeVisualizeNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
 
-    console.log('📊 Visualize node processing data:', resolvedParams);
+    console.log("📊 Visualize node processing data:", resolvedParams);
 
     return {
       success: true,
       data: {
         visualization: {
-          type: resolvedParams.chartType || 'line',
+          type: resolvedParams.chartType || "line",
           data: resolvedParams.data || input,
           config: resolvedParams.config || {},
-          timestamp: new Date().toISOString()
-        }
-      }
+          timestamp: new Date().toISOString(),
+        },
+      },
     };
   }
 
-  private async executeWebhookNode(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  private async executeWebhookNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     // Webhook nodes typically receive data, so we just process and return it
     return {
       success: true,
       data: {
         ...input,
         webhook_received_at: new Date().toISOString(),
-        node_id: node.id
-      }
+        node_id: node.id,
+      },
     };
   }
 
-  private async executeHttpNode(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
-    const resolvedParams = context?.resolveNodeParameters ? 
-      context.resolveNodeParameters(node, input) : 
-      { ...node.values, ...input };
+  private async executeHttpNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
 
-    console.log('🌐 HTTP request node execution:', resolvedParams);
+    console.log("🌐 HTTP request node execution:", resolvedParams);
 
     // This would typically make an HTTP request using the HTTP service
     // For now, returning a placeholder response
@@ -106,10 +128,10 @@ export class UtilityExecutor implements INodeExecutor {
         request: resolvedParams,
         response: {
           status: 200,
-          data: 'HTTP request executed',
-          timestamp: new Date().toISOString()
-        }
-      }
+          data: "HTTP request executed",
+          timestamp: new Date().toISOString(),
+        },
+      },
     };
   }
 }

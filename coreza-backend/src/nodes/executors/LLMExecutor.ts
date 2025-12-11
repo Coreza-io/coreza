@@ -28,7 +28,7 @@ export class LLMExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.name;
+      const nodeName = node.name;
 
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
@@ -41,14 +41,14 @@ export class LLMExecutor implements INodeExecutor {
       };
 
       let result;
-      switch (nodeType) {
+      switch (nodeName) {
         case "OpenAI":
           result = await this.executeOpenAI(node, combinedInput, context);
           break;
         default:
           return {
             success: false,
-            error: `Unsupported LLM node type: ${nodeType}`,
+            error: `Unsupported LLM node type: ${nodeName}`,
           };
       }
 

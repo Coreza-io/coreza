@@ -14,56 +14,65 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from '../types';
-import { DataService } from '../../services/data';
-import { MarketSource } from '../../types/marketEvent';
-import { SubscriptionService } from '../../services/SubscriptionService';
+import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { DataService } from "../../services/data";
+import { MarketSource } from "../../types/marketEvent";
+import { SubscriptionService } from "../../services/SubscriptionService";
 
 export class MarketExecutor implements INodeExecutor {
-  readonly category = 'Market';
+  readonly category = "Market";
 
-  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  async execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
     try {
       const nodeName = node.name;
 
       // Handle subscription nodes (ACTION nodes that manage subscriptions)
-      if (nodeName === 'AlpacaSubscribe') {
-        return this.handleSubscriptionNode(node, context, 'alpaca');
-      } else if (nodeName === 'BinanceSubscribe') {
-        return this.handleSubscriptionNode(node, context, 'binance');
+      if (nodeName === "AlpacaSubscribe") {
+        return this.handleSubscriptionNode(node, context, "alpaca");
+      } else if (nodeName === "BinanceSubscribe") {
+        return this.handleSubscriptionNode(node, context, "binance");
       }
 
       // Handle streaming trigger nodes (pure data receivers)
-      if (nodeName === 'AlpacaStreamData') {
+      if (nodeName === "AlpacaStreamData") {
         return this.handleStreamingTrigger(node, context);
-      } else if (nodeName === 'BinanceStreamData') {
+      } else if (nodeName === "BinanceStreamData") {
         return this.handleStreamingTrigger(node, context);
       }
 
       // Default: historical/REST market data
-      const resolvedParams = context?.resolveNodeParameters ? 
-        context.resolveNodeParameters(node, input) : 
-        { ...node.values, ...input };
+      const resolvedParams = context?.resolveNodeParameters
+        ? context.resolveNodeParameters(node, input)
+        : { ...node.values, ...input };
 
-      console.log(`🏪 Executing ${node.name || node.node_type} node with params:`, resolvedParams);
+      console.log(
+        `🏪 Executing ${node.name} node with params:`,
+        resolvedParams
+      );
 
       const result = await DataService.getMarketData(resolvedParams);
-      
+
       if (!result.success) {
         return {
           success: false,
-          error: result.error || 'Market data fetch failed'
+          error: result.error || "Market data fetch failed",
         };
       }
 
       return {
         success: true,
-        data: result.data
+        data: result.data,
       };
     } catch (error) {
       return {
         success: false,
-        error: `Market execution failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Market execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
@@ -100,7 +109,7 @@ export class MarketExecutor implements INodeExecutor {
       workflowId,
       nodeId,
       credentialId: credential_id,
-      operation: operation || 'subscribe',
+      operation: operation || "subscribe",
       symbols,
       symbolSource,
       sourceWorkflowId,
@@ -122,28 +131,31 @@ export class MarketExecutor implements INodeExecutor {
    * Handle streaming trigger nodes (AlpacaStreamData, BinanceStreamData)
    * These are pure data receivers - they don't manage subscriptions
    */
-  private handleStreamingTrigger(
-    node: WorkflowNode,
-    context: any
-  ): NodeResult {
+  private handleStreamingTrigger(node: WorkflowNode, context: any): NodeResult {
     const { initialInput } = context || {};
     const { filter_symbols, filter_types } = node.values || {};
 
     // When triggered by market data, initialInput contains the event
     if (initialInput?.marketEvent) {
       const event = initialInput.marketEvent;
-      
+
       // Apply optional symbol filter
       if (filter_symbols) {
-        const allowed = filter_symbols.split(',').map((s: string) => s.trim().toUpperCase());
+        const allowed = filter_symbols
+          .split(",")
+          .map((s: string) => s.trim().toUpperCase());
         if (!allowed.includes(event.symbol?.toUpperCase())) {
-          return { success: true, data: null };  // Filtered out
+          return { success: true, data: null }; // Filtered out
         }
       }
-      
+
       // Apply optional event type filter
-      if (filter_types && filter_types.length > 0 && !filter_types.includes(event.type)) {
-        return { success: true, data: null };  // Filtered out
+      if (
+        filter_types &&
+        filter_types.length > 0 &&
+        !filter_types.includes(event.type)
+      ) {
+        return { success: true, data: null }; // Filtered out
       }
 
       return {
@@ -153,17 +165,18 @@ export class MarketExecutor implements INodeExecutor {
           type: event.type,
           [event.type]: event.data,
           timestamp: event.timestamp,
-        }
+        },
       };
     }
 
     // No market event - waiting state
     return {
       success: true,
-      data: { 
-        status: 'waiting', 
-        message: 'Waiting for market data. Ensure symbols are subscribed via AlpacaSubscribe/BinanceSubscribe node.' 
-      }
+      data: {
+        status: "waiting",
+        message:
+          "Waiting for market data. Ensure symbols are subscribed via AlpacaSubscribe/BinanceSubscribe node.",
+      },
     };
   }
 }

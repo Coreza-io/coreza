@@ -1,15 +1,13 @@
 {
   "name": "BacktestInit",
   "def": "Backtest Init",
-  "node_type": "trigger",
+  "node_type": "backtest",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
   "description": "Initialize a backtest session with capital and simulation settings",
   "color": "text-orange-500",
   "size": { "width": 340, "height": 420 },
-  "handles": [
-    { "type": "source", "position": "right", "id": "output" }
-  ],
+  "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "action": { "url": "/backtest/init", "method": "POST" },
   "fields": [
     {

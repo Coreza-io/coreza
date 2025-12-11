@@ -29,7 +29,7 @@ export class CommunicationExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.name || node.node_type;
+      const nodeName = node.name;
       const operation = node.values?.operation || "send";
 
       // Resolve and merge node parameters with input data
@@ -43,7 +43,7 @@ export class CommunicationExecutor implements INodeExecutor {
       };
 
       let result;
-      switch (nodeType) {
+      switch (nodeName) {
         case "Gmail":
           result = await CommunicationService.execute(
             "gmail",
@@ -61,14 +61,14 @@ export class CommunicationExecutor implements INodeExecutor {
         default:
           return {
             success: false,
-            error: `Unsupported communication node type: ${nodeType}`,
+            error: `Unsupported communication node type: ${nodeName}`,
           };
       }
 
       if (!result.success) {
         return {
           success: false,
-          error: result.error || `${nodeType} ${operation} operation failed`,
+          error: result.error || `${nodeName} ${operation} operation failed`,
         };
       }
 

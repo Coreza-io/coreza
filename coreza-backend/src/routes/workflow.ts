@@ -158,7 +158,7 @@ router.delete("/:workflowId", async (req, res, next) => {
     // Clean up active subscriptions before deletion
     if (workflow) {
       const redis = getRedisCache();
-      
+
       // Unschedule if has Scheduler node
       await workflowScheduler.unscheduleWorkflow(workflowId);
 
@@ -216,23 +216,28 @@ router.delete("/:workflowId", async (req, res, next) => {
           );
         }
       }
-      
+
       // Also unsubscribe streaming trigger workflows from MarketDataSubscriber
       const streamingTriggers = workflow.nodes?.filter(
         (n: any) => n.node_type === "trigger" && n.executionMode === "streaming"
       );
-      
+
       for (const trigger of streamingTriggers || []) {
         const unsubscribeMessage = {
-          action: 'unsubscribe',
+          action: "unsubscribe",
           userId,
           workflowId,
           nodeId: trigger.id,
           symbols: [],
-          source: 'streaming_workflow',
+          source: "streaming_workflow",
         };
-        await redis.publish(REDIS_CHANNELS.controlUnsubscribe, JSON.stringify(unsubscribeMessage));
-        console.log(`📤 [Workflow Delete] Unsubscribed streaming workflow ${workflowId} from MarketDataSubscriber`);
+        await redis.publish(
+          REDIS_CHANNELS.controlUnsubscribe,
+          JSON.stringify(unsubscribeMessage)
+        );
+        console.log(
+          `📤 [Workflow Delete] Unsubscribed streaming workflow ${workflowId} from MarketDataSubscriber`
+        );
       }
     }
 
@@ -593,7 +598,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
     // Detect trigger nodes
     const triggerNodes = workflow.nodes.filter(
-      (n: any) => n.node_type === "trigger"
+      (n: any) => n.node_type === "trigger" || n.node_type === "backtest"
     );
 
     if (triggerNodes.length === 0) {
@@ -645,41 +650,64 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           const filterTypes = nodeValues.filter_types;
 
           const redis = getRedisCache();
-          
+
           // Store workflow in active streaming workflows set for this user
-          await redis.sadd(`user:${userId}:active_streaming_workflows`, workflowId);
-          
+          await redis.sadd(
+            `user:${userId}:active_streaming_workflows`,
+            workflowId
+          );
+
           // Store filter configuration for this workflow
           // Parse filter_symbols to array for consistent format with updateActiveStreamingWorkflows
           const filterConfig = {
-            filter_symbols: filterSymbols 
-              ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) 
+            filter_symbols: filterSymbols
+              ? filterSymbols
+                  .split(",")
+                  .map((s: string) => s.trim().toUpperCase())
+                  .filter(Boolean)
               : [],
             filter_types: filterTypes || [],
             nodeId: triggerNode.id,
           };
-          await setStoreValue(redis, `workflow:${workflowId}:stream_filter`, filterConfig);
+          await setStoreValue(
+            redis,
+            `workflow:${workflowId}:stream_filter`,
+            filterConfig
+          );
 
           // Map node name to source for proper subscription routing
-          const nodeName = triggerNode.name || '';
-          const source = nodeNameToSourceMap[nodeName] || nodeName.toLowerCase().replace('streamdata', '').replace('stream', '');
+          const nodeName = triggerNode.name || "";
+          const source =
+            nodeNameToSourceMap[nodeName] ||
+            nodeName
+              .toLowerCase()
+              .replace("streamdata", "")
+              .replace("stream", "");
 
           // Get subscription mode - determines whether to receive global or workflow-scoped data only
-          const subscriptionMode = nodeValues.subscriptionMode || 'workflow';
+          const subscriptionMode = nodeValues.subscriptionMode || "workflow";
 
           // Publish registration message to market-stream-service
           // This allows the trading workflow to receive data from symbols subscribed by other workflows
           const registrationMessage = {
-            action: 'register_streaming_workflow',
+            action: "register_streaming_workflow",
             userId,
             workflowId,
             nodeId: triggerNode.id,
             source, // Include source for proper subscription routing
-            filter_symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean) : [],
+            filter_symbols: filterSymbols
+              ? filterSymbols
+                  .split(",")
+                  .map((s: string) => s.trim().toUpperCase())
+                  .filter(Boolean)
+              : [],
             filter_types: filterTypes || [],
             subscriptionMode, // NEW: controls whether to receive global or workflow-scoped symbols
           };
-          await redis.publish('md:control:register_workflow', JSON.stringify(registrationMessage));
+          await redis.publish(
+            "md:control:register_workflow",
+            JSON.stringify(registrationMessage)
+          );
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
@@ -689,7 +717,11 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               filterTypes,
             }
           );
-          newsSubscription = { symbols: filterSymbols ? filterSymbols.split(',').map((s: string) => s.trim()) : [] };
+          newsSubscription = {
+            symbols: filterSymbols
+              ? filterSymbols.split(",").map((s: string) => s.trim())
+              : [],
+          };
         }
 
         // Handle WebhookTrigger activation
@@ -705,7 +737,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         }
 
         // Handle BacktestInit activation - execute immediately via BullMQ
-        if (triggerNode.name === "BacktestInit") {
+        if (triggerNode.node_type === "backtest") {
           // Create a workflow run record
           const { data: run, error: runError } = await supabase
             .from("workflow_runs")
@@ -718,7 +750,9 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             .single();
 
           if (runError) {
-            console.error(`Failed to create workflow run for backtest: ${runError.message}`);
+            console.error(
+              `Failed to create workflow run for backtest: ${runError.message}`
+            );
           } else {
             // Extract initial input from BacktestInit node values
             const nodeValues = triggerNode.values || {};
@@ -773,23 +807,29 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           triggerNode.executionMode == "streaming"
         ) {
           const redis = getRedisCache();
-          
+
           // Remove workflow from active streaming workflows set
-          await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
-          
+          await redis.srem(
+            `user:${userId}:active_streaming_workflows`,
+            workflowId
+          );
+
           // Remove filter configuration
           await redis.del(`workflow:${workflowId}:stream_filter`);
 
           // Publish unsubscribe message to market-stream-service
           const unsubscribeMessage = {
-            action: 'unsubscribe',
+            action: "unsubscribe",
             userId,
             workflowId,
             nodeId: triggerNode.id,
             symbols: [],
-            source: 'streaming_workflow',
+            source: "streaming_workflow",
           };
-          await redis.publish(REDIS_CHANNELS.controlUnsubscribe, JSON.stringify(unsubscribeMessage));
+          await redis.publish(
+            REDIS_CHANNELS.controlUnsubscribe,
+            JSON.stringify(unsubscribeMessage)
+          );
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unsubscribed from market-stream-service`
@@ -889,100 +929,94 @@ router.get("/scheduler/status", async (req, res, next) => {
 });
 
 // Get node execution details for a workflow run
-router.get(
-  "/:workflowId/runs/:runId/executions",
-  async (req, res, next) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const { workflowId, runId } = req.params;
-
-      // Verify workflow belongs to user
-      const { data: workflow } = await supabase
-        .from("workflows")
-        .select("id")
-        .eq("id", workflowId)
-        .eq("user_id", userId)
-        .single();
-
-      if (!workflow) {
-        throw createError("Workflow not found", 404);
-      }
-
-      // Get node executions
-      const { data, error } = await supabase
-        .from("node_executions")
-        .select("*")
-        .eq("run_id", runId)
-        .order("started_at", { ascending: true });
-
-      if (error) {
-        throw createError("Failed to fetch node executions", 500);
-      }
-
-      res.json({ executions: data });
-    } catch (error) {
-      next(error);
+router.get("/:workflowId/runs/:runId/executions", async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
+
+    const { workflowId, runId } = req.params;
+
+    // Verify workflow belongs to user
+    const { data: workflow } = await supabase
+      .from("workflows")
+      .select("id")
+      .eq("id", workflowId)
+      .eq("user_id", userId)
+      .single();
+
+    if (!workflow) {
+      throw createError("Workflow not found", 404);
+    }
+
+    // Get node executions
+    const { data, error } = await supabase
+      .from("node_executions")
+      .select("*")
+      .eq("run_id", runId)
+      .order("started_at", { ascending: true });
+
+    if (error) {
+      throw createError("Failed to fetch node executions", 500);
+    }
+
+    res.json({ executions: data });
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 // Get workflow run status
-router.get(
-  "/:workflowId/runs/:runId/status",
-  async (req, res, next) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const { workflowId, runId } = req.params;
-
-      // Verify workflow belongs to user
-      const { data: workflow } = await supabase
-        .from("workflows")
-        .select("id")
-        .eq("id", workflowId)
-        .eq("user_id", userId)
-        .single();
-
-      if (!workflow) {
-        throw createError("Workflow not found", 404);
-      }
-
-      // Get workflow run
-      const { data: run, error: runError } = await supabase
-        .from("workflow_runs")
-        .select("*")
-        .eq("id", runId)
-        .single();
-
-      if (runError || !run) {
-        throw createError("Workflow run not found", 404);
-      }
-
-      // Get node executions count
-      const { count, error: countError } = await supabase
-        .from("node_executions")
-        .select("*", { count: "exact", head: true })
-        .eq("run_id", runId);
-
-      if (countError) {
-        console.error("Failed to count node executions:", countError);
-      }
-
-      res.json({
-        run,
-        node_executions_count: count || 0,
-      });
-    } catch (error) {
-      next(error);
+router.get("/:workflowId/runs/:runId/status", async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
+
+    const { workflowId, runId } = req.params;
+
+    // Verify workflow belongs to user
+    const { data: workflow } = await supabase
+      .from("workflows")
+      .select("id")
+      .eq("id", workflowId)
+      .eq("user_id", userId)
+      .single();
+
+    if (!workflow) {
+      throw createError("Workflow not found", 404);
+    }
+
+    // Get workflow run
+    const { data: run, error: runError } = await supabase
+      .from("workflow_runs")
+      .select("*")
+      .eq("id", runId)
+      .single();
+
+    if (runError || !run) {
+      throw createError("Workflow run not found", 404);
+    }
+
+    // Get node executions count
+    const { count, error: countError } = await supabase
+      .from("node_executions")
+      .select("*", { count: "exact", head: true })
+      .eq("run_id", runId);
+
+    if (countError) {
+      console.error("Failed to count node executions:", countError);
+    }
+
+    res.json({
+      run,
+      node_executions_count: count || 0,
+    });
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 export default router;

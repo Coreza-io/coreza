@@ -28,8 +28,8 @@ export class ControlFlowExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     try {
-      const nodeType = node.name || node.node_type;
-      switch (nodeType) {
+      const nodeName = node.name;
+      switch (nodeName) {
         case "If":
           return this.executeIfNode(node, input, context);
         case "Switch":
@@ -45,7 +45,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         default:
           return {
             success: false,
-            error: `Unsupported control flow node type: ${nodeType}`,
+            error: `Unsupported control flow node type: ${nodeName}`,
           };
       }
     } catch (error) {
@@ -312,11 +312,20 @@ export class ControlFlowExecutor implements INodeExecutor {
     const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
 
     // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution
-    if (parallel && context?.runId && context?.workflowId && context?.userId && context?.nodes && context?.edges) {
-      console.log(`🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`);
-      
+    if (
+      parallel &&
+      context?.runId &&
+      context?.workflowId &&
+      context?.userId &&
+      context?.nodes &&
+      context?.edges
+    ) {
+      console.log(
+        `🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`
+      );
+
       const loopExecutorV2 = new LoopExecutorV2();
-      
+
       // Parse items first for LoopExecutorV2
       let items = resolvedParams?.inputArray || [];
       try {
@@ -331,11 +340,21 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
 
       // Convert items to Item[] format expected by LoopExecutorV2
-      const itemsAsInput = Array.isArray(items) ? items.map((i: any) => ({ json: i })) : [];
+      const itemsAsInput = Array.isArray(items)
+        ? items.map((i: any) => ({ json: i }))
+        : [];
 
       const v2Result = await loopExecutorV2.execute(
         node,
-        { ...resolvedParams, items, batchSize, parallel, continueOnError, throttleMs, maxConcurrency },
+        {
+          ...resolvedParams,
+          items,
+          batchSize,
+          parallel,
+          continueOnError,
+          throttleMs,
+          maxConcurrency,
+        },
         itemsAsInput,
         context
       );

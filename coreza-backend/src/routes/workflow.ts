@@ -704,16 +704,53 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           );
         }
 
-        // Handle BacktestInit activation (on-demand execution mode)
+        // Handle BacktestInit activation - execute immediately via BullMQ
         if (triggerNode.name === "BacktestInit") {
-          // BacktestInit workflows run on-demand, not persistently
-          // Activation just marks them as ready-to-run
-          // The actual execution happens via POST /:workflowId/execute
-          console.log(
-            `📊 [Workflow Route] BacktestInit workflow ${workflowId} activated - ready for execution`
-          );
-          // No special subscription or scheduling needed for backtest workflows
-          // They execute when triggered via the execute endpoint
+          // Create a workflow run record
+          const { data: run, error: runError } = await supabase
+            .from("workflow_runs")
+            .insert({
+              workflow_id: workflowId,
+              status: "queued",
+              initiated_by: userId,
+            })
+            .select()
+            .single();
+
+          if (runError) {
+            console.error(`Failed to create workflow run for backtest: ${runError.message}`);
+          } else {
+            // Extract initial input from BacktestInit node values
+            const nodeValues = triggerNode.values || {};
+            const initialInput = {
+              name: nodeValues.name,
+              description: nodeValues.description,
+              initial_capital: nodeValues.initial_capital,
+              start_date: nodeValues.start_date,
+              end_date: nodeValues.end_date,
+              fill_model: nodeValues.fill_model,
+              slippage_model: nodeValues.slippage_model,
+              slippage_value: nodeValues.slippage_value,
+              commission_model: nodeValues.commission_model,
+              commission_value: nodeValues.commission_value,
+              allow_short: nodeValues.allow_short,
+            };
+
+            // Queue workflow for execution
+            await jobQueue.addWorkflowExecution({
+              runId: run.id,
+              workflowId,
+              userId,
+              nodes: workflow.nodes as any[],
+              edges: workflow.edges as any[],
+              trigger: "backtest",
+              initialInput,
+            });
+
+            console.log(
+              `📊 [Workflow Route] BacktestInit workflow ${workflowId} queued for execution (run: ${run.id})`
+            );
+          }
         }
       } else {
         // Deactivate - unschedule and unsubscribe

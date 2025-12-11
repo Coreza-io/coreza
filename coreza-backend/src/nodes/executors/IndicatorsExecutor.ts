@@ -16,7 +16,6 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
-import { VectorizedIndicatorsService } from "../../services/vectorizedIndicators";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -31,32 +30,6 @@ export class IndicatorsExecutor implements INodeExecutor {
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
-
-      if (indicatorType === "vectorizedindicators") {
-        const result = await VectorizedIndicatorsService.enrichBarsWithIndicators(
-          resolvedParams.candle_data,
-          {
-            indicators: resolvedParams.indicators,
-            rsi_period: Number(resolvedParams.rsi_period),
-            ema_period: Number(resolvedParams.ema_period),
-            sma_period: Number(resolvedParams.sma_period),
-            macd_fast: Number(resolvedParams.macd_fast),
-            macd_slow: Number(resolvedParams.macd_slow),
-            macd_signal: Number(resolvedParams.macd_signal),
-            bb_period: Number(resolvedParams.bb_period),
-            bb_stddev: Number(resolvedParams.bb_stddev),
-            stoch_k: Number(resolvedParams.stoch_k),
-            stoch_d: Number(resolvedParams.stoch_d),
-            adx_period: Number(resolvedParams.adx_period),
-          }
-        );
-
-        if (!result.success) {
-          return { success: false, error: "vectorizedindicators calculation failed" };
-        }
-
-        return result;
-      }
 
       console.log(
         `🔢 Executing ${indicatorType} indicator with params:`,

@@ -18,7 +18,6 @@ import express from 'express';
 import { requireTrader } from '../middleware/licenseCheck';
 import { requireAuth } from '../middleware/jwtAuth';
 import { IndicatorService } from '../services/indicators';
-import { VectorizedIndicatorsService } from '../services/vectorizedIndicators';
 
 const router = express.Router();
 
@@ -139,20 +138,6 @@ router.post('/volume-oscillator', async (req, res, next) => {
 router.post('/support-resistance', async (req, res, next) => {
   try {
     const result = await IndicatorService.calculate('support-resistance', req.body);
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Vectorized indicators endpoint - calculate multiple indicators in one call
-router.post('/vectorized', async (req, res, next) => {
-  try {
-    const { candle_data, indicators, ...params } = req.body;
-    const result = await VectorizedIndicatorsService.enrichBarsWithIndicators(
-      candle_data,
-      { indicators, ...params }
-    );
     res.json(result);
   } catch (error) {
     next(error);

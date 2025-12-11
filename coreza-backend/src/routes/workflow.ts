@@ -703,6 +703,18 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             `🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`
           );
         }
+
+        // Handle BacktestInit activation (on-demand execution mode)
+        if (triggerNode.name === "BacktestInit") {
+          // BacktestInit workflows run on-demand, not persistently
+          // Activation just marks them as ready-to-run
+          // The actual execution happens via POST /:workflowId/execute
+          console.log(
+            `📊 [Workflow Route] BacktestInit workflow ${workflowId} activated - ready for execution`
+          );
+          // No special subscription or scheduling needed for backtest workflows
+          // They execute when triggered via the execute endpoint
+        }
       } else {
         // Deactivate - unschedule and unsubscribe
         if (triggerNode) {
@@ -781,6 +793,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           triggerNode.executionMode == "webhook_listening"
         )
           parts.push("webhook listener activated");
+        if (triggerNode.name === "BacktestInit")
+          parts.push("backtest workflow activated");
         message = `Workflow ${parts.join(" and ")}`;
       } else {
         message = "Workflow deactivated";

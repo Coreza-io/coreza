@@ -35,7 +35,8 @@
         { "label": "Is Same Day", "value": "isSameDay" },
         { "label": "Extract Component", "value": "extract" },
         { "label": "Convert Timezone", "value": "convertTimezone" },
-        { "label": "Is Weekend", "value": "isWeekend" }
+        { "label": "Is Weekend", "value": "isWeekend" },
+        { "label": "Is Day Of Week", "value": "isDayOfWeek" }
       ],
       "default": "now",
       "required": true,
@@ -47,6 +48,27 @@
       "type": "text",
       "placeholder": "Leave empty for current date, or ISO format: 2024-01-15",
       "required": false
+    },
+    {
+      "key": "targetDay",
+      "label": "Day",
+      "type": "select",
+      "options": [
+        { "label": "Sunday", "value": "0" },
+        { "label": "Monday", "value": "1" },
+        { "label": "Tuesday", "value": "2" },
+        { "label": "Wednesday", "value": "3" },
+        { "label": "Thursday", "value": "4" },
+        { "label": "Friday", "value": "5" },
+        { "label": "Saturday", "value": "6" }
+      ],
+      "default": "1",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["isDayOfWeek"]
+        }
+      }
     },
     {
       "key": "date2",

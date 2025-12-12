@@ -47,6 +47,7 @@ export interface DateInput {
   formatString?: string;
   timezone?: string;
   inputFormat?: string;
+  targetDay?: string;
 }
 
 export interface DateResult {
@@ -122,6 +123,8 @@ export class DateService {
           return this.convertTimezone(input);
         case 'isWeekend':
           return this.checkIsWeekend(input);
+        case 'isDayOfWeek':
+          return this.checkIsDayOfWeek(input);
         default:
           throw new Error(`Unsupported operation: ${operation}`);
       }
@@ -294,7 +297,7 @@ export class DateService {
     const date = this.parseDate(input.date, input.inputFormat);
     const timezone = input.timezone || 'UTC';
     const formatStr = input.formatString || 'yyyy-MM-dd HH:mm:ss';
-    
+
     const zonedDate = toZonedTime(date, timezone);
     return { success: true, result: format(zonedDate, formatStr) };
   }
@@ -302,5 +305,28 @@ export class DateService {
   private static checkIsWeekend(input: DateInput): DateResult {
     const date = this.parseDate(input.date, input.inputFormat);
     return { success: true, result: isWeekend(date) };
+  }
+
+  private static checkIsDayOfWeek(input: DateInput): DateResult {
+    try {
+      const date = this.parseDate(input.date, input.inputFormat);
+      const targetDay = parseInt(input.targetDay ?? '1', 10);
+
+      if (Number.isNaN(targetDay) || targetDay < 0 || targetDay > 6) {
+        throw new Error(`Invalid target day: ${input.targetDay}`);
+      }
+
+      const actualDay = getDay(date);
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+      return {
+        success: true,
+        result: actualDay === targetDay,
+        dayName: dayNames[actualDay],
+        targetDayName: dayNames[targetDay]
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   }
 }

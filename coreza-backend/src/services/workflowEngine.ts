@@ -541,7 +541,8 @@ export class WorkflowEngine {
       nodeName === "Edit Fields" ||
       nodeName === "Math" ||
       nodeName === "Transform" ||
-      nodeName === "Loop"
+      nodeName === "Loop" ||
+      nodeName === "Date"
     ) {
       category = "ControlFlow";
     } else if (

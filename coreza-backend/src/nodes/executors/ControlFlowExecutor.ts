@@ -17,6 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { MathService } from "../../services/math";
 import { TransformService } from "../../services/transform";
+import { DateService } from "../../services/date";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -42,6 +43,8 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeTransformNode(node, input, context);
         case "Loop":
           return this.executeLoopNode(node, input, context);
+        case "Date":
+          return this.executeDateNode(node, input, context);
         default:
           return {
             success: false,
@@ -457,6 +460,34 @@ export class ControlFlowExecutor implements INodeExecutor {
         isLastBatch,
       },
     };
+  }
+
+  private async executeDateNode(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const result = DateService.execute({
+      operation: resolvedParams.operation,
+      date: resolvedParams.date,
+      date2: resolvedParams.date2,
+      amount: resolvedParams.amount,
+      unit: resolvedParams.unit,
+      formatString: resolvedParams.formatString,
+      timezone: resolvedParams.timezone,
+      inputFormat: resolvedParams.inputFormat,
+      targetDay: resolvedParams.targetDay,
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    return { success: true, data: result.result };
   }
 
   private evaluateCondition(

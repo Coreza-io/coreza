@@ -685,7 +685,8 @@ export class WorkflowExecutor {
     const roots = this.context.nodes
       .filter(
         (n) =>
-          (n.data.definition as any)?.node_type === "trigger" &&
+          ((n.data.definition as any)?.node_type === "trigger" ||
+            (n.data.definition as any)?.node_type === "backtest") &&
           !this.context.edges.some((e) => e.target === n.id)
       )
       .map((n) => n.id);
@@ -705,6 +706,7 @@ export class WorkflowExecutor {
         const inc = this.context.edges.filter((e) => e.target === id);
         const missing =
           (node.data.definition as any)?.node_type == "trigger" ||
+          (node.data.definition as any)?.node_type == "backtest" ||
           node.type === "Loop"
             ? []
             : inc.filter(

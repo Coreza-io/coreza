@@ -70,12 +70,13 @@ export class TransformService {
           const start = Number(arg1) || 0;
           const length =
             arg2 !== undefined && arg2 !== "" ? Number(arg2) : undefined;
+          const result =
+            length !== undefined
+              ? validation.string.substring(start, start + length)
+              : validation.string.substring(start);
           return {
             success: true,
-            data:
-              length !== undefined
-                ? validation.string.substring(start, start + length)
-                : validation.string.substring(start),
+            data: result,
           };
         }
 
@@ -799,7 +800,8 @@ export class TransformService {
       return Number.isNaN(num) ? null : num;
     };
 
-    const toStringValue = (val: any) => (val === undefined || val === null ? "" : String(val));
+    const toStringValue = (val: any) =>
+      val === undefined || val === null ? "" : String(val);
 
     switch (normalizedOperator) {
       case "===":
@@ -836,7 +838,11 @@ export class TransformService {
         return toStringValue(itemValue).includes(toStringValue(matchValue));
       }
       case "does_not_contain": {
-        return !TransformService.compareValues(itemValue, "contains", matchValue);
+        return !TransformService.compareValues(
+          itemValue,
+          "contains",
+          matchValue
+        );
       }
       case "starts_with": {
         return toStringValue(itemValue).startsWith(toStringValue(matchValue));
@@ -848,11 +854,16 @@ export class TransformService {
         if (itemValue === undefined || itemValue === null) return true;
         if (typeof itemValue === "string") return itemValue.length === 0;
         if (Array.isArray(itemValue)) return itemValue.length === 0;
-        if (typeof itemValue === "object") return Object.keys(itemValue).length === 0;
+        if (typeof itemValue === "object")
+          return Object.keys(itemValue).length === 0;
         return false;
       }
       case "is_not_empty": {
-        return !TransformService.compareValues(itemValue, "is_empty", matchValue);
+        return !TransformService.compareValues(
+          itemValue,
+          "is_empty",
+          matchValue
+        );
       }
       case "matches_regex": {
         try {

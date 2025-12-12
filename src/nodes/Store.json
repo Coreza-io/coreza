@@ -54,7 +54,8 @@
           { "id": "llen", "name": "Get Length" },
           { "id": "lindex", "name": "Get by Index" },
           { "id": "lset", "name": "Set by Index" },
-          { "id": "ltrim", "name": "Trim to Range" }
+          { "id": "ltrim", "name": "Trim to Range" },
+          { "id": "delete", "name": "Delete Key" }
         ],
         "hash": [
           { "id": "hset", "name": "Set Field" },
@@ -64,7 +65,8 @@
           { "id": "hkeys", "name": "Get Field Names" },
           { "id": "hvals", "name": "Get All Values" },
           { "id": "hexists", "name": "Field Exists?" },
-          { "id": "hincrby", "name": "Increment Field" }
+          { "id": "hincrby", "name": "Increment Field" },
+          { "id": "delete", "name": "Delete Key" }
         ],
         "set": [
           { "id": "sadd", "name": "Add Members" },
@@ -74,7 +76,8 @@
           { "id": "scard", "name": "Get Size" },
           { "id": "sinter", "name": "Intersection" },
           { "id": "sunion", "name": "Union" },
-          { "id": "sdiff", "name": "Difference" }
+          { "id": "sdiff", "name": "Difference" },
+          { "id": "delete", "name": "Delete Key" }
         ],
         "sortedSet": [
           { "id": "zadd", "name": "Add with Score" },
@@ -82,13 +85,15 @@
           { "id": "zscore", "name": "Get Score" },
           { "id": "zcount", "name": "Count in Range" },
           { "id": "zincrby", "name": "Increment Score" },
-          { "id": "zrem", "name": "Remove Members" }
+          { "id": "zrem", "name": "Remove Members" },
+          { "id": "delete", "name": "Delete Key" }
         ],
         "utility": [
           { "id": "keys", "name": "List Keys (pattern)" },
           { "id": "exists", "name": "Key Exists?" },
           { "id": "expire", "name": "Set TTL" },
-          { "id": "ttl", "name": "Get TTL" }
+          { "id": "ttl", "name": "Get TTL" },
+          { "id": "delete", "name": "Delete Key" }
         ]
       }
     },

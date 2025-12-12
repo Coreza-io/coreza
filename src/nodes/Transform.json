@@ -178,6 +178,32 @@
       }
     },
     {
+      "key": "filterOperator",
+      "label": "Operator",
+      "type": "select",
+      "options": [
+        { "label": "Equals (===)", "value": "===" },
+        { "label": "Not Equals (!==)", "value": "!==" },
+        { "label": "Greater Than (>)", "value": ">" },
+        { "label": "Greater Than or Equal (>=)", "value": ">=" },
+        { "label": "Less Than (<)", "value": "<" },
+        { "label": "Less Than or Equal (<=)", "value": "<=" },
+        { "label": "Contains", "value": "contains" },
+        { "label": "Does Not Contain", "value": "does_not_contain" },
+        { "label": "Starts With", "value": "starts_with" },
+        { "label": "Ends With", "value": "ends_with" },
+        { "label": "Is Empty", "value": "is_empty" },
+        { "label": "Is Not Empty", "value": "is_not_empty" },
+        { "label": "Matches Regex", "value": "matches_regex" }
+      ],
+      "default": "===",
+      "displayOptions": {
+        "show": {
+          "operator": ["find", "filter"]
+        }
+      }
+    },
+    {
       "key": "arg2",
       "label": "Argument 2",
       "type": "text",

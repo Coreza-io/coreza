@@ -20,6 +20,7 @@ export interface TransformInput {
   dataType?: string;
   arg1?: any;
   arg2?: any;
+  filterOperator?: string;
 }
 
 export interface Transformdata {
@@ -557,13 +558,15 @@ export class TransformService {
             return { success: false, error: validation.error };
           const propertyName = String(arg1 || "");
           const matchValue = TransformService.parseValue(arg2);
+          const operator = String(input.filterOperator || "===");
           const found = validation.array.find((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              if (typeof itemValue === "object" && typeof matchValue === "object") {
-                return JSON.stringify(itemValue) === JSON.stringify(matchValue);
-              }
-              return itemValue === matchValue;
+              return TransformService.compareValues(
+                itemValue,
+                operator,
+                matchValue
+              );
             }
             return false;
           });
@@ -576,13 +579,15 @@ export class TransformService {
             return { success: false, error: validation.error };
           const propertyName = String(arg1 || "");
           const matchValue = TransformService.parseValue(arg2);
+          const operator = String(input.filterOperator || "===");
           const filtered = validation.array.filter((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              if (typeof itemValue === "object" && typeof matchValue === "object") {
-                return JSON.stringify(itemValue) === JSON.stringify(matchValue);
-              }
-              return itemValue === matchValue;
+              return TransformService.compareValues(
+                itemValue,
+                operator,
+                matchValue
+              );
             }
             return false;
           });
@@ -779,6 +784,98 @@ export class TransformService {
       }
     }
     return value;
+  }
+
+  // Helper: Compare two values with support for common operators
+  private static compareValues(
+    itemValue: any,
+    operator: string,
+    matchValue: any
+  ): boolean {
+    const normalizedOperator = operator || "===";
+
+    const toNumber = (val: any) => {
+      const num = Number(val);
+      return Number.isNaN(num) ? null : num;
+    };
+
+    const toStringValue = (val: any) => (val === undefined || val === null ? "" : String(val));
+
+    switch (normalizedOperator) {
+      case "===":
+        return TransformService.areValuesEqual(itemValue, matchValue);
+      case "!==":
+        return !TransformService.areValuesEqual(itemValue, matchValue);
+      case ">": {
+        const left = toNumber(itemValue);
+        const right = toNumber(matchValue);
+        return left !== null && right !== null ? left > right : false;
+      }
+      case ">=": {
+        const left = toNumber(itemValue);
+        const right = toNumber(matchValue);
+        return left !== null && right !== null ? left >= right : false;
+      }
+      case "<": {
+        const left = toNumber(itemValue);
+        const right = toNumber(matchValue);
+        return left !== null && right !== null ? left < right : false;
+      }
+      case "<=": {
+        const left = toNumber(itemValue);
+        const right = toNumber(matchValue);
+        return left !== null && right !== null ? left <= right : false;
+      }
+      case "contains": {
+        if (itemValue === undefined || itemValue === null) return false;
+        if (Array.isArray(itemValue)) {
+          return itemValue.some((entry) =>
+            TransformService.areValuesEqual(entry, matchValue)
+          );
+        }
+        return toStringValue(itemValue).includes(toStringValue(matchValue));
+      }
+      case "does_not_contain": {
+        return !TransformService.compareValues(itemValue, "contains", matchValue);
+      }
+      case "starts_with": {
+        return toStringValue(itemValue).startsWith(toStringValue(matchValue));
+      }
+      case "ends_with": {
+        return toStringValue(itemValue).endsWith(toStringValue(matchValue));
+      }
+      case "is_empty": {
+        if (itemValue === undefined || itemValue === null) return true;
+        if (typeof itemValue === "string") return itemValue.length === 0;
+        if (Array.isArray(itemValue)) return itemValue.length === 0;
+        if (typeof itemValue === "object") return Object.keys(itemValue).length === 0;
+        return false;
+      }
+      case "is_not_empty": {
+        return !TransformService.compareValues(itemValue, "is_empty", matchValue);
+      }
+      case "matches_regex": {
+        try {
+          const regex = new RegExp(toStringValue(matchValue));
+          return regex.test(toStringValue(itemValue));
+        } catch {
+          return false;
+        }
+      }
+      default:
+        return TransformService.areValuesEqual(itemValue, matchValue);
+    }
+  }
+
+  private static areValuesEqual(a: any, b: any): boolean {
+    if (typeof a === "object" && typeof b === "object") {
+      try {
+        return JSON.stringify(a) === JSON.stringify(b);
+      } catch {
+        return false;
+      }
+    }
+    return a === b;
   }
 
   // Helper: Get nested value from object

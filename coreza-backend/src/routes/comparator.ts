@@ -271,7 +271,7 @@ router.post("/math", async (req, res) => {
 // Generic transform operations
 router.post("/transform", async (req, res) => {
   try {
-    const { value, operator, arg1, arg2 } = req.body;
+    const { value, operator, arg1, arg2, filterOperator } = req.body;
 
     if (value === undefined || operator == null) {
       return res.status(400).json({
@@ -280,7 +280,7 @@ router.post("/transform", async (req, res) => {
       });
     }
 
-    const result = TransformService.transform({ value, operator, arg1, arg2 });
+    const result = TransformService.transform({ value, operator, arg1, arg2, filterOperator });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
@@ -307,6 +307,7 @@ router.post("/date", async (req, res) => {
       formatString,
       timezone,
       inputFormat,
+      targetDay,
     } = req.body;
 
     if (!operation) {
@@ -325,6 +326,7 @@ router.post("/date", async (req, res) => {
       formatString,
       timezone,
       inputFormat,
+      targetDay,
     });
 
     if (!result.success) {

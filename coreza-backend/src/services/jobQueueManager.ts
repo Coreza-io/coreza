@@ -487,6 +487,9 @@ const workflowWorker = new Worker(
     concurrency: parseInt(process.env.WORKFLOW_JOB_CONCURRENCY || "5"),
     removeOnComplete: { count: 50 },
     removeOnFail: { count: 100 },
+    lockDuration: 300000,      // 5 minutes (default is 30s) - for long-running loops
+    stalledInterval: 60000,    // Check for stalled jobs every 60 seconds
+    maxStalledCount: 3,        // Allow 3 stall checks before marking as stalled
   }
 );
 

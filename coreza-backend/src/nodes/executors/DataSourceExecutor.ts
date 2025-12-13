@@ -123,6 +123,13 @@ export class DataSourceExecutor implements INodeExecutor {
         case "Store":
           result = await this.executeStoreNode(resolvedParams, context);
           break;
+        case "Polygon":
+          result = await DataService.execute(
+            "polygon",
+            resolvedParams.operation,
+            combinedInput
+          );
+          break;
         default:
           return {
             success: false,

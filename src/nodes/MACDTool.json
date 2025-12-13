@@ -35,8 +35,7 @@
       "label": "Fast EMA Period",
       "type": "text",
       "placeholder": "e.g. 12",
-      "default": "12",
-      "description": "Period for the fast EMA. Standard value is 12. Shorter periods react faster to price changes.",
+      "description": "Period for fast EMA. CHOOSE based on sensitivity: 8-10 for aggressive/volatile stocks, 12 for standard, 15-20 for smoother signals on stable stocks.",
       "required": true
     },
     {
@@ -44,8 +43,7 @@
       "label": "Slow EMA Period",
       "type": "text",
       "placeholder": "e.g. 26",
-      "default": "26",
-      "description": "Period for the slow EMA. Standard value is 26. Must be greater than fast period.",
+      "description": "Period for slow EMA. Must be greater than fast period. CHOOSE: 20-26 for standard, 30-40 for long-term trend confirmation.",
       "required": true
     },
     {
@@ -53,8 +51,7 @@
       "label": "Signal Line EMA",
       "type": "text",
       "placeholder": "e.g. 9",
-      "default": "9",
-      "description": "Period for the signal line EMA. Standard value is 9. Used for crossover signals.",
+      "description": "Period for signal line. CHOOSE: 7-9 for faster crossover signals, 12-14 for fewer but more reliable signals.",
       "required": true
     }
   ]

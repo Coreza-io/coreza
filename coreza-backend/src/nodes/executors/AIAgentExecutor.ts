@@ -365,6 +365,75 @@ export class AIAgentExecutor implements INodeExecutor {
     return `Execute ${nodeName} node to perform its configured action`;
   }
 
+  private fieldToZodType(field: any): ZodTypeAny {
+    let zodType: ZodTypeAny;
+
+    switch (field.type) {
+      case "number":
+        zodType = z.number();
+        break;
+      case "select": {
+        const options = field.options?.map((o: any) => o.id || o.value) || [];
+        if (options.length > 0) {
+          zodType = z.enum(options as [string, ...string[]]);
+        } else {
+          zodType = z.string();
+        }
+        break;
+      }
+      case "checkbox":
+        zodType = z.boolean();
+        break;
+      case "text":
+      case "password":
+      case "textarea":
+      default:
+        zodType = z.string();
+    }
+
+    const desc = field.description || field.placeholder || field.label;
+    if (desc) {
+      zodType = zodType.describe(desc);
+    }
+
+    if (!field.required) {
+      zodType = zodType.optional();
+    }
+
+    return zodType;
+  }
+
+  private generateSchemaFromNode(node: WorkflowNode): ZodTypeAny {
+    const fields = (node as any).fields || [];
+    const schemaObject: Record<string, ZodTypeAny> = {};
+
+    for (const field of fields) {
+      if (field.type === "hidden") continue;
+      if (field.key === "credential_id") continue;
+
+      schemaObject[field.key] = this.fieldToZodType(field);
+    }
+
+    const nodeCategory = (node as any).subCategory || node.category || "";
+    const nodeName = node.name || "";
+
+    if (
+      nodeCategory.includes("Indicator") ||
+      nodeCategory.includes("Market") ||
+      nodeName.includes("Market") ||
+      nodeName.includes("Finance") ||
+      nodeName.includes("Polygon") ||
+      nodeName.includes("FinnHub")
+    ) {
+      schemaObject["dataRef"] = z
+        .string()
+        .optional()
+        .describe("Reference to previously fetched market data");
+    }
+
+    return z.object(schemaObject);
+  }
+
   /**
    * Generate a Zod schema for tool input based on node definition
    */
@@ -372,7 +441,12 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition
   ): ZodTypeAny {
-    if (definition) {
+    const nodeFields = (node as any).fields;
+    if (nodeFields && Array.isArray(nodeFields) && nodeFields.length > 0) {
+      return this.generateSchemaFromNode(node);
+    }
+
+    if (definition && definition.schema) {
       return definition.schema;
     }
 

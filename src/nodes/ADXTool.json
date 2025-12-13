@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/adx.svg",
   "category": "Tool",
-  "description": "ADX indicator to evaluate trend strength using DI+/DI- lines",
+  "description": "ADX (Average Directional Index) - measures trend strength (not direction). Values above 25 indicate strong trend, below 20 indicate weak/ranging market.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
@@ -35,6 +35,7 @@
       "type": "text",
       "placeholder": "e.g. 14",
       "default": "14",
+      "description": "Period for ADX calculation. Standard value is 14. Returns ADX value plus DI+ and DI- directional indicators.",
       "required": true
     }
   ]

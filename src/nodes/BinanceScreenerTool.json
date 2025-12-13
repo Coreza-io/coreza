@@ -5,7 +5,7 @@
   "icon": "/assets/icons/binance.svg",
   "category": "Tool",
   "subCategory": "Binance",
-  "description": "Screen crypto assets using Binance - top gainers, losers, most active",
+  "description": "Screen crypto assets on Binance. Find top gainers, losers, most active by volume, and new listings for spot and futures markets.",
   "color": "text-yellow-400",
   "size": { "width": 340, "height": 340 },
   "handles": [
@@ -22,6 +22,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved Binance API credential.",
       "required": true
     },
     {
@@ -33,6 +34,7 @@
         { "name": "Production (Live)", "id": "live" }
       ],
       "default": "testnet",
+      "description": "Testnet for testing, Production for real market data.",
       "required": true
     },
     {
@@ -44,6 +46,7 @@
         { "name": "Futures", "id": "futures" }
       ],
       "default": "spot",
+      "description": "Market type: Spot for regular trading, Futures for derivatives.",
       "required": true
     },
     {
@@ -58,7 +61,7 @@
       ],
       "default": "top_gainers",
       "required": true,
-      "description": "Type of screening filter to apply"
+      "description": "Screening criteria: Top Gainers/Losers by price change, Most Active by 24h volume, New Listings for recently added pairs."
     },
     {
       "key": "limit",
@@ -67,7 +70,7 @@
       "default": "10",
       "placeholder": "Number of results",
       "required": true,
-      "description": "Maximum number of results to return"
+      "description": "Maximum number of results to return."
     },
     {
       "key": "quote_asset",
@@ -80,6 +83,7 @@
         { "name": "ETH", "id": "ETH" }
       ],
       "default": "USDT",
+      "description": "Quote currency to filter pairs (e.g., USDT shows only *USDT pairs).",
       "displayOptions": {
         "show": {
           "asset_type": ["spot"]
@@ -91,6 +95,7 @@
       "label": "Min Volume (24h)",
       "type": "text",
       "placeholder": "Minimum 24h volume",
+      "description": "Minimum 24-hour trading volume in quote currency.",
       "displayOptions": {
         "show": {
           "filter_type": ["most_active"]
@@ -102,6 +107,7 @@
       "label": "Min Price Change %",
       "type": "text",
       "placeholder": "Minimum price change percentage",
+      "description": "Minimum absolute price change percentage to include.",
       "displayOptions": {
         "show": {
           "filter_type": ["top_gainers", "top_losers"]

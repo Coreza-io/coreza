@@ -5,7 +5,7 @@
   "icon": "/assets/icons/YahooFinance.svg",
   "category": "Tool",
   "subCategory": "YahooFinance",
-  "description": "Screen stocks using Yahoo Finance predefined screeners (day gainers, most actives, etc.)",
+  "description": "Screen stocks using Yahoo Finance predefined screeners. Find day gainers/losers, most active, small cap gainers, undervalued stocks, growth tech, and more.",
   "color": "text-purple-500",
   "size": { "width": 340, "height": 300 },
   "handles": [
@@ -32,7 +32,7 @@
       ],
       "default": "day_gainers",
       "required": true,
-      "description": "Type of stock screening to perform"
+      "description": "Predefined screening strategy: Day Gainers/Losers for daily movers, Most Actives for volume, others for specific investment styles."
     },
     {
       "key": "count",
@@ -40,7 +40,7 @@
       "type": "text",
       "placeholder": "100",
       "default": "100",
-      "description": "Maximum number of results to return"
+      "description": "Maximum number of stocks to return."
     },
     {
       "key": "min_gap_percent",
@@ -48,7 +48,7 @@
       "type": "text",
       "placeholder": "3.0",
       "default": "0",
-      "description": "Minimum gap percentage filter",
+      "description": "Minimum gap percentage filter (difference between previous close and current open).",
       "displayOptions": {
         "show": {
           "operation": ["day_gainers"]
@@ -61,7 +61,7 @@
       "type": "text",
       "placeholder": "1.0",
       "default": "1.0",
-      "description": "Minimum change percentage filter",
+      "description": "Minimum absolute price change percentage to include.",
       "displayOptions": {
         "show": {
           "operation": ["most_actives"]
@@ -74,7 +74,7 @@
       "type": "text",
       "placeholder": "0",
       "default": "0",
-      "description": "Minimum loss percentage filter",
+      "description": "Minimum loss percentage (absolute value) for day losers filter.",
       "displayOptions": {
         "show": {
           "operation": ["day_losers"]

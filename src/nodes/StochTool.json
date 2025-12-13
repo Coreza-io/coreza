@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/stochastic.svg",
   "category": "Tool",
-  "description": "Stochastic Oscillator for identifying overbought/oversold conditions and price momentum",
+  "description": "Stochastic Oscillator - momentum indicator comparing closing price to price range. %K above 80 = overbought, below 20 = oversold. %K/%D crossovers signal entries.",
   "color": "text-green-500",
   "size": {
     "width": 340,
@@ -35,6 +35,7 @@
       "type": "text",
       "default": "14",
       "placeholder": "e.g. 14",
+      "description": "Lookback period for %K line calculation. Standard is 14 periods.",
       "required": true
     },
     {
@@ -43,6 +44,7 @@
       "type": "text",
       "default": "3",
       "placeholder": "e.g. 3",
+      "description": "Smoothing period for %D signal line (SMA of %K). Standard is 3 periods.",
       "required": true
     },
     {
@@ -51,6 +53,7 @@
       "type": "text",
       "default": "3",
       "placeholder": "e.g. 3",
+      "description": "Additional smoothing applied to %K. Standard is 3. Higher values reduce noise.",
       "required": true
     }
   ]

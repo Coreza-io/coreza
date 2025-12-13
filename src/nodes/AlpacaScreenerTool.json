@@ -5,7 +5,7 @@
   "icon": "/assets/icons/alpaca.svg",
   "category": "Tool",
   "subCategory": "Alpaca",
-  "description": "Screen stocks using Alpaca's Most Actives and Market Movers APIs",
+  "description": "Screen stocks using Alpaca's Most Actives and Market Movers APIs. Find top traded stocks by volume or trade count, and biggest gainers/losers.",
   "color": "text-yellow-500",
   "size": { "width": 340, "height": 280 },
   "handles": [
@@ -41,6 +41,7 @@
       "label": "Credential",
       "type": "select",
       "optionsSource": "credentialsApi",
+      "description": "Your saved Alpaca API credential.",
       "required": true
     },
     {
@@ -52,6 +53,7 @@
         { "id": "market_movers", "name": "Market Movers" }
       ],
       "default": "most_actives",
+      "description": "Most Actives: highest volume/trades. Market Movers: biggest price changes (gainers/losers).",
       "required": true
     },
     {
@@ -63,6 +65,7 @@
         { "id": "crypto", "name": "Crypto" }
       ],
       "default": "stocks",
+      "description": "Asset class to screen: US stocks or cryptocurrency.",
       "displayOptions": {
         "show": {
           "operation": ["market_movers"]
@@ -75,7 +78,7 @@
       "type": "text",
       "placeholder": "10",
       "default": "10",
-      "description": "Number of results to return"
+      "description": "Maximum number of results to return (1-100)."
     },
     {
       "key": "by",
@@ -86,6 +89,7 @@
         { "id": "trades", "name": "Trades" }
       ],
       "default": "volume",
+      "description": "Ranking criteria: by dollar volume traded or by number of trades.",
       "displayOptions": {
         "show": {
           "operation": ["most_actives"]

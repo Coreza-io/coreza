@@ -5,7 +5,7 @@
   "icon": "/assets/icons/macd.svg",
   "category": "Tool",
   "subcategory": "Trend Indicators",
-  "description": "MACD (Moving Average Convergence Divergence) indicator to measure momentum and trend strength",
+  "description": "MACD (Moving Average Convergence Divergence) - measures momentum and trend strength by comparing two EMAs. Signal line crossovers indicate potential buy/sell opportunities.",
   "color": "text-purple-500",
   "size": {
     "width": 320,
@@ -36,6 +36,7 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "default": "12",
+      "description": "Period for the fast EMA. Standard value is 12. Shorter periods react faster to price changes.",
       "required": true
     },
     {
@@ -44,6 +45,7 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "default": "26",
+      "description": "Period for the slow EMA. Standard value is 26. Must be greater than fast period.",
       "required": true
     },
     {
@@ -52,6 +54,7 @@
       "type": "text",
       "placeholder": "e.g. 9",
       "default": "9",
+      "description": "Period for the signal line EMA. Standard value is 9. Used for crossover signals.",
       "required": true
     }
   ]

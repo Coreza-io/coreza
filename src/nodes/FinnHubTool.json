@@ -5,7 +5,7 @@
   "icon": "/assets/icons/FinnHub.svg",
   "category": "Tool",
   "subCategory": "FinnHub",
-  "description": "Fetch real-time quotes and market data from FinnHub",
+  "description": "Fetch real-time stock quotes from FinnHub. Returns current price, open, high, low, previous close, and change percentage.",
   "color": "text-orange-500",
   "size": { "width": 340, "height": 280 },
   "handles": [
@@ -38,6 +38,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved FinnHub API credential.",
       "required": true
     },
     {
@@ -45,7 +46,7 @@
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "description": "Stock ticker symbol to fetch quote for",
+      "description": "Stock ticker symbol to fetch real-time quote for.",
       "required": true
     }
   ]

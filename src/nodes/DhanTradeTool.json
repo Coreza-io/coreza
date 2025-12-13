@@ -5,7 +5,7 @@
   "icon": "/assets/icons/dhan.svg",
   "category": "Tool",
   "subCategory": "Dhan",
-  "description": "Execute trades through Dhan",
+  "description": "Execute trades through Dhan (Indian broker). Supports NSE/BSE equity and F&O with market and limit orders.",
   "color": "text-blue-500",
   "size": {
     "width": 340,
@@ -60,6 +60,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved Dhan API credential.",
       "required": true
     },
     {
@@ -67,6 +68,7 @@
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. RELIANCE",
+      "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY).",
       "required": true
     },
     {
@@ -74,24 +76,13 @@
       "label": "Exchange Segment",
       "type": "select",
       "options": [
-        {
-          "id": "NSE_EQ",
-          "name": "NSE Equity"
-        },
-        {
-          "id": "BSE_EQ",
-          "name": "BSE Equity"
-        },
-        {
-          "id": "NSE_FNO",
-          "name": "NSE F&O"
-        },
-        {
-          "id": "BSE_FNO",
-          "name": "BSE F&O"
-        }
+        { "id": "NSE_EQ", "name": "NSE Equity" },
+        { "id": "BSE_EQ", "name": "BSE Equity" },
+        { "id": "NSE_FNO", "name": "NSE F&O" },
+        { "id": "BSE_FNO", "name": "BSE F&O" }
       ],
       "default": "NSE_EQ",
+      "description": "Exchange and segment: NSE/BSE for equities, FNO for futures & options.",
       "required": true
     },
     {
@@ -99,16 +90,11 @@
       "label": "Side",
       "type": "select",
       "options": [
-        {
-          "id": "buy",
-          "name": "Buy"
-        },
-        {
-          "id": "sell",
-          "name": "Sell"
-        }
+        { "id": "buy", "name": "Buy" },
+        { "id": "sell", "name": "Sell" }
       ],
       "default": "buy",
+      "description": "Buy to open/add position, Sell to close/reduce position.",
       "required": true
     },
     {
@@ -116,6 +102,7 @@
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
+      "description": "Number of shares/lots to trade.",
       "required": true
     },
     {
@@ -123,16 +110,11 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        {
-          "id": "market",
-          "name": "Market"
-        },
-        {
-          "id": "limit",
-          "name": "Limit"
-        }
+        { "id": "market", "name": "Market" },
+        { "id": "limit", "name": "Limit" }
       ],
       "default": "market",
+      "description": "Market executes immediately at best price, Limit waits for specified price.",
       "required": true
     },
     {
@@ -140,16 +122,11 @@
       "label": "Validity",
       "type": "select",
       "options": [
-        {
-          "id": "day",
-          "name": "Day"
-        },
-        {
-          "id": "ioc",
-          "name": "Immediate Or Cancel"
-        }
+        { "id": "day", "name": "Day" },
+        { "id": "ioc", "name": "Immediate Or Cancel" }
       ],
       "default": "day",
+      "description": "Day order valid until market close, IOC fills immediately or cancels.",
       "required": true
     },
     {
@@ -157,6 +134,7 @@
       "label": "Price",
       "type": "text",
       "placeholder": "Required for limit orders",
+      "description": "Limit price for the order.",
       "required": false
     }
   ]

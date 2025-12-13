@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/rsi.svg",
   "category": "Tool",
-  "description": "Relative Strength Index indicator",
+  "description": "Relative Strength Index indicator - measures momentum by comparing recent gains vs losses. Values above 70 indicate overbought, below 30 indicate oversold.",
   "color": "text-blue-500",
   "size": {
     "width": 300,
@@ -31,10 +31,11 @@
     },
     {
       "key": "window",
-      "label": "EMA Window",
+      "label": "RSI Period",
       "type": "text",
-      "placeholder": "e.g. 20",
-      "default": "20",
+      "placeholder": "e.g. 14",
+      "default": "14",
+      "description": "Number of periods for RSI calculation. Standard is 14 periods. Shorter periods (7-9) are more sensitive, longer periods (21-25) are smoother.",
       "required": true
     }
   ]

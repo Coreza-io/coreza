@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/obv.svg",
   "category": "Tool",
-  "description": "On-Balance Volume indicator to detect volume-driven momentum trends",
+  "description": "On-Balance Volume (OBV) - volume-based momentum indicator. Rising OBV confirms uptrend, falling OBV confirms downtrend. Divergences with price signal potential reversals.",
   "color": "text-orange-500",
   "size": {
     "width": 300,

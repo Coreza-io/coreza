@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/volume-oscillator.svg",
   "category": "Tool",
-  "description": "Volume Oscillator showing difference between two volume moving averages",
+  "description": "Volume Oscillator - shows difference between two volume moving averages. Positive values indicate increasing volume trend, negative indicates decreasing volume.",
   "color": "text-purple-500",
   "size": {
     "width": 300,
@@ -35,6 +35,7 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "default": "12",
+      "description": "Period for short-term volume moving average. Standard is 12 periods.",
       "required": true
     },
     {
@@ -43,6 +44,7 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "default": "26",
+      "description": "Period for long-term volume moving average. Standard is 26 periods. Must be greater than short period.",
       "required": true
     },
     {
@@ -50,16 +52,11 @@
       "label": "Calculation Type",
       "type": "select",
       "options": [
-        {
-          "id": "percentage",
-          "name": "Percentage (PVO)"
-        },
-        {
-          "id": "absolute",
-          "name": "Absolute Difference"
-        }
+        { "id": "percentage", "name": "Percentage (PVO)" },
+        { "id": "absolute", "name": "Absolute Difference" }
       ],
       "default": "percentage",
+      "description": "Output format: Percentage shows relative change, Absolute shows volume difference.",
       "required": true
     }
   ]

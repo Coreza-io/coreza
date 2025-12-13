@@ -5,7 +5,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/if.svg",
   "category": "Tool",
-  "description": "Perform math calculations and statistical operations on arrays",
+  "description": "Perform math calculations: basic arithmetic (add, subtract, multiply, divide) and statistical operations (avg, sum, min, max, median, std) on numbers and arrays.",
   "color": "text-yellow-500",
   "size": {
     "width": 280,
@@ -27,76 +27,40 @@
       "key": "left",
       "label": "Value / Array",
       "type": "text",
-      "placeholder": "For stats: {{ $('Node').json[0:10].value }} | For binary: number",
+      "placeholder": "For stats: [1,2,3] | For binary: number",
       "required": true,
-      "description": "For statistical ops: array or slice. For binary ops: left operand"
+      "description": "For statistical operations (avg, sum, etc): provide an array of numbers. For binary operations (add, multiply, etc): provide the left operand number."
     },
     {
       "key": "operator",
       "label": "Operator",
       "type": "select",
       "options": [
-        {
-          "label": "Add",
-          "value": "add"
-        },
-        {
-          "label": "Subtract",
-          "value": "subtract"
-        },
-        {
-          "label": "Multiply",
-          "value": "multiply"
-        },
-        {
-          "label": "Divide",
-          "value": "divide"
-        },
-        {
-          "label": "Average",
-          "value": "avg"
-        },
-        {
-          "label": "Sum",
-          "value": "sum"
-        },
-        {
-          "label": "Min",
-          "value": "min"
-        },
-        {
-          "label": "Max",
-          "value": "max"
-        },
-        {
-          "label": "Count",
-          "value": "count"
-        },
-        {
-          "label": "Median",
-          "value": "median"
-        },
-        {
-          "label": "Standard Deviation",
-          "value": "std"
-        }
+        { "label": "Add", "value": "add" },
+        { "label": "Subtract", "value": "subtract" },
+        { "label": "Multiply", "value": "multiply" },
+        { "label": "Divide", "value": "divide" },
+        { "label": "Average", "value": "avg" },
+        { "label": "Sum", "value": "sum" },
+        { "label": "Min", "value": "min" },
+        { "label": "Max", "value": "max" },
+        { "label": "Count", "value": "count" },
+        { "label": "Median", "value": "median" },
+        { "label": "Standard Deviation", "value": "std" }
       ],
       "default": "add",
+      "description": "Mathematical operation: arithmetic (add/subtract/multiply/divide) needs two operands; statistical (avg/sum/min/max/count/median/std) operates on array.",
       "required": true
     },
     {
       "key": "right",
-      "label": "Right",
+      "label": "Right Operand",
       "type": "text",
       "required": false,
+      "description": "Second number for arithmetic operations (add, subtract, multiply, divide). Not used for statistical operations.",
       "displayOptions": {
         "show": {
-          "operator": [
-            "add",
-            "subtract",
-            "multiply",
-            "divide"
-          ]
+          "operator": ["add", "subtract", "multiply", "divide"]
         }
       }
     }

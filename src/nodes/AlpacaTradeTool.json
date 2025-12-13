@@ -5,7 +5,7 @@
   "icon": "/assets/icons/alpaca.svg",
   "category": "Tool",
   "subCategory": "Alpaca",
-  "description": "Execute trades through Alpaca Markets",
+  "description": "Execute stock and crypto trades through Alpaca Markets. Supports market, limit, stop, and trailing stop orders.",
   "color": "text-red-500",
   "size": {
     "width": 340,
@@ -60,6 +60,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved Alpaca API credential.",
       "required": true
     },
     {
@@ -67,16 +68,11 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        {
-          "id": "stock",
-          "name": "Stock"
-        },
-        {
-          "id": "crypto",
-          "name": "Crypto"
-        }
+        { "id": "stock", "name": "Stock" },
+        { "id": "crypto", "name": "Crypto" }
       ],
       "default": "stock",
+      "description": "Type of asset to trade: US stocks or cryptocurrency.",
       "required": true
     },
     {
@@ -84,7 +80,7 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL or BTC/USD",
-      "description": "Stock symbol (e.g. AAPL) or crypto pair (e.g. BTC/USD)",
+      "description": "Stock symbol (e.g., AAPL) or crypto pair (e.g., BTC/USD).",
       "required": true
     },
     {
@@ -92,16 +88,11 @@
       "label": "Side",
       "type": "select",
       "options": [
-        {
-          "id": "buy",
-          "name": "Buy"
-        },
-        {
-          "id": "sell",
-          "name": "Sell"
-        }
+        { "id": "buy", "name": "Buy" },
+        { "id": "sell", "name": "Sell" }
       ],
       "default": "buy",
+      "description": "Buy to open/add position, Sell to close/reduce position.",
       "required": true
     },
     {
@@ -109,6 +100,7 @@
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
+      "description": "Number of shares/units to trade. Supports fractional for crypto.",
       "required": false
     },
     {
@@ -116,24 +108,13 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        {
-          "id": "market",
-          "name": "Market Order"
-        },
-        {
-          "id": "limit",
-          "name": "Limit Order"
-        },
-        {
-          "id": "stop",
-          "name": "Stop Order"
-        },
-        {
-          "id": "trailing_stop",
-          "name": "Trailing Stop Order"
-        }
+        { "id": "market", "name": "Market Order" },
+        { "id": "limit", "name": "Limit Order" },
+        { "id": "stop", "name": "Stop Order" },
+        { "id": "trailing_stop", "name": "Trailing Stop Order" }
       ],
       "default": "market",
+      "description": "Market executes immediately, Limit at specified price, Stop triggers at price, Trailing Stop follows price.",
       "required": true
     },
     {
@@ -141,7 +122,8 @@
       "label": "Limit Price",
       "type": "text",
       "required": false,
-      "placeholder": "e.g. 1",
+      "placeholder": "e.g. 150.00",
+      "description": "Price for limit order. Order fills at this price or better.",
       "displayOptions": {
         "show": {
           "type": "limit"
@@ -153,7 +135,8 @@
       "label": "Stop Price",
       "type": "text",
       "required": false,
-      "placeholder": "e.g. 1",
+      "placeholder": "e.g. 145.00",
+      "description": "Trigger price for stop order. Order activates when price reaches this level.",
       "displayOptions": {
         "show": {
           "type": "stop"
@@ -166,7 +149,7 @@
       "type": "text",
       "required": false,
       "placeholder": "e.g. 0.20",
-      "description": "Dollar amount to trail. Required if trail_percent is not provided",
+      "description": "Dollar amount to trail below/above market. Required if trail_percent not provided.",
       "displayOptions": {
         "show": {
           "type": "trailing_stop"
@@ -178,8 +161,8 @@
       "label": "Trailing Percentage",
       "type": "text",
       "required": false,
-      "placeholder": "e.g. 0.20",
-      "description": "Percentage to trail (0-1). Required if trail_price is not provided",
+      "placeholder": "e.g. 1.5",
+      "description": "Percentage to trail (e.g., 1.5 for 1.5%). Required if trail_price not provided.",
       "displayOptions": {
         "show": {
           "type": "trailing_stop"
@@ -191,38 +174,19 @@
       "label": "Time In Force",
       "type": "select",
       "options": [
-        {
-          "id": "day",
-          "name": "Day"
-        },
-        {
-          "id": "gtc",
-          "name": "Good Till Cancelled (GTC)"
-        },
-        {
-          "id": "opg",
-          "name": "Market/Limit on Open (OPG)"
-        },
-        {
-          "id": "cls",
-          "name": "Market/Limit on Close (CLS)"
-        },
-        {
-          "id": "ioc",
-          "name": "Immediate Or Cancel (IOC)"
-        },
-        {
-          "id": "fok",
-          "name": "Fill Or Kill (FOK)"
-        }
+        { "id": "day", "name": "Day" },
+        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
+        { "id": "opg", "name": "Market/Limit on Open (OPG)" },
+        { "id": "cls", "name": "Market/Limit on Close (CLS)" },
+        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" },
+        { "id": "fok", "name": "Fill Or Kill (FOK)" }
       ],
       "default": "day",
+      "description": "How long order stays active. Day expires at market close, GTC stays until filled/cancelled.",
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "stock"
-          ]
+          "asset_type": ["stock"]
         }
       }
     },
@@ -231,29 +195,17 @@
       "label": "Extended Hours",
       "type": "select",
       "options": [
-        {
-          "id": "false",
-          "name": "Regular Hours Only"
-        },
-        {
-          "id": "true",
-          "name": "Include Pre/After Market"
-        }
+        { "id": "false", "name": "Regular Hours Only" },
+        { "id": "true", "name": "Include Pre/After Market" }
       ],
       "default": "false",
       "required": false,
-      "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
+      "description": "Allow execution during pre-market (4am-9:30am) and after-hours (4pm-8pm). Only for limit day orders.",
       "displayOptions": {
         "show": {
-          "type": [
-            "limit"
-          ],
-          "time_in_force": [
-            "day"
-          ],
-          "asset_type": [
-            "stock"
-          ]
+          "type": ["limit"],
+          "time_in_force": ["day"],
+          "asset_type": ["stock"]
         }
       }
     }

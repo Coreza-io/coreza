@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/vwap.svg",
   "category": "Tool",
-  "description": "VWAP indicator to identify average price levels weighted by volume over a time frame",
+  "description": "VWAP (Volume-Weighted Average Price) - average price weighted by volume. Price above VWAP = bullish bias, below = bearish. Key institutional benchmark for intraday trading.",
   "color": "text-indigo-500",
   "size": {
     "width": 320,
@@ -34,20 +34,12 @@
       "label": "VWAP Session Type",
       "type": "select",
       "options": [
-        {
-          "id": "daily",
-          "name": "Daily Session VWAP"
-        },
-        {
-          "id": "weekly",
-          "name": "Weekly VWAP"
-        },
-        {
-          "id": "custom",
-          "name": "Custom Range VWAP"
-        }
+        { "id": "daily", "name": "Daily Session VWAP" },
+        { "id": "weekly", "name": "Weekly VWAP" },
+        { "id": "custom", "name": "Custom Range VWAP" }
       ],
       "default": "daily",
+      "description": "Time period for VWAP calculation. Daily resets each day, Weekly spans the week, Custom uses specified start time.",
       "required": true
     },
     {
@@ -55,12 +47,11 @@
       "label": "Custom Start Time (UTC)",
       "type": "text",
       "placeholder": "e.g. 2025-07-18T09:30:00Z",
+      "description": "Start time for custom VWAP range in ISO 8601 format. Only used when session_type is 'custom'.",
       "required": false,
       "displayOptions": {
         "show": {
-          "session_type": [
-            "custom"
-          ]
+          "session_type": ["custom"]
         }
       }
     }

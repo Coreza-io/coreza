@@ -4,6 +4,7 @@
   "node_type": "sub",
   "category": "Tool",
   "icon": "/assets/icons/YahooFinance.svg",
+  "description": "Fetch historical OHLCV (Open, High, Low, Close, Volume) price data from Yahoo Finance. Returns a dataRef that can be passed to indicator tools.",
   "size": {
     "width": 340,
     "height": 420
@@ -25,6 +26,7 @@
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
+      "description": "Stock ticker symbol (e.g., AAPL for Apple, TSLA for Tesla, MSFT for Microsoft).",
       "required": true
     },
     {
@@ -32,28 +34,14 @@
       "label": "Interval",
       "type": "select",
       "options": [
-        {
-          "id": "1m",
-          "name": "1 min"
-        },
-        {
-          "id": "5m",
-          "name": "5 min"
-        },
-        {
-          "id": "15m",
-          "name": "15 min"
-        },
-        {
-          "id": "60m",
-          "name": "1 hour"
-        },
-        {
-          "id": "1d",
-          "name": "1 day"
-        }
+        { "id": "1m", "name": "1 min" },
+        { "id": "5m", "name": "5 min" },
+        { "id": "15m", "name": "15 min" },
+        { "id": "60m", "name": "1 hour" },
+        { "id": "1d", "name": "1 day" }
       ],
       "placeholder": "Select interval",
+      "description": "Time interval between data points. Use 1d for daily analysis, shorter intervals for intraday.",
       "required": true
     },
     {
@@ -61,16 +49,11 @@
       "label": "Date Mode",
       "type": "select",
       "options": [
-        {
-          "id": "lookback",
-          "name": "Lookback (Bars)"
-        },
-        {
-          "id": "range",
-          "name": "Date Range"
-        }
+        { "id": "lookback", "name": "Lookback (Bars)" },
+        { "id": "range", "name": "Date Range" }
       ],
       "default": "lookback",
+      "description": "How to specify date range. Use 'lookback' (RECOMMENDED) to get most recent N bars from today. Use 'range' only for specific historical periods like backtesting.",
       "required": true
     },
     {
@@ -78,12 +61,12 @@
       "label": "Bars to Fetch",
       "type": "text",
       "placeholder": "e.g. 100",
+      "default": "100",
+      "description": "Number of bars/periods to fetch backwards from today. For example, 90 with interval '1d' gets the last 90 days of daily data.",
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": [
-            "lookback"
-          ]
+          "date_mode": ["lookback"]
         }
       }
     },
@@ -91,13 +74,12 @@
       "key": "start_date",
       "label": "Start Date",
       "type": "text",
-      "placeholder": "e.g. 2023-01-01 or {{ $('BacktestInit').json.start_date }}",
+      "placeholder": "YYYY-MM-DD",
+      "description": "Start date for historical data range. Format: YYYY-MM-DD. Only used when date_mode is 'range'.",
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": [
-            "range"
-          ]
+          "date_mode": ["range"]
         }
       }
     },
@@ -105,13 +87,12 @@
       "key": "end_date",
       "label": "End Date",
       "type": "text",
-      "placeholder": "e.g. 2024-01-01 or {{ $('BacktestInit').json.end_date }}",
+      "placeholder": "YYYY-MM-DD",
+      "description": "End date for historical data range. Format: YYYY-MM-DD. Defaults to today if not specified.",
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": [
-            "range"
-          ]
+          "date_mode": ["range"]
         }
       }
     }

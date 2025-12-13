@@ -5,6 +5,7 @@
   "category": "Tool",
   "subCategory": "Binance",
   "parentNode": "Binance",
+  "description": "Execute crypto trades through Binance. Supports market, limit, stop loss, and take profit orders for spot, futures, and margin.",
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -53,6 +54,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved Binance API credential.",
       "required": true
     },
     {
@@ -60,16 +62,11 @@
       "label": "Environment",
       "type": "select",
       "options": [
-        {
-          "name": "Testnet (Paper)",
-          "id": "testnet"
-        },
-        {
-          "name": "Production (Live)",
-          "id": "live"
-        }
+        { "name": "Testnet (Paper)", "id": "testnet" },
+        { "name": "Production (Live)", "id": "live" }
       ],
       "default": "testnet",
+      "description": "Testnet for simulation/testing, Production for real trading.",
       "required": true
     },
     {
@@ -77,20 +74,12 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        {
-          "name": "Spot",
-          "id": "spot"
-        },
-        {
-          "name": "Futures",
-          "id": "futures"
-        },
-        {
-          "name": "Margin",
-          "id": "margin"
-        }
+        { "name": "Spot", "id": "spot" },
+        { "name": "Futures", "id": "futures" },
+        { "name": "Margin", "id": "margin" }
       ],
       "default": "spot",
+      "description": "Trading type: Spot for regular, Futures for derivatives, Margin for leveraged spot.",
       "required": true
     },
     {
@@ -98,6 +87,7 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. BTCUSDT",
+      "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT).",
       "required": true
     },
     {
@@ -105,15 +95,10 @@
       "label": "Side",
       "type": "select",
       "options": [
-        {
-          "name": "Buy",
-          "id": "BUY"
-        },
-        {
-          "name": "Sell",
-          "id": "SELL"
-        }
+        { "name": "Buy", "id": "BUY" },
+        { "name": "Sell", "id": "SELL" }
       ],
+      "description": "BUY to open long/add, SELL to close/short.",
       "required": true
     },
     {
@@ -121,32 +106,15 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        {
-          "name": "Market",
-          "id": "MARKET"
-        },
-        {
-          "name": "Limit",
-          "id": "LIMIT"
-        },
-        {
-          "name": "Stop Loss",
-          "id": "STOP_LOSS"
-        },
-        {
-          "name": "Stop Loss Limit",
-          "id": "STOP_LOSS_LIMIT"
-        },
-        {
-          "name": "Take Profit",
-          "id": "TAKE_PROFIT"
-        },
-        {
-          "name": "Take Profit Limit",
-          "id": "TAKE_PROFIT_LIMIT"
-        }
+        { "name": "Market", "id": "MARKET" },
+        { "name": "Limit", "id": "LIMIT" },
+        { "name": "Stop Loss", "id": "STOP_LOSS" },
+        { "name": "Stop Loss Limit", "id": "STOP_LOSS_LIMIT" },
+        { "name": "Take Profit", "id": "TAKE_PROFIT" },
+        { "name": "Take Profit Limit", "id": "TAKE_PROFIT_LIMIT" }
       ],
       "default": "MARKET",
+      "description": "Order type: Market executes immediately, Limit at specified price, Stop/TP for conditional orders.",
       "required": true
     },
     {
@@ -154,6 +122,7 @@
       "label": "Quantity",
       "type": "text",
       "placeholder": "Order quantity",
+      "description": "Amount of base asset to trade (e.g., 0.01 BTC for BTCUSDT).",
       "required": true
     },
     {
@@ -161,13 +130,10 @@
       "label": "Price",
       "type": "text",
       "placeholder": "Limit price",
+      "description": "Execution price for limit orders.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -176,14 +142,10 @@
       "label": "Stop Price",
       "type": "text",
       "placeholder": "Stop price",
+      "description": "Trigger price for stop loss/take profit orders.",
       "displayOptions": {
         "show": {
-          "type": [
-            "STOP_LOSS",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "type": ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -192,27 +154,15 @@
       "label": "Time In Force",
       "type": "select",
       "options": [
-        {
-          "name": "GTC (Good Till Cancel)",
-          "id": "GTC"
-        },
-        {
-          "name": "IOC (Immediate Or Cancel)",
-          "id": "IOC"
-        },
-        {
-          "name": "FOK (Fill Or Kill)",
-          "id": "FOK"
-        }
+        { "name": "GTC (Good Till Cancel)", "id": "GTC" },
+        { "name": "IOC (Immediate Or Cancel)", "id": "IOC" },
+        { "name": "FOK (Fill Or Kill)", "id": "FOK" }
       ],
       "default": "GTC",
+      "description": "GTC stays until filled/cancelled, IOC fills partially then cancels, FOK requires full fill or cancel.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -221,11 +171,10 @@
       "label": "Iceberg Quantity",
       "type": "text",
       "placeholder": "Optional iceberg quantity",
+      "description": "Visible portion of a large order. Hides true order size.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT"
-          ]
+          "type": ["LIMIT"]
         }
       }
     },
@@ -234,20 +183,12 @@
       "label": "Response Type",
       "type": "select",
       "options": [
-        {
-          "name": "ACK",
-          "id": "ACK"
-        },
-        {
-          "name": "RESULT",
-          "id": "RESULT"
-        },
-        {
-          "name": "FULL",
-          "id": "FULL"
-        }
+        { "name": "ACK", "id": "ACK" },
+        { "name": "RESULT", "id": "RESULT" },
+        { "name": "FULL", "id": "FULL" }
       ],
-      "default": "RESULT"
+      "default": "RESULT",
+      "description": "Response detail level: ACK (minimal), RESULT (order info), FULL (includes fills)."
     }
   ]
 }

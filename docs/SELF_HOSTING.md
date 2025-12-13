@@ -43,10 +43,6 @@ This guide covers running Coreza on your own infrastructure for production or ad
 - Rotate encryption keys regularly and audit access logs.
 - Monitor Redis, database performance, and worker queues.
 
-## Feature Gates
-- Premium features should be toggled via environment flags or configuration in accordance with the [Feature Comparison](./FEATURE_COMPARISON.md) guide.
-- Validate gating in staging before enabling production users.
-
 ## Troubleshooting
 - Review application logs from frontend, backend, and docker services.
 - Confirm Redis and database connectivity for workflow execution.

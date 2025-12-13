@@ -62,18 +62,6 @@ import redisTriggerRoutes from './routes/redisTrigger';
 import storeRoutes from './routes/store';
 import backtestRoutes from './routes/backtest';
 
-// Import rate limiters
-import {
-  authLimiter,
-  apiLimiter,
-  tradingLimiter,
-  marketLimiter,
-  workflowLimiter,
-  screenerLimiter,
-  aiLimiter,
-  webhookLimiter,
-  credentialsLimiter,
-} from './middleware/rateLimit';
 
 import WebSocketManager from './services/websocketManager';
 import { initializeNodeExecutors } from './nodes';
@@ -119,10 +107,6 @@ app.get('/health', async (req, res) => {
       pendingRunSync: runSyncStats.pendingCount,
     },
     workflowCache: WorkflowCache.getStats(),
-    rateLimit: {
-      store: 'redis',
-      status: 'active',
-    },
   });
 });
 
@@ -136,52 +120,37 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
-// Routes with rate limiting
-logger.info('Setting up routes with rate limiting...');
+// Routes
+logger.info('Setting up routes...');
 
-// Auth endpoints (strictest limits)
-app.use('/oauth', authLimiter, oauthRoutes);
-app.use('/credentials', credentialsLimiter, credentialsRoutes);
+app.use('/oauth', oauthRoutes);
+app.use('/credentials', credentialsRoutes);
+app.use('/broker', brokerRoutes);
+app.use('/openai', openaiRoutes);
+app.use('/aiagent', aiAgentRoutes);
+app.use('/webhooks', webhookRoutes);
+app.use('/market', marketRoutes);
+app.use('/workflows', workflowRoutes);
+app.use('/execute', schedulerRoutes);
+app.use('/screener', screenerRoutes);
+app.use('/indicators', indicatorRoutes);
+app.use('/gmail', gmailRoutes);
+app.use('/finnhub', finnhubRoutes);
+app.use('/whatsapp', whatsappRoutes);
+app.use('/telegram', telegramRoutes);
+app.use('/yahoofinance', yahoofinanceRoutes);
+app.use('/http', httpRoutes);
+app.use('/comparator', comparatorRoutes);
+app.use('/control', controlRoutes);
+app.use('/risk', riskRoutes);
+app.use('/websocket', websocketRoutes);
+app.use('/googlesearch', googleSearchRoutes);
+app.use('/redis', redisRoutes);
+app.use('/redis/trigger', redisTriggerRoutes);
+app.use('/store', storeRoutes);
+app.use('/backtest', backtestRoutes);
 
-// Trading endpoints (high-frequency limits)
-app.use('/broker', tradingLimiter, brokerRoutes);
-
-// AI endpoints (expensive, lower limits)
-app.use('/openai', aiLimiter, openaiRoutes);
-app.use('/aiagent', aiLimiter, aiAgentRoutes);
-
-// Incoming webhooks (external services, generous limits)
-app.use('/webhooks', webhookLimiter, webhookRoutes);
-
-// Market data endpoints
-app.use('/market', marketLimiter, marketRoutes);
-
-// Workflow endpoints
-app.use('/workflows', workflowLimiter, workflowRoutes);
-app.use('/execute', workflowLimiter, schedulerRoutes);
-
-// Screener endpoints
-app.use('/screener', screenerLimiter, screenerRoutes);
-
-// General API endpoints (moderate limits)
-app.use('/indicators', apiLimiter, indicatorRoutes);
-app.use('/gmail', apiLimiter, gmailRoutes);
-app.use('/finnhub', apiLimiter, finnhubRoutes);
-app.use('/whatsapp', apiLimiter, whatsappRoutes);
-app.use('/telegram', apiLimiter, telegramRoutes);
-app.use('/yahoofinance', apiLimiter, yahoofinanceRoutes);
-app.use('/http', apiLimiter, httpRoutes);
-app.use('/comparator', apiLimiter, comparatorRoutes);
-app.use('/control', apiLimiter, controlRoutes);
-app.use('/risk', apiLimiter, riskRoutes);
-app.use('/websocket', apiLimiter, websocketRoutes);
-app.use('/googlesearch', apiLimiter, googleSearchRoutes);
-app.use('/redis', apiLimiter, redisRoutes);
-app.use('/redis/trigger', apiLimiter, redisTriggerRoutes);
-app.use('/store', apiLimiter, storeRoutes);
-app.use('/backtest', apiLimiter, backtestRoutes);
-
-logger.info('All routes mounted with rate limiting');
+logger.info('All routes mounted');
 
 // Error handling
 app.use(errorHandler);

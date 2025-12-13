@@ -325,9 +325,9 @@ export class AIAgentExecutor implements INodeExecutor {
 
           console.log(`✅ [AIAgent] Tool ${toolName} execution completed`);
 
-          // Process output through dataRef pattern
+          // Process output through dataRef pattern (use normalized name for matching)
           const processedOutput = processToolOutput(
-            node.name || node.category || '',
+            normalizedNode.name || node.category || '',
             node.category || '',
             result.data,
             dataContext

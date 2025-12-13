@@ -15,7 +15,6 @@
  */
 
 import express from 'express';
-import { requireTrader } from '../middleware/licenseCheck';
 import { requireAuth } from '../middleware/jwtAuth';
 import { IndicatorService } from '../services/indicators';
 
@@ -75,7 +74,7 @@ router.post('/bollinger', async (req, res, next) => {
 });
 
 // ADX endpoint
-router.post('/adx', requireTrader('Advanced Indicators'), async (req, res, next) => {
+router.post('/adx', async (req, res, next) => {
   try {
     const result = await IndicatorService.calculateADX(req.body);
     res.json(result);
@@ -95,7 +94,7 @@ router.post('/stochastic', async (req, res, next) => {
 });
 
 // Ichimoku Cloud endpoint
-router.post('/ichimoku', requireTrader('Advanced Indicators'), async (req, res, next) => {
+router.post('/ichimoku', async (req, res, next) => {
   try {
     const result = await IndicatorService.calculateIchimoku(req.body);
     res.json(result);
@@ -115,7 +114,7 @@ router.post('/obv', async (req, res, next) => {
 });
 
 // VWAP endpoint
-router.post('/vwap', requireTrader('Advanced Indicators'), async (req, res, next) => {
+router.post('/vwap', async (req, res, next) => {
   try {
     const result = await IndicatorService.calculateVWAP(req.body);
     res.json(result);
@@ -128,7 +127,7 @@ router.post('/vwap', requireTrader('Advanced Indicators'), async (req, res, next
 router.post('/volume-oscillator', async (req, res, next) => {
   try {
     const result = await IndicatorService.calculateVolumeOscillator(req.body);
-    res.json(result);
+  res.json(result);
   } catch (error) {
     next(error);
   }

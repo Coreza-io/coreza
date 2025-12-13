@@ -14,10 +14,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Search,
   Database, 
@@ -36,13 +35,10 @@ import {
   Bot,
   Target,
   Play,
-  Globe,
-  Lock
+  Globe
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { nodeManifest } from "@/nodes/manifest";
-import { useSubscription, SubscriptionTier } from "@/contexts/SubscriptionContext";
-import { UpgradeModal } from "@/components/subscription/UpgradeModal";
 
 // Helper function to get icon component from string
 const getIconComponent = (iconName: string) => {
@@ -75,36 +71,6 @@ interface NodePaletteProps {
 
 export function NodePalette({ onNodeClick }: NodePaletteProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [upgradeInfo, setUpgradeInfo] = useState<{ feature: string; tier: SubscriptionTier } | null>(null);
-  const { tier } = useSubscription();
-
-  const tierRank: Record<SubscriptionTier, number> = useMemo(
-    () => ({
-      free: 0,
-      trader: 1,
-      professional: 2,
-      enterprise: 3,
-    }),
-    []
-  );
-
-  const categoryTiers: Record<string, SubscriptionTier> = useMemo(
-    () => ({
-      Broker: "trader",
-      Communication: "trader",
-      Tool: "trader",
-      Trigger: "trader",
-      webhook: "trader",
-      Screener: "professional",
-      "Risk Management": "professional",
-      LLM: "professional",
-      ChatModel: "professional",
-      AIAgent: "professional",
-    }),
-    []
-  );
-
-  const getCategoryTier = (category: string): SubscriptionTier => categoryTiers[category] || "free";
 
   const filteredNodes = Object.entries(nodeManifest).filter(([nodeType, node]) =>
     node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -114,23 +80,9 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
 
   const categories = Array.from(new Set(Object.values(nodeManifest).map(node => (node as any).category).filter(Boolean)));
 
-  const onDragStart = (event: React.DragEvent, nodeType: string, category: string) => {
-    const requiredTier = getCategoryTier(category);
-    const allowed = tierRank[tier] >= tierRank[requiredTier];
-
-    if (!allowed) {
-      event.preventDefault();
-      setUpgradeInfo({ feature: category, tier: requiredTier });
-      return;
-    }
-
+  const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
     event.dataTransfer.effectAllowed = 'move';
-  };
-
-  const onLockedClick = (category: string) => {
-    const requiredTier = getCategoryTier(category);
-    setUpgradeInfo({ feature: category, tier: requiredTier });
   };
 
   return (
@@ -153,28 +105,11 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
           const categoryNodes = filteredNodes.filter(([nodeType, node]) => (node as any).category === category);
           if (categoryNodes.length === 0) return null;
 
-          const requiredTier = getCategoryTier(category);
-          const lockedCategory = tierRank[tier] < tierRank[requiredTier];
-          const badgeLabel =
-            requiredTier === "professional"
-              ? "Pro"
-              : requiredTier === "enterprise"
-                ? "Enterprise"
-                : requiredTier === "trader"
-                  ? "Trader"
-                  : "Core";
-
           return (
             <div key={category}>
               <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
                 {category}
-                <Badge
-                  variant={lockedCategory ? "secondary" : "outline"}
-                  className={lockedCategory ? "bg-primary/10 text-primary" : "text-muted-foreground"}
-                >
-                  {badgeLabel}
-                </Badge>
               </h4>
               <div className="space-y-2">
                 {categoryNodes.map(([nodeType, node], index) => (
@@ -186,9 +121,9 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                   >
                     <Card
                       className="relative cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"
-                      draggable={!lockedCategory}
-                      onDragStart={(e) => onDragStart(e, nodeType, category)}
-                      onClick={() => lockedCategory ? onLockedClick(category) : onNodeClick?.(nodeType)}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, nodeType)}
+                      onClick={() => onNodeClick?.(nodeType)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start gap-3">
@@ -217,14 +152,6 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                               {(node as any).description || 'No description available'}
                             </p>
                           </div>
-                          {lockedCategory && (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Lock className="h-4 w-4" />
-                              <Badge variant="secondary" className="bg-primary/10 text-primary">
-                                {badgeLabel}
-                              </Badge>
-                            </div>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -256,17 +183,6 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
           </p>
         </div>
       </div>
-
-      <UpgradeModal
-        open={Boolean(upgradeInfo)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setUpgradeInfo(null);
-          }
-        }}
-        feature={upgradeInfo?.feature}
-        requiredTier={upgradeInfo?.tier}
-      />
     </div>
   );
 }

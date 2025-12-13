@@ -16,6 +16,8 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
+import { resolveDataRef, extractPrices } from "../../services/toolOutputProcessor";
+import { DataContext } from "../../services/DataContext";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -31,14 +33,41 @@ export class IndicatorsExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
+      // Get DataContext if available (from AI Agent execution)
+      const dataContext = context?.dataContext as DataContext | undefined;
+
+      // Resolve dataRef to actual data if present
+      let processedParams = { ...resolvedParams };
+      
+      if (dataContext && resolvedParams.dataRef) {
+        console.log(`🔗 [Indicators] Resolving dataRef: ${resolvedParams.dataRef}`);
+        const barsData = resolveDataRef(resolvedParams, dataContext);
+        
+        if (Array.isArray(barsData)) {
+          // Extract close prices from bars for indicator calculation
+          const closePrices = extractPrices(barsData, 'close');
+          processedParams.data = closePrices;
+          processedParams.values = closePrices;
+          
+          // Also provide OHLCV for indicators that need it (e.g., VWAP, OBV)
+          processedParams.bars = barsData;
+          processedParams.open = extractPrices(barsData, 'open');
+          processedParams.high = extractPrices(barsData, 'high');
+          processedParams.low = extractPrices(barsData, 'low');
+          processedParams.close = closePrices;
+          processedParams.volume = barsData.map(bar => bar.volume || bar.v || bar.vol || 0);
+          
+          console.log(`📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`);
+        }
+      }
+
       console.log(
-        `🔢 Executing ${indicatorType} indicator with params:`,
-        resolvedParams
+        `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`
       );
 
       const result = await IndicatorService.calculate(
         indicatorType,
-        resolvedParams
+        processedParams
       );
 
       if (!result.success) {

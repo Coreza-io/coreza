@@ -25,6 +25,8 @@ import {
 } from "@langchain/core/prompts";
 import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
+import { processToolOutput, resolveDataRef } from "../../services/toolOutputProcessor";
+import { DataContext, DataContextManager } from "../../services/DataContext";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -34,9 +36,21 @@ export class AIAgentExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    // Create DataContext for this agent execution
+    const runId = context?.runId || `agent-${node.id}-${Date.now()}`;
+    const workflowId = context?.workflowId || 'unknown';
+    const userId = context?.user_id || context?.userId || 'unknown';
+    
+    const dataContextManager = DataContextManager.getInstance();
+    const dataContext = dataContextManager.getContext({
+      runId,
+      workflowId,
+      userId,
+    });
+
     try {
       console.log(
-        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id}`
+        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (run: ${runId})`
       );
 
       // Get user_id from context
@@ -142,12 +156,12 @@ export class AIAgentExecutor implements INodeExecutor {
         apiKey: apiKey,
       });
 
-      // Create tools from connected tool nodes
+      // Create tools from connected tool nodes - pass dataContext
       const tools = await this.createToolsFromEdges(
         node,
         edges,
         allNodes,
-        context
+        { ...context, dataContext }
       );
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
@@ -179,6 +193,10 @@ export class AIAgentExecutor implements INodeExecutor {
 
       console.log(`✅ [AIAgent] Agent execution completed`);
 
+      // Log memory stats
+      const stats = dataContext.getStats();
+      console.log(`📊 [AIAgent] Memory used: ${stats.entryCount} entries, ${(stats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+
       return {
         success: true,
         data: {
@@ -187,6 +205,10 @@ export class AIAgentExecutor implements INodeExecutor {
             ? result.intermediateSteps
             : undefined,
           input: userPrompt,
+          memoryStats: {
+            entriesUsed: stats.entryCount,
+            memoryUsedMB: Math.round(stats.totalSizeBytes / 1024 / 1024 * 100) / 100,
+          },
         },
       };
     } catch (error: any) {
@@ -195,6 +217,9 @@ export class AIAgentExecutor implements INodeExecutor {
         success: false,
         error: error.message || "AI Agent execution failed",
       };
+    } finally {
+      // Cleanup DataContext after agent execution
+      dataContextManager.destroyContext(runId);
     }
   }
 
@@ -249,6 +274,7 @@ export class AIAgentExecutor implements INodeExecutor {
     const toolName = this.getToolName(node);
     const toolDescription = this.getToolDescription(node);
     const toolSchema = this.getToolSchema(node);
+    const dataContext = context?.dataContext as DataContext | undefined;
 
     return new DynamicStructuredTool<any, any, string>({
       name: toolName,
@@ -261,6 +287,9 @@ export class AIAgentExecutor implements INodeExecutor {
             input
           );
 
+          // Resolve any dataRef inputs to actual data
+          const resolvedInput = resolveDataRef(input, dataContext);
+
           // Get the executor for this node category
           const { getNodeExecutor } = await import("../registry");
           const executor = getNodeExecutor(node.category);
@@ -271,8 +300,8 @@ export class AIAgentExecutor implements INodeExecutor {
             );
           }
 
-          // Execute the node
-          const result = await executor.execute(node, input, context);
+          // Execute the node with resolved input
+          const result = await executor.execute(node, resolvedInput, context);
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");
@@ -280,8 +309,16 @@ export class AIAgentExecutor implements INodeExecutor {
 
           console.log(`✅ [AIAgent] Tool ${toolName} execution completed`);
 
-          // Return the result as a string for the agent
-          return JSON.stringify(result.data);
+          // Process output through dataRef pattern
+          const processedOutput = processToolOutput(
+            node.name || node.category || '',
+            node.category || '',
+            result.data,
+            dataContext
+          );
+
+          // Return processed output (dataRef + summary, not raw data)
+          return JSON.stringify(processedOutput);
         } catch (error: any) {
           console.error(
             `❌ [AIAgent] Tool ${toolName} execution error:`,

@@ -43,13 +43,17 @@ export class IndicatorsExecutor implements INodeExecutor {
         console.log(`🔗 [Indicators] Resolving dataRef: ${resolvedParams.dataRef}`);
         const barsData = resolveDataRef(resolvedParams, dataContext);
         
-        if (Array.isArray(barsData)) {
+      if (Array.isArray(barsData)) {
           // Extract close prices from bars for indicator calculation
           const closePrices = extractPrices(barsData, 'close');
+          
+          // Set fields that IndicatorService expects
+          processedParams.candle_data = barsData;  // For ADX, Stoch, VWAP, OBV, Ichimoku
+          processedParams.prices = closePrices;     // For RSI, EMA, SMA, MACD, BB
+          
+          // Keep existing fields for compatibility
           processedParams.data = closePrices;
           processedParams.values = closePrices;
-          
-          // Also provide OHLCV for indicators that need it (e.g., VWAP, OBV)
           processedParams.bars = barsData;
           processedParams.open = extractPrices(barsData, 'open');
           processedParams.high = extractPrices(barsData, 'high');

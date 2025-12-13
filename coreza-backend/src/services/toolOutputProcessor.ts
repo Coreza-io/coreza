@@ -378,7 +378,8 @@ export function resolveDataRef(
     const data = dataContext.getDataByKey(input.dataRef);
     if (data) {
       console.log(`🔓 [ToolProcessor] Resolved dataRef: ${input.dataRef}`);
-      return data;
+      // Preserve original input, add resolved data
+      return { ...input, resolvedData: data };
     }
     console.warn(`⚠️ [ToolProcessor] dataRef not found: ${input.dataRef}`);
   }
@@ -390,7 +391,9 @@ export function resolveDataRef(
       const data = dataContext.getDataByKey(input[field]);
       if (data) {
         console.log(`🔓 [ToolProcessor] Resolved ${field} dataRef: ${input[field]}`);
-        return data;
+        // FIXED: Preserve original input structure, replace only the field with resolved data
+        // This keeps other parameters like 'window', 'period', etc. intact
+        return { ...input, [field]: data };
       }
       console.warn(`⚠️ [ToolProcessor] ${field} dataRef not found: ${input[field]}`);
     }

@@ -1,0 +1,40 @@
+{
+  "name": "RSITool",
+  "def": "Relative Strength Index technical indicator",
+  "node_type": "sub",
+  "icon": "/assets/icons/rsi.svg",
+  "category": "Tool",
+  "description": "Relative Strength Index indicator",
+  "color": "text-blue-500",
+  "size": {
+    "width": 300,
+    "height": 220
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/rsi",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "window",
+      "label": "EMA Window",
+      "type": "text",
+      "placeholder": "e.g. 20",
+      "default": "20",
+      "required": true
+    }
+  ]
+}

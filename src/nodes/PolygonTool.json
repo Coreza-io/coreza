@@ -1,0 +1,135 @@
+{
+  "name": "PolygonTool",
+  "def": "Stock Fundamentals",
+  "node_type": "sub",
+  "category": "Tool",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Personal Polygon"
+    },
+    {
+      "key": "api_key",
+      "label": "Polygon API Key",
+      "type": "password",
+      "placeholder": "Your Polygon.io API key"
+    }
+  ],
+  "authAction": {
+    "url": "/polygon/auth",
+    "method": "POST"
+  },
+  "icon": "/assets/icons/polygon.svg",
+  "size": {
+    "width": 340,
+    "height": 420
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/polygon/execute",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "ticker_details",
+          "name": "Ticker Details"
+        },
+        {
+          "id": "financials",
+          "name": "Financials (Income/Balance/Cash Flow)"
+        },
+        {
+          "id": "dividends",
+          "name": "Dividends"
+        },
+        {
+          "id": "splits",
+          "name": "Stock Splits"
+        },
+        {
+          "id": "news",
+          "name": "Ticker News"
+        },
+        {
+          "id": "related_companies",
+          "name": "Related Companies"
+        }
+      ],
+      "default": "ticker_details",
+      "required": true
+    },
+    {
+      "key": "ticker",
+      "label": "Ticker Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "select",
+      "options": [
+        {
+          "id": "quarterly",
+          "name": "Quarterly"
+        },
+        {
+          "id": "annual",
+          "name": "Annual"
+        },
+        {
+          "id": "ttm",
+          "name": "TTM (Trailing 12 Months)"
+        }
+      ],
+      "default": "annual",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "financials"
+          ]
+        }
+      }
+    },
+    {
+      "key": "limit",
+      "label": "Limit (Results)",
+      "type": "text",
+      "placeholder": "10",
+      "default": "10",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "news",
+            "dividends",
+            "splits",
+            "financials"
+          ]
+        }
+      }
+    }
+  ]
+}

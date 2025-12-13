@@ -53,6 +53,30 @@ import OpenAIDef from './OpenAI.json'
 import OpenAIChatModelDef from './OpenAIChatModel.json'
 import AIAgentDef from './AIAgent.json'
 import GoogleWebSearchDef from './GoogleWebSearch.json'
+import RSIToolDef from './RSITool.json'
+import EMAToolDef from './EMATool.json'
+import MACDToolDef from './MACDTool.json'
+import BBToolDef from './BBTool.json'
+import ADXToolDef from './ADXTool.json'
+import StochToolDef from './StochTool.json'
+import IchimokuToolDef from './IchimokuTool.json'
+import OBVToolDef from './OBVTool.json'
+import VWAPToolDef from './VWAPTool.json'
+import VolumeOscillatorToolDef from './VolumeOscillatorTool.json'
+import SupportResistanceToolDef from './SupportResistanceTool.json'
+import YahooFinanceToolDef from './YahooFinanceTool.json'
+import PolygonToolDef from './PolygonTool.json'
+import MarketToolDef from './MarketTool.json'
+import AlpacaMarketToolDef from './AlpacaMarketTool.json'
+import BinanceMarketToolDef from './BinanceMarketTool.json'
+import AlpacaTradeToolDef from './AlpacaTradeTool.json'
+import BinanceTradeToolDef from './BinanceTradeTool.json'
+import SchwabTradeToolDef from './SchwabTradeTool.json'
+import DhanTradeToolDef from './DhanTradeTool.json'
+import MathToolDef from './MathTool.json'
+import TransformToolDef from './TransformTool.json'
+import DateToolDef from './DateTool.json'
+import HttpRequestToolDef from './HttpRequestTool.json'
 import AlpacaScreenerDef from './AlpacaScreener.json'
 import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
 import SchwabScreenerDef from './SchwabScreener.json'
@@ -172,6 +196,30 @@ export const nodeManifest = {
   [OpenAIChatModelDef.name]: OpenAIChatModelDef,
   [AIAgentDef.name]: AIAgentDef,
   [GoogleWebSearchDef.name]: GoogleWebSearchDef,
+  [RSIToolDef.name]: RSIToolDef,
+  [EMAToolDef.name]: EMAToolDef,
+  [MACDToolDef.name]: MACDToolDef,
+  [BBToolDef.name]: BBToolDef,
+  [ADXToolDef.name]: ADXToolDef,
+  [StochToolDef.name]: StochToolDef,
+  [IchimokuToolDef.name]: IchimokuToolDef,
+  [OBVToolDef.name]: OBVToolDef,
+  [VWAPToolDef.name]: VWAPToolDef,
+  [VolumeOscillatorToolDef.name]: VolumeOscillatorToolDef,
+  [SupportResistanceToolDef.name]: SupportResistanceToolDef,
+  [YahooFinanceToolDef.name]: YahooFinanceToolDef,
+  [PolygonToolDef.name]: PolygonToolDef,
+  [MarketToolDef.name]: MarketToolDef,
+  [AlpacaMarketToolDef.name]: AlpacaMarketToolDef,
+  [BinanceMarketToolDef.name]: BinanceMarketToolDef,
+  [AlpacaTradeToolDef.name]: AlpacaTradeToolDef,
+  [BinanceTradeToolDef.name]: BinanceTradeToolDef,
+  [SchwabTradeToolDef.name]: SchwabTradeToolDef,
+  [DhanTradeToolDef.name]: DhanTradeToolDef,
+  [MathToolDef.name]: MathToolDef,
+  [TransformToolDef.name]: TransformToolDef,
+  [DateToolDef.name]: DateToolDef,
+  [HttpRequestToolDef.name]: HttpRequestToolDef,
   [AlpacaScreenerDef.name]: AlpacaScreenerDef,
   [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef,
   [SchwabScreenerDef.name]: SchwabScreenerDef,

@@ -1,0 +1,323 @@
+{
+  "name": "AlpacaMarketTool",
+  "def": "Alpaca",
+  "node_type": "sub",
+  "icon": "/assets/icons/alpaca.svg",
+  "category": "Tool",
+  "description": "Execute trades and get market data from Alpaca Markets",
+  "color": "text-green-600",
+  "size": {
+    "width": 340,
+    "height": 360
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Alpaca"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "Your Alpaca API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "placeholder": "Your Alpaca Secret Key"
+    }
+  ],
+  "authAction": {
+    "url": "/broker/alpaca/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/broker/alpaca/{{operation}}",
+    "method": "{{method}}"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "default": "paper",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_account",
+            "get_positions",
+            "get_orders",
+            "cancel_order",
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "stock",
+          "name": "Stock"
+        },
+        {
+          "id": "crypto",
+          "name": "Crypto"
+        }
+      ],
+      "default": "stock",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "get_account",
+          "name": "Get Account",
+          "method": "POST"
+        },
+        {
+          "id": "get_positions",
+          "name": "Get Positions",
+          "method": "POST"
+        },
+        {
+          "id": "get_orders",
+          "name": "Get Orders",
+          "method": "POST"
+        },
+        {
+          "id": "cancel_order",
+          "name": "Cancel Orders",
+          "method": "POST"
+        },
+        {
+          "id": "get_candle",
+          "name": "Get Historical Bars",
+          "method": "POST"
+        },
+        {
+          "id": "get_latest_bar",
+          "name": "Get Latest Bar",
+          "method": "POST"
+        }
+      ],
+      "placeholder": "Select operation",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Stock Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle",
+            "get_latest_bar"
+          ],
+          "asset_type": [
+            "stock",
+            "crypto"
+          ]
+        }
+      }
+    },
+    {
+      "key": "interval",
+      "label": "Interval",
+      "type": "select",
+      "options": [
+        {
+          "id": "1Min",
+          "name": "1 min"
+        },
+        {
+          "id": "5Min",
+          "name": "5 min"
+        },
+        {
+          "id": "15Min",
+          "name": "15 min"
+        },
+        {
+          "id": "1Hour",
+          "name": "1 hour"
+        },
+        {
+          "id": "1Day",
+          "name": "1 day"
+        }
+      ],
+      "placeholder": "Select interval",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    },
+    {
+      "key": "limit",
+      "label": "Bars to Fetch",
+      "type": "text",
+      "placeholder": "e.g. 100",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    },
+    {
+      "key": "feed",
+      "label": "Data Feed",
+      "type": "select",
+      "options": [
+        {
+          "id": "sip",
+          "name": "SIP - All US Exchanges"
+        },
+        {
+          "id": "iex",
+          "name": "IEX - Investors Exchange"
+        },
+        {
+          "id": "delayed_sip",
+          "name": "Delayed SIP (15 min)"
+        },
+        {
+          "id": "otc",
+          "name": "OTC - Over-the-counter"
+        },
+        {
+          "id": "boats",
+          "name": "BOATS - Blue Ocean"
+        },
+        {
+          "id": "overnight",
+          "name": "Overnight Data"
+        }
+      ],
+      "default": "sip",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_latest_bar",
+            "get_candle"
+          ],
+          "asset_type": [
+            "stock"
+          ]
+        }
+      }
+    },
+    {
+      "key": "currency",
+      "label": "Currency",
+      "type": "text",
+      "placeholder": "e.g. USD",
+      "default": "USD",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_latest_bar"
+          ]
+        }
+      }
+    },
+    {
+      "key": "sort",
+      "label": "Sort",
+      "type": "select",
+      "options": [
+        {
+          "id": "asc",
+          "name": "asc"
+        },
+        {
+          "id": "desc",
+          "name": "desc"
+        }
+      ],
+      "default": "asc",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    },
+    {
+      "key": "start",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2024-01-03T00:00:00Z or 2024-01-03",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    },
+    {
+      "key": "end",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2024-01-04T00:00:00Z or 2024-01-04",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    }
+  ]
+}

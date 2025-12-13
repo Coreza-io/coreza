@@ -1,0 +1,357 @@
+{
+  "name": "DateTool",
+  "label": "Date",
+  "def": "Date & Time Operations",
+  "node_type": "sub",
+  "icon": "/assets/icons/if.svg",
+  "category": "Tool",
+  "description": "Perform date/time calculations, formatting, parsing, and timezone conversions",
+  "color": "text-blue-500",
+  "size": {
+    "width": 340,
+    "height": 380
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/comparator/date",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "label": "Current Date/Time",
+          "value": "now"
+        },
+        {
+          "label": "Today (Date Only)",
+          "value": "today"
+        },
+        {
+          "label": "Add",
+          "value": "add"
+        },
+        {
+          "label": "Subtract",
+          "value": "subtract"
+        },
+        {
+          "label": "Format Date",
+          "value": "format"
+        },
+        {
+          "label": "Date Difference",
+          "value": "difference"
+        },
+        {
+          "label": "Start Of",
+          "value": "startOf"
+        },
+        {
+          "label": "End Of",
+          "value": "endOf"
+        },
+        {
+          "label": "Is Before",
+          "value": "isBefore"
+        },
+        {
+          "label": "Is After",
+          "value": "isAfter"
+        },
+        {
+          "label": "Is Same Day",
+          "value": "isSameDay"
+        },
+        {
+          "label": "Extract Component",
+          "value": "extract"
+        },
+        {
+          "label": "Convert Timezone",
+          "value": "convertTimezone"
+        },
+        {
+          "label": "Is Weekend",
+          "value": "isWeekend"
+        },
+        {
+          "label": "Is Day Of Week",
+          "value": "isDayOfWeek"
+        }
+      ],
+      "default": "now",
+      "required": true,
+      "placeholder": "Select date operation to perform"
+    },
+    {
+      "key": "date",
+      "label": "Date",
+      "type": "text",
+      "placeholder": "Leave empty for current date, or ISO format: 2024-01-15",
+      "required": false
+    },
+    {
+      "key": "targetDay",
+      "label": "Day",
+      "type": "select",
+      "options": [
+        {
+          "label": "Sunday",
+          "value": "0"
+        },
+        {
+          "label": "Monday",
+          "value": "1"
+        },
+        {
+          "label": "Tuesday",
+          "value": "2"
+        },
+        {
+          "label": "Wednesday",
+          "value": "3"
+        },
+        {
+          "label": "Thursday",
+          "value": "4"
+        },
+        {
+          "label": "Friday",
+          "value": "5"
+        },
+        {
+          "label": "Saturday",
+          "value": "6"
+        }
+      ],
+      "default": "1",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "isDayOfWeek"
+          ]
+        }
+      }
+    },
+    {
+      "key": "date2",
+      "label": "Second Date",
+      "type": "text",
+      "placeholder": "ISO format: 2024-01-15",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "difference",
+            "isBefore",
+            "isAfter",
+            "isSameDay"
+          ]
+        }
+      }
+    },
+    {
+      "key": "amount",
+      "label": "Amount",
+      "type": "text",
+      "placeholder": "e.g., 5",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "add",
+            "subtract"
+          ]
+        }
+      }
+    },
+    {
+      "key": "unit",
+      "label": "Unit",
+      "type": "select",
+      "options": [
+        {
+          "label": "Seconds",
+          "value": "seconds"
+        },
+        {
+          "label": "Minutes",
+          "value": "minutes"
+        },
+        {
+          "label": "Hours",
+          "value": "hours"
+        },
+        {
+          "label": "Days",
+          "value": "days"
+        },
+        {
+          "label": "Weeks",
+          "value": "weeks"
+        },
+        {
+          "label": "Months",
+          "value": "months"
+        },
+        {
+          "label": "Years",
+          "value": "years"
+        }
+      ],
+      "default": "days",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "add",
+            "subtract",
+            "difference"
+          ]
+        }
+      }
+    },
+    {
+      "key": "Period",
+      "label": "Period",
+      "type": "select",
+      "options": [
+        {
+          "label": "Day",
+          "value": "day"
+        },
+        {
+          "label": "Week",
+          "value": "week"
+        },
+        {
+          "label": "Month",
+          "value": "month"
+        },
+        {
+          "label": "Year",
+          "value": "year"
+        }
+      ],
+      "default": "day",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "startOf",
+            "endOf"
+          ]
+        }
+      }
+    },
+    {
+      "key": "Component",
+      "label": "Component",
+      "type": "select",
+      "options": [
+        {
+          "label": "Year",
+          "value": "year"
+        },
+        {
+          "label": "Month (1-12)",
+          "value": "month"
+        },
+        {
+          "label": "Date (Day of Month)",
+          "value": "date"
+        },
+        {
+          "label": "Day of Week (0-6)",
+          "value": "day"
+        },
+        {
+          "label": "Day of Year",
+          "value": "dayOfYear"
+        },
+        {
+          "label": "Week Number",
+          "value": "week"
+        },
+        {
+          "label": "Hour",
+          "value": "hour"
+        },
+        {
+          "label": "Minute",
+          "value": "minute"
+        },
+        {
+          "label": "Second",
+          "value": "second"
+        }
+      ],
+      "default": "year",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "extract"
+          ]
+        }
+      }
+    },
+    {
+      "key": "formatString",
+      "label": "Format",
+      "type": "text",
+      "placeholder": "e.g., yyyy-MM-dd HH:mm:ss",
+      "default": "yyyy-MM-dd HH:mm:ss",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "now",
+            "today",
+            "add",
+            "subtract",
+            "format",
+            "startOf",
+            "endOf",
+            "convertTimezone"
+          ]
+        }
+      }
+    },
+    {
+      "key": "timezone",
+      "label": "Timezone",
+      "type": "text",
+      "placeholder": "e.g., America/New_York, UTC, Asia/Tokyo",
+      "default": "UTC",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "now",
+            "format",
+            "convertTimezone"
+          ]
+        }
+      }
+    },
+    {
+      "key": "inputFormat",
+      "label": "Input Format",
+      "type": "text",
+      "placeholder": "e.g., dd/MM/yyyy",
+      "required": false
+    }
+  ]
+}

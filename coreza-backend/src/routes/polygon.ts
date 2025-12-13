@@ -77,13 +77,12 @@ router.post("/auth", async (req: Request, res: Response) => {
     }
 
     // Save credentials using CredentialManager
-    await CredentialManager.saveCredential({
+    await CredentialManager.saveCredentials(
       userId,
-      name: credential_name,
-      serviceType: "polygon",
-      clientJson: { api_key },
-      tokenJson: null,
-    });
+      "polygon",
+      credential_name,
+      { api_key }
+    );
 
     return res.json({
       success: true,

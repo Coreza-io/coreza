@@ -349,6 +349,14 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition
   ): string {
+    if (node.description) {
+      return node.description;
+    }
+
+    if ((node as any).def) {
+      return (node as any).def;
+    }
+
     if (definition) {
       return definition.description;
     }
@@ -375,7 +383,10 @@ export class AIAgentExecutor implements INodeExecutor {
 
   private getToolDefinition(node: WorkflowNode): ToolDefinition | undefined {
     const nodeName = node.name || node.category || "node";
-    return TOOL_DEFINITIONS[nodeName];
+    const normalizedName = nodeName.endsWith("Tool")
+      ? nodeName.replace(/Tool$/, "")
+      : nodeName;
+    return TOOL_DEFINITIONS[normalizedName];
   }
 
   private getExecutorCategory(
@@ -383,6 +394,9 @@ export class AIAgentExecutor implements INodeExecutor {
     definition?: ToolDefinition
   ): string {
     const nodeName = node.name || node.category || "node";
+    const normalizedName = nodeName.endsWith("Tool")
+      ? nodeName.replace(/Tool$/, "")
+      : nodeName;
 
     const executorCategoryMap: Record<string, string> = {
       // Market data providers
@@ -431,7 +445,7 @@ export class AIAgentExecutor implements INodeExecutor {
     };
 
     return (
-      executorCategoryMap[nodeName] ||
+      executorCategoryMap[normalizedName] ||
       definition?.category ||
       node.category ||
       "Utility"

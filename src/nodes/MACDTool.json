@@ -1,0 +1,57 @@
+{
+  "name": "MACDTool",
+  "def": "Moving Average Convergence Divergence",
+  "node_type": "sub",
+  "icon": "/assets/icons/macd.svg",
+  "category": "Tool",
+  "subcategory": "Trend Indicators",
+  "description": "MACD (Moving Average Convergence Divergence) indicator to measure momentum and trend strength",
+  "color": "text-purple-500",
+  "size": {
+    "width": 320,
+    "height": 260
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/macd",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "fastPeriod",
+      "label": "Fast EMA Period",
+      "type": "text",
+      "placeholder": "e.g. 12",
+      "default": "12",
+      "required": true
+    },
+    {
+      "key": "slowPeriod",
+      "label": "Slow EMA Period",
+      "type": "text",
+      "placeholder": "e.g. 26",
+      "default": "26",
+      "required": true
+    },
+    {
+      "key": "signalPeriod",
+      "label": "Signal Line EMA",
+      "type": "text",
+      "placeholder": "e.g. 9",
+      "default": "9",
+      "required": true
+    }
+  ]
+}

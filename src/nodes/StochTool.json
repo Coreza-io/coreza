@@ -1,0 +1,56 @@
+{
+  "name": "StochTool",
+  "def": "Stochastic Oscillator",
+  "node_type": "sub",
+  "icon": "/assets/icons/stochastic.svg",
+  "category": "Tool",
+  "description": "Stochastic Oscillator for identifying overbought/oversold conditions and price momentum",
+  "color": "text-green-500",
+  "size": {
+    "width": 340,
+    "height": 260
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/stochastic",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "k_period",
+      "label": "%K Period",
+      "type": "text",
+      "default": "14",
+      "placeholder": "e.g. 14",
+      "required": true
+    },
+    {
+      "key": "d_period",
+      "label": "%D Period (SMA)",
+      "type": "text",
+      "default": "3",
+      "placeholder": "e.g. 3",
+      "required": true
+    },
+    {
+      "key": "smooth",
+      "label": "Smoothing Factor",
+      "type": "text",
+      "default": "3",
+      "placeholder": "e.g. 3",
+      "required": true
+    }
+  ]
+}

@@ -27,6 +27,10 @@ export class ToolExecutor implements INodeExecutor {
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
       const nodename = node.name;
+      const normalizedName =
+        nodename && nodename.endsWith("Tool")
+          ? nodename.replace(/Tool$/, "")
+          : nodename;
 
       console.log(`🔧 [Tool] Executing ${nodename} with input:`, input);
 
@@ -36,10 +40,13 @@ export class ToolExecutor implements INodeExecutor {
           result = await this.executeGoogleWebSearch(node, input, context);
           break;
         default:
-          return {
-            success: false,
-            error: `Unsupported tool node type: ${nodename}`,
-          };
+          result = await this.delegateToolExecution(
+            node,
+            normalizedName,
+            input,
+            context
+          );
+          break;
       }
 
       if (!result.success) {
@@ -166,5 +173,71 @@ export class ToolExecutor implements INodeExecutor {
           "Google Search execution failed",
       };
     }
+  }
+
+  private async delegateToolExecution(
+    node: WorkflowNode,
+    normalizedName: string | undefined,
+    input: NodeInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const executorCategoryMap: Record<string, string> = {
+      YahooFinance: "DataSource",
+      FinnHub: "DataSource",
+      Polygon: "DataSource",
+      Market: "Market",
+      Alpaca: "Market",
+      Binance: "Market",
+      Schwab: "Market",
+      Dhan: "Market",
+
+      RSI: "Indicators",
+      EMA: "Indicators",
+      SMA: "Indicators",
+      MACD: "Indicators",
+      BB: "Indicators",
+      ADX: "Indicators",
+      Stoch: "Indicators",
+      Ichimoku: "Indicators",
+      OBV: "Indicators",
+      VWAP: "Indicators",
+      VolumeOscillator: "Indicators",
+      SupportResistance: "Indicators",
+
+      AlpacaTrade: "Broker",
+      BinanceTrade: "Broker",
+      DhanTrade: "Broker",
+      SchwabTrade: "Broker",
+
+      AlpacaScreener: "Screener",
+      BinanceScreener: "Screener",
+      YahooFinanceScreener: "Screener",
+      SchwabScreener: "Screener",
+
+      HttpRequest: "Utility",
+      Math: "ControlFlow",
+      Transform: "ControlFlow",
+      Date: "ControlFlow",
+      Field: "ControlFlow",
+    };
+
+    const category = executorCategoryMap[normalizedName || ""] || node.category;
+    const { getNodeExecutor } = await import("../registry");
+    const executor = category ? getNodeExecutor(category) : undefined;
+
+    if (!executor) {
+      return {
+        success: false,
+        error: `Unsupported tool node type: ${node.name}`,
+      };
+    }
+
+    const delegatedNode: WorkflowNode = {
+      ...node,
+      name: normalizedName || node.name,
+      category,
+    };
+
+    return executor.execute(delegatedNode, input, context);
   }
 }

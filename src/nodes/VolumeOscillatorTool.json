@@ -1,0 +1,65 @@
+{
+  "name": "VolumeOscillatorTool",
+  "def": "Volume Oscillator",
+  "node_type": "sub",
+  "icon": "/assets/icons/volume-oscillator.svg",
+  "category": "Tool",
+  "description": "Volume Oscillator showing difference between two volume moving averages",
+  "color": "text-purple-500",
+  "size": {
+    "width": 300,
+    "height": 280
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/volume-oscillator",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "short_period",
+      "label": "Short Period",
+      "type": "text",
+      "placeholder": "e.g. 12",
+      "default": "12",
+      "required": true
+    },
+    {
+      "key": "long_period",
+      "label": "Long Period",
+      "type": "text",
+      "placeholder": "e.g. 26",
+      "default": "26",
+      "required": true
+    },
+    {
+      "key": "type",
+      "label": "Calculation Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "percentage",
+          "name": "Percentage (PVO)"
+        },
+        {
+          "id": "absolute",
+          "name": "Absolute Difference"
+        }
+      ],
+      "default": "percentage",
+      "required": true
+    }
+  ]
+}

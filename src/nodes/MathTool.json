@@ -1,0 +1,104 @@
+{
+  "name": "MathTool",
+  "label": "Math",
+  "def": "Basic arithmetic operations",
+  "node_type": "sub",
+  "icon": "/assets/icons/if.svg",
+  "category": "Tool",
+  "description": "Perform math calculations and statistical operations on arrays",
+  "color": "text-yellow-500",
+  "size": {
+    "width": 280,
+    "height": 240
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/comparator/math",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "left",
+      "label": "Value / Array",
+      "type": "text",
+      "placeholder": "For stats: {{ $('Node').json[0:10].value }} | For binary: number",
+      "required": true,
+      "description": "For statistical ops: array or slice. For binary ops: left operand"
+    },
+    {
+      "key": "operator",
+      "label": "Operator",
+      "type": "select",
+      "options": [
+        {
+          "label": "Add",
+          "value": "add"
+        },
+        {
+          "label": "Subtract",
+          "value": "subtract"
+        },
+        {
+          "label": "Multiply",
+          "value": "multiply"
+        },
+        {
+          "label": "Divide",
+          "value": "divide"
+        },
+        {
+          "label": "Average",
+          "value": "avg"
+        },
+        {
+          "label": "Sum",
+          "value": "sum"
+        },
+        {
+          "label": "Min",
+          "value": "min"
+        },
+        {
+          "label": "Max",
+          "value": "max"
+        },
+        {
+          "label": "Count",
+          "value": "count"
+        },
+        {
+          "label": "Median",
+          "value": "median"
+        },
+        {
+          "label": "Standard Deviation",
+          "value": "std"
+        }
+      ],
+      "default": "add",
+      "required": true
+    },
+    {
+      "key": "right",
+      "label": "Right",
+      "type": "text",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "add",
+            "subtract",
+            "multiply",
+            "divide"
+          ]
+        }
+      }
+    }
+  ]
+}

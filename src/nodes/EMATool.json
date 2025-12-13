@@ -1,0 +1,40 @@
+{
+  "name": "EMATool",
+  "def": "Exponential Moving Average",
+  "node_type": "sub",
+  "icon": "/assets/icons/ema.svg",
+  "category": "Tool",
+  "description": "Exponential Moving Average indicator",
+  "color": "text-blue-500",
+  "size": {
+    "width": 300,
+    "height": 220
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/ema",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    },
+    {
+      "key": "window",
+      "label": "EMA Window",
+      "type": "text",
+      "placeholder": "e.g. 20",
+      "default": "20",
+      "required": true
+    }
+  ]
+}

@@ -1,0 +1,253 @@
+{
+  "name": "BinanceTradeTool",
+  "def": "Execute Trade",
+  "node_type": "sub",
+  "category": "Tool",
+  "subCategory": "Binance",
+  "parentNode": "Binance",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Personal Binance"
+    },
+    {
+      "key": "api_key",
+      "label": "Binance API Key",
+      "type": "password",
+      "placeholder": "API Key"
+    },
+    {
+      "key": "secret_key",
+      "label": "Binance Secret Key",
+      "type": "password",
+      "placeholder": "Secret Key"
+    }
+  ],
+  "authAction": {
+    "url": "/broker/binance/auth",
+    "method": "POST"
+  },
+  "icon": "/assets/icons/binance.svg",
+  "size": {
+    "width": 340,
+    "height": 340
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/broker/binance/place_order",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "name": "Testnet (Paper)",
+          "id": "testnet"
+        },
+        {
+          "name": "Production (Live)",
+          "id": "live"
+        }
+      ],
+      "default": "testnet",
+      "required": true
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        {
+          "name": "Spot",
+          "id": "spot"
+        },
+        {
+          "name": "Futures",
+          "id": "futures"
+        },
+        {
+          "name": "Margin",
+          "id": "margin"
+        }
+      ],
+      "default": "spot",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. BTCUSDT",
+      "required": true
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        {
+          "name": "Buy",
+          "id": "BUY"
+        },
+        {
+          "name": "Sell",
+          "id": "SELL"
+        }
+      ],
+      "required": true
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        {
+          "name": "Market",
+          "id": "MARKET"
+        },
+        {
+          "name": "Limit",
+          "id": "LIMIT"
+        },
+        {
+          "name": "Stop Loss",
+          "id": "STOP_LOSS"
+        },
+        {
+          "name": "Stop Loss Limit",
+          "id": "STOP_LOSS_LIMIT"
+        },
+        {
+          "name": "Take Profit",
+          "id": "TAKE_PROFIT"
+        },
+        {
+          "name": "Take Profit Limit",
+          "id": "TAKE_PROFIT_LIMIT"
+        }
+      ],
+      "default": "MARKET",
+      "required": true
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "Order quantity",
+      "required": true
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "text",
+      "placeholder": "Limit price",
+      "displayOptions": {
+        "show": {
+          "type": [
+            "LIMIT",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT_LIMIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "stopPrice",
+      "label": "Stop Price",
+      "type": "text",
+      "placeholder": "Stop price",
+      "displayOptions": {
+        "show": {
+          "type": [
+            "STOP_LOSS",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT",
+            "TAKE_PROFIT_LIMIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "timeInForce",
+      "label": "Time In Force",
+      "type": "select",
+      "options": [
+        {
+          "name": "GTC (Good Till Cancel)",
+          "id": "GTC"
+        },
+        {
+          "name": "IOC (Immediate Or Cancel)",
+          "id": "IOC"
+        },
+        {
+          "name": "FOK (Fill Or Kill)",
+          "id": "FOK"
+        }
+      ],
+      "default": "GTC",
+      "displayOptions": {
+        "show": {
+          "type": [
+            "LIMIT",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT_LIMIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "icebergQty",
+      "label": "Iceberg Quantity",
+      "type": "text",
+      "placeholder": "Optional iceberg quantity",
+      "displayOptions": {
+        "show": {
+          "type": [
+            "LIMIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "newOrderRespType",
+      "label": "Response Type",
+      "type": "select",
+      "options": [
+        {
+          "name": "ACK",
+          "id": "ACK"
+        },
+        {
+          "name": "RESULT",
+          "id": "RESULT"
+        },
+        {
+          "name": "FULL",
+          "id": "FULL"
+        }
+      ],
+      "default": "RESULT"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "OBVTool",
+  "def": "On-Balance Volume",
+  "node_type": "sub",
+  "icon": "/assets/icons/obv.svg",
+  "category": "Tool",
+  "description": "On-Balance Volume indicator to detect volume-driven momentum trends",
+  "color": "text-orange-500",
+  "size": {
+    "width": 300,
+    "height": 220
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
+  ],
+  "action": {
+    "url": "/indicators/obv",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "required": true
+    }
+  ]
+}

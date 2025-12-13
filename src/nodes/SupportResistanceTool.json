@@ -26,8 +26,8 @@
       "key": "candle_data",
       "label": "Candle Data (OHLC)",
       "type": "text",
-      "required": true,
-      "placeholder": "Connect from Market node"
+      "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
+      "required": true
     },
     {
       "key": "method",

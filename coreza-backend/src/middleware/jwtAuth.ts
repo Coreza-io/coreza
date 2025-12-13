@@ -120,21 +120,6 @@ function jwtVerifyMiddleware(options: JwtVerifyOptions = {}) {
   };
 }
 
-// ---- Role-based middleware ----
-function roleCheckMiddleware(role: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (req.user.role !== role) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    return next();
-  };
-}
-
 // ---- Optional: attach user context helper (if you use this pattern) ----
 export function attachUserContext(
   req: Request,
@@ -163,5 +148,4 @@ export function attachUserContext(
 // ---- Exports ----
 export const requireAuth = jwtVerifyMiddleware();
 export const optionalAuth = jwtVerifyMiddleware({ optional: true });
-export const requireRole = (role: string) => roleCheckMiddleware(role);
 export default jwtVerifyMiddleware;

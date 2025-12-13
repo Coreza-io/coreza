@@ -92,7 +92,7 @@ const corsHeaders = {
 ```
 
 #### Rate Limiting
-- API rate limits enforced at Supabase level
+- Rate limiting can be configured at the infrastructure level (nginx, Cloudflare, etc.)
 - Request throttling for sensitive operations
 - Monitoring for unusual access patterns
 

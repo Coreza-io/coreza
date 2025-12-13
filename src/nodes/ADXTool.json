@@ -34,8 +34,7 @@
       "label": "ADX Period",
       "type": "text",
       "placeholder": "e.g. 14",
-      "default": "14",
-      "description": "Period for ADX calculation. Standard value is 14. Returns ADX value plus DI+ and DI- directional indicators.",
+      "description": "Period for ADX calculation. CHOOSE based on timeframe: 7-10 for short-term trend detection, 14 for standard analysis, 20-25 for longer-term trend confirmation. Higher values smooth out noise but lag more.",
       "required": true
     }
   ]

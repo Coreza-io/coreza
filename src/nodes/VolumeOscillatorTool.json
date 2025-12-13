@@ -34,8 +34,7 @@
       "label": "Short Period",
       "type": "text",
       "placeholder": "e.g. 12",
-      "default": "12",
-      "description": "Period for short-term volume moving average. Standard is 12 periods.",
+      "description": "Period for short-term volume MA. CHOOSE based on analysis: 5-10 for quick volume spikes, 12-14 for standard momentum, 20+ for major volume trends.",
       "required": true
     },
     {
@@ -43,8 +42,7 @@
       "label": "Long Period",
       "type": "text",
       "placeholder": "e.g. 26",
-      "default": "26",
-      "description": "Period for long-term volume moving average. Standard is 26 periods. Must be greater than short period.",
+      "description": "Period for long-term volume MA. Must be greater than short period. CHOOSE: 20-26 for standard, 40-50 for major trend confirmation.",
       "required": true
     },
     {
@@ -55,8 +53,7 @@
         { "id": "percentage", "name": "Percentage (PVO)" },
         { "id": "absolute", "name": "Absolute Difference" }
       ],
-      "default": "percentage",
-      "description": "Output format: Percentage shows relative change, Absolute shows volume difference.",
+      "description": "Output format: 'percentage' for comparing across stocks, 'absolute' for raw volume difference analysis.",
       "required": true
     }
   ]

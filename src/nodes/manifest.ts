@@ -77,6 +77,11 @@ import MathToolDef from './MathTool.json'
 import TransformToolDef from './TransformTool.json'
 import DateToolDef from './DateTool.json'
 import HttpRequestToolDef from './HttpRequestTool.json'
+import FinnHubToolDef from './FinnHubTool.json'
+import AlpacaScreenerToolDef from './AlpacaScreenerTool.json'
+import BinanceScreenerToolDef from './BinanceScreenerTool.json'
+import SchwabScreenerToolDef from './SchwabScreenerTool.json'
+import YahooFinanceScreenerToolDef from './YahooFinanceScreenerTool.json'
 import AlpacaScreenerDef from './AlpacaScreener.json'
 import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
 import SchwabScreenerDef from './SchwabScreener.json'
@@ -220,6 +225,11 @@ export const nodeManifest = {
   [TransformToolDef.name]: TransformToolDef,
   [DateToolDef.name]: DateToolDef,
   [HttpRequestToolDef.name]: HttpRequestToolDef,
+  [FinnHubToolDef.name]: FinnHubToolDef,
+  [AlpacaScreenerToolDef.name]: AlpacaScreenerToolDef,
+  [BinanceScreenerToolDef.name]: BinanceScreenerToolDef,
+  [SchwabScreenerToolDef.name]: SchwabScreenerToolDef,
+  [YahooFinanceScreenerToolDef.name]: YahooFinanceScreenerToolDef,
   [AlpacaScreenerDef.name]: AlpacaScreenerDef,
   [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef,
   [SchwabScreenerDef.name]: SchwabScreenerDef,

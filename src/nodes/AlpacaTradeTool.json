@@ -81,31 +81,11 @@
     },
     {
       "key": "symbol",
-      "label": "Stock Symbol",
+      "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. AAPL",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "asset_type": [
-            "stock"
-          ]
-        }
-      }
-    },
-    {
-      "key": "symbol",
-      "label": "Crypto Pair",
-      "type": "text",
-      "placeholder": "e.g. BTC/USD",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "asset_type": [
-            "crypto"
-          ]
-        }
-      }
+      "placeholder": "e.g. AAPL or BTC/USD",
+      "description": "Stock symbol (e.g. AAPL) or crypto pair (e.g. BTC/USD)",
+      "required": true
     },
     {
       "key": "side",

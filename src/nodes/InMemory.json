@@ -1,0 +1,86 @@
+{
+  "name": "InMemory",
+  "def": "InMemory",
+  "node_type": "main",
+  "icon": "store.svg",
+  "category": "Data",
+  "description": "Execution-scoped RAM storage for workflow data. Lives for one run only.",
+  "color": "#10b981",
+  "size": { "width": 240, "height": 180 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "fields": [
+    {
+      "key": "operation",
+      "type": "select",
+      "label": "Operation",
+      "required": true,
+      "options": [
+        { "label": "Store Data", "value": "set" },
+        { "label": "Get Data", "value": "get" },
+        { "label": "Get Data Ref", "value": "get_ref" },
+        { "label": "Check Exists", "value": "has" },
+        { "label": "Delete", "value": "delete" },
+        { "label": "List All Refs", "value": "list" },
+        { "label": "Get Stats", "value": "stats" }
+      ],
+      "default": "set"
+    },
+    {
+      "key": "key",
+      "type": "string",
+      "label": "Key",
+      "required": false,
+      "placeholder": "my_data_key",
+      "displayOptions": {
+        "show": {
+          "operation": ["set", "get", "get_ref", "has", "delete"]
+        }
+      }
+    },
+    {
+      "key": "value",
+      "type": "json",
+      "label": "Value",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
+    },
+    {
+      "key": "data_type",
+      "type": "select",
+      "label": "Data Type",
+      "required": false,
+      "options": [
+        { "label": "Bars/OHLCV", "value": "bars" },
+        { "label": "Quotes", "value": "quotes" },
+        { "label": "Fundamentals", "value": "fundamentals" },
+        { "label": "Indicators", "value": "indicators" },
+        { "label": "Custom", "value": "custom" }
+      ],
+      "default": "custom",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
+    },
+    {
+      "key": "source",
+      "type": "string",
+      "label": "Source",
+      "required": false,
+      "placeholder": "alpaca",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
+    }
+  ]
+}

@@ -35,7 +35,7 @@
       "type": "text",
       "placeholder": "e.g. 14",
       "default": "14",
-      "description": "Number of periods for RSI calculation. Standard is 14 periods. Shorter periods (7-9) are more sensitive, longer periods (21-25) are smoother.",
+      "description": "Number of periods for RSI calculation. CHOOSE based on analysis timeframe and sensitivity needed: Day trading/short-term use 7-9 (more sensitive, quicker signals), swing trading use 14 (standard), long-term/position trading use 21-28 (smoother, fewer false signals). For volatile stocks, use longer periods to reduce noise.",
       "required": true
     }
   ]

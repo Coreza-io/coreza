@@ -39,7 +39,7 @@
         { "value": "historical", "label": "Historical High/Low" }
       ],
       "default": "pivot",
-      "description": "Method for calculating levels: Pivot uses mathematical formulas, Swing detects price reversals, Historical uses extreme prices.",
+      "description": "Method for calculating levels. CHOOSE based on stock behavior: 'pivot' for range-bound stocks, 'swing' for trending/volatile stocks with clear reversals, 'historical' for finding extreme levels.",
       "required": true
     },
     {
@@ -48,7 +48,7 @@
       "type": "text",
       "default": "20",
       "placeholder": "e.g. 20",
-      "description": "Number of periods to analyze for finding support/resistance levels."
+      "description": "Number of periods to analyze. CALCULATE based on data timeframe: For 3-month daily data use 20-30, for 6-month use 40-60, for 1-year use 50-100. Consider the stock's typical price cycle length."
     },
     {
       "key": "sensitivity",
@@ -56,7 +56,7 @@
       "type": "text",
       "default": "1.0",
       "placeholder": "e.g. 1.0",
-      "description": "Percentage threshold for grouping nearby levels. Higher values merge more levels together."
+      "description": "Percentage threshold for grouping nearby levels. CALCULATE from volatility: Check the stock's average daily price movement. Low volatility (<2% daily) use 0.5-1.0%, medium volatility (2-4%) use 1.0-2.0%, high volatility (>4%) use 2.0-3.0%."
     },
     {
       "key": "num_levels",
@@ -64,7 +64,7 @@
       "type": "text",
       "default": "3",
       "placeholder": "e.g. 3",
-      "description": "Maximum number of support and resistance levels to return."
+      "description": "Maximum support and resistance levels to return. DECIDE based on analysis goal: For quick buy/sell decision use 2-3, for detailed technical analysis use 4-5, for identifying major zones use 2."
     }
   ]
 }

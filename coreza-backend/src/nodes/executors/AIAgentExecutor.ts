@@ -168,9 +168,28 @@ export class AIAgentExecutor implements INodeExecutor {
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
 
-      // Create agent prompt
+      // Build tool list for enhanced system prompt
+      const toolList = tools.map(t => `- ${t.name}: ${t.description}`).join('\n');
+      
+      // Enhance system prompt with tool listing and intelligent parameter guidance
+      const enhancedSystemPrompt = `${systemPrompt}
+
+AVAILABLE TOOLS (use ALL of them for comprehensive analysis):
+${toolList}
+
+CRITICAL INSTRUCTIONS:
+- For each tool, DO NOT just use default values blindly
+- ANALYZE the fetched data first (price range, volatility, data points count)
+- CALCULATE appropriate parameter values based on:
+  * The amount of data available (more data = can use longer lookbacks)
+  * The stock's volatility (check daily % moves in the data)
+  * The user's analysis timeframe (short-term vs long-term)
+  * The specific question being asked
+- EXPLAIN your parameter choices in your final response`;
+
+      // Create agent prompt with enhanced system prompt
       const prompt = ChatPromptTemplate.fromMessages([
-        ["system", systemPrompt],
+        ["system", enhancedSystemPrompt],
         ["human", "{input}"],
         new MessagesPlaceholder("agent_scratchpad"),
       ]);

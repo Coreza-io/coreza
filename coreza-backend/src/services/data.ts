@@ -19,9 +19,7 @@ import yahooFinance from "yahoo-finance2";
 import type { Quote } from "yahoo-finance2/dist/esm/src/modules/quote";
 import type { SearchResult } from "yahoo-finance2/dist/esm/src/modules/search";
 import type { TrendingSymbolsResult } from "yahoo-finance2/dist/esm/src/modules/trendingSymbols";
-import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
-import DecryptionUtil from "../utils/decryption";
 import CredentialManager from "../utils/credentialManager";
 
 export interface DataInput {
@@ -44,70 +42,21 @@ abstract class BaseDataService {
     userId: string,
     credentialId: string
   ): Promise<any> {
-    try {
-      const { data, error } = await supabase
-        .from("user_credentials")
-        .select("client_json, token_json")
-        .eq("user_id", userId)
-        .eq("name", credentialId)
-        .eq("service_type", this.serviceName)
-        .single();
+    const { credentials } = await CredentialManager.getCredentials(
+      userId,
+      this.serviceName,
+      credentialId
+    );
 
-      if (error || !data) {
-        throw createError(`${this.serviceName} credentials not found`, 404);
-      }
-
-      // Decrypt credentials before returning
-      const decryptedClientJson = { ...data.client_json };
-      const decryptedTokenJson = data.token_json ? { ...data.token_json } : {};
-
-      try {
-        // Decrypt sensitive fields if they appear to be encrypted
-        if (
-          decryptedClientJson.api_key &&
-          DecryptionUtil.isEncrypted(decryptedClientJson.api_key)
-        ) {
-          decryptedClientJson.api_key = await DecryptionUtil.decrypt(
-            decryptedClientJson.api_key
-          );
-        }
-
-        if (
-          decryptedClientJson.secret_key &&
-          DecryptionUtil.isEncrypted(decryptedClientJson.secret_key)
-        ) {
-          decryptedClientJson.secret_key = await DecryptionUtil.decrypt(
-            decryptedClientJson.secret_key
-          );
-        }
-
-        if (
-          decryptedTokenJson.access_token &&
-          DecryptionUtil.isEncrypted(decryptedTokenJson.access_token)
-        ) {
-          decryptedTokenJson.access_token = await DecryptionUtil.decrypt(
-            decryptedTokenJson.access_token
-          );
-        }
-      } catch (decryptError) {
-        console.error(
-          `Error decrypting ${this.serviceName} credentials:`,
-          decryptError
-        );
-        throw new Error(`Failed to decrypt ${this.serviceName} credentials`);
-      }
-
-      return {
-        ...decryptedClientJson,
-        ...decryptedTokenJson,
-      };
-    } catch (error) {
-      throw new Error(
-        `Failed to get ${this.serviceName} credentials: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    if (!credentials) {
+      throw createError(`${this.serviceName} credentials not found`, 404);
     }
+
+    // Merge client_json and token_json into a flat object for backward compatibility
+    return {
+      ...credentials.client_json,
+      ...credentials.token_json,
+    };
   }
 
   abstract execute(operation: string, input: DataInput): Promise<DataResult>;

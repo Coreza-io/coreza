@@ -302,18 +302,6 @@ export function AppSidebar() {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
-            {/* Notifications */}
-            <DropdownMenuItem
-              onClick={() => navigate('/dashboard/notifications')}
-              className="cursor-pointer"
-            >
-              <Bell className="h-4 w-4 mr-2" />
-              Notifications
-              <span className="ml-auto text-xs bg-destructive text-destructive-foreground rounded-full px-2 py-0.5">
-                3
-              </span>
-            </DropdownMenuItem>
-
             <DropdownMenuSeparator />
 
             {/* Profile */}

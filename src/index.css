@@ -715,50 +715,6 @@
     }
   }
 
-  /* Landing page specific styles */
-  .landing-grid-pattern {
-    background-image:
-      linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
-
-  .hero-glow {
-    box-shadow:
-      0 0 80px hsl(217 91% 60% / 0.3),
-      0 0 40px hsl(217 91% 60% / 0.2);
-  }
-
-  /* Animated gradient text */
-  .gradient-text {
-    background: linear-gradient(90deg,
-        hsl(217 91% 60%),
-        hsl(280 80% 60%),
-        hsl(217 91% 60%));
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: gradient-shift 3s ease infinite;
-  }
-
-  @keyframes gradient-shift {
-
-    0%,
-    100% {
-      background-position: 0% center;
-    }
-
-    50% {
-      background-position: 100% center;
-    }
-  }
-
-  .animate-gradient-shift {
-    background-size: 200% auto;
-    animation: gradient-shift 3s ease infinite;
-  }
-
   /* Metallic gradient utility classes - Dark mode only */
   .dark .bg-gradient-indicators {
     background: var(--gradient-indicators);

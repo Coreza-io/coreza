@@ -371,6 +371,9 @@ export class AIAgentExecutor implements INodeExecutor {
     switch (field.type) {
       case "number":
         zodType = z.number();
+        if (field.default !== undefined) {
+          zodType = zodType.default(Number(field.default));
+        }
         break;
       case "select": {
         const options = field.options?.map((o: any) => o.id || o.value) || [];
@@ -379,16 +382,25 @@ export class AIAgentExecutor implements INodeExecutor {
         } else {
           zodType = z.string();
         }
+        if (field.default !== undefined) {
+          zodType = zodType.default(field.default);
+        }
         break;
       }
       case "checkbox":
         zodType = z.boolean();
+        if (field.default !== undefined) {
+          zodType = zodType.default(Boolean(field.default));
+        }
         break;
       case "text":
       case "password":
       case "textarea":
       default:
         zodType = z.string();
+        if (field.default !== undefined) {
+          zodType = zodType.default(String(field.default));
+        }
     }
 
     const desc = field.description || field.placeholder || field.label;

@@ -1,0 +1,52 @@
+{
+  "name": "FinnHubTool",
+  "def": "FinnHub Market Data",
+  "node_type": "sub",
+  "icon": "/assets/icons/FinnHub.svg",
+  "category": "Tool",
+  "subCategory": "FinnHub",
+  "description": "Fetch real-time quotes and market data from FinnHub",
+  "color": "text-orange-500",
+  "size": { "width": 340, "height": 280 },
+  "handles": [
+    { "type": "source", "position": "top", "id": "tool" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Personal FinnHub"
+    },
+    {
+      "key": "api_key",
+      "label": "FinnHub API Key",
+      "type": "password",
+      "placeholder": "API Secret key"
+    }
+  ],
+  "authAction": { "url": "/finnhub/auth", "method": "POST" },
+  "action": {
+    "url": "/finnhub/get-quote",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "ticker",
+      "label": "Ticker Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "description": "Stock ticker symbol to fetch quote for",
+      "required": true
+    }
+  ]
+}

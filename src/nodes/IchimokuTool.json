@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/ichimoku.svg",
   "category": "Tool",
-  "description": "Ichimoku Cloud indicator to visualize trend, momentum, and support/resistance levels",
+  "description": "Ichimoku Cloud - comprehensive indicator showing trend, momentum, and support/resistance. Price above cloud = bullish, below = bearish. Cloud acts as support/resistance.",
   "color": "text-red-500",
   "size": {
     "width": 340,
@@ -34,6 +34,7 @@
       "label": "Conversion Line Period (Tenkan-sen)",
       "type": "text",
       "default": "9",
+      "description": "Period for Tenkan-sen (Conversion Line). Standard is 9. Short-term trend indicator.",
       "required": true
     },
     {
@@ -41,6 +42,7 @@
       "label": "Base Line Period (Kijun-sen)",
       "type": "text",
       "default": "26",
+      "description": "Period for Kijun-sen (Base Line). Standard is 26. Medium-term trend and support/resistance.",
       "required": true
     },
     {
@@ -48,6 +50,7 @@
       "label": "Leading Span B Period (Senkou Span B)",
       "type": "text",
       "default": "52",
+      "description": "Period for Senkou Span B (cloud boundary). Standard is 52. Long-term trend indicator.",
       "required": true
     },
     {
@@ -55,6 +58,7 @@
       "label": "Displacement (Chikou Span)",
       "type": "text",
       "default": "26",
+      "description": "Displacement for Chikou Span (Lagging Span). Standard is 26. Shows momentum confirmation.",
       "required": true
     }
   ]

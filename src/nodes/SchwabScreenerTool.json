@@ -5,7 +5,7 @@
   "icon": "/assets/icons/schwab.svg",
   "category": "Tool",
   "subCategory": "Schwab",
-  "description": "Screen stocks using Schwab API - Movers, Fundamentals, and Instrument Search",
+  "description": "Screen stocks using Schwab API. Get fundamentals (quote, financial data, reference info), market movers by index, search instruments, and lookup by CUSIP.",
   "color": "text-blue-600",
   "size": { "width": 360, "height": 400 },
   "handles": [
@@ -23,6 +23,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select Schwab credential",
+      "description": "Your saved Schwab OAuth credential.",
       "required": true
     },
     {
@@ -37,14 +38,14 @@
       ],
       "default": "get_fundamentals",
       "required": true,
-      "description": "Screener operation to perform"
+      "description": "Screener operation: Fundamentals enriches symbols with data, Movers shows top gainers/losers, Search finds symbols, CUSIP looks up by ID."
     },
     {
       "key": "symbols",
       "label": "Symbols (comma-separated)",
       "type": "text",
       "placeholder": "AAPL,TSLA,MSFT",
-      "description": "Comma-separated list of stock symbols",
+      "description": "Comma-separated list of stock symbols to get fundamentals for.",
       "required": true,
       "displayOptions": {
         "show": {
@@ -64,6 +65,7 @@
         { "id": "reference", "name": "Reference Only" }
       ],
       "default": "quote,fundamental,reference",
+      "description": "Types of data to return: Quote (price data), Fundamental (financial ratios), Reference (company info).",
       "displayOptions": {
         "show": {
           "operation": ["get_fundamentals"]
@@ -80,6 +82,7 @@
         { "id": "$SPX.X", "name": "S&P 500 ($SPX.X)" }
       ],
       "default": "$DJI",
+      "description": "Market index to get movers for.",
       "displayOptions": {
         "show": {
           "operation": ["movers"]
@@ -95,6 +98,7 @@
         { "id": "down", "name": "Losers (Down)" }
       ],
       "default": "up",
+      "description": "Filter for gainers (up) or losers (down).",
       "displayOptions": {
         "show": {
           "operation": ["movers"]
@@ -110,6 +114,7 @@
         { "id": "value", "name": "Dollar Value Change" }
       ],
       "default": "percent",
+      "description": "Rank movers by percentage change or absolute dollar change.",
       "displayOptions": {
         "show": {
           "operation": ["movers"]
@@ -121,7 +126,7 @@
       "label": "Symbol or Pattern",
       "type": "text",
       "placeholder": "AAPL or APP*",
-      "description": "Symbol or pattern for instrument search",
+      "description": "Symbol or pattern for instrument search. Use * as wildcard (e.g., APP* matches AAPL, APPS, etc.).",
       "required": true,
       "displayOptions": {
         "show": {
@@ -141,6 +146,7 @@
         { "id": "fundamental", "name": "Fundamental" }
       ],
       "default": "symbol-search",
+      "description": "Search method: symbol/description search or regex pattern matching.",
       "displayOptions": {
         "show": {
           "operation": ["get_instruments"]
@@ -152,7 +158,7 @@
       "label": "CUSIP",
       "type": "text",
       "placeholder": "037833100 (AAPL CUSIP)",
-      "description": "CUSIP identifier for the instrument",
+      "description": "CUSIP identifier (9-character security ID used by US/Canada).",
       "required": true,
       "displayOptions": {
         "show": {

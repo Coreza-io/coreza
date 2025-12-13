@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/ema.svg",
   "category": "Tool",
-  "description": "Exponential Moving Average indicator",
+  "description": "Exponential Moving Average - weighted moving average giving more importance to recent prices. Used to identify trend direction and support/resistance levels.",
   "color": "text-blue-500",
   "size": {
     "width": 300,
@@ -31,10 +31,11 @@
     },
     {
       "key": "window",
-      "label": "EMA Window",
+      "label": "EMA Period",
       "type": "text",
       "placeholder": "e.g. 20",
       "default": "20",
+      "description": "Number of periods for EMA calculation. Common values: 9 (short-term), 20 (medium-term), 50 (long-term), 200 (very long-term trend).",
       "required": true
     }
   ]

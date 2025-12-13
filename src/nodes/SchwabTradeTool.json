@@ -5,7 +5,7 @@
   "icon": "/assets/icons/schwab.svg",
   "category": "Tool",
   "subCategory": "Schwab",
-  "description": "Execute trades through Charles Schwab",
+  "description": "Execute stock trades through Charles Schwab. Supports market, limit, stop, and stop-limit orders with buy, sell, short, and cover actions.",
   "color": "text-blue-500",
   "size": {
     "width": 340,
@@ -67,6 +67,7 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "description": "Your saved Schwab OAuth credential.",
       "required": true
     },
     {
@@ -78,13 +79,14 @@
       "optionsApiUrl": "/broker/schwab/get_account_numbers",
       "dependsOn": "credential_id",
       "placeholder": "Select an account",
-      "description": "Select the Schwab account for trading"
+      "description": "Select the Schwab brokerage account for trading."
     },
     {
       "key": "symbol",
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
+      "description": "Stock ticker symbol to trade.",
       "required": true
     },
     {
@@ -92,24 +94,13 @@
       "label": "Action",
       "type": "select",
       "options": [
-        {
-          "id": "BUY",
-          "name": "Buy"
-        },
-        {
-          "id": "SELL",
-          "name": "Sell"
-        },
-        {
-          "id": "BUY_TO_COVER",
-          "name": "Buy to Cover"
-        },
-        {
-          "id": "SELL_SHORT",
-          "name": "Sell Short"
-        }
+        { "id": "BUY", "name": "Buy" },
+        { "id": "SELL", "name": "Sell" },
+        { "id": "BUY_TO_COVER", "name": "Buy to Cover" },
+        { "id": "SELL_SHORT", "name": "Sell Short" }
       ],
       "default": "BUY",
+      "description": "Trade action: Buy/Sell for regular positions, Short/Cover for short selling.",
       "required": true
     },
     {
@@ -117,6 +108,7 @@
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 10",
+      "description": "Number of shares to trade.",
       "required": true
     },
     {
@@ -124,24 +116,13 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        {
-          "id": "MARKET",
-          "name": "Market"
-        },
-        {
-          "id": "LIMIT",
-          "name": "Limit"
-        },
-        {
-          "id": "STOP",
-          "name": "Stop"
-        },
-        {
-          "id": "STOP_LIMIT",
-          "name": "Stop Limit"
-        }
+        { "id": "MARKET", "name": "Market" },
+        { "id": "LIMIT", "name": "Limit" },
+        { "id": "STOP", "name": "Stop" },
+        { "id": "STOP_LIMIT", "name": "Stop Limit" }
       ],
       "default": "MARKET",
+      "description": "Order execution type: Market fills immediately, Limit at specified price, Stop triggers at price.",
       "required": true
     },
     {
@@ -149,12 +130,10 @@
       "label": "Limit Price",
       "type": "text",
       "placeholder": "Required for limit orders",
+      "description": "Price for limit/stop-limit orders.",
       "displayOptions": {
         "show": {
-          "orderType": [
-            "LIMIT",
-            "STOP_LIMIT"
-          ]
+          "orderType": ["LIMIT", "STOP_LIMIT"]
         }
       }
     },
@@ -163,20 +142,12 @@
       "label": "Duration",
       "type": "select",
       "options": [
-        {
-          "id": "DAY",
-          "name": "Day"
-        },
-        {
-          "id": "GOOD_TILL_CANCEL",
-          "name": "Good Till Cancel"
-        },
-        {
-          "id": "FILL_OR_KILL",
-          "name": "Fill or Kill"
-        }
+        { "id": "DAY", "name": "Day" },
+        { "id": "GOOD_TILL_CANCEL", "name": "Good Till Cancel" },
+        { "id": "FILL_OR_KILL", "name": "Fill or Kill" }
       ],
       "default": "DAY",
+      "description": "How long order stays active: Day expires at close, GTC until filled/cancelled.",
       "required": true
     },
     {
@@ -184,20 +155,12 @@
       "label": "Session",
       "type": "select",
       "options": [
-        {
-          "id": "NORMAL",
-          "name": "Normal"
-        },
-        {
-          "id": "AM",
-          "name": "Pre-Market"
-        },
-        {
-          "id": "PM",
-          "name": "After-Hours"
-        }
+        { "id": "NORMAL", "name": "Normal" },
+        { "id": "AM", "name": "Pre-Market" },
+        { "id": "PM", "name": "After-Hours" }
       ],
-      "default": "NORMAL"
+      "default": "NORMAL",
+      "description": "Trading session: Normal (9:30am-4pm), AM (pre-market), PM (after-hours)."
     }
   ]
 }

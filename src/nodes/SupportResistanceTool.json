@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/support-resistance.svg",
   "category": "Tool",
-  "description": "Calculate support and resistance levels using multiple methods",
+  "description": "Calculate support and resistance levels - key price levels where buying/selling pressure historically occurs. Useful for entry/exit points and stop-loss placement.",
   "color": "text-purple-500",
   "size": {
     "width": 360,
@@ -34,20 +34,12 @@
       "label": "Calculation Method",
       "type": "select",
       "options": [
-        {
-          "value": "pivot",
-          "label": "Pivot Points (Classic)"
-        },
-        {
-          "value": "swing",
-          "label": "Swing High/Low (Price Action)"
-        },
-        {
-          "value": "historical",
-          "label": "Historical High/Low"
-        }
+        { "value": "pivot", "label": "Pivot Points (Classic)" },
+        { "value": "swing", "label": "Swing High/Low (Price Action)" },
+        { "value": "historical", "label": "Historical High/Low" }
       ],
       "default": "pivot",
+      "description": "Method for calculating levels: Pivot uses mathematical formulas, Swing detects price reversals, Historical uses extreme prices.",
       "required": true
     },
     {
@@ -55,21 +47,24 @@
       "label": "Lookback Period",
       "type": "text",
       "default": "20",
-      "placeholder": "e.g. 20"
+      "placeholder": "e.g. 20",
+      "description": "Number of periods to analyze for finding support/resistance levels."
     },
     {
       "key": "sensitivity",
       "label": "Sensitivity (%)",
       "type": "text",
       "default": "1.0",
-      "placeholder": "e.g. 1.0"
+      "placeholder": "e.g. 1.0",
+      "description": "Percentage threshold for grouping nearby levels. Higher values merge more levels together."
     },
     {
       "key": "num_levels",
       "label": "Number of Levels",
       "type": "text",
       "default": "3",
-      "placeholder": "e.g. 3"
+      "placeholder": "e.g. 3",
+      "description": "Maximum number of support and resistance levels to return."
     }
   ]
 }

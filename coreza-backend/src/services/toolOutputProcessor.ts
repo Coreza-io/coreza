@@ -74,7 +74,7 @@ export interface MarketDataSummary {
  */
 const MARKET_DATA_NODES = [
   'Market',
-  'YahooFinance', 
+  'YahooFinance',
   'Polygon',
   'FinnHub',
   'Alpaca',
@@ -99,6 +99,20 @@ const INDICATOR_NODES = [
   'Ichimoku',
   'VolumeOscillator',
   'SupportResistance',
+];
+
+const SCREENER_NODES = [
+  'AlpacaScreener',
+  'BinanceScreener',
+  'YahooFinanceScreener',
+  'SchwabScreener',
+];
+
+const TRADE_NODES = [
+  'AlpacaTrade',
+  'BinanceTrade',
+  'DhanTrade',
+  'SchwabTrade',
 ];
 
 /**
@@ -189,6 +203,46 @@ function createMarketDataSummary(bars: any[], output: any): MarketDataSummary {
   };
 }
 
+function createScreenerSummary(output: any) {
+  const results = Array.isArray(output)
+    ? output
+    : Array.isArray(output?.results)
+    ? output.results
+    : [];
+
+  return {
+    count: results.length,
+    samples: results.slice(0, 5),
+    meta: output?.meta || output?.summary,
+  };
+}
+
+function createTradeSummary(output: any) {
+  const orders = Array.isArray(output)
+    ? output
+    : Array.isArray(output?.orders)
+    ? output.orders
+    : output
+    ? [output]
+    : [];
+
+  const normalizedOrders = orders.map((order: any) => ({
+    id: order.id || order.order_id || order.client_order_id,
+    symbol: order.symbol || order.asset || order.ticker,
+    side: order.side,
+    type: order.type,
+    status: order.status || order.state,
+    filled_qty: order.filled_qty || order.filledQty,
+    qty: order.qty || order.quantity,
+    price: order.limit_price || order.price,
+  }));
+
+  return {
+    orders: normalizedOrders,
+    count: normalizedOrders.length,
+  };
+}
+
 /**
  * Process tool output to use dataRef pattern
  * 
@@ -266,6 +320,32 @@ export function processToolOutput(
       summary: output,
       cached: false,
       type: 'indicator',
+    };
+  }
+
+  // Screeners: summarize tickers and keep payload small
+  const isScreenerNode = SCREENER_NODES.some(
+    n => nodeName === n || nodeCategory === n
+  );
+
+  if (isScreenerNode) {
+    return {
+      summary: createScreenerSummary(output),
+      cached: false,
+      type: 'screener',
+    };
+  }
+
+  // Trades: return concise order summaries
+  const isTradeNode = TRADE_NODES.some(
+    n => nodeName === n || nodeCategory === n
+  );
+
+  if (isTradeNode) {
+    return {
+      summary: createTradeSummary(output),
+      cached: false,
+      type: 'trade',
     };
   }
 

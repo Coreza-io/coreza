@@ -27,6 +27,7 @@ import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
 import { processToolOutput, resolveDataRef } from "../../services/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../services/DataContext";
+import { TOOL_DEFINITIONS, ToolDefinition } from "../../services/toolDefinitions";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -272,9 +273,11 @@ export class AIAgentExecutor implements INodeExecutor {
     context?: any
   ): DynamicStructuredTool {
     const toolName = this.getToolName(node);
-    const toolDescription = this.getToolDescription(node);
-    const toolSchema = this.getToolSchema(node);
+    const definition = this.getToolDefinition(node);
+    const toolDescription = this.getToolDescription(node, definition);
+    const toolSchema = this.getToolSchema(node, definition);
     const dataContext = context?.dataContext as DataContext | undefined;
+    const executorCategory = this.getExecutorCategory(node, definition);
 
     return new DynamicStructuredTool<any, any, string>({
       name: toolName,
@@ -292,7 +295,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
           // Get the executor for this node category
           const { getNodeExecutor } = await import("../registry");
-          const executor = getNodeExecutor(node.category);
+          const executor = getNodeExecutor(executorCategory);
 
           if (!executor) {
             throw new Error(
@@ -342,62 +345,96 @@ export class AIAgentExecutor implements INodeExecutor {
   /**
    * Generate a tool description from a node
    */
-  private getToolDescription(node: WorkflowNode): string {
-    // Map node types to descriptions
-    const descriptionMap: Record<string, string> = {
-      HttpRequest: "Make HTTP requests to external APIs",
-      Market: "Get market data and stock prices",
-      YahooFinance: "Get financial data from Yahoo Finance",
-      FinnHub: "Get financial news and data from FinnHub",
-      GoogleWebSearch:
-        "Search the web using Google to find current information, news, and web pages",
-      Math: "Perform mathematical calculations",
-      Transform: "Transform and manipulate data",
-      Gmail: "Send emails via Gmail",
-      WhatsApp: "Send WhatsApp messages",
-      RSI: "Calculate RSI technical indicator",
-      EMA: "Calculate EMA technical indicator",
-      MACD: "Calculate MACD technical indicator",
-      BB: "Calculate Bollinger Bands technical indicator",
-    };
+  private getToolDescription(
+    node: WorkflowNode,
+    definition?: ToolDefinition
+  ): string {
+    if (definition) {
+      return definition.description;
+    }
 
     const nodeName = node.name || node.category || "node";
-    return (
-      descriptionMap[nodeName] ||
-      `Execute ${nodeName} node to perform its configured action`
-    );
+    return `Execute ${nodeName} node to perform its configured action`;
   }
 
   /**
    * Generate a Zod schema for tool input based on node definition
    */
-  private getToolSchema(node: WorkflowNode): ZodTypeAny {
-    // Create schemas based on node type
-    const schemaMap: Record<string, ZodTypeAny> = {
-      GoogleWebSearch: z.object({
-        query: z.string().describe("The search query to execute"),
-        numResults: z
-          .number()
-          .optional()
-          .describe("Number of search results to return (default: 10)"),
-      }),
-      HttpRequest: z.object({
-        input: z.any().optional().describe("Input data for HTTP request"),
-      }),
-      Math: z.object({
-        input: z
-          .any()
-          .optional()
-          .describe("Input data for mathematical operation"),
-      }),
+  private getToolSchema(
+    node: WorkflowNode,
+    definition?: ToolDefinition
+  ): ZodTypeAny {
+    if (definition) {
+      return definition.schema;
+    }
+
+    return z.object({
+      input: z.any().optional().describe("Input data for the tool"),
+    });
+  }
+
+  private getToolDefinition(node: WorkflowNode): ToolDefinition | undefined {
+    const nodeName = node.name || node.category || "node";
+    return TOOL_DEFINITIONS[nodeName];
+  }
+
+  private getExecutorCategory(
+    node: WorkflowNode,
+    definition?: ToolDefinition
+  ): string {
+    const nodeName = node.name || node.category || "node";
+
+    const executorCategoryMap: Record<string, string> = {
+      // Market data providers
+      YahooFinance: "DataSource",
+      FinnHub: "DataSource",
+      Polygon: "DataSource",
+      Market: "Market",
+      Alpaca: "Market",
+      Binance: "Market",
+      Schwab: "Market",
+      Dhan: "Market",
+
+      // Indicators
+      RSI: "Indicators",
+      EMA: "Indicators",
+      SMA: "Indicators",
+      MACD: "Indicators",
+      BB: "Indicators",
+      ADX: "Indicators",
+      Stoch: "Indicators",
+      Ichimoku: "Indicators",
+      OBV: "Indicators",
+      VWAP: "Indicators",
+      VolumeOscillator: "Indicators",
+      SupportResistance: "Indicators",
+
+      // Brokers
+      AlpacaTrade: "Broker",
+      BinanceTrade: "Broker",
+      DhanTrade: "Broker",
+      SchwabTrade: "Broker",
+
+      // Screeners
+      AlpacaScreener: "Screener",
+      BinanceScreener: "Screener",
+      YahooFinanceScreener: "Screener",
+      SchwabScreener: "Screener",
+
+      // Utilities / tools
+      GoogleWebSearch: "Tool",
+      HttpRequest: "Utility",
+      Math: "ControlFlow",
+      Transform: "ControlFlow",
+      Date: "ControlFlow",
+      Field: "ControlFlow",
     };
 
-    const nodeName = node.name || node.category || "node";
     return (
-      schemaMap[nodeName] ||
-      z.object({
-        input: z.any().optional().describe("Input data for the tool"),
-      })
+      executorCategoryMap[nodeName] ||
+      definition?.category ||
+      node.category ||
+      "Utility"
     );
   }
 }

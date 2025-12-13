@@ -105,12 +105,13 @@ export class IndicatorService {
     const {
       prices: rawPrices,
       candle_data: rawCandles,
-      period: rawPeriod = 14,
+      period: rawPeriod,
+      window: rawWindow,
     } = input;
     const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod);
+    const period = Number(rawPeriod || rawWindow);
     if (!Number.isFinite(period) || period <= 0) {
-      throw createError("period must be a positive number", 400);
+      throw createError("period/window is required and must be a positive number", 400);
     }
 
       const rsi = new RSI(period);
@@ -157,12 +158,12 @@ export class IndicatorService {
     const {
       prices: rawPrices,
       candle_data: rawCandles,
-      period: rawPeriod = 20,
+      period: rawPeriod,
     } = input;
     const prices = extractPrices(rawPrices, rawCandles);
     const period = Number(rawPeriod);
     if (!Number.isFinite(period) || period <= 0) {
-      throw createError("period must be a positive number", 400);
+      throw createError("period is required and must be a positive number", 400);
     }
 
       const sma = new SMA(period);
@@ -227,17 +228,18 @@ export class IndicatorService {
     const {
       prices: rawPrices,
       candle_data: rawCandles,
-      period: rawPeriod = 20,
-      stdDev: rawStd = 2,
+      period: rawPeriod,
+      stdDev: rawStd,
+      std_dev_multiplier: rawStdMult,
     } = input;
     const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod),
-      stdDev = Number(rawStd);
+    const period = Number(rawPeriod);
+    const stdDev = Number(rawStd || rawStdMult);
     if (!Number.isFinite(period) || period <= 0) {
-      throw createError("period must be a positive number", 400);
+      throw createError("period is required and must be a positive number", 400);
     }
     if (!Number.isFinite(stdDev) || stdDev <= 0) {
-      throw createError("stdDev must be a positive number", 400);
+      throw createError("stdDev/std_dev_multiplier is required and must be a positive number", 400);
     }
 
       const bb = new BollingerBands(period, stdDev);
@@ -270,11 +272,11 @@ export class IndicatorService {
   }
 
   static async calculateADX(input: IndicatorInput): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, period: rawPeriod = 14 } = input;
+    const { candle_data: rawCandles, period: rawPeriod } = input;
     const candles = parseArray<any>(rawCandles, "candle_data");
     const period = Number(rawPeriod);
     if (!Number.isFinite(period) || period <= 0) {
-      throw createError("period must be a positive number", 400);
+      throw createError("period is required and must be a positive number", 400);
     }
 
     const high = candles.map((c) => Number(c.h ?? c.high));
@@ -294,14 +296,17 @@ export class IndicatorService {
   ): Promise<IndicatorResult> {
     const {
       candle_data: rawCandles,
-      k_period: rawK = 14,
-      d_period: rawD = 3,
+      k_period: rawK,
+      d_period: rawD,
     } = input;
     const candles = parseArray<any>(rawCandles, "candle_data");
-    const periodK = Number(rawK),
-      periodD = Number(rawD);
-    if ([periodK, periodD].some((v) => !Number.isFinite(v) || v <= 0)) {
-      throw createError("k_period and d_period must be positive numbers", 400);
+    const periodK = Number(rawK);
+    const periodD = Number(rawD);
+    if (!Number.isFinite(periodK) || periodK <= 0) {
+      throw createError("k_period is required and must be a positive number", 400);
+    }
+    if (!Number.isFinite(periodD) || periodD <= 0) {
+      throw createError("d_period is required and must be a positive number", 400);
     }
 
     const high = candles.map((c) => Number(c.h ?? c.high));
@@ -324,18 +329,18 @@ export class IndicatorService {
   ): Promise<IndicatorResult> {
     const {
       candle_data: rawCandles,
-      conversion_period: rawConv = 9,
-      base_period: rawBase = 26,
-      leading_span_b_period: rawSpan = 52,
-      displacement: rawDisp = 26,
+      conversion_period: rawConv,
+      base_period: rawBase,
+      leading_span_b_period: rawSpan,
+      displacement: rawDisp,
     } = input;
     const candles = parseArray<any>(rawCandles, "candle_data");
-    const conv = Number(rawConv),
-      base = Number(rawBase),
-      span = Number(rawSpan),
-      disp = Number(rawDisp);
+    const conv = Number(rawConv);
+    const base = Number(rawBase);
+    const span = Number(rawSpan);
+    const disp = Number(rawDisp);
     if ([conv, base, span, disp].some((v) => !Number.isFinite(v) || v <= 0)) {
-      throw createError("All periods must be positive numbers", 400);
+      throw createError("All Ichimoku periods are required and must be positive numbers", 400);
     }
 
     const high = candles.map((c) => Number(c.h ?? c.high));
@@ -454,9 +459,9 @@ export class IndicatorService {
   ): Promise<IndicatorResult> {
     const {
       candle_data: rawCandles,
-      short_period: rawShort = 12,
-      long_period: rawLong = 26,
-      type = "percentage",
+      short_period: rawShort,
+      long_period: rawLong,
+      type,
     } = input;
 
     const candles = parseArray<any>(rawCandles, "candle_data");
@@ -464,13 +469,16 @@ export class IndicatorService {
     const longPeriod = Number(rawLong);
 
     if (!Number.isFinite(shortPeriod) || shortPeriod <= 0) {
-      throw createError("short_period must be a positive number", 400);
+      throw createError("short_period is required and must be a positive number", 400);
     }
     if (!Number.isFinite(longPeriod) || longPeriod <= 0) {
-      throw createError("long_period must be a positive number", 400);
+      throw createError("long_period is required and must be a positive number", 400);
     }
     if (shortPeriod >= longPeriod) {
       throw createError("short_period must be less than long_period", 400);
+    }
+    if (!type) {
+      throw createError("type (percentage or absolute) is required", 400);
     }
 
     // Extract volumes from candle data
@@ -520,9 +528,10 @@ export class IndicatorService {
   static async calculateSupportResistancePivot(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, num_levels = "3" } = input;
+    const { candle_data: rawCandles, num_levels } = input;
     const candles = parseArray<any>(rawCandles, "candle_data");
 
+    if (!num_levels) throw createError("num_levels is required", 400);
     if (candles.length === 0) throw createError("No candle data provided", 400);
 
     const lastCandle = candles[candles.length - 1];
@@ -572,12 +581,17 @@ export class IndicatorService {
   ): Promise<IndicatorResult> {
     const {
       candle_data: rawCandles,
-      lookback_period = "20",
-      sensitivity = "1.0",
-      num_levels = "3",
+      lookback_period,
+      sensitivity,
+      num_levels,
     } = input;
 
     const candles = parseArray<any>(rawCandles, "candle_data");
+    
+    if (!lookback_period) throw createError("lookback_period is required", 400);
+    if (!sensitivity) throw createError("sensitivity is required", 400);
+    if (!num_levels) throw createError("num_levels is required", 400);
+    
     const lookback = Number(lookback_period);
     const sens = Number(sensitivity) / 100;
     const numLevels = Math.min(Number(num_levels), 5);
@@ -661,10 +675,14 @@ export class IndicatorService {
   ): Promise<IndicatorResult> {
     const {
       candle_data: rawCandles,
-      lookback_period = "20",
-      num_levels = "3",
+      lookback_period,
+      num_levels,
     } = input;
     const candles = parseArray<any>(rawCandles, "candle_data");
+    
+    if (!lookback_period) throw createError("lookback_period is required", 400);
+    if (!num_levels) throw createError("num_levels is required", 400);
+    
     const lookback = Number(lookback_period);
     const numLevels = Math.min(Number(num_levels), 5);
 
@@ -727,7 +745,10 @@ export class IndicatorService {
         return this.calculateVWAP(input);
       case "support-resistance":
       case "support & resistance":
-        const method = (input.method || "pivot").toLowerCase();
+        const method = input.method?.toLowerCase();
+        if (!method) {
+          throw createError("method is required (pivot, swing, or historical)", 400);
+        }
         switch (method) {
           case "pivot":
             return this.calculateSupportResistancePivot(input);

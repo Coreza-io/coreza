@@ -27,6 +27,7 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
+import { DataContext, DataContextManager } from "./DataContext";
 
 interface ExecutionContext {
   nodeId: string;
@@ -71,6 +72,9 @@ export class WorkflowEngine {
   private nodeExecutions: NodeExecutionLog[] = [];
   private executionOrder: string[] = [];
 
+  // DataContext for execution-scoped RAM storage (shared by all tools)
+  private dataContext: DataContext;
+
   constructor(
     private runId: string,
     private workflowId: string,
@@ -88,6 +92,22 @@ export class WorkflowEngine {
     this.queue = new NodeQueueManager();
     this.store = new NodeStoreV2(runId, nodes);
     this.mode = mode;
+
+    // Initialize DataContext for this workflow run
+    this.dataContext = DataContextManager.getInstance().getContext({
+      runId,
+      workflowId,
+      userId,
+    });
+    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
+  }
+
+  /**
+   * Get the DataContext for this workflow run
+   * Tools and executors can use this to share data efficiently
+   */
+  getDataContext(): DataContext {
+    return this.dataContext;
   }
 
   // Deep resolve helper for resolving template expressions recursively
@@ -240,6 +260,17 @@ export class WorkflowEngine {
       await this.run(initialInput, startNodeId);
 
       console.log(`✅ Workflow execution completed successfully`);
+
+      // Log DataContext stats before cleanup
+      const ctxStats = this.dataContext.getStats();
+      console.log(
+        `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
+        `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`
+      );
+
+      // Cleanup DataContext on successful completion
+      DataContextManager.getInstance().destroyContext(this.runId);
+
       return {
         success: true,
         result: this.store.getAllResults(),
@@ -249,6 +280,10 @@ export class WorkflowEngine {
     } catch (error) {
       console.error("❌ Workflow execution failed:", error);
       const message = (error as Error).message;
+
+      // Cleanup DataContext on failure too
+      DataContextManager.getInstance().destroyContext(this.runId);
+
       return {
         success: false,
         error: message,
@@ -384,6 +419,8 @@ export class WorkflowEngine {
           this.store.setNodeState(nodeId, key, value),
         // Allow parallel loop to capture and share parent workflow context with child jobs
         getAllNodeResults: () => this.store.getAllResults(),
+        // DataContext for execution-scoped RAM storage (shared by all tools)
+        dataContext: this.dataContext,
       };
 
       const fullResult = await this.executeNode(node, input, executionContext);

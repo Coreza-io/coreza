@@ -74,6 +74,8 @@ import BacktestSnapshotDef from './BacktestSnapshot.json'
 import BacktestResultsDef from './BacktestResults.json'
 import BacktestPortfolioDef from './BacktestPortfolio.json'
 import PolygonDef from './Polygon.json'
+import InMemoryDef from './InMemory.json'
+
 // Node configuration interface
 export interface NodeConfig {
   name: string;
@@ -190,7 +192,8 @@ export const nodeManifest = {
   [BacktestSnapshotDef.name]: BacktestSnapshotDef,
   [BacktestResultsDef.name]: BacktestResultsDef,
   [BacktestPortfolioDef.name]: BacktestPortfolioDef,
-  [PolygonDef.name]: PolygonDef
+  [PolygonDef.name]: PolygonDef,
+  [InMemoryDef.name]: InMemoryDef
 } as const;
 
 export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];

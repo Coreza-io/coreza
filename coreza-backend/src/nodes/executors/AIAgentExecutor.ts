@@ -330,7 +330,8 @@ export class AIAgentExecutor implements INodeExecutor {
             normalizedNode.name || node.category || '',
             node.category || '',
             result.data,
-            dataContext
+            dataContext,
+            unwrappedInput  // Pass tool input so symbol can be extracted
           );
 
           // Return processed output (dataRef + summary, not raw data)

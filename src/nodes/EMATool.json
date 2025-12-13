@@ -35,7 +35,7 @@
       "type": "text",
       "placeholder": "e.g. 20",
       "default": "20",
-      "description": "Number of periods for EMA calculation. Common values: 9 (short-term), 20 (medium-term), 50 (long-term), 200 (very long-term trend).",
+      "description": "Number of periods for EMA calculation. CHOOSE based on trend analysis goal: 9-12 for short-term momentum and quick trend changes, 20-26 for medium-term trend direction (commonly used), 50 for intermediate trend, 100-200 for long-term trend and major support/resistance. For volatile stocks, use longer periods.",
       "required": true
     }
   ]

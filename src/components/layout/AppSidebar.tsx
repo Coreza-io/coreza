@@ -172,7 +172,7 @@ export function AppSidebar() {
     >
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-4 py-4 cursor-pointer"
-        onClick={() => navigate('/')}>
+        onClick={() => navigate('/dashboard')}>
           <div className="p-2 bg-gradient-primary rounded-lg shadow-glow">
             <TrendingUp className="h-6 w-6 text-primary-foreground" />
           </div>
@@ -332,15 +332,6 @@ export function AppSidebar() {
             >
               <Settings className="h-4 w-4 mr-2" />
               Settings
-            </DropdownMenuItem>
-
-            {/* Subscription */}
-            <DropdownMenuItem
-              onClick={() => navigate('/dashboard/subscription')}
-              className="cursor-pointer"
-            >
-              <BarChart2 className="h-4 w-4 mr-2" />
-              Subscription
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

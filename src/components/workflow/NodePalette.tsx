@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { nodeManifest } from "@/nodes/manifest";
+import { getNodeIcon } from "@/utils/nodeSchemaHelpers";
 
 // Helper function to get icon component from string
 const getIconComponent = (iconName: string) => {
@@ -130,10 +131,11 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                           <div className={`p-2 rounded-lg bg-muted/50 ${(node as any).color || ''} group-hover:shadow-glow transition-all`}>
                             {(() => {
                               // Handle SVG icons or Lucide icons
-                              if (node.icon?.startsWith('/assets/')) {
+                              const iconPath = getNodeIcon(node);
+                              if (iconPath?.startsWith('/assets/')) {
                                 return (
                                   <img 
-                                    src={node.icon} 
+                                    src={iconPath} 
                                     alt={node.name} 
                                     className="h-4 w-4" 
                                     loading="eager"
@@ -141,7 +143,7 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                                   />
                                 );
                               } else {
-                                const IconComponent = getIconComponent(node.icon);
+                                const IconComponent = getIconComponent(iconPath || 'Database');
                                 return <IconComponent className="h-4 w-4" />;
                               }
                             })()}

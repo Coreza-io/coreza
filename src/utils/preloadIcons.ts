@@ -16,11 +16,12 @@
 
 // Preload icon utility to eliminate loading delays
 import { nodeManifest } from "@/nodes/manifest";
+import { getNodeIcon } from "@/utils/nodeSchemaHelpers";
 
 // Extract all SVG icon paths from the manifest
 const getIconPaths = (): string[] => {
   const iconPaths = Object.values(nodeManifest)
-    .map(node => node.icon)
+    .map(node => getNodeIcon(node))
     .filter((icon): icon is string => 
       typeof icon === 'string' && icon.startsWith('/assets/')
     );

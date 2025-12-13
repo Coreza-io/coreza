@@ -39,9 +39,15 @@ export class IndicatorsExecutor implements INodeExecutor {
       // Resolve dataRef to actual data if present
       let processedParams = { ...resolvedParams };
       
-      if (dataContext && resolvedParams.dataRef) {
-        console.log(`🔗 [Indicators] Resolving dataRef: ${resolvedParams.dataRef}`);
-        const barsData = resolveDataRef(resolvedParams, dataContext);
+      // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
+      const dataRefValue = resolvedParams.dataRef || 
+        (typeof resolvedParams.candle_data === 'string' && resolvedParams.candle_data.startsWith('bars:') 
+          ? resolvedParams.candle_data 
+          : null);
+
+      if (dataContext && dataRefValue) {
+        console.log(`🔗 [Indicators] Resolving dataRef: ${dataRefValue}`);
+        const barsData = dataContext.getDataByKey(dataRefValue);
         
       if (Array.isArray(barsData)) {
           // Extract close prices from bars for indicator calculation

@@ -293,6 +293,19 @@ export class AIAgentExecutor implements INodeExecutor {
           // Resolve any dataRef inputs to actual data
           const resolvedInput = resolveDataRef(input, dataContext);
 
+          // Unwrap nested input if agent sends { input: { ... } } wrapper
+          const unwrappedInput = resolvedInput.input && typeof resolvedInput.input === 'object' && !Array.isArray(resolvedInput.input)
+            ? { ...resolvedInput, ...resolvedInput.input }
+            : resolvedInput;
+
+          // Normalize node name for underlying executor (strip "Tool" suffix)
+          const normalizedNode = {
+            ...node,
+            name: node.name?.endsWith("Tool") 
+              ? node.name.replace(/Tool$/, "") 
+              : node.name,
+          };
+
           // Get the executor for this node category
           const { getNodeExecutor } = await import("../registry");
           const executor = getNodeExecutor(executorCategory);
@@ -303,8 +316,8 @@ export class AIAgentExecutor implements INodeExecutor {
             );
           }
 
-          // Execute the node with resolved input
-          const result = await executor.execute(node, resolvedInput, context);
+          // Execute the normalized node with unwrapped input
+          const result = await executor.execute(normalizedNode, unwrappedInput, context);
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");

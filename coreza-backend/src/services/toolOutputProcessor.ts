@@ -138,10 +138,10 @@ function extractBars(output: any): any[] | null {
 /**
  * Create a summary from market data bars
  */
-function createMarketDataSummary(bars: any[], output: any): MarketDataSummary {
+function createMarketDataSummary(bars: any[], output: any, toolInput?: any): MarketDataSummary {
   if (!bars || bars.length === 0) {
     return {
-      symbol: output?.symbol || 'unknown',
+      symbol: output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown',
       rows: 0,
     };
   }
@@ -185,8 +185,8 @@ function createMarketDataSummary(bars: any[], output: any): MarketDataSummary {
   });
 
   return {
-    symbol: output?.symbol || 'unknown',
-    timeframe: output?.timeframe || output?.interval || undefined,
+    symbol: output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown',
+    timeframe: output?.timeframe || output?.interval || toolInput?.interval || toolInput?.timeframe || undefined,
     source: output?.source || undefined,
     rows: bars.length,
     dateRange: {
@@ -254,13 +254,15 @@ function createTradeSummary(output: any) {
  * @param nodeCategory - Category of the node
  * @param output - Raw output from the node executor
  * @param dataContext - DataContext for storing large data
+ * @param toolInput - Original input to the tool (used to extract symbol if not in output)
  * @returns ProcessedToolOutput safe for AI consumption
  */
 export function processToolOutput(
   nodeName: string,
   nodeCategory: string,
   output: any,
-  dataContext?: DataContext
+  dataContext?: DataContext,
+  toolInput?: any
 ): ProcessedToolOutput {
   // If no output, return empty
   if (output === null || output === undefined) {
@@ -279,9 +281,9 @@ export function processToolOutput(
     const bars = extractBars(output);
     
     if (bars && bars.length > 0) {
-      // Generate unique key for this data
-      const symbol = output?.symbol || 'unknown';
-      const timeframe = output?.timeframe || output?.interval || '1d';
+      // Generate unique key for this data - try output first, then toolInput
+      const symbol = output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown';
+      const timeframe = output?.timeframe || output?.interval || toolInput?.interval || toolInput?.timeframe || '1d';
       const timestamp = Date.now();
       const key = `bars:${symbol}:${timeframe}:${timestamp}`;
 
@@ -294,9 +296,9 @@ export function processToolOutput(
       });
 
       // Create summary for AI
-      const summary = createMarketDataSummary(bars, output);
+      const summary = createMarketDataSummary(bars, output, toolInput);
 
-      console.log(`🔗 [ToolProcessor] Stored ${bars.length} bars as ${key}`);
+      console.log(`🔗 [ToolProcessor] Stored ${bars.length} bars for ${symbol} as ${key}`);
 
       return {
         dataRef: dataRef.ref,

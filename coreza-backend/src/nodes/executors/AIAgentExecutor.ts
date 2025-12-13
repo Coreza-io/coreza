@@ -28,6 +28,7 @@ import { z, ZodTypeAny } from "zod";
 import { processToolOutput, resolveDataRef } from "../../services/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../services/DataContext";
 import { TOOL_DEFINITIONS, ToolDefinition } from "../../services/toolDefinitions";
+import { loadNodeDefinition } from "../nodeDefinitions";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -467,9 +468,40 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition
   ): ZodTypeAny {
-    const nodeFields = (node as any).fields;
+    let nodeFields = (node as any).fields;
+    
+    // If workflow node doesn't have fields, try to load from JSON definition
+    if (!nodeFields || !Array.isArray(nodeFields) || nodeFields.length === 0) {
+      const nodeName = node.name || '';
+      const normalizedName = nodeName.endsWith('Tool') 
+        ? nodeName.replace(/Tool$/, '') 
+        : nodeName;
+      
+      // Try to find the Tool definition first, then the base node
+      const toolDefName = `${normalizedName}Tool`;
+      let nodeDefinition = loadNodeDefinition(toolDefName);
+      
+      if (!nodeDefinition || !nodeDefinition.fields?.length) {
+        nodeDefinition = loadNodeDefinition(normalizedName);
+      }
+      
+      if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
+        nodeFields = nodeDefinition.fields;
+        console.log(`📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`);
+      }
+    }
+    
     if (nodeFields && Array.isArray(nodeFields) && nodeFields.length > 0) {
-      return this.generateSchemaFromNode(node);
+      // Create a temp node with fields for schema generation
+      const nodeWithFields = { ...node, fields: nodeFields };
+      const schema = this.generateSchemaFromNode(nodeWithFields as WorkflowNode);
+      
+      // Log schema keys for debugging
+      if (schema && typeof schema === 'object' && 'shape' in schema) {
+        console.log(`📋 [AIAgent] Tool ${node.name} schema keys:`, Object.keys((schema as any).shape || {}));
+      }
+      
+      return schema;
     }
 
     if (definition && definition.schema) {

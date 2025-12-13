@@ -18,7 +18,6 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { AIAgentExecutor } from "../nodes/executors/AIAgentExecutor";
 import { WorkflowNode } from "../nodes/types";
-import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = Router();
 const aiAgentExecutor = new AIAgentExecutor();
@@ -26,7 +25,7 @@ const aiAgentExecutor = new AIAgentExecutor();
 // Apply JWT auth to all routes
 router.use(requireAuth);
 
-router.post("/execute", requireProfessional("AI Agent"), async (req: Request, res: Response) => {
+router.post("/execute", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {

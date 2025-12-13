@@ -18,7 +18,6 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import CredentialManager from "../utils/credentialManager";
 import { supabase } from "../config/supabase";
-import { requireProfessional } from "../middleware/licenseCheck";
 import { requireAuth } from "../middleware/jwtAuth";
 
 const router = Router();
@@ -73,7 +72,7 @@ router.post("/auth", async (req: Request, res: Response, next) => {
   }
 });
 
-router.post("/chat", requireProfessional("LLM Features"), async (req: Request, res: Response) => {
+router.post("/chat", async (req: Request, res: Response) => {
   try {
     // Use authenticated user ID from JWT, not from request body
     const user_id = req.user?.id;

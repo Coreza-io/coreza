@@ -1,13 +1,13 @@
 /*
  * Copyright (C) 2024 Coreza
- * Redis-backed rate limiting middleware with tier-aware limits
+ * Redis-backed rate limiting middleware
  */
 
 import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { Request, Response } from 'express';
 import { getRedisCache } from '../config/redis';
-import { ENDPOINT_LIMITS, TIER_MULTIPLIERS, EndpointCategory, RATE_LIMIT_WHITELIST, SERVICE_SECRET } from '../config/rateLimits';
+import { ENDPOINT_LIMITS, EndpointCategory, RATE_LIMIT_WHITELIST, SERVICE_SECRET } from '../config/rateLimits';
 import { isIpWhitelisted, getClientIp } from '../utils/ipUtils';
 import logger from '../utils/logger';
 import { rateLimitHitsCounter, rateLimitBypassCounter } from '../utils/metrics';
@@ -16,13 +16,7 @@ import { rateLimitHitsCounter, rateLimitBypassCounter } from '../utils/metrics';
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
-    tier?: string;
   };
-}
-
-// Get tier multiplier for a user
-function getTierMultiplier(tier?: string): number {
-  return TIER_MULTIPLIERS[tier || 'free'] || 1;
 }
 
 // Key generator - uses user ID for authenticated requests, IP for others
@@ -41,10 +35,7 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
   
   const options: Partial<Options> = {
     windowMs: config.windowMs,
-    max: (req: AuthenticatedRequest) => {
-      const multiplier = getTierMultiplier(req.user?.tier);
-      return config.max * multiplier;
-    },
+    max: config.max,
     keyGenerator,
     skipFailedRequests,
     standardHeaders: true, // Return rate limit info in headers
@@ -56,7 +47,7 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
       // Increment Prometheus counter
       rateLimitHitsCounter.inc({
         category,
-        tier: req.user?.tier || 'free',
+        tier: 'default',
         key_type: keyType,
       });
       
@@ -66,7 +57,6 @@ function createLimiter(category: EndpointCategory, skipFailedRequests = false): 
         path: req.path,
         method: req.method,
         userId: req.user?.id,
-        tier: req.user?.tier,
       }, 'Rate limit exceeded');
       
       res.status(429).json({

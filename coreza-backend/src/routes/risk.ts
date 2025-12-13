@@ -17,14 +17,13 @@
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { RiskEngineService } from "../services/risk";
-import { requireProfessional } from "../middleware/licenseCheck";
 
 const router = express.Router();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
 
-router.post("/engine", requireProfessional("Risk Engine"), async (req, res) => {
+router.post("/engine", async (req, res) => {
   try {
     const result = RiskEngineService.evaluate(req.body);
     if (!result.success) {

@@ -1,15 +1,7 @@
 /*
  * Copyright (C) 2024 Coreza
- * Rate limiting configuration by endpoint category and subscription tier
+ * Rate limiting configuration by endpoint category
  */
-
-// Tier multipliers for rate limits
-export const TIER_MULTIPLIERS: Record<string, number> = {
-  free: 1,
-  trader: 2,
-  professional: 5,
-  enterprise: 10,
-};
 
 // Whitelist configuration for rate limit bypass
 export const RATE_LIMIT_WHITELIST = {

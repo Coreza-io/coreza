@@ -383,6 +383,19 @@ export function resolveDataRef(
     console.warn(`⚠️ [ToolProcessor] dataRef not found: ${input.dataRef}`);
   }
 
+  // Check common field names that may contain dataRef strings (e.g., candle_data from LLM)
+  const dataRefFields = ['candle_data', 'candleData', 'bars', 'data', 'prices'];
+  for (const field of dataRefFields) {
+    if (typeof input[field] === 'string' && input[field].startsWith('bars:')) {
+      const data = dataContext.getDataByKey(input[field]);
+      if (data) {
+        console.log(`🔓 [ToolProcessor] Resolved ${field} dataRef: ${input[field]}`);
+        return data;
+      }
+      console.warn(`⚠️ [ToolProcessor] ${field} dataRef not found: ${input[field]}`);
+    }
+  }
+
   // Check if input itself is a dataRef string
   if (typeof input === 'string' && input.startsWith('bars:')) {
     const data = dataContext.getDataByKey(input);

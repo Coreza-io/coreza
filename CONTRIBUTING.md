@@ -170,13 +170,12 @@ coreza/
 
 ## 📜 License
 
-By contributing to Coreza, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) and become part of the open-source Coreza codebase. Commercial licensing options are available separately for customers who need alternative terms or private modifications.
+By contributing to Coreza, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) and become part of the open-source Coreza codebase.
 
 ## 🧾 Contributor License Agreement (CLA)
 
 - All contributors must sign the Coreza CLA before pull requests can be merged. You will be prompted to review and sign the CLA as part of the PR workflow.
 - By signing the CLA, you affirm that you have the right to contribute the code and that Coreza can distribute it under the AGPL-3.0 license.
-- Contributions submitted under the CLA remain part of the open-source core and may also be incorporated into commercial offerings.
 
 ## 🧭 Feature Request Prioritization
 

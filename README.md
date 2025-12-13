@@ -92,7 +92,6 @@ Coreza is built in the open to give traders and firms full control of their auto
 - **Transparency by default**: Inspect, audit, and verify every component of the platform
 - **Security-first**: AGPL-3.0 ensures improvements to credential handling remain shared with the community
 - **Community velocity**: Shared workflows, connectors, and strategies accelerate what everyone can build
-- **Sustainable model**: Commercial licensing keeps paid features available for teams that need premium support
 
 ## 🛠️ Manual Setup
 
@@ -160,7 +159,6 @@ coreza/
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
 - [Security Guide](docs/SECURITY.md) - Security best practices
 - [Self-Hosting Guide](docs/SELF_HOSTING.md) - Host Coreza yourself
-- [Launch Checklist](docs/LAUNCH_CHECKLIST.md) - Final verification before announcing
 
 ## 🤝 Contributing
 
@@ -173,10 +171,7 @@ coreza/
 
 ## 📄 License
 
-- **Open Source License**: [GNU AGPL-3.0](LICENSE) for community use and contributions
-- **Commercial License**: [Coreza Commercial License](COMMERCIAL_LICENSE.md) for organizations needing paid features, private modifications, or commercial distribution rights
-
-Contact us to discuss commercial terms if your use case requires closed-source extensions or enterprise support.
+This project is licensed under the [GNU AGPL-3.0](LICENSE).
 
 ## 🆘 Support
 

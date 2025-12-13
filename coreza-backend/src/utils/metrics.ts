@@ -97,17 +97,4 @@ export const workflowExecutionDurationHistogram = new client.Histogram({
   buckets: [0.1, 0.5, 1, 5, 10, 30, 60]
 });
 
-// Rate Limiting Metrics
-export const rateLimitHitsCounter = new client.Counter({
-  name: 'coreza_rate_limit_hits_total',
-  help: 'Total number of rate limit violations (429 responses)',
-  labelNames: ['category', 'tier', 'key_type']
-});
-
-export const rateLimitBypassCounter = new client.Counter({
-  name: 'coreza_rate_limit_bypass_total',
-  help: 'Total number of rate limit bypasses',
-  labelNames: ['category', 'reason']
-});
-
 export const register = client.register;

@@ -14,9 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import supabase from '../config/supabase';
-import { SUBSCRIPTION_LIMITS } from '../config/featureGates';
-import { Subscription, SubscriptionTier } from '../types/subscription';
+import { Subscription } from '../types/subscription';
 
 interface UsageCheckResult {
   allowed: boolean;
@@ -31,97 +29,28 @@ interface UsageAggregation {
   monthly: number;
 }
 
-function getPeriodStart(period: 'daily' | 'monthly'): string {
-  const now = new Date();
-  if (period === 'daily') {
-    now.setHours(0, 0, 0, 0);
-  } else {
-    now.setDate(1);
-    now.setHours(0, 0, 0, 0);
-  }
-  return now.toISOString();
-}
-
+/**
+ * Open Source Edition: All usage checks pass by default.
+ * No execution limits are enforced.
+ */
 export class UsageMeteringService {
-  static async getExecutionCount(userId: string, period: 'daily' | 'monthly' = 'monthly'): Promise<number> {
-    const periodStart = getPeriodStart(period);
-
-    const { count, error } = await supabase
-      .from('workflow_runs' as any)
-      .select('id', { head: true, count: 'exact' })
-      .eq('initiated_by', userId)
-      .gte('started_at', periodStart);
-
-    if (error) {
-      console.error('[UsageMeteringService] Failed to count executions', error);
-      return 0;
-    }
-
-    return count || 0;
+  static async getExecutionCount(_userId: string, _period: 'daily' | 'monthly' = 'monthly'): Promise<number> {
+    return 0;
   }
 
-  static getTierLimit(tier: SubscriptionTier): number {
-    return SUBSCRIPTION_LIMITS[tier]?.executionsPerMonth ?? 0;
+  static getTierLimit(_tier: string): number {
+    return Number.POSITIVE_INFINITY;
   }
 
-  static async checkExecutionAllowance(userId: string, subscription: Subscription | null): Promise<UsageCheckResult> {
-    if (!subscription) {
-      return { allowed: false, reason: 'No active subscription found' };
-    }
-
-    const limit = this.getTierLimit(subscription.tier);
-
-    if (!Number.isFinite(limit)) {
-      return { allowed: true };
-    }
-
-    const usage = await this.getExecutionCount(userId, 'monthly');
-    const remainingExecutions = limit - usage;
-
-    if (remainingExecutions > 0) {
-      return { allowed: true, remainingExecutions, limit };
-    }
-
-    // Paid tiers can proceed with overage billing enabled
-    const requiresOverageBilling = subscription.tier !== 'free';
-    return {
-      allowed: requiresOverageBilling,
-      remainingExecutions: 0,
-      limit,
-      requiresOverageBilling,
-      reason: requiresOverageBilling
-        ? 'Execution limit reached. Overage billing will apply.'
-        : 'Monthly execution limit reached for the Free plan.',
-    };
+  static async checkExecutionAllowance(_userId: string, _subscription: Subscription | null): Promise<UsageCheckResult> {
+    return { allowed: true };
   }
 
-  static async recordExecution(userId: string, workflowId: string, subscription: Subscription | null) {
-    const { allowed, reason } = await this.checkExecutionAllowance(userId, subscription);
-    if (!allowed) {
-      return { success: false, error: reason || 'Execution not allowed' };
-    }
-
-    const { error } = await supabase.from('usage_events' as any).insert({
-      user_id: userId,
-      workflow_id: workflowId,
-      event_type: 'workflow_execution',
-      occurred_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      console.error('[UsageMeteringService] Failed to record execution', error);
-      return { success: false, error: error.message };
-    }
-
+  static async recordExecution(_userId: string, _workflowId: string, _subscription: Subscription | null) {
     return { success: true };
   }
 
-  static async getAggregatedUsage(userId: string): Promise<UsageAggregation> {
-    const [daily, monthly] = await Promise.all([
-      this.getExecutionCount(userId, 'daily'),
-      this.getExecutionCount(userId, 'monthly'),
-    ]);
-
-    return { daily, monthly };
+  static async getAggregatedUsage(_userId: string): Promise<UsageAggregation> {
+    return { daily: 0, monthly: 0 };
   }
 }

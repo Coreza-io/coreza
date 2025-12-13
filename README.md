@@ -160,24 +160,7 @@ coreza/
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment
 - [Security Guide](docs/SECURITY.md) - Security best practices
 - [Self-Hosting Guide](docs/SELF_HOSTING.md) - Host Coreza yourself
-- [Open Source Philosophy](docs/OPEN_SOURCE.md) - Governance and licensing
-- [Feature Comparison](docs/FEATURE_COMPARISON.md) - Free vs Paid capabilities
 - [Launch Checklist](docs/LAUNCH_CHECKLIST.md) - Final verification before announcing
-
-## 🔀 Feature Comparison (Free vs Paid)
-
-| Capability | Open Source (AGPL-3.0) | Commercial License |
-| --- | --- | --- |
-| Visual workflow builder | ✅ | ✅ (with advanced templates & SLA) |
-| Broker integrations (Alpaca, Dhan) | ✅ | ✅ (priority certifications) |
-| Real-time market data layer | ✅ | ✅ (with premium feeds) |
-| Role-based access control | ✅ | ✅ (with SSO/SCIM) |
-| Audit logging | ✅ (basic) | ✅ (advanced retention/export) |
-| White-label theming | ⚪️ | ✅ |
-| Dedicated support & onboarding | ⚪️ | ✅ |
-| Enterprise compliance reports | ⚪️ | ✅ |
-
-See [docs/FEATURE_COMPARISON.md](docs/FEATURE_COMPARISON.md) for details.
 
 ## 🤝 Contributing
 

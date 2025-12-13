@@ -422,6 +422,188 @@ class YahooFinanceService extends BaseDataService {
   }
 }
 
+// Polygon service
+class PolygonService extends BaseDataService {
+  protected serviceName = "polygon";
+  private baseUrl = "https://api.polygon.io";
+
+  async execute(operation: string, input: DataInput): Promise<DataResult> {
+    try {
+      const { user_id, credential_id, api_key } = input;
+
+      // For validation, api_key is passed directly
+      if (operation === "validate_credentials") {
+        return this.validateCredentials(api_key);
+      }
+
+      // For list_credentials, just return stored credentials
+      if (operation === "list_credentials") {
+        return this.listCredentials(user_id!);
+      }
+
+      if (!user_id || !credential_id) {
+        throw new Error("user_id and credential_id are required");
+      }
+
+      const creds = await this.getCredentials(user_id, credential_id);
+
+      if (!creds.api_key) {
+        throw new Error("Invalid Polygon API credentials");
+      }
+
+      let result;
+      switch (operation) {
+        case "ticker_details":
+          result = await this.getTickerDetails(creds, input);
+          break;
+        case "financials":
+          result = await this.getFinancials(creds, input);
+          break;
+        case "dividends":
+          result = await this.getDividends(creds, input);
+          break;
+        case "splits":
+          result = await this.getSplits(creds, input);
+          break;
+        case "news":
+          result = await this.getNews(creds, input);
+          break;
+        case "related_companies":
+          result = await this.getRelatedCompanies(creds, input);
+          break;
+        default:
+          throw new Error(`Unsupported Polygon operation: ${operation}`);
+      }
+
+      return { success: true, data: result };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async validateCredentials(apiKey: string): Promise<DataResult> {
+    try {
+      const response = await axios.get(`${this.baseUrl}/v3/reference/tickers/AAPL`, {
+        params: { apiKey },
+        timeout: 10000,
+      });
+      
+      if (response.data && response.data.results) {
+        return { success: true, data: { valid: true } };
+      }
+      return { success: false, error: "Invalid API response" };
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return { success: false, error: "Invalid Polygon API key" };
+      }
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async listCredentials(userId: string): Promise<DataResult> {
+    const { data, error } = await supabase
+      .from("user_credentials")
+      .select("id, name, created_at")
+      .eq("user_id", userId)
+      .eq("service_type", "polygon");
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data || [] };
+  }
+
+  private async getTickerDetails(creds: any, input: DataInput): Promise<any> {
+    const { ticker } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/v3/reference/tickers/${ticker.toUpperCase()}`, {
+      params: { apiKey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data.results;
+  }
+
+  private async getFinancials(creds: any, input: DataInput): Promise<any> {
+    const { ticker, timeframe = "annual", limit = 10 } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/vX/reference/financials`, {
+      params: {
+        ticker: ticker.toUpperCase(),
+        timeframe,
+        limit,
+        apiKey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data.results;
+  }
+
+  private async getDividends(creds: any, input: DataInput): Promise<any> {
+    const { ticker, limit = 10 } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/v3/reference/dividends`, {
+      params: {
+        ticker: ticker.toUpperCase(),
+        limit,
+        apiKey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data.results;
+  }
+
+  private async getSplits(creds: any, input: DataInput): Promise<any> {
+    const { ticker, limit = 10 } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/v3/reference/splits`, {
+      params: {
+        ticker: ticker.toUpperCase(),
+        limit,
+        apiKey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data.results;
+  }
+
+  private async getNews(creds: any, input: DataInput): Promise<any> {
+    const { ticker, limit = 10 } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/v2/reference/news`, {
+      params: {
+        ticker: ticker.toUpperCase(),
+        limit,
+        apiKey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data.results;
+  }
+
+  private async getRelatedCompanies(creds: any, input: DataInput): Promise<any> {
+    const { ticker } = input;
+    if (!ticker) throw new Error("ticker is required");
+
+    const response = await axios.get(`${this.baseUrl}/v1/related-companies/${ticker.toUpperCase()}`, {
+      params: { apiKey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data.results;
+  }
+}
+
 // Market service (simple market data aggregator)
 class MarketService extends BaseDataService {
   protected serviceName = "market";
@@ -452,6 +634,7 @@ export class DataService {
   private static finnhubService = new FinnHubService();
   private static yahooFinanceService = new YahooFinanceService();
   private static marketService = new MarketService();
+  private static polygonService = new PolygonService();
 
   static async execute(
     service: string,
@@ -465,6 +648,8 @@ export class DataService {
         return this.yahooFinanceService.execute(operation, input);
       case "market":
         return this.marketService.execute(operation, input);
+      case "polygon":
+        return this.polygonService.execute(operation, input);
       default:
         return {
           success: false,

@@ -61,6 +61,7 @@ import redisRoutes from './routes/redis';
 import redisTriggerRoutes from './routes/redisTrigger';
 import storeRoutes from './routes/store';
 import backtestRoutes from './routes/backtest';
+import polygonRoutes from './routes/polygon';
 
 
 import WebSocketManager from './services/websocketManager';
@@ -149,6 +150,7 @@ app.use('/redis', redisRoutes);
 app.use('/redis/trigger', redisTriggerRoutes);
 app.use('/store', storeRoutes);
 app.use('/backtest', backtestRoutes);
+app.use('/polygon', polygonRoutes);
 
 logger.info('All routes mounted');
 

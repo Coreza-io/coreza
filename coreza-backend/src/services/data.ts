@@ -181,37 +181,85 @@ class YahooFinanceService extends BaseDataService {
   }
 
   private async getHistory(input: DataInput): Promise<any> {
-    const { symbol, period1, period2, interval = "1d" } = input;
+    const { 
+      symbol, 
+      period1, 
+      period2, 
+      interval = "1d",
+      date_mode = "lookback",
+      lookback = 100,
+      start_date,
+      end_date
+    } = input;
 
     if (!symbol) {
       throw createError("symbol is required", 400);
     }
 
-    console.log(`Fetching Yahoo Finance historical data for ${symbol}`, {
-      period1,
-      period2,
-      interval,
-    });
-
     try {
-      // Convert dates to proper format for yahoo-finance2
-      let startDate, endDate;
+      let startDate: Date;
+      let endDate: Date;
 
-      if (typeof period1 === "number") {
-        startDate = new Date(period1 * 1000);
-      } else if (period1) {
-        startDate = new Date(period1);
-      } else {
-        startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000); // 1 year ago
+      // If period1/period2 are already provided (from HTTP route), use them
+      if (period1 || period2) {
+        if (typeof period1 === "number") {
+          startDate = new Date(period1 * 1000);
+        } else if (period1) {
+          startDate = new Date(period1);
+        } else {
+          startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+        }
+
+        if (typeof period2 === "number") {
+          endDate = new Date(period2 * 1000);
+        } else if (period2) {
+          endDate = new Date(period2);
+        } else {
+          endDate = new Date();
+        }
+      } 
+      // Handle date_mode for direct executor calls
+      else if (date_mode === "range") {
+        if (!start_date) {
+          throw createError("start_date is required for range mode", 400);
+        }
+        startDate = new Date(start_date);
+        endDate = end_date ? new Date(end_date) : new Date();
+      } 
+      // Lookback mode (default)
+      else {
+        endDate = new Date();
+        startDate = new Date();
+        const lookbackNum = Number(lookback) || 100;
+
+        switch (interval) {
+          case "1m":
+            startDate.setMinutes(endDate.getMinutes() - lookbackNum);
+            break;
+          case "5m":
+            startDate.setMinutes(endDate.getMinutes() - lookbackNum * 5);
+            break;
+          case "15m":
+            startDate.setMinutes(endDate.getMinutes() - lookbackNum * 15);
+            break;
+          case "60m":
+          case "1h":
+            startDate.setHours(endDate.getHours() - lookbackNum);
+            break;
+          case "1d":
+          default:
+            startDate.setDate(endDate.getDate() - lookbackNum);
+            break;
+        }
       }
 
-      if (typeof period2 === "number") {
-        endDate = new Date(period2 * 1000);
-      } else if (period2) {
-        endDate = new Date(period2);
-      } else {
-        endDate = new Date(); // today
-      }
+      console.log(`Fetching Yahoo Finance historical data for ${symbol}`, {
+        period1: startDate.toISOString(),
+        period2: endDate.toISOString(),
+        interval,
+        date_mode,
+        lookback,
+      });
 
       const options = {
         period1: startDate,
@@ -231,13 +279,6 @@ class YahooFinanceService extends BaseDataService {
           | "1mo"
           | "3mo",
       };
-
-      console.log("Yahoo Finance options:", {
-        symbol,
-        period1: startDate.toISOString(),
-        period2: endDate.toISOString(),
-        interval,
-      });
 
       const chart = await yahooFinance.chart(symbol, options);
       const history = chart.quotes || [];

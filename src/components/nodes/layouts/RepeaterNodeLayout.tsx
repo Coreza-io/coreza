@@ -67,6 +67,24 @@ interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   readOnly?: boolean;
 }
 
+const OPERATORS_WITHOUT_RIGHT_VALUE = new Set([
+  "exists",
+  "not_exists",
+  "is_empty",
+  "is_not_empty",
+  "is_true",
+  "is_false",
+  "array_is_empty",
+  "array_is_not_empty",
+  "object_is_empty",
+  "object_is_not_empty",
+  "isNull",
+  "is_not_null",
+]);
+
+const operatorRequiresRightValue = (operator?: string) =>
+  operator ? !OPERATORS_WITHOUT_RIGHT_VALUE.has(operator) : true;
+
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
   fieldState,
@@ -230,6 +248,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         conditions.map((row, i) =>
           i === idx ? { ...row, [field]: value } : row
         )
+      );
+    },
+    [conditions, handleChange, repeaterKey]
+  );
+
+  const handleOperatorSelect = useCallback(
+    (idx: number, value: string) => {
+      handleChange(
+        repeaterKey!,
+        conditions.map((row, rowIdx) => {
+          if (rowIdx !== idx) return row;
+          const updated = { ...row, operator: value } as any;
+
+          if (!operatorRequiresRightValue(value)) {
+            updated.right = "";
+          }
+
+          return updated;
+        })
       );
     },
     [conditions, handleChange, repeaterKey]
@@ -903,6 +940,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   cond.operator,
                   operatorField.groupedOptions
                 );
+              const showRightField = operatorRequiresRightValue(cond.operator);
 
               return (
                 <div key={i} className="space-y-2">
@@ -1002,7 +1040,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                                     <DropdownMenuItem
                                       key={opt.value}
                                       onClick={() =>
-                                        updateCondition(i, "operator", opt.value)
+                                        handleOperatorSelect(i, opt.value)
                                       }
                                       className={
                                         cond.operator === opt.value
@@ -1023,7 +1061,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       operatorField && (
                         <Select
                           value={cond.operator}
-                          onValueChange={(v) => updateCondition(i, "operator", v)}
+                          onValueChange={(v) => handleOperatorSelect(i, v)}
                         >
                           <SelectTrigger className="w-24 h-8 text-xs">
                             <SelectValue placeholder={operatorField.label} />
@@ -1040,7 +1078,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     )}
 
                     {/* Right */}
-                    {rightField && (
+                    {rightField && showRightField && (
                       <Input
                         className="flex-1 h-8 text-xs nodrag"
                         placeholder={rightField.placeholder || "Right value"}

@@ -117,6 +117,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const isConditional = repeaterKey === "conditions";
   const isFieldRepeater = repeaterKey === "fields";
   const isSwitch = repeaterKey === "cases";
+  const fallbackField = useMemo(
+    () => definition.fields?.find((f: any) => f.key === "enableFallback"),
+    [definition.fields]
+  );
 
   // =========== CONDITIONAL LOGIC ===========
   const defaultCond =
@@ -579,6 +583,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
           if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
+          if (isSwitch && f.key === "enableFallback") return null; // Render fallback toggle with cases section
 
           // --------- CONDITIONAL FIELD DISPLAY ---------
           let shouldShow = true;
@@ -1446,6 +1451,31 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 </div>
               );
             })}
+
+            {fallbackField && (
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div className="flex flex-col">
+                  <span className="text-sm text-foreground">
+                    {fallbackField.label}
+                  </span>
+                  {fallbackField.description && (
+                    <span className="text-xs text-muted-foreground">
+                      {fallbackField.description}
+                    </span>
+                  )}
+                </div>
+                <Switch
+                  checked={
+                    typeof fieldState[fallbackField.key] === "boolean"
+                      ? fieldState[fallbackField.key]
+                      : !!fallbackField.default
+                  }
+                  onCheckedChange={(checked) =>
+                    handleChange(fallbackField.key, checked)
+                  }
+                />
+              </div>
+            )}
           </div>
         )}
 

@@ -31,6 +31,57 @@
       "type": "repeater",
       "subFields": [
         { "key": "caseValue", "type": "string", "placeholder": "case1" },
+        {
+          "key": "operator",
+          "type": "grouped-select",
+          "default": "===",
+          "groupedOptions": {
+            "string": {
+              "label": "String",
+              "icon": "T",
+              "options": [
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" },
+                { "label": "contains", "value": "contains" },
+                { "label": "does not contain", "value": "does_not_contain" },
+                { "label": "starts with", "value": "starts_with" },
+                { "label": "ends with", "value": "ends_with" },
+                { "label": "matches regex", "value": "matches_regex" }
+              ]
+            },
+            "number": {
+              "label": "Number",
+              "icon": "#",
+              "options": [
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" },
+                { "label": "is greater than", "value": ">" },
+                { "label": "is greater than or equal", "value": ">=" },
+                { "label": "is less than", "value": "<" },
+                { "label": "is less than or equal", "value": "<=" }
+              ]
+            },
+            "boolean": {
+              "label": "Boolean",
+              "icon": "☑",
+              "options": [
+                { "label": "is true", "value": "is_true" },
+                { "label": "is false", "value": "is_false" },
+                { "label": "is equal to", "value": "===" }
+              ]
+            },
+            "array": {
+              "label": "Array",
+              "icon": "≡",
+              "options": [
+                { "label": "contains", "value": "array_contains" },
+                { "label": "does not contain", "value": "array_not_contains" },
+                { "label": "is empty", "value": "array_is_empty" },
+                { "label": "is not empty", "value": "array_is_not_empty" }
+              ]
+            }
+          }
+        },
         { "key": "caseName", "type": "string", "placeholder": "Case Label" }
       ]
     },

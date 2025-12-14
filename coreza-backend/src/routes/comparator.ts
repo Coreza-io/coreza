@@ -109,7 +109,7 @@ router.post("/switch", async (req, res) => {
     const serviceCases = cases.map((caseItem) => ({
       condition: {
         left: inputValue,
-        operator: "===",
+        operator: caseItem.operator || "===",
         right: caseItem.caseValue,
       } as ComparatorInput,
       value: caseItem.caseName ?? caseItem.caseValue,

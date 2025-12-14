@@ -17,6 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { ComputeService } from "../../services/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
+import { ComparatorService } from "../../services/comparator";
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
@@ -143,15 +144,29 @@ export class ControlFlowExecutor implements INodeExecutor {
       inputValue,
       cases,
       defaultCase,
-      originalInput: input,
     });
 
-    // Find matching case by caseValue (not value)
-    const matchedCase = cases.find((c: any) => c.caseValue === inputValue);
+    // Evaluate each case using ComparatorService
+    let matchedCase = null as any;
+    for (const c of cases) {
+      const operator = c.operator || "===";
+      const result = await ComparatorService.evaluate({
+        left: inputValue,
+        operator: operator,
+        right: c.caseValue,
+      });
+
+      if (result.success && result.result === true) {
+        matchedCase = c;
+        break;
+      }
+    }
+
     const selectedBranch = matchedCase ? matchedCase.caseValue : defaultCase;
 
     console.log("🔀 Switch node result:", {
       matchedCase: matchedCase?.caseValue,
+      matchedOperator: matchedCase?.operator,
       selectedBranch,
       isDefault: !matchedCase,
     });

@@ -1061,9 +1061,15 @@ const WorkflowEditorContent = () => {
                         (sourceNode as any).values?.cases ||
                         [];
                       const validHandles = cases.map(
-                        (c: any) => c.caseValue || `case${cases.indexOf(c) + 1}`
+                        (c: any) =>
+                          c.outputName ||
+                          c.caseName ||
+                          c.caseValue ||
+                          `case${cases.indexOf(c) + 1}`
                       );
-                      validHandles.push("default"); // Add default handle
+                      validHandles.push(
+                        sourceNode.data?.values?.defaultCase || "fallback"
+                      ); // Add default handle
 
                       if (!validHandles.includes(edge.sourceHandle)) {
                         console.log(

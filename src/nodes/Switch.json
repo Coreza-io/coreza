@@ -123,12 +123,11 @@
       "default": { "left": "", "operator": "===", "right": "", "outputName": "Case 1" }
     },
     {
-      "key": "defaultCase",
-      "label": "Fallback Output",
-      "type": "text",
-      "placeholder": "fallback",
-      "default": "fallback",
-      "required": false
+      "key": "enableFallback",
+      "label": "Enable Fallback",
+      "type": "toggle",
+      "default": true,
+      "description": "Route to fallback output if no case matches"
     }
   ]
 }

@@ -1067,9 +1067,21 @@ const WorkflowEditorContent = () => {
                           c.caseValue ||
                           `case${cases.indexOf(c) + 1}`
                       );
-                      validHandles.push(
-                        sourceNode.data?.values?.defaultCase || "fallback"
-                      ); // Add default handle
+                      const enableFallbackToggle =
+                        sourceNode.data?.values?.enableFallback ??
+                        (sourceNode as any).values?.enableFallback;
+                      const fallbackEnabled =
+                        typeof enableFallbackToggle === "boolean"
+                          ? enableFallbackToggle
+                          : (sourceNode.data?.definition as any)?.fields?.find(
+                                (f: any) => f.key === "enableFallback"
+                              )?.default ?? true;
+
+                      if (fallbackEnabled) {
+                        validHandles.push(
+                          sourceNode.data?.values?.defaultCase || "fallback"
+                        ); // Add default handle
+                      }
 
                       if (!validHandles.includes(edge.sourceHandle)) {
                         console.log(

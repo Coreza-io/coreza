@@ -36,6 +36,18 @@ export class ComparatorService {
       let result: boolean;
 
       switch (operator) {
+        case "exists":
+          result = left !== undefined && left !== null;
+          break;
+        case "not_exists":
+          result = left === undefined || left === null;
+          break;
+        case "is_true":
+          result = left === true || left === "true" || left === 1;
+          break;
+        case "is_false":
+          result = left === false || left === "false" || left === 0;
+          break;
         case "===":
           result = left === right;
           break;
@@ -89,15 +101,33 @@ export class ComparatorService {
             .toLowerCase()
             .startsWith(String(right).toLowerCase());
           break;
+        case "not_starts_with":
+          result =
+            !String(left)
+              .toLowerCase()
+              .startsWith(String(right).toLowerCase());
+          break;
         case "ends_with":
           result = String(left)
             .toLowerCase()
             .endsWith(String(right).toLowerCase());
           break;
-        case "matches_regex":
+        case "not_ends_with":
+          result =
+            !String(left)
+              .toLowerCase()
+              .endsWith(String(right).toLowerCase());
+          break;
+        case "matches_regex": {
           const regex = new RegExp(String(right), "i");
           result = regex.test(String(left));
           break;
+        }
+        case "not_matches_regex": {
+          const regex = new RegExp(String(right), "i");
+          result = !regex.test(String(left));
+          break;
+        }
         case "is_empty":
           result =
             !left ||
@@ -117,6 +147,53 @@ export class ComparatorService {
           break;
         case "is_not_null":
           result = left !== null;
+          break;
+        case "date_equals":
+          result = new Date(left).getTime() === new Date(right).getTime();
+          break;
+        case "date_not_equals":
+          result = new Date(left).getTime() !== new Date(right).getTime();
+          break;
+        case "date_after":
+          result = new Date(left).getTime() > new Date(right).getTime();
+          break;
+        case "date_before":
+          result = new Date(left).getTime() < new Date(right).getTime();
+          break;
+        case "array_contains":
+          result = Array.isArray(left) && left.includes(right);
+          break;
+        case "array_not_contains":
+          result = Array.isArray(left) && !left.includes(right);
+          break;
+        case "array_length_equals":
+          result = Array.isArray(left) && left.length === Number(right);
+          break;
+        case "array_length_gt":
+          result = Array.isArray(left) && left.length > Number(right);
+          break;
+        case "array_length_lt":
+          result = Array.isArray(left) && left.length < Number(right);
+          break;
+        case "array_is_empty":
+          result = Array.isArray(left) && left.length === 0;
+          break;
+        case "array_is_not_empty":
+          result = Array.isArray(left) && left.length > 0;
+          break;
+        case "object_is_empty":
+          result =
+            typeof left === "object" &&
+            left !== null &&
+            !Array.isArray(left) &&
+            Object.keys(left).length === 0;
+          break;
+        case "object_is_not_empty":
+          result =
+            typeof left === "object" &&
+            left !== null &&
+            !Array.isArray(left) &&
+            Object.keys(left).length > 0;
           break;
         default:
           throw createError(`Unsupported operator: ${operator}`, 400);

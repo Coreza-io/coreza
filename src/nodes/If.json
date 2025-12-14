@@ -30,24 +30,92 @@
         },
         {
           "key": "operator",
-          "type": "string",
-          "options": [
-            { "label": "equals", "value": "===" },
-            { "label": "not equals", "value": "!==" },
-            { "label": "greater than", "value": ">" },
-            { "label": "greater than or equal", "value": ">=" },
-            { "label": "less than", "value": "<" },
-            { "label": "less than or equal", "value": "<=" },
-            { "label": "contains", "value": "contains" },
-            { "label": "does not contain", "value": "does_not_contain" },
-            { "label": "starts with", "value": "starts_with" },
-            { "label": "ends with", "value": "ends_with" },
-            { "label": "is empty", "value": "is_empty" },
-            { "label": "is not empty", "value": "is_not_empty" },
-            { "label": "matches regex", "value": "matches_regex" },
-            { "label": "is null", "value": "isNull" },
-            { "label": "is not null", "value": "is_not_null" }
-          ]
+          "type": "grouped-select",
+          "groupedOptions": {
+            "string": {
+              "label": "String",
+              "icon": "T",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "is_empty" },
+                { "label": "is not empty", "value": "is_not_empty" },
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" },
+                { "label": "contains", "value": "contains" },
+                { "label": "does not contain", "value": "does_not_contain" },
+                { "label": "starts with", "value": "starts_with" },
+                { "label": "does not start with", "value": "not_starts_with" },
+                { "label": "ends with", "value": "ends_with" },
+                { "label": "does not end with", "value": "not_ends_with" },
+                { "label": "matches regex", "value": "matches_regex" },
+                { "label": "does not match regex", "value": "not_matches_regex" }
+              ]
+            },
+            "number": {
+              "label": "Number",
+              "icon": "#",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" },
+                { "label": "is greater than", "value": ">" },
+                { "label": "is greater than or equal", "value": ">=" },
+                { "label": "is less than", "value": "<" },
+                { "label": "is less than or equal", "value": "<=" }
+              ]
+            },
+            "dateTime": {
+              "label": "Date & Time",
+              "icon": "📅",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is equal to", "value": "date_equals" },
+                { "label": "is not equal to", "value": "date_not_equals" },
+                { "label": "is after", "value": "date_after" },
+                { "label": "is before", "value": "date_before" }
+              ]
+            },
+            "boolean": {
+              "label": "Boolean",
+              "icon": "☑",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is true", "value": "is_true" },
+                { "label": "is false", "value": "is_false" },
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" }
+              ]
+            },
+            "array": {
+              "label": "Array",
+              "icon": "≡",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "array_is_empty" },
+                { "label": "is not empty", "value": "array_is_not_empty" },
+                { "label": "contains", "value": "array_contains" },
+                { "label": "does not contain", "value": "array_not_contains" },
+                { "label": "length is equal to", "value": "array_length_equals" },
+                { "label": "length is greater than", "value": "array_length_gt" },
+                { "label": "length is less than", "value": "array_length_lt" }
+              ]
+            },
+            "object": {
+              "label": "Object",
+              "icon": "⊕",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "object_is_empty" },
+                { "label": "is not empty", "value": "object_is_not_empty" }
+              ]
+            }
+          }
         },
         { "key": "right", "type": "string", "placeholder": "stocks" }
       ],

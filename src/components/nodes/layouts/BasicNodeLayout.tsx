@@ -18,9 +18,18 @@ import React, { Suspense, useMemo, memo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
 import { GmailAuthModal } from "@/components/auth/GmailAuthModal";
@@ -29,6 +38,24 @@ import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import type { BaseNodeRenderProps } from "../BaseNode";
+
+// Type for grouped-select options
+type GroupedOptionType = { 
+  icon: string; 
+  label: string; 
+  options: { label: string; value: string }[] 
+};
+
+// Helper to find operator display info from grouped options
+const getOperatorDisplay = (operatorValue: string, groupedOptions: Record<string, GroupedOptionType>) => {
+  for (const [, typeData] of Object.entries(groupedOptions)) {
+    const option = typeData.options.find(opt => opt.value === operatorValue);
+    if (option) {
+      return { icon: typeData.icon, label: option.label, type: typeData.label };
+    }
+  }
+  return { icon: "?", label: operatorValue, type: "Unknown" };
+};
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {
   definition: any;
@@ -535,6 +562,50 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               ))}
             </SelectContent>
           </Select>
+        );
+
+      case "grouped-select":
+        const operatorDisplay = f.groupedOptions 
+          ? getOperatorDisplay(fieldState[f.key] || f.default || "", f.groupedOptions)
+          : null;
+        
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="w-full h-9 justify-between text-sm">
+                <span className="flex items-center gap-2">
+                  <span className="text-primary font-medium">
+                    {operatorDisplay?.icon ?? "?"}
+                  </span>
+                  {operatorDisplay?.label ?? f.placeholder ?? "Select operation"}
+                </span>
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {f.groupedOptions && Object.entries(f.groupedOptions).map(
+                ([typeKey, typeData]: [string, GroupedOptionType]) => (
+                  <DropdownMenuSub key={typeKey}>
+                    <DropdownMenuSubTrigger>
+                      <span className="text-primary mr-2">{typeData.icon}</span>
+                      {typeData.label}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-48">
+                      {typeData.options.map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value}
+                          onClick={() => handleChange(f.key, opt.value)}
+                          className={fieldState[f.key] === opt.value ? "bg-accent text-accent-foreground" : ""}
+                        >
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         );
 
       case "checkbox":

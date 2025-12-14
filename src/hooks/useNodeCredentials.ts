@@ -17,6 +17,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
+import { getTimezoneOptions } from "@/utils/timezones";
 
 interface UseNodeCredentialsProps {
   definition: any;
@@ -240,6 +241,9 @@ export function useNodeCredentials({
       }
       if (f.type === "select" && f.optionsSource === "storeWorkflowsApi") {
         fetchStoreWorkflows(f.key);
+      }
+      if (f.type === "select" && f.optionsSource === "timezones") {
+        setSelectOptions((opts) => ({ ...opts, [f.key]: getTimezoneOptions() }));
       }
       if (f.type === "select" && f.options) {
         setSelectOptions((opts) => ({ ...opts, [f.key]: f.options! }));

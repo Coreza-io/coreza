@@ -234,8 +234,9 @@
     {
       "key": "timezone",
       "label": "Timezone",
-      "type": "text",
-      "placeholder": "America/New_York",
+      "type": "select",
+      "optionsSource": "timezones",
+      "placeholder": "Select timezone",
       "description": "IANA timezone identifier (e.g., America/New_York, Europe/London, Asia/Tokyo).",
       "displayOptions": {
         "show": {

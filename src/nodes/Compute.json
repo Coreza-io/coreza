@@ -272,8 +272,9 @@
     {
       "key": "timezone",
       "label": "Timezone",
-      "type": "text",
-      "placeholder": "America/New_York",
+      "type": "select",
+      "placeholder": "Select timezone",
+      "optionsSource": "timezones",
       "displayOptions": {
         "show": {
           "operator": ["now", "convertTimezone"]

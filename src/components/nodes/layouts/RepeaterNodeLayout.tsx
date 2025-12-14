@@ -1374,21 +1374,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       />
                     )}
 
-                    {outputField && (
-                      <Input
-                        className="flex-1 h-8 text-xs nodrag"
-                        placeholder={outputField.placeholder || "Output name"}
-                        value={
-                          caseItem.outputName ||
-                          caseItem.caseName ||
-                          caseItem.caseValue ||
-                          ""
-                        }
-                        onChange={(e) => updateCase(i, "outputName", e.target.value)}
-                        onFocus={(e) => e.target.select()}
-                      />
-                    )}
-
                     {cases.length > 1 && (
                       <Button
                         type="button"
@@ -1400,7 +1385,27 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         <X className="w-3 h-3" />
                       </Button>
                     )}
-                </div>
+                  </div>
+
+                  {outputField && (
+                    <div className="mt-2 pl-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">🏷</span>
+                        <Input
+                          className="flex-1 h-8 text-xs nodrag"
+                          placeholder={outputField.placeholder || "Output name"}
+                          value={
+                            caseItem.outputName ||
+                            caseItem.caseName ||
+                            caseItem.caseValue ||
+                            ""
+                          }
+                          onChange={(e) => updateCase(i, "outputName", e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {(caseItem.left?.includes("{{") ||
                     caseItem.right?.includes("{{")) && (

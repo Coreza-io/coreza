@@ -30,9 +30,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, X, Plus } from "lucide-react";
+import { ChevronDown, Loader2, X, Plus } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
@@ -241,6 +250,22 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     },
     [logicalOps, handleChange]
   );
+
+  const getOperatorDisplay = (
+    operatorValue: string,
+    groupedOptions: Record<
+      string,
+      { icon: string; label: string; options: { label: string; value: string }[] }
+    >
+  ) => {
+    for (const [, typeData] of Object.entries(groupedOptions)) {
+      const option = typeData.options.find((opt) => opt.value === operatorValue);
+      if (option) {
+        return { icon: typeData.icon, label: option.label, type: typeData.label };
+      }
+    }
+    return { icon: "?", label: operatorValue, type: "Unknown" };
+  };
 
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
@@ -872,6 +897,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const persistentField = repeaterField.subFields?.find(
                 (sf: any) => sf.key === "persistent"
               );
+              const operatorDisplay =
+                operatorField?.groupedOptions &&
+                getOperatorDisplay(
+                  cond.operator,
+                  operatorField.groupedOptions
+                );
 
               return (
                 <div key={i} className="space-y-2">
@@ -940,22 +971,72 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     )}
 
                     {/* Operator */}
-                    {operatorField && (
-                      <Select
-                        value={cond.operator}
-                        onValueChange={(v) => updateCondition(i, "operator", v)}
-                      >
-                        <SelectTrigger className="w-24 h-8 text-xs">
-                          <SelectValue placeholder={operatorField.label} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(operatorField.options || []).map((opt: any) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    {operatorField && operatorField.groupedOptions ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-32 h-8 text-xs justify-between"
+                          >
+                            <span className="flex items-center gap-1">
+                              <span className="text-primary font-medium">
+                                {operatorDisplay?.icon ?? "?"}
+                              </span>
+                              {operatorDisplay?.label ?? operatorField.label}
+                            </span>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                          {Object.entries(operatorField.groupedOptions).map(
+                            ([typeKey, typeData]) => (
+                              <DropdownMenuSub key={typeKey}>
+                                <DropdownMenuSubTrigger>
+                                  <span className="text-primary mr-2">
+                                    {typeData.icon}
+                                  </span>
+                                  {typeData.label}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-48">
+                                  {typeData.options.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.value}
+                                      onClick={() =>
+                                        updateCondition(i, "operator", opt.value)
+                                      }
+                                      className={
+                                        cond.operator === opt.value
+                                          ? "bg-accent text-primary"
+                                          : ""
+                                      }
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      operatorField && (
+                        <Select
+                          value={cond.operator}
+                          onValueChange={(v) => updateCondition(i, "operator", v)}
+                        >
+                          <SelectTrigger className="w-24 h-8 text-xs">
+                            <SelectValue placeholder={operatorField.label} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(operatorField.options || []).map((opt: any) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
                     )}
 
                     {/* Right */}

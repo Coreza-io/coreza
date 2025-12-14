@@ -147,7 +147,7 @@ export class ComputeService {
         }
 
         case "substring": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const start = Number(arg1) || 0;
@@ -164,28 +164,28 @@ export class ComputeService {
         }
 
         case "trim": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.string.trim() };
         }
 
         case "upper": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.string.toUpperCase() };
         }
 
         case "lower": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.string.toLowerCase() };
         }
 
         case "replace": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const search = String(arg1 || "");
@@ -197,7 +197,7 @@ export class ComputeService {
         }
 
         case "split": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const delimiter = arg1 !== undefined ? String(arg1) : ",";
@@ -205,7 +205,7 @@ export class ComputeService {
         }
 
         case "concat": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const appendStr = String(arg1 || "");
@@ -213,7 +213,7 @@ export class ComputeService {
         }
 
         case "startsWith": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const prefix = String(arg1 || "");
@@ -221,7 +221,7 @@ export class ComputeService {
         }
 
         case "endsWith": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const suffix = String(arg1 || "");
@@ -229,7 +229,7 @@ export class ComputeService {
         }
 
         case "contains": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const substring = String(arg1 || "");
@@ -237,7 +237,7 @@ export class ComputeService {
         }
 
         case "isEmpty": {
-          const validation = TransformService.validateString(value);
+          const validation = this.validateString(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.string.trim().length === 0 };
@@ -653,24 +653,24 @@ export class ComputeService {
 
         // ============== ARRAY OPERATIONS ==============
         case "arrayLength": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.array.length };
         }
 
         case "push": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const arr = [...validation.array];
-          const item = TransformService.parseValue(arg1);
+          const item = this.parseValue(arg1);
           arr.push(item);
           return { success: true, data: arr };
         }
 
         case "pop": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const arr = [...validation.array];
@@ -679,7 +679,7 @@ export class ComputeService {
         }
 
         case "shift": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const arr = [...validation.array];
@@ -688,20 +688,20 @@ export class ComputeService {
         }
 
         case "unshift": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const arr = [...validation.array];
-          const item = TransformService.parseValue(arg1);
+          const item = this.parseValue(arg1);
           arr.unshift(item);
           return { success: true, data: arr };
         }
 
         case "arrayConcat": {
-          const validation1 = TransformService.validateArray(value);
+          const validation1 = this.validateArray(value);
           if (!validation1.valid)
             return { success: false, error: validation1.error };
-          const validation2 = TransformService.validateArray(arg1);
+          const validation2 = this.validateArray(arg1);
           if (!validation2.valid)
             return { success: false, error: "Second value must be an array" };
           return {
@@ -711,7 +711,7 @@ export class ComputeService {
         }
 
         case "slice": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const start = arg1 !== undefined && arg1 !== "" ? Number(arg1) : 0;
@@ -721,14 +721,14 @@ export class ComputeService {
         }
 
         case "reverse": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: [...validation.array].reverse() };
         }
 
         case "sort": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const arr = [...validation.array];
@@ -747,7 +747,7 @@ export class ComputeService {
         }
 
         case "unique": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return {
@@ -769,21 +769,21 @@ export class ComputeService {
         }
 
         case "flatten": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.array.flat(Infinity) };
         }
 
         case "first": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.array[0] ?? null };
         }
 
         case "last": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return {
@@ -793,10 +793,10 @@ export class ComputeService {
         }
 
         case "arrayContains": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
-          const item = TransformService.parseValue(arg1);
+          const item = this.parseValue(arg1);
           const found = validation.array.some((el) => {
             if (typeof el === "object" && typeof item === "object") {
               return JSON.stringify(el) === JSON.stringify(item);
@@ -807,14 +807,14 @@ export class ComputeService {
         }
 
         case "arrayIsEmpty": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: validation.array.length === 0 };
         }
 
         case "join": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const delimiter = arg1 !== undefined ? String(arg1) : ",";
@@ -878,16 +878,16 @@ export class ComputeService {
         }
 
         case "find": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const propertyName = String(arg1 || "");
-          const matchValue = TransformService.parseValue(arg2);
+          const matchValue = this.parseValue(arg2);
           const operator = String(input.filterOperator || "===");
           const found = validation.array.find((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return TransformService.compareValues(
+              return this.compareValues(
                 itemValue,
                 operator,
                 matchValue
@@ -899,16 +899,16 @@ export class ComputeService {
         }
 
         case "filter": {
-          const validation = TransformService.validateArray(value);
+          const validation = this.validateArray(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const propertyName = String(arg1 || "");
-          const matchValue = TransformService.parseValue(arg2);
+          const matchValue = this.parseValue(arg2);
           const operator = String(input.filterOperator || "===");
           const filtered = validation.array.filter((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return TransformService.compareValues(
+              return this.compareValues(
                 itemValue,
                 operator,
                 matchValue
@@ -921,70 +921,70 @@ export class ComputeService {
 
         // ============== OBJECT OPERATIONS ==============
         case "keys": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: Object.keys(validation.object) };
         }
 
         case "values": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: Object.values(validation.object) };
         }
 
         case "entries": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return { success: true, data: Object.entries(validation.object) };
         }
 
         case "getProperty": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const path = String(arg1 || "");
-          const data = TransformService.getNestedValue(validation.object, path);
+          const data = this.getNestedValue(validation.object, path);
           return { success: true, data };
         }
 
         case "setProperty": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const obj = { ...validation.object };
           const path = String(arg1 || "");
-          const newValue = TransformService.parseValue(arg2);
-          TransformService.setNestedValue(obj, path, newValue);
+          const newValue = this.parseValue(arg2);
+          this.setNestedValue(obj, path, newValue);
           return { success: true, data: obj };
         }
 
         case "deleteProperty": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const obj = { ...validation.object };
           const path = String(arg1 || "");
-          TransformService.deleteNestedValue(obj, path);
+          this.deleteNestedValue(obj, path);
           return { success: true, data: obj };
         }
 
         case "hasProperty": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const path = String(arg1 || "");
-          const data = TransformService.getNestedValue(validation.object, path);
+          const data = this.getNestedValue(validation.object, path);
           return { success: true, data: data !== undefined };
         }
 
         case "merge": {
-          const validation1 = TransformService.validateObject(value);
+          const validation1 = this.validateObject(value);
           if (!validation1.valid)
             return { success: false, error: validation1.error };
-          const validation2 = TransformService.validateObject(arg1);
+          const validation2 = this.validateObject(arg1);
           if (!validation2.valid)
             return { success: false, error: "Second value must be an object" };
           return {
@@ -994,7 +994,7 @@ export class ComputeService {
         }
 
         case "pick": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const keys = String(arg1 || "")
@@ -1011,7 +1011,7 @@ export class ComputeService {
         }
 
         case "omit": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           const obj = { ...validation.object };
@@ -1026,7 +1026,7 @@ export class ComputeService {
         }
 
         case "objectIsEmpty": {
-          const validation = TransformService.validateObject(value);
+          const validation = this.validateObject(value);
           if (!validation.valid)
             return { success: false, error: validation.error };
           return {
@@ -1129,9 +1129,9 @@ export class ComputeService {
 
     switch (normalizedOperator) {
       case "===":
-        return TransformService.areValuesEqual(itemValue, matchValue);
+        return this.areValuesEqual(itemValue, matchValue);
       case "!==":
-        return !TransformService.areValuesEqual(itemValue, matchValue);
+        return !this.areValuesEqual(itemValue, matchValue);
       case ">": {
         const left = toNumber(itemValue);
         const right = toNumber(matchValue);
@@ -1156,13 +1156,13 @@ export class ComputeService {
         if (itemValue === undefined || itemValue === null) return false;
         if (Array.isArray(itemValue)) {
           return itemValue.some((entry) =>
-            TransformService.areValuesEqual(entry, matchValue)
+            this.areValuesEqual(entry, matchValue)
           );
         }
         return toStringValue(itemValue).includes(toStringValue(matchValue));
       }
       case "does_not_contain": {
-        return !TransformService.compareValues(
+        return !this.compareValues(
           itemValue,
           "contains",
           matchValue
@@ -1183,7 +1183,7 @@ export class ComputeService {
         return false;
       }
       case "is_not_empty": {
-        return !TransformService.compareValues(
+        return !this.compareValues(
           itemValue,
           "is_empty",
           matchValue
@@ -1198,7 +1198,7 @@ export class ComputeService {
         }
       }
       default:
-        return TransformService.areValuesEqual(itemValue, matchValue);
+        return this.areValuesEqual(itemValue, matchValue);
     }
   }
 

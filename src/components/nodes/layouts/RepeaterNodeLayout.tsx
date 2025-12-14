@@ -1402,53 +1402,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     )}
                 </div>
 
-                  {outputField && (
-                    <Input
-                      className="w-full h-8 text-xs nodrag"
-                      placeholder={outputField.placeholder || "Output name"}
-                      value={
-                        caseItem.outputName ||
-                        caseItem.caseName ||
-                        caseItem.caseValue ||
-                        ""
-                      }
-                      onChange={(e) => updateCase(i, "outputName", e.target.value)}
-                      onFocus={(e) => e.target.select()}
-                    />
-                  </div>
-
-                  {(caseItem.left?.includes("{{") ||
-                    caseItem.right?.includes("{{")) && (
-                    <div className="text-xs text-gray-500 space-y-1 ml-2">
-                      {caseItem.left?.includes("{{") && (
-                        <div>
-                          Left preview: {getSwitchPreviewFor(caseItem.left)}
-                        </div>
-                      )}
-                      {caseItem.right?.includes("{{") && (
-                        <div>
-                          Right preview: {getSwitchPreviewFor(caseItem.right)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                  {outputField && (
-                    <Input
-                      className="w-full h-8 text-xs nodrag"
-                      placeholder={outputField.placeholder || "Output name"}
-                      value={
-                        caseItem.outputName ||
-                        caseItem.caseName ||
-                        caseItem.caseValue ||
-                        ""
-                      }
-                      onChange={(e) => updateCase(i, "outputName", e.target.value)}
-                      onFocus={(e) => e.target.select()}
-                    />
-                  )}
-
                   {(caseItem.left?.includes("{{") ||
                     caseItem.right?.includes("{{")) && (
                     <div className="text-xs text-gray-500 space-y-1 ml-2">

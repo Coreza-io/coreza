@@ -90,14 +90,7 @@ router.post("/if", async (req, res) => {
 // Switch case routing logic using ComparatorService
 router.post("/switch", async (req, res) => {
   try {
-    const { inputValue, cases = [], defaultCase = "default" } = req.body;
-
-    if (inputValue === undefined) {
-      return res.status(400).json({
-        error: "inputValue is required",
-        received: { inputValue, cases, defaultCase },
-      });
-    }
+    const { cases = [], defaultCase = "fallback", inputValue } = req.body;
     if (!Array.isArray(cases)) {
       return res.status(400).json({
         error: "cases must be an array",
@@ -105,14 +98,34 @@ router.post("/switch", async (req, res) => {
       });
     }
 
+    if (cases.length === 0) {
+      return res.json({
+        success: true,
+        data: defaultCase,
+      });
+    }
+
+    for (const caseItem of cases) {
+      const leftValue = caseItem.left ?? inputValue;
+      const rightValue = caseItem.right ?? caseItem.caseValue;
+
+      if (leftValue === undefined || rightValue === undefined) {
+        return res.status(400).json({
+          error: "Each case must include left, operator, and right values",
+          invalidCase: caseItem,
+        });
+      }
+    }
+
     // Transform cases to ComparatorService format
-    const serviceCases = cases.map((caseItem) => ({
+    const serviceCases = cases.map((caseItem, idx) => ({
       condition: {
-        left: inputValue,
+        left: caseItem.left ?? inputValue,
         operator: caseItem.operator || "===",
-        right: caseItem.caseValue,
+        right: caseItem.right ?? caseItem.caseValue,
       } as ComparatorInput,
-      value: caseItem.caseName ?? caseItem.caseValue,
+      value:
+        caseItem.outputName ?? caseItem.caseName ?? caseItem.caseValue ?? `case${idx + 1}`,
     }));
 
     // Use ComparatorService to evaluate switch

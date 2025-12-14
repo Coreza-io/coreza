@@ -7,11 +7,11 @@
   "category": "Logic",
   "description": "Multi-path conditional routing for complex workflow logic",
   "color": "text-orange-500",
-  "size": { "width": 360, "height": 300 },
+  "size": { "width": 340, "height": 340 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "case1" },
-    { "type": "source", "position": "right", "id": "case2" }
+    { "type": "source", "position": "right", "id": "fallback" }
   ],
   "action": {
     "url": "/comparator/switch",
@@ -19,40 +19,45 @@
   },
   "fields": [
     {
-      "key": "inputValue",
-      "label": "Input Value",
-      "type": "text",
-      "placeholder": "{{ $json.field }}",
-      "required": true
-    },
-    {
       "key": "cases",
       "label": "Cases",
       "type": "repeater",
       "subFields": [
-        { "key": "caseValue", "type": "string", "placeholder": "case1" },
+        {
+          "key": "left",
+          "type": "string",
+          "placeholder": "{{ $('Market Status').json.market_type }}"
+        },
         {
           "key": "operator",
           "type": "grouped-select",
-          "default": "===",
           "groupedOptions": {
             "string": {
               "label": "String",
               "icon": "T",
               "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "is_empty" },
+                { "label": "is not empty", "value": "is_not_empty" },
                 { "label": "is equal to", "value": "===" },
                 { "label": "is not equal to", "value": "!==" },
                 { "label": "contains", "value": "contains" },
                 { "label": "does not contain", "value": "does_not_contain" },
                 { "label": "starts with", "value": "starts_with" },
+                { "label": "does not start with", "value": "not_starts_with" },
                 { "label": "ends with", "value": "ends_with" },
-                { "label": "matches regex", "value": "matches_regex" }
+                { "label": "does not end with", "value": "not_ends_with" },
+                { "label": "matches regex", "value": "matches_regex" },
+                { "label": "does not match regex", "value": "not_matches_regex" }
               ]
             },
             "number": {
               "label": "Number",
               "icon": "#",
               "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
                 { "label": "is equal to", "value": "===" },
                 { "label": "is not equal to", "value": "!==" },
                 { "label": "is greater than", "value": ">" },
@@ -61,36 +66,68 @@
                 { "label": "is less than or equal", "value": "<=" }
               ]
             },
+            "dateTime": {
+              "label": "Date & Time",
+              "icon": "📅",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is equal to", "value": "date_equals" },
+                { "label": "is not equal to", "value": "date_not_equals" },
+                { "label": "is after", "value": "date_after" },
+                { "label": "is before", "value": "date_before" }
+              ]
+            },
             "boolean": {
               "label": "Boolean",
               "icon": "☑",
               "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
                 { "label": "is true", "value": "is_true" },
                 { "label": "is false", "value": "is_false" },
-                { "label": "is equal to", "value": "===" }
+                { "label": "is equal to", "value": "===" },
+                { "label": "is not equal to", "value": "!==" }
               ]
             },
             "array": {
               "label": "Array",
               "icon": "≡",
               "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "array_is_empty" },
+                { "label": "is not empty", "value": "array_is_not_empty" },
                 { "label": "contains", "value": "array_contains" },
                 { "label": "does not contain", "value": "array_not_contains" },
-                { "label": "is empty", "value": "array_is_empty" },
-                { "label": "is not empty", "value": "array_is_not_empty" }
+                { "label": "length is equal to", "value": "array_length_equals" },
+                { "label": "length is greater than", "value": "array_length_gt" },
+                { "label": "length is less than", "value": "array_length_lt" }
+              ]
+            },
+            "object": {
+              "label": "Object",
+              "icon": "⊕",
+              "options": [
+                { "label": "exists", "value": "exists" },
+                { "label": "does not exist", "value": "not_exists" },
+                { "label": "is empty", "value": "object_is_empty" },
+                { "label": "is not empty", "value": "object_is_not_empty" }
               ]
             }
           }
         },
-        { "key": "caseName", "type": "string", "placeholder": "Case Label" }
-      ]
+        { "key": "right", "type": "string", "placeholder": "stocks" },
+        { "key": "outputName", "type": "string", "placeholder": "Output label" }
+      ],
+      "default": { "left": "", "operator": "===", "right": "", "outputName": "Case 1" }
     },
     {
       "key": "defaultCase",
-      "label": "Default Case",
+      "label": "Fallback Output",
       "type": "text",
-      "placeholder": "default",
-      "default": "default",
+      "placeholder": "fallback",
+      "default": "fallback",
       "required": false
     }
   ]

@@ -130,7 +130,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     Array.isArray(repeaterField?.default) &&
     repeaterField.default.length > 0
       ? repeaterField.default
-      : [{ caseValue: "case1", caseName: "Case 1" }];
+      : [
+          { left: "", operator: "===", right: "", outputName: "Case 1" },
+        ];
 
   // =========== STATE ===========
   // make sure these are always arrays before you map/filter them
@@ -309,7 +311,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const newIndex = cases.length + 1;
     handleChange("cases", [
       ...cases,
-      { caseValue: `case${newIndex}`, caseName: `Case ${newIndex}` },
+      {
+        left: "",
+        operator: "===",
+        right: "",
+        outputName: `Case ${newIndex}`,
+      },
     ]);
   };
 
@@ -424,6 +431,39 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
     [selectedPrevNodeId, handleChange, previousNodes]
+  );
+
+  const handleSwitchConditionDrop = useCallback(
+    (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const raw = e.dataTransfer.getData("application/reactflow");
+      if (!raw) {
+        document.body.classList.remove("cursor-grabbing", "select-none");
+        return;
+      }
+      try {
+        const { keyPath = "" } = JSON.parse(raw);
+        const sourceNode = previousNodes.find(
+          (n) => n.id === selectedPrevNodeId
+        );
+        const sourceDisplayName =
+          sourceNode?.data?.displayName ||
+          (sourceNode
+            ? getDisplayName(sourceNode, previousNodes)
+            : selectedPrevNodeId);
+        const kp = (keyPath ?? "").trim();
+        const suffix = kp ? `.${kp}` : "";
+        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
+
+        updateCase(idx, field, currentValue + insert);
+      } catch (error) {
+        console.error("Drop error:", error);
+      }
+      document.body.classList.remove("cursor-grabbing", "select-none");
+    },
+    [selectedPrevNodeId, updateCase, previousNodes]
   );
 
   const getPreviewFor = useCallback(
@@ -1205,95 +1245,177 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             </div>
 
             {cases.map((caseItem, i) => {
-              // Get the operator subField from the repeater definition
+              const leftField = repeaterField?.subFields?.find(
+                (sf: any) => sf.key === "left"
+              );
               const operatorSubField = repeaterField?.subFields?.find(
                 (sf: any) => sf.key === "operator"
               );
+              const rightField = repeaterField?.subFields?.find(
+                (sf: any) => sf.key === "right"
+              );
+              const outputField = repeaterField?.subFields?.find(
+                (sf: any) => sf.key === "outputName"
+              );
               const caseOperatorDisplay = operatorSubField?.groupedOptions
-                ? getOperatorDisplay(caseItem.operator || "===", operatorSubField.groupedOptions)
+                ? getOperatorDisplay(
+                    caseItem.operator || "===",
+                    operatorSubField.groupedOptions
+                  )
                 : null;
+              const showRightField = operatorRequiresRightValue(caseItem.operator);
 
               return (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 p-2 border rounded bg-muted/10"
-                >
-                  <Input
-                    className="flex-1 h-8 text-xs nodrag"
-                    placeholder="Match value"
-                    value={caseItem.caseValue || ""}
-                    onChange={(e) => updateCase(i, "caseValue", e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                  />
+                <div key={i} className="space-y-2">
+                  <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
+                    <Input
+                      className="flex-1 h-8 text-xs nodrag"
+                      placeholder={leftField?.placeholder || "Left value"}
+                      value={caseItem.left || ""}
+                      onChange={(e) => updateCase(i, "left", e.target.value)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "copy";
+                      }}
+                      onDrop={(e) =>
+                        handleSwitchConditionDrop(i, "left", e, caseItem.left || "")
+                      }
+                      style={
+                        caseItem.left?.includes("{{") ? referenceStyle : undefined
+                      }
+                      onFocus={(e) => e.target.select()}
+                    />
 
-                  {/* Operator grouped-select dropdown */}
-                  {operatorSubField?.groupedOptions && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-32 h-8 text-xs justify-between flex-shrink-0"
-                        >
-                          <span className="flex items-center gap-1">
-                            <span className="text-primary font-medium">
-                              {caseOperatorDisplay?.icon ?? "?"}
+                    {operatorSubField?.groupedOptions && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-32 h-8 text-xs justify-between flex-shrink-0"
+                          >
+                            <span className="flex items-center gap-1">
+                              <span className="text-primary font-medium">
+                                {caseOperatorDisplay?.icon ?? "?"}
+                              </span>
+                              <span className="truncate">
+                                {caseOperatorDisplay?.label ?? "is equal to"}
+                              </span>
                             </span>
-                            <span className="truncate">
-                              {caseOperatorDisplay?.label ?? "is equal to"}
-                            </span>
-                          </span>
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-48">
-                        {Object.entries(operatorSubField.groupedOptions).map(
-                          ([typeKey, typeData]: [string, { icon: string; label: string; options: { label: string; value: string }[] }]) => (
-                            <DropdownMenuSub key={typeKey}>
-                              <DropdownMenuSubTrigger>
-                                <span className="text-primary mr-2">
-                                  {typeData.icon}
-                                </span>
-                                {typeData.label}
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent className="w-48">
-                                {typeData.options.map((opt) => (
-                                  <DropdownMenuItem
-                                    key={opt.value}
-                                    onClick={() => updateCase(i, "operator", opt.value)}
-                                    className={
-                                      caseItem.operator === opt.value
-                                        ? "bg-accent text-primary"
-                                        : ""
-                                    }
-                                  >
-                                    {opt.label}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuSubContent>
-                            </DropdownMenuSub>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                          {Object.entries(operatorSubField.groupedOptions).map(
+                            ([typeKey, typeData]: [
+                              string,
+                              {
+                                icon: string;
+                                label: string;
+                                options: { label: string; value: string }[];
+                              }
+                            ]) => (
+                              <DropdownMenuSub key={typeKey}>
+                                <DropdownMenuSubTrigger>
+                                  <span className="text-primary mr-2">
+                                    {typeData.icon}
+                                  </span>
+                                  {typeData.label}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-48">
+                                  {typeData.options.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.value}
+                                      onClick={() =>
+                                        updateCase(i, "operator", opt.value)
+                                      }
+                                      className={
+                                        caseItem.operator === opt.value
+                                          ? "bg-accent text-primary"
+                                          : ""
+                                      }
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+
+                    {rightField && showRightField && (
+                      <Input
+                        className="flex-1 h-8 text-xs nodrag"
+                        placeholder={rightField.placeholder || "Right value"}
+                        value={caseItem.right ?? caseItem.caseValue ?? ""}
+                        onChange={(e) => updateCase(i, "right", e.target.value)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = "copy";
+                        }}
+                        onDrop={(e) =>
+                          handleSwitchConditionDrop(
+                            i,
+                            "right",
+                            e,
+                            caseItem.right || ""
                           )
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                        }
+                        style={
+                          caseItem.right?.includes("{{")
+                            ? referenceStyle
+                            : undefined
+                        }
+                        onFocus={(e) => e.target.select()}
+                      />
+                    )}
 
-                  <Input
-                    className="flex-1 h-8 text-xs nodrag"
-                    placeholder="Case Label"
-                    value={caseItem.caseName || ""}
-                    onChange={(e) => updateCase(i, "caseName", e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                  />
-                  {cases.length > 1 && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeCase(i)}
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
+                    {outputField && (
+                      <Input
+                        className="flex-1 h-8 text-xs nodrag"
+                        placeholder={outputField.placeholder || "Output name"}
+                        value={
+                          caseItem.outputName ||
+                          caseItem.caseName ||
+                          caseItem.caseValue ||
+                          ""
+                        }
+                        onChange={(e) => updateCase(i, "outputName", e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                      />
+                    )}
+
+                    {cases.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeCase(i)}
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {(caseItem.left?.includes("{{") ||
+                    caseItem.right?.includes("{{")) && (
+                    <div className="text-xs text-gray-500 space-y-1 ml-2">
+                      {caseItem.left?.includes("{{") && (
+                        <div>
+                          Left preview: {getSwitchPreviewFor(caseItem.left)}
+                        </div>
+                      )}
+                      {caseItem.right?.includes("{{") && (
+                        <div>
+                          Right preview: {getSwitchPreviewFor(caseItem.right)}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );

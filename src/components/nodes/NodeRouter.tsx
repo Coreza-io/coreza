@@ -67,9 +67,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
     // Use defaults from definition
     const casesField = definition.fields?.find((f: any) => f.key === "cases");
-    const defaultCases = casesField?.default || [
-      { caseValue: "case1", caseName: "Case 1" },
-    ];
+    const defaultCases = Array.isArray(casesField?.default)
+      ? casesField?.default
+      : casesField?.default
+      ? [casesField.default]
+      : [{ left: "", operator: "===", right: "", outputName: "Case 1" }];
     return defaultCases.length;
   }, [
     definition.name,
@@ -90,18 +92,27 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     // If no cases available, use defaults from definition
     if (!cases || cases.length === 0) {
       const casesField = definition.fields?.find((f: any) => f.key === "cases");
-      const defaultCases = casesField?.default || [
-        { caseValue: "case1", caseName: "Case 1" },
-      ];
+      const defaultCases = Array.isArray(casesField?.default)
+        ? casesField?.default
+        : casesField?.default
+        ? [casesField.default]
+        : [
+            {
+              left: "",
+              operator: "===",
+              right: "",
+              outputName: "Case 1",
+            },
+          ];
 
       return [
         { type: "target", position: "left", id: "input" },
         ...defaultCases.map((caseItem: any, index: number) => ({
           type: "source",
           position: "right",
-          id: caseItem.caseValue || `case${index + 1}`,
+          id: caseItem.outputName || `case${index + 1}`,
         })),
-        { type: "source", position: "right", id: "default" },
+        { type: "source", position: "right", id: "fallback" },
       ];
     }
 
@@ -109,7 +120,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
     // Add handle for each case - ensure stable IDs
     cases.forEach((caseItem: any, index: number) => {
-      const handleId = caseItem.caseValue || `case${index + 1}`;
+      const handleId =
+        caseItem.outputName || caseItem.caseName || caseItem.caseValue || `case${index + 1}`;
       console.log(`🔧 Adding Switch handle: ${handleId}`);
       handles.push({
         type: "source",
@@ -122,7 +134,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     handles.push({
       type: "source",
       position: "right",
-      id: data.fieldState?.defaultCase || data.values?.defaultCase || "default",
+      id: data.fieldState?.defaultCase || data.values?.defaultCase || "fallback",
     });
 
     return handles;
@@ -146,9 +158,18 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     } else {
       // Use defaults from definition
       const casesField = definition.fields?.find((f: any) => f.key === "cases");
-      const defaultCases = casesField?.default || [
-        { caseValue: "case1", caseName: "Case 1" },
-      ];
+      const defaultCases = Array.isArray(casesField?.default)
+        ? casesField?.default
+        : casesField?.default
+        ? [casesField.default]
+        : [
+            {
+              left: "",
+              operator: "===",
+              right: "",
+              outputName: "Case 1",
+            },
+          ];
       caseCount = defaultCases.length;
     }
 

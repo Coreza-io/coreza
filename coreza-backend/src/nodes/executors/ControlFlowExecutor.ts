@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { TransformService } from "../../services/transform";
+import { ComputeService } from "../../services/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -35,31 +35,11 @@ export class ControlFlowExecutor implements INodeExecutor {
           return this.executeSwitchNode(node, input, context);
         case "Edit Fields":
           return this.executeFieldNode(node, input, context);
-        case "Math":
-          // Deprecated: Route to Transform with statistical operators
-          return this.executeTransformNode(node, input, context);
-        case "Transform":
-          return this.executeTransformNode(node, input, context);
+        case "Compute":
+          return this.executeComputeNode(node, input, context);
         case "Loop":
           return this.executeLoopNode(node, input, context);
-        case "Date":
-          // Deprecated: Route to Transform with datetime operators
-          return this.executeTransformNode(node, input, context);
         default:
-          return {
-            success: false,
-            error: `Unsupported control flow node type: ${nodeName}`,
-          };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: `Control flow execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
-    }
-  }
           return {
             success: false,
             error: `Unsupported control flow node type: ${nodeName}`,
@@ -276,7 +256,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     };
   }
 
-  private async executeTransformNode(
+  private async executeComputeNode(
     node: WorkflowNode,
     input: NodeInput,
     context?: any
@@ -285,42 +265,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    // Handle legacy Math node parameters by mapping to Transform format
-    if (node.name === "Math") {
-      const { left, operator, right } = resolvedParams;
-      const result = TransformService.transform({ 
-        value: left, 
-        operator, 
-        arg1: right 
-      });
-      if (!result.success) {
-        return { success: false, error: result.error };
-      }
-      return result;
-    }
-
-    // Handle legacy Date node parameters by mapping to Transform format
-    if (node.name === "Date") {
-      const result = TransformService.transform({
-        value: resolvedParams.date,
-        operator: resolvedParams.operation,
-        arg1: resolvedParams.amount || resolvedParams.formatString,
-        arg2: resolvedParams.formatString,
-        unit: resolvedParams.unit,
-        date2: resolvedParams.date2,
-        timezone: resolvedParams.timezone,
-        inputFormat: resolvedParams.inputFormat,
-        targetDay: resolvedParams.targetDay,
-      });
-      if (!result.success) {
-        return { success: false, error: result.error };
-      }
-      return { success: true, data: result.data };
-    }
-
-    // Standard Transform node
     const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = resolvedParams;
-    const result = TransformService.transform({ 
+    const result = ComputeService.compute({ 
       value, 
       operator, 
       arg1, 

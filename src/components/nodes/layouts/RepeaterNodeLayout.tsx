@@ -30,9 +30,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, X, Plus } from "lucide-react";
+import { ChevronDown, Loader2, X, Plus } from "lucide-react";
 import GenericAuthModal from "@/components/auth/GenericAuthModal";
 import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
 import type { BaseNodeRenderProps } from "../BaseNode";
@@ -57,6 +66,24 @@ interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
   readOnly?: boolean;
 }
+
+const OPERATORS_WITHOUT_RIGHT_VALUE = new Set([
+  "exists",
+  "not_exists",
+  "is_empty",
+  "is_not_empty",
+  "is_true",
+  "is_false",
+  "array_is_empty",
+  "array_is_not_empty",
+  "object_is_empty",
+  "object_is_not_empty",
+  "isNull",
+  "is_not_null",
+]);
+
+const operatorRequiresRightValue = (operator?: string) =>
+  operator ? !OPERATORS_WITHOUT_RIGHT_VALUE.has(operator) : true;
 
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
@@ -226,6 +253,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [conditions, handleChange, repeaterKey]
   );
 
+  const handleOperatorSelect = useCallback(
+    (idx: number, value: string) => {
+      handleChange(
+        repeaterKey!,
+        conditions.map((row, rowIdx) => {
+          if (rowIdx !== idx) return row;
+          const updated = { ...row, operator: value } as any;
+
+          if (!operatorRequiresRightValue(value)) {
+            updated.right = "";
+          }
+
+          return updated;
+        })
+      );
+    },
+    [conditions, handleChange, repeaterKey]
+  );
+
   const updateLogicalOp = useCallback(
     (idx: number, op: string) => {
       if (!logicalOps || logicalOps.length === 0) {
@@ -241,6 +287,22 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     },
     [logicalOps, handleChange]
   );
+
+  const getOperatorDisplay = (
+    operatorValue: string,
+    groupedOptions: Record<
+      string,
+      { icon: string; label: string; options: { label: string; value: string }[] }
+    >
+  ) => {
+    for (const [, typeData] of Object.entries(groupedOptions)) {
+      const option = typeData.options.find((opt) => opt.value === operatorValue);
+      if (option) {
+        return { icon: typeData.icon, label: option.label, type: typeData.label };
+      }
+    }
+    return { icon: "?", label: operatorValue, type: "Unknown" };
+  };
 
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
@@ -872,6 +934,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const persistentField = repeaterField.subFields?.find(
                 (sf: any) => sf.key === "persistent"
               );
+              const operatorDisplay =
+                operatorField?.groupedOptions &&
+                getOperatorDisplay(
+                  cond.operator,
+                  operatorField.groupedOptions
+                );
+              const showRightField = operatorRequiresRightValue(cond.operator);
 
               return (
                 <div key={i} className="space-y-2">
@@ -940,26 +1009,76 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     )}
 
                     {/* Operator */}
-                    {operatorField && (
-                      <Select
-                        value={cond.operator}
-                        onValueChange={(v) => updateCondition(i, "operator", v)}
-                      >
-                        <SelectTrigger className="w-24 h-8 text-xs">
-                          <SelectValue placeholder={operatorField.label} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(operatorField.options || []).map((opt: any) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    {operatorField && operatorField.groupedOptions ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-32 h-8 text-xs justify-between"
+                          >
+                            <span className="flex items-center gap-1">
+                              <span className="text-primary font-medium">
+                                {operatorDisplay?.icon ?? "?"}
+                              </span>
+                              {operatorDisplay?.label ?? operatorField.label}
+                            </span>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                          {Object.entries(operatorField.groupedOptions).map(
+                            ([typeKey, typeData]) => (
+                              <DropdownMenuSub key={typeKey}>
+                                <DropdownMenuSubTrigger>
+                                  <span className="text-primary mr-2">
+                                    {typeData.icon}
+                                  </span>
+                                  {typeData.label}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-48">
+                                  {typeData.options.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.value}
+                                      onClick={() =>
+                                        handleOperatorSelect(i, opt.value)
+                                      }
+                                      className={
+                                        cond.operator === opt.value
+                                          ? "bg-accent text-primary"
+                                          : ""
+                                      }
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      operatorField && (
+                        <Select
+                          value={cond.operator}
+                          onValueChange={(v) => handleOperatorSelect(i, v)}
+                        >
+                          <SelectTrigger className="w-24 h-8 text-xs">
+                            <SelectValue placeholder={operatorField.label} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(operatorField.options || []).map((opt: any) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
                     )}
 
                     {/* Right */}
-                    {rightField && (
+                    {rightField && showRightField && (
                       <Input
                         className="flex-1 h-8 text-xs nodrag"
                         placeholder={rightField.placeholder || "Right value"}

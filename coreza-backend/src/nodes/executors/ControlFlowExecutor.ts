@@ -134,48 +134,45 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const inputValue = resolvedParams.inputValue || resolvedParams.value;
     const cases = Array.isArray(resolvedParams.cases)
       ? resolvedParams.cases
       : [];
-    const defaultCase = resolvedParams.defaultCase || "default";
+    const defaultCase = resolvedParams.defaultCase || "fallback";
 
     console.log("🔀 Switch node evaluation:", {
-      inputValue,
       cases,
       defaultCase,
     });
 
-    // Evaluate each case using ComparatorService
-    let matchedCase = null as any;
-    for (const c of cases) {
-      const operator = c.operator || "===";
-      const result = await ComparatorService.evaluate({
-        left: inputValue,
-        operator: operator,
-        right: c.caseValue,
-      });
+    const baseInput = resolvedParams.inputValue ?? resolvedParams.value;
 
-      if (result.success && result.result === true) {
-        matchedCase = c;
-        break;
-      }
-    }
+    const switchCases = cases
+      .filter((c: any) => c && (c.left !== undefined || baseInput !== undefined))
+      .map((c: any, idx: number) => ({
+        condition: {
+          left: c.left ?? baseInput,
+          operator: c.operator || "===",
+          right: c.right ?? c.caseValue,
+        },
+        value:
+          c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
+      }));
 
-    const selectedBranch = matchedCase ? matchedCase.caseValue : defaultCase;
+    const result = await ComparatorService.executeSwitch(
+      switchCases,
+      defaultCase
+    );
 
     console.log("🔀 Switch node result:", {
-      matchedCase: matchedCase?.caseValue,
-      matchedOperator: matchedCase?.operator,
-      selectedBranch,
-      isDefault: !matchedCase,
+      matchedCase: result.matchedCase,
+      selectedBranch: result.result,
+      isDefault: result.matchedCase === undefined,
     });
 
-    // Return the selected branch name as a simple string for routing
-    // The workflow executor will use this to determine which edge to take
     return {
-      success: true,
-      data: selectedBranch,
+      success: result.success,
+      data: result.result,
+      error: result.error,
     };
   }
 

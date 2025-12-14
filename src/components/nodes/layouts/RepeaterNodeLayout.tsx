@@ -1027,7 +1027,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-48">
                           {Object.entries(operatorField.groupedOptions).map(
-                            ([typeKey, typeData]) => (
+                            ([typeKey, typeData]: [string, { icon: string; label: string; options: { label: string; value: string }[] }]) => (
                               <DropdownMenuSub key={typeKey}>
                                 <DropdownMenuSubTrigger>
                                   <span className="text-primary mr-2">

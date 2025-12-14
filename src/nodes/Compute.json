@@ -25,30 +25,16 @@
       "required": true
     },
     {
-      "key": "dataType",
-      "label": "Data Type",
-      "type": "select",
-      "options": [
-        { "label": "String", "value": "string" },
-        { "label": "Number", "value": "number" },
-        { "label": "Date & Time", "value": "datetime" },
-        { "label": "Array", "value": "array" },
-        { "label": "Object", "value": "object" }
-      ],
-      "default": "string",
-      "required": true
-    },
-    {
       "key": "operator",
       "label": "Operation",
-      "type": "select",
-      "options": [],
+      "type": "grouped-select",
       "default": "len",
       "required": true,
-      "dynamicOptions": {
-        "dependsOn": "dataType",
-        "optionsByValue": {
-          "string": [
+      "groupedOptions": {
+        "string": {
+          "label": "String",
+          "icon": "T",
+          "options": [
             { "label": "Length", "value": "len" },
             { "label": "Trim", "value": "trim" },
             { "label": "To Upper", "value": "upper" },
@@ -62,8 +48,12 @@
             { "label": "Contains", "value": "contains" },
             { "label": "Is Empty", "value": "isEmpty" },
             { "label": "Parse to JSON", "value": "toJson" }
-          ],
-          "number": [
+          ]
+        },
+        "number": {
+          "label": "Number",
+          "icon": "#",
+          "options": [
             { "label": "Round", "value": "round" },
             { "label": "Floor", "value": "floor" },
             { "label": "Ceil", "value": "ceil" },
@@ -74,8 +64,12 @@
             { "label": "Divide", "value": "divide" },
             { "label": "Modulo", "value": "modulo" },
             { "label": "To String", "value": "toString" }
-          ],
-          "datetime": [
+          ]
+        },
+        "datetime": {
+          "label": "Date & Time",
+          "icon": "📅",
+          "options": [
             { "label": "Now", "value": "now" },
             { "label": "Format", "value": "formatDate" },
             { "label": "Add", "value": "addTime" },
@@ -91,8 +85,12 @@
             { "label": "Convert Timezone", "value": "convertTimezone" },
             { "label": "Extract Component", "value": "extract" },
             { "label": "To Timestamp", "value": "toTimestamp" }
-          ],
-          "array": [
+          ]
+        },
+        "array": {
+          "label": "Array",
+          "icon": "≡",
+          "options": [
             { "label": "Length", "value": "arrayLength" },
             { "label": "Average", "value": "avg" },
             { "label": "Sum", "value": "sum" },
@@ -118,8 +116,12 @@
             { "label": "Join", "value": "join" },
             { "label": "Find", "value": "find" },
             { "label": "Filter", "value": "filter" }
-          ],
-          "object": [
+          ]
+        },
+        "object": {
+          "label": "Object",
+          "icon": "⊕",
+          "options": [
             { "label": "Get Keys", "value": "keys" },
             { "label": "Get Values", "value": "values" },
             { "label": "Get Entries", "value": "entries" },

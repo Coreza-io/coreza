@@ -14,20 +14,55 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { 
-  addDays, addWeeks, addMonths, addYears, addHours, addMinutes, addSeconds,
-  subDays, subWeeks, subMonths, subYears, subHours, subMinutes, subSeconds,
-  format, parse, parseISO,
-  differenceInDays, differenceInHours, differenceInMinutes, differenceInSeconds,
-  differenceInWeeks, differenceInMonths, differenceInYears,
-  startOfDay, startOfWeek, startOfMonth, startOfYear,
-  endOfDay, endOfWeek, endOfMonth, endOfYear,
-  isBefore, isAfter, isSameDay, isWeekend,
-  getYear, getMonth, getDate, getDay, getDayOfYear, getWeek,
-  getHours, getMinutes, getSeconds,
-  isValid
-} from 'date-fns';
-import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
+import {
+  addDays,
+  addWeeks,
+  addMonths,
+  addYears,
+  addHours,
+  addMinutes,
+  addSeconds,
+  subDays,
+  subWeeks,
+  subMonths,
+  subYears,
+  subHours,
+  subMinutes,
+  subSeconds,
+  format,
+  parse,
+  parseISO,
+  differenceInDays,
+  differenceInHours,
+  differenceInMinutes,
+  differenceInSeconds,
+  differenceInWeeks,
+  differenceInMonths,
+  differenceInYears,
+  startOfDay,
+  startOfWeek,
+  startOfMonth,
+  startOfYear,
+  endOfDay,
+  endOfWeek,
+  endOfMonth,
+  endOfYear,
+  isBefore,
+  isAfter,
+  isSameDay,
+  isWeekend,
+  getYear,
+  getMonth,
+  getDate,
+  getDay,
+  getDayOfYear,
+  getWeek,
+  getHours,
+  getMinutes,
+  getSeconds,
+  isValid,
+} from "date-fns";
+import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 
 export interface ComputeInput {
   value: any;
@@ -55,31 +90,34 @@ export class ComputeService {
   /**
    * Parse input to Date object
    */
-  private static parseDate(input: string | Date | undefined, inputFormat?: string): Date {
+  private static parseDate(
+    input: string | Date | undefined,
+    inputFormat?: string
+  ): Date {
     if (!input) {
       return new Date();
     }
-    
+
     if (input instanceof Date) {
       return input;
     }
-    
+
     // Try parsing with inputFormat if provided
     if (inputFormat) {
       const parsed = parse(input, inputFormat, new Date());
       if (isValid(parsed)) return parsed;
     }
-    
+
     // Try ISO format
     try {
       const parsed = parseISO(input);
       if (isValid(parsed)) return parsed;
     } catch {}
-    
+
     // Try Date constructor
     const date = new Date(input);
     if (isValid(date)) return date;
-    
+
     throw new Error(`Invalid date: ${input}`);
   }
 
@@ -115,7 +153,18 @@ export class ComputeService {
 
   static compute(input: ComputeInput): ComputeResult {
     try {
-      const { value, operator, arg1, arg2, arg3 } = input;
+      const {
+        value,
+        operator,
+        arg1,
+        arg2,
+        filterOperator,
+        unit,
+        date2,
+        timezone,
+        inputFormat,
+        targetDay,
+      } = input;
 
       switch (operator) {
         // ============== STRING OPERATIONS ==============
@@ -455,112 +504,181 @@ export class ComputeService {
 
         // ============== ADVANCED DATE OPERATIONS (from DateService) ==============
         case "now": {
-          const formatStr = arg1 || 'yyyy-MM-dd HH:mm:ss';
+          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
           const timezone = input.timezone;
           if (timezone) {
-            return { success: true, data: formatInTimeZone(new Date(), timezone, formatStr) };
+            return {
+              success: true,
+              data: formatInTimeZone(new Date(), timezone, formatStr),
+            };
           }
           return { success: true, data: format(new Date(), formatStr) };
         }
 
         case "today": {
-          const formatStr = arg1 || 'yyyy-MM-dd';
-          return { success: true, data: format(startOfDay(new Date()), formatStr) };
+          const formatStr = arg1 || "yyyy-MM-dd";
+          return {
+            success: true,
+            data: format(startOfDay(new Date()), formatStr),
+          };
         }
 
         case "addTime": {
           const date = this.parseDate(value, input.inputFormat);
           const amount = Number(arg1) || 0;
-          const unit = input.unit || 'days';
-          
+          const unit = input.unit || "days";
+
           let result: Date;
           switch (unit) {
-            case 'seconds': result = addSeconds(date, amount); break;
-            case 'minutes': result = addMinutes(date, amount); break;
-            case 'hours': result = addHours(date, amount); break;
-            case 'days': result = addDays(date, amount); break;
-            case 'weeks': result = addWeeks(date, amount); break;
-            case 'months': result = addMonths(date, amount); break;
-            case 'years': result = addYears(date, amount); break;
-            default: return { success: false, error: `Invalid unit: ${unit}` };
+            case "seconds":
+              result = addSeconds(date, amount);
+              break;
+            case "minutes":
+              result = addMinutes(date, amount);
+              break;
+            case "hours":
+              result = addHours(date, amount);
+              break;
+            case "days":
+              result = addDays(date, amount);
+              break;
+            case "weeks":
+              result = addWeeks(date, amount);
+              break;
+            case "months":
+              result = addMonths(date, amount);
+              break;
+            case "years":
+              result = addYears(date, amount);
+              break;
+            default:
+              return { success: false, error: `Invalid unit: ${unit}` };
           }
-          
-          const formatStr = arg2 || 'yyyy-MM-dd HH:mm:ss';
+
+          const formatStr = arg2 || "yyyy-MM-dd HH:mm:ss";
           return { success: true, data: format(result, formatStr) };
         }
 
         case "subtractTime": {
           const date = this.parseDate(value, input.inputFormat);
           const amount = Number(arg1) || 0;
-          const unit = input.unit || 'days';
-          
+          const unit = input.unit || "days";
+
           let result: Date;
           switch (unit) {
-            case 'seconds': result = subSeconds(date, amount); break;
-            case 'minutes': result = subMinutes(date, amount); break;
-            case 'hours': result = subHours(date, amount); break;
-            case 'days': result = subDays(date, amount); break;
-            case 'weeks': result = subWeeks(date, amount); break;
-            case 'months': result = subMonths(date, amount); break;
-            case 'years': result = subYears(date, amount); break;
-            default: return { success: false, error: `Invalid unit: ${unit}` };
+            case "seconds":
+              result = subSeconds(date, amount);
+              break;
+            case "minutes":
+              result = subMinutes(date, amount);
+              break;
+            case "hours":
+              result = subHours(date, amount);
+              break;
+            case "days":
+              result = subDays(date, amount);
+              break;
+            case "weeks":
+              result = subWeeks(date, amount);
+              break;
+            case "months":
+              result = subMonths(date, amount);
+              break;
+            case "years":
+              result = subYears(date, amount);
+              break;
+            default:
+              return { success: false, error: `Invalid unit: ${unit}` };
           }
-          
-          const formatStr = arg2 || 'yyyy-MM-dd HH:mm:ss';
+
+          const formatStr = arg2 || "yyyy-MM-dd HH:mm:ss";
           return { success: true, data: format(result, formatStr) };
         }
 
         case "difference": {
           const date1 = this.parseDate(value, input.inputFormat);
           const date2 = this.parseDate(input.date2);
-          const unit = input.unit || 'days';
-          
+          const unit = input.unit || "days";
+
           let result: number;
           switch (unit) {
-            case 'seconds': result = differenceInSeconds(date1, date2); break;
-            case 'minutes': result = differenceInMinutes(date1, date2); break;
-            case 'hours': result = differenceInHours(date1, date2); break;
-            case 'days': result = differenceInDays(date1, date2); break;
-            case 'weeks': result = differenceInWeeks(date1, date2); break;
-            case 'months': result = differenceInMonths(date1, date2); break;
-            case 'years': result = differenceInYears(date1, date2); break;
-            default: return { success: false, error: `Invalid unit: ${unit}` };
+            case "seconds":
+              result = differenceInSeconds(date1, date2);
+              break;
+            case "minutes":
+              result = differenceInMinutes(date1, date2);
+              break;
+            case "hours":
+              result = differenceInHours(date1, date2);
+              break;
+            case "days":
+              result = differenceInDays(date1, date2);
+              break;
+            case "weeks":
+              result = differenceInWeeks(date1, date2);
+              break;
+            case "months":
+              result = differenceInMonths(date1, date2);
+              break;
+            case "years":
+              result = differenceInYears(date1, date2);
+              break;
+            default:
+              return { success: false, error: `Invalid unit: ${unit}` };
           }
-          
-          return { success: true, data: result };
+
+          return { success: true, data: Math.abs(result) };
         }
 
         case "startOf": {
           const date = this.parseDate(value, input.inputFormat);
-          const unit = input.unit || 'day';
-          
+          const unit = input.unit || "day";
+
           let result: Date;
           switch (unit) {
-            case 'day': result = startOfDay(date); break;
-            case 'week': result = startOfWeek(date); break;
-            case 'month': result = startOfMonth(date); break;
-            case 'year': result = startOfYear(date); break;
-            default: return { success: false, error: `Invalid unit: ${unit}` };
+            case "day":
+              result = startOfDay(date);
+              break;
+            case "week":
+              result = startOfWeek(date);
+              break;
+            case "month":
+              result = startOfMonth(date);
+              break;
+            case "year":
+              result = startOfYear(date);
+              break;
+            default:
+              return { success: false, error: `Invalid unit: ${unit}` };
           }
-          
-          const formatStr = arg1 || 'yyyy-MM-dd HH:mm:ss';
+
+          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
           return { success: true, data: format(result, formatStr) };
         }
 
         case "endOf": {
           const date = this.parseDate(value, input.inputFormat);
-          const unit = input.unit || 'day';
-          
+          const unit = input.unit || "day";
+
           let result: Date;
           switch (unit) {
-            case 'day': result = endOfDay(date); break;
-            case 'week': result = endOfWeek(date); break;
-            case 'month': result = endOfMonth(date); break;
-            case 'year': result = endOfYear(date); break;
-            default: return { success: false, error: `Invalid unit: ${unit}` };
+            case "day":
+              result = endOfDay(date);
+              break;
+            case "week":
+              result = endOfWeek(date);
+              break;
+            case "month":
+              result = endOfMonth(date);
+              break;
+            case "year":
+              result = endOfYear(date);
+              break;
+            default:
+              return { success: false, error: `Invalid unit: ${unit}` };
           }
-          
-          const formatStr = arg1 || 'yyyy-MM-dd HH:mm:ss';
+
+          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
           return { success: true, data: format(result, formatStr) };
         }
 
@@ -589,29 +707,40 @@ export class ComputeService {
 
         case "isDayOfWeek": {
           const date = this.parseDate(value, input.inputFormat);
-          const targetDay = parseInt(input.targetDay ?? '1', 10);
+          const targetDay = parseInt(input.targetDay ?? "1", 10);
 
           if (Number.isNaN(targetDay) || targetDay < 0 || targetDay > 6) {
-            return { success: false, error: `Invalid target day: ${input.targetDay}` };
+            return {
+              success: false,
+              error: `Invalid target day: ${input.targetDay}`,
+            };
           }
 
           const actualDay = getDay(date);
-          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const dayNames = [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+          ];
 
           return {
             success: true,
             data: {
               isMatch: actualDay === targetDay,
               dayName: dayNames[actualDay],
-              targetDayName: dayNames[targetDay]
-            }
+              targetDayName: dayNames[targetDay],
+            },
           };
         }
 
         case "convertTimezone": {
           const date = this.parseDate(value, input.inputFormat);
-          const timezone = input.timezone || 'UTC';
-          const formatStr = arg1 || 'yyyy-MM-dd HH:mm:ss';
+          const timezone = input.timezone || "UTC";
+          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
 
           const zonedDate = toZonedTime(date, timezone);
           return { success: true, data: format(zonedDate, formatStr) };
@@ -619,22 +748,35 @@ export class ComputeService {
 
         case "extract": {
           const date = this.parseDate(value, input.inputFormat);
-          const component = input.unit || 'year';
-          
+          const component = input.unit || "year";
+
           let result: number;
           switch (component) {
-            case 'year': result = getYear(date); break;
-            case 'month': result = getMonth(date) + 1; break;
-            case 'date': result = getDate(date); break;
-            case 'day': result = getDay(date); break;
-            case 'dayOfYear': result = getDayOfYear(date); break;
-            case 'week': result = getWeek(date); break;
-            case 'hour': result = getHours(date); break;
-            case 'minute': result = getMinutes(date); break;
-            case 'second': result = getSeconds(date); break;
-            default: return { success: false, error: `Invalid component: ${component}` };
+            case "year":
+              result = getYear(date);
+              break;
+            case "month":
+              result = getMonth(date) + 1;
+              break;
+            case "date":
+              result = getDate(date);
+              break;
+            case "hour":
+              result = getHours(date);
+              break;
+            case "minute":
+              result = getMinutes(date);
+              break;
+            case "second":
+              result = getSeconds(date);
+              break;
+            default:
+              return {
+                success: false,
+                error: `Invalid component: ${component}`,
+              };
           }
-          
+
           return { success: true, data: result };
         }
 
@@ -825,8 +967,14 @@ export class ComputeService {
         case "avg": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return { success: false, error: "Cannot calculate average of empty array" };
-          return { success: true, data: values.reduce((sum, v) => sum + v, 0) / values.length };
+            return {
+              success: false,
+              error: "Cannot calculate average of empty array",
+            };
+          return {
+            success: true,
+            data: values.reduce((sum, v) => sum + v, 0) / values.length,
+          };
         }
 
         case "sum": {
@@ -856,24 +1004,32 @@ export class ComputeService {
         case "median": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return { success: false, error: "Cannot calculate median of empty array" };
+            return {
+              success: false,
+              error: "Cannot calculate median of empty array",
+            };
           const sorted = [...values].sort((a, b) => a - b);
           const mid = Math.floor(sorted.length / 2);
           return {
             success: true,
-            data: sorted.length % 2 === 0
-              ? (sorted[mid - 1] + sorted[mid]) / 2
-              : sorted[mid]
+            data:
+              sorted.length % 2 === 0
+                ? (sorted[mid - 1] + sorted[mid]) / 2
+                : sorted[mid],
           };
         }
 
         case "std": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return { success: false, error: "Cannot calculate std of empty array" };
+            return {
+              success: false,
+              error: "Cannot calculate std of empty array",
+            };
           const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
           const squaredDiffs = values.map((v) => Math.pow(v - avg, 2));
-          const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / values.length;
+          const variance =
+            squaredDiffs.reduce((sum, v) => sum + v, 0) / values.length;
           return { success: true, data: Math.sqrt(variance) };
         }
 
@@ -887,11 +1043,7 @@ export class ComputeService {
           const found = validation.array.find((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return this.compareValues(
-                itemValue,
-                operator,
-                matchValue
-              );
+              return this.compareValues(itemValue, operator, matchValue);
             }
             return false;
           });
@@ -908,11 +1060,7 @@ export class ComputeService {
           const filtered = validation.array.filter((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return this.compareValues(
-                itemValue,
-                operator,
-                matchValue
-              );
+              return this.compareValues(itemValue, operator, matchValue);
             }
             return false;
           });
@@ -1162,11 +1310,7 @@ export class ComputeService {
         return toStringValue(itemValue).includes(toStringValue(matchValue));
       }
       case "does_not_contain": {
-        return !this.compareValues(
-          itemValue,
-          "contains",
-          matchValue
-        );
+        return !this.compareValues(itemValue, "contains", matchValue);
       }
       case "starts_with": {
         return toStringValue(itemValue).startsWith(toStringValue(matchValue));
@@ -1183,11 +1327,7 @@ export class ComputeService {
         return false;
       }
       case "is_not_empty": {
-        return !this.compareValues(
-          itemValue,
-          "is_empty",
-          matchValue
-        );
+        return !this.compareValues(itemValue, "is_empty", matchValue);
       }
       case "matches_regex": {
         try {

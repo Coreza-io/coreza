@@ -150,7 +150,44 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addTime", "subtractTime", "startOf", "endOf", "convertTimezone", "extract", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit", "find", "filter"]
+          "operator": [
+            "substring",
+            "replace",
+            "split",
+            "concat",
+            "startsWith",
+            "endsWith",
+            "contains",
+            "round",
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+            "modulo",
+            "formatDate",
+            "addTime",
+            "subtractTime",
+            "startOf",
+            "endOf",
+            "convertTimezone",
+            "extract",
+            "push",
+            "unshift",
+            "arrayConcat",
+            "slice",
+            "sort",
+            "arrayContains",
+            "join",
+            "getProperty",
+            "setProperty",
+            "deleteProperty",
+            "hasProperty",
+            "merge",
+            "pick",
+            "omit",
+            "find",
+            "filter"
+          ]
         }
       },
       "dynamicLabel": {
@@ -200,18 +237,24 @@
       "label": "Unit",
       "type": "select",
       "options": [
-        { "label": "Seconds", "value": "seconds" },
-        { "label": "Minutes", "value": "minutes" },
-        { "label": "Hours", "value": "hours" },
-        { "label": "Days", "value": "days" },
-        { "label": "Weeks", "value": "weeks" },
-        { "label": "Months", "value": "months" },
-        { "label": "Years", "value": "years" }
+        { "label": "Second", "value": "second" },
+        { "label": "Minute", "value": "minute" },
+        { "label": "Hour", "value": "hour" },
+        { "label": "Date", "value": "date" },
+        { "label": "Month", "value": "month" },
+        { "label": "Year", "value": "year" }
       ],
       "default": "days",
       "displayOptions": {
         "show": {
-          "operator": ["addTime", "subtractTime", "difference", "startOf", "endOf", "extract"]
+          "operator": [
+            "addTime",
+            "subtractTime",
+            "difference",
+            "startOf",
+            "endOf",
+            "extract"
+          ]
         }
       }
     },
@@ -290,7 +333,16 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "slice", "setProperty", "find", "filter", "addTime", "subtractTime"]
+          "operator": [
+            "substring",
+            "replace",
+            "slice",
+            "setProperty",
+            "find",
+            "filter",
+            "addTime",
+            "subtractTime"
+          ]
         }
       },
       "dynamicLabel": {

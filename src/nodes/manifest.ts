@@ -32,7 +32,6 @@ import RSIDef from './RSI.json'
 import MarketDef from './Market.json'
 import YahooFinanceDef from './YahooFinance.json'
 import ChatInputDef from './ChatInput.json'
-import DateDef from './Date.json'
 import SchedulerDef from './Scheduler.json'
 import VisualizeDef from './Visualize.json'
 import MACDDef from './MACD.json'
@@ -46,7 +45,6 @@ import VolumeOscillatorDef from './VolumeOscillator.json'
 import HttpRequestDef from './HttpRequest.json'
 import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
-import MathDef from './Math.json'
 import TransformDef from './Transform.json'
 import LoopDef from './Loop.json'
 import OpenAIDef from './OpenAI.json'
@@ -73,9 +71,7 @@ import AlpacaTradeToolDef from './AlpacaTradeTool.json'
 import BinanceTradeToolDef from './BinanceTradeTool.json'
 import SchwabTradeToolDef from './SchwabTradeTool.json'
 import DhanTradeToolDef from './DhanTradeTool.json'
-import MathToolDef from './MathTool.json'
 import TransformToolDef from './TransformTool.json'
-import DateToolDef from './DateTool.json'
 import HttpRequestToolDef from './HttpRequestTool.json'
 import FinnHubToolDef from './FinnHubTool.json'
 import AlpacaScreenerToolDef from './AlpacaScreenerTool.json'
@@ -166,7 +162,6 @@ export const nodeManifest = {
   [DhanDef.name]: DhanDef,
   [GmailDef.name]: GmailDef,
   [ChatInputDef.name]: ChatInputDef,
-  [DateDef.name]: DateDef,
   [YahooFinanceDef.name]: YahooFinanceDef,
   [RSIDef.name]: RSIDef,
   [EMADef.name]: EMADef,
@@ -194,7 +189,6 @@ export const nodeManifest = {
   [HttpRequestDef.name]: HttpRequestDef,
   [RiskEngineDef.name]: RiskEngineDef,
   [FieldDef.name]: FieldDef,
-  [MathDef.name]: MathDef,
   [TransformDef.name]: TransformDef,
   [LoopDef.name]: LoopDef,
   [OpenAIDef.name]: OpenAIDef,
@@ -221,9 +215,7 @@ export const nodeManifest = {
   [BinanceTradeToolDef.name]: BinanceTradeToolDef,
   [SchwabTradeToolDef.name]: SchwabTradeToolDef,
   [DhanTradeToolDef.name]: DhanTradeToolDef,
-  [MathToolDef.name]: MathToolDef,
   [TransformToolDef.name]: TransformToolDef,
-  [DateToolDef.name]: DateToolDef,
   [HttpRequestToolDef.name]: HttpRequestToolDef,
   [FinnHubToolDef.name]: FinnHubToolDef,
   [AlpacaScreenerToolDef.name]: AlpacaScreenerToolDef,

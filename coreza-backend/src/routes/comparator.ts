@@ -16,9 +16,7 @@
 
 import express from "express";
 import { ComparatorService, ComparatorInput } from "../services/comparator";
-import { MathService } from "../services/math";
 import { TransformService } from "../services/transform";
-import { DateService } from "../services/date";
 import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
@@ -231,7 +229,7 @@ router.post("/field", async (req, res) => {
   }
 });
 
-// Math operations - binary and statistical
+// Math operations - now routed through TransformService
 router.post("/math", async (req, res) => {
   try {
     const { left, operator, right } = req.body;
@@ -253,12 +251,12 @@ router.post("/math", async (req, res) => {
       });
     }
 
-    const result = MathService.calculate({ left, operator, right });
+    // Route through TransformService
+    const result = TransformService.transform({ value: left, operator, arg1: right });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    //res.json({ success: true, data: result.data });
-    res.json(result);
+    res.json({ success: true, data: result.data, result: result.data });
   } catch (error) {
     console.error("Math operation error:", error);
     res.status(500).json({
@@ -271,16 +269,16 @@ router.post("/math", async (req, res) => {
 // Generic transform operations
 router.post("/transform", async (req, res) => {
   try {
-    const { value, operator, arg1, arg2, filterOperator } = req.body;
+    const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = req.body;
 
-    if (value === undefined || operator == null) {
+    if (operator == null) {
       return res.status(400).json({
-        error: "value and operator are required",
+        error: "operator is required",
         received: { value, operator },
       });
     }
 
-    const result = TransformService.transform({ value, operator, arg1, arg2, filterOperator });
+    const result = TransformService.transform({ value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
@@ -295,7 +293,7 @@ router.post("/transform", async (req, res) => {
   }
 });
 
-// Date operations
+// Date operations - now routed through TransformService
 router.post("/date", async (req, res) => {
   try {
     const {
@@ -317,13 +315,14 @@ router.post("/date", async (req, res) => {
       });
     }
 
-    const result = DateService.execute({
-      operation,
-      date,
-      date2,
-      amount,
+    // Route through TransformService with mapped parameters
+    const result = TransformService.transform({
+      value: date,
+      operator: operation,
+      arg1: amount || formatString,
+      arg2: formatString,
       unit,
-      formatString,
+      date2,
       timezone,
       inputFormat,
       targetDay,
@@ -333,7 +332,7 @@ router.post("/date", async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json({ success: true, data: result.result });
+    res.json({ success: true, data: result.data, result: result.data });
   } catch (error) {
     console.error("Date operation error:", error);
     res.status(500).json({

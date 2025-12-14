@@ -5,7 +5,7 @@
   "node_type": "main",
   "icon": "/assets/icons/if.svg",
   "category": "Logic",
-  "description": "Data computations for strings, numbers, dates, arrays, objects and booleans. Includes statistical and advanced date operations.",
+  "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations.",
   "color": "text-yellow-500",
   "size": { "width": 320, "height": 320 },
   "handles": [
@@ -32,7 +32,6 @@
         { "label": "String", "value": "string" },
         { "label": "Number", "value": "number" },
         { "label": "Date & Time", "value": "datetime" },
-        { "label": "Boolean", "value": "boolean" },
         { "label": "Array", "value": "array" },
         { "label": "Object", "value": "object" }
       ],
@@ -78,10 +77,9 @@
           ],
           "datetime": [
             { "label": "Now", "value": "now" },
-            { "label": "Today", "value": "today" },
             { "label": "Format", "value": "formatDate" },
-            { "label": "Add Time", "value": "addTime" },
-            { "label": "Subtract Time", "value": "subtractTime" },
+            { "label": "Add", "value": "addTime" },
+            { "label": "Subtract", "value": "subtractTime" },
             { "label": "Difference", "value": "difference" },
             { "label": "Start Of", "value": "startOf" },
             { "label": "End Of", "value": "endOf" },
@@ -92,13 +90,7 @@
             { "label": "Is Day Of Week", "value": "isDayOfWeek" },
             { "label": "Convert Timezone", "value": "convertTimezone" },
             { "label": "Extract Component", "value": "extract" },
-            { "label": "To Timestamp", "value": "toTimestamp" },
-            { "label": "From Timestamp", "value": "fromTimestamp" }
-          ],
-          "boolean": [
-            { "label": "Not (Invert)", "value": "not" },
-            { "label": "To String", "value": "boolToString" },
-            { "label": "To Number", "value": "boolToNumber" }
+            { "label": "To Timestamp", "value": "toTimestamp" }
           ],
           "array": [
             { "label": "Length", "value": "arrayLength" },
@@ -136,8 +128,8 @@
             { "label": "Delete Property", "value": "deleteProperty" },
             { "label": "Has Property", "value": "hasProperty" },
             { "label": "Merge", "value": "merge" },
-            { "label": "Pick", "value": "pick" },
-            { "label": "Omit", "value": "omit" },
+            { "label": "Extract", "value": "pick" },
+            { "label": "Delete", "value": "omit" },
             { "label": "Is Empty", "value": "objectIsEmpty" }
           ]
         }
@@ -167,10 +159,6 @@
             "formatDate",
             "addTime",
             "subtractTime",
-            "startOf",
-            "endOf",
-            "convertTimezone",
-            "extract",
             "push",
             "unshift",
             "arrayConcat",
@@ -209,8 +197,6 @@
           "formatDate": "Format (e.g. yyyy-MM-dd)",
           "addTime": "Amount",
           "subtractTime": "Amount",
-          "startOf": "Format (optional)",
-          "endOf": "Format (optional)",
           "convertTimezone": "Format (optional)",
           "extract": "Component",
           "push": "Item to Add",
@@ -241,6 +227,7 @@
         { "label": "Minute", "value": "minute" },
         { "label": "Hour", "value": "hour" },
         { "label": "Date", "value": "date" },
+        { "label": "Week", "value": "week" },
         { "label": "Month", "value": "month" },
         { "label": "Year", "value": "year" }
       ],
@@ -278,7 +265,10 @@
         { "label": "America/New_York (Eastern)", "value": "America/New_York" },
         { "label": "America/Chicago (Central)", "value": "America/Chicago" },
         { "label": "America/Denver (Mountain)", "value": "America/Denver" },
-        { "label": "America/Los_Angeles (Pacific)", "value": "America/Los_Angeles" },
+        {
+          "label": "America/Los_Angeles (Pacific)",
+          "value": "America/Los_Angeles"
+        },
         { "label": "America/Toronto", "value": "America/Toronto" },
         { "label": "America/Vancouver", "value": "America/Vancouver" },
         { "label": "America/Sao_Paulo", "value": "America/Sao_Paulo" },
@@ -367,9 +357,7 @@
             "slice",
             "setProperty",
             "find",
-            "filter",
-            "addTime",
-            "subtractTime"
+            "filter"
           ]
         }
       },
@@ -381,9 +369,7 @@
           "slice": "End Index",
           "setProperty": "Value",
           "find": "Match Value",
-          "filter": "Match Value",
-          "addTime": "Format (optional)",
-          "subtractTime": "Format (optional)"
+          "filter": "Match Value"
         }
       }
     }

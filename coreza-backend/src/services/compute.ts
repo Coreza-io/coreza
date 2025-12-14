@@ -108,13 +108,6 @@ export class ComputeService {
       if (isValid(parsed)) return parsed;
     }
 
-    // Try ISO format
-    try {
-      const parsed = parseISO(input);
-      if (isValid(parsed)) return parsed;
-    } catch {}
-
-    // Try Date constructor
     const date = new Date(input);
     if (isValid(date)) return date;
 
@@ -160,7 +153,6 @@ export class ComputeService {
         arg2,
         filterOperator,
         unit,
-        date2,
         timezone,
         inputFormat,
         targetDay,
@@ -495,13 +487,6 @@ export class ComputeService {
           return { success: true, data: date.getTime() };
         }
 
-        case "fromTimestamp": {
-          const timestamp = Number(value);
-          if (isNaN(timestamp))
-            return { success: false, error: "Invalid timestamp" };
-          return { success: true, data: new Date(timestamp).toISOString() };
-        }
-
         // ============== ADVANCED DATE OPERATIONS (from DateService) ==============
         case "now": {
           const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
@@ -515,52 +500,43 @@ export class ComputeService {
           return { success: true, data: format(new Date(), formatStr) };
         }
 
-        case "today": {
-          const formatStr = arg1 || "yyyy-MM-dd";
-          return {
-            success: true,
-            data: format(startOfDay(new Date()), formatStr),
-          };
-        }
-
         case "addTime": {
-          const date = this.parseDate(value, input.inputFormat);
+          const date = this.parseDate(value);
           const amount = Number(arg1) || 0;
           const unit = input.unit || "days";
 
           let result: Date;
           switch (unit) {
-            case "seconds":
+            case "second":
               result = addSeconds(date, amount);
               break;
-            case "minutes":
+            case "minute":
               result = addMinutes(date, amount);
               break;
-            case "hours":
+            case "hour":
               result = addHours(date, amount);
               break;
-            case "days":
+            case "day":
               result = addDays(date, amount);
               break;
-            case "weeks":
+            case "week":
               result = addWeeks(date, amount);
               break;
-            case "months":
+            case "month":
               result = addMonths(date, amount);
               break;
-            case "years":
+            case "year":
               result = addYears(date, amount);
               break;
             default:
               return { success: false, error: `Invalid unit: ${unit}` };
           }
 
-          const formatStr = arg2 || "yyyy-MM-dd HH:mm:ss";
-          return { success: true, data: format(result, formatStr) };
+          return { success: true, data: result };
         }
 
         case "subtractTime": {
-          const date = this.parseDate(value, input.inputFormat);
+          const date = this.parseDate(value);
           const amount = Number(arg1) || 0;
           const unit = input.unit || "days";
 
@@ -591,36 +567,35 @@ export class ComputeService {
               return { success: false, error: `Invalid unit: ${unit}` };
           }
 
-          const formatStr = arg2 || "yyyy-MM-dd HH:mm:ss";
-          return { success: true, data: format(result, formatStr) };
+          return { success: true, data: result };
         }
 
         case "difference": {
-          const date1 = this.parseDate(value, input.inputFormat);
+          const date1 = this.parseDate(value);
           const date2 = this.parseDate(input.date2);
-          const unit = input.unit || "days";
+          const unit = input.unit;
 
           let result: number;
           switch (unit) {
-            case "seconds":
+            case "second":
               result = differenceInSeconds(date1, date2);
               break;
-            case "minutes":
+            case "minute":
               result = differenceInMinutes(date1, date2);
               break;
-            case "hours":
+            case "hour":
               result = differenceInHours(date1, date2);
               break;
-            case "days":
+            case "day":
               result = differenceInDays(date1, date2);
               break;
-            case "weeks":
+            case "week":
               result = differenceInWeeks(date1, date2);
               break;
-            case "months":
+            case "month":
               result = differenceInMonths(date1, date2);
               break;
-            case "years":
+            case "year":
               result = differenceInYears(date1, date2);
               break;
             default:
@@ -631,7 +606,7 @@ export class ComputeService {
         }
 
         case "startOf": {
-          const date = this.parseDate(value, input.inputFormat);
+          const date = this.parseDate(value);
           const unit = input.unit || "day";
 
           let result: Date;
@@ -652,8 +627,7 @@ export class ComputeService {
               return { success: false, error: `Invalid unit: ${unit}` };
           }
 
-          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
-          return { success: true, data: format(result, formatStr) };
+          return { success: true, data: result };
         }
 
         case "endOf": {
@@ -678,8 +652,7 @@ export class ComputeService {
               return { success: false, error: `Invalid unit: ${unit}` };
           }
 
-          const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
-          return { success: true, data: format(result, formatStr) };
+          return { success: true, data: result };
         }
 
         case "isBefore": {
@@ -747,7 +720,7 @@ export class ComputeService {
         }
 
         case "extract": {
-          const date = this.parseDate(value, input.inputFormat);
+          const date = this.parseDate(value);
           const component = input.unit || "year";
 
           let result: number;
@@ -778,19 +751,6 @@ export class ComputeService {
           }
 
           return { success: true, data: result };
-        }
-
-        // ============== BOOLEAN OPERATIONS ==============
-        case "not": {
-          return { success: true, data: !value };
-        }
-
-        case "boolToString": {
-          return { success: true, data: String(Boolean(value)) };
-        }
-
-        case "boolToNumber": {
-          return { success: true, data: value ? 1 : 0 };
         }
 
         // ============== ARRAY OPERATIONS ==============

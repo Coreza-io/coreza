@@ -232,7 +232,18 @@ router.post("/field", async (req, res) => {
 // Generic compute operations
 router.post("/compute", async (req, res) => {
   try {
-    const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = req.body;
+    const {
+      value,
+      operator,
+      arg1,
+      arg2,
+      filterOperator,
+      unit,
+      date2,
+      timezone,
+      inputFormat,
+      targetDay,
+    } = req.body;
 
     if (operator == null) {
       return res.status(400).json({
@@ -241,7 +252,18 @@ router.post("/compute", async (req, res) => {
       });
     }
 
-    const result = ComputeService.compute({ value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay });
+    const result = ComputeService.compute({
+      value,
+      operator,
+      arg1,
+      arg2,
+      filterOperator,
+      unit,
+      date2,
+      timezone,
+      inputFormat,
+      targetDay,
+    });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
@@ -253,6 +275,45 @@ router.post("/compute", async (req, res) => {
       error: "Failed to perform compute operation",
       details: error instanceof Error ? error.message : String(error),
     });
+  }
+});
+
+router.post("/loop", (req, res) => {
+  try {
+    const {
+      inputArray,
+      batchSize = 1,
+      items,
+      parallel = false,
+      continueOnError = false,
+      throttleMs = 200,
+    } = req.body;
+
+    // Get the array to loop over
+    let arrayData: any[] = [];
+    if (inputArray && req.body[inputArray]) {
+      arrayData = Array.isArray(req.body[inputArray])
+        ? req.body[inputArray]
+        : [req.body[inputArray]];
+    } else if (Array.isArray(items)) {
+      arrayData = items;
+    }
+
+    console.log(
+      `🔄 Loop processing ${arrayData.length} items with batch size ${batchSize}`
+    );
+
+    res.json({
+      items: arrayData,
+      batchSize,
+      totalItems: arrayData.length,
+      parallel,
+      continueOnError,
+      throttleMs,
+      isLoopNode: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to process loop data" });
   }
 });
 

@@ -1204,38 +1204,100 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               </Button>
             </div>
 
-            {cases.map((caseItem, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 p-2 border rounded bg-muted/10"
-              >
-                <Input
-                  className="flex-1 h-8 text-xs nodrag"
-                  placeholder="case value (e.g., case1)"
-                  value={caseItem.caseValue || ""}
-                  onChange={(e) => updateCase(i, "caseValue", e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                />
-                <Input
-                  className="flex-1 h-8 text-xs nodrag"
-                  placeholder="Case Label"
-                  value={caseItem.caseName || ""}
-                  onChange={(e) => updateCase(i, "caseName", e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                />
-                {cases.length > 1 && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => removeCase(i)}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                )}
-              </div>
-            ))}
+            {cases.map((caseItem, i) => {
+              // Get the operator subField from the repeater definition
+              const operatorSubField = repeaterField?.subFields?.find(
+                (sf: any) => sf.key === "operator"
+              );
+              const caseOperatorDisplay = operatorSubField?.groupedOptions
+                ? getOperatorDisplay(caseItem.operator || "===", operatorSubField.groupedOptions)
+                : null;
+
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 p-2 border rounded bg-muted/10"
+                >
+                  <Input
+                    className="flex-1 h-8 text-xs nodrag"
+                    placeholder="Match value"
+                    value={caseItem.caseValue || ""}
+                    onChange={(e) => updateCase(i, "caseValue", e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                  />
+
+                  {/* Operator grouped-select dropdown */}
+                  {operatorSubField?.groupedOptions && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-32 h-8 text-xs justify-between flex-shrink-0"
+                        >
+                          <span className="flex items-center gap-1">
+                            <span className="text-primary font-medium">
+                              {caseOperatorDisplay?.icon ?? "?"}
+                            </span>
+                            <span className="truncate">
+                              {caseOperatorDisplay?.label ?? "is equal to"}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48">
+                        {Object.entries(operatorSubField.groupedOptions).map(
+                          ([typeKey, typeData]: [string, { icon: string; label: string; options: { label: string; value: string }[] }]) => (
+                            <DropdownMenuSub key={typeKey}>
+                              <DropdownMenuSubTrigger>
+                                <span className="text-primary mr-2">
+                                  {typeData.icon}
+                                </span>
+                                {typeData.label}
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="w-48">
+                                {typeData.options.map((opt) => (
+                                  <DropdownMenuItem
+                                    key={opt.value}
+                                    onClick={() => updateCase(i, "operator", opt.value)}
+                                    className={
+                                      caseItem.operator === opt.value
+                                        ? "bg-accent text-primary"
+                                        : ""
+                                    }
+                                  >
+                                    {opt.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          )
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  <Input
+                    className="flex-1 h-8 text-xs nodrag"
+                    placeholder="Case Label"
+                    value={caseItem.caseName || ""}
+                    onChange={(e) => updateCase(i, "caseName", e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  {cases.length > 1 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeCase(i)}
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

@@ -16,7 +16,7 @@
 
 import express from "express";
 import { ComparatorService, ComparatorInput } from "../services/comparator";
-import { TransformService } from "../services/transform";
+import { ComputeService } from "../services/compute";
 import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
@@ -229,45 +229,8 @@ router.post("/field", async (req, res) => {
   }
 });
 
-// Math operations - now routed through TransformService
-router.post("/math", async (req, res) => {
-  try {
-    const { left, operator, right } = req.body;
-
-    // Validate required fields
-    if (left === undefined || operator == null) {
-      return res.status(400).json({
-        error: "left and operator are required",
-        received: { left, operator, right },
-      });
-    }
-
-    // For binary operators, right is required
-    const binaryOps = ["add", "subtract", "multiply", "divide"];
-    if (binaryOps.includes(operator) && right === undefined) {
-      return res.status(400).json({
-        error: `right operand is required for ${operator}`,
-        received: { left, operator, right },
-      });
-    }
-
-    // Route through TransformService
-    const result = TransformService.transform({ value: left, operator, arg1: right });
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-    res.json({ success: true, data: result.data, result: result.data });
-  } catch (error) {
-    console.error("Math operation error:", error);
-    res.status(500).json({
-      error: "Failed to perform math operation",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-// Generic transform operations
-router.post("/transform", async (req, res) => {
+// Generic compute operations
+router.post("/compute", async (req, res) => {
   try {
     const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = req.body;
 
@@ -278,65 +241,16 @@ router.post("/transform", async (req, res) => {
       });
     }
 
-    const result = TransformService.transform({ value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay });
+    const result = ComputeService.compute({ value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
 
     res.json(result);
   } catch (error) {
-    console.error("Transform operation error:", error);
+    console.error("Compute operation error:", error);
     res.status(500).json({
-      error: "Failed to perform transform operation",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-// Date operations - now routed through TransformService
-router.post("/date", async (req, res) => {
-  try {
-    const {
-      operation,
-      date,
-      date2,
-      amount,
-      unit,
-      formatString,
-      timezone,
-      inputFormat,
-      targetDay,
-    } = req.body;
-
-    if (!operation) {
-      return res.status(400).json({
-        error: "operation is required",
-        received: req.body,
-      });
-    }
-
-    // Route through TransformService with mapped parameters
-    const result = TransformService.transform({
-      value: date,
-      operator: operation,
-      arg1: amount || formatString,
-      arg2: formatString,
-      unit,
-      date2,
-      timezone,
-      inputFormat,
-      targetDay,
-    });
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json({ success: true, data: result.data, result: result.data });
-  } catch (error) {
-    console.error("Date operation error:", error);
-    res.status(500).json({
-      error: "Failed to perform date operation",
+      error: "Failed to perform compute operation",
       details: error instanceof Error ? error.message : String(error),
     });
   }

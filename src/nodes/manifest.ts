@@ -45,7 +45,7 @@ import VolumeOscillatorDef from './VolumeOscillator.json'
 import HttpRequestDef from './HttpRequest.json'
 import RiskEngineDef from './RiskEngine.json'
 import FieldDef from './Field.json'
-import TransformDef from './Transform.json'
+import ComputeDef from './Compute.json'
 import LoopDef from './Loop.json'
 import OpenAIDef from './OpenAI.json'
 import OpenAIChatModelDef from './OpenAIChatModel.json'
@@ -71,7 +71,7 @@ import AlpacaTradeToolDef from './AlpacaTradeTool.json'
 import BinanceTradeToolDef from './BinanceTradeTool.json'
 import SchwabTradeToolDef from './SchwabTradeTool.json'
 import DhanTradeToolDef from './DhanTradeTool.json'
-import TransformToolDef from './TransformTool.json'
+import ComputeToolDef from './ComputeTool.json'
 import HttpRequestToolDef from './HttpRequestTool.json'
 import FinnHubToolDef from './FinnHubTool.json'
 import AlpacaScreenerToolDef from './AlpacaScreenerTool.json'
@@ -189,7 +189,7 @@ export const nodeManifest = {
   [HttpRequestDef.name]: HttpRequestDef,
   [RiskEngineDef.name]: RiskEngineDef,
   [FieldDef.name]: FieldDef,
-  [TransformDef.name]: TransformDef,
+  [ComputeDef.name]: ComputeDef,
   [LoopDef.name]: LoopDef,
   [OpenAIDef.name]: OpenAIDef,
   [OpenAIChatModelDef.name]: OpenAIChatModelDef,
@@ -215,7 +215,7 @@ export const nodeManifest = {
   [BinanceTradeToolDef.name]: BinanceTradeToolDef,
   [SchwabTradeToolDef.name]: SchwabTradeToolDef,
   [DhanTradeToolDef.name]: DhanTradeToolDef,
-  [TransformToolDef.name]: TransformToolDef,
+  [ComputeToolDef.name]: ComputeToolDef,
   [HttpRequestToolDef.name]: HttpRequestToolDef,
   [FinnHubToolDef.name]: FinnHubToolDef,
   [AlpacaScreenerToolDef.name]: AlpacaScreenerToolDef,

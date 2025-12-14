@@ -1,19 +1,18 @@
 {
-  "name": "Transform",
-  "label": "Transform",
-  "def": "Transform values with type-specific operations",
-  "node_type": "main",
+  "name": "ComputeTool",
+  "label": "Compute",
+  "def": "Compute values with type-specific operations",
+  "node_type": "sub",
   "icon": "/assets/icons/if.svg",
-  "category": "Logic",
-  "description": "Data transformations for strings, numbers, dates, arrays, objects and booleans. Includes statistical and advanced date operations.",
+  "category": "Tool",
+  "description": "Data computations for strings, numbers, dates, arrays, objects and booleans. Includes statistical operations (avg, sum, min, max, median, std) and advanced date operations (now, today, difference, timezone conversion).",
   "color": "text-yellow-500",
   "size": { "width": 320, "height": 320 },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    { "type": "source", "position": "top", "id": "tool" }
   ],
   "action": {
-    "url": "/comparator/transform",
+    "url": "/comparator/compute",
     "method": "POST"
   },
   "fields": [
@@ -22,7 +21,8 @@
       "label": "Value",
       "type": "text",
       "placeholder": "{{ $json.field }}",
-      "required": true
+      "required": true,
+      "description": "The value to transform. For date operations like 'now' and 'today', this can be empty."
     },
     {
       "key": "dataType",
@@ -37,7 +37,8 @@
         { "label": "Object", "value": "object" }
       ],
       "default": "string",
-      "required": true
+      "required": true,
+      "description": "The type of data being transformed. This determines available operations."
     },
     {
       "key": "operator",
@@ -46,6 +47,7 @@
       "options": [],
       "default": "len",
       "required": true,
+      "description": "The transformation operation to perform.",
       "dynamicOptions": {
         "dependsOn": "dataType",
         "optionsByValue": {
@@ -148,6 +150,7 @@
       "label": "Argument 1",
       "type": "text",
       "placeholder": "",
+      "description": "Primary argument for the operation (e.g., format string, amount, search string).",
       "displayOptions": {
         "show": {
           "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addTime", "subtractTime", "startOf", "endOf", "convertTimezone", "extract", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit", "find", "filter"]
@@ -209,6 +212,7 @@
         { "label": "Years", "value": "years" }
       ],
       "default": "days",
+      "description": "Time unit for date operations.",
       "displayOptions": {
         "show": {
           "operator": ["addTime", "subtractTime", "difference", "startOf", "endOf", "extract"]
@@ -220,6 +224,7 @@
       "label": "Second Date",
       "type": "text",
       "placeholder": "Date to compare",
+      "description": "Second date for comparison or difference calculations.",
       "displayOptions": {
         "show": {
           "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
@@ -231,6 +236,7 @@
       "label": "Timezone",
       "type": "text",
       "placeholder": "America/New_York",
+      "description": "IANA timezone identifier (e.g., America/New_York, Europe/London, Asia/Tokyo).",
       "displayOptions": {
         "show": {
           "operator": ["now", "convertTimezone"]
@@ -251,6 +257,7 @@
         { "label": "Saturday", "value": "6" }
       ],
       "default": "1",
+      "description": "Day of week to check (0=Sunday, 6=Saturday).",
       "displayOptions": {
         "show": {
           "operator": ["isDayOfWeek"]
@@ -277,6 +284,7 @@
         { "label": "Matches Regex", "value": "matches_regex" }
       ],
       "default": "===",
+      "description": "Comparison operator for find/filter operations.",
       "displayOptions": {
         "show": {
           "operator": ["find", "filter"]
@@ -288,6 +296,7 @@
       "label": "Argument 2",
       "type": "text",
       "placeholder": "",
+      "description": "Secondary argument (e.g., replacement string, end index, match value).",
       "displayOptions": {
         "show": {
           "operator": ["substring", "replace", "slice", "setProperty", "find", "filter", "addTime", "subtractTime"]

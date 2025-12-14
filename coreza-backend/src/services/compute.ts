@@ -29,7 +29,7 @@ import {
 } from 'date-fns';
 import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
-export interface TransformInput {
+export interface ComputeInput {
   value: any;
   operator: string;
   dataType?: string;
@@ -45,13 +45,13 @@ export interface TransformInput {
   targetDay?: string;
 }
 
-export interface Transformdata {
+export interface ComputeResult {
   success: boolean;
   data?: any;
   error?: string;
 }
 
-export class TransformService {
+export class ComputeService {
   /**
    * Parse input to Date object
    */
@@ -113,7 +113,7 @@ export class TransformService {
     return [];
   }
 
-  static transform(input: TransformInput): Transformdata {
+  static compute(input: ComputeInput): ComputeResult {
     try {
       const { value, operator, arg1, arg2, arg3 } = input;
 

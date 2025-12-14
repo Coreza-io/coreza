@@ -578,7 +578,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
-          if (isSwitch && f.key === "defaultCase") return null; // Handle separately for switch
           if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
 
           // --------- CONDITIONAL FIELD DISPLAY ---------
@@ -599,7 +598,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
           return (
             <div key={f.key}>
-              <Label>{f.label}</Label>
+              {f.type !== "toggle" && <Label>{f.label}</Label>}
 
               {/* --------- Text Field --------- */}
               {f.type === "text" && (
@@ -943,6 +942,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   <span className="text-sm text-foreground">{f.label}</span>
                   <Switch
                     checked={!!fieldState[f.key]}
+                    onCheckedChange={(checked) => handleChange(f.key, checked)}
+                  />
+                </div>
+              )}
+
+              {/* --------- Toggle Field --------- */}
+              {f.type === "toggle" && (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-foreground">{f.label}</span>
+                    {f.description && (
+                      <span className="text-xs text-muted-foreground">
+                        {f.description}
+                      </span>
+                    )}
+                  </div>
+                  <Switch
+                    checked={
+                      typeof fieldState[f.key] === "boolean"
+                        ? fieldState[f.key]
+                        : !!f.default
+                    }
                     onCheckedChange={(checked) => handleChange(f.key, checked)}
                   />
                 </div>
@@ -1427,25 +1448,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             })}
           </div>
         )}
-
-        {/* Default Case Field (Switch only) */}
-        {isSwitch &&
-          definition.fields?.map((f: any) => {
-            if (f.key !== "defaultCase") return null;
-
-            return (
-              <div key={f.key}>
-                <Label>{f.label}</Label>
-                <Input
-                  value={fieldState[f.key] || f.default || ""}
-                  onChange={(e) => handleChange(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                  className="nodrag"
-                  onFocus={(e) => e.target.select()}
-                />
-              </div>
-            );
-          })}
 
         {/* Submit Button */}
         {!readOnly && (

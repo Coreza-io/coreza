@@ -37,6 +37,48 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   const definition = data.definition;
 
+  const fallbackEnabled = useMemo(() => {
+    if (definition.name !== "Switch") return false;
+
+    const explicitToggle =
+      data.fieldState?.enableFallback ?? data.values?.enableFallback;
+    if (typeof explicitToggle === "boolean") return explicitToggle;
+
+    const definitionFallbackDefault = definition.fields?.find(
+      (f: any) => f.key === "enableFallback"
+    )?.default;
+    if (typeof definitionFallbackDefault === "boolean") {
+      return definitionFallbackDefault;
+    }
+
+    const legacyDefaultCase =
+      data.fieldState?.defaultCase ?? data.values?.defaultCase;
+    if (typeof legacyDefaultCase === "string") return true;
+
+    return true;
+  }, [
+    data.fieldState?.defaultCase,
+    data.fieldState?.enableFallback,
+    data.values?.defaultCase,
+    data.values?.enableFallback,
+    definition.fields,
+    definition.name,
+  ]);
+
+  const fallbackHandleId = useMemo(() => {
+    if (definition.name !== "Switch") return "fallback";
+
+    return (
+      data.fieldState?.defaultCase ||
+      data.values?.defaultCase ||
+      "fallback"
+    );
+  }, [
+    data.fieldState?.defaultCase,
+    data.values?.defaultCase,
+    definition.name,
+  ]);
+
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
     // Check if node has repeater fields (conditional logic or switch cases)
@@ -112,7 +154,9 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           position: "right",
           id: caseItem.outputName || `case${index + 1}`,
         })),
-        { type: "source", position: "right", id: "fallback" },
+        ...(fallbackEnabled
+          ? [{ type: "source", position: "right", id: fallbackHandleId }]
+          : []),
       ];
     }
 
@@ -131,14 +175,23 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     });
 
     // Add default handle
-    handles.push({
-      type: "source",
-      position: "right",
-      id: data.fieldState?.defaultCase || data.values?.defaultCase || "fallback",
-    });
+    if (fallbackEnabled) {
+      handles.push({
+        type: "source",
+        position: "right",
+        id: fallbackHandleId,
+      });
+    }
 
     return handles;
-  }, [definition.name, definition.handles, definition.fields, casesLength]);
+  }, [
+    definition.name,
+    definition.handles,
+    definition.fields,
+    casesLength,
+    fallbackEnabled,
+    fallbackHandleId,
+  ]);
 
   // Memoize dynamic size for Switch nodes to prevent infinite re-renders
   const dynamicSize = useMemo(() => {
@@ -176,7 +229,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     // Base height + extra height per case (including default case)
     const baseHeight = 340;
     const heightPerCase = 40;
-    const totalCases = caseCount + 1; // +1 for default case
+    const totalCases = caseCount + (fallbackEnabled ? 1 : 0);
     const dynamicHeight = Math.max(
       baseHeight,
       baseHeight + (totalCases - 2) * heightPerCase
@@ -186,7 +239,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
       width: definition.size?.width || 340,
       height: dynamicHeight,
     };
-  }, [definition.name, definition.size, definition.fields, casesLength]);
+  }, [
+    definition.name,
+    definition.size,
+    definition.fields,
+    casesLength,
+    fallbackEnabled,
+  ]);
 
   if (!data) {
     console.error("NodeRouter: data prop is undefined for node", nodeId);

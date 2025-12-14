@@ -1400,6 +1400,21 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         <X className="w-3 h-3" />
                       </Button>
                     )}
+                </div>
+
+                  {outputField && (
+                    <Input
+                      className="w-full h-8 text-xs nodrag"
+                      placeholder={outputField.placeholder || "Output name"}
+                      value={
+                        caseItem.outputName ||
+                        caseItem.caseName ||
+                        caseItem.caseValue ||
+                        ""
+                      }
+                      onChange={(e) => updateCase(i, "outputName", e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                    />
                   </div>
 
                   {(caseItem.left?.includes("{{") ||

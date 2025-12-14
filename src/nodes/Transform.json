@@ -5,9 +5,9 @@
   "node_type": "main",
   "icon": "/assets/icons/if.svg",
   "category": "Logic",
-  "description": "Data transformations for strings, numbers, dates, arrays, objects and booleans",
+  "description": "Data transformations for strings, numbers, dates, arrays, objects and booleans. Includes statistical and advanced date operations.",
   "color": "text-yellow-500",
-  "size": { "width": 320, "height": 280 },
+  "size": { "width": 320, "height": 320 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -77,14 +77,21 @@
             { "label": "To String", "value": "toString" }
           ],
           "datetime": [
+            { "label": "Now", "value": "now" },
+            { "label": "Today", "value": "today" },
             { "label": "Format", "value": "formatDate" },
-            { "label": "Add Days", "value": "addDays" },
-            { "label": "Subtract Days", "value": "subtractDays" },
-            { "label": "Get Year", "value": "getYear" },
-            { "label": "Get Month", "value": "getMonth" },
-            { "label": "Get Day", "value": "getDay" },
-            { "label": "Get Hour", "value": "getHour" },
-            { "label": "Get Minute", "value": "getMinute" },
+            { "label": "Add Time", "value": "addTime" },
+            { "label": "Subtract Time", "value": "subtractTime" },
+            { "label": "Difference", "value": "difference" },
+            { "label": "Start Of", "value": "startOf" },
+            { "label": "End Of", "value": "endOf" },
+            { "label": "Is Before", "value": "isBefore" },
+            { "label": "Is After", "value": "isAfter" },
+            { "label": "Is Same Day", "value": "isSameDay" },
+            { "label": "Is Weekend", "value": "isWeekend" },
+            { "label": "Is Day Of Week", "value": "isDayOfWeek" },
+            { "label": "Convert Timezone", "value": "convertTimezone" },
+            { "label": "Extract Component", "value": "extract" },
             { "label": "To Timestamp", "value": "toTimestamp" },
             { "label": "From Timestamp", "value": "fromTimestamp" }
           ],
@@ -95,6 +102,13 @@
           ],
           "array": [
             { "label": "Length", "value": "arrayLength" },
+            { "label": "Average", "value": "avg" },
+            { "label": "Sum", "value": "sum" },
+            { "label": "Min", "value": "min" },
+            { "label": "Max", "value": "max" },
+            { "label": "Count", "value": "count" },
+            { "label": "Median", "value": "median" },
+            { "label": "Std Deviation", "value": "std" },
             { "label": "Push", "value": "push" },
             { "label": "Pop", "value": "pop" },
             { "label": "Shift", "value": "shift" },
@@ -136,7 +150,7 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addDays", "subtractDays", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit", "find", "filter"]
+          "operator": ["substring", "replace", "split", "concat", "startsWith", "endsWith", "contains", "round", "add", "subtract", "multiply", "divide", "modulo", "formatDate", "addTime", "subtractTime", "startOf", "endOf", "convertTimezone", "extract", "push", "unshift", "arrayConcat", "slice", "sort", "arrayContains", "join", "getProperty", "setProperty", "deleteProperty", "hasProperty", "merge", "pick", "omit", "find", "filter"]
         }
       },
       "dynamicLabel": {
@@ -155,9 +169,13 @@
           "multiply": "Number",
           "divide": "Number",
           "modulo": "Number",
-          "formatDate": "Format (e.g. YYYY-MM-DD)",
-          "addDays": "Days",
-          "subtractDays": "Days",
+          "formatDate": "Format (e.g. yyyy-MM-dd)",
+          "addTime": "Amount",
+          "subtractTime": "Amount",
+          "startOf": "Format (optional)",
+          "endOf": "Format (optional)",
+          "convertTimezone": "Format (optional)",
+          "extract": "Component",
           "push": "Item to Add",
           "unshift": "Item to Add",
           "arrayConcat": "Array (JSON)",
@@ -174,6 +192,68 @@
           "omit": "Keys (comma-separated)",
           "find": "Property Name",
           "filter": "Property Name"
+        }
+      }
+    },
+    {
+      "key": "unit",
+      "label": "Unit",
+      "type": "select",
+      "options": [
+        { "label": "Seconds", "value": "seconds" },
+        { "label": "Minutes", "value": "minutes" },
+        { "label": "Hours", "value": "hours" },
+        { "label": "Days", "value": "days" },
+        { "label": "Weeks", "value": "weeks" },
+        { "label": "Months", "value": "months" },
+        { "label": "Years", "value": "years" }
+      ],
+      "default": "days",
+      "displayOptions": {
+        "show": {
+          "operator": ["addTime", "subtractTime", "difference", "startOf", "endOf", "extract"]
+        }
+      }
+    },
+    {
+      "key": "date2",
+      "label": "Second Date",
+      "type": "text",
+      "placeholder": "Date to compare",
+      "displayOptions": {
+        "show": {
+          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
+        }
+      }
+    },
+    {
+      "key": "timezone",
+      "label": "Timezone",
+      "type": "text",
+      "placeholder": "America/New_York",
+      "displayOptions": {
+        "show": {
+          "operator": ["now", "convertTimezone"]
+        }
+      }
+    },
+    {
+      "key": "targetDay",
+      "label": "Target Day",
+      "type": "select",
+      "options": [
+        { "label": "Sunday", "value": "0" },
+        { "label": "Monday", "value": "1" },
+        { "label": "Tuesday", "value": "2" },
+        { "label": "Wednesday", "value": "3" },
+        { "label": "Thursday", "value": "4" },
+        { "label": "Friday", "value": "5" },
+        { "label": "Saturday", "value": "6" }
+      ],
+      "default": "1",
+      "displayOptions": {
+        "show": {
+          "operator": ["isDayOfWeek"]
         }
       }
     },
@@ -210,7 +290,7 @@
       "placeholder": "",
       "displayOptions": {
         "show": {
-          "operator": ["substring", "replace", "slice", "setProperty", "find", "filter"]
+          "operator": ["substring", "replace", "slice", "setProperty", "find", "filter", "addTime", "subtractTime"]
         }
       },
       "dynamicLabel": {
@@ -221,7 +301,9 @@
           "slice": "End Index",
           "setProperty": "Value",
           "find": "Match Value",
-          "filter": "Match Value"
+          "filter": "Match Value",
+          "addTime": "Format (optional)",
+          "subtractTime": "Format (optional)"
         }
       }
     }

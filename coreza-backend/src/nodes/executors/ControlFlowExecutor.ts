@@ -15,9 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { MathService } from "../../services/math";
 import { TransformService } from "../../services/transform";
-import { DateService } from "../../services/date";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -38,14 +36,30 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "Edit Fields":
           return this.executeFieldNode(node, input, context);
         case "Math":
-          return this.executeMathNode(node, input, context);
+          // Deprecated: Route to Transform with statistical operators
+          return this.executeTransformNode(node, input, context);
         case "Transform":
           return this.executeTransformNode(node, input, context);
         case "Loop":
           return this.executeLoopNode(node, input, context);
         case "Date":
-          return this.executeDateNode(node, input, context);
+          // Deprecated: Route to Transform with datetime operators
+          return this.executeTransformNode(node, input, context);
         default:
+          return {
+            success: false,
+            error: `Unsupported control flow node type: ${nodeName}`,
+          };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Control flow execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
           return {
             success: false,
             error: `Unsupported control flow node type: ${nodeName}`,
@@ -262,24 +276,6 @@ export class ControlFlowExecutor implements INodeExecutor {
     };
   }
 
-  private async executeMathNode(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any
-  ): Promise<NodeResult> {
-    const resolvedParams = context?.resolveNodeParameters
-      ? context.resolveNodeParameters(node, input)
-      : { ...node.values, ...input };
-
-    const { left, operator, right } = resolvedParams;
-    const result = MathService.calculate({ left, operator, right });
-    if (!result.success) {
-      return { success: false, error: result.error };
-    }
-
-    return result;
-  }
-
   private async executeTransformNode(
     node: WorkflowNode,
     input: NodeInput,
@@ -289,8 +285,53 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const { value, operator, arg1, arg2 } = resolvedParams;
-    const result = TransformService.transform({ value, operator, arg1, arg2 });
+    // Handle legacy Math node parameters by mapping to Transform format
+    if (node.name === "Math") {
+      const { left, operator, right } = resolvedParams;
+      const result = TransformService.transform({ 
+        value: left, 
+        operator, 
+        arg1: right 
+      });
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+      return result;
+    }
+
+    // Handle legacy Date node parameters by mapping to Transform format
+    if (node.name === "Date") {
+      const result = TransformService.transform({
+        value: resolvedParams.date,
+        operator: resolvedParams.operation,
+        arg1: resolvedParams.amount || resolvedParams.formatString,
+        arg2: resolvedParams.formatString,
+        unit: resolvedParams.unit,
+        date2: resolvedParams.date2,
+        timezone: resolvedParams.timezone,
+        inputFormat: resolvedParams.inputFormat,
+        targetDay: resolvedParams.targetDay,
+      });
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+      return { success: true, data: result.data };
+    }
+
+    // Standard Transform node
+    const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = resolvedParams;
+    const result = TransformService.transform({ 
+      value, 
+      operator, 
+      arg1, 
+      arg2, 
+      filterOperator,
+      unit,
+      date2,
+      timezone,
+      inputFormat,
+      targetDay
+    });
     if (!result.success) {
       return { success: false, error: result.error };
     }
@@ -460,34 +501,6 @@ export class ControlFlowExecutor implements INodeExecutor {
         isLastBatch,
       },
     };
-  }
-
-  private async executeDateNode(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any
-  ): Promise<NodeResult> {
-    const resolvedParams = context?.resolveNodeParameters
-      ? context.resolveNodeParameters(node, input)
-      : { ...node.values, ...input };
-
-    const result = DateService.execute({
-      operation: resolvedParams.operation,
-      date: resolvedParams.date,
-      date2: resolvedParams.date2,
-      amount: resolvedParams.amount,
-      unit: resolvedParams.unit,
-      formatString: resolvedParams.formatString,
-      timezone: resolvedParams.timezone,
-      inputFormat: resolvedParams.inputFormat,
-      targetDay: resolvedParams.targetDay,
-    });
-
-    if (!result.success) {
-      return { success: false, error: result.error };
-    }
-
-    return { success: true, data: result.result };
   }
 
   private evaluateCondition(

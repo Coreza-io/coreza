@@ -228,7 +228,7 @@
         { "label": "Second", "value": "second" },
         { "label": "Minute", "value": "minute" },
         { "label": "Hour", "value": "hour" },
-        { "label": "Date", "value": "date" },
+        { "label": "Day", "value": "day" },
         { "label": "Week", "value": "week" },
         { "label": "Month", "value": "month" },
         { "label": "Year", "value": "year" }

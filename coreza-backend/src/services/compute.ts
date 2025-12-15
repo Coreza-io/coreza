@@ -542,25 +542,25 @@ export class ComputeService {
 
           let result: Date;
           switch (unit) {
-            case "seconds":
+            case "second":
               result = subSeconds(date, amount);
               break;
-            case "minutes":
+            case "minute":
               result = subMinutes(date, amount);
               break;
-            case "hours":
+            case "hour":
               result = subHours(date, amount);
               break;
-            case "days":
+            case "day":
               result = subDays(date, amount);
               break;
-            case "weeks":
+            case "week":
               result = subWeeks(date, amount);
               break;
-            case "months":
+            case "month":
               result = subMonths(date, amount);
               break;
-            case "years":
+            case "year":
               result = subYears(date, amount);
               break;
             default:
@@ -731,7 +731,7 @@ export class ComputeService {
             case "month":
               result = getMonth(date) + 1;
               break;
-            case "date":
+            case "day":
               result = getDate(date);
               break;
             case "hour":

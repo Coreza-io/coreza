@@ -37,7 +37,6 @@ import logger from "./utils/logger";
 // Import routes
 import indicatorRoutes from "./routes/indicators";
 import marketRoutes from "./routes/market";
-import credentialsRoutes from "./routes/credentials";
 import gmailRoutes from "./routes/gmail";
 import oauthRoutes from "./routes/oauth";
 import finnhubRoutes from "./routes/finnhub";
@@ -138,7 +137,6 @@ app.get("/metrics", async (req, res) => {
 logger.info("Setting up routes...");
 
 app.use("/oauth", oauthRoutes);
-app.use("/credentials", credentialsRoutes);
 app.use("/broker", brokerRoutes);
 app.use("/openai", openaiRoutes);
 app.use("/aiagent", aiAgentRoutes);

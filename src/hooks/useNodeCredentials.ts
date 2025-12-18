@@ -48,17 +48,19 @@ export function useNodeCredentials({
 
   const userId = user?.id;
 
-  // Fetch credentials from API
+  // Fetch credentials from API using correct broker-specific endpoints
   const fetchCredentials = useCallback(
     async (fieldKey: string) => {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
       try {
-        const apiName = (
+        const nodeName = (
           definition?.subCategory ||
           definition?.parentNode ||
           definition?.name ||
           ""
         ).toLowerCase();
+
+        const category = definition?.category?.toLowerCase() || "";
 
         // Check if userId AND access_token exist
         if (!userId || !session?.access_token) {
@@ -67,10 +69,23 @@ export function useNodeCredentials({
           return;
         }
 
-        // Use credentials API for security
-        const url = `/credentials/list?service_type=${apiName}`;
+        // Determine correct endpoint based on node definition
+        let url: string;
+
+        if (category === "broker" || category === "screener") {
+          // Broker/Screener nodes use /broker/{name}/credentials
+          url = `/broker/${nodeName}/credentials`;
+        } else if (definition?.authAction?.url) {
+          // Derive from authAction URL: /finnhub/auth → /finnhub/credentials
+          const authPath = definition.authAction.url;
+          const basePath = authPath.replace(/\/auth$/, "");
+          url = `${basePath}/credentials`;
+        } else {
+          // Fallback: /{service}/credentials
+          url = `/${nodeName}/credentials`;
+        }
+
         console.log("Fetching credentials from:", url);
-        console.log("API name:", apiName, "User ID:", userId);
 
         const res = await apiClient.get(url, session?.access_token);
         console.log("Response status:", res.status);

@@ -28,7 +28,7 @@ import { NodeScheduler } from "./nodeScheduler";
  *   - Loop nodes can re-queue themselves until completion
  *
  * The goal of committing this skeleton is to provide a clear starting
- * point for the n8n-style execution model without disrupting the
+ * point for the queue-based execution model without disrupting the
  * existing engine. The implementation is not wired to persistence or
  * the scheduler yet but showcases the core queue-based algorithm.
  */

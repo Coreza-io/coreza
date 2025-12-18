@@ -16,7 +16,7 @@
 
 /**
  * Client-side encryption utility for sensitive data
- * Uses global encryption key like N8N's approach with AES-256-GCM
+ * Uses global encryption key with AES-256-GCM
  */
 
 class EncryptionUtil {

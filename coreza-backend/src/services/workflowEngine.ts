@@ -68,7 +68,7 @@ export class WorkflowEngine {
   private MAX_RETRIES = 0;
   private mode: "best-effort" | "fail-fast";
 
-  // Execution tracking for n8n-style logs
+  // Execution tracking for detailed logs
   private nodeExecutions: NodeExecutionLog[] = [];
   private executionOrder: string[] = [];
 

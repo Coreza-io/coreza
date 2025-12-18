@@ -39,7 +39,7 @@ const toStringValue = (value: unknown): string => {
   }
 };
 
-// Build n8n-like path segments
+// Build property path segments for reference expressions
 const buildPath = (parent: string, rawKey: string): string => {
   const isNumeric = /^\d+$/.test(rawKey);
   const needsQuote = /[^A-Za-z0-9_]/.test(rawKey);
@@ -70,7 +70,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   return (
     <div className="flex flex-col gap-2 mb-2">
       {entriesToShow.map(({ key, value }) => {
-        const fullKey = buildPath(parentKey, key); // n8n-style path
+        const fullKey = buildPath(parentKey, key);
         const isNestedObject = isObjectLike(value);
         const displayKey = isArray ? `[${key}]` : key;
 

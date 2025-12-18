@@ -240,8 +240,8 @@ const calculateSmartPath = (
   sourceNodeId: string,
   targetNodeId: string
 ): { path: string; midX: number; midY: number } => {
-  const turnOffset = 40; // Fixed n8n-style turn distance
-  const radius = 20; // Larger corner radius for smooth n8n-style curves
+  const turnOffset = 40; // Fixed turn distance for orthogonal routing
+  const radius = 20; // Corner radius for smooth curves
   const nodePadding = 20;
   const defaultNodeWidth = 340;
   const defaultNodeHeight = 340;
@@ -265,7 +265,7 @@ const calculateSmartPath = (
     const isBackward = targetX < sourceX;
     
     if (isBackward) {
-      // N8N-style orthogonal routing for backward connections
+      // Orthogonal routing for backward connections
       const exitX = sourceX + turnOffset;
       const entryX = targetX - turnOffset; // FIXED: entry on correct side
       
@@ -297,7 +297,7 @@ const calculateSmartPath = (
       
       return { path, midX, midY };
     } else {
-      // Simple forward connection - use bezier for smooth n8n-style curve
+      // Simple forward connection - use bezier for smooth curve
       const path = getBezierPath({
         sourceX,
         sourceY,
@@ -349,7 +349,7 @@ const calculateSmartPath = (
       
       return { path, midX, midY };
     } else {
-      // Simple forward connection - use bezier for smooth n8n-style curve
+      // Simple forward connection - use bezier for smooth curve
       const path = getBezierPath({
         sourceX,
         sourceY,
@@ -401,7 +401,7 @@ const calculateSmartPath = (
       
       return { path, midX, midY };
     } else {
-      // Simple forward connection - use bezier for smooth n8n-style curve
+      // Simple forward connection - use bezier for smooth curve
       const path = getBezierPath({
         sourceX,
         sourceY,
@@ -453,7 +453,7 @@ const calculateSmartPath = (
       
       return { path, midX, midY };
     } else {
-      // Simple forward connection - use bezier for smooth n8n-style curve
+      // Simple forward connection - use bezier for smooth curve
       const path = getBezierPath({
         sourceX,
         sourceY,

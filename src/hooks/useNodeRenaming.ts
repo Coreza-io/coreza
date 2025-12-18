@@ -103,7 +103,7 @@ export function useNodeRenaming({
         const oldNodeId = nodeId!;
         const newNodeId = finalName;
 
-        // Update node with new ID and display name (N8N behavior)
+        // Update node with new ID and display name
         setNodes((prevNodes) => {
           return prevNodes.map((node) => {
             if (node.id === oldNodeId) {

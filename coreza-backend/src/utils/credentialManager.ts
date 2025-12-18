@@ -21,9 +21,7 @@
 
 import crypto from "crypto";
 import { supabase } from "../config/supabase";
-import EnvelopeEncryptionUtil from "./envelopeEncryption";
-import DecryptionUtil from "./decryption";
-import ClientEncryption from "./ClientEncryption"; // ⬅️ ensure this exists (frontend-style encryptor)
+import ClientEncryption from "./ClientEncryption";
 import CredentialCache from "./credentialCache";
 
 export interface UserCredential {
@@ -110,43 +108,11 @@ class CredentialManager {
       info,
       32
     ) as Buffer | ArrayBuffer;
-    return Buffer.isBuffer(derivedKey)
-      ? derivedKey
-      : Buffer.from(derivedKey);
-  }
-
-  /** Decrypt AES-256-GCM payload where encryptedData = base64(IV(12) + CIPHERTEXT + TAG(16)) */
-  private static async decryptClientData(
-    encryptedData: string,
-    encryptionKeyB64: string
-  ): Promise<any> {
-    try {
-      const combined = Buffer.from(encryptedData, "base64");
-      const iv = combined.subarray(0, 12);
-      const ciphertext = combined.subarray(12, -16);
-      const tag = combined.subarray(-16);
-
-      const key = Buffer.from(encryptionKeyB64, "base64");
-      if (key.length !== 32) {
-        throw new Error(
-          `Invalid key length: ${key.length} (expected 32 for AES-256)`
-        );
-      }
-
-      const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-      decipher.setAuthTag(tag);
-      const out = Buffer.concat([
-        decipher.update(ciphertext),
-        decipher.final(),
-      ]);
-      return JSON.parse(out.toString("utf8"));
-    } catch {
-      throw new Error("Failed to decrypt client data");
-    }
+    return Buffer.isBuffer(derivedKey) ? derivedKey : Buffer.from(derivedKey);
   }
 
   /** Decrypt enc_version=2 (separate base64 fields) using HKDF-derived user key */
-  private static async decryptFrontendData(
+  private static async decryptData(
     userId: string,
     encPayloadB64: string,
     ivB64: string,
@@ -156,16 +122,16 @@ class CredentialManager {
       const masterKey = process.env.COREZA_ENCRYPTION_KEY;
       if (!masterKey) throw new Error("Encryption key not available");
 
-        const keyBuffer = await this.deriveUserKey(
-          masterKey,
-          userId,
-          "credentials"
+      const keyBuffer = await this.deriveUserKey(
+        masterKey,
+        userId,
+        "credentials"
+      );
+      if (keyBuffer.byteLength !== 32) {
+        throw new Error(
+          `Invalid derived key length: ${keyBuffer.byteLength} (expected 32)`
         );
-        if (keyBuffer.byteLength !== 32) {
-          throw new Error(
-            `Invalid derived key length: ${keyBuffer.byteLength} (expected 32)`
-          );
-        }
+      }
 
       const iv = Buffer.from(ivB64, "base64");
       const tag = Buffer.from(tagB64, "base64");
@@ -176,7 +142,7 @@ class CredentialManager {
         throw new Error(`Invalid auth tag length: ${tag.length}`);
       if (ciphertext.length < 1) throw new Error("Ciphertext too short");
 
-        const decipher = crypto.createDecipheriv("aes-256-gcm", keyBuffer, iv);
+      const decipher = crypto.createDecipheriv("aes-256-gcm", keyBuffer, iv);
       decipher.setAuthTag(tag);
       const out = Buffer.concat([
         decipher.update(ciphertext),
@@ -203,15 +169,6 @@ class CredentialManager {
     credentialName?: string
   ): Promise<{ credentials?: any; error?: string }> {
     try {
-      const cache = CredentialCache.getInstance();
-      const cached = await cache.get(userId, serviceType, credentialName);
-      if (cached !== null) {
-        console.log(`📦 Cache HIT: ${serviceType}:${credentialName || "_default"}`);
-        return { credentials: cached };
-      }
-
-      console.log(`📦 Cache MISS: ${serviceType}:${credentialName || "_default"}`);
-
       let query = supabase
         .from("user_credentials")
         .select("*")
@@ -231,68 +188,22 @@ class CredentialManager {
 
       const credential = data[0];
       let credentials: any | null = null;
-
-      // Legacy single-field client_json (string: base64(iv+cipher+tag))
-      if (
-        credential.client_json &&
-        typeof credential.client_json === "string"
-      ) {
-        try {
-          const encryptionKey = process.env.COREZA_ENCRYPTION_KEY;
-          if (!encryptionKey) throw new Error("Encryption key not available");
-          credentials = await this.decryptClientData(
-            credential.client_json,
-            encryptionKey
-          );
-        } catch (e) {
-          console.error("Failed to decrypt client_json:", e);
-          return { error: "Failed to decrypt credentials" };
-        }
-      } else if (
-        // Frontend v2 format (separate bytea/base64 fields)
-        credential.is_encrypted &&
+      // Frontend v2 format (separate bytea/base64 fields)
+      credential.is_encrypted &&
         credential.enc_version === 2 &&
-        credential.key_ref === "user:v2"
-      ) {
-        try {
-          const encPayload = this.bufferToBase64(credential.enc_payload);
-          const iv = this.bufferToBase64(credential.iv);
-          const authTag = this.bufferToBase64(credential.auth_tag);
-          credentials = await this.decryptFrontendData(
-            userId,
-            encPayload,
-            iv,
-            authTag
-          );
-        } catch (e: any) {
-          console.error("Failed to decrypt frontend data:", e);
-          return { error: `Frontend decryption failed: ${e.message}` };
-        }
-      } else if (
-        // Envelope v1 (backend)
-        credential.is_encrypted &&
-        credential.enc_payload &&
-        credential.enc_version === 1
-      ) {
-        try {
-          const payload = EnvelopeEncryptionUtil.decrypt({
-            encPayload: credential.enc_payload,
-            iv: credential.iv,
-            authTag: credential.auth_tag,
-            dekWrapped: credential.dek_wrapped,
-            keyRef: credential.key_ref || "env:v1",
-            userId,
-            credentialId: credential.id,
-          });
-          credentials = { ...payload.client, ...payload.token };
-        } catch (e) {
-          console.error("Failed envelope decryption:", e);
-          return { error: "Failed to decrypt envelope credentials" };
-        }
+        credential.key_ref === "user:v2";
+      try {
+        const encPayload = this.bufferToBase64(credential.enc_payload);
+        const iv = this.bufferToBase64(credential.iv);
+        const authTag = this.bufferToBase64(credential.auth_tag);
+        credentials = await this.decryptData(userId, encPayload, iv, authTag);
+      } catch (e: any) {
+        console.error("Failed to decrypt frontend data:", e);
+        return { error: `Frontend decryption failed: ${e.message}` };
       }
 
       if (!credentials) return { error: "No valid credential data found" };
-
+      const cache = CredentialCache.getInstance();
       await cache.set(userId, serviceType, credentialName, credentials);
       return { credentials };
     } catch (error: any) {
@@ -328,69 +239,14 @@ class CredentialManager {
         try {
           let credentials: Record<string, any>;
 
-          if (record.is_encrypted && record.enc_payload) {
-            // Envelope or v2 (decide by version)
-            if (record.enc_version === 2 && record.key_ref === "user:v2") {
-              console.log(
-                `🔓 Decrypting v2 (frontend) ${record.service_type}:${record.name}`
-              );
-              const encPayload = this.bufferToBase64(record.enc_payload);
-              const iv = this.bufferToBase64(record.iv);
-              const tag = this.bufferToBase64(record.auth_tag);
-              credentials = await this.decryptFrontendData(
-                userId,
-                encPayload,
-                iv,
-                tag
-              );
-            } else {
-              console.log(
-                `🔓 Decrypting envelope ${record.service_type}:${record.name}`
-              );
-              const payload = EnvelopeEncryptionUtil.decrypt({
-                encPayload: record.enc_payload,
-                iv: record.iv,
-                authTag: record.auth_tag,
-                dekWrapped: record.dek_wrapped,
-                keyRef: record.key_ref || "env:v1",
-                userId,
-                credentialId: record.id,
-              });
-              credentials = { ...payload.client, ...payload.token };
-            }
-          } else {
-            // Legacy JSON fields
-            console.log(
-              `🔓 Decrypting legacy ${record.service_type}:${record.name}`
-            );
-            const clientJson = record.client_json as Record<
-              string,
-              string
-            > | null;
-            const tokenJson = record.token_json as Record<
-              string,
-              string
-            > | null;
-
-            credentials = {};
-            if (clientJson && typeof clientJson === "object") {
-              for (const [k, v] of Object.entries(clientJson)) {
-                credentials[k] =
-                  typeof v === "string" && DecryptionUtil.isEncrypted(v)
-                    ? await DecryptionUtil.decrypt(v)
-                    : v;
-              }
-            }
-            if (tokenJson && typeof tokenJson === "object") {
-              for (const [k, v] of Object.entries(tokenJson)) {
-                credentials[k] =
-                  typeof v === "string" && DecryptionUtil.isEncrypted(v)
-                    ? await DecryptionUtil.decrypt(v)
-                    : v;
-              }
-            }
-          }
-
+          // Envelope or v2 (decide by version)
+          console.log(
+            `🔓 Decrypting v2 (frontend) ${record.service_type}:${record.name}`
+          );
+          const encPayload = this.bufferToBase64(record.enc_payload);
+          const iv = this.bufferToBase64(record.iv);
+          const tag = this.bufferToBase64(record.auth_tag);
+          credentials = await this.decryptData(userId, encPayload, iv, tag);
           out.push({
             id: record.id,
             name: record.name,
@@ -447,7 +303,9 @@ class CredentialManager {
         return { credentials: null };
       }
 
-      return { credentials: { client_json: result.credentials, token_json: {} } };
+      return {
+        credentials: { client_json: result.credentials, token_json: {} },
+      };
     } catch (e: any) {
       throw new Error(
         `Failed to get ${serviceType} credentials: ${
@@ -510,7 +368,11 @@ class CredentialManager {
       }
 
       // Invalidate cache after successful store
-      await CredentialCache.getInstance().invalidate(userId, sanitizedServiceType, sanitizedCredentialName);
+      await CredentialCache.getInstance().invalidate(
+        userId,
+        sanitizedServiceType,
+        sanitizedCredentialName
+      );
       console.log(
         `✅ Successfully stored encrypted credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`
       );
@@ -531,7 +393,13 @@ class CredentialManager {
     credentials: any,
     scopes?: string
   ): Promise<string> {
-    await this.storeCredentials(userId, serviceType, credentialName, credentials, scopes);
+    await this.storeCredentials(
+      userId,
+      serviceType,
+      credentialName,
+      credentials,
+      scopes
+    );
 
     const { data, error } = await supabase
       .from("user_credentials")
@@ -560,7 +428,7 @@ class CredentialManager {
         .eq("id", credentialId);
 
       if (error) throw new Error("Failed to delete credential");
-      
+
       // Invalidate all cache for user after delete
       await CredentialCache.getInstance().invalidate(userId);
       console.log(`🗑️ Deleted credential ${credentialId}`);
@@ -592,152 +460,6 @@ class CredentialManager {
       console.error("Error in listCredentials:", e);
       throw e;
     }
-  }
-
-  /**
-   * Migrate a single credential record to envelope encryption. This is a
-   * best-effort migration that reads the existing JSON payload, re-encrypts it
-   * using the same helper used for new writes and stores the encrypted fields.
-   */
-  static async migrateCredential(
-    credentialId: string,
-    userId: string,
-    serviceType: string,
-    credentialName: string
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      const { data, error } = await supabase
-        .from("user_credentials")
-        .select("*")
-        .eq("id", credentialId)
-        .eq("user_id", userId)
-        .eq("service_type", serviceType)
-        .eq("name", credentialName)
-        .single();
-
-      if (error || !data) {
-        return { success: false, error: "Credential not found" };
-      }
-
-      if (data.enc_payload && data.iv && data.auth_tag) {
-        return { success: true };
-      }
-
-      const mergedPayload = {
-        ...(data.client_json || {}),
-        ...(data.token_json || {}),
-      };
-
-      if (Object.keys(mergedPayload).length === 0) {
-        return {
-          success: false,
-          error: "Credential has no client/token data to migrate",
-        };
-      }
-
-      const encrypted = await ClientEncryption.encrypt(userId, mergedPayload);
-
-      const { error: updateError } = await supabase
-        .from("user_credentials")
-        .update({
-          enc_payload: this.b64ToPgHex(encrypted.enc_payload),
-          iv: this.b64ToPgHex(encrypted.iv),
-          auth_tag: this.b64ToPgHex(encrypted.auth_tag),
-          enc_version: 2,
-          key_ref: "user:v2",
-          is_encrypted: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", credentialId)
-        .eq("user_id", userId);
-
-      if (updateError) {
-        return {
-          success: false,
-          error: `Failed to update credential: ${updateError.message}`,
-        };
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err?.message ?? "Failed to migrate credential",
-      };
-    }
-  }
-
-  /**
-   * Batch migrate all credentials that belong to a user.
-   */
-  static async batchMigrateUser(userId: string): Promise<{
-    success: boolean;
-    migrated: number;
-    failed: number;
-    errors: string[];
-  }> {
-    const errors: string[] = [];
-    let migrated = 0;
-    let failed = 0;
-
-    const { data, error } = await supabase
-      .from("user_credentials")
-      .select("id, service_type, name")
-      .eq("user_id", userId);
-
-    if (error || !data) {
-      return {
-        success: false,
-        migrated: 0,
-        failed: 0,
-        errors: [error?.message || "Failed to fetch credentials"],
-      };
-    }
-
-    for (const record of data) {
-      const result = await this.migrateCredential(
-        record.id,
-        userId,
-        record.service_type,
-        record.name
-      );
-      if (result.success) {
-        migrated += 1;
-      } else {
-        failed += 1;
-        if (result.error) {
-          errors.push(`${record.name}: ${result.error}`);
-        }
-      }
-    }
-
-    return { success: errors.length === 0, migrated, failed, errors };
-  }
-
-  /**
-   * Return a simple summary of how many credentials have already been migrated.
-   */
-  static async getMigrationStatus(userId: string): Promise<{
-    total: number;
-    encrypted: number;
-    migrationProgress: number;
-  }> {
-    const { data, error } = await supabase
-      .from("user_credentials")
-      .select("enc_payload, iv, auth_tag")
-      .eq("user_id", userId);
-
-    if (error || !data || data.length === 0) {
-      return { total: 0, encrypted: 0, migrationProgress: 0 };
-    }
-
-    const encrypted = data.filter(
-      (record) => record.enc_payload && record.iv && record.auth_tag
-    ).length;
-    const total = data.length;
-    const migrationProgress = total === 0 ? 0 : Math.round((encrypted / total) * 100);
-
-    return { total, encrypted, migrationProgress };
   }
 }
 

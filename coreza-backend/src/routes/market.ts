@@ -21,6 +21,7 @@ import { SubscriptionService } from '../services/SubscriptionService';
 import { MarketSource } from '../types/marketEvent';
 import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
+import { SOURCE_TO_MARKET_SOURCE, getMarketSource } from '../config/marketSources';
 
 const router = express.Router();
 
@@ -263,13 +264,8 @@ router.get('/subscriptions/status', async (req, res) => {
   }
 });
 
-// Map route source param to MarketSource type
-const sourceToMarketSource: Record<string, MarketSource> = {
-  alpaca_stream: 'alpaca',
-  binance_stream: 'binance',
-  dhan_stream: 'dhan',
-  schwab_stream: 'schwab',
-};
+// Source mapping is now auto-generated in config/marketSources.ts
+// Import: SOURCE_TO_MARKET_SOURCE, getMarketSource
 
 // ============================================
 // MARKET DATA SUBSCRIPTION OPERATIONS
@@ -315,7 +311,7 @@ router.post('/:source/subscribe', async (req, res) => {
     if (!credential_id) return res.status(400).json({ error: 'credential_id is required' });
     if (!node_id) return res.status(400).json({ error: 'node_id is required' });
 
-    const marketSource = sourceToMarketSource[source];
+    const marketSource = getMarketSource(source);
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }
@@ -387,7 +383,7 @@ router.post('/:source/unsubscribe', async (req, res) => {
       subscription_scope,  // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    const marketSource = sourceToMarketSource[source];
+    const marketSource = getMarketSource(source);
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }

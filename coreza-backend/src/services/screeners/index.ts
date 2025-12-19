@@ -14,31 +14,55 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { registerScreener } from './registry';
 import { RestScreenerService } from './RestScreenerService';
-import { alpacaScreenerConfig } from './configs/alpaca';
-import { binanceScreenerConfig } from './configs/binance';
 import { YahooFinanceScreenerService } from './YahooFinanceScreenerService';
 import { SchwabScreenerService } from './SchwabScreenerService';
+
+// Registry of custom screener services that don't use RestScreenerService
+const CUSTOM_SCREENERS: Record<string, () => any> = {
+  yahoofinance: () => new YahooFinanceScreenerService(),
+  schwab: () => new SchwabScreenerService(),
+};
 
 export function initializeScreenerServices() {
   console.log('📊 Initializing screener services...');
 
-  // Register Alpaca screener
-  registerScreener(new RestScreenerService('alpaca', alpacaScreenerConfig));
+  // 1. Auto-discover and register REST-based screeners from configs/ directory
+  const configDir = path.join(__dirname, 'configs');
+  
+  if (fs.existsSync(configDir)) {
+    const configFiles = fs.readdirSync(configDir).filter(f => f.endsWith('.ts') || f.endsWith('.js'));
+    
+    for (const file of configFiles) {
+      const screenerKey = file.replace(/\.(ts|js)$/, '');
+      
+      try {
+        // Use require for synchronous loading
+        const configModule = require(path.join(configDir, file));
+        const config = configModule.default || configModule[`${screenerKey}ScreenerConfig`];
+        
+        if (config?.ops) {
+          registerScreener(new RestScreenerService(screenerKey, config));
+          console.log(`  ✅ Registered REST screener: ${screenerKey}`);
+        }
+      } catch (error) {
+        console.error(`  ❌ Failed to load screener config: ${file}`, error);
+      }
+    }
+  }
 
-  // Register Binance screener
-  registerScreener(new RestScreenerService('binance', binanceScreenerConfig));
-
-  // Register YahooFinance screener
-  registerScreener(new YahooFinanceScreenerService());
-
-  // Register Schwab screener
-  registerScreener(new SchwabScreenerService());
-
-  // Future: Register Binance, Manual, etc.
-  // registerScreener(new RestScreenerService('binance', binanceScreenerConfig));
-  // registerScreener(new ManualScreenerService());
+  // 2. Register custom screeners (non-REST based)
+  for (const [key, factory] of Object.entries(CUSTOM_SCREENERS)) {
+    try {
+      registerScreener(factory());
+      console.log(`  ✅ Registered custom screener: ${key}`);
+    } catch (error) {
+      console.error(`  ❌ Failed to register custom screener: ${key}`, error);
+    }
+  }
 
   console.log('✅ All screener services initialized');
 }

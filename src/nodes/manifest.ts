@@ -14,92 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import GmailDef from './Gmail.json'
-import AlpacaDef from './Alpaca.json'
-import AlpacaTradeDef from './AlpacaTrade.json'
-import AlpacaNewsDef from './AlpacaNews.json'
-import AlpacaNewsRESTDef from './AlpacaNewsREST.json'
-import AlpacaSubscribeDef from './AlpacaSubscribe.json'
-import AlpacaStreamDataDef from './AlpacaStreamData.json'
-import DhanDef from './Dhan.json'
-import DhanTradeDef from './DhanTrade.json'
-import SchwabTradeDef from './SchwabTrade.json'
-import SchwabDef from './Schwab.json'
-import IfDef from './If.json'
-import SwitchDef from './Switch.json'
-import EMADef from './EMA.json'
-import RSIDef from './RSI.json'
-import MarketDef from './Market.json'
-import YahooFinanceDef from './YahooFinance.json'
-import ChatInputDef from './ChatInput.json'
-import SchedulerDef from './Scheduler.json'
-import VisualizeDef from './Visualize.json'
-import MACDDef from './MACD.json'
-import ADXDef from './ADX.json'
-import StochDef from './Stoch.json'
-import BBDDef from './BB.json'
-import IchimokuDef from './Ichimoku.json'
-import OBVDef from './OBV.json'
-import VWAPDef from './VWAP.json'
-import VolumeOscillatorDef from './VolumeOscillator.json'
-import HttpRequestDef from './HttpRequest.json'
-import RiskEngineDef from './RiskEngine.json'
-import FieldDef from './Field.json'
-import ComputeDef from './Compute.json'
-import LoopDef from './Loop.json'
-import OpenAIDef from './OpenAI.json'
-import OpenAIChatModelDef from './OpenAIChatModel.json'
-import AIAgentDef from './AIAgent.json'
-import GoogleWebSearchDef from './GoogleWebSearch.json'
-import RSIToolDef from './RSITool.json'
-import EMAToolDef from './EMATool.json'
-import MACDToolDef from './MACDTool.json'
-import BBToolDef from './BBTool.json'
-import ADXToolDef from './ADXTool.json'
-import StochToolDef from './StochTool.json'
-import IchimokuToolDef from './IchimokuTool.json'
-import OBVToolDef from './OBVTool.json'
-import VWAPToolDef from './VWAPTool.json'
-import VolumeOscillatorToolDef from './VolumeOscillatorTool.json'
-import SupportResistanceToolDef from './SupportResistanceTool.json'
-import YahooFinanceToolDef from './YahooFinanceTool.json'
-import PolygonToolDef from './PolygonTool.json'
-import MarketToolDef from './MarketTool.json'
-import AlpacaMarketToolDef from './AlpacaMarketTool.json'
-import BinanceMarketToolDef from './BinanceMarketTool.json'
-import AlpacaTradeToolDef from './AlpacaTradeTool.json'
-import BinanceTradeToolDef from './BinanceTradeTool.json'
-import SchwabTradeToolDef from './SchwabTradeTool.json'
-import DhanTradeToolDef from './DhanTradeTool.json'
-import ComputeToolDef from './ComputeTool.json'
-import HttpRequestToolDef from './HttpRequestTool.json'
-import FinnHubToolDef from './FinnHubTool.json'
-import AlpacaScreenerToolDef from './AlpacaScreenerTool.json'
-import BinanceScreenerToolDef from './BinanceScreenerTool.json'
-import SchwabScreenerToolDef from './SchwabScreenerTool.json'
-import YahooFinanceScreenerToolDef from './YahooFinanceScreenerTool.json'
-import AlpacaScreenerDef from './AlpacaScreener.json'
-import YahooFinanceScreenerDef from './YahooFinanceScreener.json'
-import SchwabScreenerDef from './SchwabScreener.json'
-import SupportResistanceDef from './SupportResistance.json'
-import BinanceDef from './Binance.json'
-import BinanceTradeDef from './BinanceTrade.json'
-import BinanceScreenerDef from './BinanceScreener.json'
-import BinanceSubscribeDef from './BinanceSubscribe.json'
-import BinanceStreamDataDef from './BinanceStreamData.json'
-import WhatsAppDef from './WhatsApp.json'
-import RedisStoreDef from './RedisStore.json'
-import RedisTriggerDef from './RedisTrigger.json'
-import StoreDef from './Store.json'
-import WebhookTriggerDef from './WebhookTrigger.json'
-import TelegramTriggerDef from './TelegramTrigger.json'
-import BacktestInitDef from './BacktestInit.json'
-import BacktestTradeDef from './BacktestTrade.json'
-import BacktestSnapshotDef from './BacktestSnapshot.json'
-import BacktestResultsDef from './BacktestResults.json'
-import BacktestPortfolioDef from './BacktestPortfolio.json'
-import PolygonDef from './Polygon.json'
-import InMemoryDef from './InMemory.json'
+// Auto-discover all *.json node definitions in this directory
+const nodeModules = import.meta.glob('./*.json', { eager: true });
 
 // Node configuration interface
 export interface NodeConfig {
@@ -157,93 +73,20 @@ export interface NodeConfig {
   }[];
 }
 
-export const nodeManifest = {
-  [AlpacaDef.name]: AlpacaDef,
-  [DhanDef.name]: DhanDef,
-  [GmailDef.name]: GmailDef,
-  [ChatInputDef.name]: ChatInputDef,
-  [YahooFinanceDef.name]: YahooFinanceDef,
-  [RSIDef.name]: RSIDef,
-  [EMADef.name]: EMADef,
-  [MACDDef.name]: MACDDef,
-  [ADXDef.name]: ADXDef,
-  [StochDef.name]: StochDef,
-  [BBDDef.name]: BBDDef,
-  [IchimokuDef.name]: IchimokuDef,
-  [OBVDef.name]: OBVDef,
-  [VWAPDef.name]: VWAPDef,
-  [VolumeOscillatorDef.name]: VolumeOscillatorDef,
-  [IfDef.name]: IfDef,
-  [SwitchDef.name]: SwitchDef,
-  [VisualizeDef.name]: VisualizeDef,
-  [SchedulerDef.name]: SchedulerDef,
-  [AlpacaTradeDef.name]: AlpacaTradeDef,
-  [AlpacaNewsDef.name]: AlpacaNewsDef,
-  [AlpacaNewsRESTDef.name]: AlpacaNewsRESTDef,
-  [AlpacaSubscribeDef.name]: AlpacaSubscribeDef,
-  [AlpacaStreamDataDef.name]: AlpacaStreamDataDef,
-  [DhanTradeDef.name]: DhanTradeDef,
-  [SchwabTradeDef.name]: SchwabTradeDef,
-  [SchwabDef.name]: SchwabDef,
-  [MarketDef.name]: MarketDef,
-  [HttpRequestDef.name]: HttpRequestDef,
-  [RiskEngineDef.name]: RiskEngineDef,
-  [FieldDef.name]: FieldDef,
-  [ComputeDef.name]: ComputeDef,
-  [LoopDef.name]: LoopDef,
-  [OpenAIDef.name]: OpenAIDef,
-  [OpenAIChatModelDef.name]: OpenAIChatModelDef,
-  [AIAgentDef.name]: AIAgentDef,
-  [GoogleWebSearchDef.name]: GoogleWebSearchDef,
-  [RSIToolDef.name]: RSIToolDef,
-  [EMAToolDef.name]: EMAToolDef,
-  [MACDToolDef.name]: MACDToolDef,
-  [BBToolDef.name]: BBToolDef,
-  [ADXToolDef.name]: ADXToolDef,
-  [StochToolDef.name]: StochToolDef,
-  [IchimokuToolDef.name]: IchimokuToolDef,
-  [OBVToolDef.name]: OBVToolDef,
-  [VWAPToolDef.name]: VWAPToolDef,
-  [VolumeOscillatorToolDef.name]: VolumeOscillatorToolDef,
-  [SupportResistanceToolDef.name]: SupportResistanceToolDef,
-  [YahooFinanceToolDef.name]: YahooFinanceToolDef,
-  [PolygonToolDef.name]: PolygonToolDef,
-  [MarketToolDef.name]: MarketToolDef,
-  [AlpacaMarketToolDef.name]: AlpacaMarketToolDef,
-  [BinanceMarketToolDef.name]: BinanceMarketToolDef,
-  [AlpacaTradeToolDef.name]: AlpacaTradeToolDef,
-  [BinanceTradeToolDef.name]: BinanceTradeToolDef,
-  [SchwabTradeToolDef.name]: SchwabTradeToolDef,
-  [DhanTradeToolDef.name]: DhanTradeToolDef,
-  [ComputeToolDef.name]: ComputeToolDef,
-  [HttpRequestToolDef.name]: HttpRequestToolDef,
-  [FinnHubToolDef.name]: FinnHubToolDef,
-  [AlpacaScreenerToolDef.name]: AlpacaScreenerToolDef,
-  [BinanceScreenerToolDef.name]: BinanceScreenerToolDef,
-  [SchwabScreenerToolDef.name]: SchwabScreenerToolDef,
-  [YahooFinanceScreenerToolDef.name]: YahooFinanceScreenerToolDef,
-  [AlpacaScreenerDef.name]: AlpacaScreenerDef,
-  [YahooFinanceScreenerDef.name]: YahooFinanceScreenerDef,
-  [SchwabScreenerDef.name]: SchwabScreenerDef,
-  [SupportResistanceDef.name]: SupportResistanceDef,
-  [BinanceDef.name]: BinanceDef,
-  [BinanceTradeDef.name]: BinanceTradeDef,
-  [BinanceScreenerDef.name]: BinanceScreenerDef,
-  [BinanceSubscribeDef.name]: BinanceSubscribeDef,
-  [BinanceStreamDataDef.name]: BinanceStreamDataDef,
-  [WhatsAppDef.name]: WhatsAppDef,
-  [RedisStoreDef.name]: RedisStoreDef,
-  [RedisTriggerDef.name]: RedisTriggerDef,
-  [StoreDef.name]: StoreDef,
-  [WebhookTriggerDef.name]: WebhookTriggerDef,
-  [TelegramTriggerDef.name]: TelegramTriggerDef,
-  [BacktestInitDef.name]: BacktestInitDef,
-  [BacktestTradeDef.name]: BacktestTradeDef,
-  [BacktestSnapshotDef.name]: BacktestSnapshotDef,
-  [BacktestResultsDef.name]: BacktestResultsDef,
-  [BacktestPortfolioDef.name]: BacktestPortfolioDef,
-  [PolygonDef.name]: PolygonDef,
-  [InMemoryDef.name]: InMemoryDef
-} as const;
+// Build manifest dynamically from discovered modules
+const buildManifest = (): Record<string, NodeConfig> => {
+  const manifest: Record<string, NodeConfig> = {};
+  
+  for (const [path, module] of Object.entries(nodeModules)) {
+    const def = (module as any).default || module;
+    if (def?.name) {
+      manifest[def.name] = def;
+    }
+  }
+  
+  return manifest;
+};
 
-export type ManifestEntry = typeof nodeManifest[keyof typeof nodeManifest];
+export const nodeManifest = buildManifest();
+
+export type ManifestEntry = NodeConfig;

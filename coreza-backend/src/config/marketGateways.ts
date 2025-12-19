@@ -14,134 +14,139 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { CorezaMarketEvent } from '../types/marketEvent';
+import { MarketEvent } from "../types/marketEvent";
 
 export interface GatewayConfig<TSource extends string = string> {
   id: TSource;
   wsUrl: string | ((creds: any) => string);
-  
+
   // Authentication
   makeAuthMessage?: (creds: any) => any;
   makeAuthHeaders?: (creds: any) => Record<string, string>;
-  
+
   // Subscription management
   makeSubscribeMessage: (symbols: string[], types?: string[]) => any;
   makeUnsubscribeMessage: (symbols: string[], types?: string[]) => any;
-  
+
   // Message processing
   parseMessage: (buffer: Buffer) => any[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any) => boolean;
-  
-  // CRITICAL: Normalizer to CorezaMarketEvent
-  normalize: (msg: any) => CorezaMarketEvent | null;
-  
+
+  // CRITICAL: Normalizer to MarketEvent
+  normalize: (msg: any) => MarketEvent | null;
+
   // Connection settings
   reconnectDelay?: number;
   maxReconnectAttempts?: number;
-  
+
   // Protocol flags
-  isBinary?: boolean;                    // Uses binary WebSocket protocol (Dhan)
-  requiresPreConnect?: boolean;          // Needs setup before connect (Schwab OAuth)
-  preConnect?: (creds: any) => Promise<any>;  // Pre-connection setup hook
+  isBinary?: boolean; // Uses binary WebSocket protocol (Dhan)
+  requiresPreConnect?: boolean; // Needs setup before connect (Schwab OAuth)
+  preConnect?: (creds: any) => Promise<any>; // Pre-connection setup hook
 }
 
 const gatewayConfigs = {
   alpaca: {
-    id: 'alpaca',
-    wsUrl: 'wss://stream.data.alpaca.markets/v2/iex',
+    id: "alpaca",
+    wsUrl: "wss://stream.data.alpaca.markets/v2/iex",
     makeAuthMessage: (creds) => ({
-      action: 'auth',
+      action: "auth",
       key: creds.api_key,
       secret: creds.secret_key,
     }),
-    makeSubscribeMessage: (symbols, types = ['trades']) => {
-      const msg: any = { action: 'subscribe' };
-      types.forEach(t => { msg[t] = symbols; });
+    makeSubscribeMessage: (symbols, types = ["trades"]) => {
+      const msg: any = { action: "subscribe" };
+      types.forEach((t) => {
+        msg[t] = symbols;
+      });
       return msg;
     },
-    makeUnsubscribeMessage: (symbols, types = ['trades']) => {
-      const msg: any = { action: 'unsubscribe' };
-      types.forEach(t => { msg[t] = symbols; });
+    makeUnsubscribeMessage: (symbols, types = ["trades"]) => {
+      const msg: any = { action: "unsubscribe" };
+      types.forEach((t) => {
+        msg[t] = symbols;
+      });
       return msg;
     },
     parseMessage: (buffer) => JSON.parse(buffer.toString()),
     identifyMessageType: (msg) => msg.T,
-    shouldPublish: (msg) => ['t', 'q', 'b', 'd'].includes(msg.T),
+    shouldPublish: (msg) => ["t", "q", "b", "d"].includes(msg.T),
     normalize: (msg) => {
       const symbol = msg.S?.toUpperCase();
       const t = msg.t ? new Date(msg.t).getTime() : Date.now();
-      
+
       switch (msg.T) {
-        case 't': 
-          return { 
-            source: 'alpaca' as const, 
-            symbol, 
-            t, 
-            type: 'trade' as const, 
-            p: msg.p, 
-            q: msg.s, 
-            x: msg.x 
+        case "t":
+          return {
+            source: "alpaca" as const,
+            symbol,
+            t,
+            type: "trade" as const,
+            p: msg.p,
+            q: msg.s,
+            x: msg.x,
           };
-        case 'q': 
-          return { 
-            source: 'alpaca' as const, 
-            symbol, 
-            t, 
-            type: 'quote' as const, 
-            b: msg.bp, 
-            B: msg.bs, 
-            a: msg.ap, 
-            A: msg.as 
+        case "q":
+          return {
+            source: "alpaca" as const,
+            symbol,
+            t,
+            type: "quote" as const,
+            b: msg.bp,
+            B: msg.bs,
+            a: msg.ap,
+            A: msg.as,
           };
-        case 'b': 
-          return { 
-            source: 'alpaca' as const, 
-            symbol, 
-            t, 
-            type: 'bar' as const, 
-            o: msg.o, 
-            h: msg.h, 
-            l: msg.l, 
-            c: msg.c, 
-            v: msg.v, 
-            vw: msg.vw, 
-            timeframe: '1m' 
+        case "b":
+          return {
+            source: "alpaca" as const,
+            symbol,
+            t,
+            type: "bar" as const,
+            o: msg.o,
+            h: msg.h,
+            l: msg.l,
+            c: msg.c,
+            v: msg.v,
+            vw: msg.vw,
+            timeframe: "1m",
           };
-        case 'd': 
-          return { 
-            source: 'alpaca' as const, 
-            symbol, 
-            t, 
-            type: 'daily_bar' as const, 
-            o: msg.o, 
-            h: msg.h, 
-            l: msg.l, 
-            c: msg.c, 
-            v: msg.v, 
-            timeframe: '1d' 
+        case "d":
+          return {
+            source: "alpaca" as const,
+            symbol,
+            t,
+            type: "daily_bar" as const,
+            o: msg.o,
+            h: msg.h,
+            l: msg.l,
+            c: msg.c,
+            v: msg.v,
+            timeframe: "1d",
           };
-        default: return null;
+        default:
+          return null;
       }
     },
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,
   },
-  
+
   alpaca_news: {
-    id: 'alpaca_news',
-    wsUrl: 'wss://stream.data.alpaca.markets/v1beta1/news',
+    id: "alpaca_news",
+    wsUrl: "wss://stream.data.alpaca.markets/v1beta1/news",
     makeAuthMessage: (creds) => ({
-      action: 'auth',
+      action: "auth",
       key: creds.api_key,
       secret: creds.secret_key,
     }),
     makeSubscribeMessage: (symbols) => ({
-      action: 'subscribe',
+      action: "subscribe",
       news: symbols,
     }),
     makeUnsubscribeMessage: (symbols) => ({
-      action: 'unsubscribe',
+      action: "unsubscribe",
       news: symbols,
     }),
     parseMessage: (buffer) => {
@@ -149,13 +154,13 @@ const gatewayConfigs = {
       return Array.isArray(parsed) ? parsed : [parsed];
     },
     identifyMessageType: (msg) => msg.T,
-    shouldPublish: (msg) => msg.T === 'n',
+    shouldPublish: (msg) => msg.T === "n",
     normalize: (msg) => {
-      if (msg.T !== 'n') return null;
+      if (msg.T !== "n") return null;
       return {
-        source: 'alpaca_news' as const,
-        symbol: msg.symbols?.[0]?.toUpperCase() || '*',
-        type: 'news' as const,
+        source: "alpaca_news" as const,
+        symbol: msg.symbols?.[0]?.toUpperCase() || "*",
+        type: "news" as const,
         t: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
         headline: msg.headline,
         summary: msg.summary,
@@ -168,39 +173,45 @@ const gatewayConfigs = {
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,
   },
-  
+
   binance: {
-    id: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws',
-    makeSubscribeMessage: (symbols, types = ['trade']) => ({
-      method: 'SUBSCRIBE',
-      params: symbols.flatMap(s => types.map(t => `${s.toLowerCase()}@${t}`)),
+    id: "binance",
+    wsUrl: "wss://stream.binance.com:9443/ws",
+    makeSubscribeMessage: (symbols, types = ["trade"]) => ({
+      method: "SUBSCRIBE",
+      params: symbols.flatMap((s) =>
+        types.map((t) => `${s.toLowerCase()}@${t}`)
+      ),
       id: Date.now(),
     }),
-    makeUnsubscribeMessage: (symbols, types = ['trade']) => ({
-      method: 'UNSUBSCRIBE',
-      params: symbols.flatMap(s => types.map(t => `${s.toLowerCase()}@${t}`)),
+    makeUnsubscribeMessage: (symbols, types = ["trade"]) => ({
+      method: "UNSUBSCRIBE",
+      params: symbols.flatMap((s) =>
+        types.map((t) => `${s.toLowerCase()}@${t}`)
+      ),
       id: Date.now(),
     }),
     parseMessage: (buffer) => [JSON.parse(buffer.toString())],
-    identifyMessageType: (msg) => msg.e || (msg.result !== undefined ? 'result' : 'unknown'),
-    shouldPublish: (msg) => ['trade', 'kline', 'bookTicker', '24hrTicker'].includes(msg.e),
+    identifyMessageType: (msg) =>
+      msg.e || (msg.result !== undefined ? "result" : "unknown"),
+    shouldPublish: (msg) =>
+      ["trade", "kline", "bookTicker", "24hrTicker"].includes(msg.e),
     normalize: (msg) => {
       const symbol = msg.s?.toUpperCase();
       const t = msg.E || msg.T || Date.now();
 
       switch (msg.e) {
-        case 'trade':
+        case "trade":
           return {
             symbol,
             t,
             p: parseFloat(msg.p),
             q: parseFloat(msg.q),
-            type: 'trade' as const,
-            source: 'binance' as const,
+            type: "trade" as const,
+            source: "binance" as const,
           };
 
-        case 'kline': {
+        case "kline": {
           const k = msg.k;
           return {
             symbol,
@@ -212,12 +223,12 @@ const gatewayConfigs = {
             v: parseFloat(k.v),
             timeframe: k.i,
             isClosed: k.x,
-            type: 'bar' as const,
-            source: 'binance' as const,
+            type: "bar" as const,
+            source: "binance" as const,
           };
         }
 
-        case 'bookTicker':
+        case "bookTicker":
           return {
             symbol,
             t,
@@ -225,11 +236,11 @@ const gatewayConfigs = {
             B: parseFloat(msg.B),
             a: parseFloat(msg.a),
             A: parseFloat(msg.A),
-            type: 'quote' as const,
-            source: 'binance' as const,
+            type: "quote" as const,
+            source: "binance" as const,
           };
 
-        case '24hrTicker':
+        case "24hrTicker":
           return {
             symbol,
             t,
@@ -237,8 +248,8 @@ const gatewayConfigs = {
             pc: parseFloat(msg.p),
             pcp: parseFloat(msg.P),
             v: parseFloat(msg.v),
-            type: 'ticker' as const,
-            source: 'binance' as const,
+            type: "ticker" as const,
+            source: "binance" as const,
           };
 
         default:
@@ -248,48 +259,49 @@ const gatewayConfigs = {
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,
   },
-  
+
   // Dhan - Binary WebSocket protocol
   dhan: {
-    id: 'dhan',
-    wsUrl: (creds) => `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
-    
+    id: "dhan",
+    wsUrl: (creds) =>
+      `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
+
     makeAuthMessage: undefined,
-    
-    makeSubscribeMessage: (symbols, types = ['ticker']) => {
+
+    makeSubscribeMessage: (symbols, types = ["ticker"]) => {
       return {
         RequestCode: 15,
         InstrumentCount: symbols.length,
-        InstrumentList: symbols.map(s => ({
-          ExchangeSegment: 'NSE_EQ',
+        InstrumentList: symbols.map((s) => ({
+          ExchangeSegment: "NSE_EQ",
           SecurityId: s,
         })),
       };
     },
-    
+
     makeUnsubscribeMessage: (symbols) => ({
       RequestCode: 16,
       InstrumentCount: symbols.length,
-      InstrumentList: symbols.map(s => ({
-        ExchangeSegment: 'NSE_EQ',
+      InstrumentList: symbols.map((s) => ({
+        ExchangeSegment: "NSE_EQ",
         SecurityId: s,
       })),
     }),
-    
+
     parseMessage: (buffer) => {
-      const { parseDhanBinaryPacket } = require('../utils/dhanBinaryParser');
+      const { parseDhanBinaryPacket } = require("../utils/dhanBinaryParser");
       return parseDhanBinaryPacket(buffer);
     },
-    
-    identifyMessageType: (msg) => msg.type || 'unknown',
-    shouldPublish: (msg) => ['ticker', 'quote', 'full'].includes(msg.type),
-    
+
+    identifyMessageType: (msg) => msg.type || "unknown",
+    shouldPublish: (msg) => ["ticker", "quote", "full"].includes(msg.type),
+
     normalize: (msg) => {
       if (!msg.SecurityId) return null;
       return {
-        source: 'dhan' as const,
+        source: "dhan" as const,
         symbol: msg.TradingSymbol || msg.SecurityId,
-        type: 'trade' as const,
+        type: "trade" as const,
         t: Date.now(),
         p: msg.LTP,
         b: msg.BidPrice,
@@ -303,89 +315,99 @@ const gatewayConfigs = {
         v: msg.Volume,
       };
     },
-    
+
     reconnectDelay: 2000,
     maxReconnectAttempts: 5,
     isBinary: true,
   },
-  
+
   // Schwab - OAuth with dynamic streaming URL
   schwab: {
-    id: 'schwab',
+    id: "schwab",
     wsUrl: (creds) => creds.streamerSocketUrl,
-    
+
     preConnect: async (creds) => {
-      const { fetchSchwabStreamingConfig } = require('../utils/schwabStreamingSetup');
+      const {
+        fetchSchwabStreamingConfig,
+      } = require("../utils/schwabStreamingSetup");
       return await fetchSchwabStreamingConfig(creds.access_token);
     },
-    
+
     makeAuthMessage: (creds) => {
-      const { buildSchwabLoginMessage } = require('../utils/schwabStreamingSetup');
+      const {
+        buildSchwabLoginMessage,
+      } = require("../utils/schwabStreamingSetup");
       return buildSchwabLoginMessage(creds);
     },
-    
-    makeSubscribeMessage: (symbols, types = ['quotes']) => ({
-      requests: [{
-        requestid: String(Date.now()),
-        service: 'LEVELONE_EQUITIES',
-        command: 'SUBS',
-        parameters: {
-          keys: symbols.join(','),
-          fields: '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,28',
+
+    makeSubscribeMessage: (symbols, types = ["quotes"]) => ({
+      requests: [
+        {
+          requestid: String(Date.now()),
+          service: "LEVELONE_EQUITIES",
+          command: "SUBS",
+          parameters: {
+            keys: symbols.join(","),
+            fields: "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,28",
+          },
         },
-      }],
+      ],
     }),
-    
+
     makeUnsubscribeMessage: (symbols) => ({
-      requests: [{
-        requestid: String(Date.now()),
-        service: 'LEVELONE_EQUITIES',
-        command: 'UNSUBS',
-        parameters: {
-          keys: symbols.join(','),
+      requests: [
+        {
+          requestid: String(Date.now()),
+          service: "LEVELONE_EQUITIES",
+          command: "UNSUBS",
+          parameters: {
+            keys: symbols.join(","),
+          },
         },
-      }],
+      ],
     }),
-    
+
     parseMessage: (buffer) => {
       const parsed = JSON.parse(buffer.toString());
-      const { parseSchwabStreamingMessage } = require('../utils/schwabStreamingSetup');
+      const {
+        parseSchwabStreamingMessage,
+      } = require("../utils/schwabStreamingSetup");
       return parseSchwabStreamingMessage(parsed);
     },
-    
+
     identifyMessageType: (msg) => {
-      if (msg.service === 'LEVELONE_EQUITIES') return 'quote';
-      if (msg.service === 'CHART_EQUITY') return 'bar';
-      return msg.service || 'unknown';
+      if (msg.service === "LEVELONE_EQUITIES") return "quote";
+      if (msg.service === "CHART_EQUITY") return "bar";
+      return msg.service || "unknown";
     },
-    
-    shouldPublish: (msg) => 
-      msg.service === 'LEVELONE_EQUITIES' && msg.content?.length > 0,
-    
+
+    shouldPublish: (msg) =>
+      msg.service === "LEVELONE_EQUITIES" && msg.content?.length > 0,
+
     normalize: (msg) => {
-      if (msg.service !== 'LEVELONE_EQUITIES') return null;
-      
+      if (msg.service !== "LEVELONE_EQUITIES") return null;
+
       const content = msg.content?.[0];
       if (!content) return null;
-      
+
       return {
-        source: 'schwab' as const,
-        symbol: content.key?.toUpperCase() || content['0']?.toUpperCase(),
-        type: 'quote' as const,
+        source: "schwab" as const,
+        symbol: content.key?.toUpperCase() || content["0"]?.toUpperCase(),
+        type: "quote" as const,
         t: Date.now(),
-        p: content['3'],
-        b: content['1'],
-        B: content['4'],
-        a: content['2'],
-        A: content['5'],
-        o: content['28'],
-        h: content['12'],
-        l: content['13'],
-        c: content['15'],
-        v: content['8'],
+        p: content["3"],
+        b: content["1"],
+        B: content["4"],
+        a: content["2"],
+        A: content["5"],
+        o: content["28"],
+        h: content["12"],
+        l: content["13"],
+        c: content["15"],
+        v: content["8"],
       };
     },
-    
+
     reconnectDelay: 2000,
     maxReconnectAttempts: 5,
     requiresPreConnect: true,
@@ -408,34 +430,35 @@ export interface SourceMapping {
   gatewaySource: MarketSource;
 }
 
-export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(GATEWAY_CONFIGS).reduce(
-  (mapping, key) => {
-    const base = key.split('_')[0];
-    const gatewaySource = key as MarketSource;
+export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(
+  GATEWAY_CONFIGS
+).reduce((mapping, key) => {
+  const base = key.split("_")[0];
+  const gatewaySource = key as MarketSource;
 
-    mapping[key] = { credentialServiceType: base, gatewaySource };
+  mapping[key] = { credentialServiceType: base, gatewaySource };
 
-    if (key === base) {
-      mapping[`${base}_stream`] = { credentialServiceType: base, gatewaySource };
-    }
+  if (key === base) {
+    mapping[`${base}_stream`] = { credentialServiceType: base, gatewaySource };
+  }
 
-    return mapping;
-  },
-  {} as Record<string, SourceMapping>
-);
+  return mapping;
+}, {} as Record<string, SourceMapping>);
 
 /**
  * Get source mapping for a given source ID.
  * Maps frontend/control message source IDs to credential service types and gateway sources.
- * 
+ *
  * Examples:
  *   - 'binance_stream' → { credentialServiceType: 'binance', gatewaySource: 'binance' }
  *   - 'alpaca_news' → { credentialServiceType: 'alpaca', gatewaySource: 'alpaca_news' }
  *   - 'binance' → { credentialServiceType: 'binance', gatewaySource: 'binance' }
  */
 export function getSourceMapping(source: string): SourceMapping {
-  return SOURCE_MAPPING[source] || { 
-    credentialServiceType: source, 
-    gatewaySource: source as MarketSource 
-  };
+  return (
+    SOURCE_MAPPING[source] || {
+      credentialServiceType: source,
+      gatewaySource: source as MarketSource,
+    }
+  );
 }

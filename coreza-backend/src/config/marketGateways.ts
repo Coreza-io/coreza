@@ -14,10 +14,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
+import { CorezaMarketEvent } from '../types/marketEvent';
 
-export interface GatewayConfig {
-  id: MarketSource;
+export interface GatewayConfig<TSource extends string = string> {
+  id: TSource;
   wsUrl: string | ((creds: any) => string);
   
   // Authentication
@@ -46,7 +46,7 @@ export interface GatewayConfig {
   preConnect?: (creds: any) => Promise<any>;  // Pre-connection setup hook
 }
 
-export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
+const gatewayConfigs = {
   alpaca: {
     id: 'alpaca',
     wsUrl: 'wss://stream.data.alpaca.markets/v2/iex',
@@ -392,6 +392,12 @@ export const GATEWAY_CONFIGS: Record<MarketSource, GatewayConfig> = {
   },
 };
 
+export const GATEWAY_CONFIGS = gatewayConfigs as {
+  [K in keyof typeof gatewayConfigs]: GatewayConfig<K>;
+};
+
+export type MarketSource = keyof typeof GATEWAY_CONFIGS;
+
 // ============================================================
 // Source Mapping: Maps frontend/control message source IDs to gateway sources
 // This consolidates the mapping previously in websockets.ts
@@ -402,20 +408,21 @@ export interface SourceMapping {
   gatewaySource: MarketSource;
 }
 
-export const SOURCE_MAPPING: Record<string, SourceMapping> = {
-  // Frontend stream node IDs → gateway sources
-  'alpaca_stream': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
-  'alpaca_news': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca_news' },
-  'binance_stream': { credentialServiceType: 'binance', gatewaySource: 'binance' },
-  'dhan_stream': { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
-  'schwab_stream': { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
-  
-  // Direct gateway names (already normalized)
-  'alpaca': { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
-  'binance': { credentialServiceType: 'binance', gatewaySource: 'binance' },
-  'dhan': { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
-  'schwab': { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
-};
+export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(GATEWAY_CONFIGS).reduce(
+  (mapping, key) => {
+    const base = key.split('_')[0];
+    const gatewaySource = key as MarketSource;
+
+    mapping[key] = { credentialServiceType: base, gatewaySource };
+
+    if (key === base) {
+      mapping[`${base}_stream`] = { credentialServiceType: base, gatewaySource };
+    }
+
+    return mapping;
+  },
+  {} as Record<string, SourceMapping>
+);
 
 /**
  * Get source mapping for a given source ID.

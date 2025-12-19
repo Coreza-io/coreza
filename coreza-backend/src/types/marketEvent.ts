@@ -17,7 +17,7 @@
 // Unified market event format - all sources normalize to this
 // Uses short field names to match REST API format (t, o, h, l, c, v)
 export type MarketEventType = 'trade' | 'quote' | 'bar' | 'daily_bar' | 'news' | 'ticker';
-export type MarketSource = 'alpaca' | 'alpaca_news' | 'binance' | 'dhan' | 'schwab';
+export type MarketSource = keyof typeof import('../config/marketGateways').GATEWAY_CONFIGS;
 export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
 
 export interface CorezaMarketEvent {

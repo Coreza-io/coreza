@@ -14,64 +14,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Auto-discover all *.json node definitions in this directory
-const nodeModules = import.meta.glob('./*.json', { eager: true });
+import { NodeConfigSchema, type NodeConfig } from "./schemas/nodeSchema";
 
-// Node configuration interface
-export interface NodeConfig {
-  name: string;
-  def: string;
-  node_type: string;
-  category?: string;
-  description?: string;
-  color?: string;
-  parentNode?: string;
-  handles: { type: string; position: string; id: string }[];
-  auth?: string;
-  authFields?: {
-    key: string;
-    label: string;
-    type: string;
-    value?: string;
-    default?: string;
-    placeholder?: string;
-    required?: boolean;
-  }[];
-  authAction?: { url: string; method: string };  
-  icon?: string;
-  size?: { width: number; height: number };
-  action?: { url: string; method: string };
-  fields: {
-    key: string;
-    label: string;
-    type: string;
-    subFields?: {
-      key: string;
-      type: string;
-      options?: {
-        label: string;
-        value: string;
-      }[];
-      placeholder?: string;
-    }[];
-    options?: {
-      id?: string;
-      name?: string;
-      method?: string;
-      label?: string;
-      value?: string;
-    }[];
-    optionsSource?: string;
-    required?: boolean;
-    placeholder?: string;
-    default?: any;
-    displayOptions?: {
-      show?: {
-        [key: string]: string[];
-      };
-    };
-  }[];
-}
+// Auto-discover all *.json node definitions in this directory
+const nodeModules = import.meta.glob("./*.json", { eager: true });
 
 // Build manifest dynamically from discovered modules
 const buildManifest = (): Record<string, NodeConfig> => {
@@ -79,8 +25,16 @@ const buildManifest = (): Record<string, NodeConfig> => {
   
   for (const [path, module] of Object.entries(nodeModules)) {
     const def = (module as any).default || module;
+
+    if (import.meta.env.DEV) {
+      const result = NodeConfigSchema.safeParse(def);
+      if (!result.success) {
+        console.error(`Invalid node config: ${path}`, result.error.errors);
+      }
+    }
+
     if (def?.name) {
-      manifest[def.name] = def;
+      manifest[def.name] = def as NodeConfig;
     }
   }
   
@@ -90,3 +44,5 @@ const buildManifest = (): Record<string, NodeConfig> => {
 export const nodeManifest = buildManifest();
 
 export type ManifestEntry = NodeConfig;
+export type { NodeConfig };
+export { NodeConfigSchema };

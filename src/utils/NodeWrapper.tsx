@@ -149,7 +149,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
-  
+
   // Access ReactFlow hooks once and gate usage for readOnly mode to keep hook order stable
   const reactFlowContext = useReactFlow();
   const setNodes = readOnly ? undefined : reactFlowContext.setNodes;
@@ -168,12 +168,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
     // Remove the node
     setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-    
+
     // Remove all edges connected to this node
     setEdges((eds) =>
-      eds.filter(
-        (edge) => edge.source !== nodeId && edge.target !== nodeId
-      )
+      eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
     );
 
     // Close dialog
@@ -265,15 +263,16 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           ${
             isExecuting && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`
-            : selected
-            ? "border-primary shadow-glow"
-            : "border-border"
+              : selected
+              ? "border-primary shadow-glow"
+              : "border-border"
           }
           ${streamingClasses}
           ${getExecutionStatusClass()}
           ${
             isDarkMode && categoryGradientClass
-              ? categoryGradientClass
+              ? //!isExpanded && isDarkMode && categoryGradientClass
+                categoryGradientClass
               : "bg-card"
           }
         `}
@@ -326,7 +325,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const normalizedType = rawType.toLowerCase();
             const isInputHandle =
               normalizedType === "target" || normalizedType === "input";
-            
+
             // Check if this handle is connected
             const isConnected = edges.some((edge) => {
               if (isInputHandle) {
@@ -337,7 +336,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 return edge.source === nodeId && edge.sourceHandle === h.id;
               }
             });
-            
+
             const orientationClass = `plug-handle--${pos}`;
             const handleClass = `plug-handle ${orientationClass} ${
               isInputHandle ? "plug-handle--female" : "plug-handle--male"
@@ -348,7 +347,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             const iconStyle = {
               transform: `${iconTranslation} rotate(${rotation}deg)`,
             };
-            
+
             // Determine which icon to show - same logic for editor and execution view
             let handleIcon = null;
             if (isInputHandle) {
@@ -364,7 +363,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 <MalePlugIcon size={20} style={iconStyle} />
               );
             }
-            
+
             return (
               <Handle
                 key={h.id}
@@ -414,11 +413,15 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               </div>
             )}
             {/* Execution duration - only in readOnly mode */}
-            {readOnly && executionDuration !== undefined && executionDuration > 0 && (
-              <div className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                {executionDuration < 1000 ? `${executionDuration}ms` : `${(executionDuration / 1000).toFixed(1)}s`}
-              </div>
-            )}
+            {readOnly &&
+              executionDuration !== undefined &&
+              executionDuration > 0 && (
+                <div className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                  {executionDuration < 1000
+                    ? `${executionDuration}ms`
+                    : `${(executionDuration / 1000).toFixed(1)}s`}
+                </div>
+              )}
             {/* Delete button - appears on hover when selected (NOT in readOnly mode) */}
             {!readOnly && selected && (
               <Button
@@ -477,13 +480,19 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 />
               ) : (
                 <div
-                  className={`flex items-center justify-center gap-1 ${!readOnly ? 'cursor-pointer' : ''} group relative`}
+                  className={`flex items-center justify-center gap-1 ${
+                    !readOnly ? "cursor-pointer" : ""
+                  } group relative`}
                   onDoubleClick={(e) => {
                     if (readOnly) return;
                     e.stopPropagation();
                     startEditing?.();
                   }}
-                  title={!readOnly && selected ? "Press F2 or double-click to rename" : ""}
+                  title={
+                    !readOnly && selected
+                      ? "Press F2 or double-click to rename"
+                      : ""
+                  }
                 >
                   {label}
                   {!readOnly && selected && startEditing && (
@@ -495,7 +504,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             {/* Item count badge - only in readOnly mode */}
             {readOnly && itemCount !== undefined && itemCount > 0 && (
               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                {itemCount} item{itemCount !== 1 ? 's' : ''}
+                {itemCount} item{itemCount !== 1 ? "s" : ""}
               </div>
             )}
           </div>
@@ -537,19 +546,20 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
       {/* Delete Confirmation Dialog - only in editor mode */}
       {!readOnly && (
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialog
+          open={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+        >
           <AlertDialogContent className="bg-card border-border">
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Node</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "{label}"? This action cannot be undone.
-                All connections to this node will also be removed.
+                Are you sure you want to delete "{label}"? This action cannot be
+                undone. All connections to this node will also be removed.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel
-                onClick={() => setIsDeleteDialogOpen(false)}
-              >
+              <AlertDialogCancel onClick={() => setIsDeleteDialogOpen(false)}>
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction

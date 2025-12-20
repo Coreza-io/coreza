@@ -19,7 +19,7 @@ import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useReactFlow } from "@xyflow/react";
-import { summarizePreview } from "@/utils/summarizePreview";
+import { summarizePreview } from "@/utils/preview";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 
 type NodeExecutionLog = {
@@ -69,8 +69,12 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const { timezone: userTimezone } = useUserPreferences();
 
   // Get fresh node/edge data on every render (only in editor mode)
-  const nodes = readOnly ? initialNodes : (reactFlowContext.getNodes() || initialNodes);
-  const edges = readOnly ? initialEdges : (reactFlowContext.getEdges() || initialEdges);
+  const nodes = readOnly
+    ? initialNodes
+    : reactFlowContext.getNodes() || initialNodes;
+  const edges = readOnly
+    ? initialEdges
+    : reactFlowContext.getEdges() || initialEdges;
 
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {
@@ -109,7 +113,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   useEffect(() => {
     if (!readOnly || !allNodeExecutions || selectedPrevNodeId) return;
     if (typeof setSelectedPrevNodeId !== "function") return;
-    
+
     // Select the first executed node by default
     if (allNodeExecutions.length > 0) {
       setSelectedPrevNodeId(allNodeExecutions[0].nodeId);
@@ -120,7 +124,9 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const outputData = useMemo(() => {
     // In readOnly mode with allNodeExecutions, use selected node's output
     if (readOnly && allNodeExecutions && selectedPrevNodeId) {
-      const selectedExec = allNodeExecutions.find(e => e.nodeId === selectedPrevNodeId);
+      const selectedExec = allNodeExecutions.find(
+        (e) => e.nodeId === selectedPrevNodeId
+      );
       return selectedExec?.output ?? {};
     }
     // Fallback to executionInput if no selection
@@ -135,7 +141,14 @@ const InputPanel: React.FC<InputPanelProps> = ({
       prevNode?.data?.input ??
       {};
     return result;
-  }, [selectedPrevNodeId, nodes, executionStore, readOnly, executionInput, allNodeExecutions]);
+  }, [
+    selectedPrevNodeId,
+    nodes,
+    executionStore,
+    readOnly,
+    executionInput,
+    allNodeExecutions,
+  ]);
 
   if (!isExpanded) return null;
 
@@ -161,25 +174,27 @@ const InputPanel: React.FC<InputPanelProps> = ({
         {readOnly ? (
           // In readOnly mode, show dropdown with all executed nodes
           <>
-            {allNodeExecutions && allNodeExecutions.length > 0 && setSelectedPrevNodeId && (
-              <div className="mb-3">
-                <label className="block text-xs font-semibold mb-2 text-muted-foreground">
-                  Previous Node:
-                </label>
-                <select
-                  className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  value={selectedPrevNodeId || ""}
-                  onChange={(e) => setSelectedPrevNodeId(e.target.value)}
-                >
-                  <option value="">Select node...</option>
-                  {allNodeExecutions.map((exec) => (
-                    <option key={exec.nodeId} value={exec.nodeId}>
-                      {exec.nodeName || exec.nodeId}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {allNodeExecutions &&
+              allNodeExecutions.length > 0 &&
+              setSelectedPrevNodeId && (
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold mb-2 text-muted-foreground">
+                    Previous Node:
+                  </label>
+                  <select
+                    className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    value={selectedPrevNodeId || ""}
+                    onChange={(e) => setSelectedPrevNodeId(e.target.value)}
+                  >
+                    <option value="">Select node...</option>
+                    {allNodeExecutions.map((exec) => (
+                      <option key={exec.nodeId} value={exec.nodeId}>
+                        {exec.nodeName || exec.nodeId}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             <div className="mb-2">
               <DraggableFieldsPanel
                 data={outputData}

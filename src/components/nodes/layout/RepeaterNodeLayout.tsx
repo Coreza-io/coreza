@@ -27,7 +27,7 @@ import { Loader2, X, Plus } from "lucide-react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
-import { formatPreviewValue } from "@/utils/summarizePreview";
+import { fullePreview } from "@/utils/preview";
 import { useReactFlow } from "@xyflow/react";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
@@ -438,7 +438,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             sourceData?.config?.timezone;
         }
 
-        return formatPreviewValue(resolved);
+        return fullePreview(resolved);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";
@@ -491,7 +491,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             sourceData?.config?.timezone;
         }
 
-        return formatPreviewValue(resolved);
+        return fullePreview(resolved);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";

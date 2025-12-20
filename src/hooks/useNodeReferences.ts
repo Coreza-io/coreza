@@ -18,7 +18,7 @@ import { useState, useCallback } from "react";
 import { useNodes } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
-import { formatPreviewValue } from "@/utils/summarizePreview";
+import { fullePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 interface UseNodeReferencesProps {
@@ -30,11 +30,7 @@ interface UseNodeReferencesProps {
 }
 
 interface UseNodeReferencesReturn {
-  handleDragStart: (
-    e: React.DragEvent,
-    keyPath: string,
-    value: string
-  ) => void;
+  handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   handleDrop: (
     fieldKey: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
@@ -110,7 +106,8 @@ export function useNodeReferences({
         }
 
         const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
-        const sourceDisplayName = sourceNode?.data?.displayName || sourceNode?.id;
+        const sourceDisplayName =
+          sourceNode?.data?.displayName || sourceNode?.id;
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
         const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
@@ -175,7 +172,7 @@ export function useNodeReferences({
             sourceData?.config?.timezone;
         }
 
-        return formatPreviewValue(resolved);
+        return fullePreview(resolved);
       } catch (error) {
         // Silently fail for preview errors
         return "";
@@ -204,4 +201,3 @@ export function useNodeReferences({
     referenceStyle,
   };
 }
-

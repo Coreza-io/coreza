@@ -132,9 +132,39 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
       case "string":
       case "number":
-      case "text":
+      case "text": {
+        const optionList = Array.isArray(field.options) ? field.options : null;
+
+        if (optionList?.length) {
+          const displayValue =
+            fieldValue ?? (typeof field.default === "string" ? field.default : "");
+
+          return (
+            <Select
+              value={displayValue}
+              onValueChange={(val) => onChange(field.key, val)}
+              disabled={readOnly}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={field.placeholder || "Select option"} />
+              </SelectTrigger>
+              <SelectContent>
+                {optionList.map((opt: any) => (
+                  <SelectItem key={opt.value ?? opt.label} value={opt.value}>
+                    {opt.label ?? opt.value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
+
         return (
-          <div className="nodrag" onDragOver={commonInputProps.onDragOver} onDrop={handleDropWrapper}>
+          <div
+            className="nodrag"
+            onDragOver={commonInputProps.onDragOver}
+            onDrop={handleDropWrapper}
+          >
             <Input
               {...commonInputProps}
               type={field.type === "number" ? "number" : undefined}
@@ -144,6 +174,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             )}
           </div>
         );
+      }
 
       case "textarea":
         return (

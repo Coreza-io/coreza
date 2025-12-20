@@ -308,17 +308,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     return val;
   }
 
-  // Drag helper for repeater (conditional)
-  const handleRepeaterDrop = useCallback(
-    (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-
+  const computeDropInsert = useCallback(
+    (e: React.DragEvent) => {
       const raw = e.dataTransfer.getData("application/reactflow");
-      if (!raw) {
-        document.body.classList.remove("cursor-grabbing", "select-none");
-        return;
-      }
+      if (!raw) return null;
+
       try {
         const { keyPath = "" } = JSON.parse(raw);
         const sourceNode = previousNodes.find(
@@ -331,91 +325,76 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             : selectedPrevNodeId);
         const kp = (keyPath ?? "").trim();
         const suffix = kp ? `.${kp}` : "";
-        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
 
+        return {
+          insert: `{{ $('${sourceDisplayName}').json${suffix} }}`,
+          sourceId: selectedPrevNodeId,
+        };
+      } catch (error) {
+        console.error("Drop error:", error);
+        return null;
+      }
+    },
+    [previousNodes, selectedPrevNodeId]
+  );
+
+  const handleDropWithInsert = useCallback(
+    (
+      e: React.DragEvent,
+      currentValue: string,
+      onInsert: (insert: string, sourceId: string) => void
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const result = computeDropInsert(e);
+      if (!result) {
+        document.body.classList.remove("cursor-grabbing", "select-none");
+        return;
+      }
+
+      onInsert(result.insert, result.sourceId);
+      document.body.classList.remove("cursor-grabbing", "select-none");
+    },
+    [computeDropInsert]
+  );
+
+  // Drag helper for repeater (conditional)
+  const handleRepeaterDrop = useCallback(
+    (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
+      handleDropWithInsert(e, currentValue, (insert, sourceId) => {
         updateCondition(idx, field, currentValue + insert);
 
         setSourceMap((sm) => {
           const next = Array.isArray(sm) ? [...sm] : [];
           next[idx] = {
             ...(next[idx] || {}),
-            [field]: selectedPrevNodeId,
+            [field]: sourceId,
           };
           return next;
         });
-      } catch (error) {
-        console.error("Drop error:", error);
-      }
-      document.body.classList.remove("cursor-grabbing", "select-none");
+      });
     },
-    [selectedPrevNodeId, updateCondition, previousNodes]
+    [handleDropWithInsert, updateCondition]
   );
 
   // Drag helper for switch
   const handleSwitchDrop = useCallback(
     (field: string, e: React.DragEvent, currentValue: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const raw = e.dataTransfer.getData("application/reactflow");
-      if (!raw) {
-        document.body.classList.remove("cursor-grabbing", "select-none");
-        return;
-      }
-      try {
-        const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find(
-          (n) => n.id === selectedPrevNodeId
-        );
-        const sourceDisplayName =
-          sourceNode?.data?.displayName ||
-          (sourceNode
-            ? getDisplayName(sourceNode, previousNodes)
-            : selectedPrevNodeId);
-        const kp = (keyPath ?? "").trim();
-        const suffix = kp ? `.${kp}` : "";
-        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
-
+      handleDropWithInsert(e, currentValue, (insert) => {
         handleChange(field, currentValue + insert);
-      } catch (error) {
-        console.error("Drop error:", error);
-      }
-      document.body.classList.remove("cursor-grabbing", "select-none");
+      });
     },
-    [selectedPrevNodeId, handleChange, previousNodes]
+    [handleDropWithInsert, handleChange]
   );
 
   const handleSwitchConditionDrop = useCallback(
     (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const raw = e.dataTransfer.getData("application/reactflow");
-      if (!raw) {
-        document.body.classList.remove("cursor-grabbing", "select-none");
-        return;
-      }
-      try {
-        const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find(
-          (n) => n.id === selectedPrevNodeId
-        );
-        const sourceDisplayName =
-          sourceNode?.data?.displayName ||
-          (sourceNode
-            ? getDisplayName(sourceNode, previousNodes)
-            : selectedPrevNodeId);
-        const kp = (keyPath ?? "").trim();
-        const suffix = kp ? `.${kp}` : "";
-        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
-
+      handleDropWithInsert(e, currentValue, (insert) => {
         updateCase(idx, field, currentValue + insert);
-      } catch (error) {
-        console.error("Drop error:", error);
-      }
-      document.body.classList.remove("cursor-grabbing", "select-none");
+      });
     },
-    [selectedPrevNodeId, updateCase, previousNodes]
+    [handleDropWithInsert, updateCase]
   );
 
   const getPreviewFor = useCallback(

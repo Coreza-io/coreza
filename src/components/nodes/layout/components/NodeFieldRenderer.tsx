@@ -113,7 +113,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           </div>
           <div className="px-3 py-2 bg-muted/50 text-[11px] text-muted-foreground flex items-center gap-1">
             <span className="font-semibold text-foreground">Tip:</span>
-            <span>Anything inside {{"{{ }}"}} is JavaScript.</span>
+            <span>Anything inside {"{{ }}"} is JavaScript.</span>
           </div>
         </div>
       </div>

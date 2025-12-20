@@ -23,6 +23,7 @@ import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { repeaterNodeTypes } from "./nodeLayoutConfig";
 
 interface NodeRouterProps {
   data: any;
@@ -88,7 +89,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     if (hasRepeaterFields) return "repeater";
 
     // Check for specific conditional/switch node types (backwards compatibility)
-    const repeaterNodeTypes = ["If", "Switch", "Filter"];
     if (repeaterNodeTypes.includes(definition.name)) return "repeater";
 
     // Default to basic layout

@@ -14,14 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, {
-  Suspense,
-  useCallback,
-  useState,
-  useEffect,
-  useMemo,
-} from "react";
-import { Input } from "@/components/ui/input";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -30,60 +23,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { ChevronDown, Loader2, X, Plus } from "lucide-react";
-import GenericAuthModal from "@/components/auth/GenericAuthModal";
-import { SchwabAuthModal } from "@/components/auth/SchwabAuthModal";
+import { Loader2, X, Plus } from "lucide-react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
-
-// Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
-const getDisplayName = (node: any, allNodes: any[]) => {
-  const baseName = node.data.definition?.name;
-  const sameType = allNodes.filter(
-    (n) => n && n.data && n.data.definition?.name === baseName
-  );
-  const idx = sameType.findIndex((n) => n.id === node.id);
-  const result = idx > 0 ? `${baseName}${idx}` : baseName;
-
-  return result;
-};
-
+import { getDisplayName } from "@/components/nodes/layout/util/nodeDisplay";
+import { operatorRequiresRightValue } from "@/components/nodes/layout/util/operators";
+import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
+import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
   readOnly?: boolean;
 }
-
-const OPERATORS_WITHOUT_RIGHT_VALUE = new Set([
-  "exists",
-  "not_exists",
-  "is_empty",
-  "is_not_empty",
-  "is_true",
-  "is_false",
-  "array_is_empty",
-  "array_is_not_empty",
-  "object_is_empty",
-  "object_is_not_empty",
-  "isNull",
-  "is_not_null",
-]);
-
-const operatorRequiresRightValue = (operator?: string) =>
-  operator ? !OPERATORS_WITHOUT_RIGHT_VALUE.has(operator) : true;
 
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
@@ -106,7 +59,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   selectedPrevNodeId,
   readOnly,
 }) => {
-  const { setNodes, setEdges, getNodes } = useReactFlow();
+  const { getNodes } = useReactFlow();
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
@@ -295,32 +248,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [logicalOps, handleChange]
   );
 
-  const getOperatorDisplay = (
-    operatorValue: string,
-    groupedOptions: Record<
-      string,
-      {
-        icon: string;
-        label: string;
-        options: { label: string; value: string }[];
-      }
-    >
-  ) => {
-    for (const [, typeData] of Object.entries(groupedOptions)) {
-      const option = typeData.options.find(
-        (opt) => opt.value === operatorValue
-      );
-      if (option) {
-        return {
-          icon: typeData.icon,
-          label: option.label,
-          type: typeData.label,
-        };
-      }
-    }
-    return { icon: "?", label: operatorValue, type: "Unknown" };
-  };
-
   // =========== SWITCH HELPERS ===========
   const addCase = () => {
     const newIndex = cases.length + 1;
@@ -399,13 +326,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
         updateCondition(idx, field, currentValue + insert);
 
-        setSourceMap((sm) => ({
-          ...sm,
-          [idx]: {
-            ...(sm?.[idx] || {}),
+        setSourceMap((sm) => {
+          const next = Array.isArray(sm) ? [...sm] : [];
+          next[idx] = {
+            ...(next[idx] || {}),
             [field]: selectedPrevNodeId,
-          },
-        }));
+          };
+          return next;
+        });
       } catch (error) {
         console.error("Drop error:", error);
       }
@@ -604,403 +532,39 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
           if (isSwitch && f.key === "enableFallback") return null; // Render fallback toggle with cases section
 
-          // --------- CONDITIONAL FIELD DISPLAY ---------
-          let shouldShow = true;
-          if (f.displayOptions && f.displayOptions.show) {
-            for (const [depKey, allowedValuesRaw] of Object.entries(
-              f.displayOptions.show
-            )) {
-              const allowedValues = allowedValuesRaw as string[];
-              if (!allowedValues.includes(fieldState[depKey])) {
-                shouldShow = false;
-                break;
-              }
-            }
-          }
-          if (!shouldShow) return null;
-          // ---------------------------------------------
-
           return (
-            <div key={f.key}>
-              {f.type !== "toggle" && <Label>{f.label}</Label>}
-
-              {/* --------- Text Field --------- */}
-              {f.type === "text" && (
-                <div
-                  className="nodrag"
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = "copy";
-                  }}
-                  onDrop={(e) => {
-                    if (isSwitch) {
-                      handleSwitchDrop(f.key, e, fieldState[f.key] || "");
-                    } else {
-                      handleDrop(
-                        f.key,
-                        (val: string) => handleChange(f.key, val),
-                        e,
-                        fieldState[f.key] || ""
-                      );
-                    }
-                  }}
-                >
-                  <Input
-                    value={fieldState[f.key] || ""}
-                    onChange={(e) => handleChange(f.key, e.target.value)}
-                    placeholder={f.placeholder}
-                    className="nodrag"
-                    style={
-                      typeof fieldState[f.key] === "string" &&
-                      fieldState[f.key].includes("{{")
-                        ? referenceStyle
-                        : undefined
-                    }
-                    onFocus={(e) => e.target.select()}
-                  />
-                  {typeof fieldState[f.key] === "string" &&
-                    fieldState[f.key].includes("{{") && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Preview:{" "}
-                        {isSwitch
-                          ? getSwitchPreviewFor(fieldState[f.key])
-                          : getFieldPreview(f.key)}
-                      </div>
-                    )}
-                </div>
-              )}
-
-              {/* --------- Select (Credential) Field --------- */}
-              {f.type === "select" && f.optionsSource === "credentialsApi" ? (
-                <div className="flex gap-2 items-center">
-                  <Select
-                    value={fieldState[f.key]}
-                    onValueChange={(val) => {
-                      handleChange(f.key, val);
-                      // Fetch options for dependent API fields
-                      const dependentApiFields = definition.fields?.filter(
-                        (field: any) =>
-                          field.dependsOn === f.key &&
-                          field.optionsSource === "dependentApi"
-                      );
-                      dependentApiFields?.forEach((depField: any) => {
-                        fetchDependentOptions(depField, val);
-                      });
-                    }}
-                    disabled={loadingSelect[f.key]}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          loadingSelect[f.key]
-                            ? "Loading..."
-                            : "Select credential"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectOptions[f.key] || []).length > 0 ? (
-                        selectOptions[f.key].map((c: any) => (
-                          <SelectItem key={c.name} value={c.name}>
-                            {c.name || c.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-creds" disabled>
-                          No credentials found
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    type="button"
-                    onClick={() => setShowAuth(true)}
-                  >
-                    Add
-                  </Button>
-                </div>
-              ) : null}
-
-              {/* --------- Dependent API Select Field --------- */}
-              {f.type === "select" && f.optionsSource === "dependentApi" && (
-                <div className="flex flex-col gap-2">
-                  <Select
-                    value={fieldState[f.key]}
-                    onValueChange={(val) => handleChange(f.key, val)}
-                    disabled={loadingSelect[f.key] || !fieldState[f.dependsOn]}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          !fieldState[f.dependsOn]
-                            ? `Select ${f.dependsOn} first`
-                            : loadingSelect[f.key]
-                            ? "Loading..."
-                            : f.placeholder || "Select option"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectOptions[f.key] || []).length > 0 ? (
-                        selectOptions[f.key].map((option: any) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-options" disabled>
-                          {!fieldState[f.dependsOn]
-                            ? "Select credential first"
-                            : "No accounts found"}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* --------- Store Workflows API Select Field --------- */}
-              {f.type === "select" &&
-                f.optionsSource === "storeWorkflowsApi" && (
-                  <Select
-                    value={fieldState[f.key] || undefined}
-                    onValueChange={(val) => {
-                      // Build batch update to avoid stale closure issue
-                      const updates: Record<string, any> = { [f.key]: val };
-
-                      // Clear dependent variable fields when workflow changes
-                      const variableFields = definition.fields?.filter(
-                        (field: any) =>
-                          field.optionsSource === "storeVariablesApi" &&
-                          field.dependsOn === f.key
-                      );
-                      variableFields?.forEach((varField: any) => {
-                        updates[varField.key] = "";
-                      });
-
-                      handleFieldStateBatch(updates);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          loadingSelect[f.key]
-                            ? "Loading workflows..."
-                            : f.placeholder || "Select workflow"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectOptions[f.key] || []).length > 0 ? (
-                        (selectOptions[f.key] || []).map((workflow: any) => (
-                          <SelectItem
-                            key={workflow.id || workflow.value}
-                            value={workflow.id || workflow.value}
-                          >
-                            {workflow.name || workflow.label || workflow.id}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-workflows" disabled>
-                          {loadingSelect[f.key]
-                            ? "Loading..."
-                            : "No workflows found"}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                )}
-
-              {/* --------- Store Variables API Select Field --------- */}
-              {f.type === "select" &&
-                f.optionsSource === "storeVariablesApi" && (
-                  <Select
-                    value={fieldState[f.key] || undefined}
-                    onValueChange={(val) => handleChange(f.key, val)}
-                    disabled={loadingSelect[f.key] || !fieldState[f.dependsOn]}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          !fieldState[f.dependsOn]
-                            ? "Select workflow first"
-                            : loadingSelect[f.key]
-                            ? "Loading variables..."
-                            : f.placeholder || "Select variable"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectOptions[f.key] || []).length > 0 ? (
-                        selectOptions[f.key].map((variable: any) => (
-                          <SelectItem key={variable.id} value={variable.id}>
-                            {variable.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-variables" disabled>
-                          {!fieldState[f.dependsOn]
-                            ? "Select workflow first"
-                            : loadingSelect[f.key]
-                            ? "Loading..."
-                            : "No variables found"}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                )}
-
-              {/* --------- Regular Select Field --------- */}
-              {f.type === "select" &&
-                f.optionsSource !== "credentialsApi" &&
-                f.optionsSource !== "dependentApi" &&
-                f.optionsSource !== "storeWorkflowsApi" &&
-                f.optionsSource !== "storeVariablesApi" && (
-                  <Select
-                    value={fieldState[f.key]}
-                    onValueChange={(val) => {
-                      handleChange(f.key, val);
-                      // Clear dependent field when parent changes
-                      if (f.conditionalOptions) {
-                        const dependentFields = definition.fields?.filter(
-                          (field: any) => field.dependsOn === f.key
-                        );
-                        dependentFields?.forEach((depField: any) => {
-                          handleChange(depField.key, "");
-                        });
-                      }
-                      // Fetch options for dependent API fields
-                      const dependentApiFields = definition.fields?.filter(
-                        (field: any) =>
-                          field.dependsOn === f.key &&
-                          field.optionsSource === "dependentApi"
-                      );
-                      dependentApiFields?.forEach((depField: any) => {
-                        fetchDependentOptions(depField, val);
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={f.placeholder || "Select option"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(() => {
-                        // Handle conditional options
-                        if (f.dependsOn && f.conditionalOptions) {
-                          const parentValue = fieldState[f.dependsOn];
-                          const conditionalOptions =
-                            f.conditionalOptions[parentValue] || [];
-                          return conditionalOptions.map((option: any) => (
-                            <SelectItem
-                              key={option.id || option.value}
-                              value={option.id || option.value}
-                            >
-                              {option.name ||
-                                option.label ||
-                                option.id ||
-                                option.value}
-                            </SelectItem>
-                          ));
-                        }
-                        // Handle regular options
-                        return (selectOptions[f.key] || f.options || []).map(
-                          (opt: any) => (
-                            <SelectItem
-                              key={opt.id || opt.value}
-                              value={opt.id || opt.value}
-                            >
-                              {opt.name || opt.label || opt.id || opt.value}
-                            </SelectItem>
-                          )
-                        );
-                      })()}
-                    </SelectContent>
-                  </Select>
-                )}
-
-              {/* --------- Multiselect Field --------- */}
-              {f.type === "multiselect" && (
-                <div className="space-y-3">
-                  {(selectOptions[f.key] || f.options || []).map((opt: any) => {
-                    const optionId = opt.id || opt.value;
-                    const optionLabel =
-                      opt.name || opt.label || opt.id || opt.value;
-                    const selectedValues = Array.isArray(fieldState[f.key])
-                      ? fieldState[f.key]
-                      : f.default || [];
-                    const isSelected = selectedValues.includes(optionId);
-
-                    return (
-                      <div
-                        key={optionId}
-                        className="flex items-center justify-between"
-                      >
-                        <span className="text-sm text-foreground">
-                          {optionLabel}
-                        </span>
-                        <Switch
-                          checked={isSelected}
-                          onCheckedChange={(checked) => {
-                            const currentValues = Array.isArray(
-                              fieldState[f.key]
-                            )
-                              ? fieldState[f.key]
-                              : f.default || [];
-                            let newValues;
-                            if (checked) {
-                              newValues = [...currentValues, optionId];
-                            } else {
-                              newValues = currentValues.filter(
-                                (v: string) => v !== optionId
-                              );
-                            }
-                            handleChange(f.key, newValues);
-                          }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* --------- Checkbox Field --------- */}
-              {f.type === "checkbox" && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-foreground">{f.label}</span>
-                  <Switch
-                    checked={!!fieldState[f.key]}
-                    onCheckedChange={(checked) => handleChange(f.key, checked)}
-                  />
-                </div>
-              )}
-
-              {/* --------- Toggle Field --------- */}
-              {f.type === "toggle" && (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm text-foreground">{f.label}</span>
-                    {f.description && (
-                      <span className="text-xs text-muted-foreground">
-                        {f.description}
-                      </span>
-                    )}
-                  </div>
-                  <Switch
-                    checked={
-                      typeof fieldState[f.key] === "boolean"
-                        ? fieldState[f.key]
-                        : !!f.default
-                    }
-                    onCheckedChange={(checked) => handleChange(f.key, checked)}
-                  />
-                </div>
-              )}
-            </div>
+            <NodeFieldRenderer
+              key={f.key}
+              field={f}
+              definition={definition}
+              fieldState={fieldState}
+              value={fieldState[f.key]}
+              selectOptions={selectOptions}
+              loadingSelect={loadingSelect}
+              onChange={handleChange}
+              onBatchChange={handleFieldStateBatch}
+              onDrop={(fieldDef, e, currentValue) => {
+                if (isSwitch) {
+                  handleSwitchDrop(fieldDef.key, e, currentValue);
+                } else {
+                  handleDrop(
+                    fieldDef.key,
+                    (val: string) => handleChange(fieldDef.key, val),
+                    e,
+                    currentValue
+                  );
+                }
+              }}
+              getPreview={(fieldKey) =>
+                isSwitch
+                  ? getSwitchPreviewFor(fieldState[fieldKey])
+                  : getFieldPreview(fieldKey)
+              }
+              referenceStyle={referenceStyle}
+              fetchDependentOptions={fetchDependentOptions}
+              setShowAuth={setShowAuth}
+              readOnly={readOnly}
+            />
           );
         })}
 
@@ -1027,9 +591,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const persistentField = repeaterField.subFields?.find(
                 (sf: any) => sf.key === "persistent"
               );
-              const operatorDisplay =
-                operatorField?.groupedOptions &&
-                getOperatorDisplay(cond.operator, operatorField.groupedOptions);
               const showRightField = operatorRequiresRightValue(cond.operator);
 
               return (
@@ -1052,181 +613,102 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
-                    {/* Left */}
-                    {leftField &&
-                    leftField.options &&
-                    leftField.options.length > 0 ? (
-                      <Select
+                  <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
+                    {leftField && (
+                      <NodeFieldRenderer
+                        field={leftField}
+                        definition={definition}
+                        fieldState={{ ...fieldState, [leftField.key]: cond.left }}
                         value={cond.left}
-                        onValueChange={(v) => updateCondition(i, "left", v)}
-                      >
-                        <SelectTrigger className="flex-1 h-8 text-xs">
-                          <SelectValue placeholder={leftField.placeholder} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(leftField.options || []).map((opt: any) => (
-                            <SelectItem
-                              key={opt.id || opt.value}
-                              value={opt.id || opt.value}
-                            >
-                              {opt.name || opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        className="flex-1 h-8 text-xs nodrag"
-                        placeholder={leftField?.placeholder || "Left value"}
-                        value={cond.left || ""}
-                        onChange={(e) =>
-                          updateCondition(i, "left", e.target.value)
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val) => updateCondition(i, key, val)}
+                        onDrop={(fieldDef, e, currentValue) =>
+                          handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                         }
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = "copy";
-                        }}
-                        onDrop={(e) =>
-                          handleRepeaterDrop(i, "left", e, cond.left || "")
-                        }
-                        style={
-                          cond.left?.includes("{{") ? referenceStyle : undefined
-                        }
-                        onFocus={(e) => e.target.select()}
+                        getPreview={() => getPreviewFor(i, "left", cond.left)}
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
+                        readOnly={readOnly}
                       />
                     )}
 
-                    {/* Operator */}
-                    {operatorField && operatorField.groupedOptions ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="w-32 h-8 text-xs justify-between"
-                          >
-                            <span className="flex items-center gap-1">
-                              <span className="text-primary font-medium">
-                                {operatorDisplay?.icon ?? "?"}
-                              </span>
-                              {operatorDisplay?.label ?? operatorField.label}
-                            </span>
-                            <ChevronDown className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-48">
-                          {Object.entries(operatorField.groupedOptions).map(
-                            ([typeKey, typeData]: [
-                              string,
-                              {
-                                icon: string;
-                                label: string;
-                                options: { label: string; value: string }[];
-                              }
-                            ]) => (
-                              <DropdownMenuSub key={typeKey}>
-                                <DropdownMenuSubTrigger>
-                                  <span className="text-primary mr-2">
-                                    {typeData.icon}
-                                  </span>
-                                  {typeData.label}
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent className="w-48">
-                                  {typeData.options.map((opt) => (
-                                    <DropdownMenuItem
-                                      key={opt.value}
-                                      onClick={() =>
-                                        handleOperatorSelect(i, opt.value)
-                                      }
-                                      className={
-                                        cond.operator === opt.value
-                                          ? "bg-accent text-primary"
-                                          : ""
-                                      }
-                                    >
-                                      {opt.label}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuSubContent>
-                              </DropdownMenuSub>
-                            )
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : (
-                      operatorField && (
-                        <Select
+                    {operatorField && (
+                      <div className="min-w-0">
+                        <NodeFieldRenderer
+                          field={operatorField}
+                          definition={definition}
+                          fieldState={{
+                            ...fieldState,
+                            [operatorField.key]: cond.operator,
+                          }}
                           value={cond.operator}
-                          onValueChange={(v) => handleOperatorSelect(i, v)}
-                        >
-                          <SelectTrigger className="w-24 h-8 text-xs">
-                            <SelectValue placeholder={operatorField.label} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(operatorField.options || []).map((opt: any) => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )
+                          selectOptions={selectOptions}
+                          loadingSelect={loadingSelect}
+                          onChange={(key, val) => handleOperatorSelect(i, val)}
+                          referenceStyle={referenceStyle}
+                          fetchDependentOptions={fetchDependentOptions}
+                          setShowAuth={setShowAuth}
+                          readOnly={readOnly}
+                        />
+                      </div>
                     )}
 
-                    {/* Right */}
                     {rightField && showRightField && (
-                      <Input
-                        className="flex-1 h-8 text-xs nodrag"
-                        placeholder={rightField.placeholder || "Right value"}
-                        value={cond.right || ""}
-                        onChange={(e) =>
-                          updateCondition(i, "right", e.target.value)
-                        }
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = "copy";
+                      <NodeFieldRenderer
+                        field={rightField}
+                        definition={definition}
+                        fieldState={{
+                          ...fieldState,
+                          [rightField.key]: cond.right,
                         }}
-                        onDrop={(e) =>
-                          handleRepeaterDrop(i, "right", e, cond.right || "")
+                        value={cond.right}
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val) => updateCondition(i, key, val)}
+                        onDrop={(fieldDef, e, currentValue) =>
+                          handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                         }
-                        style={
-                          cond.right?.includes("{{")
-                            ? referenceStyle
-                            : undefined
-                        }
-                        onFocus={(e) => e.target.select()}
+                        getPreview={() => getPreviewFor(i, "right", cond.right)}
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
+                        readOnly={readOnly}
                       />
                     )}
 
                     {conditions.length > 1 && (
                       <Button
+                        type="button"
                         size="sm"
                         variant="ghost"
                         onClick={() => removeCondition(i)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        disabled={readOnly}
                       >
                         <X className="w-3 h-3" />
                       </Button>
                     )}
                   </div>
 
-                  {/* Previews */}
-                  {(cond.left?.includes("{{") ||
-                    cond.right?.includes("{{")) && (
-                    <div className="text-xs text-gray-500 space-y-1 ml-2">
-                      {cond.left?.includes("{{") && (
-                        <div>
-                          Left preview: {getPreviewFor(i, "left", cond.left)}
-                        </div>
-                      )}
-                      {cond.right?.includes("{{") && (
-                        <div>
-                          Right preview: {getPreviewFor(i, "right", cond.right)}
-                        </div>
-                      )}
-                    </div>
+                  {persistentField && (
+                    <NodeFieldRenderer
+                      field={persistentField}
+                      definition={definition}
+                      fieldState={{
+                        ...fieldState,
+                        [persistentField.key]: cond.persistent,
+                      }}
+                      value={cond.persistent}
+                      selectOptions={selectOptions}
+                      loadingSelect={loadingSelect}
+                      onChange={(key, val) => updateCondition(i, key, val)}
+                      referenceStyle={referenceStyle}
+                      fetchDependentOptions={fetchDependentOptions}
+                      setShowAuth={setShowAuth}
+                      readOnly={readOnly}
+                    />
                   )}
                 </div>
               );
@@ -1236,51 +718,34 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               type="button"
               size="sm"
               variant="outline"
-              onClick={addCondition} // You can rename this to a generic handler if needed
-              className="h-7 px-2"
+              onClick={addCondition}
+              className="flex items-center gap-2"
+              disabled={readOnly}
             >
-              <Plus className="w-3 h-3 mr-1" />
-              {repeaterField?.key === "conditions"
-                ? "Add Condition"
-                : "Add Field"}
+              <Plus className="w-3 h-3" />
+              Add {isConditional ? "Condition" : "Field"}
             </Button>
 
-            {/* --------- LOGICAL OPERATOR (If nodes only, after conditions) --------- */}
             {isConditional &&
               conditions.length > 1 &&
-              definition.fields?.map((f: any) => {
-                if (f.key !== "logicalOp") return null;
-
-                return (
-                  <div key={f.key} className="mt-3">
-                    <Label>{f.label}</Label>
-                    <Select
-                      value={fieldState[f.key] || f.default}
-                      onValueChange={(val) => handleChange(f.key, val)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={
-                            f.placeholder || "Select logical operator"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(f.options || []).map((opt: any) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {f.description && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {f.description}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              definition.fields?.map((f: any) =>
+                f.key === "logicalOp" ? (
+                  <NodeFieldRenderer
+                    key={f.key}
+                    field={f}
+                    definition={definition}
+                    fieldState={fieldState}
+                    value={fieldState[f.key]}
+                    selectOptions={selectOptions}
+                    loadingSelect={loadingSelect}
+                    onChange={handleChange}
+                    referenceStyle={referenceStyle}
+                    fetchDependentOptions={fetchDependentOptions}
+                    setShowAuth={setShowAuth}
+                    readOnly={readOnly}
+                  />
+                ) : null
+              )}
           </div>
         )}
 
@@ -1288,13 +753,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {isSwitch && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="font-semibold">Cases</Label>
+              <h4 className="font-semibold">Cases</h4>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 onClick={addCase}
                 className="h-7 px-2"
+                disabled={readOnly}
               >
                 <Plus className="w-3 h-3 mr-1" />
                 Add Case
@@ -1314,129 +780,74 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               const outputField = repeaterField?.subFields?.find(
                 (sf: any) => sf.key === "outputName"
               );
-              const caseOperatorDisplay = operatorSubField?.groupedOptions
-                ? getOperatorDisplay(
-                    caseItem.operator || "===",
-                    operatorSubField.groupedOptions
-                  )
-                : null;
               const showRightField = operatorRequiresRightValue(
                 caseItem.operator
               );
 
               return (
                 <div key={i} className="space-y-2">
-                  <div className="flex items-center gap-2 p-2 border rounded bg-muted/10">
-                    <Input
-                      className="flex-1 h-8 text-xs nodrag"
-                      placeholder={leftField?.placeholder || "Left value"}
-                      value={caseItem.left || ""}
-                      onChange={(e) => updateCase(i, "left", e.target.value)}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = "copy";
-                      }}
-                      onDrop={(e) =>
-                        handleSwitchConditionDrop(
-                          i,
-                          "left",
-                          e,
-                          caseItem.left || ""
-                        )
-                      }
-                      style={
-                        caseItem.left?.includes("{{")
-                          ? referenceStyle
-                          : undefined
-                      }
-                      onFocus={(e) => e.target.select()}
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
+                    {leftField && (
+                      <NodeFieldRenderer
+                        field={leftField}
+                        definition={definition}
+                        fieldState={{ ...fieldState, [leftField.key]: caseItem.left }}
+                        value={caseItem.left}
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val) => updateCase(i, key, val)}
+                        onDrop={(fieldDef, e, currentValue) =>
+                          handleSwitchConditionDrop(i, fieldDef.key, e, currentValue)
+                        }
+                        getPreview={() => getSwitchPreviewFor(caseItem.left)}
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
+                        readOnly={readOnly}
+                      />
+                    )}
 
-                    {operatorSubField?.groupedOptions && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="w-32 h-8 text-xs justify-between flex-shrink-0"
-                          >
-                            <span className="flex items-center gap-1">
-                              <span className="text-primary font-medium">
-                                {caseOperatorDisplay?.icon ?? "?"}
-                              </span>
-                              <span className="truncate">
-                                {caseOperatorDisplay?.label ?? "is equal to"}
-                              </span>
-                            </span>
-                            <ChevronDown className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-48">
-                          {Object.entries(operatorSubField.groupedOptions).map(
-                            ([typeKey, typeData]: [
-                              string,
-                              {
-                                icon: string;
-                                label: string;
-                                options: { label: string; value: string }[];
-                              }
-                            ]) => (
-                              <DropdownMenuSub key={typeKey}>
-                                <DropdownMenuSubTrigger>
-                                  <span className="text-primary mr-2">
-                                    {typeData.icon}
-                                  </span>
-                                  {typeData.label}
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent className="w-48">
-                                  {typeData.options.map((opt) => (
-                                    <DropdownMenuItem
-                                      key={opt.value}
-                                      onClick={() =>
-                                        updateCase(i, "operator", opt.value)
-                                      }
-                                      className={
-                                        caseItem.operator === opt.value
-                                          ? "bg-accent text-primary"
-                                          : ""
-                                      }
-                                    >
-                                      {opt.label}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuSubContent>
-                              </DropdownMenuSub>
-                            )
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    {operatorSubField && (
+                      <div className="min-w-0">
+                        <NodeFieldRenderer
+                          field={operatorSubField}
+                          definition={definition}
+                          fieldState={{
+                            ...fieldState,
+                            [operatorSubField.key]: caseItem.operator,
+                          }}
+                          value={caseItem.operator}
+                          selectOptions={selectOptions}
+                          loadingSelect={loadingSelect}
+                          onChange={(key, val) => updateCase(i, key, val)}
+                          referenceStyle={referenceStyle}
+                          fetchDependentOptions={fetchDependentOptions}
+                          setShowAuth={setShowAuth}
+                          readOnly={readOnly}
+                        />
+                      </div>
                     )}
 
                     {rightField && showRightField && (
-                      <Input
-                        className="flex-1 h-8 text-xs nodrag"
-                        placeholder={rightField.placeholder || "Right value"}
-                        value={caseItem.right ?? caseItem.caseValue ?? ""}
-                        onChange={(e) => updateCase(i, "right", e.target.value)}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = "copy";
+                      <NodeFieldRenderer
+                        field={rightField}
+                        definition={definition}
+                        fieldState={{
+                          ...fieldState,
+                          [rightField.key]: caseItem.right,
                         }}
-                        onDrop={(e) =>
-                          handleSwitchConditionDrop(
-                            i,
-                            "right",
-                            e,
-                            caseItem.right || ""
-                          )
+                        value={caseItem.right}
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val) => updateCase(i, key, val)}
+                        onDrop={(fieldDef, e, currentValue) =>
+                          handleSwitchConditionDrop(i, fieldDef.key, e, currentValue)
                         }
-                        style={
-                          caseItem.right?.includes("{{")
-                            ? referenceStyle
-                            : undefined
-                        }
-                        onFocus={(e) => e.target.select()}
+                        getPreview={() => getSwitchPreviewFor(caseItem.right)}
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
+                        readOnly={readOnly}
                       />
                     )}
 
@@ -1447,6 +858,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         variant="ghost"
                         onClick={() => removeCase(i)}
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                        disabled={readOnly}
                       >
                         <X className="w-3 h-3" />
                       </Button>
@@ -1454,68 +866,48 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   </div>
 
                   {outputField && (
-                    <div className="mt-2 pl-2">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="w-44 h-8 text-xs nodrag"
-                          placeholder={outputField.placeholder || "Output name"}
-                          value={
-                            caseItem.outputName ||
-                            caseItem.caseName ||
-                            caseItem.caseValue ||
-                            ""
-                          }
-                          onChange={(e) =>
-                            updateCase(i, "outputName", e.target.value)
-                          }
-                          onFocus={(e) => e.target.select()}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {(caseItem.left?.includes("{{") ||
-                    caseItem.right?.includes("{{")) && (
-                    <div className="text-xs text-gray-500 space-y-1 ml-2">
-                      {caseItem.left?.includes("{{") && (
-                        <div>
-                          Left preview: {getSwitchPreviewFor(caseItem.left)}
-                        </div>
-                      )}
-                      {caseItem.right?.includes("{{") && (
-                        <div>
-                          Right preview: {getSwitchPreviewFor(caseItem.right)}
-                        </div>
-                      )}
-                    </div>
+                    <NodeFieldRenderer
+                      field={outputField}
+                      definition={definition}
+                      fieldState={{
+                        ...fieldState,
+                        [outputField.key]:
+                          caseItem.outputName ||
+                          caseItem.caseName ||
+                          caseItem.caseValue,
+                      }}
+                      value={
+                        caseItem.outputName ||
+                        caseItem.caseName ||
+                        caseItem.caseValue
+                      }
+                      selectOptions={selectOptions}
+                      loadingSelect={loadingSelect}
+                      onChange={(key, val) => updateCase(i, key, val)}
+                      referenceStyle={referenceStyle}
+                      fetchDependentOptions={fetchDependentOptions}
+                      setShowAuth={setShowAuth}
+                      readOnly={readOnly}
+                    />
                   )}
                 </div>
               );
             })}
 
             {fallbackField && (
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <div className="flex flex-col">
-                  <span className="text-sm text-foreground">
-                    {fallbackField.label}
-                  </span>
-                  {fallbackField.description && (
-                    <span className="text-xs text-muted-foreground">
-                      {fallbackField.description}
-                    </span>
-                  )}
-                </div>
-                <Switch
-                  checked={
-                    typeof fieldState[fallbackField.key] === "boolean"
-                      ? fieldState[fallbackField.key]
-                      : !!fallbackField.default
-                  }
-                  onCheckedChange={(checked) =>
-                    handleChange(fallbackField.key, checked)
-                  }
-                />
-              </div>
+              <NodeFieldRenderer
+                field={fallbackField}
+                definition={definition}
+                fieldState={fieldState}
+                value={fieldState[fallbackField.key]}
+                selectOptions={selectOptions}
+                loadingSelect={loadingSelect}
+                onChange={(key, val) => handleChange(key, val)}
+                referenceStyle={referenceStyle}
+                fetchDependentOptions={fetchDependentOptions}
+                setShowAuth={setShowAuth}
+                readOnly={readOnly}
+              />
             )}
           </div>
         )}
@@ -1550,53 +942,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </form>
 
       {/* Auth Modal */}
-      <Suspense fallback={<div>Loading modal...</div>}>
-        {!readOnly &&
-          showAuth &&
-          (definition.auth === "SchwabAuthModal" ? (
-            <SchwabAuthModal
-              isOpen={showAuth}
-              onClose={() => {
-                setShowAuth(false);
-                (definition.fields || []).forEach((f: any) => {
-                  if (
-                    f.type === "select" &&
-                    f.optionsSource === "credentialsApi"
-                  ) {
-                    fetchCredentials(f.key);
-                  }
-                });
-              }}
-              onSuccess={(credentialId) => {
-                setShowAuth(false);
-                (definition.fields || []).forEach((f: any) => {
-                  if (
-                    f.type === "select" &&
-                    f.optionsSource === "credentialsApi"
-                  ) {
-                    fetchCredentials(f.key);
-                  }
-                });
-              }}
-              userId={user?.id || ""}
-            />
-          ) : (
-            <GenericAuthModal
-              definition={definition}
-              onClose={() => {
-                setShowAuth(false);
-                (definition.fields || []).forEach((f: any) => {
-                  if (
-                    f.type === "select" &&
-                    f.optionsSource === "credentialsApi"
-                  ) {
-                    fetchCredentials(f.key);
-                  }
-                });
-              }}
-            />
-          ))}
-      </Suspense>
+      <LayoutAuthModal
+        definition={definition}
+        showAuth={showAuth}
+        readOnly={readOnly}
+        setShowAuth={setShowAuth}
+        fetchCredentials={fetchCredentials}
+        userId={user?.id || ""}
+      />
     </>
   );
 };

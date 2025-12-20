@@ -18,7 +18,7 @@ import { useState, useCallback } from "react";
 import { useNodes } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
-import { summarizePreview } from "@/utils/summarizePreview";
+import { formatPreviewValue } from "@/utils/summarizePreview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 interface UseNodeReferencesProps {
@@ -175,7 +175,7 @@ export function useNodeReferences({
             sourceData?.config?.timezone;
         }
 
-        return summarizePreview(resolved, 3, 100, timezone);
+        return formatPreviewValue(resolved);
       } catch (error) {
         // Silently fail for preview errors
         return "";

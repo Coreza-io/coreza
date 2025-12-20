@@ -1,0 +1,441 @@
+import React from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { FieldWrapper } from "./FieldWrapper";
+import GroupedSelect from "./GroupedSelect";
+import CredentialSelect from "./CredentialSelect";
+import DependentSelect from "./DependentSelect";
+
+interface NodeFieldRendererProps {
+  field: any;
+  definition: any;
+  fieldState: Record<string, any>;
+  value: any;
+  selectOptions: Record<string, any[]>;
+  loadingSelect: Record<string, boolean>;
+  onChange: (fieldKey: string, value: any) => void;
+  onBatchChange?: (updates: Record<string, any>) => void;
+  onDrop?: (field: any, e: React.DragEvent, currentValue: string) => void;
+  getPreview?: (fieldKey: string) => string | null;
+  referenceStyle?: React.CSSProperties;
+  fetchDependentOptions?: (field: any, parentValue: string) => void;
+  setShowAuth?: (show: boolean) => void;
+  workflowId?: string;
+  nodeId?: string;
+  userId?: string;
+  readOnly?: boolean;
+}
+
+const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
+  field,
+  definition,
+  fieldState,
+  value,
+  selectOptions,
+  loadingSelect,
+  onChange,
+  onBatchChange,
+  onDrop,
+  getPreview,
+  referenceStyle,
+  fetchDependentOptions,
+  setShowAuth,
+  workflowId,
+  nodeId,
+  userId,
+  readOnly,
+}) => {
+  if (field.type === "hidden") return null;
+
+  if (field.displayOptions?.show) {
+    const shouldShow = Object.entries(field.displayOptions.show).every(
+      ([depKey, allowedValues]) => {
+        const currentValue = fieldState[depKey];
+        if (!currentValue) return false;
+        return (allowedValues as string[]).includes(currentValue);
+      }
+    );
+    if (!shouldShow) return null;
+  }
+
+  let displayLabel = field.label;
+  if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {
+    const dependentValue = fieldState[field.dynamicLabel.dependsOn];
+    displayLabel = field.dynamicLabel.labelsByValue[dependentValue] || field.label;
+  }
+
+  const fieldValue = value ?? fieldState[field.key];
+  const isReference = typeof fieldValue === "string" && fieldValue.includes("{{");
+
+  const handleDropWrapper = (e: React.DragEvent) => {
+    if (!onDrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onDrop(field, e, fieldValue || "");
+  };
+
+  const commonInputProps = {
+    value: fieldValue ?? "",
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      onChange(field.key, e.target.value),
+    placeholder: field.placeholder,
+    className: "nodrag",
+    style: isReference ? referenceStyle : undefined,
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    onDrop: handleDropWrapper,
+    onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      e.target.select();
+    },
+    disabled: readOnly,
+  };
+
+  const renderField = () => {
+    switch (field.type) {
+      case "webhookUrl": {
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const webhookUrl =
+          workflowId && nodeId && userId
+            ? `${baseUrl}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`
+            : "Webhook URL will be available after saving the workflow";
+
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-1 text-xs font-semibold bg-primary/10 text-primary rounded">
+                {fieldState.httpMethod || "POST"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input value={webhookUrl} readOnly className="text-xs font-mono bg-muted" />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (webhookUrl && !webhookUrl.includes("will be available")) {
+                    navigator.clipboard.writeText(webhookUrl);
+                  }
+                }}
+                disabled={!webhookUrl || webhookUrl.includes("will be available")}
+              >
+                Copy
+              </Button>
+            </div>
+          </div>
+        );
+      }
+
+      case "string":
+      case "number":
+      case "text":
+        return (
+          <div className="nodrag" onDragOver={commonInputProps.onDragOver} onDrop={handleDropWrapper}>
+            <Input
+              {...commonInputProps}
+              type={field.type === "number" ? "number" : undefined}
+            />
+            {isReference && getPreview && (
+              <div className="text-xs text-gray-500 mt-1">Preview: {getPreview(field.key)}</div>
+            )}
+          </div>
+        );
+
+      case "textarea":
+        return (
+          <div className="nodrag" onDragOver={commonInputProps.onDragOver} onDrop={handleDropWrapper}>
+            <textarea
+              {...commonInputProps}
+              className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
+            />
+            {isReference && getPreview && (
+              <div className="text-xs text-gray-500 mt-1">Preview: {getPreview(field.key)}</div>
+            )}
+          </div>
+        );
+
+      case "select": {
+        if (field.optionsSource === "credentialsApi") {
+          return (
+            <CredentialSelect
+              value={fieldValue}
+              onChange={(val) => onChange(field.key, val)}
+              options={selectOptions[field.key] || []}
+              isLoading={loadingSelect[field.key]}
+              onAddCredential={() => setShowAuth?.(true)}
+              onCredentialChanged={(val) => {
+                const dependentApiFields = definition.fields?.filter(
+                  (f: any) => f.dependsOn === field.key && f.optionsSource === "dependentApi"
+                );
+                dependentApiFields?.forEach((depField: any) => {
+                  fetchDependentOptions?.(depField, val);
+                });
+              }}
+              disabled={readOnly}
+            />
+          );
+        }
+
+        if (field.optionsSource === "dependentApi") {
+          return (
+            <DependentSelect
+              value={fieldValue}
+              onChange={(val) => onChange(field.key, val)}
+              options={selectOptions[field.key] || []}
+              parentValue={fieldState[field.dependsOn]}
+              isLoading={loadingSelect[field.key]}
+              dependsOn={field.dependsOn}
+              placeholder={field.placeholder}
+              emptyLabel={!fieldState[field.dependsOn] ? "Select credential first" : "No accounts found"}
+              disabled={readOnly}
+            />
+          );
+        }
+
+        if (field.optionsSource === "storeWorkflowsApi") {
+          const options = selectOptions[field.key] || [];
+          const isLoading = loadingSelect[field.key];
+
+          return (
+            <Select
+              value={fieldValue || undefined}
+              onValueChange={(val) => {
+                const updates: Record<string, any> = { [field.key]: val };
+                const variableFields = definition.fields?.filter(
+                  (f: any) => f.optionsSource === "storeVariablesApi" && f.dependsOn === field.key
+                );
+                variableFields?.forEach((varField: any) => {
+                  updates[varField.key] = "";
+                });
+                if (onBatchChange) {
+                  onBatchChange(updates);
+                } else {
+                  Object.entries(updates).forEach(([k, v]) => onChange(k, v));
+                }
+              }}
+              disabled={isLoading || readOnly}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={
+                    isLoading
+                      ? "Loading workflows..."
+                      : field.placeholder || "Select workflow"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {isLoading ? (
+                  <SelectItem value="loading" disabled>
+                    Loading...
+                  </SelectItem>
+                ) : options.length === 0 ? (
+                  <SelectItem value="no-workflows" disabled>
+                    No workflows found
+                  </SelectItem>
+                ) : (
+                  options.map((workflow: any) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          );
+        }
+
+        if (field.optionsSource === "storeVariablesApi") {
+          const hasParentValue = Boolean(fieldState[field.dependsOn]);
+
+          return (
+            <Select
+              value={fieldValue || undefined}
+              onValueChange={(val) => onChange(field.key, val)}
+              disabled={loadingSelect[field.key] || !hasParentValue || readOnly}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={
+                    !hasParentValue
+                      ? "Select workflow first"
+                      : loadingSelect[field.key]
+                      ? "Loading variables..."
+                      : field.placeholder || "Select variable"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectOptions[field.key] || []).length > 0 ? (
+                  selectOptions[field.key].map((variable: any) => (
+                    <SelectItem key={variable.id} value={variable.id}>
+                      {variable.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-variables" disabled>
+                    {!hasParentValue
+                      ? "Select workflow first"
+                      : loadingSelect[field.key]
+                      ? "Loading..."
+                      : "No variables found"}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          );
+        }
+
+        let displayOptions: any[] = [];
+        if (field.dynamicOptions?.dependsOn && field.dynamicOptions?.optionsByValue) {
+          const parentValue = fieldState[field.dynamicOptions.dependsOn];
+          displayOptions = field.dynamicOptions.optionsByValue[parentValue] || [];
+        } else if (field.dependsOn && field.conditionalOptions) {
+          const parentValue = fieldState[field.dependsOn];
+          displayOptions = field.conditionalOptions[parentValue] || [];
+        } else {
+          displayOptions = selectOptions[field.key] || field.options || [];
+        }
+
+        return (
+          <Select
+            value={fieldValue}
+            onValueChange={(val) => {
+              onChange(field.key, val);
+              if (field.conditionalOptions) {
+                const dependentFields = definition.fields?.filter(
+                  (f: any) => f.dependsOn === field.key
+                );
+                dependentFields?.forEach((depField: any) => {
+                  onChange(depField.key, "");
+                });
+              }
+              const dependentApiFields = definition.fields?.filter(
+                (f: any) => f.dependsOn === field.key && f.optionsSource === "dependentApi"
+              );
+              dependentApiFields?.forEach((depField: any) => {
+                fetchDependentOptions?.(depField, val);
+              });
+            }}
+            disabled={readOnly}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={field.placeholder || "Select option"} />
+            </SelectTrigger>
+            <SelectContent>
+              {displayOptions.map((opt: any) => (
+                <SelectItem key={opt.id || opt.value} value={opt.id || opt.value}>
+                  {opt.name || opt.label || opt.id || opt.value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      }
+
+      case "grouped-select":
+        return (
+          <GroupedSelect
+            value={fieldValue || field.default || ""}
+            groupedOptions={field.groupedOptions}
+            onChange={(val) => onChange(field.key, val)}
+            placeholder={field.placeholder}
+            disabled={readOnly}
+          />
+        );
+
+      case "checkbox":
+        return (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-foreground">{field.label}</span>
+            <Switch
+              checked={!!fieldValue}
+              onCheckedChange={(checked) => onChange(field.key, checked)}
+              disabled={readOnly}
+            />
+          </div>
+        );
+
+      case "toggle":
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-sm text-foreground">{field.label}</span>
+              {field.description && (
+                <span className="text-xs text-muted-foreground">{field.description}</span>
+              )}
+            </div>
+            <Switch
+              checked={
+                typeof fieldValue === "boolean"
+                  ? fieldValue
+                  : !!field.default
+              }
+              onCheckedChange={(checked) => onChange(field.key, checked)}
+              disabled={readOnly}
+            />
+          </div>
+        );
+
+      case "multiselect": {
+        const selectedValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
+        const availableOptions = selectOptions[field.key] || field.options || [];
+
+        return (
+          <div className="space-y-3">
+            {availableOptions.map((opt: any) => {
+              const optionId = opt.id || opt.value;
+              const optionLabel = opt.name || opt.label || opt.id || opt.value;
+              const isSelected = selectedValues.includes(optionId);
+
+              return (
+                <div key={optionId} className="flex items-center justify-between">
+                  <span className="text-sm text-foreground">{optionLabel}</span>
+                  <Switch
+                    checked={isSelected}
+                    onCheckedChange={(checked) => {
+                      const currentValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
+                      const newValues = checked
+                        ? [...currentValues, optionId]
+                        : currentValues.filter((v: string) => v !== optionId);
+                      onChange(field.key, newValues);
+                    }}
+                    disabled={readOnly}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <FieldWrapper
+      key={field.key}
+      label={
+        field.type === "checkbox" || field.type === "toggle"
+          ? undefined
+          : displayLabel
+      }
+      hideLabel={field.type === "checkbox" || field.type === "toggle"}
+      description={
+        field.type === "checkbox" || field.type === "toggle"
+          ? undefined
+          : field.description
+      }
+    >
+      {renderField()}
+    </FieldWrapper>
+  );
+};
+
+export default NodeFieldRenderer;

@@ -130,10 +130,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         );
       }
 
+      case "string":
+      case "number":
       case "text":
         return (
           <div className="nodrag" onDragOver={commonInputProps.onDragOver} onDrop={handleDropWrapper}>
-            <Input {...commonInputProps} />
+            <Input
+              {...commonInputProps}
+              type={field.type === "number" ? "number" : undefined}
+            />
             {isReference && getPreview && (
               <div className="text-xs text-gray-500 mt-1">Preview: {getPreview(field.key)}</div>
             )}

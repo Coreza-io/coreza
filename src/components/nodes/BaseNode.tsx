@@ -29,7 +29,7 @@ import { useNodeCredentials } from "@/hooks/useNodeCredentials";
 import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
-import { getDisplayName } from "@/components/nodes/layout/util/nodeDisplay";
+import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 
 interface BaseNodeProps {
   data: any;
@@ -84,7 +84,12 @@ export interface BaseNodeRenderProps {
   referenceStyle: React.CSSProperties;
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({ data, selected, readOnly, children }) => {
+const BaseNode: React.FC<BaseNodeProps> = ({
+  data,
+  selected,
+  readOnly,
+  children,
+}) => {
   const nodeId = useNodeId();
   const nodes = useNodes();
   const edges = useEdges();

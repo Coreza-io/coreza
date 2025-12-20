@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   getOperatorDisplay,
   type GroupedOptionType,
-} from "@/components/nodes/layout/util/operators";
+} from "@/components/nodes/layouts/utils/operators";
 
 interface GroupedSelectProps {
   value?: string;
@@ -70,7 +70,11 @@ export const GroupedSelect: React.FC<GroupedSelectProps> = ({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => onChange(opt.value)}
-                  className={value === opt.value ? "bg-accent text-accent-foreground" : ""}
+                  className={
+                    value === opt.value
+                      ? "bg-accent text-accent-foreground"
+                      : ""
+                  }
                 >
                   {opt.label}
                 </DropdownMenuItem>

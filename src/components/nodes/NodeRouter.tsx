@@ -17,8 +17,8 @@
 import React, { memo, useMemo } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
-import BasicNodeLayout from "./layouts/BasicNodeLayout";
-import RepeaterNodeLayout from "./layouts/RepeaterNodeLayout";
+import BasicNodeLayout from "./layout/BasicNodeLayout";
+import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
 import { useNodeId, useNodes, useEdges } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -69,15 +69,9 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     if (definition.name !== "Switch") return "fallback";
 
     return (
-      data.fieldState?.defaultCase ||
-      data.values?.defaultCase ||
-      "fallback"
+      data.fieldState?.defaultCase || data.values?.defaultCase || "fallback"
     );
-  }, [
-    data.fieldState?.defaultCase,
-    data.values?.defaultCase,
-    definition.name,
-  ]);
+  }, [data.fieldState?.defaultCase, data.values?.defaultCase, definition.name]);
 
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
@@ -165,7 +159,10 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     // Add handle for each case - ensure stable IDs
     cases.forEach((caseItem: any, index: number) => {
       const handleId =
-        caseItem.outputName || caseItem.caseName || caseItem.caseValue || `case${index + 1}`;
+        caseItem.outputName ||
+        caseItem.caseName ||
+        caseItem.caseValue ||
+        `case${index + 1}`;
       console.log(`🔧 Adding Switch handle: ${handleId}`);
       handles.push({
         type: "source",

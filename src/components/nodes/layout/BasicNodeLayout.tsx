@@ -40,8 +40,12 @@ interface BasicNodeLayoutProps extends BaseNodeRenderProps {
   handleChange: (key: string, value: any) => void;
   handleFieldStateBatch: (updates: Record<string, any>) => void;
   handleSubmit: (e?: React.FormEvent) => void;
-  handleDrop: (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>, e: React.DragEvent, currentValue: string)
- => void;
+  handleDrop: (
+    fieldKey: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    e: React.DragEvent,
+    currentValue: string
+  ) => void;
   getFieldPreview: (fieldKey: string) => string | null;
   setShowAuth: (show: boolean) => void;
   fetchCredentials: (fieldKey: string) => void;
@@ -75,19 +79,23 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const isVisualize = definition?.name === "Visualize";
 
   const { vizCandles, filteredIndicator } = useMemo(() => {
-    if (!isVisualize || !selectedInputData) return { vizCandles: null, filteredIndicator: [] };
+    if (!isVisualize || !selectedInputData)
+      return { vizCandles: null, filteredIndicator: [] };
 
     const toDictOfArrays = (candlesArray: any) => {
       if (!Array.isArray(candlesArray)) return candlesArray;
-      return candlesArray.reduce((acc, c) => {
-        acc.t.push(c.t ? c.t.slice(0, 10) : undefined);
-        acc.o.push(c.o);
-        acc.h.push(c.h);
-        acc.l.push(c.l);
-        acc.c.push(c.c);
-        acc.v.push(c.v);
-        return acc;
-      }, { t: [], o: [], h: [], l: [], c: [], v: [] });
+      return candlesArray.reduce(
+        (acc, c) => {
+          acc.t.push(c.t ? c.t.slice(0, 10) : undefined);
+          acc.o.push(c.o);
+          acc.h.push(c.h);
+          acc.l.push(c.l);
+          acc.c.push(c.c);
+          acc.v.push(c.v);
+          return acc;
+        },
+        { t: [], o: [], h: [], l: [], c: [], v: [] }
+      );
     };
 
     const firstInput = Array.isArray(selectedInputData)
@@ -99,7 +107,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
     if (Array.isArray(firstInput?.candles)) {
       vizCandles = toDictOfArrays(firstInput.candles);
-    } else if (firstInput?.candles && typeof firstInput.candles === 'object') {
+    } else if (firstInput?.candles && typeof firstInput.candles === "object") {
       vizCandles = firstInput.candles;
     } else if (Array.isArray(firstInput)) {
       vizCandles = toDictOfArrays(firstInput);
@@ -110,7 +118,9 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     }
 
     const filteredIndicator = Array.isArray(vizIndicator)
-      ? vizIndicator.filter((d: any) => d && d.value !== null && !isNaN(d.value))
+      ? vizIndicator.filter(
+          (d: any) => d && d.value !== null && !isNaN(d.value)
+        )
       : [];
 
     return { vizCandles, filteredIndicator };
@@ -120,27 +130,31 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     <>
       <div className="mb-4">
         <div className="flex items-center gap-2">
-          {definition?.icon && (() => {
-            const IconComponent = IconRegistry[definition.name as keyof typeof IconRegistry];
-            if (IconComponent) {
-              return <IconComponent className="w-6 h-6" />;
-            }
+          {definition?.icon &&
+            (() => {
+              const IconComponent =
+                IconRegistry[definition.name as keyof typeof IconRegistry];
+              if (IconComponent) {
+                return <IconComponent className="w-6 h-6" />;
+              }
 
-            return (
-              <CachedIcon
-                src={definition.icon}
-                alt="Node icon"
-                className="w-6 h-6"
-                fallback={
-                  <div className="w-6 h-6 bg-muted rounded flex items-center justify-center">
-                    <span className="text-xs">{definition.name?.[0] || '?'}</span>
-                  </div>
-                }
-              />
-            );
-          })()}
+              return (
+                <CachedIcon
+                  src={definition.icon}
+                  alt="Node icon"
+                  className="w-6 h-6"
+                  fallback={
+                    <div className="w-6 h-6 bg-muted rounded flex items-center justify-center">
+                      <span className="text-xs">
+                        {definition.name?.[0] || "?"}
+                      </span>
+                    </div>
+                  }
+                />
+              );
+            })()}
           <h2 className="font-semibold text-base text-foreground flex-1">
-            {definition?.def || definition?.name || 'Node'}
+            {definition?.def || definition?.name || "Node"}
           </h2>
         </div>
       </div>

@@ -29,8 +29,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
-import { getDisplayName } from "@/components/nodes/layout/util/nodeDisplay";
-import { operatorRequiresRightValue } from "@/components/nodes/layout/util/operators";
+import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
+import { operatorRequiresRightValue } from "@/components/nodes/layouts/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
@@ -618,7 +618,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       <NodeFieldRenderer
                         field={leftField}
                         definition={definition}
-                        fieldState={{ ...fieldState, [leftField.key]: cond.left }}
+                        fieldState={{
+                          ...fieldState,
+                          [leftField.key]: cond.left,
+                        }}
                         value={cond.left}
                         selectOptions={selectOptions}
                         loadingSelect={loadingSelect}
@@ -791,13 +794,21 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       <NodeFieldRenderer
                         field={leftField}
                         definition={definition}
-                        fieldState={{ ...fieldState, [leftField.key]: caseItem.left }}
+                        fieldState={{
+                          ...fieldState,
+                          [leftField.key]: caseItem.left,
+                        }}
                         value={caseItem.left}
                         selectOptions={selectOptions}
                         loadingSelect={loadingSelect}
                         onChange={(key, val) => updateCase(i, key, val)}
                         onDrop={(fieldDef, e, currentValue) =>
-                          handleSwitchConditionDrop(i, fieldDef.key, e, currentValue)
+                          handleSwitchConditionDrop(
+                            i,
+                            fieldDef.key,
+                            e,
+                            currentValue
+                          )
                         }
                         getPreview={() => getSwitchPreviewFor(caseItem.left)}
                         referenceStyle={referenceStyle}
@@ -841,7 +852,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         loadingSelect={loadingSelect}
                         onChange={(key, val) => updateCase(i, key, val)}
                         onDrop={(fieldDef, e, currentValue) =>
-                          handleSwitchConditionDrop(i, fieldDef.key, e, currentValue)
+                          handleSwitchConditionDrop(
+                            i,
+                            fieldDef.key,
+                            e,
+                            currentValue
+                          )
                         }
                         getPreview={() => getSwitchPreviewFor(caseItem.right)}
                         referenceStyle={referenceStyle}

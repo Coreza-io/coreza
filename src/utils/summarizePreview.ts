@@ -104,3 +104,20 @@ export function summarizePreview(value: any, maxArrayItems = 3, maxLength = 100,
     return fallback.length > maxLength ? fallback.slice(0, maxLength) + "..." : fallback;
   }
 }
+
+// Format preview without truncation so users can see the full resolved value
+export function formatPreviewValue(value: any): string {
+  try {
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    console.error("❌ Preview formatting error:", error);
+    return String(value);
+  }
+}

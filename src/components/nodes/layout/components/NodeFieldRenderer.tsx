@@ -68,6 +68,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
   const fieldValue = value ?? fieldState[field.key];
   const isReference = typeof fieldValue === "string" && fieldValue.includes("{{");
+  const referencePreview = isReference && getPreview ? getPreview(field.key) : null;
 
   const handleDropWrapper = (e: React.DragEvent) => {
     if (!onDrop) return;
@@ -93,6 +94,30 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       e.target.select();
     },
     disabled: readOnly,
+  };
+
+  const renderPreviewCard = () => {
+    if (!referencePreview) return null;
+
+    return (
+      <div className="mt-2">
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/60">
+            <span className="text-xs font-medium text-muted-foreground">Result</span>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+              Preview
+            </span>
+          </div>
+          <div className="px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-36 overflow-auto font-mono bg-background">
+            {referencePreview}
+          </div>
+          <div className="px-3 py-2 bg-muted/50 text-[11px] text-muted-foreground flex items-center gap-1">
+            <span className="font-semibold text-foreground">Tip:</span>
+            <span>Anything inside {"{{ }}"} is JavaScript.</span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderField = () => {
@@ -169,9 +194,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               {...commonInputProps}
               type={field.type === "number" ? "number" : undefined}
             />
-            {isReference && getPreview && (
-              <div className="text-xs text-gray-500 mt-1">Preview: {getPreview(field.key)}</div>
-            )}
+            {renderPreviewCard()}
           </div>
         );
       }
@@ -183,9 +206,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               {...commonInputProps}
               className="w-full border rounded p-2 text-sm min-h-[100px] nodrag"
             />
-            {isReference && getPreview && (
-              <div className="text-xs text-gray-500 mt-1">Preview: {getPreview(field.key)}</div>
-            )}
+            {renderPreviewCard()}
           </div>
         );
 

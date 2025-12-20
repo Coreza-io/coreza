@@ -29,18 +29,7 @@ import { useNodeCredentials } from "@/hooks/useNodeCredentials";
 import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
-
-// Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
-const getDisplayName = (node: Node<any>, allNodes: Node<any>[]) => {
-  const baseName = node.data.definition?.name;
-  const sameType = allNodes.filter(
-    (n) => n && n.data && n.data.definition?.name === baseName
-  );
-  const idx = sameType.findIndex((n) => n.id === node.id);
-  const result = idx > 0 ? `${baseName}${idx}` : baseName;
-
-  return result;
-};
+import { getDisplayName } from "@/components/nodes/layout/util/nodeDisplay";
 
 interface BaseNodeProps {
   data: any;

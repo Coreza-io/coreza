@@ -39,7 +39,7 @@ export interface WorkflowActions {
   setIsActive: (active: boolean) => void;
   setNodes: (nodes: Node[] | ((prev: Node[]) => Node[])) => void;
   setEdges: (edges: Edge[] | ((prev: Edge[]) => Edge[])) => void;
-  saveWorkflow: (isAutosave?: boolean) => Promise<boolean>;
+  saveWorkflow: () => Promise<boolean>;
   loadWorkflow: (id: string | null, projectId?: string | null) => Promise<boolean>;
   resetWorkflow: () => void;
   createNode: (nodeType: string, position: { x: number; y: number }) => void;
@@ -157,15 +157,13 @@ export const useWorkflowState = (
     setNodes(prev => [...prev, newNode]);
   }, [generateUniqueNodeId, setNodes]);
 
-  const saveWorkflow = useCallback(async (isAutosave = false): Promise<boolean> => {
+  const saveWorkflow = useCallback(async (): Promise<boolean> => {
     if (!authUser) {
-      if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: "Please log in to save workflows",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Error",
+        description: "Please log in to save workflows",
+        variant: "destructive",
+      });
       return false;
     }
 
@@ -243,26 +241,22 @@ export const useWorkflowState = (
 
       updateLastSavedState();
 
-      if (!isAutosave) {
-        toast({
-          title: "Success",
-          description: state.workflowId ? "Workflow updated!" : "Workflow saved!",
-        });
-      }
+      toast({
+        title: "Success",
+        description: state.workflowId ? "Workflow updated!" : "Workflow saved!",
+      });
 
       return true;
     } catch (error: any) {
       const errorMessage = error.message || 'Unknown error occurred';
       setState(prev => ({ ...prev, error: errorMessage }));
-      
-      if (!isAutosave) {
-        toast({
-          title: "Error",
-          description: `Failed to save workflow: ${errorMessage}`,
-          variant: "destructive",
-        });
-      }
-      
+
+      toast({
+        title: "Error",
+        description: `Failed to save workflow: ${errorMessage}`,
+        variant: "destructive",
+      });
+
       return false;
     } finally {
       setState(prev => ({ ...prev, saving: false }));

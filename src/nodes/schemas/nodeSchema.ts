@@ -106,7 +106,7 @@ export const FieldSchema = z.object({
 export const AuthFieldSchema = z.object({
   key: z.string().min(1),
   label: z.string(),
-  type: z.enum(["text", "password", "select"]),
+  type: z.enum(["text", "password", "select", "static"]),
   value: z.string().optional(),
   default: z.string().optional(),
   placeholder: z.string().optional(),

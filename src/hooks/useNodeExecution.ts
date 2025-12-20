@@ -164,6 +164,7 @@ export function useNodeExecution({
           name: (n.data?.definition as any)?.name || n.type,
           node_type: (n.data?.definition as any)?.node_type || "main",
           category: (n.data?.definition as any)?.category,
+          subCategory: (n.data?.definition as any)?.subCategory,
           values: n.data?.fieldState || n.data?.values || {},
           position: n.position,
         }));
@@ -249,11 +250,7 @@ export function useNodeExecution({
           effectiveInput = { ...fieldState };
         }
 
-        const payload = buildPayload(
-          fieldState,
-          supportData,
-          effectiveInput
-        );
+        const payload = buildPayload(fieldState, supportData, effectiveInput);
         payload.node_id = nodeId;
         payload.workflow_id = workflowId;
 
@@ -279,13 +276,14 @@ export function useNodeExecution({
         // Handle webhook triggers - register ALL through backend
         if (definition?.executionMode === "webhook_listening") {
           // Derive provider from node name (TelegramTrigger -> telegram, WebhookTrigger -> generic)
-          const provider = definition.name === "WebhookTrigger" 
-            ? "generic" 
-            : definition.name.replace('Trigger', '').toLowerCase();
-          
+          const provider =
+            definition.name === "WebhookTrigger"
+              ? "generic"
+              : definition.name.replace("Trigger", "").toLowerCase();
+
           // Register webhook through backend (for ALL webhook types)
           const registerResponse = await apiClient.post(
-            '/webhooks/register',
+            "/webhooks/register",
             {
               provider,
               workflow_id: workflowId,
@@ -296,26 +294,35 @@ export function useNodeExecution({
             },
             session?.access_token
           );
-          
+
           if (!registerResponse.ok) {
-            const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));
-            throw new Error(errorData.error || `Failed to register ${provider} webhook`);
+            const errorData = await registerResponse
+              .json()
+              .catch(() => ({ error: "Registration failed" }));
+            throw new Error(
+              errorData.error || `Failed to register ${provider} webhook`
+            );
           }
-          
+
           const registerResult = await registerResponse.json();
-          
+
           if (!registerResult.success) {
-            throw new Error(registerResult.error || `Failed to register ${provider} webhook`);
+            throw new Error(
+              registerResult.error || `Failed to register ${provider} webhook`
+            );
           }
-          
-          console.log(`✅ Registered ${provider} webhook:`, registerResult.callback_url);
-          
+
+          console.log(
+            `✅ Registered ${provider} webhook:`,
+            registerResult.callback_url
+          );
+
           const listeningOutput = {
             status: "listening",
             message: registerResult.message || "Waiting for webhook event...",
             startedAt: new Date().toISOString(),
             callbackUrl: registerResult.callback_url,
-            httpMethod: fieldState.httpMethod || 'POST',
+            httpMethod: fieldState.httpMethod || "POST",
             nodeId: nodeId,
             provider,
           };
@@ -325,7 +332,14 @@ export function useNodeExecution({
           setNodes((nds) =>
             nds.map((n) =>
               n.id === nodeId
-                ? { ...n, data: { ...n.data, output: listeningOutput, isListening: true } }
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      output: listeningOutput,
+                      isListening: true,
+                    },
+                  }
                 : n
             )
           );
@@ -352,7 +366,11 @@ export function useNodeExecution({
                 // Check timeout
                 if (Date.now() - startTime > timeout) {
                   clearInterval(checkInterval);
-                  reject(new Error("Timeout waiting for webhook event after 5 minutes"));
+                  reject(
+                    new Error(
+                      "Timeout waiting for webhook event after 5 minutes"
+                    )
+                  );
                 }
               }, 100);
             });
@@ -384,7 +402,8 @@ export function useNodeExecution({
 
           // Continue with normal output handling
           setLastOutput(outputData);
-          const finalOutput = overrideOutput !== null ? overrideOutput : outputData;
+          const finalOutput =
+            overrideOutput !== null ? overrideOutput : outputData;
           data.output = finalOutput;
           executionStore.setNodeData(nodeId!, {
             input: effectiveInput,
@@ -575,13 +594,15 @@ export function useNodeExecution({
             method,
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${session?.access_token}`,
+              Authorization: `Bearer ${session?.access_token}`,
             },
           };
           if (method !== "GET") {
             fetchOptions.body = JSON.stringify(payload);
           } else if (fetchOptions.headers) {
-            delete (fetchOptions.headers as Record<string, string>)["Content-Type"];
+            delete (fetchOptions.headers as Record<string, string>)[
+              "Content-Type"
+            ];
           }
 
           // Log the payload and request details
@@ -717,29 +738,38 @@ export function useNodeExecution({
         ) {
           // Handle streaming TRIGGER nodes (BinanceStreamData, AlpacaStreamData)
           // Supports two modes: "listen" (passive) and "subscribe" (self-contained)
-          
+
           // Derive source from streamingConfig or node name
-          const source = definition?.streamingConfig?.sourceId || 
-            definition?.name?.toLowerCase().replace('streamdata', '_stream').replace('data', '');
-          
-          const mode = fieldState.mode || 'listen';
-          
-          if (mode === 'subscribe') {
-          // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
+          const source =
+            definition?.streamingConfig?.sourceId ||
+            definition?.name
+              ?.toLowerCase()
+              .replace("streamdata", "_stream")
+              .replace("data", "");
+
+          const mode = fieldState.mode || "listen";
+
+          if (mode === "subscribe") {
+            // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
             const symbols = fieldState.symbols
-              ? (typeof fieldState.symbols === 'string'
-                  ? fieldState.symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
-                  : fieldState.symbols)
+              ? typeof fieldState.symbols === "string"
+                ? fieldState.symbols
+                    .split(",")
+                    .map((s: string) => s.trim().toUpperCase())
+                    .filter(Boolean)
+                : fieldState.symbols
               : [];
-            
+
             if (symbols.length === 0) {
-              throw new Error('Subscribe mode requires at least one symbol');
+              throw new Error("Subscribe mode requires at least one symbol");
             }
-            
-            const streamTypes = fieldState.stream_types || ['trade'];
-            
-            console.log(`📡 [Streaming Trigger] Subscribe mode - subscribing ${symbols.length} symbols`);
-            
+
+            const streamTypes = fieldState.stream_types || ["trade"];
+
+            console.log(
+              `📡 [Streaming Trigger] Subscribe mode - subscribing ${symbols.length} symbols`
+            );
+
             // First, subscribe symbols (like Subscribe node does)
             const subscribeResponse = await apiClient.post(
               `/market/${source}/subscribe`,
@@ -749,40 +779,53 @@ export function useNodeExecution({
                 credential_id: fieldState.credential_id,
                 symbols,
                 stream_types: streamTypes,
-                environment: fieldState.environment || 'testnet',
-                asset_type: fieldState.asset_type || 'spot',
-                feed: fieldState.feed || 'iex',
-                kline_interval: fieldState.kline_interval || '1m',
-                subscriptionScope: 'workflow',
+                environment: fieldState.environment || "testnet",
+                asset_type: fieldState.asset_type || "spot",
+                feed: fieldState.feed || "iex",
+                kline_interval: fieldState.kline_interval || "1m",
+                subscriptionScope: "workflow",
                 targetWorkflowId: workflowId,
               },
               session?.access_token
             );
-            
+
             if (!subscribeResponse.ok) {
-              const errorData = await subscribeResponse.json().catch(() => ({ error: 'Subscription failed' }));
-              throw new Error(errorData.error || 'Failed to subscribe symbols');
+              const errorData = await subscribeResponse
+                .json()
+                .catch(() => ({ error: "Subscription failed" }));
+              throw new Error(errorData.error || "Failed to subscribe symbols");
             }
-            
-            console.log(`✅ [Streaming Trigger] Subscribe mode: Subscribed ${symbols.length} symbols`);
+
+            console.log(
+              `✅ [Streaming Trigger] Subscribe mode: Subscribed ${symbols.length} symbols`
+            );
           }
-          
+
           // Extract filter symbols and types based on mode
-          const filterSymbols = mode === 'listen' && fieldState.filter_symbols
-            ? (typeof fieldState.filter_symbols === 'string'
-                ? fieldState.filter_symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
-                : fieldState.filter_symbols)
-            : [];
-          const filterTypes = mode === 'listen' 
-            ? (fieldState.filter_types || [])
-            : (fieldState.stream_types || []);
-          
-          console.log(`📡 [Streaming Trigger] Registering ${definition?.name} (mode: ${mode})`);
-          console.log(`📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`);
-          
+          const filterSymbols =
+            mode === "listen" && fieldState.filter_symbols
+              ? typeof fieldState.filter_symbols === "string"
+                ? fieldState.filter_symbols
+                    .split(",")
+                    .map((s: string) => s.trim().toUpperCase())
+                    .filter(Boolean)
+                : fieldState.filter_symbols
+              : [];
+          const filterTypes =
+            mode === "listen"
+              ? fieldState.filter_types || []
+              : fieldState.stream_types || [];
+
+          console.log(
+            `📡 [Streaming Trigger] Registering ${definition?.name} (mode: ${mode})`
+          );
+          console.log(
+            `📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`
+          );
+
           // Register workflow to receive streaming data
           const registerResponse = await apiClient.post(
-            '/market/register-streaming-workflow',
+            "/market/register-streaming-workflow",
             {
               workflow_id: workflowId,
               node_id: nodeId,
@@ -792,21 +835,28 @@ export function useNodeExecution({
             },
             session?.access_token
           );
-          
+
           if (!registerResponse.ok) {
-            const errorData = await registerResponse.json().catch(() => ({ error: 'Registration failed' }));
-            throw new Error(errorData.error || 'Failed to register streaming workflow');
+            const errorData = await registerResponse
+              .json()
+              .catch(() => ({ error: "Registration failed" }));
+            throw new Error(
+              errorData.error || "Failed to register streaming workflow"
+            );
           }
-          
+
           const registerResult = await registerResponse.json();
           console.log(`✅ [Streaming Trigger] Registered:`, registerResult);
 
           // Set initial waiting output
           const waitingOutput = {
             status: "waiting",
-            message: mode === 'subscribe' 
-              ? `Subscribed and listening for ${definition?.name || 'streaming'} data...`
-              : `Listening for ${definition?.name || 'streaming'} data...`,
+            message:
+              mode === "subscribe"
+                ? `Subscribed and listening for ${
+                    definition?.name || "streaming"
+                  } data...`
+                : `Listening for ${definition?.name || "streaming"} data...`,
             registeredAt: new Date().toISOString(),
             mode,
             source,
@@ -814,18 +864,28 @@ export function useNodeExecution({
             filterSymbols,
             filterTypes,
           };
-          
+
           outputData = waitingOutput;
           setLastOutput(outputData);
-          executionStore.setNodeData(nodeId!, { output: outputData, isStreamingWaiting: true });
+          executionStore.setNodeData(nodeId!, {
+            output: outputData,
+            isStreamingWaiting: true,
+          });
           setNodes((nds) =>
             nds.map((n) =>
               n.id === nodeId
-                ? { ...n, data: { ...n.data, output: outputData, isStreamingWaiting: true } }
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      output: outputData,
+                      isStreamingWaiting: true,
+                    },
+                  }
                 : n
             )
           );
-          
+
           // Let WebSocket handler update the output when data arrives - don't block here
           setIsSending(false);
           return;

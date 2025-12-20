@@ -18,7 +18,7 @@ import React, { useMemo } from "react";
 import { NodeProps, useNodes, useEdges } from "@xyflow/react";
 import BaseNode from "@/components/nodes/BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
-import BasicNodeLayout from "@/components/nodes/layouts/BasicNodeLayout";
+import BasicNodeLayout from "@/components/nodes/layout/BasicNodeLayout";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { Plus } from "lucide-react";

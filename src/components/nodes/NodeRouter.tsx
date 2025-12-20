@@ -81,10 +81,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     );
     if (hasRepeaterFields) return "repeater";
 
-    // Check for specific conditional/switch node types (backwards compatibility)
-    const repeaterNodeTypes = ["If", "Switch", "Filter"];
-    if (repeaterNodeTypes.includes(definition.name)) return "repeater";
-
     // Default to basic layout
     return "basic";
   };
@@ -185,7 +181,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     definition.name,
     definition.handles,
     definition.fields,
-    casesLength,
+    data.fieldState?.cases,
+    data.values?.cases,
     fallbackEnabled,
     fallbackHandleId,
   ]);
@@ -238,9 +235,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     };
   }, [
     definition.name,
-    definition.size,
+    definition.size?.width,
+    definition.size?.height,
     definition.fields,
-    casesLength,
+    data.fieldState?.cases,
+    data.values?.cases,
     fallbackEnabled,
   ]);
 

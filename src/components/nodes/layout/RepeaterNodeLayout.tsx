@@ -30,7 +30,7 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { summarizePreview } from "@/utils/summarizePreview";
 import { useReactFlow } from "@xyflow/react";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { operatorRequiresRightValue } from "@/components/nodes/layouts/utils/operators";
+import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
@@ -81,25 +81,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       ? repeaterField.default[0]
       : repeaterField?.default ?? { left: "", operator: "===", right: "" };
 
-  // =========== SWITCH LOGIC ===========
-  const defaultCase =
-    isSwitch &&
-    Array.isArray(repeaterField?.default) &&
-    repeaterField.default.length > 0
-      ? repeaterField.default
-      : [{ left: "", operator: "===", right: "", outputName: "Case 1" }];
-
   // =========== STATE ===========
   // make sure these are always arrays before you map/filter them
-  const conditions =
-    repeaterKey && Array.isArray(fieldState[repeaterKey])
-      ? fieldState[repeaterKey]
-      : [];
-  const logicalOps =
-    isConditional && Array.isArray(fieldState.logicalOps)
-      ? fieldState.logicalOps
-      : [];
-  const cases = Array.isArray(fieldState.cases) ? fieldState.cases : [];
+  const conditions = useMemo(() => {
+    const repeaterFieldState = repeaterKey
+      ? fieldState?.[repeaterKey]
+      : undefined;
+    return Array.isArray(repeaterFieldState) ? repeaterFieldState : [];
+  }, [repeaterKey, fieldState]);
+
+  const logicalOps = useMemo(
+    () =>
+      isConditional && Array.isArray(fieldState.logicalOps)
+        ? fieldState.logicalOps
+        : [],
+    [fieldState.logicalOps, isConditional]
+  );
+
+  const cases = useMemo(
+    () => (Array.isArray(fieldState.cases) ? fieldState.cases : []),
+    [fieldState.cases]
+  );
+
   const [sourceMap, setSourceMap] = useState<
     { left?: string; right?: string }[]
   >(conditions.map(() => ({})));
@@ -158,7 +161,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       );
       handleFieldStateBatch({ logicalOps: padded });
     }
-  }, [isConditional, conditions.length, logicalOps?.length]);
+  }, [
+    isConditional,
+    conditions.length,
+    logicalOps.length,
+    logicalOps,
+    handleFieldStateBatch,
+  ]);
 
   // =========== CONDITIONAL HELPERS ===========
   const addCondition = () => {

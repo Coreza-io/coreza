@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   getOperatorDisplay,
   type GroupedOptionType,
-} from "@/components/nodes/layouts/utils/operators";
+} from "@/components/nodes/layout/utils/operators";
 
 interface GroupedSelectProps {
   value?: string;

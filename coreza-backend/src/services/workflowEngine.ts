@@ -265,7 +265,7 @@ export class WorkflowEngine {
       const ctxStats = this.dataContext.getStats();
       console.log(
         `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
-        `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`
+          `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`
       );
 
       // Cleanup DataContext on successful completion
@@ -423,8 +423,7 @@ export class WorkflowEngine {
         dataContext: this.dataContext,
       };
 
-      const fullResult = await this.executeNode(node, input, executionContext);
-      const result = fullResult;
+      const result = await this.executeNode(node, input, executionContext);
       console.log(`✅ Node ${nodeId} result:`, result);
 
       // Record successful execution
@@ -448,37 +447,33 @@ export class WorkflowEngine {
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
 
-      if (
-        node.name === "Loop" &&
-        fullResult &&
-        typeof fullResult === "object"
-      ) {
+      if (node.name === "Loop" && result && typeof result === "object") {
         // Unified control-based loop handling
-        if (fullResult.control?.parallelDistributed) {
+        if (result.control?.parallelDistributed) {
           // Parallel mode - aggregator will handle continuation
           console.log(
             `🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`
           );
           console.log(
-            `   Items: ${fullResult.control.itemCount}, MaxConcurrency: ${fullResult.control.maxConcurrency}`
+            `   Items: ${result.control.itemCount}, MaxConcurrency: ${result.control.maxConcurrency}`
           );
           return;
         }
 
-        if (fullResult.control?.loopCompleted) {
+        if (result.control?.loopCompleted) {
           // Sequential mode - loop completed, route to done edges
           const doneEdges = this.router.doneEdges(nodeId);
           for (const edge of doneEdges) {
             await this.routeEdge(edge, result, meta);
           }
-        } else if (fullResult.control?.loopIteration) {
+        } else if (result.control?.loopIteration) {
           // Sequential mode - loop iteration, route to loop body edges
           const loopEdges = this.router.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
             const iterMeta: IterMeta = {
               ...(meta || {}),
               originLoopId: nodeId,
-              iterIndex: fullResult.control.currentIndex,
+              iterIndex: result.control.currentIndex,
             };
             await this.routeEdge(edge, result, iterMeta);
           }
@@ -626,7 +621,7 @@ export class WorkflowEngine {
       const { success, error, ...rest } = result;
 
       // Return everything else exactly as provided
-      return rest;
+      return { success, error, ...rest };
     }
 
     // For simple results, wrap in structure to maintain consistency

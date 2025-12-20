@@ -20,8 +20,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Save, Play, Pause, Loader2, Zap, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { WorkflowVersionHistory } from './WorkflowVersionHistory';
+import { Node, Edge } from '@xyflow/react';
 
 interface WorkflowHeaderProps {
+  workflowId: string | null;
   workflowName: string;
   onWorkflowNameChange: (name: string) => void;
   isActive: boolean;
@@ -29,6 +32,7 @@ interface WorkflowHeaderProps {
   onSave: () => void;
   onExecute: () => void;
   onStopExecution: () => void;
+  onRestoreVersion: (nodes: Node[], edges: Edge[]) => void;
   loading: boolean;
   saving: boolean;
   isExecuting: boolean;
@@ -38,6 +42,7 @@ interface WorkflowHeaderProps {
 }
 
 export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
+  workflowId,
   workflowName,
   onWorkflowNameChange,
   isActive,
@@ -45,6 +50,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   onSave,
   onExecute,
   onStopExecution,
+  onRestoreVersion,
   loading,
   saving,
   isExecuting,
@@ -111,6 +117,12 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
       </div>
       
       <div className="flex items-center gap-3">
+        <WorkflowVersionHistory
+          workflowId={workflowId}
+          onRestore={onRestoreVersion}
+          disabled={disabled || loading}
+        />
+        
         <Button
           onClick={onSave}
           disabled={loading || saving || disabled}

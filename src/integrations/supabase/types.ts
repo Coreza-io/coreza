@@ -522,6 +522,59 @@ export type Database = {
           },
         ]
       }
+      workflow_versions: {
+        Row: {
+          change_description: string | null
+          created_at: string | null
+          created_by: string | null
+          edge_count: number
+          edges: Json
+          id: string
+          is_active: boolean | null
+          name: string
+          node_count: number
+          nodes: Json
+          version_number: number
+          workflow_id: string
+        }
+        Insert: {
+          change_description?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          edge_count: number
+          edges: Json
+          id?: string
+          is_active?: boolean | null
+          name: string
+          node_count: number
+          nodes: Json
+          version_number: number
+          workflow_id: string
+        }
+        Update: {
+          change_description?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          edge_count?: number
+          edges?: Json
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          node_count?: number
+          nodes?: Json
+          version_number?: number
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_versions_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workflows: {
         Row: {
           created_at: string | null

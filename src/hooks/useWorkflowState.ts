@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useExecutionStore } from '@/contexts/ExecutionStoreContext';
 import { nodeManifest } from '@/nodes/manifest';
+import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
 
 export interface WorkflowState {
   workflowId: string | null;
@@ -43,6 +44,7 @@ export interface WorkflowActions {
   loadWorkflow: (id: string | null, projectId?: string | null) => Promise<boolean>;
   resetWorkflow: () => void;
   createNode: (nodeType: string, position: { x: number; y: number }) => void;
+  restoreFromVersion: (nodes: Node[], edges: Edge[]) => void;
 }
 
 export const useWorkflowState = (
@@ -52,6 +54,7 @@ export const useWorkflowState = (
   const { toast } = useToast();
   const { user: authUser } = useAuth();
   const executionStore = useExecutionStore();
+  const { createVersionBeforeSave, shouldBlockEmptySave } = useWorkflowVersioning();
   const debounceTimeoutRef = useRef<NodeJS.Timeout>();
   const lastSavedStateRef = useRef<string>('');
 
@@ -172,7 +175,7 @@ export const useWorkflowState = (
     try {
       // Prepare clean data for saving
       const minimalNodes = state.nodes.map(node => ({
-        id: node.id, // This will now be the renamed ID (e.g., "uptrend" instead of "If1")
+        id: node.id,
         type: node.type,
         category: (node.data.definition as any)?.category,
         subCategory: (node.data.definition as any)?.subCategory,
@@ -180,7 +183,7 @@ export const useWorkflowState = (
         sourcePosition: node.sourcePosition,
         targetPosition: node.targetPosition,
         values: node.data.values || {},
-        displayName: node.data.displayName, // Save custom displayName
+        displayName: node.data.displayName,
       }));
 
       // Get existing node IDs for edge validation
@@ -202,6 +205,23 @@ export const useWorkflowState = (
           
           return cleanEdge;
         });
+
+      // PROTECTION: Check if this save would wipe out existing data
+      if (state.workflowId) {
+        const shouldBlock = await shouldBlockEmptySave(state.workflowId, minimalNodes.length);
+        if (shouldBlock) {
+          toast({
+            title: "Save Blocked",
+            description: "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
+            variant: "destructive",
+          });
+          setState(prev => ({ ...prev, saving: false }));
+          return false;
+        }
+
+        // Create a version snapshot before saving (for existing workflows with content)
+        await createVersionBeforeSave(state.workflowId);
+      }
 
       const payload = {
         user_id: authUser.id,
@@ -384,6 +404,34 @@ export const useWorkflowState = (
     lastSavedStateRef.current = '';
   }, [executionStore]);
 
+  // Restore workflow from a version snapshot
+  const restoreFromVersion = useCallback((nodes: Node[], edges: Edge[]) => {
+    // Restore nodes with definitions
+    const restoredNodes = nodes.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        definition: node.data?.definition || nodeManifest[node.type as keyof typeof nodeManifest],
+        values: (node as any).values || node.data?.values || {},
+        displayName: (node as any).displayName || node.data?.displayName,
+      }
+    }));
+
+    // Restore edges with validation
+    const restoredEdges = edges.map(edge => ({
+      ...edge,
+      type: edge.type || 'removable',
+      data: { ...edge.data }
+    }));
+
+    setState(prev => ({
+      ...prev,
+      nodes: restoredNodes,
+      edges: restoredEdges,
+      hasUnsavedChanges: true,
+    }));
+  }, []);
+
   // Check for unsaved changes when state changes
   useEffect(() => {
     if (debounceTimeoutRef.current) {
@@ -421,6 +469,7 @@ export const useWorkflowState = (
       loadWorkflow,
       resetWorkflow,
       createNode,
+      restoreFromVersion,
     }
   ];
 };

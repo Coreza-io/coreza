@@ -47,7 +47,6 @@ import {
   ChevronRight,
   Loader2,
   Zap,
-  History,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
@@ -64,6 +63,7 @@ import {
 } from "@/hooks/useExecutionHistory";
 import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
+import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHistory";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -932,6 +932,46 @@ const WorkflowEditorContent = () => {
     [createNode, rf]
   );
 
+  // Restore workflow from a version snapshot
+  const handleRestoreFromVersion = useCallback((restoredNodes: Node[], restoredEdges: Edge[]) => {
+    // Restore nodes with definitions from manifest
+    const nodesWithDefinitions = restoredNodes.map((node) => {
+      const nodeName = (node as any).name || node.type || node.id;
+      const definition =
+        node.data?.definition ||
+        nodeManifest[nodeName as keyof typeof nodeManifest];
+
+      return {
+        ...node,
+        type: nodeName,
+        data: {
+          ...node.data,
+          definition,
+          values: (node as any).values || node.data?.values || {},
+          displayName: node.data?.displayName || node.id,
+        },
+      };
+    });
+
+    // Restore edges
+    const edgesWithHandlers = restoredEdges.map((edge) => ({
+      ...edge,
+      type: edge.type || 'removable',
+      data: {
+        ...edge.data,
+        onRemoveEdge: () => removeEdge(edge.id),
+      },
+    }));
+
+    setNodes(nodesWithDefinitions);
+    setEdges(edgesWithHandlers);
+
+    toast({
+      title: "Version Restored",
+      description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
+    });
+  }, [setNodes, setEdges, removeEdge, toast]);
+
   // Check for user authentication and load latest workflow
   const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(
     null
@@ -1514,6 +1554,12 @@ const WorkflowEditorContent = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <WorkflowVersionHistory
+            workflowId={workflowId}
+            onRestore={handleRestoreFromVersion}
+            disabled={loading}
+          />
+          
           <Button
             onClick={() => handleSaveWorkflow()}
             disabled={loading}

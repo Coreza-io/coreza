@@ -136,7 +136,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
     // 3) keep your sourceMap in sync
     setSourceMap(Array(seedRows.length).fill({}));
-  }, []); // <- only on mount
+  }, [fieldState, handleFieldStateBatch, repeaterField]); // <- only on mount
 
   // whenever conditions.length changes, ensure sourceMap has the same length
   useEffect(() => {
@@ -438,7 +438,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             sourceData?.config?.timezone;
         }
 
-        return summarizePreview(resolved, 3, 100, timezone);
+        return summarizePreview(resolved, 1000, 5000, timezone);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";

@@ -75,6 +75,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const fieldWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const previewCardRef = React.useRef<HTMLDivElement | null>(null);
   const activeElementRef = React.useRef<HTMLElement | null>(null);
+  const shouldShowDescription = field.showDescription !== false;
 
   const handleDropWrapper = (e: React.DragEvent) => {
     if (!onDrop) return;
@@ -509,7 +510,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
               <span className="text-sm text-foreground">{field.label}</span>
-              {field.description && (
+              {field.description && shouldShowDescription && (
                 <span className="text-xs text-muted-foreground">{field.description}</span>
               )}
             </div>
@@ -574,7 +575,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       description={
         field.type === "checkbox" || field.type === "toggle"
           ? undefined
-          : field.description
+          : shouldShowDescription
+            ? field.description
+            : undefined
       }
     >
       {renderField()}

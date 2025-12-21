@@ -27,6 +27,7 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
+      "showDescription": false,
       "required": true
     },
     {
@@ -35,6 +36,7 @@
       "type": "text",
       "placeholder": "e.g. 14",
       "description": "Period for ADX calculation. CHOOSE based on timeframe: 7-10 for short-term trend detection, 14 for standard analysis, 20-25 for longer-term trend confirmation. Higher values smooth out noise but lag more.",
+      "showDescription": false,
       "required": true
     }
   ]

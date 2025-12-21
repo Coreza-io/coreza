@@ -53,14 +53,13 @@ export function useNodeCredentials({
     async (fieldKey: string) => {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
       try {
-        const nodeName = (
+        const serviceType = (
+          definition?.credentialServiceType ||
           definition?.subCategory ||
           definition?.parentNode ||
           definition?.name ||
           ""
         ).toLowerCase();
-
-        const category = definition?.category?.toLowerCase() || "";
 
         // Check if userId AND access_token exist
         if (!userId || !session?.access_token) {
@@ -72,15 +71,9 @@ export function useNodeCredentials({
         }
 
         // Determine correct endpoint based on node definition
-        let url: string;
-
-        if (category === "broker" || category === "screener") {
-          // Broker/Screener nodes use /broker/{name}/credentials
-          url = `/broker/${nodeName}/credentials`;
-        } else {
-          // Fallback: /{service}/credentials
-          url = `/${nodeName}/credentials`;
-        }
+        const url = serviceType
+          ? `/credentials/list?service_type=${encodeURIComponent(serviceType)}`
+          : "/credentials/list";
 
         console.log("Fetching credentials from:", url);
 
@@ -93,9 +86,14 @@ export function useNodeCredentials({
 
         const json = await res.json();
         console.log("Credentials response:", json);
+        const credentials = (json.credentials || []).map((credential: any) => ({
+          id: credential.id || credential.name,
+          name: credential.name || credential.id || "Unnamed Credential",
+        }));
+
         setSelectOptions((opts) => ({
           ...opts,
-          [fieldKey]: json.credentials || [],
+          [fieldKey]: credentials,
         }));
       } catch (error) {
         console.error("Error fetching credentials:", error);

@@ -31,6 +31,8 @@ export class CommunicationExecutor implements INodeExecutor {
     try {
       const nodeName = node.name;
       const operation = node.values?.operation || "send";
+      const credential_id = node.values?.credential_id;
+      const user_id = context.user_id;
 
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
@@ -40,6 +42,8 @@ export class CommunicationExecutor implements INodeExecutor {
       const combinedInput = {
         ...input,
         ...resolvedParams,
+        user_id,
+        credential_id,
       };
 
       let result;

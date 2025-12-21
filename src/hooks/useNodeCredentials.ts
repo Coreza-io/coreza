@@ -54,7 +54,6 @@ export function useNodeCredentials({
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
       try {
         const serviceType = (
-          definition?.credentialServiceType ||
           definition?.subCategory ||
           definition?.parentNode ||
           definition?.name ||

@@ -12,8 +12,17 @@
   },
   "description": "Subscribe to real-time news from Alpaca News API",
   "color": "text-yellow-500",
-  "size": { "width": 360, "height": 340 },
-  "handles": [{ "type": "source", "position": "right", "id": "output" }],
+  "size": {
+    "width": 360,
+    "height": 340
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
   "auth": "GenericAuthModal",
   "authFields": [
     {
@@ -35,8 +44,14 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
-  "action": { "url": "/websocket/alpaca_news/{{operation}}", "method": "POST" },
+  "authAction": {
+    "url": "/broker/alpaca/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/websocket/alpaca_news/{{operation}}",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "credential_id",
@@ -51,8 +66,16 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "subscribe", "name": "Subscribe", "method": "POST" },
-        { "id": "unsubscribe", "name": "Unsubscribe", "method": "POST" }
+        {
+          "id": "subscribe",
+          "name": "Subscribe",
+          "method": "POST"
+        },
+        {
+          "id": "unsubscribe",
+          "name": "Unsubscribe",
+          "method": "POST"
+        }
       ],
       "required": true
     },
@@ -61,8 +84,14 @@
       "label": "Symbol Source",
       "type": "select",
       "options": [
-        { "id": "manual", "name": "Manual Entry" },
-        { "id": "store", "name": "From Store (Another Workflow)" }
+        {
+          "id": "manual",
+          "name": "Manual Entry"
+        },
+        {
+          "id": "store",
+          "name": "From Store (Another Workflow)"
+        }
       ],
       "default": "manual",
       "required": true
@@ -74,7 +103,14 @@
       "placeholder": "e.g. AAPL,MSFT or * for all",
       "description": "Comma-separated symbols or * for all news",
       "required": true,
-      "displayOptions": { "show": { "symbolSource": ["manual"] } }
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "manual"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "sourceWorkflowId",
@@ -83,7 +119,13 @@
       "optionsSource": "storeWorkflowsApi",
       "placeholder": "Select workflow containing symbols",
       "required": true,
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
     },
     {
       "key": "sourceVariable",
@@ -93,7 +135,13 @@
       "dependsOn": "sourceWorkflowId",
       "placeholder": "Select stored variable",
       "required": true,
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
     }
   ]
 }

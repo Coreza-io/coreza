@@ -7,9 +7,16 @@
   "subCategory": "Binance",
   "description": "Screen crypto assets on Binance. Find top gainers, losers, most active by volume, and new listings for spot and futures markets.",
   "color": "text-yellow-400",
-  "size": { "width": 340, "height": 340 },
+  "size": {
+    "width": 340,
+    "height": 340
+  },
   "handles": [
-    { "type": "source", "position": "top", "id": "tool" }
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
   ],
   "action": {
     "url": "/screener/binance/{{filter_type}}",
@@ -23,45 +30,73 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved Binance API credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "environment",
       "label": "Environment",
       "type": "select",
       "options": [
-        { "name": "Testnet (Paper)", "id": "testnet" },
-        { "name": "Production (Live)", "id": "live" }
+        {
+          "name": "Testnet (Paper)",
+          "id": "testnet"
+        },
+        {
+          "name": "Production (Live)",
+          "id": "live"
+        }
       ],
       "default": "testnet",
       "description": "Testnet for testing, Production for real market data.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "name": "Spot", "id": "spot" },
-        { "name": "Futures", "id": "futures" }
+        {
+          "name": "Spot",
+          "id": "spot"
+        },
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
       ],
       "default": "spot",
       "description": "Market type: Spot for regular trading, Futures for derivatives.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "filter_type",
       "label": "Filter Type",
       "type": "select",
       "options": [
-        { "name": "Top Gainers", "id": "top_gainers" },
-        { "name": "Top Losers", "id": "top_losers" },
-        { "name": "Most Active by Volume", "id": "most_active" },
-        { "name": "New Listings", "id": "new_listings" }
+        {
+          "name": "Top Gainers",
+          "id": "top_gainers"
+        },
+        {
+          "name": "Top Losers",
+          "id": "top_losers"
+        },
+        {
+          "name": "Most Active by Volume",
+          "id": "most_active"
+        },
+        {
+          "name": "New Listings",
+          "id": "new_listings"
+        }
       ],
       "default": "top_gainers",
       "required": true,
-      "description": "Screening criteria: Top Gainers/Losers by price change, Most Active by 24h volume, New Listings for recently added pairs."
+      "description": "Screening criteria: Top Gainers/Losers by price change, Most Active by 24h volume, New Listings for recently added pairs.",
+      "showDescription": false
     },
     {
       "key": "limit",
@@ -70,25 +105,41 @@
       "default": "10",
       "placeholder": "Number of results",
       "required": true,
-      "description": "Maximum number of results to return."
+      "description": "Maximum number of results to return.",
+      "showDescription": false
     },
     {
       "key": "quote_asset",
       "label": "Quote Asset",
       "type": "select",
       "options": [
-        { "name": "USDT", "id": "USDT" },
-        { "name": "BUSD", "id": "BUSD" },
-        { "name": "BTC", "id": "BTC" },
-        { "name": "ETH", "id": "ETH" }
+        {
+          "name": "USDT",
+          "id": "USDT"
+        },
+        {
+          "name": "BUSD",
+          "id": "BUSD"
+        },
+        {
+          "name": "BTC",
+          "id": "BTC"
+        },
+        {
+          "name": "ETH",
+          "id": "ETH"
+        }
       ],
       "default": "USDT",
       "description": "Quote currency to filter pairs (e.g., USDT shows only *USDT pairs).",
       "displayOptions": {
         "show": {
-          "asset_type": ["spot"]
+          "asset_type": [
+            "spot"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "min_volume",
@@ -98,9 +149,12 @@
       "description": "Minimum 24-hour trading volume in quote currency.",
       "displayOptions": {
         "show": {
-          "filter_type": ["most_active"]
+          "filter_type": [
+            "most_active"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "min_price_change",
@@ -110,9 +164,13 @@
       "description": "Minimum absolute price change percentage to include.",
       "displayOptions": {
         "show": {
-          "filter_type": ["top_gainers", "top_losers"]
+          "filter_type": [
+            "top_gainers",
+            "top_losers"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

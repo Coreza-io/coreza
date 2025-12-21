@@ -7,35 +7,73 @@
   "subCategory": "Binance",
   "description": "Subscribe or unsubscribe to Binance real-time market data. Subscriptions persist and can be received by any activated BinanceStreamData trigger.",
   "color": "text-yellow-500",
-  "size": { "width": 380, "height": 520 },
+  "size": {
+    "width": 380,
+    "height": 520
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
-    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "My Binance" },
-    { "key": "api_key", "label": "API Key", "type": "password", "required": true },
-    { "key": "secret_key", "label": "Secret Key", "type": "password", "required": true }
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Binance"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "required": true
+    }
   ],
-  "authAction": { "url": "/broker/binance/auth", "method": "POST" },
-  "action": { "url": "/market/binance_stream/{{operation}}", "method": "POST" },
+  "authAction": {
+    "url": "/broker/binance/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/market/binance_stream/{{operation}}",
+    "method": "POST"
+  },
   "fields": [
-    { 
-      "key": "credential_id", 
-      "label": "Credential", 
-      "type": "select", 
-      "optionsSource": "credentialsApi", 
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true 
+      "required": true
     },
     {
       "key": "environment",
       "label": "Environment",
       "type": "select",
       "options": [
-        { "id": "testnet", "name": "Testnet (Paper)" },
-        { "id": "live", "name": "Production (Live)" }
+        {
+          "id": "testnet",
+          "name": "Testnet (Paper)"
+        },
+        {
+          "id": "live",
+          "name": "Production (Live)"
+        }
       ],
       "default": "testnet",
       "required": true
@@ -45,115 +83,217 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "spot", "name": "Spot" },
-        { "id": "futures", "name": "Futures (USDT-M)" }
+        {
+          "id": "spot",
+          "name": "Spot"
+        },
+        {
+          "id": "futures",
+          "name": "Futures (USDT-M)"
+        }
       ],
       "default": "spot",
       "required": true
     },
-    { 
-      "key": "operation", 
-      "label": "Operation", 
+    {
+      "key": "operation",
+      "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "subscribe", "name": "Subscribe" },
-        { "id": "unsubscribe", "name": "Unsubscribe" }
+        {
+          "id": "subscribe",
+          "name": "Subscribe"
+        },
+        {
+          "id": "unsubscribe",
+          "name": "Unsubscribe"
+        }
       ],
       "default": "subscribe",
       "required": true
     },
-    { 
-      "key": "stream_types", 
-      "label": "Stream Types", 
+    {
+      "key": "stream_types",
+      "label": "Stream Types",
       "type": "multiselect",
       "options": [
-        { "id": "trade", "name": "Trades" },
-        { "id": "kline", "name": "Klines (Candlesticks)" },
-        { "id": "bookTicker", "name": "Book Ticker (Best Bid/Ask)" },
-        { "id": "ticker", "name": "24h Ticker" }
+        {
+          "id": "trade",
+          "name": "Trades"
+        },
+        {
+          "id": "kline",
+          "name": "Klines (Candlesticks)"
+        },
+        {
+          "id": "bookTicker",
+          "name": "Book Ticker (Best Bid/Ask)"
+        },
+        {
+          "id": "ticker",
+          "name": "24h Ticker"
+        }
       ],
-      "default": ["trade"],
+      "default": [
+        "trade"
+      ],
       "description": "Select Binance market data streams to subscribe to",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "kline_interval",
       "label": "Kline Interval",
       "type": "select",
       "options": [
-        { "id": "1m", "name": "1 Minute" },
-        { "id": "3m", "name": "3 Minutes" },
-        { "id": "5m", "name": "5 Minutes" },
-        { "id": "15m", "name": "15 Minutes" },
-        { "id": "30m", "name": "30 Minutes" },
-        { "id": "1h", "name": "1 Hour" },
-        { "id": "4h", "name": "4 Hours" },
-        { "id": "1d", "name": "1 Day" }
+        {
+          "id": "1m",
+          "name": "1 Minute"
+        },
+        {
+          "id": "3m",
+          "name": "3 Minutes"
+        },
+        {
+          "id": "5m",
+          "name": "5 Minutes"
+        },
+        {
+          "id": "15m",
+          "name": "15 Minutes"
+        },
+        {
+          "id": "30m",
+          "name": "30 Minutes"
+        },
+        {
+          "id": "1h",
+          "name": "1 Hour"
+        },
+        {
+          "id": "4h",
+          "name": "4 Hours"
+        },
+        {
+          "id": "1d",
+          "name": "1 Day"
+        }
       ],
       "default": "1m",
-      "displayOptions": { "show": { "stream_types": ["kline"] } },
-      "description": "Candlestick timeframe for kline data"
+      "displayOptions": {
+        "show": {
+          "stream_types": [
+            "kline"
+          ]
+        }
+      },
+      "description": "Candlestick timeframe for kline data",
+      "showDescription": false
     },
-    { 
-      "key": "symbolSource", 
-      "label": "Symbol Source", 
-      "type": "select", 
+    {
+      "key": "symbolSource",
+      "label": "Symbol Source",
+      "type": "select",
       "options": [
-        { "id": "manual", "name": "Enter Manually" },
-        { "id": "store", "name": "From Store Variable" },
-        { "id": "input", "name": "From Input" }
+        {
+          "id": "manual",
+          "name": "Enter Manually"
+        },
+        {
+          "id": "store",
+          "name": "From Store Variable"
+        },
+        {
+          "id": "input",
+          "name": "From Input"
+        }
       ],
-      "default": "manual", 
-      "required": true 
+      "default": "manual",
+      "required": true
     },
-    { 
-      "key": "symbols", 
-      "label": "Symbols", 
-      "type": "text", 
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
       "placeholder": "BTCUSDT, ETHUSDT",
       "description": "Comma-separated symbols (uppercase)",
-      "displayOptions": { "show": { "symbolSource": ["manual"] } }, 
-      "required": false 
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "manual"
+          ]
+        }
+      },
+      "required": false,
+      "showDescription": false
     },
-    { 
-      "key": "sourceWorkflowId", 
-      "label": "Source Workflow", 
+    {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
       "type": "select",
       "optionsSource": "storeWorkflowsApi",
       "placeholder": "Select workflow containing symbols",
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
     },
-    { 
-      "key": "sourceVariable", 
-      "label": "Variable Name", 
+    {
+      "key": "sourceVariable",
+      "label": "Variable Name",
       "type": "select",
       "optionsSource": "storeVariablesApi",
       "dependsOn": "sourceWorkflowId",
       "placeholder": "Select stored variable",
-      "displayOptions": { "show": { "symbolSource": ["store"] } }
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
     },
-    { 
-      "key": "subscriptionScope", 
-      "label": "Subscription Scope", 
+    {
+      "key": "subscriptionScope",
+      "label": "Subscription Scope",
       "type": "select",
       "options": [
-        { "id": "global", "name": "Global (All Workflows)" },
-        { "id": "workflow", "name": "Specific Workflow Only" }
+        {
+          "id": "global",
+          "name": "Global (All Workflows)"
+        },
+        {
+          "id": "workflow",
+          "name": "Specific Workflow Only"
+        }
       ],
       "default": "global",
       "description": "Choose who can access this subscription",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
-    { 
-      "key": "targetWorkflowId", 
-      "label": "Target Workflow", 
+    {
+      "key": "targetWorkflowId",
+      "label": "Target Workflow",
       "type": "select",
       "options": [
-        { "id": "__current__", "name": "This Workflow (Current)" }
+        {
+          "id": "__current__",
+          "name": "This Workflow (Current)"
+        }
       ],
       "optionsSource": "storeWorkflowsApi",
       "placeholder": "Select workflow to receive data",
-      "displayOptions": { "show": { "subscriptionScope": ["workflow"] } },
+      "displayOptions": {
+        "show": {
+          "subscriptionScope": [
+            "workflow"
+          ]
+        }
+      },
       "default": "__current__"
     }
   ]

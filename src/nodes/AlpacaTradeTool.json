@@ -61,19 +61,27 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved Alpaca API credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "stock", "name": "Stock" },
-        { "id": "crypto", "name": "Crypto" }
+        {
+          "id": "stock",
+          "name": "Stock"
+        },
+        {
+          "id": "crypto",
+          "name": "Crypto"
+        }
       ],
       "default": "stock",
       "description": "Type of asset to trade: US stocks or cryptocurrency.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "symbol",
@@ -81,19 +89,27 @@
       "type": "text",
       "placeholder": "e.g. AAPL or BTC/USD",
       "description": "Stock symbol (e.g., AAPL) or crypto pair (e.g., BTC/USD).",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "side",
       "label": "Side",
       "type": "select",
       "options": [
-        { "id": "buy", "name": "Buy" },
-        { "id": "sell", "name": "Sell" }
+        {
+          "id": "buy",
+          "name": "Buy"
+        },
+        {
+          "id": "sell",
+          "name": "Sell"
+        }
       ],
       "default": "buy",
       "description": "Buy to open/add position, Sell to close/reduce position.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "qty",
@@ -101,21 +117,35 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "description": "Number of shares/units to trade. Supports fractional for crypto.",
-      "required": false
+      "required": false,
+      "showDescription": false
     },
     {
       "key": "type",
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "id": "market", "name": "Market Order" },
-        { "id": "limit", "name": "Limit Order" },
-        { "id": "stop", "name": "Stop Order" },
-        { "id": "trailing_stop", "name": "Trailing Stop Order" }
+        {
+          "id": "market",
+          "name": "Market Order"
+        },
+        {
+          "id": "limit",
+          "name": "Limit Order"
+        },
+        {
+          "id": "stop",
+          "name": "Stop Order"
+        },
+        {
+          "id": "trailing_stop",
+          "name": "Trailing Stop Order"
+        }
       ],
       "default": "market",
       "description": "Market executes immediately, Limit at specified price, Stop triggers at price, Trailing Stop follows price.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "limit_price",
@@ -128,7 +158,8 @@
         "show": {
           "type": "limit"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "stop_price",
@@ -141,7 +172,8 @@
         "show": {
           "type": "stop"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "trail_price",
@@ -154,7 +186,8 @@
         "show": {
           "type": "trailing_stop"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "trail_percent",
@@ -167,47 +200,82 @@
         "show": {
           "type": "trailing_stop"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "time_in_force",
       "label": "Time In Force",
       "type": "select",
       "options": [
-        { "id": "day", "name": "Day" },
-        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
-        { "id": "opg", "name": "Market/Limit on Open (OPG)" },
-        { "id": "cls", "name": "Market/Limit on Close (CLS)" },
-        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" },
-        { "id": "fok", "name": "Fill Or Kill (FOK)" }
+        {
+          "id": "day",
+          "name": "Day"
+        },
+        {
+          "id": "gtc",
+          "name": "Good Till Cancelled (GTC)"
+        },
+        {
+          "id": "opg",
+          "name": "Market/Limit on Open (OPG)"
+        },
+        {
+          "id": "cls",
+          "name": "Market/Limit on Close (CLS)"
+        },
+        {
+          "id": "ioc",
+          "name": "Immediate Or Cancel (IOC)"
+        },
+        {
+          "id": "fok",
+          "name": "Fill Or Kill (FOK)"
+        }
       ],
       "default": "day",
       "description": "How long order stays active. Day expires at market close, GTC stays until filled/cancelled.",
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["stock"]
+          "asset_type": [
+            "stock"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "extended_hours",
       "label": "Extended Hours",
       "type": "select",
       "options": [
-        { "id": "false", "name": "Regular Hours Only" },
-        { "id": "true", "name": "Include Pre/After Market" }
+        {
+          "id": "false",
+          "name": "Regular Hours Only"
+        },
+        {
+          "id": "true",
+          "name": "Include Pre/After Market"
+        }
       ],
       "default": "false",
       "required": false,
       "description": "Allow execution during pre-market (4am-9:30am) and after-hours (4pm-8pm). Only for limit day orders.",
       "displayOptions": {
         "show": {
-          "type": ["limit"],
-          "time_in_force": ["day"],
-          "asset_type": ["stock"]
+          "type": [
+            "limit"
+          ],
+          "time_in_force": [
+            "day"
+          ],
+          "asset_type": [
+            "stock"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

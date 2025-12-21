@@ -8,10 +8,21 @@
   "subCategory": "Redis",
   "description": "Persistent key-value storage with TTL, lists, and hash support",
   "color": "text-red-500",
-  "size": { "width": 340, "height": 420 },
+  "size": {
+    "width": 340,
+    "height": 420
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
@@ -60,13 +71,22 @@
       "label": "Use TLS/SSL",
       "type": "select",
       "options": [
-        { "label": "Yes (recommended for cloud)", "value": "true" },
-        { "label": "No", "value": "false" }
+        {
+          "label": "Yes (recommended for cloud)",
+          "value": "true"
+        },
+        {
+          "label": "No",
+          "value": "false"
+        }
       ],
       "default": "true"
     }
   ],
-  "authAction": { "url": "/redis/auth", "method": "POST" },
+  "authAction": {
+    "url": "/redis/auth",
+    "method": "POST"
+  },
   "action": {
     "url": "/redis/store",
     "method": "POST"
@@ -85,85 +105,351 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "label": "Delete", "value": "delete", "description": "Delete a key from Redis" },
-        { "label": "Get", "value": "get", "description": "Get the value of a key from Redis" },
-        { "label": "Increment", "value": "increment", "description": "Atomically increments a key by 1. Creates the key if it does not exist" },
-        { "label": "Info", "value": "info", "description": "Returns generic information about the Redis instance" },
-        { "label": "Keys", "value": "keys", "description": "Returns all the keys matching a pattern" },
-        { "label": "Pop", "value": "pop", "description": "Pop data from a redis list" },
-        { "label": "Publish", "value": "publish", "description": "Publish message to redis channel" },
-        { "label": "Push", "value": "push", "description": "Push data to a redis list" },
-        { "label": "Set", "value": "set", "description": "Set the value of a key in redis" },
-        { "label": "Set Add (SADD)", "value": "sadd", "description": "Add one or more members to a set" },
-        { "label": "Set Remove (SREM)", "value": "srem", "description": "Remove one or more members from a set" },
-        { "label": "Set Members (SMEMBERS)", "value": "smembers", "description": "Get all members of a set" },
-        { "label": "Set Is Member (SISMEMBER)", "value": "sismember", "description": "Check if a member exists in a set" },
-        { "label": "Set Size (SCARD)", "value": "scard", "description": "Get the number of members in a set" },
-        { "label": "Set Intersection (SINTER)", "value": "sinter", "description": "Return the intersection of multiple sets" },
-        { "label": "Set Union (SUNION)", "value": "sunion", "description": "Return the union of multiple sets" },
-        { "label": "Set Difference (SDIFF)", "value": "sdiff", "description": "Return the difference between the first set and other sets" },
-        { "label": "Hash Keys (HKEYS)", "value": "hkeys", "description": "Get all field names in a hash" },
-        { "label": "Hash Values (HVALS)", "value": "hvals", "description": "Get all values in a hash" },
-        { "label": "Hash Exists (HEXISTS)", "value": "hexists", "description": "Check if a field exists in a hash" },
-        { "label": "Hash Increment (HINCRBY)", "value": "hincrby", "description": "Increment a hash field by a number" },
-        { "label": "List Range (LRANGE)", "value": "lrange", "description": "Get a slice of list elements by range" },
-        { "label": "List Length (LLEN)", "value": "llen", "description": "Get the length of a list" },
-        { "label": "List Index (LINDEX)", "value": "lindex", "description": "Get element at specific index" },
-        { "label": "List Set (LSET)", "value": "lset", "description": "Set value at specific index" },
-        { "label": "List Trim (LTRIM)", "value": "ltrim", "description": "Trim list to specified range" },
-        { "label": "Sorted Set Add (ZADD)", "value": "zadd", "description": "Add members with scores to a sorted set" },
-        { "label": "Sorted Set Range (ZRANGE)", "value": "zrange", "description": "Get members by rank with optional scores" },
-        { "label": "Sorted Set Score (ZSCORE)", "value": "zscore", "description": "Get the score of a member" },
-        { "label": "Sorted Set Count (ZCOUNT)", "value": "zcount", "description": "Count members in a score range" },
-        { "label": "Sorted Set Increment (ZINCRBY)", "value": "zincrby", "description": "Increment a member's score by a value" },
-      { "label": "Sorted Set Remove (ZREM)", "value": "zrem", "description": "Remove one or more members from a sorted set" },
-      { "label": "Pub/Sub Channels (PUBSUB CHANNELS)", "value": "pubsub_channels", "description": "List active channels matching a pattern" },
-      { "label": "Pub/Sub Subscribers (PUBSUB NUMSUB)", "value": "pubsub_numsub", "description": "Get subscriber count for specific channels" }
-    ],
-    "default": "set",
-    "required": true
-  },
+        {
+          "label": "Delete",
+          "value": "delete",
+          "description": "Delete a key from Redis"
+        },
+        {
+          "label": "Get",
+          "value": "get",
+          "description": "Get the value of a key from Redis"
+        },
+        {
+          "label": "Increment",
+          "value": "increment",
+          "description": "Atomically increments a key by 1. Creates the key if it does not exist"
+        },
+        {
+          "label": "Info",
+          "value": "info",
+          "description": "Returns generic information about the Redis instance"
+        },
+        {
+          "label": "Keys",
+          "value": "keys",
+          "description": "Returns all the keys matching a pattern"
+        },
+        {
+          "label": "Pop",
+          "value": "pop",
+          "description": "Pop data from a redis list"
+        },
+        {
+          "label": "Publish",
+          "value": "publish",
+          "description": "Publish message to redis channel"
+        },
+        {
+          "label": "Push",
+          "value": "push",
+          "description": "Push data to a redis list"
+        },
+        {
+          "label": "Set",
+          "value": "set",
+          "description": "Set the value of a key in redis"
+        },
+        {
+          "label": "Set Add (SADD)",
+          "value": "sadd",
+          "description": "Add one or more members to a set"
+        },
+        {
+          "label": "Set Remove (SREM)",
+          "value": "srem",
+          "description": "Remove one or more members from a set"
+        },
+        {
+          "label": "Set Members (SMEMBERS)",
+          "value": "smembers",
+          "description": "Get all members of a set"
+        },
+        {
+          "label": "Set Is Member (SISMEMBER)",
+          "value": "sismember",
+          "description": "Check if a member exists in a set"
+        },
+        {
+          "label": "Set Size (SCARD)",
+          "value": "scard",
+          "description": "Get the number of members in a set"
+        },
+        {
+          "label": "Set Intersection (SINTER)",
+          "value": "sinter",
+          "description": "Return the intersection of multiple sets"
+        },
+        {
+          "label": "Set Union (SUNION)",
+          "value": "sunion",
+          "description": "Return the union of multiple sets"
+        },
+        {
+          "label": "Set Difference (SDIFF)",
+          "value": "sdiff",
+          "description": "Return the difference between the first set and other sets"
+        },
+        {
+          "label": "Hash Keys (HKEYS)",
+          "value": "hkeys",
+          "description": "Get all field names in a hash"
+        },
+        {
+          "label": "Hash Values (HVALS)",
+          "value": "hvals",
+          "description": "Get all values in a hash"
+        },
+        {
+          "label": "Hash Exists (HEXISTS)",
+          "value": "hexists",
+          "description": "Check if a field exists in a hash"
+        },
+        {
+          "label": "Hash Increment (HINCRBY)",
+          "value": "hincrby",
+          "description": "Increment a hash field by a number"
+        },
+        {
+          "label": "List Range (LRANGE)",
+          "value": "lrange",
+          "description": "Get a slice of list elements by range"
+        },
+        {
+          "label": "List Length (LLEN)",
+          "value": "llen",
+          "description": "Get the length of a list"
+        },
+        {
+          "label": "List Index (LINDEX)",
+          "value": "lindex",
+          "description": "Get element at specific index"
+        },
+        {
+          "label": "List Set (LSET)",
+          "value": "lset",
+          "description": "Set value at specific index"
+        },
+        {
+          "label": "List Trim (LTRIM)",
+          "value": "ltrim",
+          "description": "Trim list to specified range"
+        },
+        {
+          "label": "Sorted Set Add (ZADD)",
+          "value": "zadd",
+          "description": "Add members with scores to a sorted set"
+        },
+        {
+          "label": "Sorted Set Range (ZRANGE)",
+          "value": "zrange",
+          "description": "Get members by rank with optional scores"
+        },
+        {
+          "label": "Sorted Set Score (ZSCORE)",
+          "value": "zscore",
+          "description": "Get the score of a member"
+        },
+        {
+          "label": "Sorted Set Count (ZCOUNT)",
+          "value": "zcount",
+          "description": "Count members in a score range"
+        },
+        {
+          "label": "Sorted Set Increment (ZINCRBY)",
+          "value": "zincrby",
+          "description": "Increment a member's score by a value"
+        },
+        {
+          "label": "Sorted Set Remove (ZREM)",
+          "value": "zrem",
+          "description": "Remove one or more members from a sorted set"
+        },
+        {
+          "label": "Pub/Sub Channels (PUBSUB CHANNELS)",
+          "value": "pubsub_channels",
+          "description": "List active channels matching a pattern"
+        },
+        {
+          "label": "Pub/Sub Subscribers (PUBSUB NUMSUB)",
+          "value": "pubsub_numsub",
+          "description": "Get subscriber count for specific channels"
+        }
+      ],
+      "default": "set",
+      "required": true
+    },
     {
       "key": "scope",
       "label": "Scope",
       "type": "select",
       "options": [
-        { "label": "Workflow (this workflow only)", "value": "workflow" },
-        { "label": "User (shared across workflows)", "value": "user" },
-        { "label": "Global (shared across users)", "value": "global" }
+        {
+          "label": "Workflow (this workflow only)",
+          "value": "workflow"
+        },
+        {
+          "label": "User (shared across workflows)",
+          "value": "user"
+        },
+        {
+          "label": "Global (shared across users)",
+          "value": "global"
+        }
       ],
       "default": "workflow",
       "description": "Determines key namespace",
-        "displayOptions": {
-          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby", "lrange", "llen", "lindex", "lset", "ltrim", "zadd", "zrange", "zscore", "zcount", "zincrby", "zrem"] }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get",
+            "set",
+            "delete",
+            "increment",
+            "pop",
+            "push",
+            "sadd",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "lrange",
+            "llen",
+            "lindex",
+            "lset",
+            "ltrim",
+            "zadd",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem"
+          ]
         }
+      },
+      "showDescription": false
     },
     {
       "key": "keyType",
       "label": "Key Type",
       "type": "select",
       "options": [
-        { "label": "Automatic", "value": "automatic", "description": "Tries to figure out the type automatically depending on the data" },
-        { "label": "Hash", "value": "hash", "description": "Data in key is of type 'hash'" },
-        { "label": "List", "value": "list", "description": "Data in key is of type 'lists'" },
-        { "label": "Sets", "value": "sets", "description": "Data in key is of type 'sets'" },
-        { "label": "String", "value": "string", "description": "Data in key is of type 'string'" }
+        {
+          "label": "Automatic",
+          "value": "automatic",
+          "description": "Tries to figure out the type automatically depending on the data"
+        },
+        {
+          "label": "Hash",
+          "value": "hash",
+          "description": "Data in key is of type 'hash'"
+        },
+        {
+          "label": "List",
+          "value": "list",
+          "description": "Data in key is of type 'lists'"
+        },
+        {
+          "label": "Sets",
+          "value": "sets",
+          "description": "Data in key is of type 'sets'"
+        },
+        {
+          "label": "String",
+          "value": "string",
+          "description": "Data in key is of type 'string'"
+        }
       ],
       "default": "automatic",
-    "displayOptions": {
-      "show": {
-        "operation": ["set", "get", "delete", "exists", "incr", "decr", "append", "lpush", "rpush", "lpop", "rpop", "lrange", "llen", "lindex", "lset", "sadd", "srem", "smembers", "scard", "sismember", "hset", "hget", "hgetall", "hdel", "hkeys", "hvals", "hexists", "zadd", "zrange", "zscore", "zcount", "zincrby", "zrem", "pubsub_channels", "pubsub_numsub"]
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set",
+            "get",
+            "delete",
+            "exists",
+            "incr",
+            "decr",
+            "append",
+            "lpush",
+            "rpush",
+            "lpop",
+            "rpop",
+            "lrange",
+            "llen",
+            "lindex",
+            "lset",
+            "sadd",
+            "srem",
+            "smembers",
+            "scard",
+            "sismember",
+            "hset",
+            "hget",
+            "hgetall",
+            "hdel",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "zadd",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem",
+            "pubsub_channels",
+            "pubsub_numsub"
+          ]
+        }
       }
-    }
-  },
+    },
     {
       "key": "key",
       "label": "Key",
       "type": "text",
       "placeholder": "e.g., scanner:breakoutCandidates",
-        "displayOptions": {
-          "show": { "operation": ["get", "set", "delete", "increment", "pop", "push", "sadd", "srem", "smembers", "sismember", "scard", "sinter", "sunion", "sdiff", "hkeys", "hvals", "hexists", "hincrby", "lrange", "llen", "lindex", "lset", "ltrim", "zadd", "zrange", "zscore", "zcount", "zincrby", "zrem"] }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get",
+            "set",
+            "delete",
+            "increment",
+            "pop",
+            "push",
+            "sadd",
+            "srem",
+            "smembers",
+            "sismember",
+            "scard",
+            "sinter",
+            "sunion",
+            "sdiff",
+            "hkeys",
+            "hvals",
+            "hexists",
+            "hincrby",
+            "lrange",
+            "llen",
+            "lindex",
+            "lset",
+            "ltrim",
+            "zadd",
+            "zrange",
+            "zscore",
+            "zcount",
+            "zincrby",
+            "zrem"
+          ]
         }
+      }
     },
     {
       "key": "pattern",
@@ -173,8 +459,13 @@
       "default": "*",
       "description": "Pattern to match keys (supports * and ? wildcards)",
       "displayOptions": {
-        "show": { "operation": ["keys"] }
-      }
+        "show": {
+          "operation": [
+            "keys"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "channel",
@@ -183,44 +474,65 @@
       "placeholder": "e.g., notifications or alerts",
       "required": true,
       "displayOptions": {
-        "show": { "operation": ["publish"] }
+        "show": {
+          "operation": [
+            "publish"
+          ]
+        }
       }
     },
-      {
-        "key": "value",
-        "label": "Value",
-        "type": "textarea",
-        "placeholder": "{{ $('Scanner').json.tickers }} or static value",
-        "displayOptions": { 
-          "show": { "operation": ["set", "push", "publish", "lset"] } 
+    {
+      "key": "value",
+      "label": "Value",
+      "type": "textarea",
+      "placeholder": "{{ $('Scanner').json.tickers }} or static value",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set",
+            "push",
+            "publish",
+            "lset"
+          ]
         }
-      },
-      {
-        "key": "hashField",
-        "label": "Hash Field",
-        "type": "text",
-        "placeholder": "Field name for hash operations",
-        "displayOptions": { 
-          "show": { 
-            "operation": [
-              { "operation": "get", "keyType": "hash" },
-              { "operation": "set", "keyType": "hash" },
-              "hexists",
-              "hincrby"
-            ]
-          } 
+      }
+    },
+    {
+      "key": "hashField",
+      "label": "Hash Field",
+      "type": "text",
+      "placeholder": "Field name for hash operations",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            {
+              "operation": "get",
+              "keyType": "hash"
+            },
+            {
+              "operation": "set",
+              "keyType": "hash"
+            },
+            "hexists",
+            "hincrby"
+          ]
         }
-      },
+      }
+    },
     {
       "key": "setMember",
       "label": "Set Member",
       "type": "text",
       "placeholder": "Member value for set operations",
-      "displayOptions": { 
-        "show": { 
-          "operation": ["set"],
-          "keyType": ["sets"]
-        } 
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set"
+          ],
+          "keyType": [
+            "sets"
+          ]
+        }
       }
     },
     {
@@ -228,12 +540,22 @@
       "label": "Pop Direction",
       "type": "select",
       "options": [
-        { "label": "Left (LPOP)", "value": "left" },
-        { "label": "Right (RPOP)", "value": "right" }
+        {
+          "label": "Left (LPOP)",
+          "value": "left"
+        },
+        {
+          "label": "Right (RPOP)",
+          "value": "right"
+        }
       ],
       "default": "left",
       "displayOptions": {
-        "show": { "operation": ["pop"] }
+        "show": {
+          "operation": [
+            "pop"
+          ]
+        }
       }
     },
     {
@@ -241,12 +563,22 @@
       "label": "Push Direction",
       "type": "select",
       "options": [
-        { "label": "Left (LPUSH)", "value": "left" },
-        { "label": "Right (RPUSH)", "value": "right" }
+        {
+          "label": "Left (LPUSH)",
+          "value": "left"
+        },
+        {
+          "label": "Right (RPUSH)",
+          "value": "right"
+        }
       ],
       "default": "left",
       "displayOptions": {
-        "show": { "operation": ["push"] }
+        "show": {
+          "operation": [
+            "push"
+          ]
+        }
       }
     },
     {
@@ -256,8 +588,15 @@
       "placeholder": "member1, member2, member3 OR {{ $('Node').json.array }}",
       "description": "Comma-separated values or array from previous node",
       "displayOptions": {
-        "show": { "operation": ["sadd", "srem", "zrem"] }
-      }
+        "show": {
+          "operation": [
+            "sadd",
+            "srem",
+            "zrem"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "member",
@@ -265,163 +604,262 @@
       "type": "text",
       "placeholder": "Member to check",
       "displayOptions": {
-        "show": { "operation": ["sismember", "zscore", "zincrby"] }
+        "show": {
+          "operation": [
+            "sismember",
+            "zscore",
+            "zincrby"
+          ]
+        }
       }
     },
-      {
-        "key": "otherKeys",
-        "label": "Other Set Keys",
-        "type": "textarea",
-        "placeholder": "key2, key3, key4 (comma-separated set names)",
-        "description": "Additional set keys for intersection/union/difference operations",
-        "displayOptions": {
-          "show": { "operation": ["sinter", "sunion", "sdiff"] }
+    {
+      "key": "otherKeys",
+      "label": "Other Set Keys",
+      "type": "textarea",
+      "placeholder": "key2, key3, key4 (comma-separated set names)",
+      "description": "Additional set keys for intersection/union/difference operations",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sinter",
+            "sunion",
+            "sdiff"
+          ]
         }
       },
-      {
-        "key": "incrementBy",
-        "label": "Increment By",
-        "type": "number",
-        "placeholder": "Amount to increment (default: 1)",
-        "default": 1,
-        "description": "Integer value to increment the hash field by (can be negative)",
-        "displayOptions": {
-          "show": { "operation": ["hincrby"] }
+      "showDescription": false
+    },
+    {
+      "key": "incrementBy",
+      "label": "Increment By",
+      "type": "number",
+      "placeholder": "Amount to increment (default: 1)",
+      "default": 1,
+      "description": "Integer value to increment the hash field by (can be negative)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "hincrby"
+          ]
         }
       },
-      {
-        "key": "startIndex",
-        "label": "Start Index",
-        "type": "number",
-        "placeholder": "0 for first element, -1 for last",
-        "default": 0,
-        "description": "Starting position (0-based, negative counts from end)",
-        "displayOptions": {
-          "show": { "operation": ["lrange", "ltrim", "zrange"] }
+      "showDescription": false
+    },
+    {
+      "key": "startIndex",
+      "label": "Start Index",
+      "type": "number",
+      "placeholder": "0 for first element, -1 for last",
+      "default": 0,
+      "description": "Starting position (0-based, negative counts from end)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "lrange",
+            "ltrim",
+            "zrange"
+          ]
         }
       },
-      {
-        "key": "endIndex",
-        "label": "End Index",
-        "type": "number",
-        "placeholder": "-1 for last element",
-        "default": -1,
-        "description": "Ending position (inclusive, -1 for last element)",
-        "displayOptions": {
-          "show": { "operation": ["lrange", "ltrim", "zrange"] }
+      "showDescription": false
+    },
+    {
+      "key": "endIndex",
+      "label": "End Index",
+      "type": "number",
+      "placeholder": "-1 for last element",
+      "default": -1,
+      "description": "Ending position (inclusive, -1 for last element)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "lrange",
+            "ltrim",
+            "zrange"
+          ]
         }
       },
-      {
-        "key": "index",
-        "label": "Index",
-        "type": "number",
-        "placeholder": "0 for first, -1 for last",
-        "description": "List position (0-based, negative counts from end)",
-        "displayOptions": {
-          "show": { "operation": ["lindex", "lset"] }
+      "showDescription": false
+    },
+    {
+      "key": "index",
+      "label": "Index",
+      "type": "number",
+      "placeholder": "0 for first, -1 for last",
+      "description": "List position (0-based, negative counts from end)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "lindex",
+            "lset"
+          ]
         }
       },
-      {
-        "key": "ttl",
-        "label": "TTL (seconds)",
-        "type": "number",
-        "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
-        "default": 0,
-        "description": "Time to live in seconds (0 = no expiry)",
-        "displayOptions": { 
-          "show": { "operation": ["set", "push", "sadd", "zadd"] } 
+      "showDescription": false
+    },
+    {
+      "key": "ttl",
+      "label": "TTL (seconds)",
+      "type": "number",
+      "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
+      "default": 0,
+      "description": "Time to live in seconds (0 = no expiry)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "set",
+            "push",
+            "sadd",
+            "zadd"
+          ]
         }
       },
-      {
-        "key": "score",
-        "label": "Score",
-        "type": "number",
-        "placeholder": "Numeric score for the member",
-        "description": "Score value for sorting (can be integer or float)",
-        "displayOptions": {
-          "show": { "operation": ["zadd", "zincrby"] }
+      "showDescription": false
+    },
+    {
+      "key": "score",
+      "label": "Score",
+      "type": "number",
+      "placeholder": "Numeric score for the member",
+      "description": "Score value for sorting (can be integer or float)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zadd",
+            "zincrby"
+          ]
         }
       },
-      {
-        "key": "scoreMembers",
-        "label": "Score-Member Pairs",
-        "type": "textarea",
-        "placeholder": "score1:member1, score2:member2 OR {{ $('Node').json.pairs }}",
-        "description": "Comma-separated score:member pairs for batch add",
-        "displayOptions": {
-          "show": { "operation": ["zadd"] }
+      "showDescription": false
+    },
+    {
+      "key": "scoreMembers",
+      "label": "Score-Member Pairs",
+      "type": "textarea",
+      "placeholder": "score1:member1, score2:member2 OR {{ $('Node').json.pairs }}",
+      "description": "Comma-separated score:member pairs for batch add",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zadd"
+          ]
         }
       },
-      {
-        "key": "withScores",
-        "label": "Include Scores",
-        "type": "select",
-        "options": [
-          { "label": "Yes", "value": "true" },
-          { "label": "No", "value": "false" }
-        ],
-        "default": "true",
-        "description": "Include scores in the output",
-        "displayOptions": {
-          "show": { "operation": ["zrange"] }
+      "showDescription": false
+    },
+    {
+      "key": "withScores",
+      "label": "Include Scores",
+      "type": "select",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "true"
+        },
+        {
+          "label": "No",
+          "value": "false"
+        }
+      ],
+      "default": "true",
+      "description": "Include scores in the output",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zrange"
+          ]
         }
       },
-      {
-        "key": "reverseOrder",
-        "label": "Reverse Order (High to Low)",
-        "type": "select",
-        "options": [
-          { "label": "Yes (ZREVRANGE)", "value": "true" },
-          { "label": "No (ZRANGE)", "value": "false" }
-        ],
-        "default": "false",
-        "description": "Return results from highest to lowest score",
-        "displayOptions": {
-          "show": { "operation": ["zrange"] }
+      "showDescription": false
+    },
+    {
+      "key": "reverseOrder",
+      "label": "Reverse Order (High to Low)",
+      "type": "select",
+      "options": [
+        {
+          "label": "Yes (ZREVRANGE)",
+          "value": "true"
+        },
+        {
+          "label": "No (ZRANGE)",
+          "value": "false"
+        }
+      ],
+      "default": "false",
+      "description": "Return results from highest to lowest score",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zrange"
+          ]
         }
       },
-      {
-        "key": "minScore",
-        "label": "Min Score",
-        "type": "text",
-        "placeholder": "-inf or number",
-        "default": "-inf",
-        "description": "Minimum score (use -inf for no lower bound)",
-        "displayOptions": {
-          "show": { "operation": ["zcount"] }
+      "showDescription": false
+    },
+    {
+      "key": "minScore",
+      "label": "Min Score",
+      "type": "text",
+      "placeholder": "-inf or number",
+      "default": "-inf",
+      "description": "Minimum score (use -inf for no lower bound)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zcount"
+          ]
         }
       },
-  {
-    "key": "maxScore",
-    "label": "Max Score",
-    "type": "text",
-    "placeholder": "+inf or number",
-    "default": "+inf",
-    "description": "Maximum score (use +inf for no upper bound)",
-    "displayOptions": {
-      "show": { "operation": ["zcount"] }
+      "showDescription": false
+    },
+    {
+      "key": "maxScore",
+      "label": "Max Score",
+      "type": "text",
+      "placeholder": "+inf or number",
+      "default": "+inf",
+      "description": "Maximum score (use +inf for no upper bound)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "zcount"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "channelPattern",
+      "label": "Channel Pattern",
+      "type": "text",
+      "placeholder": "*",
+      "default": "*",
+      "description": "Pattern to match channels (supports * wildcards)",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "pubsub_channels"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "channels",
+      "label": "Channels",
+      "type": "textarea",
+      "placeholder": "channel1, channel2, channel3",
+      "description": "Comma-separated list of channel names",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "pubsub_numsub"
+          ]
+        }
+      },
+      "showDescription": false
     }
-  },
-  {
-    "key": "channelPattern",
-    "label": "Channel Pattern",
-    "type": "text",
-    "placeholder": "*",
-    "default": "*",
-    "description": "Pattern to match channels (supports * wildcards)",
-    "displayOptions": {
-      "show": { "operation": ["pubsub_channels"] }
-    }
-  },
-  {
-    "key": "channels",
-    "label": "Channels",
-    "type": "textarea",
-    "placeholder": "channel1, channel2, channel3",
-    "description": "Comma-separated list of channel names",
-    "displayOptions": {
-      "show": { "operation": ["pubsub_numsub"] }
-    }
-  }
   ]
 }

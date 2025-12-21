@@ -27,7 +27,8 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "short_period",
@@ -35,7 +36,8 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "description": "Period for short-term volume MA. CHOOSE based on analysis: 5-10 for quick volume spikes, 12-14 for standard momentum, 20+ for major volume trends.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "long_period",
@@ -43,18 +45,26 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "description": "Period for long-term volume MA. Must be greater than short period. CHOOSE: 20-26 for standard, 40-50 for major trend confirmation.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "type",
       "label": "Calculation Type",
       "type": "select",
       "options": [
-        { "id": "percentage", "name": "Percentage (PVO)" },
-        { "id": "absolute", "name": "Absolute Difference" }
+        {
+          "id": "percentage",
+          "name": "Percentage (PVO)"
+        },
+        {
+          "id": "absolute",
+          "name": "Absolute Difference"
+        }
       ],
       "description": "Output format: 'percentage' for comparing across stocks, 'absolute' for raw volume difference analysis.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

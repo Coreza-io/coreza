@@ -27,34 +27,58 @@
       "type": "text",
       "placeholder": "e.g. AAPL",
       "description": "Stock ticker symbol (e.g., AAPL for Apple, TSLA for Tesla, MSFT for Microsoft).",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "interval",
       "label": "Interval",
       "type": "select",
       "options": [
-        { "id": "1m", "name": "1 min" },
-        { "id": "5m", "name": "5 min" },
-        { "id": "15m", "name": "15 min" },
-        { "id": "60m", "name": "1 hour" },
-        { "id": "1d", "name": "1 day" }
+        {
+          "id": "1m",
+          "name": "1 min"
+        },
+        {
+          "id": "5m",
+          "name": "5 min"
+        },
+        {
+          "id": "15m",
+          "name": "15 min"
+        },
+        {
+          "id": "60m",
+          "name": "1 hour"
+        },
+        {
+          "id": "1d",
+          "name": "1 day"
+        }
       ],
       "placeholder": "Select interval",
       "description": "Time interval between data points. Use 1d for daily analysis, shorter intervals for intraday.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "date_mode",
       "label": "Date Mode",
       "type": "select",
       "options": [
-        { "id": "lookback", "name": "Lookback (Bars)" },
-        { "id": "range", "name": "Date Range" }
+        {
+          "id": "lookback",
+          "name": "Lookback (Bars)"
+        },
+        {
+          "id": "range",
+          "name": "Date Range"
+        }
       ],
       "default": "lookback",
       "description": "How to specify date range. Use 'lookback' (RECOMMENDED) to get most recent N bars from today. Use 'range' only for specific historical periods like backtesting.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "lookback",
@@ -66,9 +90,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["lookback"]
+          "date_mode": [
+            "lookback"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "start_date",
@@ -79,9 +106,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["range"]
+          "date_mode": [
+            "range"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "end_date",
@@ -92,9 +122,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["range"]
+          "date_mode": [
+            "range"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

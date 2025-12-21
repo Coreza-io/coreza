@@ -27,7 +27,8 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "conversion_period",
@@ -35,7 +36,8 @@
       "type": "text",
       "default": "9",
       "description": "Period for Tenkan-sen (Conversion Line). Standard is 9. Short-term trend indicator.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "base_period",
@@ -43,7 +45,8 @@
       "type": "text",
       "default": "26",
       "description": "Period for Kijun-sen (Base Line). Standard is 26. Medium-term trend and support/resistance.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "leading_span_b_period",
@@ -51,7 +54,8 @@
       "type": "text",
       "default": "52",
       "description": "Period for Senkou Span B (cloud boundary). Standard is 52. Long-term trend indicator.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "displacement",
@@ -59,7 +63,8 @@
       "type": "text",
       "default": "26",
       "description": "Displacement for Chikou Span (Lagging Span). Standard is 26. Shows momentum confirmation.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

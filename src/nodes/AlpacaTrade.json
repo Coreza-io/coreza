@@ -7,10 +7,21 @@
   "subCategory": "Alpaca",
   "description": "Execute trades through Alpaca Markets",
   "color": "text-red-500",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
@@ -33,9 +44,14 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
-
-  "action": { "url": "/broker/alpaca/place_order", "method": "POST" },
+  "authAction": {
+    "url": "/broker/alpaca/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/broker/alpaca/place_order",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "operation",
@@ -56,8 +72,14 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "stock", "name": "Stock" },
-        { "id": "crypto", "name": "Crypto" }
+        {
+          "id": "stock",
+          "name": "Stock"
+        },
+        {
+          "id": "crypto",
+          "name": "Crypto"
+        }
       ],
       "default": "stock",
       "required": true
@@ -70,7 +92,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["stock"]
+          "asset_type": [
+            "stock"
+          ]
         }
       }
     },
@@ -82,7 +106,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["crypto"]
+          "asset_type": [
+            "crypto"
+          ]
         }
       }
     },
@@ -91,8 +117,14 @@
       "label": "Side",
       "type": "select",
       "options": [
-        { "id": "buy", "name": "Buy" },
-        { "id": "sell", "name": "Sell" }
+        {
+          "id": "buy",
+          "name": "Buy"
+        },
+        {
+          "id": "sell",
+          "name": "Sell"
+        }
       ],
       "default": "buy",
       "required": true
@@ -109,10 +141,22 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "id": "market", "name": "Market Order" },
-        { "id": "limit", "name": "Limit Order" },
-        { "id": "stop", "name": "Stop Order" },
-        { "id": "trailing_stop", "name": "Trailing Stop Order" }
+        {
+          "id": "market",
+          "name": "Market Order"
+        },
+        {
+          "id": "limit",
+          "name": "Limit Order"
+        },
+        {
+          "id": "stop",
+          "name": "Stop Order"
+        },
+        {
+          "id": "trailing_stop",
+          "name": "Trailing Stop Order"
+        }
       ],
       "default": "market",
       "required": true
@@ -152,7 +196,8 @@
         "show": {
           "type": "trailing_stop"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "trail_percent",
@@ -165,25 +210,46 @@
         "show": {
           "type": "trailing_stop"
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "time_in_force",
       "label": "Time In Force",
       "type": "select",
       "options": [
-        { "id": "day", "name": "Day" },
-        { "id": "gtc", "name": "Good Till Cancelled (GTC)" },
-        { "id": "opg", "name": "Market/Limit on Open (OPG)" },
-        { "id": "cls", "name": "Market/Limit on Close (CLS)" },
-        { "id": "ioc", "name": "Immediate Or Cancel (IOC)" },
-        { "id": "fok", "name": "Fill Or Kill (FOK)" }
+        {
+          "id": "day",
+          "name": "Day"
+        },
+        {
+          "id": "gtc",
+          "name": "Good Till Cancelled (GTC)"
+        },
+        {
+          "id": "opg",
+          "name": "Market/Limit on Open (OPG)"
+        },
+        {
+          "id": "cls",
+          "name": "Market/Limit on Close (CLS)"
+        },
+        {
+          "id": "ioc",
+          "name": "Immediate Or Cancel (IOC)"
+        },
+        {
+          "id": "fok",
+          "name": "Fill Or Kill (FOK)"
+        }
       ],
       "default": "day",
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["stock"]
+          "asset_type": [
+            "stock"
+          ]
         }
       }
     },
@@ -192,19 +258,32 @@
       "label": "Extended Hours",
       "type": "select",
       "options": [
-        { "id": "false", "name": "Regular Hours Only" },
-        { "id": "true", "name": "Include Pre/After Market" }
+        {
+          "id": "false",
+          "name": "Regular Hours Only"
+        },
+        {
+          "id": "true",
+          "name": "Include Pre/After Market"
+        }
       ],
       "default": "false",
       "required": false,
       "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
       "displayOptions": {
         "show": {
-          "type": ["limit"],
-          "time_in_force": ["day"],
-          "asset_type": ["stock"]
+          "type": [
+            "limit"
+          ],
+          "time_in_force": [
+            "day"
+          ],
+          "asset_type": [
+            "stock"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

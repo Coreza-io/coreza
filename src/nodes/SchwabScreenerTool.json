@@ -7,9 +7,16 @@
   "subCategory": "Schwab",
   "description": "Screen stocks using Schwab API. Get fundamentals (quote, financial data, reference info), market movers by index, search instruments, and lookup by CUSIP.",
   "color": "text-blue-600",
-  "size": { "width": 360, "height": 400 },
+  "size": {
+    "width": 360,
+    "height": 400
+  },
   "handles": [
-    { "type": "source", "position": "top", "id": "tool" }
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
   ],
   "auth": "SchwabAuthModal",
   "action": {
@@ -24,21 +31,35 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select Schwab credential",
       "description": "Your saved Schwab OAuth credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "operation",
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "get_fundamentals", "name": "Get Fundamentals (Enrich Symbols)" },
-        { "id": "movers", "name": "Market Movers" },
-        { "id": "get_instruments", "name": "Search Instruments" },
-        { "id": "get_instrument_cusip", "name": "Get Instrument by CUSIP" }
+        {
+          "id": "get_fundamentals",
+          "name": "Get Fundamentals (Enrich Symbols)"
+        },
+        {
+          "id": "movers",
+          "name": "Market Movers"
+        },
+        {
+          "id": "get_instruments",
+          "name": "Search Instruments"
+        },
+        {
+          "id": "get_instrument_cusip",
+          "name": "Get Instrument by CUSIP"
+        }
       ],
       "default": "get_fundamentals",
       "required": true,
-      "description": "Screener operation: Fundamentals enriches symbols with data, Movers shows top gainers/losers, Search finds symbols, CUSIP looks up by ID."
+      "description": "Screener operation: Fundamentals enriches symbols with data, Movers shows top gainers/losers, Search finds symbols, CUSIP looks up by ID.",
+      "showDescription": false
     },
     {
       "key": "symbols",
@@ -49,77 +70,128 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_fundamentals"]
+          "operation": [
+            "get_fundamentals"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "fields",
       "label": "Data Fields",
       "type": "select",
       "options": [
-        { "id": "quote,fundamental,reference", "name": "All (Quote + Fundamental + Reference)" },
-        { "id": "quote,fundamental", "name": "Quote + Fundamental" },
-        { "id": "fundamental", "name": "Fundamental Only" },
-        { "id": "quote", "name": "Quote Only" },
-        { "id": "reference", "name": "Reference Only" }
+        {
+          "id": "quote,fundamental,reference",
+          "name": "All (Quote + Fundamental + Reference)"
+        },
+        {
+          "id": "quote,fundamental",
+          "name": "Quote + Fundamental"
+        },
+        {
+          "id": "fundamental",
+          "name": "Fundamental Only"
+        },
+        {
+          "id": "quote",
+          "name": "Quote Only"
+        },
+        {
+          "id": "reference",
+          "name": "Reference Only"
+        }
       ],
       "default": "quote,fundamental,reference",
       "description": "Types of data to return: Quote (price data), Fundamental (financial ratios), Reference (company info).",
       "displayOptions": {
         "show": {
-          "operation": ["get_fundamentals"]
+          "operation": [
+            "get_fundamentals"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "index",
       "label": "Market Index",
       "type": "select",
       "options": [
-        { "id": "$DJI", "name": "Dow Jones ($DJI)" },
-        { "id": "$COMPX", "name": "NASDAQ Composite ($COMPX)" },
-        { "id": "$SPX.X", "name": "S&P 500 ($SPX.X)" }
+        {
+          "id": "$DJI",
+          "name": "Dow Jones ($DJI)"
+        },
+        {
+          "id": "$COMPX",
+          "name": "NASDAQ Composite ($COMPX)"
+        },
+        {
+          "id": "$SPX.X",
+          "name": "S&P 500 ($SPX.X)"
+        }
       ],
       "default": "$DJI",
       "description": "Market index to get movers for.",
       "displayOptions": {
         "show": {
-          "operation": ["movers"]
+          "operation": [
+            "movers"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "direction",
       "label": "Direction",
       "type": "select",
       "options": [
-        { "id": "up", "name": "Gainers (Up)" },
-        { "id": "down", "name": "Losers (Down)" }
+        {
+          "id": "up",
+          "name": "Gainers (Up)"
+        },
+        {
+          "id": "down",
+          "name": "Losers (Down)"
+        }
       ],
       "default": "up",
       "description": "Filter for gainers (up) or losers (down).",
       "displayOptions": {
         "show": {
-          "operation": ["movers"]
+          "operation": [
+            "movers"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "change",
       "label": "Change Type",
       "type": "select",
       "options": [
-        { "id": "percent", "name": "Percent Change" },
-        { "id": "value", "name": "Dollar Value Change" }
+        {
+          "id": "percent",
+          "name": "Percent Change"
+        },
+        {
+          "id": "value",
+          "name": "Dollar Value Change"
+        }
       ],
       "default": "percent",
       "description": "Rank movers by percentage change or absolute dollar change.",
       "displayOptions": {
         "show": {
-          "operation": ["movers"]
+          "operation": [
+            "movers"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "symbol",
@@ -130,28 +202,49 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_instruments"]
+          "operation": [
+            "get_instruments"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "projection",
       "label": "Search Type",
       "type": "select",
       "options": [
-        { "id": "symbol-search", "name": "Symbol Search" },
-        { "id": "symbol-regex", "name": "Symbol Regex" },
-        { "id": "desc-search", "name": "Description Search" },
-        { "id": "desc-regex", "name": "Description Regex" },
-        { "id": "fundamental", "name": "Fundamental" }
+        {
+          "id": "symbol-search",
+          "name": "Symbol Search"
+        },
+        {
+          "id": "symbol-regex",
+          "name": "Symbol Regex"
+        },
+        {
+          "id": "desc-search",
+          "name": "Description Search"
+        },
+        {
+          "id": "desc-regex",
+          "name": "Description Regex"
+        },
+        {
+          "id": "fundamental",
+          "name": "Fundamental"
+        }
       ],
       "default": "symbol-search",
       "description": "Search method: symbol/description search or regex pattern matching.",
       "displayOptions": {
         "show": {
-          "operation": ["get_instruments"]
+          "operation": [
+            "get_instruments"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "cusip",
@@ -162,9 +255,12 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_instrument_cusip"]
+          "operation": [
+            "get_instrument_cusip"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

@@ -27,7 +27,8 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "k_period",
@@ -35,7 +36,8 @@
       "type": "text",
       "placeholder": "e.g. 14",
       "description": "Lookback period for %K. CHOOSE based on sensitivity: 5-9 for fast/aggressive signals, 14 for standard, 21+ for slow/reliable signals on volatile stocks.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "d_period",
@@ -43,7 +45,8 @@
       "type": "text",
       "placeholder": "e.g. 3",
       "description": "Smoothing for %D signal line. CHOOSE: 3 for standard responsiveness, 5-7 for smoother crossover signals.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "smooth",
@@ -51,7 +54,8 @@
       "type": "text",
       "placeholder": "e.g. 3",
       "description": "Additional %K smoothing. CHOOSE based on noise: 1 for raw/fast, 3 for standard, 5+ for very noisy/volatile stocks.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

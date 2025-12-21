@@ -270,13 +270,17 @@ export class WebhookService {
           "Webhook triggering backend execution for active workflow"
         );
 
-        // Create workflow run
+        // Create workflow run with snapshot of current workflow state
         const { data: run, error: runError } = await supabase
           .from("workflow_runs")
           .insert({
             workflow_id: workflowId,
             status: "queued",
             initiated_by: userId,
+            nodes: workflow.nodes,
+            edges: workflow.edges,
+            node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
+            edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
           })
           .select()
           .single();

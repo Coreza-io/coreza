@@ -65,6 +65,10 @@ export interface Database {
           error_message: string | null;
           result: any | null;
           initiated_by: string | null;
+          nodes: any | null;
+          edges: any | null;
+          node_count: number | null;
+          edge_count: number | null;
         };
         Insert: {
           id?: string;
@@ -75,6 +79,10 @@ export interface Database {
           error_message?: string | null;
           result?: any | null;
           initiated_by?: string | null;
+          nodes?: any | null;
+          edges?: any | null;
+          node_count?: number | null;
+          edge_count?: number | null;
         };
         Update: {
           id?: string;
@@ -85,6 +93,10 @@ export interface Database {
           error_message?: string | null;
           result?: any | null;
           initiated_by?: string | null;
+          nodes?: any | null;
+          edges?: any | null;
+          node_count?: number | null;
+          edge_count?: number | null;
         };
       };
       node_executions: {

@@ -59,6 +59,22 @@ export function ExecutionDetailView({
 }: ExecutionDetailViewProps) {
   const resolvedTheme = useResolvedTheme();
 
+  // Use execution's stored snapshot if available, otherwise fall back to current workflow
+  // This ensures historical executions display the workflow state at execution time
+  const sourceNodes = useMemo(() => {
+    if (execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0) {
+      return execution.nodes as Node[];
+    }
+    return nodes;
+  }, [execution.nodes, nodes]);
+
+  const sourceEdges = useMemo(() => {
+    if (execution.edges && Array.isArray(execution.edges) && execution.edges.length > 0) {
+      return execution.edges as Edge[];
+    }
+    return edges;
+  }, [execution.edges, edges]);
+
   // Get node execution data by nodeId
   const nodeExecutionMap = useMemo(() => {
     const map = new Map<string, NodeExecutionLog>();
@@ -70,7 +86,7 @@ export function ExecutionDetailView({
 
   // Transform nodes to show execution status with readOnly mode
   const executionNodes = useMemo(() => {
-    return nodes.map((node) => {
+    return sourceNodes.map((node) => {
       const nodeExec = nodeExecutionMap.get(node.id);
       const status = nodeExec?.status || "pending";
       
@@ -97,11 +113,11 @@ export function ExecutionDetailView({
         },
       };
     });
-  }, [nodes, nodeExecutionMap, nodeExecutions]);
+  }, [sourceNodes, nodeExecutionMap, nodeExecutions]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {
-    return edges.map((edge) => {
+    return sourceEdges.map((edge) => {
       const sourceExec = nodeExecutionMap.get(edge.source);
       const itemCount = sourceExec?.itemCount || 0;
       
@@ -130,7 +146,7 @@ export function ExecutionDetailView({
         animated: false,
       };
     });
-  }, [edges, nodeExecutionMap]);
+  }, [sourceEdges, nodeExecutionMap]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {

@@ -56,6 +56,11 @@ export interface ExecutionRun {
   error_message: string | null;
   result: ExecutionResultPayload | null;
   initiated_by: string | null;
+  // Workflow snapshot at execution time
+  nodes: any[] | null;
+  edges: any[] | null;
+  node_count: number | null;
+  edge_count: number | null;
 }
 
 export function useExecutionHistory(

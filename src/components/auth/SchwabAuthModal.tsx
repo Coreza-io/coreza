@@ -89,11 +89,21 @@ export function SchwabAuthModal({
       return;
     }
 
+    if (!session?.access_token) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in again to generate the authorization link",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await apiClient.post(
         '/oauth/schwab/generate-auth-url',
-        { app_key: appKey, app_secret: appSecret }
+        { app_key: appKey, app_secret: appSecret },
+        session.access_token
       );
 
       const data = await response.json();
@@ -140,6 +150,15 @@ export function SchwabAuthModal({
       return;
     }
 
+    if (!session?.access_token) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in again to complete the connection",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await apiClient.post(
@@ -149,7 +168,7 @@ export function SchwabAuthModal({
           redirect_url: redirectUrl,
           credential_name: credentialName,
         },
-        session?.access_token
+        session.access_token
       );
 
       const data = await response.json();

@@ -13,35 +13,73 @@
   },
   "description": "Receives real-time market data from Binance. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
-  "size": { "width": 320, "height": 280 },
+  "size": {
+    "width": 320,
+    "height": 280
+  },
   "handles": [
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
-    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "My Binance" },
-    { "key": "api_key", "label": "API Key", "type": "password", "required": true },
-    { "key": "secret_key", "label": "Secret Key", "type": "password", "required": true }
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Binance"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "required": true
+    }
   ],
-  "authAction": { "url": "/broker/binance/auth", "method": "POST" },
+  "authAction": {
+    "url": "/broker/binance/auth",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "mode",
       "label": "Mode",
       "type": "select",
       "options": [
-        { "id": "listen", "name": "Listen (Use Pre-subscribed Symbols)" },
-        { "id": "subscribe", "name": "Subscribe & Stream (Self-contained)" }
+        {
+          "id": "listen",
+          "name": "Listen (Use Pre-subscribed Symbols)"
+        },
+        {
+          "id": "subscribe",
+          "name": "Subscribe & Stream (Self-contained)"
+        }
       ],
       "default": "listen",
-      "description": "Listen mode uses symbols from Subscribe nodes. Subscribe mode subscribes symbols directly."
+      "description": "Listen mode uses symbols from Subscribe nodes. Subscribe mode subscribes symbols directly.",
+      "showDescription": false
     },
-    { 
-      "key": "credential_id", 
-      "label": "Credential", 
-      "type": "select", 
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
       "optionsSource": "credentialsApi",
-      "displayOptions": { "show": { "mode": ["subscribe"] } },
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
       "required": false
     },
     {
@@ -49,69 +87,154 @@
       "label": "Environment",
       "type": "select",
       "options": [
-        { "id": "testnet", "name": "Testnet (Paper)" },
-        { "id": "live", "name": "Production (Live)" }
+        {
+          "id": "testnet",
+          "name": "Testnet (Paper)"
+        },
+        {
+          "id": "live",
+          "name": "Production (Live)"
+        }
       ],
       "default": "testnet",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
     },
     {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "spot", "name": "Spot" },
-        { "id": "futures", "name": "Futures (USDT-M)" }
+        {
+          "id": "spot",
+          "name": "Spot"
+        },
+        {
+          "id": "futures",
+          "name": "Futures (USDT-M)"
+        }
       ],
       "default": "spot",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
     },
-    { 
-      "key": "symbols", 
-      "label": "Symbols", 
-      "type": "text", 
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
       "placeholder": "BTCUSDT, ETHUSDT",
       "description": "Symbols to subscribe and stream.",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "showDescription": false
     },
-    { 
-      "key": "stream_types", 
-      "label": "Stream Types", 
+    {
+      "key": "stream_types",
+      "label": "Stream Types",
       "type": "multiselect",
       "options": [
-        { "id": "trade", "name": "Trades" },
-        { "id": "kline", "name": "Klines (Candlesticks)" },
-        { "id": "bookTicker", "name": "Book Ticker" },
-        { "id": "ticker", "name": "24h Ticker" }
+        {
+          "id": "trade",
+          "name": "Trades"
+        },
+        {
+          "id": "kline",
+          "name": "Klines (Candlesticks)"
+        },
+        {
+          "id": "bookTicker",
+          "name": "Book Ticker"
+        },
+        {
+          "id": "ticker",
+          "name": "24h Ticker"
+        }
       ],
-      "default": ["trade"],
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "default": [
+        "trade"
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
     },
     {
       "key": "kline_interval",
       "label": "Kline Interval",
       "type": "select",
       "options": [
-        { "id": "1m", "name": "1 Minute" },
-        { "id": "5m", "name": "5 Minutes" },
-        { "id": "15m", "name": "15 Minutes" },
-        { "id": "1h", "name": "1 Hour" },
-        { "id": "1d", "name": "1 Day" }
+        {
+          "id": "1m",
+          "name": "1 Minute"
+        },
+        {
+          "id": "5m",
+          "name": "5 Minutes"
+        },
+        {
+          "id": "15m",
+          "name": "15 Minutes"
+        },
+        {
+          "id": "1h",
+          "name": "1 Hour"
+        },
+        {
+          "id": "1d",
+          "name": "1 Day"
+        }
       ],
       "default": "1m",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
     },
     {
       "key": "subscriptionMode",
       "label": "Subscription Mode",
       "type": "select",
       "options": [
-        { "id": "workflow", "name": "Only This Workflow's Subscriptions" },
-        { "id": "global", "name": "All My Subscriptions" }
+        {
+          "id": "workflow",
+          "name": "Only This Workflow's Subscriptions"
+        },
+        {
+          "id": "global",
+          "name": "All My Subscriptions"
+        }
       ],
       "default": "workflow",
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "filter_symbols",
@@ -119,20 +242,46 @@
       "type": "text",
       "placeholder": "BTCUSDT, ETHUSDT (leave empty for all)",
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "filter_types",
       "label": "Filter Event Types (Optional)",
       "type": "multiselect",
       "options": [
-        { "id": "trade", "name": "Trades" },
-        { "id": "bar", "name": "Klines/Bars" },
-        { "id": "quote", "name": "Book Ticker" },
-        { "id": "ticker", "name": "24h Ticker" }
+        {
+          "id": "trade",
+          "name": "Trades"
+        },
+        {
+          "id": "bar",
+          "name": "Klines/Bars"
+        },
+        {
+          "id": "quote",
+          "name": "Book Ticker"
+        },
+        {
+          "id": "ticker",
+          "name": "24h Ticker"
+        }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     }
   ]
 }

@@ -27,19 +27,30 @@
       "label": "Candle Data (OHLC)",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "method",
       "label": "Calculation Method",
       "type": "select",
       "options": [
-        { "value": "pivot", "label": "Pivot Points (Classic)" },
-        { "value": "swing", "label": "Swing High/Low (Price Action)" },
-        { "value": "historical", "label": "Historical High/Low" }
+        {
+          "value": "pivot",
+          "label": "Pivot Points (Classic)"
+        },
+        {
+          "value": "swing",
+          "label": "Swing High/Low (Price Action)"
+        },
+        {
+          "value": "historical",
+          "label": "Historical High/Low"
+        }
       ],
       "description": "Method for calculating levels. CHOOSE based on stock behavior: 'pivot' for range-bound stocks, 'swing' for trending/volatile stocks with clear reversals, 'historical' for finding extreme levels.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "lookback_period",
@@ -47,7 +58,8 @@
       "type": "text",
       "placeholder": "e.g. 20",
       "description": "Number of periods to analyze. CALCULATE based on data timeframe: For 3-month daily data use 20-30, for 6-month use 40-60, for 1-year use 50-100. Consider the stock's typical price cycle length.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "sensitivity",
@@ -55,7 +67,8 @@
       "type": "text",
       "placeholder": "e.g. 1.0",
       "description": "Percentage threshold for grouping nearby levels. CALCULATE from volatility: Check the stock's average daily price movement. Low volatility (<2% daily) use 0.5-1.0%, medium volatility (2-4%) use 1.0-2.0%, high volatility (>4%) use 2.0-3.0%.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "num_levels",
@@ -63,7 +76,8 @@
       "type": "text",
       "placeholder": "e.g. 3",
       "description": "Maximum support and resistance levels to return. DECIDE based on analysis goal: For quick buy/sell decision use 2-3, for detailed technical analysis use 4-5, for identifying major zones use 2.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

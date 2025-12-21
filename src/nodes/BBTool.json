@@ -27,7 +27,8 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "period",
@@ -35,7 +36,8 @@
       "type": "text",
       "placeholder": "e.g. 20",
       "description": "Period for middle band SMA. CHOOSE based on timeframe: 10-15 for short-term trading, 20 for standard, 30-50 for longer-term trend channels.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "std_dev_multiplier",
@@ -43,7 +45,8 @@
       "type": "text",
       "placeholder": "e.g. 2",
       "description": "Standard deviations for bands. CHOOSE based on volatility: 1.5 for low volatility stocks, 2.0 for standard, 2.5-3.0 for highly volatile stocks to avoid false breakout signals.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

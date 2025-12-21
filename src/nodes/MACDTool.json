@@ -28,7 +28,8 @@
       "label": "Candle Data",
       "type": "text",
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "fastPeriod",
@@ -36,7 +37,8 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "description": "Period for fast EMA. CHOOSE based on sensitivity: 8-10 for aggressive/volatile stocks, 12 for standard, 15-20 for smoother signals on stable stocks.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "slowPeriod",
@@ -44,7 +46,8 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "description": "Period for slow EMA. Must be greater than fast period. CHOOSE: 20-26 for standard, 30-40 for long-term trend confirmation.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "signalPeriod",
@@ -52,7 +55,8 @@
       "type": "text",
       "placeholder": "e.g. 9",
       "description": "Period for signal line. CHOOSE: 7-9 for faster crossover signals, 12-14 for fewer but more reliable signals.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

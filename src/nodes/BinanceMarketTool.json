@@ -54,48 +54,85 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved Binance API credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "environment",
       "label": "Environment",
       "type": "select",
       "options": [
-        { "name": "Testnet (Paper)", "id": "testnet" },
-        { "name": "Production (Live)", "id": "live" }
+        {
+          "name": "Testnet (Paper)",
+          "id": "testnet"
+        },
+        {
+          "name": "Production (Live)",
+          "id": "live"
+        }
       ],
       "default": "testnet",
       "description": "Testnet for simulation/testing, Production for real trading.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "name": "Spot", "id": "spot" },
-        { "name": "Futures", "id": "futures" }
+        {
+          "name": "Spot",
+          "id": "spot"
+        },
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
       ],
       "default": "spot",
       "description": "Spot for regular trading, Futures for derivatives/leverage.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "operation",
       "label": "Operation",
       "type": "select",
       "options": [
-        { "name": "Get Account", "id": "get_account" },
-        { "name": "Get Positions", "id": "get_positions" },
-        { "name": "Get Orders", "id": "get_orders" },
-        { "name": "Cancel Order", "id": "cancel_order" },
-        { "name": "Get Candle", "id": "get_candle" },
-        { "name": "Get Latest Bar", "id": "get_latest_bar" },
-        { "name": "Get Ticker", "id": "get_ticker" }
+        {
+          "name": "Get Account",
+          "id": "get_account"
+        },
+        {
+          "name": "Get Positions",
+          "id": "get_positions"
+        },
+        {
+          "name": "Get Orders",
+          "id": "get_orders"
+        },
+        {
+          "name": "Cancel Order",
+          "id": "cancel_order"
+        },
+        {
+          "name": "Get Candle",
+          "id": "get_candle"
+        },
+        {
+          "name": "Get Latest Bar",
+          "id": "get_latest_bar"
+        },
+        {
+          "name": "Get Ticker",
+          "id": "get_ticker"
+        }
       ],
       "required": true,
       "default": "get_ticker",
-      "description": "Action to perform: account/position info, market data, or order management."
+      "description": "Action to perform: account/position info, market data, or order management.",
+      "showDescription": false
     },
     {
       "key": "symbol",
@@ -105,9 +142,15 @@
       "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT).",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar", "get_ticker", "cancel_order"]
+          "operation": [
+            "get_candle",
+            "get_latest_bar",
+            "get_ticker",
+            "cancel_order"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "order_id",
@@ -117,33 +160,66 @@
       "description": "Binance order ID for cancellation.",
       "displayOptions": {
         "show": {
-          "operation": ["cancel_order"]
+          "operation": [
+            "cancel_order"
+          ]
         }
       },
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "interval",
       "label": "Interval",
       "type": "select",
       "options": [
-        { "name": "1 Minute", "id": "1m" },
-        { "name": "5 Minutes", "id": "5m" },
-        { "name": "3 Minutes", "id": "3m" },
-        { "name": "15 Minutes", "id": "15m" },
-        { "name": "30 Minutes", "id": "30m" },
-        { "name": "1 Hour", "id": "1h" },
-        { "name": "4 Hours", "id": "4h" },
-        { "name": "1 Day", "id": "1d" },
-        { "name": "1 Week", "id": "1w" }
+        {
+          "name": "1 Minute",
+          "id": "1m"
+        },
+        {
+          "name": "5 Minutes",
+          "id": "5m"
+        },
+        {
+          "name": "3 Minutes",
+          "id": "3m"
+        },
+        {
+          "name": "15 Minutes",
+          "id": "15m"
+        },
+        {
+          "name": "30 Minutes",
+          "id": "30m"
+        },
+        {
+          "name": "1 Hour",
+          "id": "1h"
+        },
+        {
+          "name": "4 Hours",
+          "id": "4h"
+        },
+        {
+          "name": "1 Day",
+          "id": "1d"
+        },
+        {
+          "name": "1 Week",
+          "id": "1w"
+        }
       ],
       "default": "1h",
       "description": "Kline/candlestick interval.",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "limit",
@@ -154,9 +230,13 @@
       "description": "Maximum number of records to return.",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": [
+            "get_candle",
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "startTime",
@@ -166,9 +246,13 @@
       "description": "Start time for historical data query.",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": [
+            "get_candle",
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "endTime",
@@ -178,9 +262,13 @@
       "description": "End time for historical data query.",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": [
+            "get_candle",
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

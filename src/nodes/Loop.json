@@ -6,11 +6,26 @@
   "category": "Logic",
   "description": "Iterate over array items, executing downstream nodes once per item. Supports distributed parallel execution via BullMQ.",
   "color": "text-yellow-500",
-  "size": { "width": 320, "height": 200 },
+  "size": {
+    "width": 320,
+    "height": 200
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "in" },
-    { "type": "source", "position": "top", "id": "done" },
-    { "type": "source", "position": "right", "id": "loop" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "in"
+    },
+    {
+      "type": "source",
+      "position": "top",
+      "id": "done"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "loop"
+    }
   ],
   "fields": [
     {
@@ -19,7 +34,8 @@
       "type": "text",
       "placeholder": "items",
       "required": true,
-      "description": "Field name containing the array to loop over."
+      "description": "Field name containing the array to loop over.",
+      "showDescription": false
     },
     {
       "key": "batchSize",
@@ -27,21 +43,24 @@
       "type": "text",
       "placeholder": "1",
       "default": 1,
-      "description": "Number of items to process per iteration (sequential mode only)."
+      "description": "Number of items to process per iteration (sequential mode only).",
+      "showDescription": false
     },
     {
       "key": "aggregate",
       "label": "Aggregate Output",
       "type": "checkbox",
       "default": false,
-      "description": "Accumulate results and emit all processed items when loop completes."
+      "description": "Accumulate results and emit all processed items when loop completes.",
+      "showDescription": false
     },
     {
       "key": "parallel",
       "label": "Parallel Execution",
       "type": "checkbox",
       "default": false,
-      "description": "Distribute loop items across BullMQ workers for true distributed parallelism."
+      "description": "Distribute loop items across BullMQ workers for true distributed parallelism.",
+      "showDescription": false
     },
     {
       "key": "maxConcurrency",
@@ -50,14 +69,19 @@
       "placeholder": "10",
       "default": "10",
       "description": "Maximum concurrent BullMQ workers (1-50). Higher values = faster but more resource usage.",
-      "condition": { "field": "parallel", "value": true }
+      "condition": {
+        "field": "parallel",
+        "value": true
+      },
+      "showDescription": false
     },
     {
       "key": "continueOnError",
       "label": "Continue On Error",
       "type": "checkbox",
       "default": false,
-      "description": "Continue processing remaining items even if some fail. Failed items include error info in results."
+      "description": "Continue processing remaining items even if some fail. Failed items include error info in results.",
+      "showDescription": false
     },
     {
       "key": "throttleMs",
@@ -66,7 +90,11 @@
       "placeholder": "200",
       "default": 200,
       "description": "Delay between loop iterations (sequential mode only).",
-      "condition": { "field": "parallel", "value": false }
+      "condition": {
+        "field": "parallel",
+        "value": false
+      },
+      "showDescription": false
     }
   ]
 }

@@ -7,10 +7,21 @@
   "subCategory": "Schwab",
   "description": "Execute trades through Charles Schwab",
   "color": "text-blue-500",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "SchwabAuthModal",
   "authFields": [
@@ -40,9 +51,14 @@
       "placeholder": "For reference only - will be fetched dynamically"
     }
   ],
-  "authAction": { "url": "/oauth/schwab/generate-auth-url", "method": "POST" },
-
-  "action": { "url": "/broker/schwab/place_order", "method": "POST" },
+  "authAction": {
+    "url": "/oauth/schwab/generate-auth-url",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/broker/schwab/place_order",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "operation",
@@ -67,7 +83,8 @@
       "optionsApiUrl": "/broker/schwab/get_account_numbers",
       "dependsOn": "credential_id",
       "placeholder": "Select an account",
-      "description": "Select the Schwab account for trading"
+      "description": "Select the Schwab account for trading",
+      "showDescription": false
     },
     {
       "key": "symbol",
@@ -81,10 +98,22 @@
       "label": "Action",
       "type": "select",
       "options": [
-        { "id": "BUY", "name": "Buy" },
-        { "id": "SELL", "name": "Sell" },
-        { "id": "BUY_TO_COVER", "name": "Buy to Cover" },
-        { "id": "SELL_SHORT", "name": "Sell Short" }
+        {
+          "id": "BUY",
+          "name": "Buy"
+        },
+        {
+          "id": "SELL",
+          "name": "Sell"
+        },
+        {
+          "id": "BUY_TO_COVER",
+          "name": "Buy to Cover"
+        },
+        {
+          "id": "SELL_SHORT",
+          "name": "Sell Short"
+        }
       ],
       "default": "BUY",
       "required": true
@@ -101,10 +130,22 @@
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "id": "MARKET", "name": "Market" },
-        { "id": "LIMIT", "name": "Limit" },
-        { "id": "STOP", "name": "Stop" },
-        { "id": "STOP_LIMIT", "name": "Stop Limit" }
+        {
+          "id": "MARKET",
+          "name": "Market"
+        },
+        {
+          "id": "LIMIT",
+          "name": "Limit"
+        },
+        {
+          "id": "STOP",
+          "name": "Stop"
+        },
+        {
+          "id": "STOP_LIMIT",
+          "name": "Stop Limit"
+        }
       ],
       "default": "MARKET",
       "required": true
@@ -116,7 +157,10 @@
       "placeholder": "Required for limit orders",
       "displayOptions": {
         "show": {
-          "orderType": ["LIMIT", "STOP_LIMIT"]
+          "orderType": [
+            "LIMIT",
+            "STOP_LIMIT"
+          ]
         }
       }
     },
@@ -125,9 +169,18 @@
       "label": "Duration",
       "type": "select",
       "options": [
-        { "id": "DAY", "name": "Day" },
-        { "id": "GOOD_TILL_CANCEL", "name": "Good Till Cancel" },
-        { "id": "FILL_OR_KILL", "name": "Fill or Kill" }
+        {
+          "id": "DAY",
+          "name": "Day"
+        },
+        {
+          "id": "GOOD_TILL_CANCEL",
+          "name": "Good Till Cancel"
+        },
+        {
+          "id": "FILL_OR_KILL",
+          "name": "Fill or Kill"
+        }
       ],
       "default": "DAY",
       "required": true
@@ -137,9 +190,18 @@
       "label": "Session",
       "type": "select",
       "options": [
-        { "id": "NORMAL", "name": "Normal" },
-        { "id": "AM", "name": "Pre-Market" },
-        { "id": "PM", "name": "After-Hours" }
+        {
+          "id": "NORMAL",
+          "name": "Normal"
+        },
+        {
+          "id": "AM",
+          "name": "Pre-Market"
+        },
+        {
+          "id": "PM",
+          "name": "After-Hours"
+        }
       ],
       "default": "NORMAL"
     }

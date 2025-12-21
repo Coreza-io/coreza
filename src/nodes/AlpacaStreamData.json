@@ -13,35 +13,73 @@
   },
   "description": "Receives real-time market data from Alpaca. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
-  "size": { "width": 320, "height": 280 },
+  "size": {
+    "width": 320,
+    "height": 280
+  },
   "handles": [
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
-    { "key": "credential_name", "label": "Credential Label", "type": "text", "default": "My Alpaca" },
-    { "key": "api_key", "label": "API Key", "type": "password", "required": true },
-    { "key": "secret_key", "label": "Secret Key", "type": "password", "required": true }
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Alpaca"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "secret_key",
+      "label": "Secret Key",
+      "type": "password",
+      "required": true
+    }
   ],
-  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
+  "authAction": {
+    "url": "/broker/alpaca/auth",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "mode",
       "label": "Mode",
       "type": "select",
       "options": [
-        { "id": "listen", "name": "Listen (Use Pre-subscribed Symbols)" },
-        { "id": "subscribe", "name": "Subscribe & Stream (Self-contained)" }
+        {
+          "id": "listen",
+          "name": "Listen (Use Pre-subscribed Symbols)"
+        },
+        {
+          "id": "subscribe",
+          "name": "Subscribe & Stream (Self-contained)"
+        }
       ],
       "default": "listen",
-      "description": "Listen mode uses symbols from Subscribe nodes. Subscribe mode subscribes symbols directly."
+      "description": "Listen mode uses symbols from Subscribe nodes. Subscribe mode subscribes symbols directly.",
+      "showDescription": false
     },
-    { 
-      "key": "credential_id", 
-      "label": "Credential", 
-      "type": "select", 
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
       "optionsSource": "credentialsApi",
-      "displayOptions": { "show": { "mode": ["subscribe"] } },
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
       "required": false
     },
     {
@@ -49,45 +87,98 @@
       "label": "Data Feed",
       "type": "select",
       "options": [
-        { "id": "iex", "name": "IEX (Free)" },
-        { "id": "sip", "name": "SIP (Paid - Full Market)" }
+        {
+          "id": "iex",
+          "name": "IEX (Free)"
+        },
+        {
+          "id": "sip",
+          "name": "SIP (Paid - Full Market)"
+        }
       ],
       "default": "iex",
       "description": "IEX is free but regular hours only. SIP includes pre/post market.",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "showDescription": false
     },
-    { 
-      "key": "symbols", 
-      "label": "Symbols", 
-      "type": "text", 
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
       "placeholder": "AAPL, TSLA, SPY",
       "description": "Symbols to subscribe and stream.",
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "showDescription": false
     },
-    { 
-      "key": "stream_types", 
-      "label": "Stream Types", 
+    {
+      "key": "stream_types",
+      "label": "Stream Types",
       "type": "multiselect",
       "options": [
-        { "id": "trade", "name": "Trades" },
-        { "id": "quote", "name": "Quotes" },
-        { "id": "bar", "name": "Bars (1-min)" },
-        { "id": "daily_bar", "name": "Daily Bars" }
+        {
+          "id": "trade",
+          "name": "Trades"
+        },
+        {
+          "id": "quote",
+          "name": "Quotes"
+        },
+        {
+          "id": "bar",
+          "name": "Bars (1-min)"
+        },
+        {
+          "id": "daily_bar",
+          "name": "Daily Bars"
+        }
       ],
-      "default": ["trade"],
-      "displayOptions": { "show": { "mode": ["subscribe"] } }
+      "default": [
+        "trade"
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
     },
     {
       "key": "subscriptionMode",
       "label": "Subscription Mode",
       "type": "select",
       "options": [
-        { "id": "workflow", "name": "Only This Workflow's Subscriptions" },
-        { "id": "global", "name": "All My Subscriptions" }
+        {
+          "id": "workflow",
+          "name": "Only This Workflow's Subscriptions"
+        },
+        {
+          "id": "global",
+          "name": "All My Subscriptions"
+        }
       ],
       "default": "workflow",
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "filter_symbols",
@@ -95,20 +186,46 @@
       "type": "text",
       "placeholder": "AAPL, TSLA (leave empty for all)",
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "filter_types",
       "label": "Filter Event Types (Optional)",
       "type": "multiselect",
       "options": [
-        { "id": "trade", "name": "Trades" },
-        { "id": "quote", "name": "Quotes" },
-        { "id": "bar", "name": "Bars" },
-        { "id": "daily_bar", "name": "Daily Bars" }
+        {
+          "id": "trade",
+          "name": "Trades"
+        },
+        {
+          "id": "quote",
+          "name": "Quotes"
+        },
+        {
+          "id": "bar",
+          "name": "Bars"
+        },
+        {
+          "id": "daily_bar",
+          "name": "Daily Bars"
+        }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",
-      "displayOptions": { "show": { "mode": ["listen"] } }
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
     }
   ]
 }

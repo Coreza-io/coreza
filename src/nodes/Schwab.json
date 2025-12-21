@@ -5,12 +5,23 @@
   "description": "Access Schwab account info, positions, orders, quotes, and price history",
   "icon": "/assets/icons/schwab.svg",
   "color": "text-blue-500",
-  "size": { "width": 300, "height": 300 },
+  "size": {
+    "width": 300,
+    "height": 300
+  },
   "category": "Broker",
   "subCategory": "Schwab",
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "SchwabAuthModal",
   "authAction": {
@@ -72,9 +83,14 @@
       "description": "Select the Schwab account to use",
       "displayOptions": {
         "show": {
-          "operation": ["get_account", "get_positions", "get_orders"]
+          "operation": [
+            "get_account",
+            "get_positions",
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "operation",
@@ -82,11 +98,26 @@
       "type": "select",
       "required": true,
       "options": [
-        { "id": "get_account", "name": "Get Account" },
-        { "id": "get_positions", "name": "Get Positions" },
-        { "id": "get_orders", "name": "Get Orders" },
-        { "id": "get_quotes", "name": "Get Quotes" },
-        { "id": "get_price_history", "name": "Get Price History" }
+        {
+          "id": "get_account",
+          "name": "Get Account"
+        },
+        {
+          "id": "get_positions",
+          "name": "Get Positions"
+        },
+        {
+          "id": "get_orders",
+          "name": "Get Orders"
+        },
+        {
+          "id": "get_quotes",
+          "name": "Get Quotes"
+        },
+        {
+          "id": "get_price_history",
+          "name": "Get Price History"
+        }
       ],
       "default": "get_account"
     },
@@ -98,24 +129,44 @@
       "description": "Comma-separated list of symbols",
       "displayOptions": {
         "show": {
-          "operation": ["get_quotes"]
+          "operation": [
+            "get_quotes"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "fields",
       "label": "Quote Fields",
       "type": "select",
       "options": [
-        { "id": "quote", "name": "Quote Only" },
-        { "id": "fundamental", "name": "Fundamental Only" },
-        { "id": "extended", "name": "Extended Only" },
-        { "id": "quote,fundamental", "name": "Quote + Fundamental" },
-        { "id": "all", "name": "All Fields" }
+        {
+          "id": "quote",
+          "name": "Quote Only"
+        },
+        {
+          "id": "fundamental",
+          "name": "Fundamental Only"
+        },
+        {
+          "id": "extended",
+          "name": "Extended Only"
+        },
+        {
+          "id": "quote,fundamental",
+          "name": "Quote + Fundamental"
+        },
+        {
+          "id": "all",
+          "name": "All Fields"
+        }
       ],
       "displayOptions": {
         "show": {
-          "operation": ["get_quotes"]
+          "operation": [
+            "get_quotes"
+          ]
         }
       }
     },
@@ -127,23 +178,40 @@
       "description": "Single symbol for price history",
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "periodType",
       "label": "Period Type",
       "type": "select",
       "options": [
-        { "id": "day", "name": "Day" },
-        { "id": "month", "name": "Month" },
-        { "id": "year", "name": "Year" },
-        { "id": "ytd", "name": "Year to Date" }
+        {
+          "id": "day",
+          "name": "Day"
+        },
+        {
+          "id": "month",
+          "name": "Month"
+        },
+        {
+          "id": "year",
+          "name": "Year"
+        },
+        {
+          "id": "ytd",
+          "name": "Year to Date"
+        }
       ],
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
       }
     },
@@ -155,23 +223,40 @@
       "description": "Number of periods (depends on periodType)",
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "frequencyType",
       "label": "Frequency Type",
       "type": "select",
       "options": [
-        { "id": "minute", "name": "Minute" },
-        { "id": "daily", "name": "Daily" },
-        { "id": "weekly", "name": "Weekly" },
-        { "id": "monthly", "name": "Monthly" }
+        {
+          "id": "minute",
+          "name": "Minute"
+        },
+        {
+          "id": "daily",
+          "name": "Daily"
+        },
+        {
+          "id": "weekly",
+          "name": "Weekly"
+        },
+        {
+          "id": "monthly",
+          "name": "Monthly"
+        }
       ],
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
       }
     },
@@ -183,21 +268,32 @@
       "description": "Interval (e.g., 1 for 1-minute, 5 for 5-minute)",
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "needExtendedHoursData",
       "label": "Include Extended Hours",
       "type": "select",
       "options": [
-        { "id": "true", "name": "Yes" },
-        { "id": "false", "name": "No" }
+        {
+          "id": "true",
+          "name": "Yes"
+        },
+        {
+          "id": "false",
+          "name": "No"
+        }
       ],
       "displayOptions": {
         "show": {
-          "operation": ["get_price_history"]
+          "operation": [
+            "get_price_history"
+          ]
         }
       }
     },
@@ -208,7 +304,9 @@
       "placeholder": "100",
       "displayOptions": {
         "show": {
-          "operation": ["get_orders"]
+          "operation": [
+            "get_orders"
+          ]
         }
       }
     },
@@ -220,9 +318,12 @@
       "description": "ISO 8601 format",
       "displayOptions": {
         "show": {
-          "operation": ["get_orders"]
+          "operation": [
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "end_date",
@@ -232,9 +333,12 @@
       "description": "ISO 8601 format",
       "displayOptions": {
         "show": {
-          "operation": ["get_orders"]
+          "operation": [
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "status",
@@ -244,9 +348,12 @@
       "description": "Comma-separated list of statuses",
       "displayOptions": {
         "show": {
-          "operation": ["get_orders"]
+          "operation": [
+            "get_orders"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

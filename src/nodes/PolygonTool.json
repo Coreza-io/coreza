@@ -47,23 +47,43 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved Polygon.io API credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "operation",
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "ticker_details", "name": "Ticker Details" },
-        { "id": "financials", "name": "Financials (Income/Balance/Cash Flow)" },
-        { "id": "dividends", "name": "Dividends" },
-        { "id": "splits", "name": "Stock Splits" },
-        { "id": "news", "name": "Ticker News" },
-        { "id": "related_companies", "name": "Related Companies" }
+        {
+          "id": "ticker_details",
+          "name": "Ticker Details"
+        },
+        {
+          "id": "financials",
+          "name": "Financials (Income/Balance/Cash Flow)"
+        },
+        {
+          "id": "dividends",
+          "name": "Dividends"
+        },
+        {
+          "id": "splits",
+          "name": "Stock Splits"
+        },
+        {
+          "id": "news",
+          "name": "Ticker News"
+        },
+        {
+          "id": "related_companies",
+          "name": "Related Companies"
+        }
       ],
       "default": "ticker_details",
       "description": "Type of data to fetch: company details, financial statements, dividend history, split history, news, or related tickers.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "ticker",
@@ -71,24 +91,37 @@
       "type": "text",
       "placeholder": "e.g. AAPL",
       "description": "Stock ticker symbol to fetch data for.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "select",
       "options": [
-        { "id": "quarterly", "name": "Quarterly" },
-        { "id": "annual", "name": "Annual" },
-        { "id": "ttm", "name": "TTM (Trailing 12 Months)" }
+        {
+          "id": "quarterly",
+          "name": "Quarterly"
+        },
+        {
+          "id": "annual",
+          "name": "Annual"
+        },
+        {
+          "id": "ttm",
+          "name": "TTM (Trailing 12 Months)"
+        }
       ],
       "default": "annual",
       "description": "Reporting period for financial data.",
       "displayOptions": {
         "show": {
-          "operation": ["financials"]
+          "operation": [
+            "financials"
+          ]
         }
-      }
+      },
+      "showDescription": false
     },
     {
       "key": "limit",
@@ -99,9 +132,15 @@
       "description": "Maximum number of results to return.",
       "displayOptions": {
         "show": {
-          "operation": ["news", "dividends", "splits", "financials"]
+          "operation": [
+            "news",
+            "dividends",
+            "splits",
+            "financials"
+          ]
         }
-      }
+      },
+      "showDescription": false
     }
   ]
 }

@@ -7,9 +7,16 @@
   "subCategory": "FinnHub",
   "description": "Fetch real-time stock quotes from FinnHub. Returns current price, open, high, low, previous close, and change percentage.",
   "color": "text-orange-500",
-  "size": { "width": 340, "height": 280 },
+  "size": {
+    "width": 340,
+    "height": 280
+  },
   "handles": [
-    { "type": "source", "position": "top", "id": "tool" }
+    {
+      "type": "source",
+      "position": "top",
+      "id": "tool"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
@@ -26,7 +33,10 @@
       "placeholder": "API Secret key"
     }
   ],
-  "authAction": { "url": "/finnhub/auth", "method": "POST" },
+  "authAction": {
+    "url": "/finnhub/auth",
+    "method": "POST"
+  },
   "action": {
     "url": "/finnhub/get-quote",
     "method": "POST"
@@ -39,7 +49,8 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved FinnHub API credential.",
-      "required": true
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "ticker",
@@ -47,7 +58,8 @@
       "type": "text",
       "placeholder": "e.g. AAPL",
       "description": "Stock ticker symbol to fetch real-time quote for.",
-      "required": true
+      "required": true,
+      "showDescription": false
     }
   ]
 }

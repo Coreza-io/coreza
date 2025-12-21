@@ -67,7 +67,7 @@ class GmailService extends BaseCommunicationService {
     if (credentials.refresh_token) {
       auth.setCredentials({
         refresh_token: credentials.refresh_token,
-        access_token: credentials.access_token,
+        //access_token: credentials.access_token,
       });
     }
 

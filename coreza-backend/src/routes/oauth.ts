@@ -16,14 +16,22 @@
 
 import express from "express";
 import OAuthService from "../services/oauthService";
+import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
+
+router.use(requireAuth);
 
 router.post("/:provider/generate-auth-url", async (req, res, next) => {
   try {
     const { provider } = req.params;
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     const { authUrl, tempId } = await OAuthService.generateAuthUrl(
       provider,
+      user_id,
       req.body
     );
 
@@ -36,7 +44,15 @@ router.post("/:provider/generate-auth-url", async (req, res, next) => {
 router.post("/:provider/exchange-token", async (req, res, next) => {
   try {
     const { provider } = req.params;
-    const { credentialId } = await OAuthService.exchangeCode(provider, req.body);
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { credentialId } = await OAuthService.exchangeCode(
+      provider,
+      user_id,
+      req.body
+    );
 
     res.json({ success: true, credential_id: credentialId });
   } catch (error) {
@@ -47,7 +63,15 @@ router.post("/:provider/exchange-token", async (req, res, next) => {
 router.post("/:provider/refresh-token", async (req, res, next) => {
   try {
     const { provider } = req.params;
-    const { tokens } = await OAuthService.refreshToken(provider, req.body);
+    const user_id = req.user?.id;
+    if (!user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { tokens } = await OAuthService.refreshToken(
+      provider,
+      user_id,
+      req.body
+    );
 
     res.json({
       success: true,
@@ -60,4 +84,3 @@ router.post("/:provider/refresh-token", async (req, res, next) => {
 });
 
 export default router;
-

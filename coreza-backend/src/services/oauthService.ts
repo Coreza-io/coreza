@@ -69,7 +69,9 @@ class OAuthService {
     const scope = body.scope || config.defaultScopes;
 
     if (!clientId || !clientSecret) {
-      throw new Error(`${config.clientIdField} and ${config.clientSecretField} are required`);
+      throw new Error(
+        `${config.clientIdField} and ${config.clientSecretField} are required`
+      );
     }
 
     return {
@@ -83,7 +85,7 @@ class OAuthService {
     };
   }
 
-  static async generateAuthUrl(provider: string, body: any) {
+  static async generateAuthUrl(provider: string, userId: string, body: any) {
     const config = this.getProviderConfig(provider);
     const session = this.buildSession(provider, config, body);
     const tempId = `${session.provider}_${Date.now()}_${Math.random()
@@ -97,9 +99,10 @@ class OAuthService {
     return { authUrl, tempId };
   }
 
-  static async exchangeCode(provider: string, body: any) {
+  static async exchangeCode(provider: string, userId: string, body: any) {
     const config = this.getProviderConfig(provider);
-    const { temp_id, user_id, credential_name } = body;
+    const { temp_id, credential_name } = body;
+    const user_id = userId;
 
     if (!temp_id || !user_id || !credential_name) {
       throw new Error("temp_id, user_id, and credential_name are required");
@@ -113,7 +116,9 @@ class OAuthService {
 
     if (Date.now() > session.expires) {
       this.tempSessions.delete(temp_id);
-      throw new Error("Session expired. Please start the connection process again.");
+      throw new Error(
+        "Session expired. Please start the connection process again."
+      );
     }
 
     const tokenData: OAuthTokenResult = await config.exchangeCode({
@@ -145,14 +150,15 @@ class OAuthService {
     };
   }
 
-  static async refreshToken(provider: string, body: any) {
+  static async refreshToken(provider: string, userId: string, body: any) {
     const config = this.getProviderConfig(provider);
 
     if (!config.refreshToken) {
       throw new Error(`Refresh not supported for provider: ${provider}`);
     }
 
-    const { user_id, credential_id } = body;
+    const { credential_id } = body;
+    const user_id = userId;
 
     if (!user_id || !credential_id) {
       throw new Error("user_id and credential_id are required");
@@ -195,4 +201,3 @@ class OAuthService {
 }
 
 export default OAuthService;
-

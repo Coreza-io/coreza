@@ -91,6 +91,15 @@ export function GmailAuthModal({
       return;
     }
 
+    if (!session?.access_token) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in again to generate the authorization link",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await apiClient.post(
@@ -99,7 +108,8 @@ export function GmailAuthModal({
           client_id: clientId,
           client_secret: clientSecret,
           redirect_uri: redirectUri,
-        }
+        },
+        session.access_token
       );
 
       const data = await response.json();

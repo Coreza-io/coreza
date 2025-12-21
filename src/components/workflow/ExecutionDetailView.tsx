@@ -30,6 +30,9 @@ import { nodeManifest } from "@/nodes/manifest";
 // Create execution-specific node types using NodeRouter for all node types
 const executionNodeTypes = Object.fromEntries([
   ...Object.keys(nodeManifest).map((key) => [key, NodeRouter]),
+  ...Object.values(nodeManifest)
+    .filter((def: any) => Boolean(def.node_type))
+    .map((def: any) => [def.node_type, NodeRouter]),
   ...Object.values(nodeManifest).map((def: any) => [def.name, NodeRouter]),
 ]);
 

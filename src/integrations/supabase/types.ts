@@ -477,9 +477,13 @@ export type Database = {
       workflow_runs: {
         Row: {
           completed_at: string | null
+          edge_count: number | null
+          edges: Json | null
           error_message: string | null
           id: string
           initiated_by: string | null
+          node_count: number | null
+          nodes: Json | null
           result: Json | null
           started_at: string
           status: string
@@ -487,9 +491,13 @@ export type Database = {
         }
         Insert: {
           completed_at?: string | null
+          edge_count?: number | null
+          edges?: Json | null
           error_message?: string | null
           id?: string
           initiated_by?: string | null
+          node_count?: number | null
+          nodes?: Json | null
           result?: Json | null
           started_at?: string
           status: string
@@ -497,9 +505,13 @@ export type Database = {
         }
         Update: {
           completed_at?: string | null
+          edge_count?: number | null
+          edges?: Json | null
           error_message?: string | null
           id?: string
           initiated_by?: string | null
+          node_count?: number | null
+          nodes?: Json | null
           result?: Json | null
           started_at?: string
           status?: string

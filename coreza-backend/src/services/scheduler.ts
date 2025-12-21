@@ -233,7 +233,7 @@ class WorkflowScheduler {
         const startTime = Date.now();
 
         try {
-          // Create workflow run
+          // Create workflow run with snapshot of current workflow state
           console.log(
             `📋 [SCHEDULER] Creating workflow run for ${workflowId}...`
           );
@@ -243,6 +243,10 @@ class WorkflowScheduler {
               workflow_id: workflowId,
               status: "queued",
               initiated_by: userId,
+              nodes: nodes,
+              edges: edges,
+              node_count: Array.isArray(nodes) ? nodes.length : 0,
+              edge_count: Array.isArray(edges) ? edges.length : 0,
             })
             .select()
             .single();

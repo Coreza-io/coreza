@@ -318,13 +318,17 @@ router.post("/:workflowId/execute", async (req, res, next) => {
       throw createError("Workflow not found", 404);
     }
 
-    // Create workflow run
+    // Create workflow run with snapshot of current workflow state
     const { data: run, error: runError } = await supabase
       .from("workflow_runs")
       .insert({
         workflow_id: workflowId,
         status: "queued",
         initiated_by: userId,
+        nodes: workflow.nodes,
+        edges: workflow.edges,
+        node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
+        edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
       })
       .select()
       .single();
@@ -738,13 +742,17 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
         // Handle BacktestInit activation - execute immediately via BullMQ
         if (triggerNode.node_type === "backtest") {
-          // Create a workflow run record
+          // Create a workflow run record with snapshot
           const { data: run, error: runError } = await supabase
             .from("workflow_runs")
             .insert({
               workflow_id: workflowId,
               status: "queued",
               initiated_by: userId,
+              nodes: workflow.nodes,
+              edges: workflow.edges,
+              node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
+              edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
             })
             .select()
             .single();

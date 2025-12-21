@@ -84,12 +84,42 @@ export function ExecutionDetailView({
     return map;
   }, [nodeExecutions]);
 
+  // Ensure execution nodes always include definitions and consistent types
+  const hydratedNodes = useMemo(() => {
+    return sourceNodes.map((node) => {
+      const nodeType =
+        node.type ||
+        (node as any).name ||
+        (node.data as any)?.definition?.name ||
+        node.id;
+
+      const definition =
+        (node.data as any)?.definition ||
+        nodeManifest[nodeType as keyof typeof nodeManifest];
+
+      return {
+        ...node,
+        type: nodeType,
+        data: {
+          ...node.data,
+          definition,
+          values: (node as any).values || node.data?.values || {},
+          displayName:
+            node.data?.displayName ||
+            (node.data as any)?.label ||
+            definition?.name ||
+            node.id,
+        },
+      };
+    });
+  }, [sourceNodes]);
+
   // Transform nodes to show execution status with readOnly mode
   const executionNodes = useMemo(() => {
-    return sourceNodes.map((node) => {
+    return hydratedNodes.map((node) => {
       const nodeExec = nodeExecutionMap.get(node.id);
       const status = nodeExec?.status || "pending";
-      
+
       return {
         ...node,
         data: {
@@ -113,7 +143,7 @@ export function ExecutionDetailView({
         },
       };
     });
-  }, [sourceNodes, nodeExecutionMap, nodeExecutions]);
+  }, [hydratedNodes, nodeExecutionMap, nodeExecutions]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {

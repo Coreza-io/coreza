@@ -64,7 +64,9 @@ export function useNodeCredentials({
 
         // Check if userId AND access_token exist
         if (!userId || !session?.access_token) {
-          console.log("No authenticated user or access token, skipping credentials fetch");
+          console.log(
+            "No authenticated user or access token, skipping credentials fetch"
+          );
           setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
           return;
         }
@@ -75,11 +77,6 @@ export function useNodeCredentials({
         if (category === "broker" || category === "screener") {
           // Broker/Screener nodes use /broker/{name}/credentials
           url = `/broker/${nodeName}/credentials`;
-        } else if (definition?.authAction?.url) {
-          // Derive from authAction URL: /finnhub/auth → /finnhub/credentials
-          const authPath = definition.authAction.url;
-          const basePath = authPath.replace(/\/auth$/, "");
-          url = `${basePath}/credentials`;
         } else {
           // Fallback: /{service}/credentials
           url = `/${nodeName}/credentials`;
@@ -143,7 +140,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [userId, session?.access_token],
+    [userId, session?.access_token]
   );
 
   const fetchStoreVariables = useCallback(
@@ -171,7 +168,8 @@ export function useNodeCredentials({
 
         setSelectOptions((opts) => ({
           ...opts,
-          [fieldKey]: json.variables?.map((v: string) => ({ id: v, name: v })) || [],
+          [fieldKey]:
+            json.variables?.map((v: string) => ({ id: v, name: v })) || [],
         }));
       } catch (error) {
         console.error("Error fetching store variables:", error);
@@ -180,7 +178,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [userId, session?.access_token],
+    [userId, session?.access_token]
   );
 
   // Fetch dependent options (cascading selects)
@@ -248,7 +246,7 @@ export function useNodeCredentials({
   useEffect(() => {
     // Don't fetch until auth is resolved
     if (loading) return;
-    
+
     (definition?.fields || []).forEach(async (f: any) => {
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
         fetchCredentials(f.key);
@@ -260,7 +258,13 @@ export function useNodeCredentials({
         setSelectOptions((opts) => ({ ...opts, [f.key]: f.options! }));
       }
     });
-  }, [definition?.fields, definition?.name, fetchCredentials, fetchStoreWorkflows, loading]);
+  }, [
+    definition?.fields,
+    definition?.name,
+    fetchCredentials,
+    fetchStoreWorkflows,
+    loading,
+  ]);
 
   // Load dependent API options on mount or when parent field changes
   useEffect(() => {
@@ -273,8 +277,13 @@ export function useNodeCredentials({
       ) {
         fetchDependentOptions(field, fieldState[field.dependsOn]);
       }
-      if (field.type === "select" && field.optionsSource === "storeVariablesApi") {
-        const selectedWorkflowId = field.dependsOn ? fieldState[field.dependsOn] : undefined;
+      if (
+        field.type === "select" &&
+        field.optionsSource === "storeVariablesApi"
+      ) {
+        const selectedWorkflowId = field.dependsOn
+          ? fieldState[field.dependsOn]
+          : undefined;
 
         if (selectedWorkflowId) {
           fetchStoreVariables(field, selectedWorkflowId);
@@ -283,7 +292,12 @@ export function useNodeCredentials({
         }
       }
     });
-  }, [definition?.fields, fieldState, fetchDependentOptions, fetchStoreVariables]);
+  }, [
+    definition?.fields,
+    fieldState,
+    fetchDependentOptions,
+    fetchStoreVariables,
+  ]);
 
   return {
     loadingSelect,
@@ -294,4 +308,3 @@ export function useNodeCredentials({
     fetchStoreVariables,
   };
 }
-

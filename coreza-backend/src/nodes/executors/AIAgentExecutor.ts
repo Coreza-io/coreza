@@ -25,9 +25,15 @@ import {
 } from "@langchain/core/prompts";
 import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
-import { processToolOutput, resolveDataRef } from "../../services/toolOutputProcessor";
+import {
+  processToolOutput,
+  resolveDataRef,
+} from "../../services/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../services/DataContext";
-import { TOOL_DEFINITIONS, ToolDefinition } from "../../services/toolDefinitions";
+import {
+  TOOL_DEFINITIONS,
+  ToolDefinition,
+} from "../../services/toolDefinitions";
 import { loadNodeDefinition } from "../nodeDefinitions";
 
 export class AIAgentExecutor implements INodeExecutor {
@@ -40,9 +46,9 @@ export class AIAgentExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     // Create DataContext for this agent execution
     const runId = context?.runId || `agent-${node.id}-${Date.now()}`;
-    const workflowId = context?.workflowId || 'unknown';
-    const userId = context?.user_id || context?.userId || 'unknown';
-    
+    const workflowId = context?.workflowId || "unknown";
+    const userId = context?.user_id || context?.userId || "unknown";
+
     const dataContextManager = DataContextManager.getInstance();
     const dataContext = dataContextManager.getContext({
       runId,
@@ -159,18 +165,18 @@ export class AIAgentExecutor implements INodeExecutor {
       });
 
       // Create tools from connected tool nodes - pass dataContext
-      const tools = await this.createToolsFromEdges(
-        node,
-        edges,
-        allNodes,
-        { ...context, dataContext }
-      );
+      const tools = await this.createToolsFromEdges(node, edges, allNodes, {
+        ...context,
+        dataContext,
+      });
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
 
       // Build tool list for enhanced system prompt
-      const toolList = tools.map(t => `- ${t.name}: ${t.description}`).join('\n');
-      
+      const toolList = tools
+        .map((t) => `- ${t.name}: ${t.description}`)
+        .join("\n");
+
       // Enhance system prompt with tool listing and intelligent parameter guidance
       const enhancedSystemPrompt = `${systemPrompt}
 
@@ -216,21 +222,17 @@ CRITICAL INSTRUCTIONS:
 
       // Log memory stats
       const stats = dataContext.getStats();
-      console.log(`📊 [AIAgent] Memory used: ${stats.entryCount} entries, ${(stats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+      console.log(
+        `📊 [AIAgent] Memory used: ${stats.entryCount} entries, ${(
+          stats.totalSizeBytes /
+          1024 /
+          1024
+        ).toFixed(2)}MB`
+      );
 
       return {
         success: true,
-        data: {
-          output: result.output,
-          intermediateSteps: returnIntermediateSteps
-            ? result.intermediateSteps
-            : undefined,
-          input: userPrompt,
-          memoryStats: {
-            entriesUsed: stats.entryCount,
-            memoryUsedMB: Math.round(stats.totalSizeBytes / 1024 / 1024 * 100) / 100,
-          },
-        },
+        data: result.output,
       };
     } catch (error: any) {
       console.error("❌ [AIAgent] Agent execution error:", error);
@@ -314,15 +316,18 @@ CRITICAL INSTRUCTIONS:
           const resolvedInput = resolveDataRef(input, dataContext);
 
           // Unwrap nested input if agent sends { input: { ... } } wrapper
-          const unwrappedInput = resolvedInput.input && typeof resolvedInput.input === 'object' && !Array.isArray(resolvedInput.input)
-            ? { ...resolvedInput, ...resolvedInput.input }
-            : resolvedInput;
+          const unwrappedInput =
+            resolvedInput.input &&
+            typeof resolvedInput.input === "object" &&
+            !Array.isArray(resolvedInput.input)
+              ? { ...resolvedInput, ...resolvedInput.input }
+              : resolvedInput;
 
           // Normalize node name for underlying executor (strip "Tool" suffix)
           const normalizedNode = {
             ...node,
-            name: node.name?.endsWith("Tool") 
-              ? node.name.replace(/Tool$/, "") 
+            name: node.name?.endsWith("Tool")
+              ? node.name.replace(/Tool$/, "")
               : node.name,
           };
 
@@ -337,7 +342,11 @@ CRITICAL INSTRUCTIONS:
           }
 
           // Execute the normalized node with unwrapped input
-          const result = await executor.execute(normalizedNode, unwrappedInput, context);
+          const result = await executor.execute(
+            normalizedNode,
+            unwrappedInput,
+            context
+          );
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");
@@ -347,11 +356,11 @@ CRITICAL INSTRUCTIONS:
 
           // Process output through dataRef pattern (use normalized name for matching)
           const processedOutput = processToolOutput(
-            normalizedNode.name || node.category || '',
-            node.category || '',
+            normalizedNode.name || node.category || "",
+            node.category || "",
             result.data,
             dataContext,
-            unwrappedInput  // Pass tool input so symbol can be extracted
+            unwrappedInput // Pass tool input so symbol can be extracted
           );
 
           // Return processed output (dataRef + summary, not raw data)
@@ -488,38 +497,45 @@ CRITICAL INSTRUCTIONS:
     definition?: ToolDefinition
   ): ZodTypeAny {
     let nodeFields = (node as any).fields;
-    
+
     // If workflow node doesn't have fields, try to load from JSON definition
     if (!nodeFields || !Array.isArray(nodeFields) || nodeFields.length === 0) {
-      const nodeName = node.name || '';
-      const normalizedName = nodeName.endsWith('Tool') 
-        ? nodeName.replace(/Tool$/, '') 
+      const nodeName = node.name || "";
+      const normalizedName = nodeName.endsWith("Tool")
+        ? nodeName.replace(/Tool$/, "")
         : nodeName;
-      
+
       // Try to find the Tool definition first, then the base node
       const toolDefName = `${normalizedName}Tool`;
       let nodeDefinition = loadNodeDefinition(toolDefName);
-      
+
       if (!nodeDefinition || !nodeDefinition.fields?.length) {
         nodeDefinition = loadNodeDefinition(normalizedName);
       }
-      
+
       if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
         nodeFields = nodeDefinition.fields;
-        console.log(`📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`);
+        console.log(
+          `📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`
+        );
       }
     }
-    
+
     if (nodeFields && Array.isArray(nodeFields) && nodeFields.length > 0) {
       // Create a temp node with fields for schema generation
       const nodeWithFields = { ...node, fields: nodeFields };
-      const schema = this.generateSchemaFromNode(nodeWithFields as WorkflowNode);
-      
+      const schema = this.generateSchemaFromNode(
+        nodeWithFields as WorkflowNode
+      );
+
       // Log schema keys for debugging
-      if (schema && typeof schema === 'object' && 'shape' in schema) {
-        console.log(`📋 [AIAgent] Tool ${node.name} schema keys:`, Object.keys((schema as any).shape || {}));
+      if (schema && typeof schema === "object" && "shape" in schema) {
+        console.log(
+          `📋 [AIAgent] Tool ${node.name} schema keys:`,
+          Object.keys((schema as any).shape || {})
+        );
       }
-      
+
       return schema;
     }
 

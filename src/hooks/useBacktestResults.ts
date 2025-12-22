@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { BacktestStatus } from "./useBacktests";
-import { getErrorMessage } from "@/utils/getErrorMessage";
 
 export interface BacktestResultMetrics {
   total_return?: number;
@@ -100,7 +99,7 @@ export const useBacktestResults = (id?: string) => {
       setSnapshots((snapshotsData || []) as PortfolioSnapshot[]);
     } catch (err: any) {
       console.error('Error loading backtest results', err);
-      setError(getErrorMessage(err));
+      setError(err.message || 'Failed to load backtest results');
     } finally {
       setLoading(false);
     }

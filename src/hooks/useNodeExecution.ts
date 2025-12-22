@@ -22,8 +22,6 @@ import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
-import { getErrorMessage } from "@/utils/getErrorMessage";
-import { createErrorOutput } from "@/utils/normalizeOutput";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -387,11 +385,11 @@ export function useNodeExecution({
             );
           } catch (error: any) {
             console.error("Webhook listening error:", error);
-            const message = getErrorMessage(error);
+            setError(error.message || "Failed to receive webhook");
             outputData = {
               ...listeningOutput,
               status: "error",
-              message,
+              message: error.message,
             };
             setNodes((nds) =>
               nds.map((n) =>
@@ -623,8 +621,7 @@ export function useNodeExecution({
             token: session?.access_token,
           });
           const responseData = await res.json();
-          if (!res.ok)
-            throw new Error(JSON.stringify(responseData) || "Action failed");
+          if (!res.ok) throw new Error(responseData || "Action failed");
 
           // Handle streaming subscriptions generically
           const isStreamingSubscribe =
@@ -717,11 +714,11 @@ export function useNodeExecution({
               );
             } catch (error: any) {
               console.error("Streaming wait error:", error);
-              const message = getErrorMessage(error);
+              setError(error.message || "Failed to receive streaming data");
               outputData = {
                 ...outputData,
                 status: "error",
-                message,
+                message: error.message,
               };
               setNodes((nds) =>
                 nds.map((n) =>
@@ -912,26 +909,12 @@ export function useNodeExecution({
           )
         );
       } catch (err: any) {
-        const message = getErrorMessage(err);
-        const errorOutput = createErrorOutput(message, {
-          nodeId: nodeId ?? undefined,
-          nodeName: definition?.name,
-          category: definition?.category,
+        setError(err.message || "Action failed");
+        setLastOutput({
+          status: "error",
+          message: err.message,
+          timestamp: new Date().toISOString(),
         });
-
-        setLastOutput(errorOutput);
-        data.output = errorOutput;
-
-        if (nodeId) {
-          executionStore.setNodeData(nodeId, { output: errorOutput });
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, output: errorOutput } }
-                : n
-            )
-          );
-        }
       } finally {
         setIsSending(false);
       }

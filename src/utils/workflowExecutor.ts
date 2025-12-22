@@ -16,7 +16,6 @@
 
 import { Node, Edge } from "@xyflow/react";
 import ExecutionContext from "./executionContext";
-import { getErrorMessage } from "./getErrorMessage";
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -955,7 +954,7 @@ export class WorkflowExecutor {
       console.error("❌ [WORKFLOW EXECUTOR] Critical execution error:", err);
       this.context.toast({
         title: "Workflow Execution Error",
-        description: getErrorMessage(err),
+        description: err.message || String(err),
         variant: "destructive",
       });
     } finally {

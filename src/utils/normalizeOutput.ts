@@ -20,7 +20,6 @@ import {
   NormalizeContext,
   isStandardNodeOutput,
 } from '@/types/nodeOutput';
-import { getErrorMessage } from './getErrorMessage';
 
 /**
  * Normalize any raw response into StandardNodeOutput format
@@ -150,15 +149,13 @@ export function createRunningOutput(context: NormalizeContext = {}): StandardNod
  * Create an error output
  */
 export function createErrorOutput(
-  error: unknown,
+  error: string | Error,
   context: NormalizeContext = {}
 ): StandardNodeOutput {
-  const errorMessage = getErrorMessage(error);
-
   return {
     success: false,
     status: 'error',
-    error: errorMessage,
+    error: error instanceof Error ? error.message : error,
     meta: {
       timestamp: new Date().toISOString(),
       executionTime: context.startTime ? Date.now() - context.startTime : undefined,

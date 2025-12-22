@@ -30,7 +30,6 @@ import { ExternalLink, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
-import { getErrorMessage } from "@/utils/getErrorMessage";
 
 interface SchwabAuthModalProps {
   isOpen: boolean;
@@ -122,10 +121,9 @@ export function SchwabAuthModal({
         description: "Click the link below to authorize your Schwab account",
       });
     } catch (error: any) {
-      const errorMessage = getErrorMessage(error);
       toast({
         title: "Error",
-        description: errorMessage || "Failed to generate authorization URL",
+        description: error.message || "Failed to generate authorization URL",
         variant: "destructive",
       });
     } finally {
@@ -189,10 +187,9 @@ export function SchwabAuthModal({
 
       onSuccess(data.credential_id);
     } catch (error: any) {
-      const errorMessage = getErrorMessage(error);
       toast({
         title: "Connection Failed",
-        description: errorMessage || "Failed to complete connection",
+        description: error.message || "Failed to complete connection",
         variant: "destructive",
       });
     } finally {

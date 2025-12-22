@@ -8,7 +8,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getErrorMessage } from "@/utils/getErrorMessage";
 
 const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
@@ -135,8 +134,7 @@ export function useExecutionHistory(
       setError(null);
     } catch (error) {
       console.error("Failed to fetch executions:", error);
-      const errorMessage = getErrorMessage(error);
-      setError(errorMessage);
+      setError(error instanceof Error ? error.message : "Failed to fetch executions");
     } finally {
       setLoading(false);
     }
@@ -178,8 +176,7 @@ export function useExecutionHistory(
       setError(null);
     } catch (error) {
       console.error("Failed to load more executions:", error);
-      const errorMessage = getErrorMessage(error);
-      setError(errorMessage);
+      setError(error instanceof Error ? error.message : "Failed to load more executions");
     } finally {
       setLoadingMore(false);
     }

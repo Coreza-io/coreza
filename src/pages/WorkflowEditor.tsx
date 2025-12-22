@@ -77,7 +77,6 @@ import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
-import { getErrorMessage } from "@/utils/getErrorMessage";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -748,10 +747,9 @@ const WorkflowEditorContent = () => {
           description: "Workflow saved!",
         });
       } else {
-        const errorMessage = getErrorMessage(error);
         toast({
           title: "Error",
-          description: "Error saving: " + errorMessage,
+          description: "Error saving: " + error.message,
           variant: "destructive",
         });
       }
@@ -838,12 +836,11 @@ const WorkflowEditorContent = () => {
         } successfully`,
       });
     } catch (error: any) {
-      const errorMessage = getErrorMessage(error);
       toast({
         title: "Error",
         description: `Failed to ${
           !isActive ? "activate" : "deactivate"
-        } workflow: ${errorMessage}`,
+        } workflow: ${error.message}`,
         variant: "destructive",
       });
     }

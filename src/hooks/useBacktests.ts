@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { getErrorMessage } from "@/utils/getErrorMessage";
 
 export type BacktestStatus = "pending" | "running" | "completed" | "failed";
 
@@ -51,7 +50,7 @@ export const useBacktests = () => {
       setBacktests(parsed);
     } catch (err: any) {
       console.error('Error loading backtests', err);
-      setError(getErrorMessage(err));
+      setError(err.message || 'Failed to load backtests');
     } finally {
       setLoading(false);
     }

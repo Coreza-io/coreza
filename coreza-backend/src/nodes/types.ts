@@ -22,12 +22,12 @@ export interface NodeResult {
   success?: boolean;
   data?: any;
   error?: string;
-  /**
+  /** 
    * Execution context metadata (e.g., error summaries, timing info).
    * For loop iteration context, use IterMeta in QueueItem.
    */
   meta?: Record<string, any>;
-  /**
+  /** 
    * Engine routing signals (loopCompleted, loopIteration, sourceHandle, etc.)
    * that tell the workflow engine what action to take.
    */
@@ -47,7 +47,7 @@ export interface WorkflowNode {
   type?: string;
   /** Optional grouping metadata used by a few screeners */
   subCategory?: string;
-  node_type?: string; // Classification ("main" or "sub")
+  node_type: string; // Classification ("main" or "sub")
   category: string;
   values?: { [key: string]: any };
   data?: {
@@ -88,7 +88,7 @@ export interface ControlFlags {
   setState?: Record<string, any>;
   /** Convenience branch decision for conditional nodes. */
   branch?: "true" | "false";
-
+  
   // Unified loop control flags
   /** Loop completed all items - route to "done" handle */
   loopCompleted?: boolean;
@@ -102,7 +102,7 @@ export interface ControlFlags {
   currentIndex?: number;
   /** Whether this is the last batch in sequential mode */
   isLastBatch?: boolean;
-
+  
   // Parallel distribution metadata
   /** Number of items being processed */
   itemCount?: number;

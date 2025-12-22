@@ -623,7 +623,8 @@ export function useNodeExecution({
             token: session?.access_token,
           });
           const responseData = await res.json();
-          if (!res.ok) throw new Error(responseData || "Action failed");
+          if (!res.ok)
+            throw new Error(JSON.stringify(responseData) || "Action failed");
 
           // Handle streaming subscriptions generically
           const isStreamingSubscribe =
@@ -904,24 +905,24 @@ export function useNodeExecution({
           input: effectiveInput,
           output: finalOutput,
         });
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, output: finalOutput } }
-            : n
-        )
-      );
-    } catch (err: any) {
-      const message = getErrorMessage(err);
-      setError(message);
-      setLastOutput({
-        status: "error",
-        message,
-        timestamp: new Date().toISOString(),
-      });
-    } finally {
-      setIsSending(false);
-    }
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, output: finalOutput } }
+              : n
+          )
+        );
+      } catch (err: any) {
+        const message = getErrorMessage(err);
+        setError(message);
+        setLastOutput({
+          status: "error",
+          message,
+          timestamp: new Date().toISOString(),
+        });
+      } finally {
+        setIsSending(false);
+      }
     },
     [
       definition,

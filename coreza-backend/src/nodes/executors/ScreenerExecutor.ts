@@ -16,6 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getScreenerService } from "../../services/screeners/registry";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class ScreenerExecutor implements INodeExecutor {
   readonly category = "Screener";
@@ -25,6 +26,7 @@ export class ScreenerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const operation = node.values?.operation;
       const screener = node.subCategory ?? node.name;
@@ -70,24 +72,28 @@ export class ScreenerExecutor implements INodeExecutor {
       });
 
       if (!result.success) {
-        return {
-          success: false,
-          error: result.error || `${screener} ${operation} operation failed`,
-        };
+        const errOutput = createErrorOutput(
+          result.error || `${screener} ${operation} operation failed`,
+          { nodeId: node.id, nodeName: screener, category: this.category, startTime }
+        );
+        return toNodeResult(errOutput);
       }
 
       console.log(`📊 [SCREENER] ${screener} screener completed successfully`);
-      return {
-        data: result.data,
-      };
+      const successOutput = createSuccessOutput(result.data, {
+        nodeId: node.id,
+        nodeName: screener,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(successOutput);
     } catch (error) {
       console.error("[SCREENER] Execution error:", error);
-      return {
-        success: false,
-        error: `Screener execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 }

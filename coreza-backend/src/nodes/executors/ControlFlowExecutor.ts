@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { ComputeService } from "../../services/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 import { ComparatorService } from "../../services/comparator";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
@@ -27,6 +28,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const nodeName = node.name;
       switch (nodeName) {
@@ -41,18 +43,18 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "Loop":
           return this.executeLoopNode(node, input, context);
         default:
-          return {
-            success: false,
-            error: `Unsupported control flow node type: ${nodeName}`,
-          };
+          const errOutput = createErrorOutput(
+            `Unsupported control flow node type: ${nodeName}`,
+            { nodeId: node.id, nodeName, category: this.category, startTime }
+          );
+          return toNodeResult(errOutput);
       }
     } catch (error) {
-      return {
-        success: false,
-        error: `Control flow execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 

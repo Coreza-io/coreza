@@ -19,6 +19,7 @@ import { CommunicationService } from "../../services/communications";
 import axios from "axios";
 import { resolveReferences } from "../../utils/resolveReferences";
 import CredentialManager from "../../utils/credentialManager";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class CommunicationExecutor implements INodeExecutor {
   readonly category = "Communication";
@@ -28,6 +29,7 @@ export class CommunicationExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const nodeName = node.name;
       const operation = node.values?.operation || "send";
@@ -63,30 +65,26 @@ export class CommunicationExecutor implements INodeExecutor {
           );
           break;
         default:
-          return {
-            success: false,
-            error: `Unsupported communication node type: ${nodeName}`,
-          };
+          const errOutput = createErrorOutput(
+            `Unsupported communication node type: ${nodeName}`,
+            { nodeId: node.id, nodeName, category: this.category, startTime }
+          );
+          return toNodeResult(errOutput);
       }
 
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error || `${nodeName} ${operation} operation failed`,
-        };
-      }
-
-      return {
-        success: true,
-        data: result.data,
-      };
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
-      return {
-        success: false,
-        error: `Communication execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 }

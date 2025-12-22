@@ -17,6 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import logger from "../../utils/logger";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, createWaitingOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 /**
  * TriggerExecutor handles trigger-type nodes (RedisTrigger, AlpacaStreamData, etc.)
@@ -30,6 +31,7 @@ export class TriggerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const nodeName = node.name;
       const userId = context?.userId || input.userId;
@@ -91,15 +93,20 @@ export class TriggerExecutor implements INodeExecutor {
         );
       }
 
-      return result;
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
       logger.error({ err: error }, "Trigger executor error");
-      return {
-        success: false,
-        error: `Trigger execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 

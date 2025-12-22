@@ -15,48 +15,54 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class IOExecutor implements INodeExecutor {
   readonly category = "IO";
 
-  async execute(node: WorkflowNode, input: NodeInput): Promise<NodeResult> {
+  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       // Handle different IO node types
       const nodeName = node.name;
 
       switch (nodeName) {
         case "ChatInput":
-          return this.executeChatInput(node, input);
+          return this.executeChatInput(node, input, startTime);
         default:
-          return {
-            success: false,
-            error: `Unsupported IO node type: ${nodeName}`,
-          };
+          const errOutput = createErrorOutput(
+            `Unsupported IO node type: ${nodeName}`,
+            { nodeId: node.id, nodeName, category: this.category, startTime }
+          );
+          return toNodeResult(errOutput);
       }
     } catch (error) {
-      return {
-        success: false,
-        error: `IO execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 
   private async executeChatInput(
     node: WorkflowNode,
-    input: NodeInput
+    input: NodeInput,
+    startTime: number
   ): Promise<NodeResult> {
     // Handle chat input logic
     const message = node.values?.message || input.message || "";
 
-    return {
-      success: true,
-      data: {
-        message,
-        timestamp: new Date().toISOString(),
-        source: "chat_input",
-      },
-    };
+    const successOutput = createSuccessOutput({
+      message,
+      timestamp: new Date().toISOString(),
+      source: "chat_input",
+    }, {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    });
+    return toNodeResult(successOutput);
   }
 }

@@ -388,7 +388,6 @@ export function useNodeExecution({
           } catch (error: any) {
             console.error("Webhook listening error:", error);
             const message = getErrorMessage(error);
-            setError(message);
             outputData = {
               ...listeningOutput,
               status: "error",
@@ -719,7 +718,6 @@ export function useNodeExecution({
             } catch (error: any) {
               console.error("Streaming wait error:", error);
               const message = getErrorMessage(error);
-              setError(message);
               outputData = {
                 ...outputData,
                 status: "error",
@@ -921,7 +919,6 @@ export function useNodeExecution({
           category: definition?.category,
         });
 
-        setError(message);
         setLastOutput(errorOutput);
         data.output = errorOutput;
 

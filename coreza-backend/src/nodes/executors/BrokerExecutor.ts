@@ -25,6 +25,7 @@ import {
   getOrderFromCache,
   updateOrderCache,
 } from "../../utils/orderIdempotency";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -34,6 +35,7 @@ export class BrokerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     let idempotencyKey: string | null = null;
     let isPlaceOrder = false;
 
@@ -198,10 +200,13 @@ export class BrokerExecutor implements INodeExecutor {
         );
       }
 
-      return {
-        success: true,
-        data,
-      };
+      const normalized = createSuccessOutput(data, {
+        nodeId: node.id,
+        nodeName: node.name,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
 
@@ -211,12 +216,11 @@ export class BrokerExecutor implements INodeExecutor {
         });
       }
 
-      return {
-        success: false,
-        error: `Broker execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const normalized = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(normalized);
     }
   }
 }

@@ -18,6 +18,8 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DataService } from "../../services/data";
 import { RedisService } from "../../services/RedisService";
 import { StoreService, StoreOperationParams } from "../../services/StoreService";
+import { normalizeOutput, createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
+import { toNodeResult } from "../../utils/normalizeOutput";
 
 export { StoreOperationParams };
 
@@ -29,6 +31,7 @@ export class DataSourceExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
       const nodeName = node.name;
@@ -137,23 +140,19 @@ export class DataSourceExecutor implements INodeExecutor {
           };
       }
 
-      if (!result.success) {
-        return {
-          success: false,
-          error:
-            result.error ||
-            `${nodeName} ${resolvedParams.operation} operation failed`,
-        };
-      }
-
-      return result;
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
-      return {
-        success: false,
-        error: `Data source execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const normalized = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(normalized);
     }
   }
 

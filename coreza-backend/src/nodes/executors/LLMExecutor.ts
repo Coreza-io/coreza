@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { resolveReferences } from "../../utils/resolveReferences";
 import CredentialManager from "../../utils/credentialManager";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class LLMExecutor implements INodeExecutor {
   readonly category = "LLM";
@@ -27,6 +28,7 @@ export class LLMExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const nodeName = node.name;
 
@@ -52,14 +54,19 @@ export class LLMExecutor implements INodeExecutor {
           };
       }
 
-      return result;
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName: node.name,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
-      return {
-        success: false,
-        error: `LLM execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const normalized = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(normalized);
     }
   }
 

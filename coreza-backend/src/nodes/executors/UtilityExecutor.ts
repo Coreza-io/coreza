@@ -15,6 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class UtilityExecutor implements INodeExecutor {
   readonly category = "Utility";
@@ -24,55 +25,61 @@ export class UtilityExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const nodeName = node.name;
 
       switch (nodeName) {
         case "Scheduler":
         case "trigger":
-          return this.executeSchedulerNode(node, input, context);
+          return this.executeSchedulerNode(node, input, context, startTime);
         case "Visualize":
-          return this.executeVisualizeNode(node, input, context);
+          return this.executeVisualizeNode(node, input, context, startTime);
         case "webhook":
-          return this.executeWebhookNode(node, input, context);
+          return this.executeWebhookNode(node, input, context, startTime);
         case "httprequest":
-          return this.executeHttpNode(node, input, context);
+          return this.executeHttpNode(node, input, context, startTime);
         default:
-          return {
-            success: false,
-            error: `Unsupported utility node type: ${nodeName}`,
-          };
+          const errOutput = createErrorOutput(
+            `Unsupported utility node type: ${nodeName}`,
+            { nodeId: node.id, nodeName, category: this.category, startTime }
+          );
+          return toNodeResult(errOutput);
       }
     } catch (error) {
-      return {
-        success: false,
-        error: `Utility execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 
   private async executeSchedulerNode(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
+    startTime?: number
   ): Promise<NodeResult> {
     // Scheduler nodes typically just pass through data since they're triggered externally
-    return {
-      success: true,
-      data: {
-        ...input,
-        triggered_at: new Date().toISOString(),
-        node_id: node.id,
-      },
-    };
+    const successOutput = createSuccessOutput({
+      ...input,
+      triggered_at: new Date().toISOString(),
+      node_id: node.id,
+    }, {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    });
+    return toNodeResult(successOutput);
   }
 
   private async executeVisualizeNode(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
+    startTime?: number
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -80,39 +87,47 @@ export class UtilityExecutor implements INodeExecutor {
 
     console.log("📊 Visualize node processing data:", resolvedParams);
 
-    return {
-      success: true,
-      data: {
-        visualization: {
-          type: resolvedParams.chartType || "line",
-          data: resolvedParams.data || input,
-          config: resolvedParams.config || {},
-          timestamp: new Date().toISOString(),
-        },
+    const successOutput = createSuccessOutput({
+      visualization: {
+        type: resolvedParams.chartType || "line",
+        data: resolvedParams.data || input,
+        config: resolvedParams.config || {},
+        timestamp: new Date().toISOString(),
       },
-    };
+    }, {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    });
+    return toNodeResult(successOutput);
   }
 
   private async executeWebhookNode(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
+    startTime?: number
   ): Promise<NodeResult> {
     // Webhook nodes typically receive data, so we just process and return it
-    return {
-      success: true,
-      data: {
-        ...input,
-        webhook_received_at: new Date().toISOString(),
-        node_id: node.id,
-      },
-    };
+    const successOutput = createSuccessOutput({
+      ...input,
+      webhook_received_at: new Date().toISOString(),
+      node_id: node.id,
+    }, {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    });
+    return toNodeResult(successOutput);
   }
 
   private async executeHttpNode(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
+    startTime?: number
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -122,16 +137,19 @@ export class UtilityExecutor implements INodeExecutor {
 
     // This would typically make an HTTP request using the HTTP service
     // For now, returning a placeholder response
-    return {
-      success: true,
-      data: {
-        request: resolvedParams,
-        response: {
-          status: 200,
-          data: "HTTP request executed",
-          timestamp: new Date().toISOString(),
-        },
+    const successOutput = createSuccessOutput({
+      request: resolvedParams,
+      response: {
+        status: 200,
+        data: "HTTP request executed",
+        timestamp: new Date().toISOString(),
       },
-    };
+    }, {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    });
+    return toNodeResult(successOutput);
   }
 }

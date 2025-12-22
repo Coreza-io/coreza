@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
 import { resolveDataRef, extractPrices } from "../../services/toolOutputProcessor";
 import { DataContext } from "../../services/DataContext";
+import { normalizeOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -27,6 +28,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     try {
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
       const resolvedParams = context?.resolveNodeParameters
@@ -80,21 +82,19 @@ export class IndicatorsExecutor implements INodeExecutor {
         processedParams
       );
 
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error || `${indicatorType} calculation failed`,
-        };
-      }
-
-      return result;
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName: node.name,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
-      return {
-        success: false,
-        error: `Indicator execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const normalized = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+      );
+      return toNodeResult(normalized);
     }
   }
 }

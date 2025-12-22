@@ -16,7 +16,10 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2 } from "lucide-react";
+import { isStandardNodeOutput, extractOutputData } from "@/types/nodeOutput";
+import type { StandardNodeOutput } from "@/types/nodeOutput";
+
 
 // Props strongly typed, mirroring InputPanel
 export type OutputPanelProps = {
@@ -31,6 +34,28 @@ export type OutputPanelProps = {
   onPinToggle?: () => void;
   /** Read-only mode (for execution view) - hides edit/pin buttons */
   readOnly?: boolean;
+};
+
+// Status badge component for StandardNodeOutput
+const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, success }) => {
+  const statusConfig: Record<string, { icon: React.ReactNode; className: string }> = {
+    success: { icon: <CheckCircle className="w-3 h-3" />, className: "bg-green-500/20 text-green-500" },
+    error: { icon: <XCircle className="w-3 h-3" />, className: "bg-red-500/20 text-red-500" },
+    pending: { icon: <Clock className="w-3 h-3" />, className: "bg-yellow-500/20 text-yellow-500" },
+    running: { icon: <Loader2 className="w-3 h-3 animate-spin" />, className: "bg-blue-500/20 text-blue-500" },
+    waiting: { icon: <Clock className="w-3 h-3" />, className: "bg-orange-500/20 text-orange-500" },
+    streaming: { icon: <Radio className="w-3 h-3" />, className: "bg-purple-500/20 text-purple-500" },
+    listening: { icon: <Radio className="w-3 h-3" />, className: "bg-cyan-500/20 text-cyan-500" },
+  };
+
+  const config = statusConfig[status] || statusConfig[success ? 'success' : 'error'];
+
+  return (
+    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.className}`}>
+      {config.icon}
+      <span className="capitalize">{status}</span>
+    </div>
+  );
 };
 
 // Recursively render output data, modern UI with design system
@@ -145,8 +170,13 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
       } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden`}
     >
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
-        <div className="font-semibold text-foreground text-sm tracking-tight">
-          Output Data
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-foreground text-sm tracking-tight">
+            Output
+          </span>
+          {isStandardNodeOutput(internalData) && (
+            <StatusBadge status={internalData.status} success={internalData.success} />
+          )}
         </div>
         {/* Hide edit/pin buttons in readOnly mode */}
         {!readOnly && (
@@ -211,7 +241,23 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {renderData(internalData, "")}
+            {isStandardNodeOutput(internalData) ? (
+              <>
+                {internalData.error && (
+                  <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-md text-xs text-red-500">
+                    {internalData.error}
+                  </div>
+                )}
+                {renderData(internalData.data, "")}
+                {internalData.meta?.executionTime && (
+                  <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
+                    Executed in {internalData.meta.executionTime}ms
+                  </div>
+                )}
+              </>
+            ) : (
+              renderData(internalData, "")
+            )}
           </div>
         )}
       </div>

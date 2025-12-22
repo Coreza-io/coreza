@@ -23,6 +23,7 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
 import { getErrorMessage } from "@/utils/getErrorMessage";
+import { createErrorOutput } from "@/utils/normalizeOutput";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -914,12 +915,26 @@ export function useNodeExecution({
         );
       } catch (err: any) {
         const message = getErrorMessage(err);
-        setError(message);
-        setLastOutput({
-          status: "error",
-          message,
-          timestamp: new Date().toISOString(),
+        const errorOutput = createErrorOutput(message, {
+          nodeId: nodeId ?? undefined,
+          nodeName: definition?.name,
+          category: definition?.category,
         });
+
+        setError(message);
+        setLastOutput(errorOutput);
+        data.output = errorOutput;
+
+        if (nodeId) {
+          executionStore.setNodeData(nodeId, { output: errorOutput });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: errorOutput } }
+                : n
+            )
+          );
+        }
       } finally {
         setIsSending(false);
       }

@@ -15,11 +15,11 @@
  */
 
 import express from "express";
-import axios, { AxiosRequestConfig } from "axios";
 import CredentialManager from "../utils/credentialManager";
-import { getBrokerConfig, isSupportedBroker } from "../config/brokers";
-import { refreshOAuthTokenIfNeeded } from "../utils/oauthTokenManager";
+import { isSupportedBroker } from "../config/brokers";
 import { requireAuth } from "../middleware/jwtAuth";
+import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
+import { WorkflowNode } from "../nodes/types";
 
 const router = express.Router();
 
@@ -28,6 +28,8 @@ function normalizeBroker(broker: string) {
 }
 
 router.use(requireAuth);
+
+const brokerExecutor = new BrokerExecutor();
 
 // Get user credentials list for any broker
 router.get("/:broker/credentials", async (req, res, next) => {
@@ -130,20 +132,6 @@ router.post("/:broker/:operation", async (req, res, next) => {
         .json({ error: "credential_id is required" });
     }
 
-    const config = getBrokerConfig(brokerKey);
-    if (!config) {
-      return res
-        .status(400)
-        .json({ error: `Broker config not found: ${brokerKey}` });
-    }
-
-    const op = config.operations[operation];
-    if (!op) {
-      return res.status(400).json({
-        error: `Unsupported operation: ${operation} for broker: ${brokerKey}`,
-      });
-    }
-
     // Parse symbol if it's a JSON array string
     if (typeof req.body.symbol === "string") {
       try {
@@ -156,59 +144,26 @@ router.post("/:broker/:operation", async (req, res, next) => {
       }
     }
 
-    // 1. Get credentials
-    const { credentials } = await CredentialManager.getCredentials(
-      userId,
-      brokerKey,
-      credential_id
-    );
-    let creds = credentials?.client_json;
-
-    // 2. Handle OAuth token refresh for any OAuth broker
-    if (config.authType === "oauth") {
-      creds = await refreshOAuthTokenIfNeeded(
-        brokerKey,
-        creds,
-        userId,
-        credential_id
-      );
-    }
-
-    // 3. Build request
-    const baseUrl =
-      typeof config.baseUrl === "function"
-        ? config.baseUrl(creds, { operation, ...req.body })
-        : config.baseUrl;
-
-    const path =
-      typeof op.path === "function" ? op.path(req.body, creds) : op.path;
-    const url = `${baseUrl}${path}`;
-    const headers = await config.makeAuthHeaders(creds);
-    const params = op.makeParams?.(req.body, creds) ?? {};
-    const body = op.makeBody ? await op.makeBody(req.body, creds) : undefined;
-
-    // 3. Execute request
-    const axiosConfig: AxiosRequestConfig = {
-      method: op.method,
-      url,
-      headers,
-      params,
-      timeout: 30_000,
+    const node: WorkflowNode = {
+      id: `broker:${brokerKey}:${operation}`,
+      name: brokerKey,
+      node_type: "broker",
+      category: "Broker",
+      subCategory: brokerKey,
+      values: { ...req.body, operation },
     };
 
-    if (["post", "put", "patch", "delete"].includes(op.method.toLowerCase())) {
-      axiosConfig.data = body;
+    const result = await brokerExecutor.execute(node, req.body, {
+      userId,
+      workflowId: "manual-broker-route",
+      runId: `manual-${Date.now()}`,
+    });
+
+    if (result.success) {
+      return res.json({ success: true, data: result.data, meta: result.meta });
     }
 
-    const response = await axios.request(axiosConfig);
-
-    // 4. Transform result
-    const rawData = response.data;
-    const data = op.transformResult
-      ? op.transformResult(rawData, req.body)
-      : rawData;
-
-    res.json({ success: true, data });
+    res.status(400).json({ success: false, error: result.error });
   } catch (err: any) {
     const status = err.response?.status;
     let message =

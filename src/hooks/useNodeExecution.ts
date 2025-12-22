@@ -22,6 +22,7 @@ import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
+import { getErrorMessage } from "@/utils/getErrorMessage";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -385,11 +386,12 @@ export function useNodeExecution({
             );
           } catch (error: any) {
             console.error("Webhook listening error:", error);
-            setError(error.message || "Failed to receive webhook");
+            const message = getErrorMessage(error);
+            setError(message);
             outputData = {
               ...listeningOutput,
               status: "error",
-              message: error.message,
+              message,
             };
             setNodes((nds) =>
               nds.map((n) =>
@@ -714,11 +716,12 @@ export function useNodeExecution({
               );
             } catch (error: any) {
               console.error("Streaming wait error:", error);
-              setError(error.message || "Failed to receive streaming data");
+              const message = getErrorMessage(error);
+              setError(message);
               outputData = {
                 ...outputData,
                 status: "error",
-                message: error.message,
+                message,
               };
               setNodes((nds) =>
                 nds.map((n) =>
@@ -901,23 +904,24 @@ export function useNodeExecution({
           input: effectiveInput,
           output: finalOutput,
         });
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, output: finalOutput } }
-              : n
-          )
-        );
-      } catch (err: any) {
-        setError(err.message || "Action failed");
-        setLastOutput({
-          status: "error",
-          message: err.message,
-          timestamp: new Date().toISOString(),
-        });
-      } finally {
-        setIsSending(false);
-      }
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, output: finalOutput } }
+            : n
+        )
+      );
+    } catch (err: any) {
+      const message = getErrorMessage(err);
+      setError(message);
+      setLastOutput({
+        status: "error",
+        message,
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsSending(false);
+    }
     },
     [
       definition,

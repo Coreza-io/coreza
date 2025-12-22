@@ -43,6 +43,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
+import { getErrorMessage } from "@/utils/getErrorMessage";
 
 interface Workflow {
   id: string;
@@ -194,9 +195,10 @@ const Workflows = () => {
         description: `Workflow ${!currentStatus ? 'activated' : 'deactivated'} successfully`,
       });
     } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
       toast({
         title: "Error",
-        description: `Failed to ${!currentStatus ? 'activate' : 'deactivate'} workflow: ${error.message}`,
+        description: `Failed to ${!currentStatus ? 'activate' : 'deactivate'} workflow: ${errorMessage}`,
         variant: "destructive",
       });
     }
@@ -231,9 +233,10 @@ const Workflows = () => {
       setIsDeleteDialogOpen(false);
       setSelectedWorkflow(null);
     } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
       toast({
         title: "Error",
-        description: `Failed to delete workflow: ${error.message}`,
+        description: `Failed to delete workflow: ${errorMessage}`,
         variant: "destructive",
       });
     } finally {

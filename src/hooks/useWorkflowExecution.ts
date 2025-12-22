@@ -19,6 +19,7 @@ import { Node, Edge } from '@xyflow/react';
 import { WorkflowExecutor } from '@/utils/workflowExecutor';
 import { useToast } from '@/hooks/use-toast';
 import { useExecutionStore } from '@/contexts/ExecutionStoreContext';
+import { getErrorMessage } from '@/utils/getErrorMessage';
 
 export interface ExecutionState {
   isExecuting: boolean;
@@ -131,7 +132,7 @@ export const useWorkflowExecution = (
         description: "Workflow executed successfully",
       });
     } catch (error: any) {
-      const errorMessage = error.message || 'Execution failed';
+      const errorMessage = getErrorMessage(error);
       setState(prev => ({ ...prev, error: errorMessage }));
       
       toast({
@@ -161,7 +162,7 @@ export const useWorkflowExecution = (
       const result = await workflowExecutorRef.current.executeNode(nodeId, new Set());
       return result;
     } catch (error: any) {
-      const errorMessage = error.message || 'Node execution failed';
+      const errorMessage = getErrorMessage(error);
       setState(prev => ({ ...prev, error: errorMessage }));
       throw error;
     } finally {

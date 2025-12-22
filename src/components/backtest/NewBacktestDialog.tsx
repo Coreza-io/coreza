@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/utils/getErrorMessage";
 
 interface WorkflowOption {
   id: string;
@@ -100,7 +101,7 @@ export const NewBacktestDialog = ({ open, onOpenChange, onCreated }: NewBacktest
       console.error('Error creating backtest', err);
       toast({
         title: 'Failed to create backtest',
-        description: err.message || 'Please try again later',
+        description: getErrorMessage(err),
         variant: 'destructive',
       });
     } finally {

@@ -12,6 +12,7 @@ import { MoreHorizontal, Plus, Search, Trash2, BarChart2, CheckCircle2, PlayCirc
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/utils/getErrorMessage";
 
 const statusConfig: Record<BacktestStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: 'Pending', variant: 'outline' },
@@ -46,7 +47,11 @@ const Backtests = () => {
       toast({ title: 'Backtest deleted' });
       refetch();
     } catch (err: any) {
-      toast({ title: 'Failed to delete backtest', description: err.message, variant: 'destructive' });
+      toast({
+        title: 'Failed to delete backtest',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      });
     } finally {
       setDeleting(false);
       setDeleteId(null);

@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useExecutionStore } from '@/contexts/ExecutionStoreContext';
 import { nodeManifest } from '@/nodes/manifest';
 import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
+import { getErrorMessage } from '@/utils/getErrorMessage';
 
 export interface WorkflowState {
   workflowId: string | null;
@@ -268,7 +269,7 @@ export const useWorkflowState = (
 
       return true;
     } catch (error: any) {
-      const errorMessage = error.message || 'Unknown error occurred';
+      const errorMessage = getErrorMessage(error);
       setState(prev => ({ ...prev, error: errorMessage }));
 
       toast({
@@ -373,7 +374,7 @@ export const useWorkflowState = (
       updateLastSavedState();
       return true;
     } catch (error: any) {
-      const errorMessage = error.message || 'Failed to load workflow';
+      const errorMessage = getErrorMessage(error);
       setState(prev => ({ ...prev, error: errorMessage }));
       
       toast({

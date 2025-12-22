@@ -85,9 +85,7 @@ router.post("/:broker/auth", async (req, res, next) => {
     }
 
     if (!userId || !credential_name) {
-      return res
-        .status(400)
-        .json({ error: "credential_name is required" });
+      return res.status(400).json({ error: "credential_name is required" });
     }
 
     const credentialId = await CredentialManager.saveCredentials(
@@ -113,7 +111,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
   try {
     const { broker, operation } = req.params;
     const brokerKey = normalizeBroker(broker);
-    const { credential_id } = req.body;
+    const { credential_id, workflow_id } = req.body;
     const userId = req.user?.id;
 
     if (!brokerKey) {
@@ -127,9 +125,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     }
 
     if (!userId || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "credential_id is required" });
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     // Parse symbol if it's a JSON array string
@@ -147,7 +143,6 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const node: WorkflowNode = {
       id: `broker:${brokerKey}:${operation}`,
       name: brokerKey,
-      node_type: "broker",
       category: "Broker",
       subCategory: brokerKey,
       values: { ...req.body, operation },
@@ -155,7 +150,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
 
     const result = await brokerExecutor.execute(node, req.body, {
       userId,
-      workflowId: "manual-broker-route",
+      workflowId: workflow_id,
       runId: `manual-${Date.now()}`,
     });
 

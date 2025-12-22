@@ -25,7 +25,12 @@ import {
   getOrderFromCache,
   updateOrderCache,
 } from "../../utils/orderIdempotency";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -42,7 +47,8 @@ export class BrokerExecutor implements INodeExecutor {
     try {
       const operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory?: string };
-      const broker = (brokerNode.subCategory ?? node.name ?? node.node_type)?.toLowerCase();
+      const broker = (brokerNode.subCategory ?? node.name ?? "").toLowerCase();
+
       const credential_id = node.values?.credential_id;
 
       if (!credential_id) {
@@ -106,7 +112,11 @@ export class BrokerExecutor implements INodeExecutor {
             console.log(
               `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`
             );
-            return { success: true, data: cached.result, meta: { cached: true } };
+            return {
+              success: true,
+              data: cached.result,
+              meta: { cached: true },
+            };
           }
 
           if (cached.status === "pending") {
@@ -142,7 +152,7 @@ export class BrokerExecutor implements INodeExecutor {
       let workingCreds = creds;
       if (broker === "schwab") {
         workingCreds = await refreshOAuthTokenIfNeeded(
-          'schwab',
+          "schwab",
           creds,
           context?.userId,
           credential_id
@@ -167,24 +177,22 @@ export class BrokerExecutor implements INodeExecutor {
         ? await op.makeBody(resolvedParams, workingCreds)
         : undefined;
 
-      console.log(
-        `📤 [BROKER] Executing ${broker}.${operation} → ${url}`
-      );
+      console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
 
       // Execute request to external broker (Alpaca/Dhan/Schwab/Binance)
       // Only add Content-Type header when body exists (Binance requires no body for orders)
       const response = await axios({
         method: op.method,
         url,
-        headers: body ? { ...headers, "Content-Type": "application/json" } : headers,
+        headers: body
+          ? { ...headers, "Content-Type": "application/json" }
+          : headers,
         params,
         data: body,
         timeout: 30000,
       });
 
-      console.log(
-        `✅ [BROKER] ${broker}.${operation} completed successfully`
-      );
+      console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       // Transform result
       const data = op.transformResult
@@ -218,7 +226,12 @@ export class BrokerExecutor implements INodeExecutor {
 
       const normalized = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        }
       );
       return toNodeResult(normalized);
     }

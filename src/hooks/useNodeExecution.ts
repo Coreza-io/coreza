@@ -385,7 +385,7 @@ export function useNodeExecution({
             );
           } catch (error: any) {
             console.error("Webhook listening error:", error);
-            setError(error.message || "Failed to receive webhook");
+            //setError(error.message || "Failed to receive webhook");
             outputData = {
               ...listeningOutput,
               status: "error",
@@ -715,7 +715,7 @@ export function useNodeExecution({
               );
             } catch (error: any) {
               console.error("Streaming wait error:", error);
-              setError(error.message || "Failed to receive streaming data");
+              //setError(error.message || "Failed to receive streaming data");
               outputData = {
                 ...outputData,
                 status: "error",
@@ -929,7 +929,6 @@ export function useNodeExecution({
           };
         }
 
-        setError(err.message || "Action failed");
         setLastOutput(errOutput);
         data.output = errOutput;
 

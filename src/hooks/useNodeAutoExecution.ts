@@ -101,13 +101,24 @@ export function useNodeAutoExecution({
     };
   }, [nodeId, handleSubmit, executionStore]);
 
-  // Watch for output changes and call success callback
+  // Watch for output changes and call success/error callback
   useEffect(() => {
     const currentNode = nodes.find((n) => n.id === nodeId);
-    if (!currentNode || !onSuccessRef.current) return;
+    if (!currentNode) return;
 
-    const output = currentNode.data?.output;
+    // Need either success or error callback to proceed
+    if (!onSuccessRef.current && !onErrorRef.current) return;
+
+    const output = currentNode.data?.output as { status?: string; success?: boolean; error?: any } | undefined;
     if (output === undefined) return;
+
+    // CHECK FOR ERROR STATUS - call onError and stop execution chain
+    if (output?.status === "error" || output?.success === false) {
+      console.log(`❌ Node ${nodeId} execution failed:`, output);
+      onErrorRef.current?.(output?.error || output);
+      onSuccessRef.current = onErrorRef.current = null;
+      return;
+    }
 
     // Normalize result as needed
     let resultToPass = output;

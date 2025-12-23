@@ -114,10 +114,8 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const { credential_id } = req.body;
     const userId = req.user?.id;
 
-    if (brokerKey) {
-      return res
-        .status(400)
-        .json({ success: false, data: "broker is required" });
+    if (!brokerKey) {
+      return res.status(400).json({ error: "broker is required" });
     }
 
     if (!isSupportedBroker(brokerKey)) {

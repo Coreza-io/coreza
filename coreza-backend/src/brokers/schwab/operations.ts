@@ -37,9 +37,6 @@ export const schwabOperations: Record<string, BrokerOperation> = {
     makeParams: () => ({
       fields: 'positions',
     }),
-    transformResult: (raw: any) => ({
-      positions: raw.securitiesAccount?.positions || [],
-    }),
   },
   get_orders: {
     method: 'get',

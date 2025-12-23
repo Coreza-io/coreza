@@ -5,7 +5,6 @@
 
 import crypto from "crypto";
 import { supabase } from "../config/supabase";
-import DecryptionUtil from "./decryption";
 import ClientEncryption from "./ClientEncryption";
 import CredentialCache from "./credentialCache";
 
@@ -94,36 +93,6 @@ class CredentialManager {
       32
     ) as Buffer | ArrayBuffer;
     return Buffer.isBuffer(derivedKey) ? derivedKey : Buffer.from(derivedKey);
-  }
-
-  /** Decrypt AES-256-GCM payload where encryptedData = base64(IV(12) + CIPHERTEXT + TAG(16)) */
-  private static async decryptClientData(
-    encryptedData: string,
-    encryptionKeyB64: string
-  ): Promise<any> {
-    try {
-      const combined = Buffer.from(encryptedData, "base64");
-      const iv = combined.subarray(0, 12);
-      const ciphertext = combined.subarray(12, -16);
-      const tag = combined.subarray(-16);
-
-      const key = Buffer.from(encryptionKeyB64, "base64");
-      if (key.length !== 32) {
-        throw new Error(
-          `Invalid key length: ${key.length} (expected 32 for AES-256)`
-        );
-      }
-
-      const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-      decipher.setAuthTag(tag);
-      const out = Buffer.concat([
-        decipher.update(ciphertext),
-        decipher.final(),
-      ]);
-      return JSON.parse(out.toString("utf8"));
-    } catch {
-      throw new Error("Failed to decrypt client data");
-    }
   }
 
   /** Decrypt enc_version=2 (separate base64 fields) using HKDF-derived user key */

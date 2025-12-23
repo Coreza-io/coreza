@@ -12,7 +12,7 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { getSourceMapping } from "../config/marketGateways";
+import { getSourceMapping } from "../marketGateways";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {

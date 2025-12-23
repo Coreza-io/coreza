@@ -621,7 +621,8 @@ export function useNodeExecution({
             token: session?.access_token,
           });
           const responseData = await res.json();
-          if (!res.ok) throw new Error(responseData || "Action failed");
+          if (!res.ok)
+            throw new Error(JSON.stringify(responseData) || "Action failed");
 
           // Handle streaming subscriptions generically
           const isStreamingSubscribe =
@@ -909,31 +910,52 @@ export function useNodeExecution({
           )
         );
       } catch (err: any) {
-        setError(err.message || "Action failed");
-        setLastOutput({
+        const errOutput = {
           status: "error",
-          message: err.message,
+          sucess: JSON.parse(err.message).success,
+          error: JSON.parse(err.message).data,
           timestamp: new Date().toISOString(),
-        });
+        };
+        setLastOutput(errOutput);
+        // data.output = errOutput;
+
+        // if (nodeId) {
+        //   executionStore.setNodeData(nodeId, { output: errOutput });
+        //   setNodes((nds) =>
+        //     nds.map((n) =>
+        //       n.id === nodeId
+        //         ? { ...n, data: { ...n.data, output: errOutput } }
+        //         : n
+        //     )
+        //   );
+        // }
       } finally {
         setIsSending(false);
       }
     },
     [
-      definition,
+      definition.name,
+      definition?.fields,
+      definition?.executionMode,
+      definition?.action?.url,
+      definition?.action?.method,
+      definition?.node_type,
+      definition?.streamingConfig?.timeout,
+      definition?.streamingConfig?.sourceId,
       fieldState,
-      nodeId,
-      nodes,
-      edges,
       userId,
-      selectedInputData,
       collectNodeData,
+      selectedInputData,
       buildPayload,
-      executionStore,
-      setNodes,
+      nodeId,
+      workflowId,
       setLastOutput,
       overrideOutput,
       data,
+      executionStore,
+      setNodes,
+      session?.access_token,
+      edges,
     ]
   );
 

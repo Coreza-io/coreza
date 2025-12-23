@@ -85,9 +85,7 @@ router.post("/:broker/auth", async (req, res, next) => {
     }
 
     if (!userId || !credential_name) {
-      return res
-        .status(400)
-        .json({ error: "credential_name is required" });
+      return res.status(400).json({ error: "credential_name is required" });
     }
 
     const credentialId = await CredentialManager.saveCredentials(
@@ -116,8 +114,10 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const { credential_id } = req.body;
     const userId = req.user?.id;
 
-    if (!brokerKey) {
-      return res.status(400).json({ error: "broker is required" });
+    if (brokerKey) {
+      return res
+        .status(400)
+        .json({ success: false, data: "broker is required" });
     }
 
     if (!isSupportedBroker(brokerKey)) {
@@ -127,9 +127,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     }
 
     if (!userId || !credential_id) {
-      return res
-        .status(400)
-        .json({ error: "credential_id is required" });
+      return res.status(400).json({ error: "credential_id is required" });
     }
 
     // Parse symbol if it's a JSON array string

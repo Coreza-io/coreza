@@ -243,12 +243,13 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           <div className="space-y-2">
             {isStandardNodeOutput(internalData) ? (
               <>
-                {internalData.error && (
-                  <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-md text-xs text-red-500">
-                    {internalData.error}
-                  </div>
-                )}
-                {renderData(internalData.data, "")}
+                {/* Render full output structure: success, status, data/error */}
+                {renderData({
+                  success: internalData.success,
+                  status: internalData.status,
+                  ...(internalData.error !== undefined ? { error: internalData.error } : {}),
+                  ...(internalData.data !== undefined ? { data: internalData.data } : {}),
+                }, "")}
                 {internalData.meta?.executionTime && (
                   <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
                     Executed in {internalData.meta.executionTime}ms

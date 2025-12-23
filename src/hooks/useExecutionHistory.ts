@@ -304,7 +304,7 @@ export function useExecutionHistory(
           output && typeof output === "object" && "data" in output
             ? (output as { data?: unknown }).data
             : output;
-        
+
         // Derive input from previous node's output
         const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
         const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
@@ -319,7 +319,53 @@ export function useExecutionHistory(
           // If execution failed, mark the last node as failed
           status = index === executionOrder.length - 1 ? "failed" : "success";
         }
-        
+
+        // If output is already normalized, respect its shape
+        if (
+          output &&
+          typeof output === "object" &&
+          "success" in output &&
+          "status" in output
+        ) {
+          const normalizedOutput = output as {
+            success: boolean;
+            status?: string;
+            data?: unknown;
+            error?: string;
+          };
+
+          const normalizedItemCount = Array.isArray(normalizedOutput.data)
+            ? normalizedOutput.data.length
+            : normalizedOutput.data !== null && normalizedOutput.data !== undefined
+            ? 1
+            : 0;
+
+          return {
+            nodeId,
+            nodeName: nodeId,
+            startedAt: execution.started_at,
+            completedAt: execution.completed_at || execution.started_at,
+            durationMs: estimatedDurationPerNode,
+            status: normalizedOutput.success ? "success" : "failed",
+            input: inputData,
+            output: normalizedOutput,
+            itemCount: normalizedItemCount,
+            error: normalizedOutput.error,
+          };
+        }
+
+        const normalizedOutput = {
+          success: status === "success",
+          status: status === "success" ? "success" : "error",
+          data: outputData,
+          error: status === "failed" ? "Execution failed" : undefined,
+          meta: {
+            timestamp: execution.started_at,
+            nodeId,
+            nodeName: nodeId,
+          },
+        };
+
         return {
           nodeId,
           nodeName: nodeId,
@@ -328,12 +374,13 @@ export function useExecutionHistory(
           durationMs: estimatedDurationPerNode,
           status,
           input: inputData,
-          output: outputData,
-          itemCount: Array.isArray(outputData)
-            ? outputData.length
-            : outputData !== null && outputData !== undefined
+          output: normalizedOutput,
+          itemCount: Array.isArray(normalizedOutput.data)
+            ? normalizedOutput.data.length
+            : normalizedOutput.data !== null && normalizedOutput.data !== undefined
             ? 1
             : 0,
+          error: normalizedOutput.error,
         };
       });
   }, []);

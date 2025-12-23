@@ -27,6 +27,7 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
+import { normalizeOutput } from "../utils/normalizeOutput";
 import { DataContext, DataContextManager } from "./DataContext";
 
 interface ExecutionContext {
@@ -429,7 +430,19 @@ export class WorkflowEngine {
       // Record successful execution
       const completedAt = new Date().toISOString();
       const durationMs = Date.now() - startTime;
-      const outputData = result?.data ?? result;
+
+      const normalizedOutput = normalizeOutput(result, {
+        nodeId,
+        nodeName: node.name || nodeId,
+        startTime: startTime,
+        category: node.category,
+      });
+
+      const itemCount = Array.isArray(normalizedOutput.data)
+        ? normalizedOutput.data.length
+        : normalizedOutput.data !== null && normalizedOutput.data !== undefined
+        ? 1
+        : 0;
 
       this.nodeExecutions.push({
         nodeId,
@@ -437,10 +450,11 @@ export class WorkflowEngine {
         startedAt,
         completedAt,
         durationMs,
-        status: "success",
+        status: normalizedOutput.success ? "success" : "failed",
         input,
-        output: outputData,
-        itemCount: Array.isArray(outputData) ? outputData.length : 1,
+        output: normalizedOutput,
+        itemCount,
+        error: normalizedOutput.error,
       });
       this.executionOrder.push(nodeId);
 
@@ -514,6 +528,19 @@ export class WorkflowEngine {
       const completedAt = new Date().toISOString();
       const durationMs = Date.now() - startTime;
 
+      const normalizedError = normalizeOutput(
+        {
+          success: false,
+          error: (error as Error).message,
+        },
+        {
+          nodeId,
+          nodeName: node.name || nodeId,
+          startTime: startTime,
+          category: node.category,
+        }
+      );
+
       this.nodeExecutions.push({
         nodeId,
         nodeName: node.name || nodeId,
@@ -522,7 +549,7 @@ export class WorkflowEngine {
         durationMs,
         status: "failed",
         input,
-        output: null,
+        output: normalizedError,
         itemCount: 0,
         error: (error as Error).message,
       });

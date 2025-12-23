@@ -143,7 +143,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const node: WorkflowNode = {
       id: `broker:${brokerKey}:${operation}`,
       name: brokerKey,
-      node_type: "broker",
+      node_type: "main",
       category: "Broker",
       subCategory: brokerKey,
       values: { ...req.body, operation },

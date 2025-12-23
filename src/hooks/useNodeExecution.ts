@@ -910,25 +910,39 @@ export function useNodeExecution({
           )
         );
       } catch (err: any) {
-        const errOutput = {
-          status: "error",
-          sucess: JSON.parse(err.message).success,
-          error: JSON.parse(err.message).data,
-          timestamp: new Date().toISOString(),
-        };
-        setLastOutput(errOutput);
-        // data.output = errOutput;
+        let errOutput;
+        try {
+          const parsed = JSON.parse(err.message);
+          errOutput = {
+            status: "error",
+            success: false,
+            error: parsed.data || parsed.error || err.message,
+            timestamp: new Date().toISOString(),
+          };
+        } catch {
+          // If message isn't JSON, use it directly
+          errOutput = {
+            status: "error",
+            success: false,
+            error: err.message || "Action failed",
+            timestamp: new Date().toISOString(),
+          };
+        }
 
-        // if (nodeId) {
-        //   executionStore.setNodeData(nodeId, { output: errOutput });
-        //   setNodes((nds) =>
-        //     nds.map((n) =>
-        //       n.id === nodeId
-        //         ? { ...n, data: { ...n.data, output: errOutput } }
-        //         : n
-        //     )
-        //   );
-        // }
+        setError(err.message || "Action failed");
+        setLastOutput(errOutput);
+        data.output = errOutput;
+
+        if (nodeId) {
+          executionStore.setNodeData(nodeId, { output: errOutput });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: errOutput } }
+                : n
+            )
+          );
+        }
       } finally {
         setIsSending(false);
       }

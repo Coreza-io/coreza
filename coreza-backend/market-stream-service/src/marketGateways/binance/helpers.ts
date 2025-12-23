@@ -28,6 +28,12 @@ export function shouldPublishBinanceMessage(msg: any): boolean {
   return ['trade', 'kline', 'bookTicker', '24hrTicker'].includes(msg.e);
 }
 
+export function handleBinanceControlMessage(msg: any, logger: any) {
+  if (msg.result !== undefined) {
+    logger.info({ source: 'binance', id: msg.id }, 'Subscription confirmed');
+  }
+}
+
 export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
   const symbol = msg.s?.toUpperCase();
   const t = msg.E || msg.T || Date.now();

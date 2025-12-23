@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
-import { getBrokerConfig } from "../../config/brokers";
+import { getBrokerConfig } from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import {

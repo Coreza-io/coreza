@@ -14,7 +14,7 @@ import {
   redisSetBreaker,
 } from "../utils/redisCircuitBreaker";
 import logger from "../utils/logger";
-import { getSourceMapping } from "../config/marketGateways";
+import { getSourceMapping } from "../marketGateways";
 
 interface WorkflowSubscription {
   workflowId: string;

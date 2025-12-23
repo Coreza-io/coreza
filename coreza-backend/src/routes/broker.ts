@@ -15,8 +15,8 @@
  */
 
 import express from "express";
+import { isSupportedBroker } from "../brokers";
 import CredentialManager from "../utils/credentialManager";
-import { isSupportedBroker } from "../config/brokers";
 import { requireAuth } from "../middleware/jwtAuth";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import { WorkflowNode } from "../nodes/types";

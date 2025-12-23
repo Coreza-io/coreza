@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
-import { GatewayConfig, GATEWAY_CONFIGS } from "../config/marketGateways";
+import { GatewayConfig, GATEWAY_CONFIGS } from "../marketGateways";
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";

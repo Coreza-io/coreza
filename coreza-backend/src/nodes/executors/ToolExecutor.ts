@@ -15,6 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 
 export class ToolExecutor implements INodeExecutor {
   readonly category = "Tool";
@@ -24,6 +25,14 @@ export class ToolExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
+    const normalizeCtx: NormalizeContext = {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    };
+
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
       const nodename = node.name;
@@ -50,23 +59,18 @@ export class ToolExecutor implements INodeExecutor {
       }
 
       if (!result.success) {
-        return {
-          success: false,
-          error: result.error || `${nodename} tool execution failed`,
-        };
+        const errOutput = createErrorOutput(result.error || `${nodename} tool execution failed`, normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
-      return {
-        success: true,
-        data: result.data,
-      };
+      const successOutput = createSuccessOutput(result.data, normalizeCtx);
+      return toNodeResult(successOutput);
     } catch (error) {
-      return {
-        success: false,
-        error: `Tool execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      const errOutput = createErrorOutput(
+        `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
+        normalizeCtx
+      );
+      return toNodeResult(errOutput);
     }
   }
 

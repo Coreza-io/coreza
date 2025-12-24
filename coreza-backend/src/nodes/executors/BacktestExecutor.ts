@@ -17,6 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, SimBrokerConfig, Bar } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
+import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";

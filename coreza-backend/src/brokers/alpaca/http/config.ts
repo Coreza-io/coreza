@@ -1,4 +1,4 @@
-import { BrokerConfig } from '../types';
+import { BrokerConfig } from '../../types';
 import { alpacaOperations } from './operations';
 
 export const alpacaConfig: BrokerConfig = {

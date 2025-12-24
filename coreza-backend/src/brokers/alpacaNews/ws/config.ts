@@ -1,4 +1,4 @@
-import { GatewayConfig } from '../types';
+import { GatewayConfig } from '../../gatewayTypes';
 import {
   buildAlpacaNewsAuthMessage,
   buildAlpacaNewsSubscribeMessage,

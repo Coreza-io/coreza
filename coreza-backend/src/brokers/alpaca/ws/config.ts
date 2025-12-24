@@ -1,4 +1,4 @@
-import { GatewayConfig } from '../types';
+import { GatewayConfig } from '../../gatewayTypes';
 import {
   buildAlpacaAuthMessage,
   buildAlpacaSubscribeMessage,
@@ -7,7 +7,7 @@ import {
   normalizeAlpacaMessage,
   parseAlpacaMessage,
   shouldPublishAlpacaMessage,
-} from './helpers';
+} from '../helpers';
 
 export const alpacaGatewayConfig: GatewayConfig<'alpaca'> = {
   id: 'alpaca',

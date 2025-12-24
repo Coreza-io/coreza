@@ -1,4 +1,4 @@
-import type { MarketEvent } from '../../types/marketEvent';
+import type { MarketEvent } from '../../../types/marketEvent';
 
 export function buildAlpacaNewsAuthMessage(creds: any) {
   return {

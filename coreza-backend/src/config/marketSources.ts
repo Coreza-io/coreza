@@ -15,7 +15,7 @@
  */
 
 import { MarketSource } from '../types/marketEvent';
-import { GATEWAY_CONFIGS } from '../marketGateways';
+import { GATEWAY_CONFIGS } from '../brokers';
 
 /**
  * Auto-generated mapping from frontend stream source params to MarketSource.

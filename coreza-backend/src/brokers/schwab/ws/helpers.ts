@@ -3,7 +3,7 @@ import {
   buildSchwabLoginMessage,
   fetchSchwabStreamingConfig,
   parseSchwabStreamingMessage,
-} from '../../utils/schwabStreamingSetup';
+} from '../../../utils/schwabStreamingSetup';
 
 export async function preConnectSchwab(creds: any) {
   return fetchSchwabStreamingConfig(creds.access_token);

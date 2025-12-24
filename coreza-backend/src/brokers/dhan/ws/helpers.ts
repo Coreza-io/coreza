@@ -1,4 +1,4 @@
-import { parseDhanBinaryPacket } from '../../utils/dhanBinaryParser';
+import { parseDhanBinaryPacket } from '../../../utils/dhanBinaryParser';
 import type { MarketEvent } from '../../../types/marketEvent';
 
 export function buildDhanSubscribeMessage(symbols: string[]) {

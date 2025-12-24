@@ -13,14 +13,14 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
+import axios from "axios";
 import {
   StandardNodeOutput,
   NodeExecutionStatus,
   NormalizeContext,
   isStandardNodeOutput,
-} from '../types/nodeOutput';
-import { NodeResult } from '../nodes/types';
+} from "../types/nodeOutput";
+import { NodeResult } from "../nodes/types";
 
 /**
  * Normalize NodeResult or any raw response into StandardNodeOutput format
@@ -31,7 +31,9 @@ export function normalizeOutput(
   context: NormalizeContext = {}
 ): StandardNodeOutput {
   const now = new Date().toISOString();
-  const executionTime = context.startTime ? Date.now() - context.startTime : undefined;
+  const executionTime = context.startTime
+    ? Date.now() - context.startTime
+    : undefined;
 
   const baseMeta = {
     timestamp: now,
@@ -53,17 +55,21 @@ export function normalizeOutput(
   if (raw === null || raw === undefined) {
     return {
       success: true,
-      status: 'success',
+      status: "success",
       data: null,
       meta: baseMeta,
     };
   }
 
   // Handle NodeResult format { success?: boolean, data?: any, error?: string, meta?: any, control?: any }
-  if (typeof raw?.success === 'boolean' || raw?.error || raw?.data !== undefined) {
+  if (
+    typeof raw?.success === "boolean" ||
+    raw?.error ||
+    raw?.data !== undefined
+  ) {
     const success = raw.success !== false && !raw.error;
-    const status: NodeExecutionStatus = success ? 'success' : 'error';
-    
+    const status: NodeExecutionStatus = success ? "success" : "error";
+
     return {
       success,
       status,
@@ -74,18 +80,18 @@ export function normalizeOutput(
   }
 
   // Handle streaming/waiting status objects
-  if (raw?.status && typeof raw.status === 'string') {
+  if (raw?.status && typeof raw.status === "string") {
     const statusMap: Record<string, NodeExecutionStatus> = {
-      waiting: 'waiting',
-      streaming: 'streaming',
-      listening: 'listening',
-      pending: 'pending',
-      running: 'running',
-      success: 'success',
-      error: 'error',
+      waiting: "waiting",
+      streaming: "streaming",
+      listening: "listening",
+      pending: "pending",
+      running: "running",
+      success: "success",
+      error: "error",
     };
-    const mappedStatus = statusMap[raw.status] || 'success';
-    const isError = mappedStatus === 'error';
+    const mappedStatus = statusMap[raw.status] || "success";
+    const isError = mappedStatus === "error";
 
     return {
       success: !isError,
@@ -99,7 +105,7 @@ export function normalizeOutput(
   // Default: treat as successful data
   return {
     success: true,
-    status: 'success',
+    status: "success",
     data: raw,
     meta: baseMeta,
   };
@@ -127,11 +133,13 @@ export function createSuccessOutput<T = any>(
 ): StandardNodeOutput<T> {
   return {
     success: true,
-    status: 'success',
+    status: "success",
     data,
     meta: {
       timestamp: new Date().toISOString(),
-      executionTime: context.startTime ? Date.now() - context.startTime : undefined,
+      executionTime: context.startTime
+        ? Date.now() - context.startTime
+        : undefined,
       nodeId: context.nodeId,
       nodeName: context.nodeName,
       category: context.category,
@@ -139,20 +147,55 @@ export function createSuccessOutput<T = any>(
   };
 }
 
+function normalizeError(err: unknown) {
+  if (axios.isAxiosError(err)) {
+    return {
+      message: err.message,
+      code: err.code,
+      status: err.response?.status,
+      response: err.response?.data,
+    };
+  }
+
+  if (err instanceof Error) {
+    return {
+      message: err.message,
+    };
+  }
+
+  return {
+    message: String(err),
+  };
+}
+
 /**
  * Create an error output
  */
 export function createErrorOutput(
-  error: string | Error,
+  error: unknown,
   context: NormalizeContext = {}
 ): StandardNodeOutput {
+  const normalized = normalizeError(error);
+
   return {
     success: false,
-    status: 'error',
-    error: error instanceof Error ? error.message : error,
+    status: "error",
+
+    // ✅ user-safe
+    error: normalized.response.message,
+
+    // ✅ structured (optional, UI can show on expand)
+    details: {
+      code: normalized.code,
+      status: normalized.status,
+      response: normalized.response.message,
+    },
+
     meta: {
       timestamp: new Date().toISOString(),
-      executionTime: context.startTime ? Date.now() - context.startTime : undefined,
+      executionTime: context.startTime
+        ? Date.now() - context.startTime
+        : undefined,
       nodeId: context.nodeId,
       nodeName: context.nodeName,
       category: context.category,
@@ -170,7 +213,7 @@ export function createWaitingOutput(
 ): StandardNodeOutput {
   return {
     success: true,
-    status: 'waiting',
+    status: "waiting",
     data: { message, ...data },
     meta: {
       timestamp: new Date().toISOString(),
@@ -190,7 +233,7 @@ export function createStreamingOutput(
 ): StandardNodeOutput {
   return {
     success: true,
-    status: 'streaming',
+    status: "streaming",
     data,
     meta: {
       timestamp: new Date().toISOString(),

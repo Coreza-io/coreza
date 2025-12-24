@@ -150,14 +150,18 @@ class OAuthService {
     };
   }
 
-  static async refreshToken(provider: string, userId: string, body: any) {
+  static async refreshToken(
+    provider: string,
+    userId: string,
+    credentialid: any
+  ) {
     const config = this.getProviderConfig(provider);
 
     if (!config.refreshToken) {
       throw new Error(`Refresh not supported for provider: ${provider}`);
     }
 
-    const { credential_id } = body;
+    const credential_id = credentialid;
     const user_id = userId;
 
     if (!user_id || !credential_id) {

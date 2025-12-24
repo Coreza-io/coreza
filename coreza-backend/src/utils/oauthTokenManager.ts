@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import OAuthService from '../services/oauthService';
+import OAuthService from "../services/oauthService";
 
 /**
  * Generic OAuth token refresh utility
@@ -31,16 +31,21 @@ export async function refreshOAuthTokenIfNeeded(
 
   // Check if token will expire in next 60 seconds
   if (now >= expiresAt - 60) {
-    console.log(`🔄 [${provider.toUpperCase()}] Access token expired, refreshing...`);
+    console.log(
+      `🔄 [${provider.toUpperCase()}] Access token expired, refreshing...`
+    );
 
     try {
       // Use generic OAuth service to refresh
-      const { tokens } = await OAuthService.refreshToken(provider, {
-        user_id: userId,
-        credential_id: credentialId,
-      });
+      const { tokens } = await OAuthService.refreshToken(
+        provider,
+        userId,
+        credentialId
+      );
 
-      console.log(`✅ [${provider.toUpperCase()}] Token refreshed successfully`);
+      console.log(
+        `✅ [${provider.toUpperCase()}] Token refreshed successfully`
+      );
 
       // Return updated credentials with new token
       return {

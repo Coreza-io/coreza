@@ -17,14 +17,14 @@
 /**
  * Standard node execution status types
  */
-export type NodeExecutionStatus = 
-  | 'pending'
-  | 'running'
-  | 'success'
-  | 'error'
-  | 'waiting'
-  | 'streaming'
-  | 'listening';
+export type NodeExecutionStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "error"
+  | "waiting"
+  | "streaming"
+  | "listening";
 
 /**
  * Metadata attached to every node output
@@ -36,6 +36,12 @@ export interface NodeOutputMeta {
   nodeName?: string;
   category?: string;
   cached?: boolean;
+}
+
+export interface StandardErrorDetails {
+  code?: string;
+  status?: number;
+  response?: unknown;
 }
 
 /**
@@ -51,6 +57,8 @@ export interface StandardNodeOutput<T = any> {
   data?: T;
   /** Error message if execution failed */
   error?: string;
+  /** Error deatils */
+  details?: StandardErrorDetails;
   /** Execution metadata */
   meta?: NodeOutputMeta;
 }
@@ -71,17 +79,27 @@ export interface NormalizeContext {
 export function isStandardNodeOutput(obj: any): obj is StandardNodeOutput {
   return (
     obj !== null &&
-    typeof obj === 'object' &&
-    typeof obj.success === 'boolean' &&
-    typeof obj.status === 'string' &&
-    ['pending', 'running', 'success', 'error', 'waiting', 'streaming', 'listening'].includes(obj.status)
+    typeof obj === "object" &&
+    typeof obj.success === "boolean" &&
+    typeof obj.status === "string" &&
+    [
+      "pending",
+      "running",
+      "success",
+      "error",
+      "waiting",
+      "streaming",
+      "listening",
+    ].includes(obj.status)
   );
 }
 
 /**
  * Extract just the data from a StandardNodeOutput, or return raw value if not standard format
  */
-export function extractOutputData<T = any>(output: StandardNodeOutput<T> | any): T {
+export function extractOutputData<T = any>(
+  output: StandardNodeOutput<T> | any
+): T {
   if (isStandardNodeOutput(output)) {
     return output.data;
   }

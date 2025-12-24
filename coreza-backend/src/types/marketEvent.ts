@@ -24,7 +24,7 @@ export type MarketEventType =
   | "news"
   | "ticker";
 export type MarketSource =
-  keyof typeof import("../marketGateways").GATEWAY_CONFIGS;
+  keyof typeof import("../brokers").GATEWAY_CONFIGS;
 export type Timeframe = "tick" | "1m" | "5m" | "15m" | "1h" | "1d";
 
 export interface MarketEvent {

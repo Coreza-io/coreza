@@ -1,4 +1,4 @@
-import { BrokerOperation } from '../types';
+import { BrokerOperation } from '../../types';
 
 export const schwabOperations: Record<string, BrokerOperation> = {
   get_account_numbers: {

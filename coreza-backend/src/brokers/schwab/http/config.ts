@@ -1,4 +1,4 @@
-import { BrokerConfig } from '../types';
+import { BrokerConfig } from '../../types';
 import { schwabOperations } from './operations';
 
 export const schwabConfig: BrokerConfig = {

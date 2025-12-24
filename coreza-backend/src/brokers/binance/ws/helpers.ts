@@ -1,4 +1,4 @@
-import type { MarketEvent } from '../../types/marketEvent';
+import type { MarketEvent } from '../../../types/marketEvent';
 
 export function buildBinanceSubscribeMessage(symbols: string[], types: string[] = ['trade']) {
   return {

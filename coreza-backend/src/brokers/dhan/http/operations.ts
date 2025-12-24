@@ -1,5 +1,5 @@
-import { BrokerOperation } from '../types';
-import { buildDhanHistoricalBody, buildDhanPlaceOrder, transformDhanCandles } from './helpers';
+import { BrokerOperation } from '../../types';
+import { buildDhanHistoricalBody, buildDhanPlaceOrder, transformDhanCandles } from '../helpers';
 
 export const dhanOperations: Record<string, BrokerOperation> = {
   get_account: {

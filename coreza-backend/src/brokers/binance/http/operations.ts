@@ -1,6 +1,6 @@
-import { getBinanceTimestamp } from '../../utils/binanceTimeSync';
-import { signHmacSha256 } from '../../utils/crypto';
-import { BrokerOperation } from '../types';
+import { getBinanceTimestamp } from '../../../utils/binanceTimeSync';
+import { signHmacSha256 } from '../../../utils/crypto';
+import { BrokerOperation } from '../../types';
 
 export const binanceOperations: Record<string, BrokerOperation> = {
   get_account: {

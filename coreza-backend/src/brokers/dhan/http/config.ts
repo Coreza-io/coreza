@@ -1,4 +1,4 @@
-import { BrokerConfig } from '../types';
+import { BrokerConfig } from '../../types';
 import { dhanOperations } from './operations';
 
 export const dhanConfig: BrokerConfig = {

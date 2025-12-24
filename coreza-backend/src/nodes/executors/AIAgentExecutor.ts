@@ -35,6 +35,7 @@ import {
   ToolDefinition,
 } from "../../services/toolDefinitions";
 import { loadNodeDefinition } from "../nodeDefinitions";
+import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -44,6 +45,14 @@ export class AIAgentExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
+    const normalizeCtx: NormalizeContext = {
+      nodeId: node.id,
+      nodeName: node.name,
+      category: this.category,
+      startTime,
+    };
+
     // Create DataContext for this agent execution
     const runId = context?.runId || `agent-${node.id}-${Date.now()}`;
     const workflowId = context?.workflowId || "unknown";
@@ -64,10 +73,8 @@ export class AIAgentExecutor implements INodeExecutor {
       // Get user_id from context
       const user_id = context?.user_id || context?.userId;
       if (!user_id) {
-        return {
-          success: false,
-          error: "user_id is required for AI Agent execution",
-        };
+        const errOutput = createErrorOutput("user_id is required for AI Agent execution", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       // Get edges and nodes from context
@@ -80,29 +87,23 @@ export class AIAgentExecutor implements INodeExecutor {
       );
 
       if (!chatModelEdge) {
-        return {
-          success: false,
-          error: "Chat Model node must be connected to the 'Chat Model' handle",
-        };
+        const errOutput = createErrorOutput("Chat Model node must be connected to the 'Chat Model' handle", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       const chatModelNode = allNodes.find(
         (n: WorkflowNode) => n.id === chatModelEdge.source
       );
       if (!chatModelNode) {
-        return {
-          success: false,
-          error: "Connected Chat Model node not found",
-        };
+        const errOutput = createErrorOutput("Connected Chat Model node not found", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       // Get credentials from the connected Chat Model node
       const credential_id = chatModelNode.values?.credential_id;
       if (!credential_id) {
-        return {
-          success: false,
-          error: "Chat Model node must have credentials configured",
-        };
+        const errOutput = createErrorOutput("Chat Model node must have credentials configured", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       const credentialResponse = await CredentialManager.getCredentials(
@@ -113,18 +114,14 @@ export class AIAgentExecutor implements INodeExecutor {
 
       const client_json = credentialResponse.credentials?.client_json;
       if (!client_json) {
-        return {
-          success: false,
-          error: "Unable to load chat model credentials",
-        };
+        const errOutput = createErrorOutput("Unable to load chat model credentials", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       const { apiKey } = client_json;
       if (!apiKey) {
-        return {
-          success: false,
-          error: "Chat model credential is missing apiKey",
-        };
+        const errOutput = createErrorOutput("Chat model credential is missing apiKey", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       // Get model from Chat Model node
@@ -151,10 +148,8 @@ export class AIAgentExecutor implements INodeExecutor {
         false;
 
       if (!userPrompt) {
-        return {
-          success: false,
-          error: "userPrompt is required",
-        };
+        const errOutput = createErrorOutput("userPrompt is required", normalizeCtx);
+        return toNodeResult(errOutput);
       }
 
       // Initialize LLM
@@ -230,16 +225,12 @@ CRITICAL INSTRUCTIONS:
         ).toFixed(2)}MB`
       );
 
-      return {
-        success: true,
-        data: result.output,
-      };
+      const successOutput = createSuccessOutput(result.output, normalizeCtx);
+      return toNodeResult(successOutput);
     } catch (error: any) {
       console.error("❌ [AIAgent] Agent execution error:", error);
-      return {
-        success: false,
-        error: error.message || "AI Agent execution failed",
-      };
+      const errOutput = createErrorOutput(error.message || "AI Agent execution failed", normalizeCtx);
+      return toNodeResult(errOutput);
     } finally {
       // Cleanup DataContext after agent execution
       dataContextManager.destroyContext(runId);

@@ -561,6 +561,7 @@ router.post('/register-streaming-workflow', async (req, res) => {
 
     const redis = getRedisCache();
     const streamSource = source || 'binance_stream';
+    const now = new Date().toISOString();
 
     // Store workflow subscription info
     const subKey = `wf:sub:${workflow_id}:${node_id}`;
@@ -572,7 +573,8 @@ router.post('/register-streaming-workflow', async (req, res) => {
       filterSymbols: filter_symbols || [],
       filterTypes: filter_types || [],
       subscriptionMode: subscription_mode || 'workflow',
-      registeredAt: new Date().toISOString(),
+      registeredAt: now,
+      lastActivityAt: now,
     };
 
     await redis.set(subKey, JSON.stringify(subscriptionData));
@@ -664,6 +666,78 @@ router.delete('/unregister-streaming-workflow', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to unregister streaming workflow',
+    });
+  }
+});
+
+/**
+ * Update activity timestamp for a streaming workflow
+ * POST /market/streaming-activity
+ * 
+ * Called periodically to indicate a streaming workflow is still active.
+ * Prevents the cleanup service from removing it.
+ */
+router.post('/streaming-activity', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { workflow_id, node_id } = req.body;
+
+    if (!workflow_id || !node_id) {
+      return res.status(400).json({ error: 'workflow_id and node_id are required' });
+    }
+
+    const redis = getRedisCache();
+    const subKey = `wf:sub:${workflow_id}:${node_id}`;
+
+    const data = await redis.get(subKey);
+    if (!data) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    const subscription = JSON.parse(data);
+    subscription.lastActivityAt = new Date().toISOString();
+    await redis.set(subKey, JSON.stringify(subscription));
+
+    res.json({
+      success: true,
+      message: 'Activity updated',
+      lastActivityAt: subscription.lastActivityAt,
+    });
+  } catch (error) {
+    console.error('Error updating streaming activity:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update activity',
+    });
+  }
+});
+
+/**
+ * Manually trigger cleanup of stale streaming workflows
+ * POST /market/cleanup-streaming
+ * 
+ * Admin endpoint to force cleanup of stale subscriptions.
+ */
+router.post('/cleanup-streaming', async (req, res) => {
+  try {
+    const { default: streamingCleanupService } = await import('../services/StreamingCleanupService');
+    const result = await streamingCleanupService.runCleanup();
+
+    res.json({
+      success: true,
+      message: 'Cleanup completed',
+      cleaned: result.cleaned,
+      remaining: result.remaining,
+    });
+  } catch (error) {
+    console.error('Error running streaming cleanup:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to run cleanup',
     });
   }
 });

@@ -833,6 +833,10 @@ export function useNodeExecution({
               source,
               filter_symbols: filterSymbols,
               filter_types: filterTypes,
+              subscription_mode:
+                mode === "listen"
+                  ? fieldState.subscriptionMode || "workflow"
+                  : "workflow",
             },
             session?.access_token
           );

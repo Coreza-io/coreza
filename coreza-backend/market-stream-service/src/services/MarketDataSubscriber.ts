@@ -102,14 +102,6 @@ export class MarketDataSubscriber {
         symbols
       );
 
-      const existingSubscription = this.subscriptions.get(workflowId);
-      if (existingSubscription) {
-        console.log(
-          `🔁 [MarketDataSubscriber] Replacing existing subscription for workflow ${workflowId}`
-        );
-        await this.unsubscribe(workflowId);
-      }
-
       // Normalize source from gateway ID to broker name (e.g., 'binance_stream' → 'binance')
       const normalizedSource = this.normalizeSource(options?.source);
       console.log(`📊 [MarketDataSubscriber] Normalized source: ${options?.source} → ${normalizedSource}`);

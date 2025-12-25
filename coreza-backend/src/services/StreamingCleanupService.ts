@@ -1,12 +1,12 @@
 /**
  * StreamingCleanupService
- *
+ * 
  * Periodically cleans up stale streaming workflow registrations
  * that haven't been active for a configurable period of time.
  */
 
-import { getRedisCache } from "../config/redis";
-import logger from "../utils/logger";
+import { getRedisCache } from '../utils/redisClient';
+import logger from '../utils/logger';
 
 // Default stale threshold: 1 hour (in milliseconds)
 const DEFAULT_STALE_THRESHOLD_MS = 60 * 60 * 1000;
@@ -40,28 +40,28 @@ class StreamingCleanupService {
    */
   start(): void {
     if (this.isRunning) {
-      logger.warn("StreamingCleanupService is already running");
+      logger.warn('StreamingCleanupService is already running');
       return;
     }
 
     this.isRunning = true;
     logger.info(
-      {
-        intervalMs: CLEANUP_INTERVAL_MS,
-        staleThresholdMs: this.staleThresholdMs,
+      { 
+        intervalMs: CLEANUP_INTERVAL_MS, 
+        staleThresholdMs: this.staleThresholdMs 
       },
-      "🧹 Starting StreamingCleanupService"
+      '🧹 Starting StreamingCleanupService'
     );
 
     // Run immediately on start
     this.runCleanup().catch((err) => {
-      logger.error({ err }, "Error in initial streaming cleanup");
+      logger.error({ err }, 'Error in initial streaming cleanup');
     });
 
     // Schedule periodic cleanup
     this.cleanupInterval = setInterval(() => {
       this.runCleanup().catch((err) => {
-        logger.error({ err }, "Error in periodic streaming cleanup");
+        logger.error({ err }, 'Error in periodic streaming cleanup');
       });
     }, CLEANUP_INTERVAL_MS);
   }
@@ -75,7 +75,7 @@ class StreamingCleanupService {
       this.cleanupInterval = null;
     }
     this.isRunning = false;
-    logger.info("🧹 StreamingCleanupService stopped");
+    logger.info('🧹 StreamingCleanupService stopped');
   }
 
   /**
@@ -89,17 +89,14 @@ class StreamingCleanupService {
 
     try {
       // Find all streaming workflow subscriptions
-      const subKeys = await redis.keys("wf:sub:*");
-
+      const subKeys = await redis.keys('wf:sub:*');
+      
       if (subKeys.length === 0) {
-        logger.debug("No streaming subscriptions to clean up");
+        logger.debug('No streaming subscriptions to clean up');
         return { cleaned: 0, remaining: 0 };
       }
 
-      const workflowsToCleanup = new Map<
-        string,
-        { userId: string; nodeIds: string[] }
-      >();
+      const workflowsToCleanup = new Map<string, { userId: string; nodeIds: string[] }>();
 
       for (const key of subKeys) {
         try {
@@ -107,9 +104,9 @@ class StreamingCleanupService {
           if (!data) continue;
 
           const subscription: StreamingSubscription = JSON.parse(data);
-
+          
           // Determine last activity time
-          const lastActivity = subscription.lastActivityAt
+          const lastActivity = subscription.lastActivityAt 
             ? new Date(subscription.lastActivityAt).getTime()
             : new Date(subscription.registeredAt).getTime();
 
@@ -118,7 +115,7 @@ class StreamingCleanupService {
           if (timeSinceActivity > this.staleThresholdMs) {
             // Mark for cleanup
             const { workflowId, nodeId, userId } = subscription;
-
+            
             if (!workflowsToCleanup.has(workflowId)) {
               workflowsToCleanup.set(workflowId, { userId, nodeIds: [] });
             }
@@ -130,16 +127,13 @@ class StreamingCleanupService {
 
             logger.debug(
               { workflowId, nodeId, staleDurationMs: timeSinceActivity },
-              "Cleaned up stale streaming subscription"
+              'Cleaned up stale streaming subscription'
             );
           } else {
             remainingCount++;
           }
         } catch (parseErr) {
-          logger.warn(
-            { key, err: parseErr },
-            "Failed to parse subscription data"
-          );
+          logger.warn({ key, err: parseErr }, 'Failed to parse subscription data');
         }
       }
 
@@ -147,18 +141,15 @@ class StreamingCleanupService {
       for (const [workflowId, { userId, nodeIds }] of workflowsToCleanup) {
         // Check if any subscriptions remain for this workflow
         const remainingKeys = await redis.keys(`wf:sub:${workflowId}:*`);
-
+        
         if (remainingKeys.length === 0) {
           // No more subscriptions, clean up workflow-level data
-          await redis.srem(
-            `user:${userId}:active_streaming_workflows`,
-            workflowId
-          );
+          await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
           await redis.del(`workflow:${workflowId}:stream_filter`);
-
+          
           logger.info(
             { workflowId, cleanedNodes: nodeIds.length },
-            "🧹 Fully cleaned up stale streaming workflow"
+            '🧹 Fully cleaned up stale streaming workflow'
           );
         }
       }
@@ -166,13 +157,13 @@ class StreamingCleanupService {
       if (cleanedCount > 0) {
         logger.info(
           { cleaned: cleanedCount, remaining: remainingCount },
-          "🧹 Streaming cleanup completed"
+          '🧹 Streaming cleanup completed'
         );
       }
 
       return { cleaned: cleanedCount, remaining: remainingCount };
     } catch (error) {
-      logger.error({ err: error }, "Error during streaming cleanup");
+      logger.error({ err: error }, 'Error during streaming cleanup');
       throw error;
     }
   }
@@ -195,7 +186,7 @@ class StreamingCleanupService {
     } catch (error) {
       logger.warn(
         { workflowId, nodeId, err: error },
-        "Failed to update streaming activity timestamp"
+        'Failed to update streaming activity timestamp'
       );
     }
   }

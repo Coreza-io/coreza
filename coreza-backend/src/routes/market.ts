@@ -612,4 +612,60 @@ router.post('/register-streaming-workflow', async (req, res) => {
   }
 });
 
+/**
+ * Unregister a workflow from receiving streaming market data
+ * DELETE /market/unregister-streaming-workflow
+ * 
+ * This endpoint removes a workflow/node from streaming data subscriptions.
+ * Called when a streaming node stops or workflow is deleted.
+ */
+router.delete('/unregister-streaming-workflow', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { workflow_id, node_id } = req.body;
+
+    if (!workflow_id) {
+      return res.status(400).json({ error: 'workflow_id is required' });
+    }
+
+    const redis = getRedisCache();
+
+    // Remove specific node subscription if node_id provided
+    if (node_id) {
+      const subKey = `wf:sub:${workflow_id}:${node_id}`;
+      await redis.del(subKey);
+      console.log(`📤 [Market Route] Unregistered streaming node: ${workflow_id}:${node_id}`);
+    }
+
+    // Check if any other nodes still subscribed for this workflow
+    const pattern = `wf:sub:${workflow_id}:*`;
+    const remainingKeys = await redis.keys(pattern);
+
+    // If no more subscriptions, clean up workflow-level data
+    if (remainingKeys.length === 0) {
+      await redis.srem(`user:${userId}:active_streaming_workflows`, workflow_id);
+      await redis.del(`workflow:${workflow_id}:stream_filter`);
+      console.log(`📤 [Market Route] Fully unregistered streaming workflow: ${workflow_id}`);
+    }
+
+    res.json({
+      success: true,
+      message: node_id 
+        ? `Node ${node_id} unregistered from streaming` 
+        : `Workflow ${workflow_id} unregistered from streaming`,
+      remainingSubscriptions: remainingKeys.length,
+    });
+  } catch (error) {
+    console.error('Error unregistering streaming workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to unregister streaming workflow',
+    });
+  }
+});
+
 export default router;

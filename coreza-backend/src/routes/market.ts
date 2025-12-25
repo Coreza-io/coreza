@@ -524,4 +524,92 @@ router.delete('/workflows/:workflowId/unsubscribe', async (req, res) => {
   }
 });
 
+// ============================================
+// STREAMING WORKFLOW REGISTRATION
+// ============================================
+
+/**
+ * Register a workflow to receive streaming market data
+ * POST /market/register-streaming-workflow
+ * 
+ * This endpoint registers a workflow/node to receive real-time market data
+ * from a streaming source (e.g., binance_stream). Used by BinanceStreamData
+ * node in "listen" mode.
+ */
+router.post('/register-streaming-workflow', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      workflow_id,
+      node_id,
+      source,
+      filter_symbols,
+      filter_types,
+      subscription_mode,
+    } = req.body;
+
+    if (!workflow_id) {
+      return res.status(400).json({ error: 'workflow_id is required' });
+    }
+    if (!node_id) {
+      return res.status(400).json({ error: 'node_id is required' });
+    }
+
+    const redis = getRedisCache();
+    const streamSource = source || 'binance_stream';
+
+    // Store workflow subscription info
+    const subKey = `wf:sub:${workflow_id}:${node_id}`;
+    const subscriptionData = {
+      userId,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      source: streamSource,
+      filterSymbols: filter_symbols || [],
+      filterTypes: filter_types || [],
+      subscriptionMode: subscription_mode || 'workflow',
+      registeredAt: new Date().toISOString(),
+    };
+
+    await redis.set(subKey, JSON.stringify(subscriptionData));
+
+    // Add to user's active streaming workflows set
+    await redis.sadd(`user:${userId}:active_streaming_workflows`, workflow_id);
+
+    // Store stream filter for this workflow
+    const filterData = {
+      source: streamSource,
+      symbols: filter_symbols || [],
+      eventTypes: filter_types || [],
+      subscriptionMode: subscription_mode || 'workflow',
+    };
+    await redis.set(`workflow:${workflow_id}:stream_filter`, JSON.stringify(filterData));
+
+    console.log(`📥 [Market Route] Registered streaming workflow: ${workflow_id}, node: ${node_id}, source: ${streamSource}`);
+
+    res.json({
+      success: true,
+      message: 'Workflow registered for streaming',
+      registration: {
+        workflowId: workflow_id,
+        nodeId: node_id,
+        source: streamSource,
+        filterSymbols: filter_symbols || [],
+        filterTypes: filter_types || [],
+        subscriptionMode: subscription_mode || 'workflow',
+      },
+    });
+  } catch (error) {
+    console.error('Error registering streaming workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to register streaming workflow',
+    });
+  }
+});
+
 export default router;

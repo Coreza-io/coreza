@@ -661,6 +661,9 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             workflowId
           );
 
+          // Get subscription mode - determines whether to receive global or workflow-scoped data only
+          const subscriptionMode = nodeValues.subscriptionMode || "workflow";
+
           // Store filter configuration for this workflow
           // Parse filter_symbols to array for consistent format with updateActiveStreamingWorkflows
           const filterConfig = {
@@ -672,6 +675,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               : [],
             filter_types: filterTypes || [],
             nodeId: triggerNode.id,
+            subscriptionMode: subscriptionMode,
           };
           await setStoreValue(
             redis,
@@ -687,9 +691,6 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               .toLowerCase()
               .replace("streamdata", "")
               .replace("stream", "");
-
-          // Get subscription mode - determines whether to receive global or workflow-scoped data only
-          const subscriptionMode = nodeValues.subscriptionMode || "workflow";
 
           // Publish registration message to market-stream-service
           // This allows the trading workflow to receive data from symbols subscribed by other workflows

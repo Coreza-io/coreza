@@ -382,15 +382,23 @@ export class MarketControlHandler {
           const filterKey = `workflow:${workflowId}:stream_filter`;
           const filterJson = await this.redisPub.get(filterKey);
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
+          const workflowSubscriptionMode =
+            filterConfig.subscriptionMode || "workflow";
+
+          if (workflowSubscriptionMode !== "global") {
+            console.log(
+              `ℹ️ [MarketControl] Workflow ${workflowId} is not in global subscription mode, skipping`
+            );
+            continue;
+          }
 
           // Apply symbol filter if specified
           let symbolsToAdd = newSymbols;
-          if (
-            filterConfig.filter_symbols &&
-            filterConfig.filter_symbols.length > 0
-          ) {
-            const allowedSymbols = filterConfig.filter_symbols.map(
-              (s: string) => s.toUpperCase()
+          const filterSymbols =
+            filterConfig.filter_symbols || filterConfig.symbols || [];
+          if (filterSymbols.length > 0) {
+            const allowedSymbols = filterSymbols.map((s: string) =>
+              s.toUpperCase()
             );
             symbolsToAdd = newSymbols.filter((s) =>
               allowedSymbols.includes(s.toUpperCase())

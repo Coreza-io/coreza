@@ -25,36 +25,6 @@ import { SOURCE_TO_MARKET_SOURCE, getMarketSource } from '../config/marketSource
 
 const router = express.Router();
 
-const normalizeStreamEventTypes = (
-  source: string,
-  eventTypes?: string[]
-): string[] | undefined => {
-  if (!eventTypes || eventTypes.length === 0) return undefined;
-
-  if (source.includes('binance')) {
-    const normalized = eventTypes.map((type) => {
-      if (type.startsWith('kline')) return 'bar';
-      if (type === 'bookTicker') return 'quote';
-      if (type === 'ticker') return 'ticker';
-      return type;
-    });
-    return [...new Set(normalized)];
-  }
-
-  if (source.includes('alpaca')) {
-    const normalized = eventTypes.map((type) => {
-      if (type === 'trades') return 'trade';
-      if (type === 'quotes') return 'quote';
-      if (type === 'bars') return 'bar';
-      if (type === 'dailyBars') return 'daily_bar';
-      return type;
-    });
-    return [...new Set(normalized)];
-  }
-
-  return eventTypes;
-};
-
 // Apply JWT auth to all routes
 router.use(requireAuth);
 
@@ -593,11 +563,6 @@ router.post('/register-streaming-workflow', async (req, res) => {
     const streamSource = source || 'binance_stream';
     const now = new Date().toISOString();
 
-    const normalizedEventTypes = normalizeStreamEventTypes(
-      streamSource,
-      filter_types
-    );
-
     // Store workflow subscription info
     const subKey = `wf:sub:${workflow_id}:${node_id}`;
     const subscriptionData = {
@@ -606,7 +571,7 @@ router.post('/register-streaming-workflow', async (req, res) => {
       nodeId: node_id,
       source: streamSource,
       filterSymbols: filter_symbols || [],
-      filterTypes: normalizedEventTypes || [],
+      filterTypes: filter_types || [],
       subscriptionMode: subscription_mode || 'workflow',
       registeredAt: now,
       lastActivityAt: now,
@@ -621,7 +586,7 @@ router.post('/register-streaming-workflow', async (req, res) => {
     const filterData = {
       source: streamSource,
       symbols: filter_symbols || [],
-      eventTypes: normalizedEventTypes || [],
+      eventTypes: filter_types || [],
       subscriptionMode: subscription_mode || 'workflow',
     };
     await redis.set(`workflow:${workflow_id}:stream_filter`, JSON.stringify(filterData));

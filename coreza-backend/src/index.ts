@@ -74,6 +74,7 @@ import {
 import { RedisBuffer } from "./services/RedisBuffer";
 import { setupBufferFlush } from "./utils/flushRedisBuffer";
 import RunSyncService from "./services/RunSyncService";
+import streamingCleanupService from "./services/StreamingCleanupService";
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -219,6 +220,11 @@ async function startServer() {
     RunSyncService.start();
     logger.info("RunSyncService started (syncing every 10s)");
 
+    // Start StreamingCleanupService for stale subscription cleanup
+    logger.info("Starting StreamingCleanupService...");
+    streamingCleanupService.start();
+    logger.info("StreamingCleanupService started (cleanup every 5min)");
+
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || "8081", 10);
     await WebSocketManager.initialize(wsPort);
@@ -241,6 +247,9 @@ async function startServer() {
 
       // Stop WorkflowCache cleanup timer
       WorkflowCache.stopCleanupTimer();
+
+      // Stop StreamingCleanupService
+      streamingCleanupService.stop();
 
       // Stop RunSyncService and flush remaining runs
       RunSyncService.stop();

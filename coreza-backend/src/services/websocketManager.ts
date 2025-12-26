@@ -595,12 +595,19 @@ export class WebSocketManager {
     redis: Redis
   ): Promise<void> {
     try {
-      // Get all test listener keys for this user
-      const testKeys = await redis.keys(`stream:test:*`);
+      // Use SET for O(1) member retrieval instead of O(N) KEYS scan
+      const activeTestKeys = await redis.smembers('stream:test:active');
       
-      for (const testKey of testKeys) {
+      if (activeTestKeys.length === 0) return;
+      
+      for (const testKey of activeTestKeys) {
         const listenerStr = await redis.get(testKey);
-        if (!listenerStr) continue;
+        
+        // Key expired but still in SET - clean up stale entry
+        if (!listenerStr) {
+          await redis.srem('stream:test:active', testKey);
+          continue;
+        }
 
         const listener = JSON.parse(listenerStr);
         
@@ -629,7 +636,7 @@ export class WebSocketManager {
           }
         }
 
-        // Match found! Store result and delete listener
+        // Match found! Store result, delete listener, and remove from SET
         const resultKey = `${testKey}:result`;
         const resultData = {
           symbol: eventSymbol,
@@ -641,6 +648,7 @@ export class WebSocketManager {
 
         await redis.setex(resultKey, 60, JSON.stringify(resultData)); // 1 min TTL for result
         await redis.del(testKey); // Remove listener (auto-stop)
+        await redis.srem('stream:test:active', testKey); // Remove from active SET
 
         console.log(`🎯 [Test Listen] Data matched for ${testKey}: ${eventSymbol} (${eventType})`);
         break; // Only match first listener per event

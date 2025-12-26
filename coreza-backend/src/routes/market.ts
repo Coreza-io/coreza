@@ -826,6 +826,9 @@ router.post('/test-listen-stream', async (req, res) => {
 
     // Store test listener with 5-minute TTL (auto-expire)
     await redis.setex(testKey, 300, JSON.stringify(testListenerData));
+    
+    // Add to active listeners SET for O(1) lookup instead of KEYS scan
+    await redis.sadd('stream:test:active', testKey);
 
     console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
     console.log(`   Allowed symbols: ${allowedSymbols.join(', ') || 'ALL'}`);
@@ -872,6 +875,9 @@ router.post('/stop-listen-stream', async (req, res) => {
     // Delete both test listener and any stored result
     await redis.del(testKey);
     await redis.del(resultKey);
+    
+    // Remove from active listeners SET
+    await redis.srem('stream:test:active', testKey);
 
     console.log(`🛑 [Test Listen] Stopped test listener: ${testKey}`);
 
@@ -914,9 +920,10 @@ router.get('/stream-test-result/:workflow_id/:node_id', async (req, res) => {
     if (resultStr) {
       const result = JSON.parse(resultStr);
       
-      // Clean up both keys
+      // Clean up both keys and remove from active SET
       await redis.del(testKey);
       await redis.del(resultKey);
+      await redis.srem('stream:test:active', testKey);
 
       console.log(`✅ [Test Listen] Returning result for: ${testKey}`);
 

@@ -47,6 +47,7 @@ export interface NodeExecutionData {
   isTestListening?: boolean;                 // test listening mode (webhook-like)
   testListenWorkflowId?: string;             // workflow ID for test listener
   testListenNodeId?: string;                 // node ID for test listener
+  streamDataReceived?: boolean;              // true when stream data just arrived (for flash animation)
 }
 
 export class ExecutionContext {

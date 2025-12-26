@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position, useReactFlow } from "@xyflow/react";
@@ -104,6 +104,8 @@ interface NodeWrapperProps {
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
+  // Stream data received flash
+  streamDataReceived?: boolean;
   // Read-only mode (for execution view)
   readOnly?: boolean;
   executionStatus?: "success" | "failed" | "pending" | "running" | "skipped";
@@ -139,6 +141,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
   isExecuting = false,
   isStreamingWaiting = false,
+  // Stream data received flash
+  streamDataReceived = false,
   // Read-only mode props
   readOnly = false,
   executionStatus,
@@ -147,8 +151,20 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(false);
+  const prevStreamDataReceived = useRef(streamDataReceived);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
+
+  // Detect when stream data is received and trigger flash animation
+  useEffect(() => {
+    if (streamDataReceived && !prevStreamDataReceived.current) {
+      setIsFlashing(true);
+      const timer = setTimeout(() => setIsFlashing(false), 600);
+      return () => clearTimeout(timer);
+    }
+    prevStreamDataReceived.current = streamDataReceived;
+  }, [streamDataReceived]);
 
   // Access ReactFlow hooks once and gate usage for readOnly mode to keep hook order stable
   const reactFlowContext = useReactFlow();
@@ -260,6 +276,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           border-2 hover:shadow-elevated
           ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
           ${nodeShapeClass}
+          ${isFlashing ? "animate-stream-data-flash" : ""}
           ${
             isExecuting && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`

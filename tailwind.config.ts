@@ -137,13 +137,28 @@ export default {
     				'50%': {
     					boxShadow: '0 0 30px hsl(217 91% 60% / 0.5)'
     				}
+    			},
+    			'stream-data-flash': {
+    				'0%': {
+    					borderColor: 'hsl(142 76% 36%)',
+    					boxShadow: '0 0 20px hsl(142 76% 36% / 0.6)'
+    				},
+    				'50%': {
+    					borderColor: 'hsl(142 76% 50%)',
+    					boxShadow: '0 0 30px hsl(142 76% 50% / 0.8)'
+    				},
+    				'100%': {
+    					borderColor: 'hsl(var(--border))',
+    					boxShadow: 'none'
+    				}
     			}
     		},
     		animation: {
     			'accordion-down': 'accordion-down 0.2s ease-out',
     			'accordion-up': 'accordion-up 0.2s ease-out',
     			'fade-in': 'fade-in 0.3s ease-out',
-    			'glow-pulse': 'glow-pulse 2s ease-in-out infinite'
+    			'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
+    			'stream-data-flash': 'stream-data-flash 0.6s ease-out'
     		},
     		fontFamily: {
     			sans: [

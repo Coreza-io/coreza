@@ -931,6 +931,7 @@ export function useNodeExecution({
                     executionStore.setNodeData(nodeId!, {
                       output: receivedOutput,
                       isTestListening: false,
+                      streamDataReceived: true,
                     });
                     setNodes((nds) =>
                       nds.map((n) =>
@@ -941,11 +942,30 @@ export function useNodeExecution({
                                 ...n.data,
                                 output: receivedOutput,
                                 isTestListening: false,
+                                streamDataReceived: true,
                               },
                             }
                           : n
                       )
                     );
+                    
+                    // Reset streamDataReceived after animation completes
+                    setTimeout(() => {
+                      setNodes((nds) =>
+                        nds.map((n) =>
+                          n.id === nodeId
+                            ? {
+                                ...n,
+                                data: {
+                                  ...n.data,
+                                  streamDataReceived: false,
+                                },
+                              }
+                            : n
+                        )
+                      );
+                    }, 700);
+                    
                     setIsSending(false);
                     return;
                   } else if (result.status === "expired") {

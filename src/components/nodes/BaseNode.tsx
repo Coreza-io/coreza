@@ -20,7 +20,7 @@ import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { useAuth } from "@/contexts/AuthContext";
-import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { useExecutionStore, useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
 // Custom hooks
 import { useNodeFieldState } from "@/hooks/useNodeFieldState";
@@ -97,6 +97,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const nodes = useNodes();
   const edges = useEdges();
   const executionStore = useExecutionStore();
+  const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const { id: workflowId } = useParams();
 
   const definition = data.definition;
@@ -197,7 +198,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
     // Only use execution store flag - displayedData.status can be stale from previous sessions
     return nodeData?.isTestListening === true;
-  }, [nodeId, executionStore]);
+  }, [nodeId, executionStore, storeVersion]); // Include storeVersion to re-compute when store updates
 
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {

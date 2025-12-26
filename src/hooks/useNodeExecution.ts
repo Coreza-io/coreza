@@ -911,7 +911,10 @@ export function useNodeExecution({
           );
 
           // Poll for result (auto-stop on first data like webhooks)
-          const pollInterval = 500; // 500ms
+          // Use 1000ms base interval with jitter to prevent thundering herd
+          const basePollInterval = 1000;
+          const pollJitter = Math.random() * 200; // 0-200ms jitter
+          const pollInterval = basePollInterval + pollJitter;
           const maxPollTime = 300000; // 5 minutes
           const startTime = Date.now();
           

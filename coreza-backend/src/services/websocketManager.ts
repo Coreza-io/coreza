@@ -22,6 +22,15 @@ import { Server } from "net";
 import { createRedisQueuePubSub } from "../config/redis";
 import type Redis from "ioredis";
 import { matchesEventFilters } from "../utils/streamFilters";
+import {
+  MAX_CONNECTIONS_PER_USER,
+  WS_HEARTBEAT_INTERVAL_MS,
+  TEST_RESULT_TTL_SECONDS,
+  REDIS_KEY_ACTIVE_TEST_LISTENERS,
+  REDIS_KEY_USER_TEST_COUNT_PREFIX,
+  LUA_ATOMIC_TEST_LISTENER,
+  LUA_DECREMENT_TEST_COUNT,
+} from "../config/streaming";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -320,6 +329,17 @@ export class WebSocketManager {
       ws.close(1008, "Authentication required");
       return;
     }
+
+    // Check connection limit per user
+    const existingClients = this.clients.get(userId);
+    if (existingClients && existingClients.size >= MAX_CONNECTIONS_PER_USER) {
+      console.warn(
+        `⚠️ User ${userId} exceeded max connections (${MAX_CONNECTIONS_PER_USER}), rejecting`
+      );
+      ws.close(1013, `Maximum connections (${MAX_CONNECTIONS_PER_USER}) exceeded`);
+      return;
+    }
+
     const sessionId = this.generateSessionId();
 
     console.log(
@@ -340,14 +360,14 @@ export class WebSocketManager {
 
     console.log(`👤 User ${userId} connected (session: ${sessionId})`);
     console.log(
-      `📊 Total clients for user ${userId}: ${this.clients.get(userId)?.size}`
+      `📊 Total clients for user ${userId}: ${this.clients.get(userId)?.size}/${MAX_CONNECTIONS_PER_USER}`
     );
     console.log(`📊 Total connected users: ${this.clients.size}`);
 
     // Send welcome message
     this.sendMessage(ws, {
       type: "connected",
-      payload: { sessionId, userId },
+      payload: { sessionId, userId, maxConnections: MAX_CONNECTIONS_PER_USER },
       timestamp: new Date().toISOString(),
     });
 
@@ -588,7 +608,7 @@ export class WebSocketManager {
 
   /**
    * Check if incoming stream data matches any test listeners
-   * If match found, store result and mark listener as data_received
+   * Uses atomic Lua script to prevent race conditions with concurrent events
    */
   private async checkTestListeners(
     userId: string,
@@ -597,31 +617,38 @@ export class WebSocketManager {
   ): Promise<void> {
     try {
       // Use SET for O(1) member retrieval instead of O(N) KEYS scan
-      const activeTestKeys = await redis.smembers('stream:test:active');
+      const activeTestKeys = await redis.smembers(REDIS_KEY_ACTIVE_TEST_LISTENERS);
       
       if (activeTestKeys.length === 0) return;
+
+      // Extract event data from payload
+      const eventData = payload.payload || payload;
+      const eventSymbol = eventData.symbol?.toUpperCase();
+      const eventType = eventData.type;
       
       for (const testKey of activeTestKeys) {
+        // Quick pre-check: get listener to verify filters before atomic operation
         const listenerStr = await redis.get(testKey);
         
         // Key expired but still in SET - clean up stale entry
         if (!listenerStr) {
-          await redis.srem('stream:test:active', testKey);
+          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
           continue;
         }
 
-        const listener = JSON.parse(listenerStr);
+        let listener: any;
+        try {
+          listener = JSON.parse(listenerStr);
+        } catch {
+          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          continue;
+        }
         
         // Only process if this listener belongs to the current user
         if (listener.userId !== userId) continue;
         
         // Check if still in listening status
         if (listener.status !== 'listening') continue;
-
-        // Extract event data from payload
-        const eventData = payload.payload || payload;
-        const eventSymbol = eventData.symbol?.toUpperCase();
-        const eventType = eventData.type;
 
         // Check symbol and type filters using shared utility
         if (!matchesEventFilters(eventSymbol, eventType, {
@@ -631,7 +658,7 @@ export class WebSocketManager {
           continue; // Doesn't match filters
         }
 
-        // Match found! Store result, delete listener, and remove from SET
+        // Match found! Use atomic Lua script to prevent race conditions
         const resultKey = `${testKey}:result`;
         const resultData = {
           symbol: eventSymbol,
@@ -641,15 +668,41 @@ export class WebSocketManager {
           source: listener.source,
         };
 
-        await redis.setex(resultKey, 60, JSON.stringify(resultData)); // 1 min TTL for result
-        await redis.del(testKey); // Remove listener (auto-stop)
-        await redis.srem('stream:test:active', testKey); // Remove from active SET
+        try {
+          const result = await redis.eval(
+            LUA_ATOMIC_TEST_LISTENER,
+            3, // number of keys
+            testKey,
+            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            resultKey,
+            userId,
+            JSON.stringify(resultData),
+            String(TEST_RESULT_TTL_SECONDS)
+          );
 
-        console.log(`🎯 [Test Listen] Data matched for ${testKey}: ${eventSymbol} (${eventType})`);
-        break; // Only match first listener per event
+          if (result) {
+            // Decrement user's test listener count
+            const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+            await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+            
+            console.log(`🎯 [Test Listen] Data matched for ${testKey}: ${eventSymbol} (${eventType})`);
+            break; // Only match first listener per event
+          }
+          // If result is null, another event already claimed this listener
+        } catch (luaError) {
+          // Fallback to non-atomic operation if Lua fails
+          console.warn(`⚠️ Lua script failed, using fallback:`, luaError);
+          await redis.setex(resultKey, TEST_RESULT_TTL_SECONDS, JSON.stringify(resultData));
+          await redis.del(testKey);
+          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          
+          console.log(`🎯 [Test Listen] Data matched (fallback) for ${testKey}: ${eventSymbol} (${eventType})`);
+          break;
+        }
       }
     } catch (error) {
       console.error("❌ Error checking test listeners:", error);
+      // Don't throw - continue processing other events
     }
   }
 
@@ -666,7 +719,7 @@ export class WebSocketManager {
         ws.isAlive = false;
         ws.ping();
       });
-    }, 30000); // 30 seconds
+    }, WS_HEARTBEAT_INTERVAL_MS);
 
     this.wss?.on("close", () => {
       clearInterval(interval);

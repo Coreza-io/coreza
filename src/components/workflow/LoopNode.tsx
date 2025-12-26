@@ -83,6 +83,8 @@ export function LoopNode({ id, data, selected }: NodeProps) {
               pinned: renderProps.isPinned,
               onSave: renderProps.handlePanelSave,
               onPinToggle: renderProps.handlePanelPinToggle,
+              isTestListening: renderProps.isTestListening,
+              onStopListening: renderProps.handleStopListening,
             }}
             icon={icon}
             label={renderProps.displayName}

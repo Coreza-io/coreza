@@ -750,141 +750,71 @@ export function useNodeExecution({
           definition?.node_type === "trigger" &&
           !definition?.action?.url
         ) {
-          // Handle streaming TRIGGER nodes (BinanceStreamData, AlpacaStreamData)
-          // Supports two modes: "listen" (passive) and "subscribe" (self-contained)
-          // Uses webhook-like test listening: waits for first data then auto-stops
-
-          // Derive source from streamingConfig or node name
-          const source =
-            definition?.streamingConfig?.sourceId ||
-            definition?.name
-              ?.toLowerCase()
-              .replace("streamdata", "_stream")
-              .replace("data", "");
-
-          const mode = fieldState.mode || "listen";
-
-          if (mode === "subscribe") {
-            // SUBSCRIBE MODE: Self-contained - subscribe symbols and start streaming
-            const symbols = fieldState.symbols
-              ? typeof fieldState.symbols === "string"
-                ? fieldState.symbols
-                    .split(",")
-                    .map((s: string) => s.trim().toUpperCase())
-                    .filter(Boolean)
-                : fieldState.symbols
-              : [];
-
-            if (symbols.length === 0) {
-              throw new Error("Subscribe mode requires at least one symbol");
-            }
-
-            const streamTypes = fieldState.stream_types || ["trade"];
-
-            console.log(
-              `📡 [Streaming Trigger] Subscribe mode - subscribing ${symbols.length} symbols`
-            );
-
-            // First, subscribe symbols (like Subscribe node does)
-            const subscribeResponse = await apiClient.post(
-              `/market/${source}/subscribe`,
-              {
-                workflow_id: workflowId,
-                node_id: nodeId,
-                credential_id: fieldState.credential_id,
-                symbols,
-                stream_types: streamTypes,
-                environment: fieldState.environment || "testnet",
-                asset_type: fieldState.asset_type || "spot",
-                feed: fieldState.feed || "iex",
-                kline_interval: fieldState.kline_interval || "1m",
-                subscriptionScope: "workflow",
-                targetWorkflowId: workflowId,
-              },
-              session?.access_token
-            );
-
-            if (!subscribeResponse.ok) {
-              const errorData = await subscribeResponse
-                .json()
-                .catch(() => ({ error: "Subscription failed" }));
-              throw new Error(errorData.error || "Failed to subscribe symbols");
-            }
-
-            console.log(
-              `✅ [Streaming Trigger] Subscribe mode: Subscribed ${symbols.length} symbols`
-            );
-          }
-
-          // Extract filter symbols and types based on mode
-          const filterSymbols =
-            mode === "listen" && fieldState.filter_symbols
-              ? typeof fieldState.filter_symbols === "string"
-                ? fieldState.filter_symbols
-                    .split(",")
-                    .map((s: string) => s.trim().toUpperCase())
-                    .filter(Boolean)
-                : fieldState.filter_symbols
-              : mode === "subscribe" && fieldState.symbols
-              ? typeof fieldState.symbols === "string"
-                ? fieldState.symbols
-                    .split(",")
-                    .map((s: string) => s.trim().toUpperCase())
-                    .filter(Boolean)
-                : fieldState.symbols
-              : [];
-          const filterTypes =
-            mode === "listen"
-              ? fieldState.filter_types || []
-              : fieldState.stream_types || [];
-
-          console.log(
-            `📡 [Streaming Trigger] Starting test listener ${definition?.name} (mode: ${mode})`
-          );
-          console.log(
-            `📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`
-          );
-
-          // Start test listener (webhook-like behavior)
-          // For subscribe mode, always use 'workflow' scope since symbols are workflow-scoped
-          const effectiveSubscriptionMode = mode === 'subscribe' ? 'workflow' : (fieldState.subscriptionMode || 'workflow');
+          // ============================================
+          // UNIFIED STREAMING TRIGGER EXECUTION
+          // Single API call - backend owns all broker logic
+          // ============================================
           
-          const testListenResponse = await apiClient.post(
-            "/market/test-listen-stream",
+          const mode = fieldState.mode || "listen";
+          
+          // Parse symbols for subscribe mode
+          const symbols = fieldState.symbols
+            ? typeof fieldState.symbols === "string"
+              ? fieldState.symbols.split(",").map((s: string) => s.trim().toUpperCase()).filter(Boolean)
+              : fieldState.symbols
+            : [];
+          
+          // Parse filter symbols for listen mode
+          const filterSymbols = fieldState.filter_symbols
+            ? typeof fieldState.filter_symbols === "string"
+              ? fieldState.filter_symbols.split(",").map((s: string) => s.trim().toUpperCase()).filter(Boolean)
+              : fieldState.filter_symbols
+            : [];
+
+          console.log(`📡 [Streaming Trigger] Executing ${definition?.name} (mode: ${mode})`);
+          
+          // Single unified call - backend handles subscribe + listener registration atomically
+          const streamResponse = await apiClient.post(
+            "/market/execute-stream-node",
             {
               workflow_id: workflowId,
               node_id: nodeId,
+              node_type: definition.name,
               mode,
-              subscription_mode: effectiveSubscriptionMode,
-              filter_symbols: filterSymbols,
-              filter_types: filterTypes,
-              source,
+              // Subscribe params
+              symbols,
+              stream_types: fieldState.stream_types || ["trade"],
+              credential_id: fieldState.credential_id,
+              environment: fieldState.environment || "testnet",
+              asset_type: fieldState.asset_type || "spot",
+              feed: fieldState.feed || "iex",
+              kline_interval: fieldState.kline_interval || "1m",
+              // Filter params
+              filter_symbols: mode === "subscribe" ? symbols : filterSymbols,
+              filter_types: mode === "listen" ? (fieldState.filter_types || []) : (fieldState.stream_types || []),
+              subscription_mode: mode === "subscribe" ? "workflow" : (fieldState.subscriptionMode || "workflow"),
             },
             session?.access_token
           );
 
-          if (!testListenResponse.ok) {
-            const errorData = await testListenResponse
-              .json()
-              .catch(() => ({ error: "Test listen failed" }));
-            throw new Error(
-              errorData.error || "Failed to start test listener"
-            );
+          if (!streamResponse.ok) {
+            const errorData = await streamResponse.json().catch(() => ({ error: "Stream execution failed" }));
+            throw new Error(errorData.error || "Failed to execute stream node");
           }
 
-          const testListenResult = await testListenResponse.json();
-          console.log(`✅ [Streaming Trigger] Test listener started:`, testListenResult);
+          const streamResult = await streamResponse.json();
+          console.log(`✅ [Streaming Trigger] Unified execution complete:`, streamResult);
 
-          // Set initial listening output with isTestListening flag
+          // Set initial listening output
           const listeningOutput = {
             status: "listening",
             message: `Listening for ${definition?.name || "streaming"} data...`,
             startedAt: new Date().toISOString(),
             mode,
-            source,
+            source: streamResult.source,
             nodeId,
-            filterSymbols: testListenResult.listener?.filterSymbols || filterSymbols,
-            filterTypes: testListenResult.listener?.filterTypes || filterTypes,
+            filterSymbols: streamResult.symbols,
+            filterTypes: mode === "listen" ? (fieldState.filter_types || []) : (fieldState.stream_types || []),
             subscriptionMode: fieldState.subscriptionMode || "workflow",
           };
 
@@ -913,42 +843,36 @@ export function useNodeExecution({
             )
           );
 
-          // Poll for result as RECOVERY mechanism only (main path is WebSocket push)
-          // Use 10s interval - WebSocket push provides real-time updates
-          const recoveryPollInterval = 10000; // 10 seconds
-          const maxPollTime = 300000; // 5 minutes
+          // Recovery polling (WebSocket push is primary path)
+          const recoveryPollInterval = 10000;
+          const maxPollTime = 300000;
           const startTime = Date.now();
           
-          // Create AbortController for this polling session
-          pollingAbortRef.current?.abort(); // Cancel any previous polling
+          pollingAbortRef.current?.abort();
           const abortController = new AbortController();
           pollingAbortRef.current = abortController;
 
           const pollForResult = async (): Promise<void> => {
             while (Date.now() - startTime < maxPollTime) {
-              // Check if polling was aborted (component unmounted or new poll started)
               if (abortController.signal.aborted) {
                 console.log(`[Streaming Trigger] Recovery polling aborted for node ${nodeId}`);
                 return;
               }
               
-              // Check if data was received via WebSocket push (preferred path)
               const currentNodeData = executionStore.getNodeData(nodeId!);
               if (currentNodeData?.streamDataReceived || currentNodeData?.output?.status === 'success') {
-                console.log(`✅ [Streaming Trigger] Data received via WebSocket, stopping recovery poll`);
+                console.log(`✅ [Streaming Trigger] Data received via WebSocket`);
                 setIsSending(false);
                 return;
               }
               
-              // Check if test listening was stopped manually
               if (currentNodeData?.isTestListening === false && !currentNodeData?.streamDataReceived) {
-                console.log(`[Streaming Trigger] Test listening stopped, exiting recovery poll`);
+                console.log(`[Streaming Trigger] Test listening stopped`);
                 setIsSending(false);
                 return;
               }
               
               try {
-                // Recovery poll - only hits backend every 10s as fallback
                 const resultResponse = await apiClient.get(
                   `/market/stream-test-result/${workflowId}/${nodeId}`,
                   session?.access_token
@@ -958,9 +882,6 @@ export function useNodeExecution({
                   const result = await resultResponse.json();
 
                   if (result.status === "data_received") {
-                    // Data received via recovery poll (WebSocket push may have failed)
-                    console.log(`✅ [Streaming Trigger] Test data recovered via poll:`, result.data);
-                    
                     const receivedOutput = {
                       status: "success",
                       symbol: result.data.symbol,
@@ -980,32 +901,15 @@ export function useNodeExecution({
                     setNodes((nds) =>
                       nds.map((n) =>
                         n.id === nodeId
-                          ? {
-                              ...n,
-                              data: {
-                                ...n.data,
-                                output: receivedOutput,
-                                isTestListening: false,
-                                streamDataReceived: true,
-                              },
-                            }
+                          ? { ...n, data: { ...n.data, output: receivedOutput, isTestListening: false, streamDataReceived: true } }
                           : n
                       )
                     );
                     
-                    // Reset streamDataReceived after animation completes
                     setTimeout(() => {
                       setNodes((nds) =>
                         nds.map((n) =>
-                          n.id === nodeId
-                            ? {
-                                ...n,
-                                data: {
-                                  ...n.data,
-                                  streamDataReceived: false,
-                                },
-                              }
-                            : n
+                          n.id === nodeId ? { ...n, data: { ...n.data, streamDataReceived: false } } : n
                         )
                       );
                     }, 700);
@@ -1013,40 +917,22 @@ export function useNodeExecution({
                     setIsSending(false);
                     return;
                   } else if (result.status === "expired") {
-                    // Listener expired
-                    const expiredOutput = {
-                      status: "expired",
-                      message: "Test listener expired without receiving data",
-                    };
+                    const expiredOutput = { status: "expired", message: "Test listener expired" };
                     setLastOutput(expiredOutput);
-                    executionStore.setNodeData(nodeId!, {
-                      output: expiredOutput,
-                      isTestListening: false,
-                    });
+                    executionStore.setNodeData(nodeId!, { output: expiredOutput, isTestListening: false });
                     setNodes((nds) =>
                       nds.map((n) =>
-                        n.id === nodeId
-                          ? {
-                              ...n,
-                              data: {
-                                ...n.data,
-                                output: expiredOutput,
-                                isTestListening: false,
-                              },
-                            }
-                          : n
+                        n.id === nodeId ? { ...n, data: { ...n.data, output: expiredOutput, isTestListening: false } } : n
                       )
                     );
                     setIsSending(false);
                     return;
                   }
-                  // Still listening, continue recovery polling
                 }
               } catch (pollError) {
                 console.warn(`[Streaming Trigger] Recovery poll error:`, pollError);
               }
 
-              // Wait before next recovery poll (abortable)
               await new Promise((resolve) => {
                 const timeoutId = setTimeout(resolve, recoveryPollInterval);
                 abortController.signal.addEventListener('abort', () => {
@@ -1056,39 +942,19 @@ export function useNodeExecution({
               });
             }
             
-            // Check abort before timeout handling
-            if (abortController.signal.aborted) {
-              return;
-            }
+            if (abortController.signal.aborted) return;
 
-            // Timeout reached
-            const timeoutOutput = {
-              status: "timeout",
-              message: "No stream data received within timeout period",
-            };
+            const timeoutOutput = { status: "timeout", message: "No stream data received within timeout" };
             setLastOutput(timeoutOutput);
-            executionStore.setNodeData(nodeId!, {
-              output: timeoutOutput,
-              isTestListening: false,
-            });
+            executionStore.setNodeData(nodeId!, { output: timeoutOutput, isTestListening: false });
             setNodes((nds) =>
               nds.map((n) =>
-                n.id === nodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: timeoutOutput,
-                        isTestListening: false,
-                      },
-                    }
-                  : n
+                n.id === nodeId ? { ...n, data: { ...n.data, output: timeoutOutput, isTestListening: false } } : n
               )
             );
             setIsSending(false);
           };
 
-          // Start recovery polling in background (WebSocket push is primary path)
           pollForResult();
           return;
         } else {

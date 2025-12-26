@@ -31,6 +31,11 @@ import {
   LUA_INCREMENT_TEST_COUNT,
   LUA_DECREMENT_TEST_COUNT,
 } from '../config/streaming';
+import {
+  StreamExecutionRequest,
+  StreamExecutionResponse,
+  resolveSourceFromNodeType,
+} from '../types/streaming';
 const router = express.Router();
 
 // Apply JWT auth to all routes
@@ -747,6 +752,208 @@ router.post('/cleanup-streaming', async (req, res) => {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to run cleanup',
     });
+  }
+});
+
+// ============================================
+// UNIFIED STREAM EXECUTION ENDPOINT
+// ============================================
+
+/**
+ * Unified stream node execution endpoint
+ * POST /market/execute-stream-node
+ * 
+ * Single orchestrator for streaming trigger nodes (BinanceStreamData, AlpacaStreamData, etc.)
+ * Handles subscription AND listener registration atomically - eliminates race conditions.
+ * Frontend makes ONE call; backend owns all broker/source logic.
+ */
+router.post('/execute-stream-node', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      workflow_id,
+      node_id,
+      node_type,
+      mode = 'listen',
+      // Subscribe params
+      symbols,
+      stream_types,
+      credential_id,
+      environment,
+      asset_type,
+      feed,
+      kline_interval,
+      // Filter params
+      filter_symbols,
+      filter_types,
+      subscription_mode = 'workflow',
+    } = req.body as StreamExecutionRequest;
+
+    if (!workflow_id) {
+      return res.status(400).json({ error: 'workflow_id is required' });
+    }
+    if (!node_id) {
+      return res.status(400).json({ error: 'node_id is required' });
+    }
+    if (!node_type) {
+      return res.status(400).json({ error: 'node_type is required' });
+    }
+
+    const redis = getRedisCache();
+
+    // 1. Backend resolves source from node type (frontend never derives this)
+    const source = resolveSourceFromNodeType(node_type);
+    if (source === 'unknown') {
+      return res.status(400).json({ error: `Unknown node_type: ${node_type}` });
+    }
+
+    const marketSource = getMarketSource(source);
+    if (!marketSource) {
+      return res.status(400).json({ error: `Unknown source: ${source}` });
+    }
+
+    console.log(`🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${source})`);
+
+    // 2. Parse symbols
+    const parsedSymbols: string[] = Array.isArray(symbols)
+      ? symbols.map((s: string) => s.toUpperCase())
+      : typeof symbols === 'string'
+        ? symbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean)
+        : [];
+
+    // 3. If subscribe mode, subscribe first and WAIT for completion
+    if (mode === 'subscribe') {
+      if (parsedSymbols.length === 0) {
+        return res.status(400).json({ error: 'Subscribe mode requires at least one symbol' });
+      }
+
+      console.log(`📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`);
+
+      const subscribeResult = await SubscriptionService.subscribe({
+        source: marketSource,
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        credentialId: credential_id || '',
+        symbols: parsedSymbols,
+        streamTypes: stream_types,
+        feed,
+        environment,
+        assetType: asset_type,
+        klineInterval: kline_interval,
+        subscriptionScope: 'workflow',
+        targetWorkflowId: workflow_id,
+      });
+
+      if (!subscribeResult.success) {
+        console.error(`❌ [ExecuteStreamNode] Subscription failed:`, subscribeResult.error);
+        return res.status(400).json({
+          success: false,
+          status: 'error',
+          error: subscribeResult.error,
+        } as StreamExecutionResponse);
+      }
+
+      console.log(`✅ [ExecuteStreamNode] Subscription successful for ${parsedSymbols.length} symbols`);
+    }
+
+    // 4. Determine effective filter symbols (for listener registration)
+    const effectiveFilterSymbols = filter_symbols?.length 
+      ? filter_symbols.map((s: string) => s.toUpperCase())
+      : mode === 'subscribe' 
+        ? parsedSymbols 
+        : [];
+
+    const effectiveFilterTypes = filter_types?.length 
+      ? filter_types 
+      : stream_types || [];
+
+    // 5. Rate limit check for test listener
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const allowed = await redis.eval(
+      LUA_INCREMENT_TEST_COUNT,
+      1,
+      userCountKey,
+      String(MAX_TEST_LISTENERS_PER_USER),
+      String(TEST_LISTENER_TTL_SECONDS)
+    );
+
+    if (allowed === 0) {
+      console.warn(`⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`);
+      return res.status(429).json({
+        success: false,
+        status: 'error',
+        error: `Maximum concurrent test listeners (${MAX_TEST_LISTENERS_PER_USER}) exceeded.`,
+      } as StreamExecutionResponse);
+    }
+
+    // 6. Create test listener key and store metadata
+    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const now = new Date().toISOString();
+
+    const testListenerData = {
+      userId,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      status: 'listening',
+      startedAt: now,
+      mode,
+      subscriptionMode: subscription_mode,
+      source,
+      filterSymbols: effectiveFilterSymbols,
+      filterTypes: effectiveFilterTypes,
+    };
+
+    // Store test listener with TTL (auto-expire)
+    await redis.setex(testKey, TEST_LISTENER_TTL_SECONDS, JSON.stringify(testListenerData));
+
+    // Add to active listeners SET for O(1) lookup
+    await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+
+    console.log(`📝 [ExecuteStreamNode] Stored test listener: ${testKey}`);
+    console.log(`   Filter symbols: ${effectiveFilterSymbols.join(', ') || 'NONE'}`);
+    console.log(`   Filter types: ${effectiveFilterTypes.join(', ') || 'ALL'}`);
+
+    // 7. Register with MarketDataSubscriber via control message
+    // CRITICAL: Include filter_symbols so MarketControlHandler subscribes to correct Redis channels
+    const controlMessage = {
+      action: 'register_workflow',
+      userId,
+      workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
+      nodeId: node_id,
+      source,
+      filter_symbols: effectiveFilterSymbols, // ✅ Always passed with resolved symbols
+      filter_types: effectiveFilterTypes,
+      subscriptionMode: subscription_mode,
+      isTestListener: true,
+    };
+
+    await redis.publish('md:control:register_workflow', JSON.stringify(controlMessage));
+    console.log(`📡 [ExecuteStreamNode] Published register_workflow with symbols: ${effectiveFilterSymbols.join(', ')}`);
+
+    // 8. Return success response
+    const response: StreamExecutionResponse = {
+      success: true,
+      status: 'listening',
+      source,
+      symbols: effectiveFilterSymbols,
+      testKey,
+      message: `Listening for ${node_type} data`,
+    };
+
+    console.log(`✅ [ExecuteStreamNode] Complete - testKey: ${testKey}`);
+    res.json(response);
+  } catch (error) {
+    console.error('Error executing stream node:', error);
+    res.status(500).json({
+      success: false,
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Failed to execute stream node',
+    } as StreamExecutionResponse);
   }
 });
 

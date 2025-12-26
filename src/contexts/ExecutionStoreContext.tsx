@@ -165,16 +165,22 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               const { nodeId, data } = message.payload;
 
               if (storeRef.current) {
-                storeRef.current.setNodeData(nodeId, {
-                  output: {
-                    status: 'streaming',
-                    data,
-                    streamType: message.type,
-                    receivedAt: new Date().toISOString()
-                  }
-                });
-                setUpdateVersion(v => v + 1); // Trigger React re-render
-                console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
+                // Only update if this node is actively test listening
+                const existingData = storeRef.current.getNodeData(nodeId);
+                if (existingData?.isTestListening) {
+                  storeRef.current.setNodeData(nodeId, {
+                    output: {
+                      status: 'streaming',
+                      data,
+                      streamType: message.type,
+                      receivedAt: new Date().toISOString()
+                    }
+                  });
+                  setUpdateVersion(v => v + 1); // Trigger React re-render
+                  console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
+                } else {
+                  console.log('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
+                }
               }
             }
           } catch (error) {

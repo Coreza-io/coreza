@@ -808,14 +808,24 @@ router.post('/test-listen-stream', async (req, res) => {
     const testKey = `stream:test:${workflow_id}:${node_id}`;
     const now = new Date().toISOString();
 
-    // Get allowed symbols using shared utility
-    const allowedSymbols = await getAllowedSymbols(redis, {
-      userId,
-      workflowId: workflow_id,
-      source: source || 'binance_stream',
-      subscriptionMode: subscription_mode || 'workflow',
-      filterSymbols: filter_symbols,
-    });
+    // Get allowed symbols based on mode
+    let allowedSymbols: string[];
+    
+    if (mode === 'subscribe') {
+      // SUBSCRIBE MODE (Self-contained): Use provided symbols directly
+      // These are the symbols the user just subscribed to in this node - no intersection needed
+      allowedSymbols = (filter_symbols || []).map((s: string) => s.toUpperCase());
+      console.log(`🔧 [Test Listen] Subscribe mode - using provided symbols directly: ${allowedSymbols.join(', ') || 'NONE'}`);
+    } else {
+      // LISTEN MODE: Get allowed symbols from existing subscriptions (with intersection)
+      allowedSymbols = await getAllowedSymbols(redis, {
+        userId,
+        workflowId: workflow_id,
+        source: source || 'binance_stream',
+        subscriptionMode: subscription_mode || 'workflow',
+        filterSymbols: filter_symbols,
+      });
+    }
 
     const testListenerData = {
       userId,

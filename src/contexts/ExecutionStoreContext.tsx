@@ -117,15 +117,21 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               const { nodeId, data } = message.payload;
 
               if (nodeId && storeRef.current) {
-                storeRef.current.setNodeData(nodeId, {
-                  output: {
-                    status: 'streaming',
-                    data,
-                    lastUpdate: new Date().toISOString()
-                  }
-                });
-                setUpdateVersion(v => v + 1); // Trigger React re-render
-                console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
+                // Only update if this node is actively test listening
+                const existingData = storeRef.current.getNodeData(nodeId);
+                if (existingData?.isTestListening) {
+                  storeRef.current.setNodeData(nodeId, {
+                    output: {
+                      status: 'streaming',
+                      data,
+                      lastUpdate: new Date().toISOString()
+                    }
+                  });
+                  setUpdateVersion(v => v + 1); // Trigger React re-render
+                  console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
+                } else {
+                  console.log('⚠️ [ExecutionStore] Ignoring market_data for non-listening node:', nodeId);
+                }
               }
             }
 

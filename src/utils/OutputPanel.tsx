@@ -247,55 +247,48 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {/* Show Stop Listening button when in test listening mode */}
+            {/* Show Stop Listening banner when in test listening mode */}
             {(isTestListening || internalData?.status === 'listening') && onStopListening && (
-              <div className="flex flex-col items-center gap-3 py-4">
+              <div className="flex flex-col items-center gap-2 py-3 px-3 bg-cyan-500/10 border border-cyan-500/30 rounded-md mb-3">
                 <div className="flex items-center gap-2 text-cyan-500">
-                  <Radio className="w-4 h-4 animate-pulse" />
-                  <span className="text-sm font-medium">Listening for stream data...</span>
+                  <Radio className="w-3 h-3 animate-pulse" />
+                  <span className="text-xs font-medium">Listening for stream data...</span>
                 </div>
                 {internalData?.filterSymbols?.length > 0 && (
                   <div className="text-xs text-muted-foreground text-center">
                     Symbols: {internalData.filterSymbols.join(', ')}
                   </div>
                 )}
-                {internalData?.subscriptionMode && (
-                  <div className="text-xs text-muted-foreground text-center">
-                    Mode: {internalData.subscriptionMode === 'global' ? 'All My Subscriptions' : 'Workflow Only'}
-                  </div>
-                )}
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={onStopListening}
-                  className="mt-2"
+                  className="h-6 text-xs px-2"
                 >
-                  <Square className="w-3 h-3 mr-2 fill-current" />
-                  Stop Listening
+                  <Square className="w-2 h-2 mr-1 fill-current" />
+                  Stop
                 </Button>
               </div>
             )}
             
-            {/* Regular output rendering */}
-            {!(isTestListening || internalData?.status === 'listening') && (
-              isStandardNodeOutput(internalData) ? (
-                <>
-                  {/* Render full output structure: success, status, data/error */}
-                  {renderData({
-                    success: internalData.success,
-                    status: internalData.status,
-                    ...(internalData.error !== undefined ? { error: internalData.error } : {}),
-                    ...(internalData.data !== undefined ? { data: internalData.data } : {}),
-                  }, "")}
-                  {internalData.meta?.executionTime && (
-                    <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
-                      Executed in {internalData.meta.executionTime}ms
-                    </div>
-                  )}
-                </>
-              ) : (
-                renderData(internalData, "")
-              )
+            {/* Always render output data (show both listening status AND any received data) */}
+            {isStandardNodeOutput(internalData) ? (
+              <>
+                {/* Render full output structure: success, status, data/error */}
+                {renderData({
+                  success: internalData.success,
+                  status: internalData.status,
+                  ...(internalData.error !== undefined ? { error: internalData.error } : {}),
+                  ...(internalData.data !== undefined ? { data: internalData.data } : {}),
+                }, "")}
+                {internalData.meta?.executionTime && (
+                  <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
+                    Executed in {internalData.meta.executionTime}ms
+                  </div>
+                )}
+              </>
+            ) : (
+              renderData(internalData, "")
             )}
           </div>
         )}

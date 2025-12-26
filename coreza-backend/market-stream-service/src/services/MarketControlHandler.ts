@@ -110,7 +110,9 @@ export class MarketControlHandler {
         console.log(`📨 [MarketControl] Received message on ${channel}:`, {
           action: msg.action,
           source: msg.source,
-          symbols: msg.symbols,
+          filter_symbols: msg.filter_symbols,
+          subscriptionMode: msg.subscriptionMode,
+          isTestListener: msg.isTestListener,
           workflowId: msg.workflowId,
           nodeId: msg.nodeId,
           userId: msg.userId,

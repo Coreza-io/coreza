@@ -486,6 +486,68 @@ export class MarketControlHandler {
           );
         }
       }
+
+      // Also update test listeners for global scope
+      // Test listeners are stored with pattern: stream:test:*
+      // We need to find all test listeners belonging to this user
+      try {
+        const testListenerPattern = `stream:test:*`;
+        const testListenerKeys = await this.redisPub.keys(testListenerPattern);
+
+        if (testListenerKeys.length > 0) {
+          console.log(
+            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener key(s) to check for global update`
+          );
+
+          for (const testKey of testListenerKeys) {
+            try {
+              const listenerJson = await this.redisPub.get(testKey);
+              if (!listenerJson) continue;
+
+              const listenerData = JSON.parse(listenerJson);
+
+              // Only update test listeners belonging to this user
+              if (listenerData.userId !== userId) continue;
+
+              // Apply filter_symbols if specified
+              let symbolsToAdd = newSymbols;
+              if (
+                listenerData.filterSymbols &&
+                listenerData.filterSymbols.length > 0
+              ) {
+                const allowedSymbols = listenerData.filterSymbols.map(
+                  (s: string) => s.toUpperCase()
+                );
+                symbolsToAdd = newSymbols.filter((s) =>
+                  allowedSymbols.includes(s.toUpperCase())
+                );
+
+                if (symbolsToAdd.length === 0) {
+                  console.log(
+                    `ℹ️ [MarketControl] Test listener ${testKey} filters exclude new symbols, skipping`
+                  );
+                  continue;
+                }
+              }
+
+              await subscriber.addSymbolsToSubscription(testKey, symbolsToAdd);
+              console.log(
+                `🧪 [MarketControl] Updated test listener ${testKey} with ${symbolsToAdd.length} global symbols`
+              );
+            } catch (err) {
+              console.warn(
+                `⚠️ [MarketControl] Failed to update test listener ${testKey}:`,
+                err
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `⚠️ [MarketControl] Failed to scan test listeners for global update:`,
+          err
+        );
+      }
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to update active streaming workflows:`,

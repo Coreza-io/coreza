@@ -16,7 +16,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2 } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square } from "lucide-react";
 import { isStandardNodeOutput, extractOutputData } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
 
@@ -34,6 +34,10 @@ export type OutputPanelProps = {
   onPinToggle?: () => void;
   /** Read-only mode (for execution view) - hides edit/pin buttons */
   readOnly?: boolean;
+  /** Whether the node is in test listening mode */
+  isTestListening?: boolean;
+  /** Callback to stop test listening */
+  onStopListening?: () => void;
 };
 
 // Status badge component for StandardNodeOutput
@@ -121,6 +125,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   onSave = () => {},
   onPinToggle = () => {},
   readOnly = false,
+  isTestListening = false,
+  onStopListening,
 }) => {
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
@@ -241,23 +247,55 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {isStandardNodeOutput(internalData) ? (
-              <>
-                {/* Render full output structure: success, status, data/error */}
-                {renderData({
-                  success: internalData.success,
-                  status: internalData.status,
-                  ...(internalData.error !== undefined ? { error: internalData.error } : {}),
-                  ...(internalData.data !== undefined ? { data: internalData.data } : {}),
-                }, "")}
-                {internalData.meta?.executionTime && (
-                  <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
-                    Executed in {internalData.meta.executionTime}ms
+            {/* Show Stop Listening button when in test listening mode */}
+            {(isTestListening || internalData?.status === 'listening') && onStopListening && (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="flex items-center gap-2 text-cyan-500">
+                  <Radio className="w-4 h-4 animate-pulse" />
+                  <span className="text-sm font-medium">Listening for stream data...</span>
+                </div>
+                {internalData?.filterSymbols?.length > 0 && (
+                  <div className="text-xs text-muted-foreground text-center">
+                    Symbols: {internalData.filterSymbols.join(', ')}
                   </div>
                 )}
-              </>
-            ) : (
-              renderData(internalData, "")
+                {internalData?.subscriptionMode && (
+                  <div className="text-xs text-muted-foreground text-center">
+                    Mode: {internalData.subscriptionMode === 'global' ? 'All My Subscriptions' : 'Workflow Only'}
+                  </div>
+                )}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={onStopListening}
+                  className="mt-2"
+                >
+                  <Square className="w-3 h-3 mr-2 fill-current" />
+                  Stop Listening
+                </Button>
+              </div>
+            )}
+            
+            {/* Regular output rendering */}
+            {!(isTestListening || internalData?.status === 'listening') && (
+              isStandardNodeOutput(internalData) ? (
+                <>
+                  {/* Render full output structure: success, status, data/error */}
+                  {renderData({
+                    success: internalData.success,
+                    status: internalData.status,
+                    ...(internalData.error !== undefined ? { error: internalData.error } : {}),
+                    ...(internalData.data !== undefined ? { data: internalData.data } : {}),
+                  }, "")}
+                  {internalData.meta?.executionTime && (
+                    <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
+                      Executed in {internalData.meta.executionTime}ms
+                    </div>
+                  )}
+                </>
+              ) : (
+                renderData(internalData, "")
+              )
             )}
           </div>
         )}

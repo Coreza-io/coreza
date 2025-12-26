@@ -14,13 +14,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { apiClient } from "@/lib/apiClient";
 // Custom hooks
 import { useNodeFieldState } from "@/hooks/useNodeFieldState";
 import { useNodeRenaming } from "@/hooks/useNodeRenaming";
@@ -78,6 +79,8 @@ export interface BaseNodeRenderProps {
   setSelectedPrevNodeId: (id: string) => void;
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
+  handleStopListening: () => void;
+  isTestListening: boolean;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
@@ -185,6 +188,66 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     executionStore,
   });
 
+  // Get auth context for API calls
+  const { session } = useAuth();
+  const { setNodes } = useReactFlow();
+
+  // Check if node is in test listening mode
+  const isTestListening = useMemo(() => {
+    const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
+    return nodeData?.isTestListening || outputHook.displayedData?.status === 'listening';
+  }, [nodeId, executionStore, outputHook.displayedData?.status]);
+
+  // Handle stop listening - calls the stop-listen-stream endpoint
+  const handleStopListening = useCallback(async () => {
+    if (!workflowId || !nodeId || readOnly) return;
+    
+    try {
+      console.log(`🛑 [BaseNode] Stopping test listener for ${workflowId}:${nodeId}`);
+      
+      const response = await apiClient.post(
+        "/market/stop-listen-stream",
+        {
+          workflow_id: workflowId,
+          node_id: nodeId,
+        },
+        session?.access_token
+      );
+
+      if (response.ok) {
+        // Update node state to remove listening status
+        const stoppedOutput = {
+          status: "stopped",
+          message: "Test listener stopped manually",
+          stoppedAt: new Date().toISOString(),
+        };
+
+        outputHook.setLastOutput(stoppedOutput);
+        executionStore.setNodeData(nodeId, {
+          output: stoppedOutput,
+          isTestListening: false,
+        });
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    output: stoppedOutput,
+                    isTestListening: false,
+                  },
+                }
+              : n
+          )
+        );
+        console.log(`✅ [BaseNode] Test listener stopped successfully`);
+      }
+    } catch (error) {
+      console.error("Failed to stop test listener:", error);
+    }
+  }, [workflowId, nodeId, readOnly, session?.access_token, outputHook, executionStore, setNodes]);
+
   // ========== Combine All Props ==========
 
   const renderProps: BaseNodeRenderProps = {
@@ -222,6 +285,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     setSelectedPrevNodeId,
     handlePanelSave: outputHook.handlePanelSave,
     handlePanelPinToggle: outputHook.handlePanelPinToggle,
+    handleStopListening,
+    isTestListening,
     fetchCredentials: credentialsHook.fetchCredentials,
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants

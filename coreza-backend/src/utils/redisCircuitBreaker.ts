@@ -15,94 +15,131 @@
  */
 
 import CircuitBreaker from 'opossum';
-import { getRedisQueuePubSub } from '../config/redis';
 import { createLogger } from './logger';
-import { alertRedisCircuitOpen } from './alerting';
-import { redisOperationsCounter } from './metrics';
 
-const logger = createLogger('CircuitBreaker');
+const logger = createLogger('RedisCircuitBreaker');
 
+/**
+ * Circuit breaker configuration optimized for Redis operations
+ * - Short timeout for fast-fail on slow Redis
+ * - Lower threshold for test listener operations (high volume, fast recovery preferred)
+ */
 const circuitBreakerOptions = {
-  timeout: 5000,                    // 5 second timeout for operations
+  timeout: 3000,                    // 3 second timeout for operations
   errorThresholdPercentage: 50,     // Open circuit at 50% failures
-  resetTimeout: 30000,              // Try again after 30 seconds
-  volumeThreshold: 5,               // Min requests before circuit can open
+  resetTimeout: 15000,              // Try again after 15 seconds
+  volumeThreshold: 10,              // Min requests before circuit can open
 };
 
-// Get dedicated pub connection for Redis operations (never used for subscribe)
-const { pub: redisPub } = getRedisQueuePubSub();
+/**
+ * Track circuit breaker state changes
+ */
+function setupCircuitBreakerEvents(breaker: CircuitBreaker, name: string): void {
+  breaker.on('open', () => {
+    logger.error({ breaker: name, state: 'OPEN' }, `${name} circuit OPEN - operations will fail fast`);
+  });
+
+  breaker.on('halfOpen', () => {
+    logger.warn({ breaker: name, state: 'HALF_OPEN' }, `${name} circuit HALF-OPEN - testing connection`);
+  });
+
+  breaker.on('close', () => {
+    logger.info({ breaker: name, state: 'CLOSED' }, `${name} circuit CLOSED - normal operation resumed`);
+  });
+
+  breaker.on('fallback', () => {
+    logger.debug({ breaker: name }, `${name} fallback executed`);
+  });
+}
 
 /**
- * Circuit breaker for Redis PUBLISH operations
- * Prevents cascading failures when Redis is unavailable
+ * Circuit breaker for Redis SMEMBERS operation (test listeners)
  */
-export const redisPublishBreaker = new CircuitBreaker(
-  async (channel: string, message: string) => {
-    return redisPub.publish(channel, message);
+export const redisSMembersBreaker = new CircuitBreaker(
+  async (redis: any, key: string) => {
+    return redis.smembers(key);
   },
-  circuitBreakerOptions
+  {
+    ...circuitBreakerOptions,
+    // Return empty array on failure - safe fallback for test listeners
+    fallback: () => [],
+  }
 );
 
 /**
- * Circuit breaker for Redis GET operations
+ * Circuit breaker for Redis GET operation
  */
 export const redisGetBreaker = new CircuitBreaker(
-  async (key: string) => {
-    return redisPub.get(key);
+  async (redis: any, key: string) => {
+    return redis.get(key);
   },
-  circuitBreakerOptions
+  {
+    ...circuitBreakerOptions,
+    // Return null on failure - caller should handle null gracefully
+    fallback: () => null,
+  }
 );
 
 /**
- * Circuit breaker for Redis SET operations
+ * Circuit breaker for Redis EVAL (Lua script) operations
  */
-export const redisSetBreaker = new CircuitBreaker(
-  async (key: string, value: string) => {
-    return redisPub.set(key, value);
+export const redisEvalBreaker = new CircuitBreaker(
+  async (redis: any, script: string, numKeys: number, ...args: any[]) => {
+    return redis.eval(script, numKeys, ...args);
   },
-  circuitBreakerOptions
+  {
+    ...circuitBreakerOptions,
+    timeout: 5000, // Slightly longer timeout for Lua scripts
+    // Return null on failure - indicates operation didn't complete
+    fallback: () => null,
+  }
 );
 
-// Event handlers for monitoring
-redisPublishBreaker.on('open', () => {
-  logger.fatal({ breaker: 'redisPublish', state: 'OPEN' }, 'Redis PUBLISH circuit OPEN - fallback active');
-  redisOperationsCounter.inc({ operation: 'publish', status: 'circuit_open' });
-  alertRedisCircuitOpen();
-});
+/**
+ * Circuit breaker for Redis SREM operation
+ */
+export const redisSRemBreaker = new CircuitBreaker(
+  async (redis: any, key: string, member: string) => {
+    return redis.srem(key, member);
+  },
+  {
+    ...circuitBreakerOptions,
+    // Return 0 on failure - indicates no members removed
+    fallback: () => 0,
+  }
+);
 
-redisPublishBreaker.on('halfOpen', () => {
-  logger.warn({ breaker: 'redisPublish', state: 'HALF_OPEN' }, 'Redis PUBLISH circuit HALF-OPEN - testing connection');
-});
+// Setup event handlers for all breakers
+setupCircuitBreakerEvents(redisSMembersBreaker, 'redisSMembers');
+setupCircuitBreakerEvents(redisGetBreaker, 'redisGet');
+setupCircuitBreakerEvents(redisEvalBreaker, 'redisEval');
+setupCircuitBreakerEvents(redisSRemBreaker, 'redisSRem');
 
-redisPublishBreaker.on('close', () => {
-  logger.info({ breaker: 'redisPublish', state: 'CLOSED' }, 'Redis PUBLISH circuit CLOSED - normal operation');
-  redisOperationsCounter.inc({ operation: 'publish', status: 'circuit_closed' });
-});
-
-redisGetBreaker.on('open', () => {
-  logger.fatal({ breaker: 'redisGet', state: 'OPEN' }, 'Redis GET circuit OPEN - fallback active');
-  redisOperationsCounter.inc({ operation: 'get', status: 'circuit_open' });
-});
-
-redisGetBreaker.on('halfOpen', () => {
-  logger.warn({ breaker: 'redisGet', state: 'HALF_OPEN' }, 'Redis GET circuit HALF-OPEN - testing connection');
-});
-
-redisGetBreaker.on('close', () => {
-  logger.info({ breaker: 'redisGet', state: 'CLOSED' }, 'Redis GET circuit CLOSED - normal operation');
-  redisOperationsCounter.inc({ operation: 'get', status: 'circuit_closed' });
-});
-
-redisSetBreaker.on('open', () => {
-  logger.fatal({ breaker: 'redisSet', state: 'OPEN' }, 'Redis SET circuit OPEN - fallback active');
-  redisOperationsCounter.inc({ operation: 'set', status: 'circuit_open' });
-});
-
-redisSetBreaker.on('halfOpen', () => {
-  logger.warn({ breaker: 'redisSet', state: 'HALF_OPEN' }, 'Redis SET circuit HALF-OPEN - testing connection');
-});
-
-redisSetBreaker.on('close', () => {
-  logger.info({ breaker: 'redisSet', state: 'CLOSED' }, 'Redis SET circuit CLOSED - normal operation');
-  redisOperationsCounter.inc({ operation: 'set', status: 'circuit_closed' });
-});
+/**
+ * Get combined circuit breaker health status
+ */
+export function getCircuitBreakerHealth(): {
+  smembers: { state: string; stats: any };
+  get: { state: string; stats: any };
+  eval: { state: string; stats: any };
+  srem: { state: string; stats: any };
+} {
+  return {
+    smembers: {
+      state: redisSMembersBreaker.opened ? 'OPEN' : redisSMembersBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisSMembersBreaker.stats,
+    },
+    get: {
+      state: redisGetBreaker.opened ? 'OPEN' : redisGetBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisGetBreaker.stats,
+    },
+    eval: {
+      state: redisEvalBreaker.opened ? 'OPEN' : redisEvalBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisEvalBreaker.stats,
+    },
+    srem: {
+      state: redisSRemBreaker.opened ? 'OPEN' : redisSRemBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisSRemBreaker.stats,
+    },
+  };
+}

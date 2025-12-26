@@ -925,21 +925,16 @@ router.get('/stream-test-result/:workflow_id/:node_id', async (req, res) => {
     const testKey = `stream:test:${workflow_id}:${node_id}`;
     const resultKey = `${testKey}:result`;
 
-    // Check if result arrived
+    // Check if result arrived (WebSocket push already decremented count in checkTestListeners)
     const resultStr = await redis.get(resultKey);
     if (resultStr) {
       const result = JSON.parse(resultStr);
       
-      // Clean up both keys and remove from active SET
-      await redis.del(testKey);
+      // Clean up result key only - testKey and SET entry already removed by checkTestListeners
+      // DO NOT decrement count here - it was already decremented atomically in checkTestListeners
       await redis.del(resultKey);
-      await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
-      
-      // Decrement user's test listener count (already done in checkTestListeners, but ensure cleanup)
-      const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
-      await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
-      console.log(`✅ [Test Listen] Returning result for: ${testKey}`);
+      console.log(`✅ [Test Listen] Returning cached result for: ${testKey} (recovery poll)`);
 
       return res.json({
         success: true,

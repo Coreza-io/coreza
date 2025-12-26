@@ -20,6 +20,7 @@ import { MarketSource } from "../../types/marketEvent";
 import { SubscriptionService } from "../../services/SubscriptionService";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 import { getRedisCache } from "../../config/redis";
+import { getAllowedSymbols, matchesTypeFilter, parseSymbolString, matchesSymbolFilter } from "../../utils/streamFilters";
 
 export class MarketExecutor implements INodeExecutor {
   readonly category = "Market";
@@ -159,63 +160,40 @@ export class MarketExecutor implements INodeExecutor {
       const event = initialInput.marketEvent;
       const eventSymbol = event.symbol?.toUpperCase();
 
-      // Get allowed symbols based on mode and subscriptionMode
-      let allowedSymbols: string[] = [];
-      
+      // Get allowed symbols based on mode and subscriptionMode using shared utility
       if (mode === 'listen') {
         const redis = getRedisCache();
         
-        if (subscriptionMode === 'global') {
-          // Fetch user's globally subscribed symbols
-          const globalSymbols = await redis.smembers(`user:${userId}:subscribed_symbols:${source}`);
-          allowedSymbols = globalSymbols.map(s => s.toUpperCase());
-          console.log(`🔍 [StreamTrigger] Global mode - allowed symbols: ${allowedSymbols.join(', ')}`);
-        } else {
-          // Default: workflow-scoped symbols
-          const workflowSymbols = await redis.smembers(`workflow:${workflowId}:subscribed_symbols:${source}`);
-          allowedSymbols = workflowSymbols.map(s => s.toUpperCase());
-          console.log(`🔍 [StreamTrigger] Workflow mode - allowed symbols: ${allowedSymbols.join(', ')}`);
-        }
-
-        // Apply additional filter_symbols if specified
-        if (filter_symbols) {
-          const filterList = filter_symbols
-            .split(",")
-            .map((s: string) => s.trim().toUpperCase())
-            .filter(Boolean);
-          
-          if (filterList.length > 0) {
-            // Only allow symbols that are both in allowedSymbols AND filterList
-            allowedSymbols = allowedSymbols.filter(s => filterList.includes(s));
-            console.log(`🔍 [StreamTrigger] After filter_symbols: ${allowedSymbols.join(', ')}`);
-          }
-        }
+        // Parse filter_symbols string if provided
+        const filterSymbolsList = parseSymbolString(filter_symbols);
+        
+        const allowedSymbols = await getAllowedSymbols(redis, {
+          userId,
+          workflowId,
+          source,
+          subscriptionMode: subscriptionMode || 'workflow',
+          filterSymbols: filterSymbolsList.length > 0 ? filterSymbolsList : undefined,
+        });
+        
+        console.log(`🔍 [StreamTrigger] ${subscriptionMode || 'workflow'} mode - allowed symbols: ${allowedSymbols.join(', ')}`);
 
         // Check if event symbol is in allowed list
-        if (allowedSymbols.length > 0 && !allowedSymbols.includes(eventSymbol)) {
+        if (!matchesSymbolFilter(eventSymbol, allowedSymbols)) {
           console.log(`⏭️ [StreamTrigger] Symbol ${eventSymbol} not in allowed list, filtering out`);
           const successOutput = createSuccessOutput(null, normalizeCtx);
           return toNodeResult(successOutput); // Filtered out
         }
       } else if (mode === 'subscribe') {
         // Subscribe mode: only allow symbols defined in this node
-        if (filter_symbols) {
-          const allowed = filter_symbols
-            .split(",")
-            .map((s: string) => s.trim().toUpperCase());
-          if (!allowed.includes(eventSymbol)) {
-            const successOutput = createSuccessOutput(null, normalizeCtx);
-            return toNodeResult(successOutput); // Filtered out
-          }
+        const allowed = parseSymbolString(filter_symbols);
+        if (!matchesSymbolFilter(eventSymbol, allowed)) {
+          const successOutput = createSuccessOutput(null, normalizeCtx);
+          return toNodeResult(successOutput); // Filtered out
         }
       }
 
-      // Apply optional event type filter
-      if (
-        filter_types &&
-        filter_types.length > 0 &&
-        !filter_types.includes(event.type)
-      ) {
+      // Apply optional event type filter using shared utility
+      if (!matchesTypeFilter(event.type, filter_types || [])) {
         const successOutput = createSuccessOutput(null, normalizeCtx);
         return toNodeResult(successOutput); // Filtered out
       }

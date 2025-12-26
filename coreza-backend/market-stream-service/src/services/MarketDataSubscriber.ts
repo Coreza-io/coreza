@@ -374,6 +374,15 @@ export class MarketDataSubscriber {
             );
           }
 
+          // Skip workflow execution for test listeners (they only need WebSocket data)
+          if (workflowId.startsWith('stream:test:')) {
+            logger.debug(
+              { workflowId },
+              "Skipping workflow execution for test listener"
+            );
+            continue;
+          }
+
           // Trigger backend workflow execution with same formatted payload
           await this.triggerWorkflowExecution(
             workflowId,

@@ -80,8 +80,11 @@ export const POLL_JITTER_MS = parseInt(
 // REDIS KEYS
 // ============================================
 
-/** Active test listeners SET key */
+/** Active test listeners SET key (global) */
 export const REDIS_KEY_ACTIVE_TEST_LISTENERS = 'stream:test:active';
+
+/** User-specific active test listeners SET key prefix */
+export const REDIS_KEY_USER_TEST_LISTENERS_PREFIX = 'user:active_test_listeners:';
 
 /** User test listener count key prefix */
 export const REDIS_KEY_USER_TEST_COUNT_PREFIX = 'user:test_listener_count:';

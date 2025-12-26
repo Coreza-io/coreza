@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,6 +76,19 @@ export function useNodeExecution({
 
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  
+  // AbortController ref for polling cleanup on unmount
+  const pollingAbortRef = useRef<AbortController | null>(null);
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingAbortRef.current) {
+        pollingAbortRef.current.abort();
+        pollingAbortRef.current = null;
+      }
+    };
+  }, []);
 
   const userId = user?.id;
 
@@ -901,9 +914,20 @@ export function useNodeExecution({
           const pollInterval = 500; // 500ms
           const maxPollTime = 300000; // 5 minutes
           const startTime = Date.now();
+          
+          // Create AbortController for this polling session
+          pollingAbortRef.current?.abort(); // Cancel any previous polling
+          const abortController = new AbortController();
+          pollingAbortRef.current = abortController;
 
           const pollForResult = async (): Promise<void> => {
             while (Date.now() - startTime < maxPollTime) {
+              // Check if polling was aborted (component unmounted or new poll started)
+              if (abortController.signal.aborted) {
+                console.log(`[Streaming Trigger] Polling aborted for node ${nodeId}`);
+                return;
+              }
+              
               try {
                 const resultResponse = await apiClient.get(
                   `/market/stream-test-result/${workflowId}/${nodeId}`,
@@ -1002,8 +1026,19 @@ export function useNodeExecution({
                 console.warn(`[Streaming Trigger] Poll error:`, pollError);
               }
 
-              // Wait before next poll
-              await new Promise((resolve) => setTimeout(resolve, pollInterval));
+              // Wait before next poll (abortable)
+              await new Promise((resolve) => {
+                const timeoutId = setTimeout(resolve, pollInterval);
+                abortController.signal.addEventListener('abort', () => {
+                  clearTimeout(timeoutId);
+                  resolve(undefined);
+                }, { once: true });
+              });
+            }
+            
+            // Check abort before timeout handling
+            if (abortController.signal.aborted) {
+              return;
             }
 
             // Timeout reached

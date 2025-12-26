@@ -739,6 +739,7 @@ export function useNodeExecution({
         ) {
           // Handle streaming TRIGGER nodes (BinanceStreamData, AlpacaStreamData)
           // Supports two modes: "listen" (passive) and "subscribe" (self-contained)
+          // Uses webhook-like test listening: waits for first data then auto-stops
 
           // Derive source from streamingConfig or node name
           const source =
@@ -811,6 +812,13 @@ export function useNodeExecution({
                     .map((s: string) => s.trim().toUpperCase())
                     .filter(Boolean)
                 : fieldState.filter_symbols
+              : mode === "subscribe" && fieldState.symbols
+              ? typeof fieldState.symbols === "string"
+                ? fieldState.symbols
+                    .split(",")
+                    .map((s: string) => s.trim().toUpperCase())
+                    .filter(Boolean)
+                : fieldState.symbols
               : [];
           const filterTypes =
             mode === "listen"
@@ -818,59 +826,59 @@ export function useNodeExecution({
               : fieldState.stream_types || [];
 
           console.log(
-            `📡 [Streaming Trigger] Registering ${definition?.name} (mode: ${mode})`
+            `📡 [Streaming Trigger] Starting test listener ${definition?.name} (mode: ${mode})`
           );
           console.log(
             `📡 [Streaming Trigger] Source: ${source}, FilterSymbols: ${filterSymbols}, FilterTypes: ${filterTypes}`
           );
 
-          // Register workflow to receive streaming data
-          const registerResponse = await apiClient.post(
-            "/market/register-streaming-workflow",
+          // Start test listener (webhook-like behavior)
+          const testListenResponse = await apiClient.post(
+            "/market/test-listen-stream",
             {
               workflow_id: workflowId,
               node_id: nodeId,
-              source,
+              mode,
+              subscription_mode: fieldState.subscriptionMode || "workflow",
               filter_symbols: filterSymbols,
               filter_types: filterTypes,
+              source,
             },
             session?.access_token
           );
 
-          if (!registerResponse.ok) {
-            const errorData = await registerResponse
+          if (!testListenResponse.ok) {
+            const errorData = await testListenResponse
               .json()
-              .catch(() => ({ error: "Registration failed" }));
+              .catch(() => ({ error: "Test listen failed" }));
             throw new Error(
-              errorData.error || "Failed to register streaming workflow"
+              errorData.error || "Failed to start test listener"
             );
           }
 
-          const registerResult = await registerResponse.json();
-          console.log(`✅ [Streaming Trigger] Registered:`, registerResult);
+          const testListenResult = await testListenResponse.json();
+          console.log(`✅ [Streaming Trigger] Test listener started:`, testListenResult);
 
-          // Set initial waiting output
-          const waitingOutput = {
-            status: "waiting",
-            message:
-              mode === "subscribe"
-                ? `Subscribed and listening for ${
-                    definition?.name || "streaming"
-                  } data...`
-                : `Listening for ${definition?.name || "streaming"} data...`,
-            registeredAt: new Date().toISOString(),
+          // Set initial listening output with isTestListening flag
+          const listeningOutput = {
+            status: "listening",
+            message: `Listening for ${definition?.name || "streaming"} data...`,
+            startedAt: new Date().toISOString(),
             mode,
             source,
             nodeId,
-            filterSymbols,
-            filterTypes,
+            filterSymbols: testListenResult.listener?.filterSymbols || filterSymbols,
+            filterTypes: testListenResult.listener?.filterTypes || filterTypes,
+            subscriptionMode: fieldState.subscriptionMode || "workflow",
           };
 
-          outputData = waitingOutput;
+          outputData = listeningOutput;
           setLastOutput(outputData);
           executionStore.setNodeData(nodeId!, {
             output: outputData,
-            isStreamingWaiting: true,
+            isTestListening: true,
+            testListenWorkflowId: workflowId,
+            testListenNodeId: nodeId,
           });
           setNodes((nds) =>
             nds.map((n) =>
@@ -880,15 +888,133 @@ export function useNodeExecution({
                     data: {
                       ...n.data,
                       output: outputData,
-                      isStreamingWaiting: true,
+                      isTestListening: true,
+                      testListenWorkflowId: workflowId,
+                      testListenNodeId: nodeId,
                     },
                   }
                 : n
             )
           );
 
-          // Let WebSocket handler update the output when data arrives - don't block here
-          setIsSending(false);
+          // Poll for result (auto-stop on first data like webhooks)
+          const pollInterval = 500; // 500ms
+          const maxPollTime = 300000; // 5 minutes
+          const startTime = Date.now();
+
+          const pollForResult = async (): Promise<void> => {
+            while (Date.now() - startTime < maxPollTime) {
+              try {
+                const resultResponse = await apiClient.get(
+                  `/market/stream-test-result/${workflowId}/${nodeId}`,
+                  session?.access_token
+                );
+
+                if (resultResponse.ok) {
+                  const result = await resultResponse.json();
+
+                  if (result.status === "data_received") {
+                    // Data received! Auto-stop and show result
+                    console.log(`✅ [Streaming Trigger] Test data received:`, result.data);
+                    
+                    const receivedOutput = {
+                      status: "success",
+                      symbol: result.data.symbol,
+                      type: result.data.type,
+                      data: result.data.data,
+                      receivedAt: result.data.receivedAt,
+                      source: result.data.source,
+                      [result.data.type]: result.data.data?.[result.data.type] || result.data.data,
+                    };
+
+                    setLastOutput(receivedOutput);
+                    executionStore.setNodeData(nodeId!, {
+                      output: receivedOutput,
+                      isTestListening: false,
+                    });
+                    setNodes((nds) =>
+                      nds.map((n) =>
+                        n.id === nodeId
+                          ? {
+                              ...n,
+                              data: {
+                                ...n.data,
+                                output: receivedOutput,
+                                isTestListening: false,
+                              },
+                            }
+                          : n
+                      )
+                    );
+                    setIsSending(false);
+                    return;
+                  } else if (result.status === "expired") {
+                    // Listener expired
+                    const expiredOutput = {
+                      status: "expired",
+                      message: "Test listener expired without receiving data",
+                    };
+                    setLastOutput(expiredOutput);
+                    executionStore.setNodeData(nodeId!, {
+                      output: expiredOutput,
+                      isTestListening: false,
+                    });
+                    setNodes((nds) =>
+                      nds.map((n) =>
+                        n.id === nodeId
+                          ? {
+                              ...n,
+                              data: {
+                                ...n.data,
+                                output: expiredOutput,
+                                isTestListening: false,
+                              },
+                            }
+                          : n
+                      )
+                    );
+                    setIsSending(false);
+                    return;
+                  }
+                  // Still listening, continue polling
+                }
+              } catch (pollError) {
+                console.warn(`[Streaming Trigger] Poll error:`, pollError);
+              }
+
+              // Wait before next poll
+              await new Promise((resolve) => setTimeout(resolve, pollInterval));
+            }
+
+            // Timeout reached
+            const timeoutOutput = {
+              status: "timeout",
+              message: "No stream data received within timeout period",
+            };
+            setLastOutput(timeoutOutput);
+            executionStore.setNodeData(nodeId!, {
+              output: timeoutOutput,
+              isTestListening: false,
+            });
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        output: timeoutOutput,
+                        isTestListening: false,
+                      },
+                    }
+                  : n
+              )
+            );
+            setIsSending(false);
+          };
+
+          // Start polling in background
+          pollForResult();
           return;
         } else {
           outputData = payload;

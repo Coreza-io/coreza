@@ -742,4 +742,218 @@ router.post('/cleanup-streaming', async (req, res) => {
   }
 });
 
+// ============================================
+// TEST LISTENING (WEBHOOK-LIKE BEHAVIOR)
+// ============================================
+
+/**
+ * Start test listening for stream data
+ * POST /market/test-listen-stream
+ * 
+ * Initiates a test listening session like n8n webhooks - waits for first matching data.
+ * Returns immediately, client should poll /stream-test-result for data.
+ */
+router.post('/test-listen-stream', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      workflow_id,
+      node_id,
+      mode,
+      subscription_mode,
+      filter_symbols,
+      filter_types,
+      source,
+    } = req.body;
+
+    if (!workflow_id) {
+      return res.status(400).json({ error: 'workflow_id is required' });
+    }
+    if (!node_id) {
+      return res.status(400).json({ error: 'node_id is required' });
+    }
+
+    const redis = getRedisCache();
+    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const now = new Date().toISOString();
+
+    // Get allowed symbols based on subscription_mode
+    let allowedSymbols: string[] = filter_symbols || [];
+    
+    if (subscription_mode === 'global') {
+      // Fetch all globally subscribed symbols for this user
+      const streamSource = source || 'binance_stream';
+      const globalSymbols = await redis.smembers(`user:${userId}:subscribed_symbols:${streamSource}`);
+      
+      if (filter_symbols && filter_symbols.length > 0) {
+        // Filter to only symbols that are in both global and filter
+        allowedSymbols = globalSymbols.filter(s => 
+          filter_symbols.map((f: string) => f.toUpperCase()).includes(s.toUpperCase())
+        );
+      } else {
+        allowedSymbols = globalSymbols;
+      }
+    } else if (subscription_mode === 'workflow') {
+      // Fetch workflow-scoped subscribed symbols
+      const streamSource = source || 'binance_stream';
+      const workflowSymbols = await redis.smembers(`workflow:${workflow_id}:subscribed_symbols:${streamSource}`);
+      
+      if (filter_symbols && filter_symbols.length > 0) {
+        allowedSymbols = workflowSymbols.filter(s => 
+          filter_symbols.map((f: string) => f.toUpperCase()).includes(s.toUpperCase())
+        );
+      } else {
+        allowedSymbols = workflowSymbols;
+      }
+    }
+
+    const testListenerData = {
+      userId,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      status: 'listening',
+      startedAt: now,
+      mode: mode || 'listen',
+      subscriptionMode: subscription_mode || 'workflow',
+      source: source || 'binance_stream',
+      filterSymbols: allowedSymbols.map((s: string) => s.toUpperCase()),
+      filterTypes: filter_types || [],
+    };
+
+    // Store test listener with 5-minute TTL (auto-expire)
+    await redis.setex(testKey, 300, JSON.stringify(testListenerData));
+
+    console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
+    console.log(`   Allowed symbols: ${allowedSymbols.join(', ') || 'ALL'}`);
+    console.log(`   Filter types: ${filter_types?.join(', ') || 'ALL'}`);
+
+    res.json({
+      success: true,
+      status: 'listening',
+      testKey,
+      listener: testListenerData,
+    });
+  } catch (error) {
+    console.error('Error starting test listener:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start test listener',
+    });
+  }
+});
+
+/**
+ * Stop test listening for stream data
+ * POST /market/stop-listen-stream
+ * 
+ * Manually cancels a test listening session.
+ */
+router.post('/stop-listen-stream', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { workflow_id, node_id } = req.body;
+
+    if (!workflow_id || !node_id) {
+      return res.status(400).json({ error: 'workflow_id and node_id are required' });
+    }
+
+    const redis = getRedisCache();
+    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const resultKey = `${testKey}:result`;
+
+    // Delete both test listener and any stored result
+    await redis.del(testKey);
+    await redis.del(resultKey);
+
+    console.log(`🛑 [Test Listen] Stopped test listener: ${testKey}`);
+
+    res.json({
+      success: true,
+      status: 'stopped',
+      message: 'Test listener stopped',
+    });
+  } catch (error) {
+    console.error('Error stopping test listener:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to stop test listener',
+    });
+  }
+});
+
+/**
+ * Get test listening result
+ * GET /market/stream-test-result/:workflow_id/:node_id
+ * 
+ * Polls for the first matching stream event. Returns data if received,
+ * or "listening" status if still waiting.
+ */
+router.get('/stream-test-result/:workflow_id/:node_id', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { workflow_id, node_id } = req.params;
+
+    const redis = getRedisCache();
+    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const resultKey = `${testKey}:result`;
+
+    // Check if result arrived
+    const resultStr = await redis.get(resultKey);
+    if (resultStr) {
+      const result = JSON.parse(resultStr);
+      
+      // Clean up both keys
+      await redis.del(testKey);
+      await redis.del(resultKey);
+
+      console.log(`✅ [Test Listen] Returning result for: ${testKey}`);
+
+      return res.json({
+        success: true,
+        status: 'data_received',
+        data: result,
+      });
+    }
+
+    // Check if still listening
+    const listenerStr = await redis.get(testKey);
+    if (listenerStr) {
+      const listener = JSON.parse(listenerStr);
+      
+      return res.json({
+        success: true,
+        status: 'listening',
+        startedAt: listener.startedAt,
+        filterSymbols: listener.filterSymbols,
+        filterTypes: listener.filterTypes,
+      });
+    }
+
+    // No listener and no result - expired or never started
+    return res.json({
+      success: false,
+      status: 'expired',
+      message: 'Test listener expired or not found',
+    });
+  } catch (error) {
+    console.error('Error getting test result:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get test result',
+    });
+  }
+});
+
 export default router;

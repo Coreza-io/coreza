@@ -44,6 +44,9 @@ export interface NodeExecutionData {
   
   // Streaming state
   isStreamingWaiting?: boolean;              // waiting for streaming data
+  isTestListening?: boolean;                 // test listening mode (webhook-like)
+  testListenWorkflowId?: string;             // workflow ID for test listener
+  testListenNodeId?: string;                 // node ID for test listener
 }
 
 export class ExecutionContext {

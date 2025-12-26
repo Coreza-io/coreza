@@ -50,6 +50,11 @@ export function useNodeOutput({
   const [lastOutput, setLastOutput] = useState<any>(() => {
     // In execution view (readOnly), data.output contains the actual execution result
     if (data.output !== undefined && data.output !== null) {
+      // Don't restore stale "listening" or "streaming" states from previous sessions
+      const status = data.output?.status;
+      if (status === 'listening' || status === 'streaming') {
+        return { status: "pending" };
+      }
       return data.output;
     }
     // Default behavior for editor mode

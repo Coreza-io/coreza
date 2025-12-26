@@ -192,11 +192,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const { session } = useAuth();
   const { setNodes } = useReactFlow();
 
-  // Check if node is in test listening mode
+  // Check if node is in test listening mode - ONLY trust execution store, not stale output status
   const isTestListening = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
-    return nodeData?.isTestListening || outputHook.displayedData?.status === 'listening';
-  }, [nodeId, executionStore, outputHook.displayedData?.status]);
+    // Only use execution store flag - displayedData.status can be stale from previous sessions
+    return nodeData?.isTestListening === true;
+  }, [nodeId, executionStore]);
 
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {

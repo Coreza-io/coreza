@@ -23,7 +23,14 @@ import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
 import { SOURCE_TO_MARKET_SOURCE, getMarketSource } from '../config/marketSources';
 import { getAllowedSymbols } from '../utils/streamFilters';
-
+import {
+  MAX_TEST_LISTENERS_PER_USER,
+  TEST_LISTENER_TTL_SECONDS,
+  REDIS_KEY_ACTIVE_TEST_LISTENERS,
+  REDIS_KEY_USER_TEST_COUNT_PREFIX,
+  LUA_INCREMENT_TEST_COUNT,
+  LUA_DECREMENT_TEST_COUNT,
+} from '../config/streaming';
 const router = express.Router();
 
 // Apply JWT auth to all routes
@@ -779,6 +786,25 @@ router.post('/test-listen-stream', async (req, res) => {
     }
 
     const redis = getRedisCache();
+    
+    // Rate limit: check user's active test listener count using atomic Lua script
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const allowed = await redis.eval(
+      LUA_INCREMENT_TEST_COUNT,
+      1, // number of keys
+      userCountKey,
+      String(MAX_TEST_LISTENERS_PER_USER),
+      String(TEST_LISTENER_TTL_SECONDS)
+    );
+
+    if (allowed === 0) {
+      console.warn(`⚠️ [Test Listen] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`);
+      return res.status(429).json({
+        error: `Maximum concurrent test listeners (${MAX_TEST_LISTENERS_PER_USER}) exceeded. Please stop existing listeners first.`,
+        maxListeners: MAX_TEST_LISTENERS_PER_USER,
+      });
+    }
+
     const testKey = `stream:test:${workflow_id}:${node_id}`;
     const now = new Date().toISOString();
 
@@ -804,11 +830,11 @@ router.post('/test-listen-stream', async (req, res) => {
       filterTypes: filter_types || [],
     };
 
-    // Store test listener with 5-minute TTL (auto-expire)
-    await redis.setex(testKey, 300, JSON.stringify(testListenerData));
+    // Store test listener with TTL (auto-expire)
+    await redis.setex(testKey, TEST_LISTENER_TTL_SECONDS, JSON.stringify(testListenerData));
     
     // Add to active listeners SET for O(1) lookup instead of KEYS scan
-    await redis.sadd('stream:test:active', testKey);
+    await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
 
     console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
     console.log(`   Allowed symbols: ${allowedSymbols.join(', ') || 'ALL'}`);
@@ -857,7 +883,11 @@ router.post('/stop-listen-stream', async (req, res) => {
     await redis.del(resultKey);
     
     // Remove from active listeners SET
-    await redis.srem('stream:test:active', testKey);
+    await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    
+    // Decrement user's test listener count
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
     console.log(`🛑 [Test Listen] Stopped test listener: ${testKey}`);
 
@@ -903,7 +933,11 @@ router.get('/stream-test-result/:workflow_id/:node_id', async (req, res) => {
       // Clean up both keys and remove from active SET
       await redis.del(testKey);
       await redis.del(resultKey);
-      await redis.srem('stream:test:active', testKey);
+      await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+      
+      // Decrement user's test listener count (already done in checkTestListeners, but ensure cleanup)
+      const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+      await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
       console.log(`✅ [Test Listen] Returning result for: ${testKey}`);
 
@@ -929,6 +963,10 @@ router.get('/stream-test-result/:workflow_id/:node_id', async (req, res) => {
     }
 
     // No listener and no result - expired or never started
+    // Ensure count is decremented for expired listeners
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+    
     return res.json({
       success: false,
       status: 'expired',

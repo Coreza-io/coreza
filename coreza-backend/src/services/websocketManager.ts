@@ -21,6 +21,7 @@ import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 import { Server } from "net";
 import { createRedisQueuePubSub } from "../config/redis";
 import type Redis from "ioredis";
+import { matchesEventFilters } from "../utils/streamFilters";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -622,18 +623,12 @@ export class WebSocketManager {
         const eventSymbol = eventData.symbol?.toUpperCase();
         const eventType = eventData.type;
 
-        // Check symbol filter
-        if (listener.filterSymbols && listener.filterSymbols.length > 0) {
-          if (!eventSymbol || !listener.filterSymbols.includes(eventSymbol)) {
-            continue; // Symbol doesn't match filter
-          }
-        }
-
-        // Check type filter
-        if (listener.filterTypes && listener.filterTypes.length > 0) {
-          if (!eventType || !listener.filterTypes.includes(eventType)) {
-            continue; // Type doesn't match filter
-          }
+        // Check symbol and type filters using shared utility
+        if (!matchesEventFilters(eventSymbol, eventType, {
+          filterSymbols: listener.filterSymbols,
+          filterTypes: listener.filterTypes,
+        })) {
+          continue; // Doesn't match filters
         }
 
         // Match found! Store result, delete listener, and remove from SET

@@ -22,6 +22,7 @@ import { MarketSource } from '../types/marketEvent';
 import { getRedisCache } from '../config/redis';
 import { supabase } from '../config/supabase';
 import { SOURCE_TO_MARKET_SOURCE, getMarketSource } from '../config/marketSources';
+import { getAllowedSymbols } from '../utils/streamFilters';
 
 const router = express.Router();
 
@@ -781,35 +782,14 @@ router.post('/test-listen-stream', async (req, res) => {
     const testKey = `stream:test:${workflow_id}:${node_id}`;
     const now = new Date().toISOString();
 
-    // Get allowed symbols based on subscription_mode
-    let allowedSymbols: string[] = filter_symbols || [];
-    
-    if (subscription_mode === 'global') {
-      // Fetch all globally subscribed symbols for this user
-      const streamSource = source || 'binance_stream';
-      const globalSymbols = await redis.smembers(`user:${userId}:subscribed_symbols:${streamSource}`);
-      
-      if (filter_symbols && filter_symbols.length > 0) {
-        // Filter to only symbols that are in both global and filter
-        allowedSymbols = globalSymbols.filter(s => 
-          filter_symbols.map((f: string) => f.toUpperCase()).includes(s.toUpperCase())
-        );
-      } else {
-        allowedSymbols = globalSymbols;
-      }
-    } else if (subscription_mode === 'workflow') {
-      // Fetch workflow-scoped subscribed symbols
-      const streamSource = source || 'binance_stream';
-      const workflowSymbols = await redis.smembers(`workflow:${workflow_id}:subscribed_symbols:${streamSource}`);
-      
-      if (filter_symbols && filter_symbols.length > 0) {
-        allowedSymbols = workflowSymbols.filter(s => 
-          filter_symbols.map((f: string) => f.toUpperCase()).includes(s.toUpperCase())
-        );
-      } else {
-        allowedSymbols = workflowSymbols;
-      }
-    }
+    // Get allowed symbols using shared utility
+    const allowedSymbols = await getAllowedSymbols(redis, {
+      userId,
+      workflowId: workflow_id,
+      source: source || 'binance_stream',
+      subscriptionMode: subscription_mode || 'workflow',
+      filterSymbols: filter_symbols,
+    });
 
     const testListenerData = {
       userId,

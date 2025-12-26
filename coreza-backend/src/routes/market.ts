@@ -27,6 +27,7 @@ import {
   MAX_TEST_LISTENERS_PER_USER,
   TEST_LISTENER_TTL_SECONDS,
   REDIS_KEY_ACTIVE_TEST_LISTENERS,
+  REDIS_KEY_USER_TEST_LISTENERS_PREFIX,
   REDIS_KEY_USER_TEST_COUNT_PREFIX,
   LUA_INCREMENT_TEST_COUNT,
   LUA_DECREMENT_TEST_COUNT,
@@ -911,8 +912,12 @@ router.post('/execute-stream-node', async (req, res) => {
     // Store test listener with TTL (auto-expire)
     await redis.setex(testKey, TEST_LISTENER_TTL_SECONDS, JSON.stringify(testListenerData));
 
-    // Add to active listeners SET for O(1) lookup
+    // Add to active listeners SETs for O(1) lookup
     await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    
+    // Add to user-specific SET for efficient per-user queries (no pattern scanning)
+    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    await redis.sadd(userTestListenersKey, testKey);
 
     console.log(`📝 [ExecuteStreamNode] Stored test listener: ${testKey}`);
     console.log(`   Filter symbols: ${effectiveFilterSymbols.join(', ') || 'NONE'}`);
@@ -1050,8 +1055,12 @@ router.post('/test-listen-stream', async (req, res) => {
     // Store test listener with TTL (auto-expire)
     await redis.setex(testKey, TEST_LISTENER_TTL_SECONDS, JSON.stringify(testListenerData));
     
-    // Add to active listeners SET for O(1) lookup instead of KEYS scan
+    // Add to active listeners SETs for O(1) lookup
     await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    
+    // Add to user-specific SET for efficient per-user queries (no pattern scanning)
+    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    await redis.sadd(userTestListenersKey, testKey);
 
     // Register temporary subscription with MarketDataSubscriber via control message
     // This ensures data flows through ws:user:{userId} channel to reach checkTestListeners
@@ -1115,8 +1124,12 @@ router.post('/stop-listen-stream', async (req, res) => {
     await redis.del(testKey);
     await redis.del(resultKey);
     
-    // Remove from active listeners SET
+    // Remove from active listeners SETs
     await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    
+    // Remove from user-specific SET
+    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    await redis.srem(userTestListenersKey, testKey);
     
     // Decrement user's test listener count
     const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;

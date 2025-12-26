@@ -488,26 +488,26 @@ export class MarketControlHandler {
       }
 
       // Also update test listeners for global scope
-      // Test listeners are stored with pattern: stream:test:*
-      // We need to find all test listeners belonging to this user
+      // Use user-specific SET for O(1) lookup instead of pattern scanning
+      const userTestListenersKey = `user:active_test_listeners:${userId}`;
       try {
-        const testListenerPattern = `stream:test:*`;
-        const testListenerKeys = await this.redisPub.keys(testListenerPattern);
+        const testListenerKeys = await this.redisPub.smembers(userTestListenersKey);
 
         if (testListenerKeys.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener key(s) to check for global update`
+            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener(s) for user ${userId} to update with global symbols`
           );
 
           for (const testKey of testListenerKeys) {
             try {
               const listenerJson = await this.redisPub.get(testKey);
-              if (!listenerJson) continue;
+              if (!listenerJson) {
+                // Listener expired, clean up stale SET entry
+                await this.redisPub.srem(userTestListenersKey, testKey);
+                continue;
+              }
 
               const listenerData = JSON.parse(listenerJson);
-
-              // Only update test listeners belonging to this user
-              if (listenerData.userId !== userId) continue;
 
               // Apply filter_symbols if specified
               let symbolsToAdd = newSymbols;
@@ -544,7 +544,7 @@ export class MarketControlHandler {
         }
       } catch (err) {
         console.warn(
-          `⚠️ [MarketControl] Failed to scan test listeners for global update:`,
+          `⚠️ [MarketControl] Failed to get user test listeners for global update:`,
           err
         );
       }

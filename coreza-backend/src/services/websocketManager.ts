@@ -526,7 +526,7 @@ export class WebSocketManager {
   private setupRedisSubscription(): void {
     // Setup Redis subscriber for user-specific market data from market-stream-service
     // All market data now flows through: market-stream-service → ws:user:{userId} → WebSocketManager
-    const { sub } = createRedisQueuePubSub();
+    const { sub, pub } = createRedisQueuePubSub();
     this.redisSub = sub;
 
     // Subscribe to pattern ws:user:* to receive market data for all users
@@ -543,7 +543,7 @@ export class WebSocketManager {
     // Handle incoming messages from market-stream-service
     this.redisSub.on(
       "pmessage",
-      (pattern: string, channel: string, message: string) => {
+      async (pattern: string, channel: string, message: string) => {
         try {
           // Extract userId from channel name: ws:user:{userId}
           const userId = channel.split(":")[2];
@@ -554,6 +554,9 @@ export class WebSocketManager {
 
           // Parse message payload
           const payload = JSON.parse(message);
+
+          // Check for test listeners and route first matching data
+          await this.checkTestListeners(userId, payload, pub);
 
           // Forward to all connected WebSocket clients for this user
           const userClients = this.clients.get(userId);
@@ -580,6 +583,71 @@ export class WebSocketManager {
         }
       }
     );
+  }
+
+  /**
+   * Check if incoming stream data matches any test listeners
+   * If match found, store result and mark listener as data_received
+   */
+  private async checkTestListeners(
+    userId: string,
+    payload: any,
+    redis: Redis
+  ): Promise<void> {
+    try {
+      // Get all test listener keys for this user
+      const testKeys = await redis.keys(`stream:test:*`);
+      
+      for (const testKey of testKeys) {
+        const listenerStr = await redis.get(testKey);
+        if (!listenerStr) continue;
+
+        const listener = JSON.parse(listenerStr);
+        
+        // Only process if this listener belongs to the current user
+        if (listener.userId !== userId) continue;
+        
+        // Check if still in listening status
+        if (listener.status !== 'listening') continue;
+
+        // Extract event data from payload
+        const eventData = payload.payload || payload;
+        const eventSymbol = eventData.symbol?.toUpperCase();
+        const eventType = eventData.type;
+
+        // Check symbol filter
+        if (listener.filterSymbols && listener.filterSymbols.length > 0) {
+          if (!eventSymbol || !listener.filterSymbols.includes(eventSymbol)) {
+            continue; // Symbol doesn't match filter
+          }
+        }
+
+        // Check type filter
+        if (listener.filterTypes && listener.filterTypes.length > 0) {
+          if (!eventType || !listener.filterTypes.includes(eventType)) {
+            continue; // Type doesn't match filter
+          }
+        }
+
+        // Match found! Store result and delete listener
+        const resultKey = `${testKey}:result`;
+        const resultData = {
+          symbol: eventSymbol,
+          type: eventType,
+          data: eventData,
+          receivedAt: new Date().toISOString(),
+          source: listener.source,
+        };
+
+        await redis.setex(resultKey, 60, JSON.stringify(resultData)); // 1 min TTL for result
+        await redis.del(testKey); // Remove listener (auto-stop)
+
+        console.log(`🎯 [Test Listen] Data matched for ${testKey}: ${eventSymbol} (${eventType})`);
+        break; // Only match first listener per event
+      }
+    } catch (error) {
+      console.error("❌ Error checking test listeners:", error);
+    }
   }
 
   private setupHeartbeat(): void {

@@ -836,9 +836,25 @@ router.post('/test-listen-stream', async (req, res) => {
     // Add to active listeners SET for O(1) lookup instead of KEYS scan
     await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
 
+    // Register temporary subscription with MarketDataSubscriber via control message
+    // This ensures data flows through ws:user:{userId} channel to reach checkTestListeners
+    const controlMessage = {
+      action: 'register_workflow',
+      userId,
+      workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
+      nodeId: node_id,
+      source: source || 'binance_stream',
+      filter_symbols: allowedSymbols.map((s: string) => s.toUpperCase()),
+      filter_types: filter_types || [],
+      subscriptionMode: subscription_mode || 'workflow',
+      isTestListener: true, // Mark as temporary test listener
+    };
+    await redis.publish('md:control:register_workflow', JSON.stringify(controlMessage));
+
     console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
     console.log(`   Allowed symbols: ${allowedSymbols.join(', ') || 'ALL'}`);
     console.log(`   Filter types: ${filter_types?.join(', ') || 'ALL'}`);
+    console.log(`   Registered with MarketDataSubscriber for data routing`);
 
     res.json({
       success: true,
@@ -888,6 +904,15 @@ router.post('/stop-listen-stream', async (req, res) => {
     // Decrement user's test listener count
     const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
     await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+
+    // Unregister from MarketDataSubscriber by publishing unsubscribe control message
+    const unsubscribeMessage = {
+      action: 'unregister_workflow',
+      workflowId: testKey, // Same pseudo workflow ID used during registration
+      userId,
+      isTestListener: true,
+    };
+    await redis.publish('md:control:unregister_workflow', JSON.stringify(unsubscribeMessage));
 
     console.log(`🛑 [Test Listen] Stopped test listener: ${testKey}`);
 

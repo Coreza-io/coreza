@@ -693,6 +693,15 @@ export class WebSocketManager {
             const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
             await redisEvalBreaker.fire(redis, LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
             
+            // Unregister from MarketDataSubscriber to stop receiving data for this test listener
+            const unsubscribeMessage = {
+              action: 'unregister_workflow',
+              workflowId: testKey, // Same pseudo workflow ID used during registration
+              userId,
+              isTestListener: true,
+            };
+            await redis.publish('md:control:unregister_workflow', JSON.stringify(unsubscribeMessage));
+            
             // Push result directly to user via WebSocket (replaces polling)
             WebSocketManager.sendToUser(userId, {
               type: 'test_data_received',

@@ -196,16 +196,27 @@ export class MarketControlHandler {
             `🧪 [MarketControl] Test listener - using provided symbols directly: ${symbolsToSubscribe.join(', ')}`
           );
         } else {
-          // filter_symbols missing - load from Redis using testKey (workflowId)
-          console.log(`🧪 [MarketControl] Test listener - filter_symbols missing, loading from Redis key: ${workflowId}`);
-          const listenerJson = await this.redisPub.get(workflowId);
-          if (listenerJson) {
-            const listenerData = JSON.parse(listenerJson);
-            symbolsToSubscribe = (listenerData.filterSymbols || []).map((s: string) => s.toUpperCase());
-            console.log(`🧪 [MarketControl] Loaded symbols from Redis: ${symbolsToSubscribe.join(', ')}`);
+          // No filter_symbols - resolve from existing subscriptions based on scope
+          console.log(`🧪 [MarketControl] Test listener - no filter_symbols, resolving from ${subscriptionMode} subscriptions`);
+          
+          if (subscriptionMode === 'global') {
+            // Fetch globally subscribed symbols for this user
+            const globalSymbols = await this.getUserSubscribedSymbols(userId);
+            symbolsToSubscribe = globalSymbols;
+            console.log(`🧪 [MarketControl] Test listener - found ${globalSymbols.length} global symbols: ${globalSymbols.join(', ')}`);
           } else {
-            console.warn(`⚠️ [MarketControl] Test listener ${workflowId} not found in Redis, subscribing with empty symbols`);
-            symbolsToSubscribe = [];
+            // Workflow scope - get workflow-scoped symbols
+            // testKey format: stream:test:{workflowId}:{nodeId}
+            const parts = workflowId.split(':');
+            const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
+            
+            const workflowSymbols = await this.getWorkflowScopedSymbols(actualWorkflowId, source);
+            symbolsToSubscribe = workflowSymbols;
+            console.log(`🧪 [MarketControl] Test listener - found ${workflowSymbols.length} workflow-scoped symbols: ${workflowSymbols.join(', ')}`);
+          }
+          
+          if (symbolsToSubscribe.length === 0) {
+            console.log(`ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`);
           }
         }
       } else {

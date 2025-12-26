@@ -53,6 +53,17 @@ function setupCircuitBreakerEvents(breaker: CircuitBreaker, name: string): void 
 }
 
 /**
+ * Circuit breaker for Redis PUBLISH operations
+ * Used by flushRedisBuffer to detect when Redis is restored
+ */
+export const redisPublishBreaker = new CircuitBreaker(
+  async (redis: any, channel: string, message: string) => {
+    return redis.publish(channel, message);
+  },
+  circuitBreakerOptions
+);
+
+/**
  * Circuit breaker for Redis SMEMBERS operation (test listeners)
  */
 export const redisSMembersBreaker = new CircuitBreaker(
@@ -110,6 +121,7 @@ export const redisSRemBreaker = new CircuitBreaker(
 );
 
 // Setup event handlers for all breakers
+setupCircuitBreakerEvents(redisPublishBreaker, 'redisPublish');
 setupCircuitBreakerEvents(redisSMembersBreaker, 'redisSMembers');
 setupCircuitBreakerEvents(redisGetBreaker, 'redisGet');
 setupCircuitBreakerEvents(redisEvalBreaker, 'redisEval');
@@ -119,12 +131,17 @@ setupCircuitBreakerEvents(redisSRemBreaker, 'redisSRem');
  * Get combined circuit breaker health status
  */
 export function getCircuitBreakerHealth(): {
+  publish: { state: string; stats: any };
   smembers: { state: string; stats: any };
   get: { state: string; stats: any };
   eval: { state: string; stats: any };
   srem: { state: string; stats: any };
 } {
   return {
+    publish: {
+      state: redisPublishBreaker.opened ? 'OPEN' : redisPublishBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisPublishBreaker.stats,
+    },
     smembers: {
       state: redisSMembersBreaker.opened ? 'OPEN' : redisSMembersBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
       stats: redisSMembersBreaker.stats,

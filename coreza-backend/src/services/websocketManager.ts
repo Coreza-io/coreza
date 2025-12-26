@@ -23,6 +23,12 @@ import { createRedisQueuePubSub } from "../config/redis";
 import type Redis from "ioredis";
 import { matchesEventFilters } from "../utils/streamFilters";
 import {
+  redisSMembersBreaker,
+  redisGetBreaker,
+  redisEvalBreaker,
+  redisSRemBreaker,
+} from "../utils/redisCircuitBreaker";
+import {
   MAX_CONNECTIONS_PER_USER,
   WS_HEARTBEAT_INTERVAL_MS,
   TEST_RESULT_TTL_SECONDS,
@@ -616,10 +622,10 @@ export class WebSocketManager {
     redis: Redis
   ): Promise<void> {
     try {
-      // Use SET for O(1) member retrieval instead of O(N) KEYS scan
-      const activeTestKeys = await redis.smembers(REDIS_KEY_ACTIVE_TEST_LISTENERS);
+      // Use circuit breaker for SMEMBERS - returns empty array on failure
+      const activeTestKeys = await redisSMembersBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS) as string[];
       
-      if (activeTestKeys.length === 0) return;
+      if (!activeTestKeys || activeTestKeys.length === 0) return;
 
       // Extract event data from payload
       const eventData = payload.payload || payload;
@@ -627,12 +633,12 @@ export class WebSocketManager {
       const eventType = eventData.type;
       
       for (const testKey of activeTestKeys) {
-        // Quick pre-check: get listener to verify filters before atomic operation
-        const listenerStr = await redis.get(testKey);
+        // Use circuit breaker for GET - returns null on failure (skip this listener)
+        const listenerStr = await redisGetBreaker.fire(redis, testKey) as string | null;
         
-        // Key expired but still in SET - clean up stale entry
+        // Key expired or circuit breaker fallback - clean up stale entry
         if (!listenerStr) {
-          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          await redisSRemBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
           continue;
         }
 
@@ -640,7 +646,7 @@ export class WebSocketManager {
         try {
           listener = JSON.parse(listenerStr);
         } catch {
-          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          await redisSRemBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
           continue;
         }
         
@@ -669,7 +675,9 @@ export class WebSocketManager {
         };
 
         try {
-          const result = await redis.eval(
+          // Use circuit breaker for EVAL - returns null on failure
+          const result = await redisEvalBreaker.fire(
+            redis,
             LUA_ATOMIC_TEST_LISTENER,
             3, // number of keys
             testKey,
@@ -681,9 +689,9 @@ export class WebSocketManager {
           );
 
           if (result) {
-            // Decrement user's test listener count
+            // Decrement user's test listener count (circuit breaker wrapped)
             const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
-            await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+            await redisEvalBreaker.fire(redis, LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
             
             // Push result directly to user via WebSocket (replaces polling)
             WebSocketManager.sendToUser(userId, {
@@ -699,15 +707,12 @@ export class WebSocketManager {
             console.log(`🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`);
             break; // Only match first listener per event
           }
-          // If result is null, another event already claimed this listener
+          // If result is null, another event already claimed this listener OR circuit breaker fired
         } catch (luaError) {
-          // Fallback to non-atomic operation if Lua fails
-          console.warn(`⚠️ Lua script failed, using fallback:`, luaError);
-          await redis.setex(resultKey, TEST_RESULT_TTL_SECONDS, JSON.stringify(resultData));
-          await redis.del(testKey);
-          await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          // Fallback - still try to push via WebSocket even if Redis failed
+          console.warn(`⚠️ Test listener processing failed for ${testKey}:`, luaError);
           
-          // Still push via WebSocket even in fallback path
+          // Attempt to push the data anyway - better to notify user than lose the event
           WebSocketManager.sendToUser(userId, {
             type: 'test_data_received',
             payload: {
@@ -718,7 +723,7 @@ export class WebSocketManager {
             }
           });
           
-          console.log(`🎯 [Test Listen] Data matched (fallback) and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`);
+          console.log(`🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`);
           break;
         }
       }

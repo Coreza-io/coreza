@@ -136,12 +136,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
             }
 
             // Handle test listener data (WebSocket push instead of polling)
+            // KEEP isTestListening: true so the Stop button remains visible
             if (message.type === 'test_data_received' && message.payload) {
               const { nodeId, data } = message.payload;
 
               if (nodeId && storeRef.current) {
                 const receivedOutput = {
-                  status: 'success',
+                  status: 'streaming',
                   symbol: data.symbol,
                   type: data.type,
                   data: data.data,
@@ -150,10 +151,11 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   [data.type]: data.data?.[data.type] || data.data,
                 };
                 
+                // Keep isTestListening: true so user can continue receiving data and stop manually
                 storeRef.current.setNodeData(nodeId, {
                   output: receivedOutput,
-                  isTestListening: false,
                   streamDataReceived: true,
+                  // Do NOT set isTestListening: false - keep streaming active
                 });
                 setUpdateVersion(v => v + 1); // Trigger React re-render
                 console.log('🎯 [ExecutionStore] Test data received via WebSocket for node:', nodeId);

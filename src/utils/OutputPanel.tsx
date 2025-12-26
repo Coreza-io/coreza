@@ -167,13 +167,16 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
     setIsEditing(false);
   };
 
+  // Determine if we should show the streaming footer
+  const showStreamingFooter = isTestListening && onStopListening;
+
   return (
     <div
       className={`absolute ${
         position === "right"
           ? "left-full top-0 ml-2"
           : "right-full top-0 mr-2"
-      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden`}
+      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col`}
     >
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
@@ -215,7 +218,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
         )}
       </div>
       
-      <div className="p-3 h-[calc(100%-42px)] overflow-auto">
+      {/* Main content area - scrollable, accounts for footer height when streaming */}
+      <div className={`p-3 flex-1 overflow-auto ${showStreamingFooter ? 'pb-16' : ''}`}>
         {isEditing ? (
           <div className="space-y-3">
             <textarea
@@ -247,31 +251,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {/* Show Stop Listening banner when in test listening mode */}
-            {(isTestListening || internalData?.status === 'listening') && onStopListening && (
-              <div className="flex flex-col items-center gap-2 py-3 px-3 bg-cyan-500/10 border border-cyan-500/30 rounded-md mb-3">
-                <div className="flex items-center gap-2 text-cyan-500">
-                  <Radio className="w-3 h-3 animate-pulse" />
-                  <span className="text-xs font-medium">Listening for stream data...</span>
-                </div>
-                {internalData?.filterSymbols?.length > 0 && (
-                  <div className="text-xs text-muted-foreground text-center">
-                    Symbols: {internalData.filterSymbols.join(', ')}
-                  </div>
-                )}
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onStopListening}
-                  className="h-6 text-xs px-2"
-                >
-                  <Square className="w-2 h-2 mr-1 fill-current" />
-                  Stop
-                </Button>
-              </div>
-            )}
-            
-            {/* Always render output data (show both listening status AND any received data) */}
+            {/* Always render output data */}
             {isStandardNodeOutput(internalData) ? (
               <>
                 {/* Render full output structure: success, status, data/error */}
@@ -293,6 +273,27 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Fixed streaming control footer - always visible while streaming */}
+      {showStreamingFooter && (
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-card border-t border-cyan-500/30 bg-gradient-to-t from-cyan-500/10 to-transparent">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-cyan-500">
+              <Radio className="w-3 h-3 animate-pulse" />
+              <span className="text-xs font-medium">Streaming...</span>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onStopListening}
+              className="h-6 text-xs px-3"
+            >
+              <Square className="w-2 h-2 mr-1 fill-current" />
+              Stop
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

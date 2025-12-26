@@ -129,6 +129,31 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               }
             }
 
+            // Handle test listener data (WebSocket push instead of polling)
+            if (message.type === 'test_data_received' && message.payload) {
+              const { nodeId, data } = message.payload;
+
+              if (nodeId && storeRef.current) {
+                const receivedOutput = {
+                  status: 'success',
+                  symbol: data.symbol,
+                  type: data.type,
+                  data: data.data,
+                  receivedAt: data.receivedAt,
+                  source: data.source,
+                  [data.type]: data.data?.[data.type] || data.data,
+                };
+                
+                storeRef.current.setNodeData(nodeId, {
+                  output: receivedOutput,
+                  isTestListening: false,
+                  streamDataReceived: true,
+                });
+                setUpdateVersion(v => v + 1); // Trigger React re-render
+                console.log('🎯 [ExecutionStore] Test data received via WebSocket for node:', nodeId);
+              }
+            }
+
             // Handle legacy streaming format (WebSocketClient broadcasts)
             if (message.status === 'streaming' && message.payload?.nodeId) {
               const { nodeId, data } = message.payload;

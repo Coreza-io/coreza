@@ -910,11 +910,9 @@ export function useNodeExecution({
             )
           );
 
-          // Poll for result (auto-stop on first data like webhooks)
-          // Use 1000ms base interval with jitter to prevent thundering herd
-          const basePollInterval = 1000;
-          const pollJitter = Math.random() * 200; // 0-200ms jitter
-          const pollInterval = basePollInterval + pollJitter;
+          // Poll for result as RECOVERY mechanism only (main path is WebSocket push)
+          // Use 10s interval - WebSocket push provides real-time updates
+          const recoveryPollInterval = 10000; // 10 seconds
           const maxPollTime = 300000; // 5 minutes
           const startTime = Date.now();
           
@@ -927,11 +925,27 @@ export function useNodeExecution({
             while (Date.now() - startTime < maxPollTime) {
               // Check if polling was aborted (component unmounted or new poll started)
               if (abortController.signal.aborted) {
-                console.log(`[Streaming Trigger] Polling aborted for node ${nodeId}`);
+                console.log(`[Streaming Trigger] Recovery polling aborted for node ${nodeId}`);
+                return;
+              }
+              
+              // Check if data was received via WebSocket push (preferred path)
+              const currentNodeData = executionStore.getNodeData(nodeId!);
+              if (currentNodeData?.streamDataReceived || currentNodeData?.output?.status === 'success') {
+                console.log(`✅ [Streaming Trigger] Data received via WebSocket, stopping recovery poll`);
+                setIsSending(false);
+                return;
+              }
+              
+              // Check if test listening was stopped manually
+              if (currentNodeData?.isTestListening === false && !currentNodeData?.streamDataReceived) {
+                console.log(`[Streaming Trigger] Test listening stopped, exiting recovery poll`);
+                setIsSending(false);
                 return;
               }
               
               try {
+                // Recovery poll - only hits backend every 10s as fallback
                 const resultResponse = await apiClient.get(
                   `/market/stream-test-result/${workflowId}/${nodeId}`,
                   session?.access_token
@@ -941,8 +955,8 @@ export function useNodeExecution({
                   const result = await resultResponse.json();
 
                   if (result.status === "data_received") {
-                    // Data received! Auto-stop and show result
-                    console.log(`✅ [Streaming Trigger] Test data received:`, result.data);
+                    // Data received via recovery poll (WebSocket push may have failed)
+                    console.log(`✅ [Streaming Trigger] Test data recovered via poll:`, result.data);
                     
                     const receivedOutput = {
                       status: "success",
@@ -1023,15 +1037,15 @@ export function useNodeExecution({
                     setIsSending(false);
                     return;
                   }
-                  // Still listening, continue polling
+                  // Still listening, continue recovery polling
                 }
               } catch (pollError) {
-                console.warn(`[Streaming Trigger] Poll error:`, pollError);
+                console.warn(`[Streaming Trigger] Recovery poll error:`, pollError);
               }
 
-              // Wait before next poll (abortable)
+              // Wait before next recovery poll (abortable)
               await new Promise((resolve) => {
-                const timeoutId = setTimeout(resolve, pollInterval);
+                const timeoutId = setTimeout(resolve, recoveryPollInterval);
                 abortController.signal.addEventListener('abort', () => {
                   clearTimeout(timeoutId);
                   resolve(undefined);
@@ -1071,7 +1085,7 @@ export function useNodeExecution({
             setIsSending(false);
           };
 
-          // Start polling in background
+          // Start recovery polling in background (WebSocket push is primary path)
           pollForResult();
           return;
         } else {

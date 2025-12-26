@@ -685,7 +685,18 @@ export class WebSocketManager {
             const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
             await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
             
-            console.log(`🎯 [Test Listen] Data matched for ${testKey}: ${eventSymbol} (${eventType})`);
+            // Push result directly to user via WebSocket (replaces polling)
+            WebSocketManager.sendToUser(userId, {
+              type: 'test_data_received',
+              payload: {
+                workflowId: listener.workflowId,
+                nodeId: listener.nodeId,
+                testKey,
+                data: resultData,
+              }
+            });
+            
+            console.log(`🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`);
             break; // Only match first listener per event
           }
           // If result is null, another event already claimed this listener
@@ -696,7 +707,18 @@ export class WebSocketManager {
           await redis.del(testKey);
           await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
           
-          console.log(`🎯 [Test Listen] Data matched (fallback) for ${testKey}: ${eventSymbol} (${eventType})`);
+          // Still push via WebSocket even in fallback path
+          WebSocketManager.sendToUser(userId, {
+            type: 'test_data_received',
+            payload: {
+              workflowId: listener.workflowId,
+              nodeId: listener.nodeId,
+              testKey,
+              data: resultData,
+            }
+          });
+          
+          console.log(`🎯 [Test Listen] Data matched (fallback) and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`);
           break;
         }
       }

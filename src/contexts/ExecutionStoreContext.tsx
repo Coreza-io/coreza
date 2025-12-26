@@ -22,6 +22,7 @@ import { supabase } from '@/integrations/supabase/client';
 const ExecutionStoreContext = createContext<{
   store: ExecutionContext;
   version: number;
+  notifyUpdate: () => void;
 } | null>(null);
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
@@ -236,8 +237,10 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
     };
   }, [user?.id]);
 
+  const notifyUpdate = () => setUpdateVersion(v => v + 1);
+
   return (
-    <ExecutionStoreContext.Provider value={{ store: storeRef.current, version: updateVersion }}>
+    <ExecutionStoreContext.Provider value={{ store: storeRef.current, version: updateVersion, notifyUpdate }}>
       {children}
     </ExecutionStoreContext.Provider>
   );
@@ -254,6 +257,11 @@ export const useExecutionStore = (): ExecutionContext => {
 export const useExecutionStoreVersion = (): number => {
   const ctx = useContext(ExecutionStoreContext);
   return ctx?.version ?? 0;
+};
+
+export const useExecutionStoreNotify = (): (() => void) => {
+  const ctx = useContext(ExecutionStoreContext);
+  return ctx?.notifyUpdate ?? (() => {});
 };
 
 export default ExecutionStoreContext;

@@ -20,7 +20,7 @@ import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { useAuth } from "@/contexts/AuthContext";
-import { useExecutionStore, useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
+import { useExecutionStore, useExecutionStoreVersion, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
 // Custom hooks
 import { useNodeFieldState } from "@/hooks/useNodeFieldState";
@@ -98,6 +98,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const edges = useEdges();
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
+  const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: workflowId } = useParams();
 
   const definition = data.definition;
@@ -229,6 +230,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
           output: stoppedOutput,
           isTestListening: false,
         });
+        notifyStoreUpdate(); // Trigger re-render to hide streaming footer
         setNodes((nds) =>
           nds.map((n) =>
             n.id === nodeId
@@ -248,7 +250,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     } catch (error) {
       console.error("Failed to stop test listener:", error);
     }
-  }, [workflowId, nodeId, readOnly, session?.access_token, outputHook, executionStore, setNodes]);
+  }, [workflowId, nodeId, readOnly, session?.access_token, outputHook, executionStore, setNodes, notifyStoreUpdate]);
 
   // ========== Combine All Props ==========
 

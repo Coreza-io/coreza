@@ -846,13 +846,16 @@ export function useNodeExecution({
           );
 
           // Start test listener (webhook-like behavior)
+          // For subscribe mode, always use 'workflow' scope since symbols are workflow-scoped
+          const effectiveSubscriptionMode = mode === 'subscribe' ? 'workflow' : (fieldState.subscriptionMode || 'workflow');
+          
           const testListenResponse = await apiClient.post(
             "/market/test-listen-stream",
             {
               workflow_id: workflowId,
               node_id: nodeId,
               mode,
-              subscription_mode: fieldState.subscriptionMode || "workflow",
+              subscription_mode: effectiveSubscriptionMode,
               filter_symbols: filterSymbols,
               filter_types: filterTypes,
               source,

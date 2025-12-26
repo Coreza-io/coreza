@@ -75,14 +75,15 @@ export class MarketControlHandler {
       // Redis connections are already established by factory
       console.log("✅ [MarketControl] Using shared Redis connections");
 
-      // Subscribe to control channels including workflow registration
+      // Subscribe to control channels including workflow registration and unregistration
       await this.redisSub.subscribe(
         REDIS_CHANNELS.controlSubscribe,
         REDIS_CHANNELS.controlUnsubscribe,
-        "md:control:register_workflow"
+        "md:control:register_workflow",
+        "md:control:unregister_workflow"
       );
       console.log(
-        "✅ [MarketControl] Subscribed to control channels (including workflow registration)"
+        "✅ [MarketControl] Subscribed to control channels (including workflow registration/unregistration)"
       );
 
       // Set up message handler
@@ -121,6 +122,8 @@ export class MarketControlHandler {
           await this.handleUnsubscribe(msg as ControlMessage);
         } else if (channel === "md:control:register_workflow") {
           await this.handleRegisterStreamingWorkflow(msg);
+        } else if (channel === "md:control:unregister_workflow") {
+          await this.handleUnregisterStreamingWorkflow(msg);
         }
       } catch (error) {
         console.error(
@@ -239,6 +242,36 @@ export class MarketControlHandler {
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Handle unregistration of streaming workflows (from workflow deactivation or test listener cleanup)
+   */
+  private async handleUnregisterStreamingWorkflow(msg: {
+    action: string;
+    userId: string;
+    workflowId: string;
+    isTestListener?: boolean;
+  }): Promise<void> {
+    const { userId, workflowId, isTestListener } = msg;
+
+    try {
+      console.log(
+        `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: ${isTestListener || false})`
+      );
+
+      const subscriber = MarketDataSubscriber.getInstance();
+      await subscriber.unsubscribe(workflowId);
+
+      console.log(
+        `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${isTestListener ? ' (test listener)' : ''}`
+      );
+    } catch (error) {
+      console.error(
+        `❌ [MarketControl] Failed to unregister streaming workflow ${workflowId}:`,
         error
       );
     }

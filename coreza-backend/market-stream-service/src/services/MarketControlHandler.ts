@@ -166,14 +166,16 @@ export class MarketControlHandler {
       filter_symbols,
       filter_types,
       subscriptionMode = "workflow",
-      isTestListener = false,
     } = msg;
+    
+    // Detect test listener by explicit flag OR workflowId prefix (fallback for race conditions)
+    const isTestListener = msg.isTestListener === true || workflowId.startsWith('stream:test:');
 
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
-        }, mode: ${subscriptionMode}, isTestListener: ${isTestListener})`
+        }, mode: ${subscriptionMode}, isTestListener: ${isTestListener}, filter_symbols: ${JSON.stringify(filter_symbols)})`
       );
 
       // Normalize event types for proper filtering
@@ -185,12 +187,27 @@ export class MarketControlHandler {
       let symbolsToSubscribe: string[];
 
       // TEST LISTENER MODE: Use filter_symbols directly without intersection
-      // The test listener just subscribed these symbols and wants to receive them immediately
-      if (isTestListener && filter_symbols && filter_symbols.length > 0) {
-        symbolsToSubscribe = filter_symbols.map((s) => s.toUpperCase());
-        console.log(
-          `🧪 [MarketControl] Test listener - using provided symbols directly: ${symbolsToSubscribe.join(', ')}`
-        );
+      // OR: Fallback to loading from Redis if filter_symbols missing (handles race condition)
+      if (isTestListener) {
+        if (filter_symbols && filter_symbols.length > 0) {
+          // filter_symbols provided in message - use directly
+          symbolsToSubscribe = filter_symbols.map((s) => s.toUpperCase());
+          console.log(
+            `🧪 [MarketControl] Test listener - using provided symbols directly: ${symbolsToSubscribe.join(', ')}`
+          );
+        } else {
+          // filter_symbols missing - load from Redis using testKey (workflowId)
+          console.log(`🧪 [MarketControl] Test listener - filter_symbols missing, loading from Redis key: ${workflowId}`);
+          const listenerJson = await this.redisPub.get(workflowId);
+          if (listenerJson) {
+            const listenerData = JSON.parse(listenerJson);
+            symbolsToSubscribe = (listenerData.filterSymbols || []).map((s: string) => s.toUpperCase());
+            console.log(`🧪 [MarketControl] Loaded symbols from Redis: ${symbolsToSubscribe.join(', ')}`);
+          } else {
+            console.warn(`⚠️ [MarketControl] Test listener ${workflowId} not found in Redis, subscribing with empty symbols`);
+            symbolsToSubscribe = [];
+          }
+        }
       } else {
         // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
         const subscribedSymbols =
@@ -382,12 +399,28 @@ export class MarketControlHandler {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
 
-      // If workflow-scoped, only update the target workflow
+      // If workflow-scoped, only update the target workflow AND any test listeners for it
       if (subscriptionScope === "workflow" && targetWorkflowId) {
         console.log(
           `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`
         );
         await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
+        
+        // Also update any test listeners for this workflow (handles race condition)
+        const testListenerPattern = `stream:test:${targetWorkflowId}:*`;
+        try {
+          const testListenerKeys = await this.redisPub.keys(testListenerPattern);
+          if (testListenerKeys.length > 0) {
+            console.log(`🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`);
+            for (const testKey of testListenerKeys) {
+              await subscriber.addSymbolsToSubscription(testKey, newSymbols);
+              console.log(`🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`);
+            }
+          }
+        } catch (err) {
+          console.warn(`⚠️ [MarketControl] Failed to update test listeners for ${targetWorkflowId}:`, err);
+        }
+        
         console.log(
           `✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`
         );

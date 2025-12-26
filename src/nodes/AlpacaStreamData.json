@@ -6,6 +6,10 @@
   "category": "Broker",
   "subCategory": "Alpaca",
   "executionMode": "streaming",
+  "action": {
+    "url": "/market/execute-stream-node",
+    "method": "POST"
+  },
   "streamingConfig": {
     "sourceId": "alpaca_stream",
     "waitForFirstEvent": false,

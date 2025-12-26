@@ -6,6 +6,10 @@
   "category": "Broker",
   "subCategory": "Binance",
   "executionMode": "streaming",
+  "action": {
+    "url": "/market/execute-stream-node",
+    "method": "POST"
+  },
   "streamingConfig": {
     "sourceId": "binance_stream",
     "waitForFirstEvent": false,

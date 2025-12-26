@@ -748,11 +748,12 @@ export function useNodeExecution({
         } else if (
           definition?.executionMode === "streaming" &&
           definition?.node_type === "trigger" &&
-          !definition?.action?.url
+          definition?.action?.url
         ) {
           // ============================================
           // UNIFIED STREAMING TRIGGER EXECUTION
-          // Single API call - backend owns all broker logic
+          // Uses action.url from node definition JSON
+          // Backend owns all broker logic
           // ============================================
           
           const mode = fieldState.mode || "listen";
@@ -771,11 +772,11 @@ export function useNodeExecution({
               : fieldState.filter_symbols
             : [];
 
-          console.log(`📡 [Streaming Trigger] Executing ${definition?.name} (mode: ${mode})`);
+          console.log(`📡 [Streaming Trigger] Executing ${definition?.name} via ${definition.action.url} (mode: ${mode})`);
           
-          // Single unified call - backend handles subscribe + listener registration atomically
+          // Single unified call using URL from node definition
           const streamResponse = await apiClient.post(
-            "/market/execute-stream-node",
+            definition.action.url,
             {
               workflow_id: workflowId,
               node_id: nodeId,

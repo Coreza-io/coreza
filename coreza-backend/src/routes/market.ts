@@ -1357,4 +1357,90 @@ router.get("/stream-test-result/:workflow_id/:node_id", async (req, res) => {
   }
 });
 
+// ============================================
+// USER STREAM CLEANUP (SIGN OUT / SESSION EXPIRY)
+// ============================================
+
+/**
+ * Cleanup all test listeners for the current user
+ * Called when user signs out or session expires
+ * POST /market/cleanup-user-streams
+ */
+router.post("/cleanup-user-streams", async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    console.log(`🧹 [Market Cleanup] Starting cleanup for user ${userId}`);
+
+    const redis = getRedisCache();
+    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    
+    // Get all test listener keys for this user
+    const testListenerKeys = await redis.smembers(userTestListenersKey);
+    console.log(`🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`);
+
+    let cleanedCount = 0;
+
+    for (const testKey of testListenerKeys) {
+      try {
+        // Get listener data to log what we're cleaning
+        const listenerJson = await redis.get(testKey);
+        if (listenerJson) {
+          const listenerData = JSON.parse(listenerJson);
+          console.log(`🧹 [Market Cleanup] Cleaning test listener: ${testKey}`, {
+            source: listenerData.source,
+            symbols: listenerData.filterSymbols,
+          });
+        }
+
+        // Delete the test key
+        await redis.del(testKey);
+        
+        // Delete the result key if exists
+        await redis.del(`${testKey}:result`);
+        
+        // Remove from user's test listeners set
+        await redis.srem(userTestListenersKey, testKey);
+        
+        // Remove from global active listeners
+        await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+        
+        // Publish unregister message to market-stream-service
+        const unregisterMsg = {
+          action: "unregister_workflow",
+          userId,
+          workflowId: testKey,
+          isTestListener: true,
+        };
+        await redis.publish("md:control:unregister_workflow", JSON.stringify(unregisterMsg));
+        
+        cleanedCount++;
+      } catch (err) {
+        console.error(`⚠️ [Market Cleanup] Failed to cleanup test listener ${testKey}:`, err);
+      }
+    }
+
+    // Reset user's test listener count
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    await redis.del(userCountKey);
+
+    console.log(`✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`);
+
+    res.json({
+      success: true,
+      cleaned: cleanedCount,
+      total: testListenerKeys.length,
+    });
+  } catch (error) {
+    console.error("Error during user stream cleanup:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to cleanup user streams",
+    });
+  }
+});
+
 export default router;

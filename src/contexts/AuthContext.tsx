@@ -18,7 +18,7 @@ import { createContext, useContext, useEffect, useState, useRef, useCallback } f
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { AUTH_EXPIRED_EVENT } from '@/lib/apiClient';
+import { AUTH_EXPIRED_EVENT, apiClient } from '@/lib/apiClient';
 import { toast } from 'sonner';
 
 interface AuthContextType {
@@ -73,6 +73,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Get current session token BEFORE signing out (for cleanup API call)
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    
+    // Call cleanup endpoint FIRST (while we still have auth)
+    if (currentSession?.access_token) {
+      try {
+        await apiClient.post(
+          '/market/cleanup-user-streams',
+          {},
+          currentSession.access_token
+        );
+        console.log('✅ Cleaned up user streams on sign out');
+      } catch (error) {
+        console.error('Failed to cleanup streams on sign out:', error);
+        // Continue with sign out even if cleanup fails
+      }
+    }
+    
     try {
       await supabase.auth.signOut();
     } catch (error) {

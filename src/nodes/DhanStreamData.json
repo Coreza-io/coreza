@@ -1,0 +1,246 @@
+{
+  "name": "DhanStreamData",
+  "def": "Dhan Stream Data",
+  "node_type": "trigger",
+  "icon": "/assets/icons/dhan.svg",
+  "category": "Broker",
+  "subCategory": "Dhan",
+  "executionMode": "streaming",
+  "action": {
+    "url": "/market/execute-stream-node",
+    "method": "POST"
+  },
+  "streamingConfig": {
+    "sourceId": "dhan_stream",
+    "waitForFirstEvent": false,
+    "timeout": 300000
+  },
+  "description": "Receives real-time market data from Dhan. Use Listen mode to receive pre-subscribed security IDs, or Subscribe mode to subscribe and stream in one node.",
+  "color": "text-blue-500",
+  "size": {
+    "width": 320,
+    "height": 280
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Dhan"
+    },
+    {
+      "key": "client_id",
+      "label": "Client ID",
+      "type": "text"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password"
+    }
+  ],
+  "authAction": {
+    "url": "/broker/dhan/auth",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "mode",
+      "label": "Mode",
+      "type": "select",
+      "options": [
+        {
+          "id": "listen",
+          "name": "Listen (Use Pre-subscribed Security IDs)"
+        },
+        {
+          "id": "subscribe",
+          "name": "Subscribe & Stream (Self-contained)"
+        }
+      ],
+      "default": "listen",
+      "description": "Listen mode uses security IDs from Subscribe nodes. Subscribe mode subscribes directly.",
+      "showDescription": false
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "required": false
+    },
+    {
+      "key": "exchange",
+      "label": "Exchange Segment",
+      "type": "select",
+      "options": [
+        {
+          "id": "NSE_EQ",
+          "name": "NSE Equity"
+        },
+        {
+          "id": "BSE_EQ",
+          "name": "BSE Equity"
+        },
+        {
+          "id": "NSE_FNO",
+          "name": "NSE F&O"
+        },
+        {
+          "id": "BSE_FNO",
+          "name": "BSE F&O"
+        },
+        {
+          "id": "NSE_CURR",
+          "name": "NSE Currency"
+        },
+        {
+          "id": "BSE_CURR",
+          "name": "BSE Currency"
+        },
+        {
+          "id": "MCX",
+          "name": "MCX"
+        },
+        {
+          "id": "IDX",
+          "name": "Index"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
+    },
+    {
+      "key": "symbols",
+      "label": "Security IDs",
+      "type": "text",
+      "placeholder": "1333, 11536",
+      "description": "Security IDs to subscribe and stream.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "stream_types",
+      "label": "Stream Types",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "ticker",
+          "name": "Ticker (LTP)"
+        },
+        {
+          "id": "quote",
+          "name": "Quote (Bid/Ask)"
+        },
+        {
+          "id": "full",
+          "name": "Full (OHLC + Depth)"
+        }
+      ],
+      "default": [
+        "ticker"
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      }
+    },
+    {
+      "key": "subscriptionMode",
+      "label": "Subscription Mode",
+      "type": "select",
+      "options": [
+        {
+          "id": "workflow",
+          "name": "Only This Workflow's Subscriptions"
+        },
+        {
+          "id": "global",
+          "name": "All My Subscriptions"
+        }
+      ],
+      "default": "workflow",
+      "description": "Receive only security IDs subscribed targeting this workflow, or all your global subscriptions.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "filter_symbols",
+      "label": "Filter Security IDs (Optional)",
+      "type": "text",
+      "placeholder": "1333, 11536 (leave empty for all)",
+      "description": "Only receive data for specific security IDs. Leave empty to receive all pre-subscribed.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "filter_types",
+      "label": "Filter Stream Types (Optional)",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "ticker",
+          "name": "Ticker"
+        },
+        {
+          "id": "quote",
+          "name": "Quote"
+        },
+        {
+          "id": "full",
+          "name": "Full"
+        }
+      ],
+      "description": "Filter specific stream types. Leave empty to receive all types.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    }
+  ]
+}

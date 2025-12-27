@@ -3,7 +3,7 @@
   "def": "Binance Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/binance.svg",
-  "category": "Broker",
+  "category": "Market",
   "subCategory": "Binance",
   "executionMode": "streaming",
   "action": {
@@ -79,9 +79,7 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": false
@@ -103,9 +101,7 @@
       "default": "testnet",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -126,9 +122,7 @@
       "default": "spot",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -140,9 +134,7 @@
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false
@@ -169,14 +161,10 @@
           "name": "24h Ticker"
         }
       ],
-      "default": [
-        "trade"
-      ],
+      "default": ["trade"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -209,9 +197,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -233,9 +219,7 @@
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -248,9 +232,7 @@
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -280,9 +262,7 @@
       "description": "Filter specific event types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

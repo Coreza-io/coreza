@@ -37,6 +37,7 @@ const nodeNameToSourceMap: Record<string, string> = {
   BinanceStreamData: "binance_stream",
   AlpacaStreamData: "alpaca_stream",
   AlpacaNews: "alpaca_news",
+  DhanStreamData: "dhan_stream",
 };
 
 // Get all workflows for a user
@@ -174,7 +175,9 @@ router.delete("/:workflowId", async (req, res, next) => {
           n.name === "AlpacaStreamData" ||
           n.type === "AlpacaStreamData" ||
           n.name === "BinanceStreamData" ||
-          n.type === "BinanceStreamData"
+          n.type === "BinanceStreamData" ||
+          n.name === "DhanStreamData" ||
+          n.type === "DhanStreamData"
       );
 
       if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
@@ -751,8 +754,12 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               initiated_by: userId,
               nodes: workflow.nodes,
               edges: workflow.edges,
-              node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
-              edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
+              node_count: Array.isArray(workflow.nodes)
+                ? workflow.nodes.length
+                : 0,
+              edge_count: Array.isArray(workflow.edges)
+                ? workflow.edges.length
+                : 0,
             })
             .select()
             .single();

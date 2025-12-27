@@ -331,16 +331,14 @@ router.post("/:source/subscribe", async (req, res) => {
       environment, // Binance: testnet or live
       asset_type, // Binance: spot or futures
       kline_interval, // Binance: 1m, 5m, 15m, etc.
-      // Subscription scope - accept both snake_case and camelCase
-      subscription_scope,
+      // Subscription scope
       subscriptionScope,
       target_workflow_id,
       targetWorkflowId,
     } = req.body;
 
     // Use camelCase first (frontend convention), fallback to snake_case
-    const finalSubscriptionScope =
-      subscriptionScope || subscription_scope || "global";
+    const finalSubscriptionScope = subscriptionScope || "global";
     const finalTargetWorkflowId = targetWorkflowId || target_workflow_id;
 
     if (!credential_id)
@@ -416,7 +414,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       symbolSource,
       sourceWorkflowId,
       sourceVariable,
-      subscription_scope, // 'global' or 'workflow' - determines which Redis key to use
+      subscriptionScope, // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
     const marketSource = getMarketSource(source);
@@ -451,7 +449,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
     // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
     if (
-      subscription_scope === "workflow" &&
+      subscriptionScope === "workflow" &&
       workflow_id &&
       resolvedSymbols.length > 0
     ) {
@@ -1377,10 +1375,12 @@ router.post("/cleanup-user-streams", async (req, res) => {
 
     const redis = getRedisCache();
     const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
-    
+
     // Get all test listener keys for this user
     const testListenerKeys = await redis.smembers(userTestListenersKey);
-    console.log(`🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`);
+    console.log(
+      `🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`
+    );
 
     let cleanedCount = 0;
 
@@ -1390,24 +1390,27 @@ router.post("/cleanup-user-streams", async (req, res) => {
         const listenerJson = await redis.get(testKey);
         if (listenerJson) {
           const listenerData = JSON.parse(listenerJson);
-          console.log(`🧹 [Market Cleanup] Cleaning test listener: ${testKey}`, {
-            source: listenerData.source,
-            symbols: listenerData.filterSymbols,
-          });
+          console.log(
+            `🧹 [Market Cleanup] Cleaning test listener: ${testKey}`,
+            {
+              source: listenerData.source,
+              symbols: listenerData.filterSymbols,
+            }
+          );
         }
 
         // Delete the test key
         await redis.del(testKey);
-        
+
         // Delete the result key if exists
         await redis.del(`${testKey}:result`);
-        
+
         // Remove from user's test listeners set
         await redis.srem(userTestListenersKey, testKey);
-        
+
         // Remove from global active listeners
         await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
-        
+
         // Publish unregister message to market-stream-service
         const unregisterMsg = {
           action: "unregister_workflow",
@@ -1415,11 +1418,17 @@ router.post("/cleanup-user-streams", async (req, res) => {
           workflowId: testKey,
           isTestListener: true,
         };
-        await redis.publish("md:control:unregister_workflow", JSON.stringify(unregisterMsg));
-        
+        await redis.publish(
+          "md:control:unregister_workflow",
+          JSON.stringify(unregisterMsg)
+        );
+
         cleanedCount++;
       } catch (err) {
-        console.error(`⚠️ [Market Cleanup] Failed to cleanup test listener ${testKey}:`, err);
+        console.error(
+          `⚠️ [Market Cleanup] Failed to cleanup test listener ${testKey}:`,
+          err
+        );
       }
     }
 
@@ -1427,7 +1436,9 @@ router.post("/cleanup-user-streams", async (req, res) => {
     const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
     await redis.del(userCountKey);
 
-    console.log(`✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`);
+    console.log(
+      `✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`
+    );
 
     res.json({
       success: true,
@@ -1438,7 +1449,10 @@ router.post("/cleanup-user-streams", async (req, res) => {
     console.error("Error during user stream cleanup:", error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : "Failed to cleanup user streams",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to cleanup user streams",
     });
   }
 });

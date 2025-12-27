@@ -3,7 +3,7 @@
   "def": "Binance Subscribe",
   "node_type": "main",
   "icon": "/assets/icons/binance.svg",
-  "category": "Broker",
+  "category": "Market",
   "subCategory": "Binance",
   "description": "Subscribe or unsubscribe to Binance real-time market data. Subscriptions persist and can be received by any activated BinanceStreamData trigger.",
   "color": "text-yellow-500",
@@ -134,9 +134,7 @@
           "name": "24h Ticker"
         }
       ],
-      "default": [
-        "trade"
-      ],
+      "default": ["trade"],
       "description": "Select Binance market data streams to subscribe to",
       "required": true,
       "showDescription": false
@@ -182,9 +180,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "stream_types": [
-            "kline"
-          ]
+          "stream_types": ["kline"]
         }
       },
       "description": "Candlestick timeframe for kline data",
@@ -219,9 +215,7 @@
       "description": "Comma-separated symbols (uppercase)",
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "manual"
-          ]
+          "symbolSource": ["manual"]
         }
       },
       "required": false,
@@ -235,9 +229,7 @@
       "placeholder": "Select workflow containing symbols",
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "store"
-          ]
+          "symbolSource": ["store"]
         }
       }
     },
@@ -250,9 +242,7 @@
       "placeholder": "Select stored variable",
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "store"
-          ]
+          "symbolSource": ["store"]
         }
       }
     },
@@ -289,9 +279,7 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": [
-            "workflow"
-          ]
+          "subscriptionScope": ["workflow"]
         }
       },
       "default": "__current__"

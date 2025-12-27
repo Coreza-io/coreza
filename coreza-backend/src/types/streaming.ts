@@ -10,22 +10,22 @@
 export interface StreamExecutionRequest {
   workflow_id: string;
   node_id: string;
-  node_type: string;            // "BinanceStreamData", "AlpacaStreamData", etc.
-  mode: 'listen' | 'subscribe'; // User-selected mode
+  node_type: string; // "BinanceStreamData", "AlpacaStreamData", etc.
+  mode: "listen" | "subscribe"; // User-selected mode
 
   // For subscribe mode
   symbols?: string[];
   stream_types?: string[];
   credential_id?: string;
-  environment?: 'testnet' | 'live';
-  asset_type?: 'spot' | 'futures';
-  feed?: 'iex' | 'sip';
+  environment?: "testnet" | "live";
+  asset_type?: "spot" | "futures";
+  feed?: "iex" | "sip";
   kline_interval?: string;
 
   // For filtering (both modes)
   filter_symbols?: string[];
   filter_types?: string[];
-  subscription_mode?: 'workflow' | 'global';
+  subscriptionMode?: "workflow" | "global";
 }
 
 /**
@@ -33,7 +33,7 @@ export interface StreamExecutionRequest {
  */
 export interface StreamExecutionResponse {
   success: boolean;
-  status: 'listening' | 'error';
+  status: "listening" | "error";
   source: string;
   symbols: string[];
   testKey: string;
@@ -46,17 +46,17 @@ export interface StreamExecutionResponse {
  * Backend owns this mapping - frontend never derives sources.
  */
 export const NODE_TYPE_TO_SOURCE: Record<string, string> = {
-  'BinanceStreamData': 'binance_stream',
-  'BinanceSubscribe': 'binance_stream',
-  'AlpacaStreamData': 'alpaca',
-  'AlpacaSubscribe': 'alpaca',
-  'DhanStreamData': 'dhan_stream',
-  'DhanSubscribe': 'dhan_stream',
+  BinanceStreamData: "binance_stream",
+  BinanceSubscribe: "binance_stream",
+  AlpacaStreamData: "alpaca",
+  AlpacaSubscribe: "alpaca",
+  DhanStreamData: "dhan_stream",
+  DhanSubscribe: "dhan_stream",
 };
 
 /**
  * Resolve streaming source from node type.
  */
 export function resolveSourceFromNodeType(nodeType: string): string {
-  return NODE_TYPE_TO_SOURCE[nodeType] || 'unknown';
+  return NODE_TYPE_TO_SOURCE[nodeType] || "unknown";
 }

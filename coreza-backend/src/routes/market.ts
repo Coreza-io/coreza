@@ -16,15 +16,11 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
-import { DataService } from "../services/data";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { MarketSource } from "../types/marketEvent";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
-import {
-  SOURCE_TO_MARKET_SOURCE,
-  getMarketSource,
-} from "../config/marketSources";
+import { getMarketSource } from "../config/marketSources";
 import { getAllowedSymbols } from "../utils/streamFilters";
 import {
   MAX_TEST_LISTENERS_PER_USER,

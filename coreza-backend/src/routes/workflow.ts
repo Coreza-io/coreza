@@ -849,6 +849,36 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`
           );
         }
+
+        // Clean up workflow-scoped symbol subscriptions (from Subscribe nodes like BinanceSubscribe, AlpacaSubscribe, DhanSubscribe)
+        const redis = getRedisCache();
+        const workflowSymbolKeys = await redis.keys(`workflow:${workflowId}:subscribed_symbols:*`);
+        
+        for (const key of workflowSymbolKeys) {
+          const source = key.split(':').pop(); // Extract source from key (e.g., "binance_stream")
+          const symbols = await redis.smembers(key);
+          
+          if (symbols.length > 0) {
+            const unsubscribeMessage = {
+              action: "unsubscribe",
+              userId,
+              workflowId,
+              symbols,
+              source,
+            };
+            await redis.publish(
+              REDIS_CHANNELS.controlUnsubscribe,
+              JSON.stringify(unsubscribeMessage)
+            );
+            
+            console.log(
+              `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`
+            );
+          }
+          
+          // Clean up the Redis key
+          await redis.del(key);
+        }
       }
 
       // Persist workflow state

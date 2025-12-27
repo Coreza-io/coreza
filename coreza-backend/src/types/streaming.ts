@@ -50,6 +50,8 @@ export const NODE_TYPE_TO_SOURCE: Record<string, string> = {
   'BinanceSubscribe': 'binance_stream',
   'AlpacaStreamData': 'alpaca',
   'AlpacaSubscribe': 'alpaca',
+  'DhanStreamData': 'dhan_stream',
+  'DhanSubscribe': 'dhan_stream',
 };
 
 /**

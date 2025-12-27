@@ -46,6 +46,8 @@ export class MarketExecutor implements INodeExecutor {
         return this.handleSubscriptionNode(node, context, "alpaca", normalizeCtx);
       } else if (nodeName === "BinanceSubscribe") {
         return this.handleSubscriptionNode(node, context, "binance", normalizeCtx);
+      } else if (nodeName === "DhanSubscribe") {
+        return this.handleSubscriptionNode(node, context, "dhan", normalizeCtx);
       }
 
       // Handle streaming trigger nodes (pure data receivers)
@@ -53,6 +55,8 @@ export class MarketExecutor implements INodeExecutor {
         return await this.handleStreamingTrigger(node, context, normalizeCtx, "alpaca_stream");
       } else if (nodeName === "BinanceStreamData") {
         return await this.handleStreamingTrigger(node, context, normalizeCtx, "binance_stream");
+      } else if (nodeName === "DhanStreamData") {
+        return await this.handleStreamingTrigger(node, context, normalizeCtx, "dhan_stream");
       }
 
       // Default: historical/REST market data

@@ -1,0 +1,252 @@
+{
+  "name": "DhanSubscribe",
+  "def": "Dhan Subscribe",
+  "node_type": "main",
+  "icon": "/assets/icons/dhan.svg",
+  "category": "Broker",
+  "subCategory": "Dhan",
+  "description": "Subscribe or unsubscribe to Dhan real-time market data. Subscriptions persist and can be received by any activated DhanStreamData trigger.",
+  "color": "text-blue-500",
+  "size": {
+    "width": 380,
+    "height": 520
+  },
+  "handles": [
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Dhan"
+    },
+    {
+      "key": "client_id",
+      "label": "Client ID",
+      "type": "text"
+    },
+    {
+      "key": "api_key",
+      "label": "API Key",
+      "type": "password"
+    }
+  ],
+  "authAction": {
+    "url": "/broker/dhan/auth",
+    "method": "POST"
+  },
+  "action": {
+    "url": "/market/dhan_stream/{{operation}}",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "exchange",
+      "label": "Exchange Segment",
+      "type": "select",
+      "options": [
+        {
+          "id": "NSE_EQ",
+          "name": "NSE Equity"
+        },
+        {
+          "id": "BSE_EQ",
+          "name": "BSE Equity"
+        },
+        {
+          "id": "NSE_FNO",
+          "name": "NSE F&O"
+        },
+        {
+          "id": "BSE_FNO",
+          "name": "BSE F&O"
+        },
+        {
+          "id": "NSE_CURR",
+          "name": "NSE Currency"
+        },
+        {
+          "id": "BSE_CURR",
+          "name": "BSE Currency"
+        },
+        {
+          "id": "MCX",
+          "name": "MCX"
+        },
+        {
+          "id": "IDX",
+          "name": "Index"
+        }
+      ],
+      "placeholder": "Select exchange",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "subscribe",
+          "name": "Subscribe"
+        },
+        {
+          "id": "unsubscribe",
+          "name": "Unsubscribe"
+        }
+      ],
+      "default": "subscribe",
+      "required": true
+    },
+    {
+      "key": "stream_types",
+      "label": "Stream Types",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "ticker",
+          "name": "Ticker (LTP)"
+        },
+        {
+          "id": "quote",
+          "name": "Quote (Bid/Ask)"
+        },
+        {
+          "id": "full",
+          "name": "Full (OHLC + Depth)"
+        }
+      ],
+      "default": [
+        "ticker"
+      ],
+      "description": "Select Dhan stream types to subscribe to",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "symbolSource",
+      "label": "Symbol Source",
+      "type": "select",
+      "options": [
+        {
+          "id": "manual",
+          "name": "Enter Manually"
+        },
+        {
+          "id": "store",
+          "name": "From Store Variable"
+        },
+        {
+          "id": "input",
+          "name": "From Input"
+        }
+      ],
+      "default": "manual",
+      "required": true
+    },
+    {
+      "key": "symbols",
+      "label": "Security IDs",
+      "type": "text",
+      "placeholder": "1333, 11536",
+      "description": "Comma-separated security IDs",
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "manual"
+          ]
+        }
+      },
+      "required": false,
+      "showDescription": false
+    },
+    {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow containing symbols",
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
+    },
+    {
+      "key": "sourceVariable",
+      "label": "Variable Name",
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select stored variable",
+      "displayOptions": {
+        "show": {
+          "symbolSource": [
+            "store"
+          ]
+        }
+      }
+    },
+    {
+      "key": "subscriptionScope",
+      "label": "Subscription Scope",
+      "type": "select",
+      "options": [
+        {
+          "id": "global",
+          "name": "Global (All Workflows)"
+        },
+        {
+          "id": "workflow",
+          "name": "Specific Workflow Only"
+        }
+      ],
+      "default": "global",
+      "description": "Choose who can access this subscription",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "targetWorkflowId",
+      "label": "Target Workflow",
+      "type": "select",
+      "options": [
+        {
+          "id": "__current__",
+          "name": "This Workflow (Current)"
+        }
+      ],
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow to receive data",
+      "displayOptions": {
+        "show": {
+          "subscriptionScope": [
+            "workflow"
+          ]
+        }
+      },
+      "default": "__current__"
+    }
+  ]
+}

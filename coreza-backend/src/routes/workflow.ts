@@ -832,22 +832,21 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // Remove filter configuration
           await redis.del(`workflow:${workflowId}:stream_filter`);
 
-          // Publish unsubscribe message to market-stream-service
-          const unsubscribeMessage = {
-            action: "unsubscribe",
+          // Publish unregister message to market-stream-service
+          const unregisterMessage = {
+            action: "unregister_workflow",
             userId,
             workflowId,
             nodeId: triggerNode.id,
-            symbols: [],
-            source: "streaming_workflow",
+            isTestListener: false,
           };
           await redis.publish(
-            REDIS_CHANNELS.controlUnsubscribe,
-            JSON.stringify(unsubscribeMessage)
+            "md:control:unregister_workflow",
+            JSON.stringify(unregisterMessage)
           );
 
           console.log(
-            `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unsubscribed from market-stream-service`
+            `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`
           );
         }
       }

@@ -197,51 +197,34 @@ export class MarketControlHandler {
           );
         } else {
           // No filter_symbols - resolve from existing subscriptions based on scope
-          // testKey format: stream:test:{workflowId}:{nodeId}
-          const parts = workflowId.split(':');
-          const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
-          
-          console.log(`🧪 [MarketControl] Test listener - no filter_symbols, resolving from ${subscriptionMode} subscriptions (actualWorkflowId: ${actualWorkflowId}, source: ${source})`);
+          console.log(`🧪 [MarketControl] Test listener - no filter_symbols, resolving from ${subscriptionMode} subscriptions`);
           
           if (subscriptionMode === 'global') {
-            // Global mode: UNION of user's global symbols + workflow-scoped symbols for this source
-            const globalSymbols = await this.getUserSubscribedSymbolsForSource(userId, source);
-            const workflowSymbols = await this.getWorkflowScopedSymbols(actualWorkflowId, source);
-            
-            // Union both sets
-            const allSymbols = new Set([...globalSymbols, ...workflowSymbols]);
-            symbolsToSubscribe = Array.from(allSymbols);
-            
-            console.log(`🧪 [MarketControl] Test listener (global mode) - found ${globalSymbols.length} global + ${workflowSymbols.length} workflow symbols = ${symbolsToSubscribe.length} total: ${symbolsToSubscribe.join(', ')}`);
+            // Fetch globally subscribed symbols for this user
+            const globalSymbols = await this.getUserSubscribedSymbols(userId);
+            symbolsToSubscribe = globalSymbols;
+            console.log(`🧪 [MarketControl] Test listener - found ${globalSymbols.length} global symbols: ${globalSymbols.join(', ')}`);
           } else {
-            // Workflow scope - get ONLY workflow-scoped symbols
+            // Workflow scope - get workflow-scoped symbols
+            // testKey format: stream:test:{workflowId}:{nodeId}
+            const parts = workflowId.split(':');
+            const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
+            
             const workflowSymbols = await this.getWorkflowScopedSymbols(actualWorkflowId, source);
             symbolsToSubscribe = workflowSymbols;
-            console.log(`🧪 [MarketControl] Test listener (workflow mode) - found ${workflowSymbols.length} workflow-scoped symbols: ${workflowSymbols.join(', ')}`);
+            console.log(`🧪 [MarketControl] Test listener - found ${workflowSymbols.length} workflow-scoped symbols: ${workflowSymbols.join(', ')}`);
           }
           
           if (symbolsToSubscribe.length === 0) {
-            const scopeHint = subscriptionMode === 'global' 
-              ? 'No symbols found in global or workflow scope for this source.'
-              : 'No symbols found in workflow scope. Did you subscribe with "Workflow Scoped" or use the BinanceSubscribe node first?';
-            console.warn(`⚠️ [MarketControl] Test listener ${workflowId} has 0 symbols. ${scopeHint}`);
+            console.log(`ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`);
           }
         }
       } else {
         // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-        let subscribedSymbols: string[];
-        
-        if (subscriptionMode === "global") {
-          // Global mode: UNION of user's global symbols + workflow-scoped symbols
-          const globalSymbols = await this.getUserSubscribedSymbolsForSource(userId, source);
-          const workflowSymbols = await this.getWorkflowScopedSymbols(workflowId, source);
-          const allSymbols = new Set([...globalSymbols, ...workflowSymbols]);
-          subscribedSymbols = Array.from(allSymbols);
-          console.log(`📊 [MarketControl] Normal workflow (global mode): ${globalSymbols.length} global + ${workflowSymbols.length} workflow = ${subscribedSymbols.length} symbols`);
-        } else {
-          subscribedSymbols = await this.getWorkflowScopedSymbols(workflowId, source);
-          console.log(`📊 [MarketControl] Normal workflow (workflow mode): ${subscribedSymbols.length} workflow-scoped symbols`);
-        }
+        const subscribedSymbols =
+          subscriptionMode === "global"
+            ? await this.getUserSubscribedSymbols(userId)
+            : await this.getWorkflowScopedSymbols(workflowId, source);
 
         if (subscribedSymbols.length === 0) {
           console.log(
@@ -403,48 +386,6 @@ export class MarketControlHandler {
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
-        err
-      );
-    }
-
-    return Array.from(allSymbols);
-  }
-
-  /**
-   * Get GLOBAL symbols for a user filtered by specific source
-   * This prevents cross-broker symbol leakage (e.g., Alpaca symbols appearing in Binance listener)
-   */
-  private async getUserSubscribedSymbolsForSource(userId: string, source?: string): Promise<string[]> {
-    const allSymbols = new Set<string>();
-
-    try {
-      if (source) {
-        // Check both exact source key and legacy variants
-        const keysToCheck = [
-          `user:${userId}:subscribed_symbols:${source}`,
-        ];
-        
-        // Also check without _stream suffix if source has it (legacy compatibility)
-        if (source.endsWith('_stream')) {
-          keysToCheck.push(`user:${userId}:subscribed_symbols:${source.replace('_stream', '')}`);
-        }
-        
-        console.log(`🔍 [MarketControl] Checking source-specific keys: ${keysToCheck.join(', ')}`);
-        
-        for (const key of keysToCheck) {
-          const symbols = await this.redisPub.smembers(key);
-          if (symbols.length > 0) {
-            console.log(`🔍 [MarketControl] Key ${key} has ${symbols.length} symbols: ${symbols.join(', ')}`);
-            symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
-          }
-        }
-      } else {
-        // No source specified, fall back to all sources
-        return this.getUserSubscribedSymbols(userId);
-      }
-    } catch (err) {
-      console.error(
-        `❌ [MarketControl] Failed to get user subscribed symbols for source ${source}:`,
         err
       );
     }

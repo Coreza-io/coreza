@@ -144,6 +144,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     userRef.current = user;
   }, [user]);
 
+  // Ref to hold signOut function for use in inactivity timer
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
+
   // Reset inactivity timer - using ref to avoid recreating on every render
   const resetInactivityTimer = useRef(() => {
     lastActivityRef.current = Date.now();
@@ -155,9 +161,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Only set timer if user is logged in
     if (userRef.current) {
-      inactivityTimerRef.current = setTimeout(() => {
+      inactivityTimerRef.current = setTimeout(async () => {
         console.log('Auto logout: User inactive for too long');
-        supabase.auth.signOut();
+        await signOutRef.current(); // Uses cleanup-enabled signOut
       }, INACTIVITY_TIMEOUT);
     }
   });
@@ -261,7 +267,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const expiresAt = session.expires_at;
           if (expiresAt && expiresAt * 1000 < Date.now()) {
             console.log('Session expired, signing out');
-            supabase.auth.signOut();
+            await signOutRef.current(); // Uses cleanup-enabled signOut
           } else {
             setSession(session);
             setUser(session.user);
@@ -300,7 +306,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const expiresAt = session.expires_at;
           if (expiresAt && expiresAt * 1000 < Date.now()) {
             console.log('Session expired during periodic check, signing out');
-            supabase.auth.signOut();
+            await signOutRef.current(); // Uses cleanup-enabled signOut
           }
         }
       } catch (error) {

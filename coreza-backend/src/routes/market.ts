@@ -791,8 +791,13 @@ router.post('/execute-stream-node', async (req, res) => {
       // Filter params
       filter_symbols,
       filter_types,
-      subscription_mode = 'workflow',
-    } = req.body as StreamExecutionRequest;
+      // Accept both snake_case and camelCase for subscription_mode
+      subscription_mode,
+      subscriptionMode,
+    } = req.body as StreamExecutionRequest & { subscriptionMode?: string };
+    
+    // Use camelCase first (frontend convention), fallback to snake_case, then default
+    const effectiveSubscriptionMode = subscriptionMode || subscription_mode || 'workflow';
 
     if (!workflow_id) {
       return res.status(400).json({ error: 'workflow_id is required' });
@@ -817,7 +822,8 @@ router.post('/execute-stream-node', async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }
 
-    console.log(`🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${source})`);
+    console.log(`🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${source}, subscriptionMode: ${effectiveSubscriptionMode})`);
+    console.log(`🚀 [ExecuteStreamNode] Request body fields: subscription_mode=${subscription_mode}, subscriptionMode=${subscriptionMode}`);
 
     // 2. Parse symbols
     const parsedSymbols: string[] = Array.isArray(symbols)
@@ -903,7 +909,7 @@ router.post('/execute-stream-node', async (req, res) => {
       status: 'listening',
       startedAt: now,
       mode,
-      subscriptionMode: subscription_mode,
+      subscriptionMode: effectiveSubscriptionMode,
       source,
       filterSymbols: effectiveFilterSymbols,
       filterTypes: effectiveFilterTypes,
@@ -933,7 +939,7 @@ router.post('/execute-stream-node', async (req, res) => {
       source,
       filter_symbols: effectiveFilterSymbols, // ✅ Always passed with resolved symbols
       filter_types: effectiveFilterTypes,
-      subscriptionMode: subscription_mode,
+      subscriptionMode: effectiveSubscriptionMode,
       isTestListener: true,
     };
 

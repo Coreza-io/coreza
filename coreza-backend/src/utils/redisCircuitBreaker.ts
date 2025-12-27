@@ -92,6 +92,20 @@ export const redisGetBreaker = new CircuitBreaker(
 );
 
 /**
+ * Circuit breaker for Redis SET operation
+ */
+export const redisSetBreaker = new CircuitBreaker(
+  async (redis: any, key: string, value: string) => {
+    return redis.set(key, value);
+  },
+  {
+    ...circuitBreakerOptions,
+    // Return null on failure - caller should handle null gracefully
+    fallback: () => null,
+  }
+);
+
+/**
  * Circuit breaker for Redis EVAL (Lua script) operations
  */
 export const redisEvalBreaker = new CircuitBreaker(
@@ -124,6 +138,7 @@ export const redisSRemBreaker = new CircuitBreaker(
 setupCircuitBreakerEvents(redisPublishBreaker, 'redisPublish');
 setupCircuitBreakerEvents(redisSMembersBreaker, 'redisSMembers');
 setupCircuitBreakerEvents(redisGetBreaker, 'redisGet');
+setupCircuitBreakerEvents(redisSetBreaker, 'redisSet');
 setupCircuitBreakerEvents(redisEvalBreaker, 'redisEval');
 setupCircuitBreakerEvents(redisSRemBreaker, 'redisSRem');
 
@@ -134,6 +149,7 @@ export function getCircuitBreakerHealth(): {
   publish: { state: string; stats: any };
   smembers: { state: string; stats: any };
   get: { state: string; stats: any };
+  set: { state: string; stats: any };
   eval: { state: string; stats: any };
   srem: { state: string; stats: any };
 } {
@@ -149,6 +165,10 @@ export function getCircuitBreakerHealth(): {
     get: {
       state: redisGetBreaker.opened ? 'OPEN' : redisGetBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
       stats: redisGetBreaker.stats,
+    },
+    set: {
+      state: redisSetBreaker.opened ? 'OPEN' : redisSetBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: redisSetBreaker.stats,
     },
     eval: {
       state: redisEvalBreaker.opened ? 'OPEN' : redisEvalBreaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',

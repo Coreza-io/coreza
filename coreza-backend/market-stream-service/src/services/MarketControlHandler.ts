@@ -821,15 +821,16 @@ export class MarketControlHandler {
         );
       }
 
-      // Remove user-level subscriptions
-      if (symbols.length > 0) {
+      // Remove user-level subscriptions ONLY for symbols that were actually unsubscribed
+      // This preserves symbols that are still needed by other active workflows
+      if (toRemove.length > 0 && msg.userId) {
         const userSubKey = `user:${msg.userId}:subscribed_symbols:${source}`;
         await this.redisPub.srem(
           userSubKey,
-          ...symbols.map((s) => s.toUpperCase())
+          ...toRemove.map((s) => s.toUpperCase())
         );
         console.log(
-          `📊 [MarketControl] Removed ${symbols.length} user-level subscriptions from ${source}`
+          `📊 [MarketControl] Removed ${toRemove.length} user-level subscriptions from ${source}`
         );
       }
 

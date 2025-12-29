@@ -345,12 +345,12 @@
     {
       "key": "member",
       "label": "Member",
-      "type": "text",
-      "placeholder": "member_name",
+      "type": "textarea",
+      "placeholder": "Enter member value or {{ $('Node').json.field }}",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["sismember", "zscore", "zincrby"]
+          "operation": ["zadd", "sismember", "zscore", "zincrby"]
         }
       }
     },
@@ -358,18 +358,8 @@
       "key": "score",
       "label": "Score",
       "type": "text",
-      "placeholder": "0",
-      "displayOptions": {
-        "show": {
-          "operation": ["zadd"]
-        }
-      }
-    },
-    {
-      "key": "scoreMembers",
-      "label": "Score:Member Pairs",
-      "type": "textarea",
-      "placeholder": "100:AAPL, 95:TSLA, 87:NVDA (score:member, comma-separated)",
+      "placeholder": "Numeric score (e.g., timestamp or rank)",
+      "required": true,
       "displayOptions": {
         "show": {
           "operation": ["zadd"]

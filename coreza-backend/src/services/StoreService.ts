@@ -473,9 +473,36 @@ export class StoreService {
         return { success: false, error: "workflow_id and variableName required for zadd" };
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
+      
+      // Mode 1: Single score + member (preferred for dynamic expressions)
+      if (params.score !== undefined && params.member) {
+        const score = parseFloat(String(params.score));
+        if (isNaN(score)) {
+          return { success: false, error: "Score must be a valid number" };
+        }
+        // Serialize member if it's an object
+        const memberValue = typeof params.member === 'object' 
+          ? JSON.stringify(params.member) 
+          : String(params.member);
+        
+        await redis.zadd(key, score, memberValue);
+        await applyTTL(key);
+        return {
+          success: true,
+          data: { 
+            operation, 
+            variableName: params.variableName, 
+            score,
+            member: memberValue,
+            message: "Member added to sorted set" 
+          },
+        };
+      }
+      
+      // Mode 2: Batch scoreMembers format (backwards compatible)
       const scoreMembersList = parseScoreMembers(params.scoreMembers || "");
       if (scoreMembersList.length === 0) {
-        return { success: false, error: "scoreMembers required for zadd" };
+        return { success: false, error: "score and member are required for zadd" };
       }
       await redis.zadd(key, ...scoreMembersList);
       await applyTTL(key);

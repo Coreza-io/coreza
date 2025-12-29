@@ -223,12 +223,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   const handleOperatorSelect = useCallback(
-    (idx: number, value: string) => {
+    (idx: number, value: string, dataType?: string) => {
       handleChange(
         repeaterKey!,
         conditions.map((row, rowIdx) => {
           if (rowIdx !== idx) return row;
-          const updated = { ...row, operator: value } as any;
+          const updated = {
+            ...row,
+            operator: value,
+            dataType: dataType || "any",
+          } as any;
 
           if (!operatorRequiresRightValue(value)) {
             updated.right = "";
@@ -265,6 +269,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       {
         left: "",
         operator: "===",
+        dataType: "any",
         right: "",
         outputName: `Case ${newIndex}`,
       },
@@ -283,6 +288,29 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       handleChange(
         "cases",
         cases.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+      );
+    },
+    [cases, handleChange]
+  );
+
+  const handleCaseOperatorSelect = useCallback(
+    (idx: number, value: string, dataType?: string) => {
+      handleChange(
+        "cases",
+        cases.map((row, rowIdx) => {
+          if (rowIdx !== idx) return row;
+          const updated = {
+            ...row,
+            operator: value,
+            dataType: dataType || "any",
+          } as any;
+
+          if (!operatorRequiresRightValue(value)) {
+            updated.right = "";
+          }
+
+          return updated;
+        })
       );
     },
     [cases, handleChange]
@@ -630,18 +658,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         <NodeFieldRenderer
                           field={operatorField}
                           definition={definition}
-                          fieldState={{
-                            ...fieldState,
-                            [operatorField.key]: cond.operator,
-                          }}
-                          value={cond.operator}
-                          selectOptions={selectOptions}
-                          loadingSelect={loadingSelect}
-                          onChange={(key, val) => handleOperatorSelect(i, val)}
-                          referenceStyle={referenceStyle}
-                          fetchDependentOptions={fetchDependentOptions}
-                          setShowAuth={setShowAuth}
-                          readOnly={readOnly}
+                        fieldState={{
+                          ...fieldState,
+                          [operatorField.key]: cond.operator,
+                        }}
+                        value={cond.operator}
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val, dataType) =>
+                          handleOperatorSelect(i, val, dataType)
+                        }
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
+                        readOnly={readOnly}
                         />
                       </div>
                     )}
@@ -811,17 +841,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         <NodeFieldRenderer
                           field={operatorSubField}
                           definition={definition}
-                          fieldState={{
-                            ...fieldState,
-                            [operatorSubField.key]: caseItem.operator,
-                          }}
-                          value={caseItem.operator}
-                          selectOptions={selectOptions}
-                          loadingSelect={loadingSelect}
-                          onChange={(key, val) => updateCase(i, key, val)}
-                          referenceStyle={referenceStyle}
-                          fetchDependentOptions={fetchDependentOptions}
-                          setShowAuth={setShowAuth}
+                        fieldState={{
+                          ...fieldState,
+                          [operatorSubField.key]: caseItem.operator,
+                        }}
+                        value={caseItem.operator}
+                        selectOptions={selectOptions}
+                        loadingSelect={loadingSelect}
+                        onChange={(key, val, dataType) =>
+                          handleCaseOperatorSelect(i, val, dataType)
+                        }
+                        referenceStyle={referenceStyle}
+                        fetchDependentOptions={fetchDependentOptions}
+                        setShowAuth={setShowAuth}
                           readOnly={readOnly}
                         />
                       </div>

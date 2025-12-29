@@ -16,7 +16,7 @@ interface NodeFieldRendererProps {
   value: any;
   selectOptions: Record<string, any[]>;
   loadingSelect: Record<string, boolean>;
-  onChange: (fieldKey: string, value: any) => void;
+  onChange: (fieldKey: string, value: any, dataType?: string) => void;
   onBatchChange?: (updates: Record<string, any>) => void;
   onDrop?: (field: any, e: React.DragEvent, currentValue: string) => void;
   getPreview?: (fieldKey: string) => string | null;
@@ -487,7 +487,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <GroupedSelect
             value={fieldValue || field.default || ""}
             groupedOptions={field.groupedOptions}
-            onChange={(val) => onChange(field.key, val)}
+            onChange={(val, dataType) => onChange(field.key, val, dataType)}
             placeholder={field.placeholder}
             disabled={readOnly}
           />

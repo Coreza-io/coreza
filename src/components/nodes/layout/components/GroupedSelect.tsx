@@ -18,7 +18,7 @@ import {
 
 interface GroupedSelectProps {
   value?: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, dataType?: string) => void;
   groupedOptions?: Record<string, GroupedOptionType>;
   placeholder?: string;
   triggerClassName?: string;
@@ -69,7 +69,7 @@ export const GroupedSelect: React.FC<GroupedSelectProps> = ({
               {typeData.options.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
-                  onClick={() => onChange(opt.value)}
+                  onClick={() => onChange(opt.value, typeKey)}
                   className={
                     value === opt.value
                       ? "bg-accent text-accent-foreground"

@@ -741,6 +741,19 @@ export class MarketControlHandler {
           console.log(
             `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`
           );
+          
+          // Also track in workflow-scoped key for cleanup on workflow deactivation
+          // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
+          if (workflowId) {
+            const workflowTrackingKey = `workflow:${workflowId}:subscribed_symbols:${source}`;
+            await this.redisPub.sadd(
+              workflowTrackingKey,
+              ...symbols.map((s) => s.toUpperCase())
+            );
+            console.log(
+              `📊 [MarketControl] Also tracked ${symbols.length} symbols in workflow key for cleanup: ${workflowTrackingKey}`
+            );
+          }
         }
       });
     } catch (error) {

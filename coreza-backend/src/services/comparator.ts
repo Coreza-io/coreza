@@ -21,6 +21,14 @@ export interface ComparatorInput {
   left: any;
   operator: string;
   right: any;
+  dataType?:
+    | "string"
+    | "number"
+    | "boolean"
+    | "array"
+    | "object"
+    | "dateTime"
+    | "any";
 }
 
 export interface ComparatorResult {
@@ -29,10 +37,74 @@ export interface ComparatorResult {
   error?: string;
 }
 
+function parseValueByType(value: any, dataType: string): any {
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (trimmed === "null") return null;
+  if (trimmed === "undefined") return undefined;
+
+  switch (dataType) {
+    case "number": {
+      const num = parseFloat(trimmed);
+      return Number.isNaN(num) ? value : num;
+    }
+    case "boolean":
+      if (trimmed === "true") return true;
+      if (trimmed === "false") return false;
+      return value;
+    case "array":
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          return JSON.parse(trimmed);
+        } catch (error) {
+          return value;
+        }
+      }
+      return value;
+    case "object":
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        try {
+          return JSON.parse(trimmed);
+        } catch (error) {
+          return value;
+        }
+      }
+      return value;
+    case "dateTime":
+      if (/^\d+$/.test(trimmed)) {
+        return new Date(Number.parseInt(trimmed, 10));
+      }
+      return value;
+    case "string":
+      return value;
+    default:
+      if (trimmed === "true") return true;
+      if (trimmed === "false") return false;
+      if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+        const num = parseFloat(trimmed);
+        if (!Number.isNaN(num) && Number.isFinite(num)) return num;
+      }
+      if (
+        (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+        (trimmed.startsWith("{") && trimmed.endsWith("}"))
+      ) {
+        try {
+          return JSON.parse(trimmed);
+        } catch (error) {
+          return value;
+        }
+      }
+      return value;
+  }
+}
+
 export class ComparatorService {
   static async evaluate(input: ComparatorInput): Promise<ComparatorResult> {
     try {
-      const { left, operator, right } = input;
+      const { operator, dataType = "any" } = input;
+      const left = parseValueByType(input.left, dataType);
+      const right = parseValueByType(input.right, dataType);
       let result: boolean;
 
       switch (operator) {

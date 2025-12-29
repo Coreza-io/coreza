@@ -40,7 +40,7 @@ router.post("/if", async (req, res) => {
     // Evaluate each condition using ComparatorService
     const results: boolean[] = [];
     for (const condition of conditions) {
-      const { left, operator, right } = condition;
+      const { left, operator, right, dataType } = condition;
       if (left === undefined || operator == null || right === undefined) {
         return res.status(400).json({
           error: "Each condition must have left, operator, and right",
@@ -48,7 +48,12 @@ router.post("/if", async (req, res) => {
         });
       }
 
-      const conditionInput: ComparatorInput = { left, operator, right };
+      const conditionInput: ComparatorInput = {
+        left,
+        operator,
+        right,
+        dataType: dataType || "any",
+      };
       const result = await ComparatorService.evaluate(conditionInput);
 
       if (!result.success) {
@@ -123,6 +128,7 @@ router.post("/switch", async (req, res) => {
         left: caseItem.left ?? inputValue,
         operator: caseItem.operator || "===",
         right: caseItem.right ?? caseItem.caseValue,
+        dataType: caseItem.dataType || "any",
       } as ComparatorInput,
       value:
         caseItem.outputName ??

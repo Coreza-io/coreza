@@ -27,24 +27,31 @@ export class BacktestExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
+    const startTime = Date.now();
     const nodeName = node.name;
+    const normalizeCtx: NormalizeContext = {
+      nodeId: node.id,
+      nodeName,
+      category: this.category,
+      startTime,
+    };
 
     switch (nodeName) {
       case "BacktestInit":
-        return this.executeBacktestInit(node, input, context);
+        return this.executeBacktestInit(node, input, context, normalizeCtx);
       case "BacktestTrade":
-        return this.executeBacktestTrade(node, input, context);
+        return this.executeBacktestTrade(node, input, context, normalizeCtx);
       case "BacktestSnapshot":
-        return this.executeBacktestSnapshot(node, input, context);
+        return this.executeBacktestSnapshot(node, input, context, normalizeCtx);
       case "BacktestResults":
-        return this.executeBacktestResults(node, input, context);
+        return this.executeBacktestResults(node, input, context, normalizeCtx);
       case "BacktestPortfolio":
-        return this.executeBacktestPortfolio(node, input, context);
+        return this.executeBacktestPortfolio(node, input, context, normalizeCtx);
       default:
-        return {
-          success: false,
-          error: `Unknown backtest node type: ${nodeName}`,
-        };
+        return toNodeResult(createErrorOutput(
+          `Unknown backtest node type: ${nodeName}`,
+          normalizeCtx
+        ));
     }
   }
 
@@ -52,7 +59,8 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeBacktestInit(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context: any,
+    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -63,10 +71,10 @@ export class BacktestExecutor implements INodeExecutor {
       const workflowId = context?.workflowId;
 
       if (!userId || !workflowId) {
-        return {
-          success: false,
-          error: "User ID and Workflow ID required for backtest",
-        };
+        return toNodeResult(createErrorOutput(
+          "User ID and Workflow ID required for backtest",
+          normalizeCtx
+        ));
       }
 
       // Parse configuration
@@ -107,10 +115,10 @@ export class BacktestExecutor implements INodeExecutor {
           "[BacktestExecutor] Failed to create backtest session:",
           insertError
         );
-        return {
-          success: false,
-          error: `Failed to create backtest: ${insertError?.message}`,
-        };
+        return toNodeResult(createErrorOutput(
+          `Failed to create backtest: ${insertError?.message}`,
+          normalizeCtx
+        ));
       }
 
       const backtestId = backtest.id;
@@ -123,33 +131,25 @@ export class BacktestExecutor implements INodeExecutor {
         `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital}`
       );
 
-      return {
-        success: true,
-        data: {
-          backtest_id: backtestId,
-          initial_capital: config.initialCapital,
-          start_date:
-            params.start_date || new Date().toISOString().split("T")[0],
-          end_date: params.end_date || new Date().toISOString().split("T")[0],
-          config: {
-            fill_model: config.fillModel,
-            slippage_model: config.slippageModel,
-            slippage_value: config.slippageValue,
-            commission_model: config.commissionModel,
-            commission_value: config.commissionValue,
-            allow_short: config.allowShort,
-          },
-          status: "running",
+      return toNodeResult(createSuccessOutput({
+        backtest_id: backtestId,
+        initial_capital: config.initialCapital,
+        start_date:
+          params.start_date || new Date().toISOString().split("T")[0],
+        end_date: params.end_date || new Date().toISOString().split("T")[0],
+        config: {
+          fill_model: config.fillModel,
+          slippage_model: config.slippageModel,
+          slippage_value: config.slippageValue,
+          commission_model: config.commissionModel,
+          commission_value: config.commissionValue,
+          allow_short: config.allowShort,
         },
-      };
+        status: "running",
+      }, normalizeCtx));
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
-      return {
-        success: false,
-        error: `BacktestInit failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      return toNodeResult(createErrorOutput(error, normalizeCtx));
     }
   }
 
@@ -157,7 +157,8 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeBacktestTrade(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context: any,
+    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -166,7 +167,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return { success: false, error: "backtest_id is required" };
+        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
       const symbol = params.symbol;
@@ -175,10 +176,10 @@ export class BacktestExecutor implements INodeExecutor {
       const orderType = params.order_type || "market";
 
       if (!symbol || !side || !quantity) {
-        return {
-          success: false,
-          error: "symbol, side, and quantity are required",
-        };
+        return toNodeResult(createErrorOutput(
+          "symbol, side, and quantity are required",
+          normalizeCtx
+        ));
       }
 
       // Get SimBroker instance
@@ -207,7 +208,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       if (!orderResult.success) {
-        return { success: false, error: orderResult.error };
+        return toNodeResult(createErrorOutput(orderResult.error || "Order failed", normalizeCtx));
       }
 
       // For immediate fills, process the newly placed order right away
@@ -222,24 +223,21 @@ export class BacktestExecutor implements INodeExecutor {
             const cash = await simBroker.getCash();
             const positions = await simBroker.getPositions();
 
-            return {
-              success: true,
-              data: {
-                order_id: orderResult.orderId,
-                order_status: "filled",
-                fill_price: fill.price,
-                fill_quantity: fill.quantity,
-                commission: fill.commission,
-                slippage: fill.slippage,
-                symbol,
-                side,
-                quantity,
-                order_type: orderType,
-                cash,
-                positions,
-                pending_orders: 0,
-              },
-            };
+            return toNodeResult(createSuccessOutput({
+              order_id: orderResult.orderId,
+              order_status: "filled",
+              fill_price: fill.price,
+              fill_quantity: fill.quantity,
+              commission: fill.commission,
+              slippage: fill.slippage,
+              symbol,
+              side,
+              quantity,
+              order_type: orderType,
+              cash,
+              positions,
+              pending_orders: 0,
+            }, normalizeCtx));
           }
         }
       }
@@ -249,28 +247,20 @@ export class BacktestExecutor implements INodeExecutor {
       const positions = await simBroker.getPositions();
       const pendingOrders = await simBroker.getPendingOrders();
 
-      return {
-        success: true,
-        data: {
-          order_id: orderResult.orderId,
-          order_status: orderResult.status,
-          symbol,
-          side,
-          quantity,
-          order_type: orderType,
-          cash,
-          positions,
-          pending_orders: pendingOrders.length,
-        },
-      };
+      return toNodeResult(createSuccessOutput({
+        order_id: orderResult.orderId,
+        order_status: orderResult.status,
+        symbol,
+        side,
+        quantity,
+        order_type: orderType,
+        cash,
+        positions,
+        pending_orders: pendingOrders.length,
+      }, normalizeCtx));
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
-      return {
-        success: false,
-        error: `BacktestTrade failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      return toNodeResult(createErrorOutput(error, normalizeCtx));
     }
   }
 
@@ -278,7 +268,8 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeBacktestSnapshot(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context: any,
+    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -287,7 +278,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return { success: false, error: "backtest_id is required" };
+        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
       // Parse current bar or prices
@@ -315,24 +306,16 @@ export class BacktestExecutor implements INodeExecutor {
       // Record equity snapshot
       const snapshot = await simBroker.recordSnapshot(timestamp, prices);
 
-      return {
-        success: true,
-        data: {
-          timestamp: snapshot.timestamp,
-          cash: snapshot.cash,
-          positions_value: snapshot.positionsValue,
-          total_equity: snapshot.totalEquity,
-          drawdown_pct: snapshot.drawdownPct,
-        },
-      };
+      return toNodeResult(createSuccessOutput({
+        timestamp: snapshot.timestamp,
+        cash: snapshot.cash,
+        positions_value: snapshot.positionsValue,
+        total_equity: snapshot.totalEquity,
+        drawdown_pct: snapshot.drawdownPct,
+      }, normalizeCtx));
     } catch (error) {
       console.error("[BacktestExecutor] BacktestSnapshot failed:", error);
-      return {
-        success: false,
-        error: `BacktestSnapshot failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      return toNodeResult(createErrorOutput(error, normalizeCtx));
     }
   }
 
@@ -340,7 +323,8 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeBacktestResults(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context: any,
+    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -349,7 +333,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return { success: false, error: "backtest_id is required" };
+        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
       // Get SimBroker
@@ -444,53 +428,45 @@ export class BacktestExecutor implements INodeExecutor {
         )}%`
       );
 
-      return {
-        success: true,
-        data: {
-          backtest_id: backtestId,
-          metrics: {
-            total_return: metrics.totalReturn,
-            total_return_pct: metrics.totalReturnPct,
-            annualized_return: metrics.annualizedReturn,
-            max_drawdown: metrics.maxDrawdown,
-            max_drawdown_pct: metrics.maxDrawdownPct,
-            sharpe_ratio: metrics.sharpeRatio,
-            sortino_ratio: metrics.sortinoRatio,
-            calmar_ratio: metrics.calmarRatio,
-            total_trades: metrics.totalTrades,
-            winning_trades: metrics.winningTrades,
-            losing_trades: metrics.losingTrades,
-            win_rate: metrics.winRate,
-            profit_factor: metrics.profitFactor,
-            avg_win: metrics.avgWin,
-            avg_loss: metrics.avgLoss,
-            largest_win: metrics.largestWin,
-            largest_loss: metrics.largestLoss,
-            avg_trade_pnl: metrics.avgTradePnl,
-            total_commission: metrics.totalCommission,
-            total_slippage: metrics.totalSlippage,
-            start_date: metrics.startDate,
-            end_date: metrics.endDate,
-            total_bars: metrics.totalBars,
-          },
-          trades_count: trades.length,
-          equity_points: equityCurve.length,
-          final_equity:
-            portfolioState.cash +
-            Object.values(portfolioState.positions).reduce(
-              (sum, p) => sum + p.marketValue,
-              0
-            ),
+      return toNodeResult(createSuccessOutput({
+        backtest_id: backtestId,
+        metrics: {
+          total_return: metrics.totalReturn,
+          total_return_pct: metrics.totalReturnPct,
+          annualized_return: metrics.annualizedReturn,
+          max_drawdown: metrics.maxDrawdown,
+          max_drawdown_pct: metrics.maxDrawdownPct,
+          sharpe_ratio: metrics.sharpeRatio,
+          sortino_ratio: metrics.sortinoRatio,
+          calmar_ratio: metrics.calmarRatio,
+          total_trades: metrics.totalTrades,
+          winning_trades: metrics.winningTrades,
+          losing_trades: metrics.losingTrades,
+          win_rate: metrics.winRate,
+          profit_factor: metrics.profitFactor,
+          avg_win: metrics.avgWin,
+          avg_loss: metrics.avgLoss,
+          largest_win: metrics.largestWin,
+          largest_loss: metrics.largestLoss,
+          avg_trade_pnl: metrics.avgTradePnl,
+          total_commission: metrics.totalCommission,
+          total_slippage: metrics.totalSlippage,
+          start_date: metrics.startDate,
+          end_date: metrics.endDate,
+          total_bars: metrics.totalBars,
         },
-      };
+        trades_count: trades.length,
+        equity_points: equityCurve.length,
+        final_equity:
+          portfolioState.cash +
+          Object.values(portfolioState.positions).reduce(
+            (sum, p) => sum + p.marketValue,
+            0
+          ),
+      }, normalizeCtx));
     } catch (error) {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
-      return {
-        success: false,
-        error: `BacktestResults failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      return toNodeResult(createErrorOutput(error, normalizeCtx));
     }
   }
 
@@ -498,7 +474,8 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeBacktestPortfolio(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context: any,
+    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -507,17 +484,17 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return { success: false, error: "backtest_id is required" };
+        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
       const simBroker = new SimBroker(backtestId);
       const portfolioState = await simBroker.getPortfolioState();
 
       if (!portfolioState) {
-        return {
-          success: false,
-          error: "Portfolio not found - run BacktestInit first",
-        };
+        return toNodeResult(createErrorOutput(
+          "Portfolio not found - run BacktestInit first",
+          normalizeCtx
+        ));
       }
 
       // Convert positions object to array format
@@ -537,31 +514,23 @@ export class BacktestExecutor implements INodeExecutor {
         0
       );
 
-      return {
-        success: true,
-        data: {
-          cash: portfolioState.cash,
-          initial_capital: portfolioState.initialCapital,
-          positions: positionsArray,
-          positions_count: positionsArray.length,
-          positions_value: positionsValue,
-          unrealized_pnl: unrealizedPnlTotal,
-          realized_pnl: realizedPnlTotal,
-          total_equity: portfolioState.cash + positionsValue,
-          pending_orders: portfolioState.pendingOrders,
-          pending_orders_count: portfolioState.pendingOrders.length,
-          trades: portfolioState.trades,
-          trades_count: portfolioState.trades.length,
-        },
-      };
+      return toNodeResult(createSuccessOutput({
+        cash: portfolioState.cash,
+        initial_capital: portfolioState.initialCapital,
+        positions: positionsArray,
+        positions_count: positionsArray.length,
+        positions_value: positionsValue,
+        unrealized_pnl: unrealizedPnlTotal,
+        realized_pnl: realizedPnlTotal,
+        total_equity: portfolioState.cash + positionsValue,
+        pending_orders: portfolioState.pendingOrders,
+        pending_orders_count: portfolioState.pendingOrders.length,
+        trades: portfolioState.trades,
+        trades_count: portfolioState.trades.length,
+      }, normalizeCtx));
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
-      return {
-        success: false,
-        error: `BacktestPortfolio failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
+      return toNodeResult(createErrorOutput(error, normalizeCtx));
     }
   }
 

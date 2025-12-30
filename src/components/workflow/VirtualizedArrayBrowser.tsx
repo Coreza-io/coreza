@@ -55,9 +55,55 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
   const virtualizer = useVirtualizer({
     count: filteredData.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 40,
+    estimateSize: () => 56,
     overscan: 10,
   });
+  
+  // Format a bar/candle object for display
+  const formatBarItem = (item: any): React.ReactNode => {
+    if (typeof item !== 'object' || item === null) {
+      return String(item);
+    }
+    
+    // Check if it looks like bar/candle data (has OHLCV fields)
+    const hasBarFields = 'o' in item || 'open' in item || 
+                         'c' in item || 'close' in item ||
+                         'h' in item || 'high' in item;
+    
+    if (hasBarFields) {
+      const o = item.o ?? item.open ?? '-';
+      const h = item.h ?? item.high ?? '-';
+      const l = item.l ?? item.low ?? '-';
+      const c = item.c ?? item.close ?? '-';
+      const v = item.v ?? item.volume ?? item.vw ?? '-';
+      const t = item.t ?? item.timestamp ?? item.time ?? item.datetime ?? null;
+      
+      // Format timestamp if present
+      let timeStr = '';
+      if (t) {
+        try {
+          const date = new Date(typeof t === 'number' && t < 1e12 ? t * 1000 : t);
+          timeStr = date.toISOString().replace('T', ' ').slice(0, 19);
+        } catch {
+          timeStr = String(t);
+        }
+      }
+      
+      return (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 items-center">
+          {timeStr && <span className="text-blue-400">{timeStr}</span>}
+          <span>O:<span className="text-green-400">{o}</span></span>
+          <span>H:<span className="text-green-400">{h}</span></span>
+          <span>L:<span className="text-red-400">{l}</span></span>
+          <span>C:<span className="text-yellow-400">{c}</span></span>
+          <span>V:<span className="text-purple-400">{typeof v === 'number' ? v.toLocaleString() : v}</span></span>
+        </div>
+      );
+    }
+    
+    // For non-bar objects, show formatted JSON
+    return JSON.stringify(item, null, 0);
+  };
   
   const handleJumpTo = () => {
     const index = parseInt(jumpToIndex, 10);
@@ -223,13 +269,10 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
                 }}
               >
                 <div className="h-full py-1">
-                  <div className="h-full p-2 rounded bg-muted/30 hover:bg-muted/50 text-xs font-mono overflow-hidden flex items-start gap-2">
-                    <span className="text-muted-foreground shrink-0">[{originalIndex}]</span>
-                    <span className="break-all line-clamp-2">
-                      {typeof item === 'object' 
-                        ? JSON.stringify(item).slice(0, 200) 
-                        : String(item).slice(0, 200)}
-                      {JSON.stringify(item).length > 200 && '...'}
+                  <div className="h-full px-3 py-2 rounded bg-muted/30 hover:bg-muted/50 text-xs font-mono overflow-hidden flex items-center gap-3">
+                    <span className="text-muted-foreground shrink-0 w-14 text-right">[{originalIndex}]</span>
+                    <span className="break-all flex-1">
+                      {formatBarItem(item)}
                     </span>
                   </div>
                 </div>

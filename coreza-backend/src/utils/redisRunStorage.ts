@@ -52,7 +52,7 @@ export async function createRunInRedis(
  */
 export async function updateRunStatusInRedis(
   runId: string,
-  status: 'running' | 'success' | 'failed',
+  status: 'running' | 'success' | 'failed' | 'cancelled',
   options?: {
     result?: any;
     errorMessage?: string;
@@ -64,7 +64,7 @@ export async function updateRunStatusInRedis(
     status,
   };
 
-  if (status === 'success' || status === 'failed') {
+  if (status === 'success' || status === 'failed' || status === 'cancelled') {
     updates.completed_at = new Date().toISOString();
   }
 

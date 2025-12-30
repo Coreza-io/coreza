@@ -123,9 +123,9 @@ export class RunSyncService {
         }
       }
 
-      // Filter to only completed runs (success or failed)
+      // Filter to only completed runs (success, failed, or cancelled)
       const completedRuns = runs.filter(
-        r => r.status === 'success' || r.status === 'failed'
+        r => r.status === 'success' || r.status === 'failed' || r.status === 'cancelled'
       );
 
       if (completedRuns.length === 0) {

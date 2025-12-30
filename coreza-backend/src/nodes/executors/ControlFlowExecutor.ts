@@ -79,18 +79,24 @@ export class ControlFlowExecutor implements INodeExecutor {
     let result: boolean;
 
     if (Array.isArray(conditions)) {
-      // Evaluate each condition object
-      const evals = conditions.map((cond: any) => {
-        const { left, operator, right } = cond;
-        const r = this.evaluateCondition(left, right, operator);
-        return { left, operator, right, result: r };
+      // Evaluate each condition using ComparatorService for full operator support
+      const evalPromises = conditions.map(async (cond: any) => {
+        const evalResult = await ComparatorService.evaluate({
+          left: cond.left,
+          operator: cond.operator,
+          right: cond.right,
+          dataType: cond.dataType,
+        });
+        return evalResult.success && evalResult.data?.result;
       });
+
+      const evals = await Promise.all(evalPromises);
 
       // Aggregate based on logicalOp
       result =
         logicalOp === "OR"
-          ? evals.some((e) => e.result)
-          : evals.every((e) => e.result);
+          ? evals.some((e) => e)
+          : evals.every((e) => e);
 
       return toNodeResult(createSuccessOutput({
         true: result,
@@ -102,19 +108,28 @@ export class ControlFlowExecutor implements INodeExecutor {
     const condition = resolvedParams.condition;
     const value1 = resolvedParams.value1;
     const value2 = resolvedParams.value2;
-    const operation = resolvedParams.operation || "==";
+    const operation = resolvedParams.operation || "===";
+    const dataType = resolvedParams.dataType;
 
     console.log("🔀 If node condition check:", {
       condition,
       value1,
       value2,
       operation,
+      dataType,
     });
 
     if (condition !== undefined) {
       result = Boolean(condition);
     } else {
-      result = this.evaluateCondition(value1, value2, operation);
+      // Use ComparatorService for full operator support
+      const evalResult = await ComparatorService.evaluate({
+        left: value1,
+        operator: operation,
+        right: value2,
+        dataType,
+      });
+      result = evalResult.success && evalResult.data?.result === true;
     }
 
     return toNodeResult(createSuccessOutput({
@@ -152,6 +167,7 @@ export class ControlFlowExecutor implements INodeExecutor {
           left: c.left ?? baseInput,
           operator: c.operator || "===",
           right: c.right ?? c.caseValue,
+          dataType: c.dataType, // Add dataType support for proper type handling
         },
         value:
           c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
@@ -461,34 +477,4 @@ export class ControlFlowExecutor implements INodeExecutor {
     };
   }
 
-  private evaluateCondition(
-    value1: any,
-    value2: any,
-    operation: string
-  ): boolean {
-    switch (operation) {
-      case "===":
-        return value1 === value2;
-      case "!=":
-        return value1 != value2;
-      case "!==":
-        return value1 !== value2;
-      case ">":
-        return Number(value1) > Number(value2);
-      case ">=":
-        return Number(value1) >= Number(value2);
-      case "<":
-        return Number(value1) < Number(value2);
-      case "<=":
-        return Number(value1) <= Number(value2);
-      case "contains":
-        return String(value1).includes(String(value2));
-      case "startsWith":
-        return String(value1).startsWith(String(value2));
-      case "endsWith":
-        return String(value1).endsWith(String(value2));
-      default:
-        return Boolean(value1);
-    }
-  }
 }

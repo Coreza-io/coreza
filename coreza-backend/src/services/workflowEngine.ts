@@ -68,6 +68,7 @@ export class WorkflowEngine {
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
   private mode: "best-effort" | "fail-fast";
+  private abortSignal?: AbortSignal;
 
   // Execution tracking for detailed logs
   private nodeExecutions: NodeExecutionLog[] = [];
@@ -82,7 +83,8 @@ export class WorkflowEngine {
     private userId: string,
     private nodes: WorkflowNode[],
     private edges: WorkflowEdge[],
-    mode: "best-effort" | "fail-fast" = "best-effort"
+    mode: "best-effort" | "fail-fast" = "best-effort",
+    abortSignal?: AbortSignal
   ) {
     this.router = new NodeRouter(edges);
     // Add node type lookup to router
@@ -93,6 +95,7 @@ export class WorkflowEngine {
     this.queue = new NodeQueueManager();
     this.store = new NodeStoreV2(runId, nodes);
     this.mode = mode;
+    this.abortSignal = abortSignal;
 
     // Initialize DataContext for this workflow run
     this.dataContext = DataContextManager.getInstance().getContext({
@@ -371,6 +374,11 @@ export class WorkflowEngine {
 
     // Process queue until empty
     while (this.queue.length > 0) {
+      // Check if job was cancelled via abort signal
+      if (this.abortSignal?.aborted) {
+        throw new Error('Workflow cancelled by user');
+      }
+      
       const item = this.dequeue();
       if (!item) break;
       await this.executeOnce(item);
@@ -664,6 +672,8 @@ export type ExecutionOptions = {
   initialInput?: any;
   /** Start execution from a specific node (for loop continuation) */
   startNodeId?: string;
+  /** Abort signal for cancellation support */
+  abortSignal?: AbortSignal;
 };
 
 export async function executeWorkflow(
@@ -680,7 +690,8 @@ export async function executeWorkflow(
     userId,
     nodes,
     edges,
-    opts?.mode
+    opts?.mode,
+    opts?.abortSignal
   );
   return await workflowEngine.execute(opts?.initialInput, opts?.startNodeId);
 }

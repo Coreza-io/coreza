@@ -154,7 +154,7 @@ async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<voi
 // Workflow execution worker
 const workflowWorker = new Worker(
   "workflow-execution",
-  async (job: Job<WorkflowJobData>) => {
+  async (job: Job<WorkflowJobData>, token?: string, signal?: AbortSignal) => {
     // Ensure node executors are registered (handles circular dependency race condition)
     const registeredCategories = getAllRegisteredCategories();
     if (registeredCategories.length === 0) {
@@ -195,6 +195,7 @@ const workflowWorker = new Worker(
           { 
             initialInput: job.data.initialInput,
             startNodeId, // Pass entry point to workflow engine
+            abortSignal: signal, // Pass abort signal from BullMQ for cancellation
           }
         );
 
@@ -399,6 +400,7 @@ const workflowWorker = new Worker(
           { 
             initialInput: job.data.initialInput,
             startNodeId, // Pass start node to workflow engine
+            abortSignal: signal, // Pass abort signal from BullMQ for cancellation
           }
         );
 
@@ -436,6 +438,12 @@ const workflowWorker = new Worker(
       return { cancelled: true, reason: 'workflow_deactivated' };
     }
 
+    // Check abort signal before starting (in case job was cancelled immediately)
+    if (signal?.aborted) {
+      console.log(`🛑 Job ${job.id} was cancelled before starting`);
+      throw new Error('Workflow cancelled by user');
+    }
+
     try {
       // Update run status to running
       if (useRedisStorage) {
@@ -452,13 +460,17 @@ const workflowWorker = new Worker(
       const renamed = {
         data: input?.marketEvent ?? input?.data ?? input,
       };
+      
       const result = await executeWorkflow(
         runId,
         workflowId,
         userId,
         nodes,
         edges,
-        { initialInput: renamed }
+        { 
+          initialInput: renamed,
+          abortSignal: signal, // Pass abort signal from BullMQ for cancellation
+        }
       );
 
       // Save successful result
@@ -783,16 +795,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   /**
    * Cancel all queued/running jobs for a workflow.
    * - Removes waiting/delayed jobs immediately
-   * - Sets cancellation flag in Redis for active jobs to check
+   * - Uses native BullMQ cancelJob() for active jobs
    * - Returns count of jobs affected
    */
   async cancelWorkflowJobs(workflowId: string): Promise<number> {
     console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
     
     try {
-      // Set cancellation flag in Redis (active jobs will check this)
-      await redis.set(`workflow:${workflowId}:cancelled`, '1', 'EX', 300); // 5 min TTL
-      
       // Get all waiting, delayed, and active jobs
       const allJobs = await workflowQueue.getJobs(['waiting', 'delayed', 'active']);
       
@@ -807,9 +816,14 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               cancelledCount++;
               console.log(`  ↳ Removed ${state} job ${job.id}`);
             } else if (state === 'active') {
-              // Active jobs will check the cancellation flag
-              cancelledCount++;
-              console.log(`  ↳ Flagged active job ${job.id} for cancellation`);
+              // Use BullMQ's native job cancellation - sends abort signal to worker
+              const cancelled = await workflowWorker.cancelJob(job.id!, 'Workflow deactivated by user');
+              if (cancelled) {
+                cancelledCount++;
+                console.log(`  ↳ Cancelled active job ${job.id}`);
+              } else {
+                console.log(`  ↳ Could not cancel active job ${job.id} (may have already completed)`);
+              }
             }
           } catch (err) {
             console.error(`  ↳ Failed to cancel job ${job.id}:`, err);

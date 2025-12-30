@@ -1608,29 +1608,31 @@ const WorkflowEditorContent = () => {
             />
           </div>
           
-          {/* Editor/Executions Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "editor" | "executions")}>
-            <TabsList className="h-8">
-              <TabsTrigger value="editor" className="text-xs px-3 h-7">Editor</TabsTrigger>
-              <TabsTrigger value="executions" className="text-xs px-3 h-7">
-                Executions
-                {executions.length > 0 && (
-                  <span className="ml-1.5 bg-muted px-1.5 py-0.5 rounded text-[10px]">
-                    {executions.length}
-                  </span>
-                )}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Editor/Executions/Restore Tabs */}
+          <div className="flex items-center gap-1">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "editor" | "executions")}>
+              <TabsList className="h-8">
+                <TabsTrigger value="editor" className="text-xs px-3 h-7">Editor</TabsTrigger>
+                <TabsTrigger value="executions" className="text-xs px-3 h-7">
+                  Executions
+                  {executions.length > 0 && (
+                    <span className="ml-1.5 bg-muted px-1.5 py-0.5 rounded text-[10px]">
+                      {executions.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            
+            <WorkflowVersionHistory
+              workflowId={workflowId}
+              onRestore={handleRestoreFromVersion}
+              disabled={loading}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <WorkflowVersionHistory
-            workflowId={workflowId}
-            onRestore={handleRestoreFromVersion}
-            disabled={loading}
-          />
-          
           <Button
             onClick={() => handleSaveWorkflow()}
             disabled={loading}

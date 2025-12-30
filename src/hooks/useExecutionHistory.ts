@@ -13,7 +13,7 @@ const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
 
 export interface ExecutionFilters {
-  status?: "all" | "success" | "failed" | "running" | "pending";
+  status?: "all" | "success" | "failed" | "running" | "pending" | "cancelled";
   dateFrom?: Date | null;
   dateTo?: Date | null;
 }

@@ -627,6 +627,11 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
     try {
       if (is_active) {
+        // Clear any previous cancellation flag from prior deactivation
+        const redisForCancel = getRedisCache();
+        await redisForCancel.del(`workflow:${workflowId}:cancelled`);
+        console.log(`🔄 Cleared cancellation flag for workflow ${workflowId}`);
+
         // Handle Scheduler activation
         if (triggerNode.name == "Scheduler") {
           const { cron, timezone, next } = computeCronFromSchedulerNodes(

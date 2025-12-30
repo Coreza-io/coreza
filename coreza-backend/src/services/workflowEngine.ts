@@ -558,7 +558,12 @@ export class WorkflowEngine {
 
       this.clearIncomingEdgePayloads(nodeId);
     } catch (error) {
-      console.error(`❌ Node ${nodeId} failed:`, error);
+      const errorMessage = (error as Error).message || '';
+      const isCancellation = errorMessage.toLowerCase().includes('cancelled') || 
+                             errorMessage.toLowerCase().includes('deactivated') ||
+                             this.abortSignal?.aborted;
+      
+      console.error(`${isCancellation ? '🛑' : '❌'} Node ${nodeId} ${isCancellation ? 'cancelled' : 'failed'}:`, error);
 
       // Record failed execution
       const completedAt = new Date().toISOString();
@@ -567,7 +572,7 @@ export class WorkflowEngine {
       const normalizedError = normalizeOutput(
         {
           success: false,
-          error: (error as Error).message,
+          error: errorMessage,
         },
         {
           nodeId,
@@ -587,12 +592,17 @@ export class WorkflowEngine {
         input,
         output: normalizedError,
         itemCount: 0,
-        error: (error as Error).message,
+        error: errorMessage,
       });
       this.executionOrder.push(nodeId);
 
       this.failed.add(nodeId);
       this.store.setNodeError(nodeId, error);
+
+      // ALWAYS rethrow cancellation errors - they should never be swallowed
+      if (isCancellation) {
+        throw error;
+      }
 
       if (meta?.originLoopId) {
         const originLoopId = meta.originLoopId;
@@ -615,7 +625,7 @@ export class WorkflowEngine {
       if (this.mode === "fail-fast") {
         throw error;
       }
-      // best-effort: swallow error
+      // best-effort: swallow non-cancellation errors only
     }
   }
 

@@ -473,10 +473,16 @@ const workflowWorker = new Worker(
         }
       );
 
-      // Save successful result
+      // Check if workflow actually succeeded - if not, throw to enter catch block
+      if (result.success !== true) {
+        throw new Error(result.error || 'Workflow execution failed');
+      }
+
+      // Save successful result (only if not already cancelled)
       if (useRedisStorage) {
         await updateRunStatusInRedis(runId, 'success', { result });
       } else {
+        // Guard: only update to success if status is still running/queued (not cancelled)
         await supabase
           .from("workflow_runs")
           .update({
@@ -484,7 +490,8 @@ const workflowWorker = new Worker(
             result: result,
             completed_at: new Date().toISOString(),
           })
-          .eq("id", runId);
+          .eq("id", runId)
+          .in("status", ["running", "queued"]);
       }
 
       console.log(`✅ Workflow run ${runId} completed successfully`);

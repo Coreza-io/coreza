@@ -22,20 +22,8 @@ import { getRedisQueue } from "../config/redis";
 import { IWorkflowJobQueue, WorkflowJobData, ParallelLoopOptions } from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
-
-const normalizeError = (error: unknown): Error => {
-  if (error instanceof Error) {
-    return error;
-  }
-  if (typeof error === "string") {
-    return new Error(error);
-  }
-  try {
-    return new Error(JSON.stringify(error));
-  } catch {
-    return new Error("Unknown error");
-  }
-};
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import { StandardNodeOutput } from "../types/nodeOutput";
 
 const redis = getRedisQueue();
 
@@ -56,12 +44,9 @@ interface ScheduledWorkflowJobData {
   cronExpression: string;
 }
 
-/** Result structure for each loop item */
-interface LoopItemResult {
-  success: boolean;
+/** Result structure for each loop item - uses StandardNodeOutput format */
+interface LoopItemResult extends StandardNodeOutput {
   itemIndex: number;
-  data?: any;
-  error?: string;
 }
 
 /**
@@ -86,39 +71,39 @@ async function collectOrderedResults(
     if (rawValue) {
       try {
         const parsed = JSON.parse(rawValue);
-        if (parsed.error) {
+        if (parsed.error || parsed.success === false) {
           hasErrors = true;
           errorCount++;
-          results[i] = {
-            success: false,
-            itemIndex: i,
-            error: parsed.error,
-          };
+          const errorOutput = createErrorOutput(parsed.error || "Unknown error", {
+            nodeName: `loop-item-${i}`,
+            category: "loop",
+          });
+          results[i] = { ...errorOutput, itemIndex: i };
         } else {
-          results[i] = {
-            success: true,
-            itemIndex: i,
-            data: parsed,
-          };
+          const successOutput = createSuccessOutput(parsed.data ?? parsed, {
+            nodeName: `loop-item-${i}`,
+            category: "loop",
+          });
+          results[i] = { ...successOutput, itemIndex: i };
         }
       } catch {
-        results[i] = {
-          success: false,
-          itemIndex: i,
-          error: "Failed to parse result",
-        };
         hasErrors = true;
         errorCount++;
+        const errorOutput = createErrorOutput("Failed to parse result", {
+          nodeName: `loop-item-${i}`,
+          category: "loop",
+        });
+        results[i] = { ...errorOutput, itemIndex: i };
       }
     } else {
       // Missing result - treat as error
-      results[i] = {
-        success: false,
-        itemIndex: i,
-        error: "No result received",
-      };
       hasErrors = true;
       errorCount++;
+      const errorOutput = createErrorOutput("No result received", {
+        nodeName: `loop-item-${i}`,
+        category: "loop",
+      });
+      results[i] = { ...errorOutput, itemIndex: i };
     }
   }
   
@@ -219,23 +204,30 @@ const workflowWorker = new Worker(
         await redis.expire(key, 3600); // 1 hour TTL
 
         console.log(`✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`);
-        return { success: true, itemIndex, data: result };
+        const successOutput = createSuccessOutput(result, {
+          nodeName: `loop-item-${itemIndex}`,
+          category: "loop",
+        });
+        return { ...successOutput, itemIndex };
       } catch (error) {
-        const normalized = normalizeError(error);
-        console.error(`❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`, normalized.message);
+        const errorOutput = createErrorOutput(error, {
+          nodeName: `loop-item-${itemIndex}`,
+          category: "loop",
+        });
+        console.error(`❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`, errorOutput.error);
         
         // Store error in Redis for aggregation (allows continueOnError)
         const key = `loop:${parentRunId}:${loopId}:results`;
-        await redis.hset(key, String(itemIndex), JSON.stringify({ error: normalized.message }));
+        await redis.hset(key, String(itemIndex), JSON.stringify(errorOutput));
         await redis.expire(key, 3600);
         
         // If continueOnError is false, throw to fail the job
         if (!continueOnError) {
-          throw normalized;
+          throw new Error(errorOutput.error);
         }
         
         // Return error result for aggregation
-        return { success: false, itemIndex, error: normalized.message };
+        return { ...errorOutput, itemIndex };
       }
     }
 
@@ -257,10 +249,15 @@ const workflowWorker = new Worker(
           continueOnError
         );
         
-        // Extract just the data for successful items, keep error info for failed
-        const aggregatedOutput = results.map(r => 
-          r.success ? r.data : { _error: r.error, _itemIndex: r.itemIndex }
-        );
+        // Keep full StandardNodeOutput for each item, preserving structure
+        const aggregatedOutput = results.map(r => ({
+          success: r.success,
+          status: r.status,
+          data: r.data,
+          error: r.error,
+          itemIndex: r.itemIndex,
+          meta: r.meta,
+        }));
 
         // Store aggregated results for parent workflow to retrieve
         const aggregatedKey = `loop:${parentRunId}:${loopId}:aggregated`;
@@ -317,7 +314,7 @@ const workflowWorker = new Worker(
           // No done edges - Loop is a terminal node, complete the parent workflow run with aggregated result
           console.log(`📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`);
           
-          const finalResult = {
+          const finalResult = createSuccessOutput({
             finalOutput: aggregatedOutput,
             loopResult: {
               loopId,
@@ -327,7 +324,7 @@ const workflowWorker = new Worker(
               hasErrors,
               completedAt: new Date().toISOString(),
             }
-          };
+          }, { nodeName: loopId, category: "loop" });
           
           if (useRedisStorage) {
             // Update Redis-stored run
@@ -364,25 +361,25 @@ const workflowWorker = new Worker(
         // Cleanup Redis keys after successful aggregation
         await cleanupLoopKeys(parentRunId!, loopId!);
         
-        return { 
+        return createSuccessOutput({
           aggregated: aggregatedOutput, 
           count: results.length,
           successCount: totalItems! - errorCount,
           errorCount,
           continuationQueued: doneEdges.length > 0,
-        };
+        }, { nodeName: loopId, category: "loop" });
       } catch (error) {
-        const normalized = normalizeError(error);
-        console.error(`❌ Loop aggregation failed for ${loopId}:`, normalized.message);
+        const errorOutput = createErrorOutput(error, { nodeName: loopId, category: "loop" });
+        console.error(`❌ Loop aggregation failed for ${loopId}:`, errorOutput.error);
         
         // Publish failure event
         await redis.publish('loop:failed', JSON.stringify({
           parentRunId,
           loopId,
-          error: normalized.message,
+          error: errorOutput.error,
         }));
         
-        throw normalized;
+        throw new Error(errorOutput.error);
       }
     }
 
@@ -406,11 +403,11 @@ const workflowWorker = new Worker(
         );
 
         console.log(`✅ Workflow continuation completed from node ${startNodeId}`);
-        return result;
+        return createSuccessOutput(result, { nodeName: startNodeId, category: "loop_continuation" });
       } catch (error) {
-        const normalized = normalizeError(error);
-        console.error(`❌ Workflow continuation failed from node ${startNodeId}:`, normalized.message);
-        throw normalized;
+        const errorOutput = createErrorOutput(error, { nodeName: startNodeId, category: "loop_continuation" });
+        console.error(`❌ Workflow continuation failed from node ${startNodeId}:`, errorOutput.error);
+        throw new Error(errorOutput.error);
       }
     }
 
@@ -457,29 +454,29 @@ const workflowWorker = new Worker(
       }
 
       console.log(`✅ Workflow run ${runId} completed successfully`);
-      return result;
+      return createSuccessOutput(result, { nodeName: "workflow", category: "execution" });
     } catch (error) {
-      const normalized = normalizeError(error);
+      const errorOutput = createErrorOutput(error, { nodeName: "workflow", category: "execution" });
       console.error(
         `❌ Workflow execution failed for run ${runId}:`,
-        normalized
+        errorOutput.error
       );
 
       // Save error
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'failed', { errorMessage: normalized.message });
+        await updateRunStatusInRedis(runId, 'failed', { errorMessage: errorOutput.error });
       } else {
         await supabase
           .from("workflow_runs")
           .update({
             status: "failed",
-            error_message: normalized.message,
+            error_message: errorOutput.error,
             completed_at: new Date().toISOString(),
           })
           .eq("id", runId);
       }
 
-      throw normalized;
+      throw new Error(errorOutput.error);
     }
   },
   {
@@ -544,14 +541,14 @@ const scheduledWorker = new Worker(
         trigger: "scheduled",
       });
 
-      return { runId: run.id };
+      return createSuccessOutput({ runId: run.id }, { nodeName: "scheduler", category: "scheduled" });
     } catch (error) {
-      const normalized = normalizeError(error);
+      const errorOutput = createErrorOutput(error, { nodeName: "scheduler", category: "scheduled" });
       console.error(
         `❌ Scheduled workflow failed for ${workflowId}:`,
-        normalized
+        errorOutput.error
       );
-      throw normalized;
+      throw new Error(errorOutput.error);
     }
   },
   {

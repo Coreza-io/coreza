@@ -16,6 +16,8 @@
 
 import { createError } from "../middleware/errorHandler";
 import { Item } from "../nodes/types";
+import { StandardNodeOutput } from "../types/nodeOutput";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
 
 export interface ComparatorInput {
   left: any;
@@ -31,11 +33,11 @@ export interface ComparatorInput {
     | "any";
 }
 
-export interface ComparatorResult {
-  success: boolean;
+export interface ComparatorResultData {
   result: boolean;
-  error?: string;
 }
+
+export type ComparatorResult = StandardNodeOutput<ComparatorResultData>;
 
 function parseValueByType(value: any, dataType: string): any {
   if (typeof value !== "string") return value;
@@ -98,6 +100,8 @@ function parseValueByType(value: any, dataType: string): any {
       return value;
   }
 }
+
+const COMPARATOR_CONTEXT = { category: "control-flow", nodeName: "Comparator" };
 
 export class ComparatorService {
   static async evaluate(input: ComparatorInput): Promise<ComparatorResult> {
@@ -271,9 +275,9 @@ export class ComparatorService {
           throw createError(`Unsupported operator: ${operator}`, 400);
       }
 
-      return { success: true, result };
+      return createSuccessOutput({ result }, COMPARATOR_CONTEXT);
     } catch (error: any) {
-      return { success: false, result: false, error: error.message };
+      return createErrorOutput(error, COMPARATOR_CONTEXT);
     }
   }
 
@@ -286,35 +290,25 @@ export class ComparatorService {
   static async executeSwitch(
     cases: Array<{ condition: ComparatorInput; value: any }>,
     defaultValue?: any
-  ): Promise<{
-    success: boolean;
-    result: any;
-    matchedCase?: number;
-    error?: string;
-  }> {
+  ): Promise<StandardNodeOutput<{ result: any; matchedCase?: number }>> {
     try {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = await this.evaluate(cases[i].condition);
-        if (caseResult.success && caseResult.result) {
-          return {
-            success: true,
-            result: cases[i].value,
-            matchedCase: i,
-          };
+        if (caseResult.success && caseResult.data?.result) {
+          return createSuccessOutput(
+            { result: cases[i].value, matchedCase: i },
+            { ...COMPARATOR_CONTEXT, nodeName: "Switch" }
+          );
         }
       }
 
       // No case matched, return default value
-      return {
-        success: true,
-        result: defaultValue ?? null,
-      };
+      return createSuccessOutput(
+        { result: defaultValue ?? null },
+        { ...COMPARATOR_CONTEXT, nodeName: "Switch" }
+      );
     } catch (error: any) {
-      return {
-        success: false,
-        result: null,
-        error: error.message,
-      };
+      return createErrorOutput(error, { ...COMPARATOR_CONTEXT, nodeName: "Switch" });
     }
   }
 
@@ -335,11 +329,12 @@ export class ComparatorService {
           ? this.resolvePath(item, condition.right) ?? condition.right
           : condition.right;
 
-      const { result } = await this.evaluate({
+      const evalResult = await this.evaluate({
         left: leftValue,
         operator: condition.operator,
         right: rightValue,
       });
+      const result = evalResult.success && evalResult.data?.result;
       (result ? trueItems : falseItems).push(item);
     }
 

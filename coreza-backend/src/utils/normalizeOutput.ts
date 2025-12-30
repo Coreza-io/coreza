@@ -147,10 +147,17 @@ export function createSuccessOutput<T = any>(
   };
 }
 
-function normalizeError(err: unknown) {
+interface NormalizedError {
+  message: string;
+  code?: string;
+  status?: number;
+  response?: any;
+}
+
+function normalizeError(err: unknown): NormalizedError {
   if (axios.isAxiosError(err)) {
     return {
-      message: err.message,
+      message: err.response?.data?.message || err.message,
       code: err.code,
       status: err.response?.status,
       response: err.response?.data,
@@ -160,6 +167,12 @@ function normalizeError(err: unknown) {
   if (err instanceof Error) {
     return {
       message: err.message,
+    };
+  }
+
+  if (typeof err === "string") {
+    return {
+      message: err,
     };
   }
 
@@ -180,17 +193,12 @@ export function createErrorOutput(
   return {
     success: false,
     status: "error",
-
-    // ✅ user-safe
-    error: normalized.response.message,
-
-    // ✅ structured (optional, UI can show on expand)
+    error: normalized.message,
     details: {
       code: normalized.code,
       status: normalized.status,
-      response: normalized.response.message,
+      response: normalized.response,
     },
-
     meta: {
       timestamp: new Date().toISOString(),
       executionTime: context.startTime

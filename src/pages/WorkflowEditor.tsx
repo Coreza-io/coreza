@@ -79,6 +79,7 @@ import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHis
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
+import { useWorkflowVersioning } from "@/hooks/useWorkflowVersioning";
 import {
   ExecutionStoreProvider,
   useExecutionStore,
@@ -194,7 +195,7 @@ const WorkflowEditorContent = () => {
     }
   }, [id, isNewWorkflow, workflowId]);
   const [workflowName, setWorkflowName] = useState(
-    isNewWorkflow ? "My workflow 1" : "Existing Workflow"
+    isNewWorkflow ? "My workflow 1" : "Loading..."
   );
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -210,6 +211,11 @@ const WorkflowEditorContent = () => {
   const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
   const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
+  const [pendingSaveData, setPendingSaveData] = useState<{ currentCount: number; newCount: number } | null>(null);
+  
+  // Workflow versioning hooks
+  const { createVersionBeforeSave, shouldBlockEmptySave } = useWorkflowVersioning();
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
@@ -286,8 +292,9 @@ const WorkflowEditorContent = () => {
     setDateToFilter(null);
   }, []);
 
-  const [nodes, setNodes, applyNodeChanges] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // CRITICAL FIX: Initialize with empty state for existing workflows to prevent race condition
+  const [nodes, setNodes, applyNodeChanges] = useNodesState(isNewWorkflow ? initialNodes : []);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(isNewWorkflow ? initialEdges : []);
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
@@ -663,10 +670,63 @@ const WorkflowEditorContent = () => {
     [workflowExecutor]
   );
 
-  // Save workflow to Supabase
-  const handleSaveWorkflow = async () => {
+  // Save workflow to Supabase with versioning and data loss protection
+  const handleSaveWorkflow = async (skipConfirmation: boolean = false) => {
     if (!authUser) {
       return;
+    }
+
+    // CRITICAL: Prevent saving while loading to avoid race condition
+    if (loading) {
+      toast({
+        title: "Please wait",
+        description: "Workflow is still loading...",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For existing workflows, check for potential data loss
+    if (workflowId && !skipConfirmation) {
+      // Block empty saves that would overwrite data
+      const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
+      if (shouldBlock) {
+        toast({
+          title: "Save Blocked",
+          description: "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check for significant node reduction and confirm with user
+      try {
+        const { data: current } = await supabase
+          .from('workflows')
+          .select('nodes')
+          .eq('id', workflowId)
+          .single();
+
+        if (current) {
+          const currentNodes = current.nodes as any[];
+          const currentCount = Array.isArray(currentNodes) ? currentNodes.length : 0;
+          
+          // Warn if reducing nodes by more than 50% from a substantial workflow
+          if (currentCount > 5 && nodes.length < currentCount * 0.5) {
+            setPendingSaveData({ currentCount, newCount: nodes.length });
+            setShowSaveConfirmDialog(true);
+            return; // Wait for user confirmation
+          }
+        }
+      } catch (error) {
+        console.warn('Could not check current workflow state:', error);
+      }
+
+      // Create version snapshot before overwriting existing workflow
+      const versionCreated = await createVersionBeforeSave(workflowId);
+      if (versionCreated) {
+        console.log('✅ Created version backup before save');
+      }
     }
 
     // 1) Turn each node into a "minimal" version without its definition
@@ -1754,6 +1814,37 @@ const WorkflowEditorContent = () => {
               }}
             >
               Restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Save Confirmation Dialog for Significant Changes */}
+      <AlertDialog open={showSaveConfirmDialog} onOpenChange={setShowSaveConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Significant Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              This save will significantly reduce the number of nodes in your workflow 
+              from {pendingSaveData?.currentCount || 0} to {pendingSaveData?.newCount || 0} nodes.
+              A backup version will be created automatically.
+              Are you sure you want to continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingSaveData(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setPendingSaveData(null);
+                // Create version before saving
+                if (workflowId) {
+                  await createVersionBeforeSave(workflowId);
+                }
+                // Now save with skipConfirmation flag
+                await handleSaveWorkflow(true);
+              }}
+            >
+              Save Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

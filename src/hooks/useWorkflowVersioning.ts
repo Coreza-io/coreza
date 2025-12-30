@@ -119,7 +119,7 @@ export const useWorkflowVersioning = () => {
   };
 
   /**
-   * Checks if saving would result in data loss (going from many nodes to empty).
+   * Checks if saving would result in data loss (going from nodes to empty).
    * Returns true if the save should be blocked.
    */
   const shouldBlockEmptySave = useCallback(async (
@@ -140,12 +140,27 @@ export const useWorkflowVersioning = () => {
       const currentNodes = current.nodes as any[];
       const currentNodeCount = Array.isArray(currentNodes) ? currentNodes.length : 0;
 
-      // Block if going from substantial workflow (>3 nodes) to empty/minimal
-      if (currentNodeCount > 3 && newNodeCount <= 1) {
+      // Block if going from ANY workflow with nodes to completely empty
+      if (currentNodeCount > 0 && newNodeCount === 0) {
         console.warn(
-          `Blocked potential data loss: ${currentNodeCount} nodes → ${newNodeCount} nodes`
+          `🚫 Blocked complete data loss: ${currentNodeCount} nodes → 0 nodes`
         );
         return true;
+      }
+
+      // Block if going from substantial workflow (>2 nodes) to just 1 node
+      if (currentNodeCount > 2 && newNodeCount <= 1) {
+        console.warn(
+          `🚫 Blocked potential data loss: ${currentNodeCount} nodes → ${newNodeCount} nodes`
+        );
+        return true;
+      }
+
+      // Log warning for significant reduction (but don't block)
+      if (currentNodeCount > 5 && newNodeCount < currentNodeCount * 0.5) {
+        console.warn(
+          `⚠️ Warning: significant node reduction from ${currentNodeCount} to ${newNodeCount}`
+        );
       }
 
       return false;

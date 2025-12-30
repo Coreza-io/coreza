@@ -21,6 +21,9 @@ import type { SearchResult } from "yahoo-finance2/dist/esm/src/modules/search";
 import type { TrendingSymbolsResult } from "yahoo-finance2/dist/esm/src/modules/trendingSymbols";
 import { createError } from "../middleware/errorHandler";
 import CredentialManager from "../utils/credentialManager";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import type { StandardNodeOutput } from "../types/nodeOutput";
+import { supabase } from "../config/supabase";
 
 export interface DataInput {
   user_id?: string;
@@ -59,7 +62,7 @@ abstract class BaseDataService {
     };
   }
 
-  abstract execute(operation: string, input: DataInput): Promise<DataResult>;
+  abstract execute(operation: string, input: DataInput): Promise<StandardNodeOutput>;
 }
 
 // FinnHub service
@@ -67,7 +70,8 @@ class FinnHubService extends BaseDataService {
   protected serviceName = "finnhub";
   private baseUrl = "https://finnhub.io/api/v1";
 
-  async execute(operation: string, input: DataInput): Promise<DataResult> {
+  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'FinnHub', category: 'data' };
     try {
       const { user_id, credential_id } = input;
 
@@ -90,9 +94,9 @@ class FinnHubService extends BaseDataService {
           throw createError(`Unsupported FinnHub operation: ${operation}`, 400);
       }
 
-      return { success: true, data: result };
+      return createSuccessOutput(result, context);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
@@ -122,7 +126,8 @@ class FinnHubService extends BaseDataService {
 class YahooFinanceService extends BaseDataService {
   protected serviceName = "yahoofinance";
 
-  async execute(operation: string, input: DataInput): Promise<DataResult> {
+  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'YahooFinance', category: 'data' };
     try {
       let result;
       switch (operation) {
@@ -148,9 +153,9 @@ class YahooFinanceService extends BaseDataService {
           );
       }
 
-      return result;
+      return createSuccessOutput(result, context);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
@@ -196,120 +201,104 @@ class YahooFinanceService extends BaseDataService {
       throw createError("symbol is required", 400);
     }
 
-    try {
-      let startDate: Date;
-      let endDate: Date;
+    let startDate: Date;
+    let endDate: Date;
 
-      // If period1/period2 are already provided (from HTTP route), use them
-      if (period1 || period2) {
-        if (typeof period1 === "number") {
-          startDate = new Date(period1 * 1000);
-        } else if (period1) {
-          startDate = new Date(period1);
-        } else {
-          startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-        }
-
-        if (typeof period2 === "number") {
-          endDate = new Date(period2 * 1000);
-        } else if (period2) {
-          endDate = new Date(period2);
-        } else {
-          endDate = new Date();
-        }
-      } 
-      // Handle date_mode for direct executor calls
-      else if (date_mode === "range") {
-        if (!start_date) {
-          throw createError("start_date is required for range mode", 400);
-        }
-        startDate = new Date(start_date);
-        endDate = end_date ? new Date(end_date) : new Date();
-      } 
-      // Lookback mode (default)
-      else {
-        endDate = new Date();
-        startDate = new Date();
-        const lookbackNum = Number(lookback) || 100;
-
-        switch (interval) {
-          case "1m":
-            startDate.setMinutes(endDate.getMinutes() - lookbackNum);
-            break;
-          case "5m":
-            startDate.setMinutes(endDate.getMinutes() - lookbackNum * 5);
-            break;
-          case "15m":
-            startDate.setMinutes(endDate.getMinutes() - lookbackNum * 15);
-            break;
-          case "60m":
-          case "1h":
-            startDate.setHours(endDate.getHours() - lookbackNum);
-            break;
-          case "1d":
-          default:
-            startDate.setDate(endDate.getDate() - lookbackNum);
-            break;
-        }
+    // If period1/period2 are already provided (from HTTP route), use them
+    if (period1 || period2) {
+      if (typeof period1 === "number") {
+        startDate = new Date(period1 * 1000);
+      } else if (period1) {
+        startDate = new Date(period1);
+      } else {
+        startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
       }
 
-      console.log(`Fetching Yahoo Finance historical data for ${symbol}`, {
-        period1: startDate.toISOString(),
-        period2: endDate.toISOString(),
-        interval,
-        date_mode,
-        lookback,
-      });
+      if (typeof period2 === "number") {
+        endDate = new Date(period2 * 1000);
+      } else if (period2) {
+        endDate = new Date(period2);
+      } else {
+        endDate = new Date();
+      }
+    } 
+    // Handle date_mode for direct executor calls
+    else if (date_mode === "range") {
+      if (!start_date) {
+        throw createError("start_date is required for range mode", 400);
+      }
+      startDate = new Date(start_date);
+      endDate = end_date ? new Date(end_date) : new Date();
+    } 
+    // Lookback mode (default)
+    else {
+      endDate = new Date();
+      startDate = new Date();
+      const lookbackNum = Number(lookback) || 100;
 
-      const options = {
-        period1: startDate,
-        period2: endDate,
-        interval: interval as
-          | "1m"
-          | "2m"
-          | "5m"
-          | "15m"
-          | "30m"
-          | "60m"
-          | "90m"
-          | "1h"
-          | "1d"
-          | "5d"
-          | "1wk"
-          | "1mo"
-          | "3mo",
-      };
-
-      const chart = await yahooFinance.chart(symbol, options);
-      const history = chart.quotes || [];
-      console.log(
-        `Retrieved ${history.length} historical records for ${symbol}`
-      );
-
-      return {
-        success: true,
-        data: history.map((item) => ({
-          date: item.date,
-          open: item.open,
-          high: item.high,
-          low: item.low,
-          close: item.close,
-          volume: item.volume,
-          adjClose: item.adjclose,
-        })),
-      };
-    } catch (error) {
-      console.error(
-        `Error fetching Yahoo Finance historical data for ${symbol}:`,
-        error
-      );
-      throw createError(
-        `Failed to fetch historical data for ${symbol}: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        500
-      );
+      switch (interval) {
+        case "1m":
+          startDate.setMinutes(endDate.getMinutes() - lookbackNum);
+          break;
+        case "5m":
+          startDate.setMinutes(endDate.getMinutes() - lookbackNum * 5);
+          break;
+        case "15m":
+          startDate.setMinutes(endDate.getMinutes() - lookbackNum * 15);
+          break;
+        case "60m":
+        case "1h":
+          startDate.setHours(endDate.getHours() - lookbackNum);
+          break;
+        case "1d":
+        default:
+          startDate.setDate(endDate.getDate() - lookbackNum);
+          break;
+      }
     }
+
+    console.log(`Fetching Yahoo Finance historical data for ${symbol}`, {
+      period1: startDate.toISOString(),
+      period2: endDate.toISOString(),
+      interval,
+      date_mode,
+      lookback,
+    });
+
+    const options = {
+      period1: startDate,
+      period2: endDate,
+      interval: interval as
+        | "1m"
+        | "2m"
+        | "5m"
+        | "15m"
+        | "30m"
+        | "60m"
+        | "90m"
+        | "1h"
+        | "1d"
+        | "5d"
+        | "1wk"
+        | "1mo"
+        | "3mo",
+    };
+
+    const chart = await yahooFinance.chart(symbol, options);
+    const history = chart.quotes || [];
+    console.log(
+      `Retrieved ${history.length} historical records for ${symbol}`
+    );
+
+    return history.map((item) => ({
+      date: item.date,
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+      volume: item.volume,
+      adjClose: item.adjclose,
+    }));
   }
 
   private async search(input: DataInput): Promise<any> {
@@ -417,7 +406,8 @@ class PolygonService extends BaseDataService {
   protected serviceName = "polygon";
   private baseUrl = "https://api.polygon.io";
 
-  async execute(operation: string, input: DataInput): Promise<DataResult> {
+  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Polygon', category: 'data' };
     try {
       const { user_id, credential_id, api_key } = input;
 
@@ -465,13 +455,14 @@ class PolygonService extends BaseDataService {
           throw new Error(`Unsupported Polygon operation: ${operation}`);
       }
 
-      return { success: true, data: result };
+      return createSuccessOutput(result, context);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
-  private async validateCredentials(apiKey: string): Promise<DataResult> {
+  private async validateCredentials(apiKey: string): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Polygon', category: 'data' };
     try {
       const response = await axios.get(`${this.baseUrl}/v3/reference/tickers/AAPL`, {
         params: { apiKey },
@@ -479,18 +470,19 @@ class PolygonService extends BaseDataService {
       });
       
       if (response.data && response.data.results) {
-        return { success: true, data: { valid: true } };
+        return createSuccessOutput({ valid: true }, context);
       }
-      return { success: false, error: "Invalid API response" };
+      return createErrorOutput("Invalid API response", context);
     } catch (error: any) {
       if (error.response?.status === 401 || error.response?.status === 403) {
-        return { success: false, error: "Invalid Polygon API key" };
+        return createErrorOutput("Invalid Polygon API key", context);
       }
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
-  private async listCredentials(userId: string): Promise<DataResult> {
+  private async listCredentials(userId: string): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Polygon', category: 'data' };
     const { data, error } = await supabase
       .from("user_credentials")
       .select("id, name, created_at")
@@ -498,10 +490,10 @@ class PolygonService extends BaseDataService {
       .eq("service_type", "polygon");
 
     if (error) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error.message, context);
     }
 
-    return { success: true, data: data || [] };
+    return createSuccessOutput(data || [], context);
   }
 
   private async getTickerDetails(creds: any, input: DataInput): Promise<any> {
@@ -598,7 +590,8 @@ class PolygonService extends BaseDataService {
 class MarketService extends BaseDataService {
   protected serviceName = "market";
 
-  async execute(operation: string, input: DataInput): Promise<DataResult> {
+  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Market', category: 'data' };
     try {
       let result;
       switch (operation) {
@@ -612,9 +605,9 @@ class MarketService extends BaseDataService {
           throw createError(`Unsupported Market operation: ${operation}`, 400);
       }
 
-      return { success: true, data: result };
+      return createSuccessOutput(result, context);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 }
@@ -630,7 +623,8 @@ export class DataService {
     service: string,
     operation: string,
     input: DataInput
-  ): Promise<DataResult> {
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: service, category: 'data' };
     switch (service.toLowerCase()) {
       case "finnhub":
         return this.finnhubService.execute(operation, input);
@@ -641,15 +635,12 @@ export class DataService {
       case "polygon":
         return this.polygonService.execute(operation, input);
       default:
-        return {
-          success: false,
-          error: `Unsupported data service: ${service}`,
-        };
+        return createErrorOutput(`Unsupported data service: ${service}`, context);
     }
   }
 
   // Backwards compatibility method for MarketExecutor
-  static async getMarketData(input: DataInput): Promise<DataResult> {
+  static async getMarketData(input: DataInput): Promise<StandardNodeOutput> {
     return this.marketService.execute("get_market_data", input);
   }
 }

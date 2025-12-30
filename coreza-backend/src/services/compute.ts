@@ -63,6 +63,8 @@ import {
   isValid,
 } from "date-fns";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import type { StandardNodeOutput } from "../types/nodeOutput";
 
 export interface ComputeInput {
   value: any;
@@ -85,6 +87,8 @@ export interface ComputeResult {
   data?: any;
   error?: string;
 }
+
+const COMPUTE_CONTEXT = { nodeName: 'Compute', category: 'control-flow' };
 
 export class ComputeService {
   /**
@@ -144,7 +148,7 @@ export class ComputeService {
     return [];
   }
 
-  static compute(input: ComputeInput): ComputeResult {
+  static compute(input: ComputeInput): StandardNodeOutput {
     try {
       const {
         value,
@@ -162,10 +166,10 @@ export class ComputeService {
         // ============== STRING OPERATIONS ==============
         case "len": {
           if (Array.isArray(value)) {
-            return { success: true, data: value.length };
+            return createSuccessOutput(value.length, COMPUTE_CONTEXT);
           }
           if (typeof value === "object" && value !== null) {
-            return { success: true, data: Object.keys(value).length };
+            return createSuccessOutput(Object.keys(value).length, COMPUTE_CONTEXT);
           }
           if (typeof value === "string") {
             const looksLikeJson = /^\s*[\[{]/.test(value);
@@ -173,24 +177,24 @@ export class ComputeService {
               try {
                 const parsed = JSON.parse(value);
                 if (Array.isArray(parsed)) {
-                  return { success: true, data: parsed.length };
+                  return createSuccessOutput(parsed.length, COMPUTE_CONTEXT);
                 }
                 if (parsed && typeof parsed === "object") {
-                  return { success: true, data: Object.keys(parsed).length };
+                  return createSuccessOutput(Object.keys(parsed).length, COMPUTE_CONTEXT);
                 }
               } catch {
                 // Not valid JSON → fall through to string length
               }
             }
-            return { success: true, data: value.length };
+            return createSuccessOutput(value.length, COMPUTE_CONTEXT);
           }
-          return { success: true, data: String(value).length };
+          return createSuccessOutput(String(value).length, COMPUTE_CONTEXT);
         }
 
         case "substring": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const start = Number(arg1) || 0;
           const length =
             arg2 !== undefined && arg2 !== "" ? Number(arg2) : undefined;
@@ -198,99 +202,93 @@ export class ComputeService {
             length !== undefined
               ? validation.string.substring(start, start + length)
               : validation.string.substring(start);
-          return {
-            success: true,
-            data: result,
-          };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         case "trim": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.string.trim() };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.string.trim(), COMPUTE_CONTEXT);
         }
 
         case "upper": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.string.toUpperCase() };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.string.toUpperCase(), COMPUTE_CONTEXT);
         }
 
         case "lower": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.string.toLowerCase() };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.string.toLowerCase(), COMPUTE_CONTEXT);
         }
 
         case "replace": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const search = String(arg1 || "");
           const replacement = String(arg2 || "");
-          return {
-            success: true,
-            data: validation.string.split(search).join(replacement),
-          };
+          return createSuccessOutput(validation.string.split(search).join(replacement), COMPUTE_CONTEXT);
         }
 
         case "split": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const delimiter = arg1 !== undefined ? String(arg1) : ",";
-          return { success: true, data: validation.string.split(delimiter) };
+          return createSuccessOutput(validation.string.split(delimiter), COMPUTE_CONTEXT);
         }
 
         case "concat": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const appendStr = String(arg1 || "");
-          return { success: true, data: validation.string + appendStr };
+          return createSuccessOutput(validation.string + appendStr, COMPUTE_CONTEXT);
         }
 
         case "startsWith": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const prefix = String(arg1 || "");
-          return { success: true, data: validation.string.startsWith(prefix) };
+          return createSuccessOutput(validation.string.startsWith(prefix), COMPUTE_CONTEXT);
         }
 
         case "endsWith": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const suffix = String(arg1 || "");
-          return { success: true, data: validation.string.endsWith(suffix) };
+          return createSuccessOutput(validation.string.endsWith(suffix), COMPUTE_CONTEXT);
         }
 
         case "contains": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const substring = String(arg1 || "");
-          return { success: true, data: validation.string.includes(substring) };
+          return createSuccessOutput(validation.string.includes(substring), COMPUTE_CONTEXT);
         }
 
         case "isEmpty": {
           const validation = this.validateString(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.string.trim().length === 0 };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.string.trim().length === 0, COMPUTE_CONTEXT);
         }
 
         case "toJson": {
           if (typeof value !== "string") {
-            return { success: false, error: "Value must be a string" };
+            return createErrorOutput("Value must be a string", COMPUTE_CONTEXT);
           }
           // Try standard JSON parse first
           try {
-            return { success: true, data: JSON.parse(value) };
+            return createSuccessOutput(JSON.parse(value), COMPUTE_CONTEXT);
           } catch {
             // Fall back to key-value parsing
           }
@@ -326,97 +324,97 @@ export class ComputeService {
             data[key] = val;
           }
 
-          return { success: true, data };
+          return createSuccessOutput(data, COMPUTE_CONTEXT);
         }
 
         // ============== NUMBER OPERATIONS ==============
         case "round": {
           const num = Number(value);
           if (isNaN(num))
-            return { success: false, error: "Value must be a number" };
+            return createErrorOutput("Value must be a number", COMPUTE_CONTEXT);
           const decimals = arg1 !== undefined && arg1 !== "" ? Number(arg1) : 0;
           const factor = Math.pow(10, decimals);
-          return { success: true, data: Math.round(num * factor) / factor };
+          return createSuccessOutput(Math.round(num * factor) / factor, COMPUTE_CONTEXT);
         }
 
         case "floor": {
           const num = Number(value);
           if (isNaN(num))
-            return { success: false, error: "Value must be a number" };
-          return { success: true, data: Math.floor(num) };
+            return createErrorOutput("Value must be a number", COMPUTE_CONTEXT);
+          return createSuccessOutput(Math.floor(num), COMPUTE_CONTEXT);
         }
 
         case "ceil": {
           const num = Number(value);
           if (isNaN(num))
-            return { success: false, error: "Value must be a number" };
-          return { success: true, data: Math.ceil(num) };
+            return createErrorOutput("Value must be a number", COMPUTE_CONTEXT);
+          return createSuccessOutput(Math.ceil(num), COMPUTE_CONTEXT);
         }
 
         case "abs": {
           const num = Number(value);
           if (isNaN(num))
-            return { success: false, error: "Value must be a number" };
-          return { success: true, data: Math.abs(num) };
+            return createErrorOutput("Value must be a number", COMPUTE_CONTEXT);
+          return createSuccessOutput(Math.abs(num), COMPUTE_CONTEXT);
         }
 
         case "add": {
           const num = Number(value);
           const addend = Number(arg1);
           if (isNaN(num) || isNaN(addend))
-            return { success: false, error: "Both values must be numbers" };
-          return { success: true, data: num + addend };
+            return createErrorOutput("Both values must be numbers", COMPUTE_CONTEXT);
+          return createSuccessOutput(num + addend, COMPUTE_CONTEXT);
         }
 
         case "subtract": {
           const num = Number(value);
           const subtrahend = Number(arg1);
           if (isNaN(num) || isNaN(subtrahend))
-            return { success: false, error: "Both values must be numbers" };
-          return { success: true, data: num - subtrahend };
+            return createErrorOutput("Both values must be numbers", COMPUTE_CONTEXT);
+          return createSuccessOutput(num - subtrahend, COMPUTE_CONTEXT);
         }
 
         case "multiply": {
           const num = Number(value);
           const multiplier = Number(arg1);
           if (isNaN(num) || isNaN(multiplier))
-            return { success: false, error: "Both values must be numbers" };
-          return { success: true, data: num * multiplier };
+            return createErrorOutput("Both values must be numbers", COMPUTE_CONTEXT);
+          return createSuccessOutput(num * multiplier, COMPUTE_CONTEXT);
         }
 
         case "divide": {
           const num = Number(value);
           const divisor = Number(arg1);
           if (isNaN(num) || isNaN(divisor))
-            return { success: false, error: "Both values must be numbers" };
+            return createErrorOutput("Both values must be numbers", COMPUTE_CONTEXT);
           if (divisor === 0)
-            return { success: false, error: "Cannot divide by zero" };
-          return { success: true, data: num / divisor };
+            return createErrorOutput("Cannot divide by zero", COMPUTE_CONTEXT);
+          return createSuccessOutput(num / divisor, COMPUTE_CONTEXT);
         }
 
         case "modulo": {
           const num = Number(value);
           const divisor = Number(arg1);
           if (isNaN(num) || isNaN(divisor))
-            return { success: false, error: "Both values must be numbers" };
+            return createErrorOutput("Both values must be numbers", COMPUTE_CONTEXT);
           if (divisor === 0)
-            return { success: false, error: "Cannot modulo by zero" };
-          return { success: true, data: num % divisor };
+            return createErrorOutput("Cannot modulo by zero", COMPUTE_CONTEXT);
+          return createSuccessOutput(num % divisor, COMPUTE_CONTEXT);
         }
 
         case "toString": {
-          return { success: true, data: String(value) };
+          return createSuccessOutput(String(value), COMPUTE_CONTEXT);
         }
 
         // ============== DATETIME OPERATIONS ==============
         case "formatDate": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          const format = String(arg1 || "YYYY-MM-DD HH:mm:ss");
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          const formatStr = String(arg1 || "YYYY-MM-DD HH:mm:ss");
 
           const pad = (n: number) => n.toString().padStart(2, "0");
-          const formatted = format
+          const formatted = formatStr
             .replace("YYYY", date.getFullYear().toString())
             .replace("MM", pad(date.getMonth() + 1))
             .replace("DD", pad(date.getDate()))
@@ -424,89 +422,86 @@ export class ComputeService {
             .replace("mm", pad(date.getMinutes()))
             .replace("ss", pad(date.getSeconds()));
 
-          return { success: true, data: formatted };
+          return createSuccessOutput(formatted, COMPUTE_CONTEXT);
         }
 
         case "addDays": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
           const days = Number(arg1) || 0;
           date.setDate(date.getDate() + days);
-          return { success: true, data: date.toISOString() };
+          return createSuccessOutput(date.toISOString(), COMPUTE_CONTEXT);
         }
 
         case "subtractDays": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
           const days = Number(arg1) || 0;
           date.setDate(date.getDate() - days);
-          return { success: true, data: date.toISOString() };
+          return createSuccessOutput(date.toISOString(), COMPUTE_CONTEXT);
         }
 
         case "getYear": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getFullYear() };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getFullYear(), COMPUTE_CONTEXT);
         }
 
         case "getMonth": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getMonth() + 1 };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getMonth() + 1, COMPUTE_CONTEXT);
         }
 
         case "getDay": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getDate() };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getDate(), COMPUTE_CONTEXT);
         }
 
         case "getHour": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getHours() };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getHours(), COMPUTE_CONTEXT);
         }
 
         case "getMinute": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getMinutes() };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getMinutes(), COMPUTE_CONTEXT);
         }
 
         case "toTimestamp": {
           const date = new Date(value);
           if (isNaN(date.getTime()))
-            return { success: false, error: "Invalid date value" };
-          return { success: true, data: date.getTime() };
+            return createErrorOutput("Invalid date value", COMPUTE_CONTEXT);
+          return createSuccessOutput(date.getTime(), COMPUTE_CONTEXT);
         }
 
         // ============== ADVANCED DATE OPERATIONS (from DateService) ==============
         case "now": {
           const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
-          const timezone = input.timezone;
-          if (timezone) {
-            return {
-              success: true,
-              data: formatInTimeZone(new Date(), timezone, formatStr),
-            };
+          const tz = input.timezone;
+          if (tz) {
+            return createSuccessOutput(formatInTimeZone(new Date(), tz, formatStr), COMPUTE_CONTEXT);
           }
-          return { success: true, data: format(new Date(), formatStr) };
+          return createSuccessOutput(format(new Date(), formatStr), COMPUTE_CONTEXT);
         }
 
         case "addTime": {
           const date = this.parseDate(value);
           const amount = Number(arg1) || 0;
-          const unit = input.unit || "days";
+          const unitValue = input.unit || "days";
 
           let result: Date;
-          switch (unit) {
+          switch (unitValue) {
             case "second":
               result = addSeconds(date, amount);
               break;
@@ -529,19 +524,19 @@ export class ComputeService {
               result = addYears(date, amount);
               break;
             default:
-              return { success: false, error: `Invalid unit: ${unit}` };
+              return createErrorOutput(`Invalid unit: ${unitValue}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: result };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         case "subtractTime": {
           const date = this.parseDate(value);
           const amount = Number(arg1) || 0;
-          const unit = input.unit || "days";
+          const unitValue = input.unit || "days";
 
           let result: Date;
-          switch (unit) {
+          switch (unitValue) {
             case "second":
               result = subSeconds(date, amount);
               break;
@@ -564,19 +559,19 @@ export class ComputeService {
               result = subYears(date, amount);
               break;
             default:
-              return { success: false, error: `Invalid unit: ${unit}` };
+              return createErrorOutput(`Invalid unit: ${unitValue}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: result };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         case "difference": {
           const date1 = this.parseDate(value);
           const date2 = this.parseDate(input.date2);
-          const unit = input.unit;
+          const unitValue = input.unit;
 
           let result: number;
-          switch (unit) {
+          switch (unitValue) {
             case "second":
               result = differenceInSeconds(date1, date2);
               break;
@@ -599,18 +594,18 @@ export class ComputeService {
               result = differenceInYears(date1, date2);
               break;
             default:
-              return { success: false, error: `Invalid unit: ${unit}` };
+              return createErrorOutput(`Invalid unit: ${unitValue}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: Math.abs(result) };
+          return createSuccessOutput(Math.abs(result), COMPUTE_CONTEXT);
         }
 
         case "startOf": {
           const date = this.parseDate(value);
-          const unit = input.unit || "day";
+          const unitValue = input.unit || "day";
 
           let result: Date;
-          switch (unit) {
+          switch (unitValue) {
             case "day":
               result = startOfDay(date);
               break;
@@ -624,18 +619,18 @@ export class ComputeService {
               result = startOfYear(date);
               break;
             default:
-              return { success: false, error: `Invalid unit: ${unit}` };
+              return createErrorOutput(`Invalid unit: ${unitValue}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: result };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         case "endOf": {
           const date = this.parseDate(value, input.inputFormat);
-          const unit = input.unit || "day";
+          const unitValue = input.unit || "day";
 
           let result: Date;
-          switch (unit) {
+          switch (unitValue) {
             case "day":
               result = endOfDay(date);
               break;
@@ -649,44 +644,41 @@ export class ComputeService {
               result = endOfYear(date);
               break;
             default:
-              return { success: false, error: `Invalid unit: ${unit}` };
+              return createErrorOutput(`Invalid unit: ${unitValue}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: result };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         case "isBefore": {
           const date1 = this.parseDate(value, input.inputFormat);
           const date2 = this.parseDate(input.date2);
-          return { success: true, data: isBefore(date1, date2) };
+          return createSuccessOutput(isBefore(date1, date2), COMPUTE_CONTEXT);
         }
 
         case "isAfter": {
           const date1 = this.parseDate(value, input.inputFormat);
           const date2 = this.parseDate(input.date2);
-          return { success: true, data: isAfter(date1, date2) };
+          return createSuccessOutput(isAfter(date1, date2), COMPUTE_CONTEXT);
         }
 
         case "isSameDay": {
           const date1 = this.parseDate(value, input.inputFormat);
           const date2 = this.parseDate(input.date2);
-          return { success: true, data: isSameDay(date1, date2) };
+          return createSuccessOutput(isSameDay(date1, date2), COMPUTE_CONTEXT);
         }
 
         case "isWeekend": {
           const date = this.parseDate(value, input.inputFormat);
-          return { success: true, data: isWeekend(date) };
+          return createSuccessOutput(isWeekend(date), COMPUTE_CONTEXT);
         }
 
         case "isDayOfWeek": {
           const date = this.parseDate(value, input.inputFormat);
-          const targetDay = parseInt(input.targetDay ?? "1", 10);
+          const targetDayNum = parseInt(input.targetDay ?? "1", 10);
 
-          if (Number.isNaN(targetDay) || targetDay < 0 || targetDay > 6) {
-            return {
-              success: false,
-              error: `Invalid target day: ${input.targetDay}`,
-            };
+          if (Number.isNaN(targetDayNum) || targetDayNum < 0 || targetDayNum > 6) {
+            return createErrorOutput(`Invalid target day: ${input.targetDay}`, COMPUTE_CONTEXT);
           }
 
           const actualDay = getDay(date);
@@ -700,23 +692,20 @@ export class ComputeService {
             "Saturday",
           ];
 
-          return {
-            success: true,
-            data: {
-              isMatch: actualDay === targetDay,
-              dayName: dayNames[actualDay],
-              targetDayName: dayNames[targetDay],
-            },
-          };
+          return createSuccessOutput({
+            isMatch: actualDay === targetDayNum,
+            dayName: dayNames[actualDay],
+            targetDayName: dayNames[targetDayNum],
+          }, COMPUTE_CONTEXT);
         }
 
         case "convertTimezone": {
           const date = this.parseDate(value, input.inputFormat);
-          const timezone = input.timezone || "UTC";
+          const tz = input.timezone || "UTC";
           const formatStr = arg1 || "yyyy-MM-dd HH:mm:ss";
 
-          const zonedDate = toZonedTime(date, timezone);
-          return { success: true, data: format(zonedDate, formatStr) };
+          const zonedDate = toZonedTime(date, tz);
+          return createSuccessOutput(format(zonedDate, formatStr), COMPUTE_CONTEXT);
         }
 
         case "extract": {
@@ -744,95 +733,89 @@ export class ComputeService {
               result = getSeconds(date);
               break;
             default:
-              return {
-                success: false,
-                error: `Invalid component: ${component}`,
-              };
+              return createErrorOutput(`Invalid component: ${component}`, COMPUTE_CONTEXT);
           }
 
-          return { success: true, data: result };
+          return createSuccessOutput(result, COMPUTE_CONTEXT);
         }
 
         // ============== ARRAY OPERATIONS ==============
         case "arrayLength": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.array.length };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.array.length, COMPUTE_CONTEXT);
         }
 
         case "push": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const arr = [...validation.array];
           const item = this.parseValue(arg1);
           arr.push(item);
-          return { success: true, data: arr };
+          return createSuccessOutput(arr, COMPUTE_CONTEXT);
         }
 
         case "pop": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const arr = [...validation.array];
           const popped = arr.pop();
-          return { success: true, data: { array: arr, popped } };
+          return createSuccessOutput({ array: arr, popped }, COMPUTE_CONTEXT);
         }
 
         case "shift": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const arr = [...validation.array];
           const shifted = arr.shift();
-          return { success: true, data: { array: arr, shifted } };
+          return createSuccessOutput({ array: arr, shifted }, COMPUTE_CONTEXT);
         }
 
         case "unshift": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const arr = [...validation.array];
           const item = this.parseValue(arg1);
           arr.unshift(item);
-          return { success: true, data: arr };
+          return createSuccessOutput(arr, COMPUTE_CONTEXT);
         }
 
         case "arrayConcat": {
           const validation1 = this.validateArray(value);
           if (!validation1.valid)
-            return { success: false, error: validation1.error };
+            return createErrorOutput(validation1.error, COMPUTE_CONTEXT);
           const validation2 = this.validateArray(arg1);
           if (!validation2.valid)
-            return { success: false, error: "Second value must be an array" };
-          return {
-            success: true,
-            data: [...validation1.array, ...validation2.array],
-          };
+            return createErrorOutput("Second value must be an array", COMPUTE_CONTEXT);
+          return createSuccessOutput([...validation1.array, ...validation2.array], COMPUTE_CONTEXT);
         }
 
         case "slice": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const start = arg1 !== undefined && arg1 !== "" ? Number(arg1) : 0;
           const end =
             arg2 !== undefined && arg2 !== "" ? Number(arg2) : undefined;
-          return { success: true, data: validation.array.slice(start, end) };
+          return createSuccessOutput(validation.array.slice(start, end), COMPUTE_CONTEXT);
         }
 
         case "reverse": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: [...validation.array].reverse() };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput([...validation.array].reverse(), COMPUTE_CONTEXT);
         }
 
         case "sort": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const arr = [...validation.array];
           const order = String(arg1 || "asc").toLowerCase();
           arr.sort((a, b) => {
@@ -845,59 +828,54 @@ export class ComputeService {
               ? strB.localeCompare(strA)
               : strA.localeCompare(strB);
           });
-          return { success: true, data: arr };
+          return createSuccessOutput(arr, COMPUTE_CONTEXT);
         }
 
         case "unique": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return {
-            success: true,
-            data: [
-              ...new Set(
-                validation.array.map((item) =>
-                  typeof item === "object" ? JSON.stringify(item) : item
-                )
-              ),
-            ].map((item) => {
-              try {
-                return JSON.parse(item as string);
-              } catch {
-                return item;
-              }
-            }),
-          };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          const uniqueArr = [
+            ...new Set(
+              validation.array.map((item) =>
+                typeof item === "object" ? JSON.stringify(item) : item
+              )
+            ),
+          ].map((item) => {
+            try {
+              return JSON.parse(item as string);
+            } catch {
+              return item;
+            }
+          });
+          return createSuccessOutput(uniqueArr, COMPUTE_CONTEXT);
         }
 
         case "flatten": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.array.flat(Infinity) };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.array.flat(Infinity), COMPUTE_CONTEXT);
         }
 
         case "first": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.array[0] ?? null };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.array[0] ?? null, COMPUTE_CONTEXT);
         }
 
         case "last": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return {
-            success: true,
-            data: validation.array[validation.array.length - 1] ?? null,
-          };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.array[validation.array.length - 1] ?? null, COMPUTE_CONTEXT);
         }
 
         case "arrayContains": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const item = this.parseValue(arg1);
           const found = validation.array.some((el) => {
             if (typeof el === "object" && typeof item === "object") {
@@ -905,206 +883,189 @@ export class ComputeService {
             }
             return el === item;
           });
-          return { success: true, data: found };
+          return createSuccessOutput(found, COMPUTE_CONTEXT);
         }
 
         case "arrayIsEmpty": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: validation.array.length === 0 };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(validation.array.length === 0, COMPUTE_CONTEXT);
         }
 
         case "join": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const delimiter = arg1 !== undefined ? String(arg1) : ",";
-          return { success: true, data: validation.array.join(delimiter) };
+          return createSuccessOutput(validation.array.join(delimiter), COMPUTE_CONTEXT);
         }
 
         // ============== STATISTICAL OPERATIONS (from MathService) ==============
         case "avg": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return {
-              success: false,
-              error: "Cannot calculate average of empty array",
-            };
-          return {
-            success: true,
-            data: values.reduce((sum, v) => sum + v, 0) / values.length,
-          };
+            return createErrorOutput("Cannot calculate average of empty array", COMPUTE_CONTEXT);
+          return createSuccessOutput(values.reduce((sum, v) => sum + v, 0) / values.length, COMPUTE_CONTEXT);
         }
 
         case "sum": {
           const values = this.parseToNumericArray(value);
-          return { success: true, data: values.reduce((sum, v) => sum + v, 0) };
+          return createSuccessOutput(values.reduce((sum, v) => sum + v, 0), COMPUTE_CONTEXT);
         }
 
         case "min": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return { success: false, error: "Cannot find min of empty array" };
-          return { success: true, data: Math.min(...values) };
+            return createErrorOutput("Cannot find min of empty array", COMPUTE_CONTEXT);
+          return createSuccessOutput(Math.min(...values), COMPUTE_CONTEXT);
         }
 
         case "max": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return { success: false, error: "Cannot find max of empty array" };
-          return { success: true, data: Math.max(...values) };
+            return createErrorOutput("Cannot find max of empty array", COMPUTE_CONTEXT);
+          return createSuccessOutput(Math.max(...values), COMPUTE_CONTEXT);
         }
 
         case "count": {
           const values = this.parseToNumericArray(value);
-          return { success: true, data: values.length };
+          return createSuccessOutput(values.length, COMPUTE_CONTEXT);
         }
 
         case "median": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return {
-              success: false,
-              error: "Cannot calculate median of empty array",
-            };
+            return createErrorOutput("Cannot calculate median of empty array", COMPUTE_CONTEXT);
           const sorted = [...values].sort((a, b) => a - b);
           const mid = Math.floor(sorted.length / 2);
-          return {
-            success: true,
-            data:
-              sorted.length % 2 === 0
-                ? (sorted[mid - 1] + sorted[mid]) / 2
-                : sorted[mid],
-          };
+          const medianValue =
+            sorted.length % 2 === 0
+              ? (sorted[mid - 1] + sorted[mid]) / 2
+              : sorted[mid];
+          return createSuccessOutput(medianValue, COMPUTE_CONTEXT);
         }
 
         case "std": {
           const values = this.parseToNumericArray(value);
           if (values.length === 0)
-            return {
-              success: false,
-              error: "Cannot calculate std of empty array",
-            };
+            return createErrorOutput("Cannot calculate std of empty array", COMPUTE_CONTEXT);
           const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
           const squaredDiffs = values.map((v) => Math.pow(v - avg, 2));
           const variance =
             squaredDiffs.reduce((sum, v) => sum + v, 0) / values.length;
-          return { success: true, data: Math.sqrt(variance) };
+          return createSuccessOutput(Math.sqrt(variance), COMPUTE_CONTEXT);
         }
 
         case "find": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const propertyName = String(arg1 || "");
           const matchValue = this.parseValue(arg2);
-          const operator = String(input.filterOperator || "===");
+          const operatorValue = String(input.filterOperator || "===");
           const found = validation.array.find((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return this.compareValues(itemValue, operator, matchValue);
+              return this.compareValues(itemValue, operatorValue, matchValue);
             }
             return false;
           });
-          return { success: true, data: found ?? null };
+          return createSuccessOutput(found ?? null, COMPUTE_CONTEXT);
         }
 
         case "filter": {
           const validation = this.validateArray(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const propertyName = String(arg1 || "");
           const matchValue = this.parseValue(arg2);
-          const operator = String(input.filterOperator || "===");
+          const operatorValue = String(input.filterOperator || "===");
           const filtered = validation.array.filter((item) => {
             if (item && typeof item === "object") {
               const itemValue = item[propertyName];
-              return this.compareValues(itemValue, operator, matchValue);
+              return this.compareValues(itemValue, operatorValue, matchValue);
             }
             return false;
           });
-          return { success: true, data: filtered };
+          return createSuccessOutput(filtered, COMPUTE_CONTEXT);
         }
 
         // ============== OBJECT OPERATIONS ==============
         case "keys": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: Object.keys(validation.object) };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(Object.keys(validation.object), COMPUTE_CONTEXT);
         }
 
         case "values": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: Object.values(validation.object) };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(Object.values(validation.object), COMPUTE_CONTEXT);
         }
 
         case "entries": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return { success: true, data: Object.entries(validation.object) };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(Object.entries(validation.object), COMPUTE_CONTEXT);
         }
 
         case "getProperty": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const path = String(arg1 || "");
           const data = this.getNestedValue(validation.object, path);
-          return { success: true, data };
+          return createSuccessOutput(data, COMPUTE_CONTEXT);
         }
 
         case "setProperty": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const obj = { ...validation.object };
           const path = String(arg1 || "");
           const newValue = this.parseValue(arg2);
           this.setNestedValue(obj, path, newValue);
-          return { success: true, data: obj };
+          return createSuccessOutput(obj, COMPUTE_CONTEXT);
         }
 
         case "deleteProperty": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const obj = { ...validation.object };
           const path = String(arg1 || "");
           this.deleteNestedValue(obj, path);
-          return { success: true, data: obj };
+          return createSuccessOutput(obj, COMPUTE_CONTEXT);
         }
 
         case "hasProperty": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const path = String(arg1 || "");
           const data = this.getNestedValue(validation.object, path);
-          return { success: true, data: data !== undefined };
+          return createSuccessOutput(data !== undefined, COMPUTE_CONTEXT);
         }
 
         case "merge": {
           const validation1 = this.validateObject(value);
           if (!validation1.valid)
-            return { success: false, error: validation1.error };
+            return createErrorOutput(validation1.error, COMPUTE_CONTEXT);
           const validation2 = this.validateObject(arg1);
           if (!validation2.valid)
-            return { success: false, error: "Second value must be an object" };
-          return {
-            success: true,
-            data: { ...validation1.object, ...validation2.object },
-          };
+            return createErrorOutput("Second value must be an object", COMPUTE_CONTEXT);
+          return createSuccessOutput({ ...validation1.object, ...validation2.object }, COMPUTE_CONTEXT);
         }
 
         case "pick": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const keys = String(arg1 || "")
             .split(",")
             .map((k) => k.trim())
@@ -1115,13 +1076,13 @@ export class ComputeService {
               data[key] = validation.object[key];
             }
           }
-          return { success: true, data };
+          return createSuccessOutput(data, COMPUTE_CONTEXT);
         }
 
         case "omit": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
           const obj = { ...validation.object };
           const keys = String(arg1 || "")
             .split(",")
@@ -1130,24 +1091,21 @@ export class ComputeService {
           for (const key of keys) {
             delete obj[key];
           }
-          return { success: true, data: obj };
+          return createSuccessOutput(obj, COMPUTE_CONTEXT);
         }
 
         case "objectIsEmpty": {
           const validation = this.validateObject(value);
           if (!validation.valid)
-            return { success: false, error: validation.error };
-          return {
-            success: true,
-            data: Object.keys(validation.object).length === 0,
-          };
+            return createErrorOutput(validation.error, COMPUTE_CONTEXT);
+          return createSuccessOutput(Object.keys(validation.object).length === 0, COMPUTE_CONTEXT);
         }
 
         default:
-          return { success: false, error: `Unsupported operator: ${operator}` };
+          return createErrorOutput(`Unsupported operator: ${operator}`, COMPUTE_CONTEXT);
       }
     } catch (err: any) {
-      return { success: false, error: err.message };
+      return createErrorOutput(err, COMPUTE_CONTEXT);
     }
   }
 

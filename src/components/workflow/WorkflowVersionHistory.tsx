@@ -71,6 +71,14 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
     }
   }, [workflowId, toast]);
 
+  // Fetch versions count on mount and when sheet opens
+  useEffect(() => {
+    if (workflowId) {
+      fetchVersions();
+    }
+  }, [workflowId]);
+
+  // Refresh when sheet opens
   useEffect(() => {
     if (open && workflowId) {
       fetchVersions();
@@ -119,9 +127,20 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={disabled} className="h-8 px-2">
-          <History className="h-4 w-4 mr-1" />
-          History
+        <Button 
+          variant="outline" 
+          size="sm" 
+          disabled={disabled} 
+          className="h-9 px-3 gap-2 border-dashed hover:border-solid hover:bg-accent/50 transition-all"
+        >
+          <RotateCcw className="h-4 w-4" />
+          <span className="hidden sm:inline">Restore from Version</span>
+          <span className="sm:hidden">Restore</span>
+          {versions.length > 0 && (
+            <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-medium">
+              {versions.length}
+            </Badge>
+          )}
         </Button>
       </SheetTrigger>
       <SheetContent className="w-[400px] sm:w-[540px]">

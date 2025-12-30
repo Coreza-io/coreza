@@ -385,6 +385,24 @@ export class WorkflowEngine {
     }
   }
 
+  /**
+   * Check if the workflow has been cancelled via Redis flag.
+   * This allows long-running operations to detect cancellation even if
+   * the abort signal hasn't propagated yet.
+   */
+  async checkCancellation(): Promise<boolean> {
+    if (this.abortSignal?.aborted) return true;
+    
+    try {
+      const { getRedisCache } = await import('../config/redis');
+      const redis = getRedisCache();
+      const isCancelled = await redis.get(`workflow:${this.workflowId}:cancelled`);
+      return !!isCancelled;
+    } catch {
+      return false;
+    }
+  }
+
   private async executeOnce(item: QueueItem): Promise<void> {
     const { nodeId, input, meta } = item;
     const node = this.nodes.find((n) => n.id === nodeId);
@@ -414,6 +432,12 @@ export class WorkflowEngine {
     const startTime = Date.now();
 
     try {
+      // Check if workflow was cancelled before executing this node
+      const wasCancelled = await this.checkCancellation();
+      if (wasCancelled) {
+        throw new Error('Workflow cancelled by user');
+      }
+
       // Create execution context with all necessary information
       const executionContext = {
         user_id: this.userId,
@@ -430,6 +454,10 @@ export class WorkflowEngine {
         getAllNodeResults: () => this.store.getAllResults(),
         // DataContext for execution-scoped RAM storage (shared by all tools)
         dataContext: this.dataContext,
+        // Abort signal for cancellation detection
+        abortSignal: this.abortSignal,
+        // Function for executors to check cancellation
+        checkCancellation: this.checkCancellation.bind(this),
       };
 
       const result = await this.executeNode(node, input, executionContext);

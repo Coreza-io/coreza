@@ -794,35 +794,57 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   /**
    * Cancel all queued/running jobs for a workflow.
+   * - Sets Redis cancellation flag for workflow (checked by running jobs)
    * - Removes waiting/delayed jobs immediately
    * - Uses native BullMQ cancelJob() for active jobs
+   * - Also cancels child jobs from parallel loops
    * - Returns count of jobs affected
    */
   async cancelWorkflowJobs(workflowId: string): Promise<number> {
     console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
     
     try {
+      // Set cancellation flag in Redis (TTL 10 minutes) - running jobs will check this
+      await redis.set(`workflow:${workflowId}:cancelled`, '1', 'EX', 600);
+      console.log(`  ↳ Set cancellation flag for workflow ${workflowId}`);
+      
       // Get all waiting, delayed, and active jobs
       const allJobs = await workflowQueue.getJobs(['waiting', 'delayed', 'active']);
       
       let cancelledCount = 0;
       for (const job of allJobs) {
-        if (job.data.workflowId === workflowId) {
+        // Cancel if job belongs to this workflow OR is a child job (parallel loop item, aggregator, continuation)
+        const isWorkflowJob = job.data.workflowId === workflowId;
+        
+        if (isWorkflowJob) {
           try {
             const state = await job.getState();
             if (state === 'waiting' || state === 'delayed') {
               // Can directly remove these jobs
               await job.remove();
               cancelledCount++;
-              console.log(`  ↳ Removed ${state} job ${job.id}`);
+              console.log(`  ↳ Removed ${state} job ${job.id} (${job.data.trigger || 'normal'})`);
             } else if (state === 'active') {
               // Use BullMQ's native job cancellation - sends abort signal to worker
               const cancelled = await workflowWorker.cancelJob(job.id!, 'Workflow deactivated by user');
               if (cancelled) {
                 cancelledCount++;
-                console.log(`  ↳ Cancelled active job ${job.id}`);
+                console.log(`  ↳ Cancelled active job ${job.id} (${job.data.trigger || 'normal'})`);
               } else {
                 console.log(`  ↳ Could not cancel active job ${job.id} (may have already completed)`);
+              }
+              
+              // Also update the run status immediately in DB for active jobs
+              if (job.data.runId) {
+                await supabase
+                  .from('workflow_runs')
+                  .update({
+                    status: 'cancelled',
+                    completed_at: new Date().toISOString(),
+                    error_message: 'Workflow deactivated by user'
+                  })
+                  .eq('id', job.data.runId)
+                  .in('status', ['running', 'queued']);
               }
             }
           } catch (err) {

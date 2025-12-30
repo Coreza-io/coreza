@@ -56,6 +56,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   if (!isObjectLike(data)) return null;
 
   const isArray = Array.isArray(data);
+  const totalLength = isArray ? data.length : 0;
 
   const entriesToShow: Entry[] = useMemo(() => {
     if (Array.isArray(data)) {
@@ -66,6 +67,8 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
     }
     return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({ key: k, value: v }));
   }, [data, maxItems]);
+
+  const remainingCount = isArray ? totalLength - entriesToShow.length : 0;
 
   return (
     <div className="flex flex-col gap-2 mb-2">
@@ -125,6 +128,13 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
           </div>
         );
       })}
+
+      {/* Show remaining items indicator for arrays */}
+      {isArray && remainingCount > 0 && (
+        <div className="ml-2 mt-1 text-xs text-muted-foreground italic">
+          ... and {remainingCount.toLocaleString()} more item{remainingCount !== 1 ? 's' : ''}
+        </div>
+      )}
     </div>
   );
 };

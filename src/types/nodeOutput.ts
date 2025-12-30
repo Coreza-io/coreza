@@ -39,6 +39,15 @@ export interface NodeOutputMeta {
 }
 
 /**
+ * Error details for standardized error responses
+ */
+export interface StandardErrorDetails {
+  code?: string;
+  status?: number;
+  response?: unknown;
+}
+
+/**
  * Unified node output format for both frontend and backend
  * All node executions should return this format
  */
@@ -51,6 +60,8 @@ export interface StandardNodeOutput<T = any> {
   data?: T;
   /** Error message if execution failed */
   error?: string;
+  /** Error details */
+  details?: StandardErrorDetails;
   /** Execution metadata */
   meta?: NodeOutputMeta;
 }

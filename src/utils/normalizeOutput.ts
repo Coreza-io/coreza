@@ -19,6 +19,7 @@ import {
   NodeExecutionStatus,
   NormalizeContext,
   isStandardNodeOutput,
+  StandardErrorDetails,
 } from '@/types/nodeOutput';
 
 /**
@@ -145,17 +146,54 @@ export function createRunningOutput(context: NormalizeContext = {}): StandardNod
   };
 }
 
+interface NormalizedError {
+  message: string;
+  code?: string;
+  status?: number;
+  response?: unknown;
+}
+
+function normalizeError(err: unknown): NormalizedError {
+  // Handle fetch/axios-like error responses
+  if (err && typeof err === 'object' && 'response' in err) {
+    const axiosLike = err as { response?: { data?: { message?: string }; status?: number }; message?: string; code?: string };
+    return {
+      message: axiosLike.response?.data?.message || axiosLike.message || 'Request failed',
+      code: axiosLike.code,
+      status: axiosLike.response?.status,
+      response: axiosLike.response?.data,
+    };
+  }
+
+  if (err instanceof Error) {
+    return { message: err.message };
+  }
+
+  if (typeof err === 'string') {
+    return { message: err };
+  }
+
+  return { message: String(err) };
+}
+
 /**
  * Create an error output
  */
 export function createErrorOutput(
-  error: string | Error,
+  error: unknown,
   context: NormalizeContext = {}
 ): StandardNodeOutput {
+  const normalized = normalizeError(error);
+
   return {
     success: false,
     status: 'error',
-    error: error instanceof Error ? error.message : error,
+    error: normalized.message,
+    details: {
+      code: normalized.code,
+      status: normalized.status,
+      response: normalized.response,
+    },
     meta: {
       timestamp: new Date().toISOString(),
       executionTime: context.startTime ? Date.now() - context.startTime : undefined,

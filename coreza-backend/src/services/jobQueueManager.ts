@@ -423,7 +423,7 @@ const workflowWorker = new Worker(
       
       // Mark run as cancelled
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'failed', { errorMessage: 'Workflow deactivated by user' });
+        await updateRunStatusInRedis(runId, 'cancelled', { errorMessage: 'Workflow deactivated by user' });
       } else {
         await supabase
           .from("workflow_runs")

@@ -127,21 +127,13 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <button 
           disabled={disabled || !workflowId} 
-          className="h-7 px-3 text-xs gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all rounded-md"
+          className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 h-7 text-xs font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-muted-foreground hover:text-foreground hover:bg-muted/50 gap-1.5"
         >
           <RotateCcw className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Restore from Version</span>
-          <span className="sm:hidden">Restore</span>
-          {versions.length > 0 && (
-            <span className="ml-0.5 bg-muted px-1.5 py-0.5 rounded text-[10px]">
-              {versions.length}
-            </span>
-          )}
-        </Button>
+          Restore from Version
+        </button>
       </SheetTrigger>
       <SheetContent className="w-[400px] sm:w-[540px]">
         <SheetHeader>

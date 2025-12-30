@@ -56,6 +56,10 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       edges?: WorkflowEdge[];
       /** Get all node results accumulated so far (for parent context sharing) */
       getAllNodeResults?: () => Record<string, any>;
+      /** Abort signal for cancellation detection */
+      abortSignal?: AbortSignal;
+      /** Check if workflow was cancelled via Redis flag */
+      checkCancellation?: () => Promise<boolean>;
     }
   ): Promise<NodeExecutionOutput> {
     // Items come either from params or upstream input
@@ -153,6 +157,20 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
     
     if (aggregate && !aggregation) aggregation = [];
     if (continueOnError && !errors) errors = [];
+
+    // Check for cancellation before processing batch
+    if (context.abortSignal?.aborted) {
+      console.log(`🛑 Loop ${node.id}: Abort signal detected, stopping`);
+      return { output: [], control: { cancelled: true } };
+    }
+    
+    if (context.checkCancellation) {
+      const cancelled = await context.checkCancellation();
+      if (cancelled) {
+        console.log(`🛑 Loop ${node.id}: Workflow cancelled, stopping sequential processing`);
+        return { output: [], control: { cancelled: true } };
+      }
+    }
 
     const batch = items.slice(startIndex, startIndex + batchSize);
     startIndex += batch.length;

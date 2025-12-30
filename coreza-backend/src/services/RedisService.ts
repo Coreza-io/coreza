@@ -16,8 +16,9 @@
 
 import Redis from "ioredis";
 import logger from "../utils/logger";
-import { NodeResult } from "../nodes/types";
 import CredentialManager from "../utils/credentialManager";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import type { StandardNodeOutput } from "../types/nodeOutput";
 
 // Cache for user Redis connections
 const userRedisConnections = new Map<string, Redis>();
@@ -54,6 +55,8 @@ interface RedisOperationParams {
   credentialId: string;
   workflowId?: string;
 }
+
+const REDIS_CONTEXT = { nodeName: 'Redis', category: 'data' };
 
 // Helper to get or create user's Redis connection
 async function getUserRedis(
@@ -143,7 +146,7 @@ export class RedisService {
     }
   }
 
-  static async execute(params: RedisOperationParams): Promise<NodeResult> {
+  static async execute(params: RedisOperationParams): Promise<StandardNodeOutput> {
     try {
       const redis = await getUserRedis(params.userId, params.credentialId);
       const {
@@ -172,10 +175,7 @@ export class RedisService {
           if (actualKeyType === "hash") {
             const { hashField } = params;
             if (!hashField) {
-              return {
-                success: false,
-                error: "Hash field is required for hash type",
-              };
+              return createErrorOutput("Hash field is required for hash type", REDIS_CONTEXT);
             }
             const serialized =
               typeof value === "object" ? JSON.stringify(value) : String(value);
@@ -187,10 +187,7 @@ export class RedisService {
           } else if (actualKeyType === "sets") {
             const { setMember } = params;
             if (!setMember) {
-              return {
-                success: false,
-                error: "Set member is required for sets type",
-              };
+              return createErrorOutput("Set member is required for sets type", REDIS_CONTEXT);
             }
             await redis.sadd(key, setMember);
           } else {
@@ -202,12 +199,11 @@ export class RedisService {
           if (ttl && ttl > 0) {
             await redis.expire(key, ttl);
           }
-          return {
-            success: true,
+          return createSuccessOutput({
             message: "Value set successfully",
             key,
             keyType: actualKeyType,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "get": {
@@ -219,31 +215,17 @@ export class RedisService {
             if (hashField) {
               const result = await redis.hget(key, hashField);
               if (!result) {
-                return {
-                  success: false,
-                  error: "Hash field not found",
-                  key,
-                  hashField,
-                };
+                return createErrorOutput("Hash field not found", REDIS_CONTEXT);
               }
               try {
-                return {
-                  success: true,
-                  value: JSON.parse(result),
-                  key,
-                  hashField,
-                };
+                return createSuccessOutput({ value: JSON.parse(result), key, hashField }, REDIS_CONTEXT);
               } catch {
-                return { success: true, value: result, key, hashField };
+                return createSuccessOutput({ value: result, key, hashField }, REDIS_CONTEXT);
               }
             } else {
               const result = await redis.hgetall(key);
               if (!result || Object.keys(result).length === 0) {
-                return {
-                  success: false,
-                  error: "Hash not found or empty",
-                  key,
-                };
+                return createErrorOutput("Hash not found or empty", REDIS_CONTEXT);
               }
               const parsed: Record<string, any> = {};
               for (const [k, v] of Object.entries(result)) {
@@ -253,7 +235,7 @@ export class RedisService {
                   parsed[k] = v;
                 }
               }
-              return { success: true, value: parsed, key };
+              return createSuccessOutput({ value: parsed, key }, REDIS_CONTEXT);
             }
           } else if (actualKeyType === "list") {
             const results = await redis.lrange(key, 0, -1);
@@ -264,24 +246,19 @@ export class RedisService {
                 return item;
               }
             });
-            return { success: true, values: parsed, count: parsed.length, key };
+            return createSuccessOutput({ values: parsed, count: parsed.length, key }, REDIS_CONTEXT);
           } else if (actualKeyType === "set") {
             const members = await redis.smembers(key);
-            return {
-              success: true,
-              values: members,
-              count: members.length,
-              key,
-            };
+            return createSuccessOutput({ values: members, count: members.length, key }, REDIS_CONTEXT);
           } else {
             const result = await redis.get(key);
             if (!result) {
-              return { success: false, error: "Key not found", key };
+              return createErrorOutput("Key not found", REDIS_CONTEXT);
             }
             try {
-              return { success: true, value: JSON.parse(result), key };
+              return createSuccessOutput({ value: JSON.parse(result), key }, REDIS_CONTEXT);
             } catch {
-              return { success: true, value: result, key };
+              return createSuccessOutput({ value: result, key }, REDIS_CONTEXT);
             }
           }
         }
@@ -294,39 +271,34 @@ export class RedisService {
             const { hashField } = params;
             if (hashField) {
               const deleted = await redis.hdel(key, hashField);
-              return {
-                success: deleted > 0,
-                message:
-                  deleted > 0 ? "Hash field deleted" : "Hash field not found",
+              return createSuccessOutput({
+                message: deleted > 0 ? "Hash field deleted" : "Hash field not found",
                 key,
                 hashField,
-              };
+              }, REDIS_CONTEXT);
             }
           } else if (actualKeyType === "sets") {
             const { setMember } = params;
             if (setMember) {
               const deleted = await redis.srem(key, setMember);
-              return {
-                success: deleted > 0,
-                message:
-                  deleted > 0 ? "Set member deleted" : "Set member not found",
+              return createSuccessOutput({
+                message: deleted > 0 ? "Set member deleted" : "Set member not found",
                 key,
                 setMember,
-              };
+              }, REDIS_CONTEXT);
             }
           }
 
           const deleted = await redis.del(key);
-          return {
-            success: deleted > 0,
+          return createSuccessOutput({
             message: deleted > 0 ? "Key deleted" : "Key not found",
             key,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "increment": {
           const newValue = await redis.incr(key);
-          return { success: true, value: newValue, key };
+          return createSuccessOutput({ value: newValue, key }, REDIS_CONTEXT);
         }
 
         case "info": {
@@ -339,21 +311,21 @@ export class RedisService {
               currentSection = line.substring(2).trim();
               sections[currentSection] = {};
             } else if (line.includes(":")) {
-              const [key, value] = line.split(":");
+              const [k, v] = line.split(":");
               if (!sections[currentSection]) sections[currentSection] = {};
-              sections[currentSection][key] = isNaN(Number(value))
-                ? value
-                : Number(value);
+              sections[currentSection][k] = isNaN(Number(v))
+                ? v
+                : Number(v);
             }
           });
 
-          return { success: true, info: sections };
+          return createSuccessOutput({ info: sections }, REDIS_CONTEXT);
         }
 
         case "keys": {
           const { pattern = "*" } = params;
           const keys = await redis.keys(pattern);
-          return { success: true, keys, count: keys.length, pattern };
+          return createSuccessOutput({ keys, count: keys.length, pattern }, REDIS_CONTEXT);
         }
 
         case "pop": {
@@ -364,39 +336,31 @@ export class RedisService {
               : await redis.rpop(key);
 
           if (!result) {
-            return {
-              success: false,
-              error: "List is empty or key not found",
-              key,
-            };
+            return createErrorOutput("List is empty or key not found", REDIS_CONTEXT);
           }
 
           try {
-            return { success: true, value: JSON.parse(result), key };
+            return createSuccessOutput({ value: JSON.parse(result), key }, REDIS_CONTEXT);
           } catch {
-            return { success: true, value: result, key };
+            return createSuccessOutput({ value: result, key }, REDIS_CONTEXT);
           }
         }
 
         case "publish": {
           const { channel } = params;
           if (!channel) {
-            return {
-              success: false,
-              error: "Channel is required for publish operation",
-            };
+            return createErrorOutput("Channel is required for publish operation", REDIS_CONTEXT);
           }
 
           const serialized =
             typeof value === "object" ? JSON.stringify(value) : String(value);
           const subscribers = await redis.publish(channel, serialized);
 
-          return {
-            success: true,
+          return createSuccessOutput({
             message: `Message published to ${subscribers} subscriber(s)`,
             channel,
             subscribers,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "push": {
@@ -412,77 +376,69 @@ export class RedisService {
             await redis.expire(key, ttl);
           }
 
-          return {
-            success: true,
+          return createSuccessOutput({
             message: `Value pushed to ${pushDirection} of list`,
             length,
             key,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "sadd": {
           const membersArray = this.parseMembers(params.members);
           if (membersArray.length === 0) {
-            return { success: false, error: "At least one member is required" };
+            return createErrorOutput("At least one member is required", REDIS_CONTEXT);
           }
           const added = await redis.sadd(key, ...membersArray);
           if (ttl && ttl > 0) {
             await redis.expire(key, ttl);
           }
-          return {
-            success: true,
+          return createSuccessOutput({
             added,
             members: membersArray,
             key,
             message: `${added} member(s) added to set`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "srem": {
           const membersArray = this.parseMembers(params.members);
           if (membersArray.length === 0) {
-            return { success: false, error: "At least one member is required" };
+            return createErrorOutput("At least one member is required", REDIS_CONTEXT);
           }
           const removed = await redis.srem(key, ...membersArray);
-          return {
-            success: true,
+          return createSuccessOutput({
             removed,
             members: membersArray,
             key,
             message: `${removed} member(s) removed from set`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "smembers": {
           const members = await redis.smembers(key);
-          return {
-            success: true,
+          return createSuccessOutput({
             members,
             count: members.length,
             key,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "sismember": {
           const { member } = params;
           if (!member) {
-            return {
-              success: false,
-              error: "Member is required for SISMEMBER",
-            };
+            return createErrorOutput("Member is required for SISMEMBER", REDIS_CONTEXT);
           }
           const isMember = await redis.sismember(key, member);
-          return {
-            success: true,
+          return createSuccessOutput({
             isMember: isMember === 1,
             member,
             key,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "scard": {
           const count = await redis.scard(key);
-          return { success: true, count, key };
+          return createSuccessOutput({ count, key }, REDIS_CONTEXT);
         }
 
         case "sinter": {
@@ -493,12 +449,11 @@ export class RedisService {
           );
           const allKeys = [key, ...otherKeysArray];
           const intersection = await redis.sinter(...allKeys);
-          return {
-            success: true,
+          return createSuccessOutput({
             members: intersection,
             count: intersection.length,
             keys: allKeys,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "sunion": {
@@ -509,12 +464,11 @@ export class RedisService {
           );
           const allKeys = [key, ...otherKeysArray];
           const union = await redis.sunion(...allKeys);
-          return {
-            success: true,
+          return createSuccessOutput({
             members: union,
             count: union.length,
             keys: allKeys,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "sdiff": {
@@ -525,24 +479,22 @@ export class RedisService {
           );
           const allKeys = [key, ...otherKeysArray];
           const diff = await redis.sdiff(...allKeys);
-          return {
-            success: true,
+          return createSuccessOutput({
             members: diff,
             count: diff.length,
             keys: allKeys,
             message: "Members in first set but not in other sets",
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "hkeys": {
           const fields = await redis.hkeys(key);
-          return {
-            success: true,
+          return createSuccessOutput({
             fields,
             count: fields.length,
             key,
             message: `Found ${fields.length} field(s) in hash`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "hvals": {
@@ -554,49 +506,40 @@ export class RedisService {
               return v;
             }
           });
-          return {
-            success: true,
+          return createSuccessOutput({
             values: parsed,
             count: parsed.length,
             key,
             message: `Found ${parsed.length} value(s) in hash`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "hexists": {
           const { hashField } = params;
           if (!hashField) {
-            return {
-              success: false,
-              error: "Hash field is required for HEXISTS",
-            };
+            return createErrorOutput("Hash field is required for HEXISTS", REDIS_CONTEXT);
           }
           const exists = await redis.hexists(key, hashField);
-          return {
-            success: true,
+          return createSuccessOutput({
             exists: exists === 1,
             field: hashField,
             key,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "hincrby": {
           const { hashField, incrementBy = 1 } = params;
           if (!hashField) {
-            return {
-              success: false,
-              error: "Hash field is required for HINCRBY",
-            };
+            return createErrorOutput("Hash field is required for HINCRBY", REDIS_CONTEXT);
           }
           const newValue = await redis.hincrby(key, hashField, incrementBy);
-          return {
-            success: true,
+          return createSuccessOutput({
             value: newValue,
             field: hashField,
             incrementBy,
             key,
             message: `Field '${hashField}' incremented by ${incrementBy}, new value: ${newValue}`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "lrange": {
@@ -609,77 +552,68 @@ export class RedisService {
               return item;
             }
           });
-          return {
-            success: true,
+          return createSuccessOutput({
             values: parsed,
             count: parsed.length,
             startIndex,
             endIndex,
             key,
             message: `Retrieved ${parsed.length} element(s) from index ${startIndex} to ${endIndex}`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "llen": {
           const length = await redis.llen(key);
-          return {
-            success: true,
+          return createSuccessOutput({
             length,
             key,
             message: `List contains ${length} element(s)`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "lindex": {
           const { index } = params;
           if (index === undefined) {
-            return { success: false, error: "Index is required for LINDEX" };
+            return createErrorOutput("Index is required for LINDEX", REDIS_CONTEXT);
           }
           const element = await redis.lindex(key, index);
           if (element === null) {
-            return {
-              success: false,
-              error: "Index out of range or list not found",
-              key,
-              index,
-            };
+            return createErrorOutput("Index out of range or list not found", REDIS_CONTEXT);
           }
           try {
-            return { success: true, value: JSON.parse(element), key, index };
+            return createSuccessOutput({ value: JSON.parse(element), key, index }, REDIS_CONTEXT);
           } catch {
-            return { success: true, value: element, key, index };
+            return createSuccessOutput({ value: element, key, index }, REDIS_CONTEXT);
           }
         }
 
         case "lset": {
-          const { index, value } = params;
+          const { index, value: val } = params;
           if (index === undefined) {
-            return { success: false, error: "Index is required for LSET" };
+            return createErrorOutput("Index is required for LSET", REDIS_CONTEXT);
           }
-          if (value === undefined) {
-            return { success: false, error: "Value is required for LSET" };
+          if (val === undefined) {
+            return createErrorOutput("Value is required for LSET", REDIS_CONTEXT);
           }
           const serialized =
-            typeof value === "object" ? JSON.stringify(value) : String(value);
+            typeof val === "object" ? JSON.stringify(val) : String(val);
           await redis.lset(key, index, serialized);
-          return {
-            success: true,
+          return createSuccessOutput({
             key,
             index,
             message: `Element at index ${index} updated successfully`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "ltrim": {
           const { startIndex = 0, endIndex = -1 } = params;
           await redis.ltrim(key, startIndex, endIndex);
-          return {
-            success: true,
+          return createSuccessOutput({
             key,
             startIndex,
             endIndex,
             message: `List trimmed to range ${startIndex} to ${endIndex}`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "zadd": {
@@ -689,10 +623,7 @@ export class RedisService {
           if (scoreMembers) {
             const pairs = this.parseScoreMembers(scoreMembers);
             if (pairs.length === 0) {
-              return {
-                success: false,
-                error: "Invalid score-member pairs format",
-              };
+              return createErrorOutput("Invalid score-member pairs format", REDIS_CONTEXT);
             }
             const args: (string | number)[] = [];
             pairs.forEach((p) => {
@@ -700,33 +631,27 @@ export class RedisService {
             });
             const added = await redis.zadd(key, ...args);
             if (ttl && ttl > 0) await redis.expire(key, ttl);
-            return {
-              success: true,
+            return createSuccessOutput({
               added,
               pairs,
               key,
               message: `${added} member(s) added to sorted set`,
-            };
+            }, REDIS_CONTEXT);
           }
 
           // Handle single member add
           if (score === undefined || !member) {
-            return {
-              success: false,
-              error:
-                "Score and member are required, or provide scoreMembers for batch",
-            };
+            return createErrorOutput("Score and member are required, or provide scoreMembers for batch", REDIS_CONTEXT);
           }
           const added = await redis.zadd(key, score, member);
           if (ttl && ttl > 0) await redis.expire(key, ttl);
-          return {
-            success: true,
+          return createSuccessOutput({
             added,
             score,
             member,
             key,
             message: added ? "Member added" : "Member score updated",
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "zrange": {
@@ -759,103 +684,87 @@ export class RedisService {
                 score: parseFloat(results[i + 1]),
               });
             }
-            return {
-              success: true,
+            return createSuccessOutput({
               members,
               count: members.length,
               key,
               startIndex,
               endIndex,
-            };
+            }, REDIS_CONTEXT);
           }
 
-          return {
-            success: true,
+          return createSuccessOutput({
             members: results,
             count: results.length,
             key,
             startIndex,
             endIndex,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "zscore": {
           const { member } = params;
           if (!member) {
-            return { success: false, error: "Member is required for ZSCORE" };
+            return createErrorOutput("Member is required for ZSCORE", REDIS_CONTEXT);
           }
-          const score = await redis.zscore(key, member);
-          if (score === null) {
-            return {
-              success: false,
-              error: "Member not found in sorted set",
-              key,
-              member,
-            };
+          const scoreVal = await redis.zscore(key, member);
+          if (scoreVal === null) {
+            return createErrorOutput("Member not found in sorted set", REDIS_CONTEXT);
           }
-          return { success: true, score: parseFloat(score), member, key };
+          return createSuccessOutput({ score: parseFloat(scoreVal), member, key }, REDIS_CONTEXT);
         }
 
         case "zcount": {
           const { minScore = "-inf", maxScore = "+inf" } = params;
           const count = await redis.zcount(key, minScore, maxScore);
-          return { success: true, count, minScore, maxScore, key };
+          return createSuccessOutput({ count, minScore, maxScore, key }, REDIS_CONTEXT);
         }
 
         case "zincrby": {
           const { member, score } = params;
           if (!member) {
-            return { success: false, error: "Member is required for ZINCRBY" };
+            return createErrorOutput("Member is required for ZINCRBY", REDIS_CONTEXT);
           }
           const increment = score ?? 1;
           const newScore = await redis.zincrby(key, increment, member);
-          return {
-            success: true,
+          return createSuccessOutput({
             newScore: parseFloat(newScore),
             member,
             increment,
             key,
             message: `Member '${member}' score incremented by ${increment}, new score: ${newScore}`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "zrem": {
           const membersArray = this.parseMembers(params.members);
           if (membersArray.length === 0) {
-            return {
-              success: false,
-              error: "At least one member is required for ZREM",
-            };
+            return createErrorOutput("At least one member is required for ZREM", REDIS_CONTEXT);
           }
           const removed = await redis.zrem(key, ...membersArray);
-          return {
-            success: true,
+          return createSuccessOutput({
             removed,
             members: membersArray,
             key,
             message: `${removed} member(s) removed from sorted set`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "pubsub_channels": {
           const { channelPattern = "*" } = params;
           const channels = await redis.pubsub("CHANNELS", channelPattern);
-          return {
-            success: true,
+          return createSuccessOutput({
             channels,
             count: channels.length,
             pattern: channelPattern,
             message: `Found ${channels.length} active channel(s)`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         case "pubsub_numsub": {
           const channelList = this.parseMembers(params.channels);
           if (channelList.length === 0) {
-            return {
-              success: false,
-              error: "At least one channel is required",
-            };
+            return createErrorOutput("At least one channel is required", REDIS_CONTEXT);
           }
           const result = (await redis.pubsub(
             "NUMSUB",
@@ -866,26 +775,22 @@ export class RedisService {
           for (let i = 0; i < result.length; i += 2) {
             subscribers[result[i] as string] = result[i + 1] as number;
           }
-          return {
-            success: true,
+          return createSuccessOutput({
             subscribers,
             channels: channelList,
             message: `Subscriber counts for ${channelList.length} channel(s)`,
-          };
+          }, REDIS_CONTEXT);
         }
 
         default:
-          return {
-            success: false,
-            error: `Unsupported operation: ${operation}`,
-          };
+          return createErrorOutput(`Unsupported operation: ${operation}`, REDIS_CONTEXT);
       }
     } catch (error: any) {
       logger.error(
         { err: error, operation: params.operation, key: params.key },
         "Redis operation failed"
       );
-      return { success: false, error: error.message };
+      return createErrorOutput(error, REDIS_CONTEXT);
     }
   }
 

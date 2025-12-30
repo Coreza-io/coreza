@@ -24,7 +24,8 @@ import {
   parseMembers,
   parseScoreMembers,
 } from "../utils/store";
-import type { NodeResult } from "../nodes/types";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import type { StandardNodeOutput } from "../types/nodeOutput";
 
 export interface StoreOperationParams {
   workflow_id?: string;
@@ -59,11 +60,13 @@ export interface StoreContext {
   workflowId?: string;
 }
 
+const STORE_CONTEXT = { nodeName: 'Store', category: 'data' };
+
 export class StoreService {
   static async execute(
     params: StoreOperationParams,
     context?: StoreContext
-  ): Promise<NodeResult> {
+  ): Promise<StandardNodeOutput> {
     const userId = context?.userId || params.workflow_id;
     const workflowId = params.workflow_id || params.workflowId || context?.workflowId;
     const operation = params.operation;
@@ -78,7 +81,7 @@ export class StoreService {
         : workflowId;
 
     if (!userId) {
-      return { success: false, error: "userId is required for Store operations" };
+      return createErrorOutput("userId is required for Store operations", STORE_CONTEXT);
     }
 
     const redis = getRedisCache();
@@ -93,213 +96,165 @@ export class StoreService {
     // ============ STRING OPERATIONS ============
     if (operation === "set") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for set" };
+        return createErrorOutput("workflow_id and variableName required for set", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       await setStoreValue(redis, key, params.value, params.ttl);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: "Value saved" },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: "Value saved" }, STORE_CONTEXT);
     }
 
     if (operation === "get") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for get" };
+        return createErrorOutput("workflow_id and variableName required for get", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const storedValue = await getStoreValue(redis, key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: storedValue },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: storedValue }, STORE_CONTEXT);
     }
 
     if (operation === "delete") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for delete" };
+        return createErrorOutput("workflow_id and variableName required for delete", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.del(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: "Key deleted" },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: "Key deleted" }, STORE_CONTEXT);
     }
 
     if (operation === "increment") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for increment" };
+        return createErrorOutput("workflow_id and variableName required for increment", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = params.incrementBy || 1;
       const newValue = await redis.incrby(key, amount);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: newValue },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: newValue }, STORE_CONTEXT);
     }
 
     if (operation === "append") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for append" };
+        return createErrorOutput("workflow_id and variableName required for append", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.append(key, params.value || "");
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: "Value appended" },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: "Value appended" }, STORE_CONTEXT);
     }
 
     // ============ LIST OPERATIONS ============
     if (operation === "lpush") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for lpush" };
+        return createErrorOutput("workflow_id and variableName required for lpush", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       const serialized = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
       await redis.lpush(key, serialized);
       await applyTTL(key);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: "Value pushed left" },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: "Value pushed left" }, STORE_CONTEXT);
     }
 
     if (operation === "rpush") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for rpush" };
+        return createErrorOutput("workflow_id and variableName required for rpush", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       const serialized = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
       await redis.rpush(key, serialized);
       await applyTTL(key);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: "Value pushed right" },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: "Value pushed right" }, STORE_CONTEXT);
     }
 
     if (operation === "lpop") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for lpop" };
+        return createErrorOutput("workflow_id and variableName required for lpop", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const popped = await redis.lpop(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: parseStoredValue(popped) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: parseStoredValue(popped) }, STORE_CONTEXT);
     }
 
     if (operation === "rpop") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for rpop" };
+        return createErrorOutput("workflow_id and variableName required for rpop", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const popped = await redis.rpop(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: parseStoredValue(popped) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: parseStoredValue(popped) }, STORE_CONTEXT);
     }
 
     if (operation === "lrange") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for lrange" };
+        return createErrorOutput("workflow_id and variableName required for lrange", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = params.startIndex ?? 0;
       const end = params.endIndex ?? -1;
       const items = await redis.lrange(key, start, end);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: items.map(parseStoredValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: items.map(parseStoredValue) }, STORE_CONTEXT);
     }
 
     if (operation === "llen") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for llen" };
+        return createErrorOutput("workflow_id and variableName required for llen", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const length = await redis.llen(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: length },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: length }, STORE_CONTEXT);
     }
 
     if (operation === "lindex") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for lindex" };
+        return createErrorOutput("workflow_id and variableName required for lindex", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const item = await redis.lindex(key, params.index ?? 0);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: parseStoredValue(item) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: parseStoredValue(item) }, STORE_CONTEXT);
     }
 
     if (operation === "lset") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for lset" };
+        return createErrorOutput("workflow_id and variableName required for lset", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       const serialized = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
       await redis.lset(key, params.index ?? 0, serialized);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: "Value set at index" },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: "Value set at index" }, STORE_CONTEXT);
     }
 
     if (operation === "ltrim") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for ltrim" };
+        return createErrorOutput("workflow_id and variableName required for ltrim", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = params.startIndex ?? 0;
       const end = params.endIndex ?? -1;
       await redis.ltrim(key, start, end);
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: "List trimmed" },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: "List trimmed" }, STORE_CONTEXT);
     }
 
     // ============ HASH OPERATIONS ============
     if (operation === "hset") {
       if (!workflowId || !params.variableName || !params.hashField) {
-        return { success: false, error: "workflow_id, variableName, and hashField required for hset" };
+        return createErrorOutput("workflow_id, variableName, and hashField required for hset", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       const serialized = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
       await redis.hset(key, params.hashField, serialized);
       await applyTTL(key);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, hashField: params.hashField, message: "Hash field set" },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, hashField: params.hashField, message: "Hash field set" }, STORE_CONTEXT);
     }
 
     if (operation === "hget") {
       if (!targetWorkflowId || !varName || !params.hashField) {
-        return { success: false, error: "workflow_id, variableName, and hashField required for hget" };
+        return createErrorOutput("workflow_id, variableName, and hashField required for hget", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const fieldValue = await redis.hget(key, params.hashField);
-      return {
-        success: true,
-        data: { operation, variableName: varName, hashField: params.hashField, value: parseStoredValue(fieldValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, hashField: params.hashField, value: parseStoredValue(fieldValue) }, STORE_CONTEXT);
     }
 
     if (operation === "hgetall") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for hgetall" };
+        return createErrorOutput("workflow_id and variableName required for hgetall", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const hash = await redis.hgetall(key);
@@ -307,146 +262,113 @@ export class StoreService {
       for (const [field, val] of Object.entries(hash)) {
         parsed[field] = parseStoredValue(val);
       }
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: parsed },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: parsed }, STORE_CONTEXT);
     }
 
     if (operation === "hdel") {
       if (!targetWorkflowId || !varName || !params.hashField) {
-        return { success: false, error: "workflow_id, variableName, and hashField required for hdel" };
+        return createErrorOutput("workflow_id, variableName, and hashField required for hdel", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.hdel(key, params.hashField);
-      return {
-        success: true,
-        data: { operation, variableName: varName, hashField: params.hashField, message: "Hash field deleted" },
-      };
+      return createSuccessOutput({ operation, variableName: varName, hashField: params.hashField, message: "Hash field deleted" }, STORE_CONTEXT);
     }
 
     if (operation === "hkeys") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for hkeys" };
+        return createErrorOutput("workflow_id and variableName required for hkeys", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const keys = await redis.hkeys(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: keys },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: keys }, STORE_CONTEXT);
     }
 
     if (operation === "hvals") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for hvals" };
+        return createErrorOutput("workflow_id and variableName required for hvals", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const vals = await redis.hvals(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: vals.map(parseStoredValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: vals.map(parseStoredValue) }, STORE_CONTEXT);
     }
 
     if (operation === "hexists") {
       if (!targetWorkflowId || !varName || !params.hashField) {
-        return { success: false, error: "workflow_id, variableName, and hashField required for hexists" };
+        return createErrorOutput("workflow_id, variableName, and hashField required for hexists", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const exists = await redis.hexists(key, params.hashField);
-      return {
-        success: true,
-        data: { operation, variableName: varName, hashField: params.hashField, value: exists === 1 },
-      };
+      return createSuccessOutput({ operation, variableName: varName, hashField: params.hashField, value: exists === 1 }, STORE_CONTEXT);
     }
 
     if (operation === "hincrby") {
       if (!targetWorkflowId || !varName || !params.hashField) {
-        return { success: false, error: "workflow_id, variableName, and hashField required for hincrby" };
+        return createErrorOutput("workflow_id, variableName, and hashField required for hincrby", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = params.incrementBy || 1;
       const newValue = await redis.hincrby(key, params.hashField, amount);
-      return {
-        success: true,
-        data: { operation, variableName: varName, hashField: params.hashField, value: newValue },
-      };
+      return createSuccessOutput({ operation, variableName: varName, hashField: params.hashField, value: newValue }, STORE_CONTEXT);
     }
 
     // ============ SET OPERATIONS ============
     if (operation === "sadd") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for sadd" };
+        return createErrorOutput("workflow_id and variableName required for sadd", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       const memberList = parseMembers(params.members || "");
       if (memberList.length === 0) {
-        return { success: false, error: "members required for sadd" };
+        return createErrorOutput("members required for sadd", STORE_CONTEXT);
       }
       await redis.sadd(key, ...memberList);
       await applyTTL(key);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: `Added ${memberList.length} member(s)` },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: `Added ${memberList.length} member(s)` }, STORE_CONTEXT);
     }
 
     if (operation === "srem") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for srem" };
+        return createErrorOutput("workflow_id and variableName required for srem", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const memberList = parseMembers(params.members || "");
       if (memberList.length === 0) {
-        return { success: false, error: "members required for srem" };
+        return createErrorOutput("members required for srem", STORE_CONTEXT);
       }
       await redis.srem(key, ...memberList);
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: `Removed ${memberList.length} member(s)` },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: `Removed ${memberList.length} member(s)` }, STORE_CONTEXT);
     }
 
     if (operation === "smembers") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for smembers" };
+        return createErrorOutput("workflow_id and variableName required for smembers", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const setMembers = await redis.smembers(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: setMembers.map(parseStoredValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: setMembers.map(parseStoredValue) }, STORE_CONTEXT);
     }
 
     if (operation === "sismember") {
       if (!targetWorkflowId || !varName || !params.member) {
-        return { success: false, error: "workflow_id, variableName, and member required for sismember" };
+        return createErrorOutput("workflow_id, variableName, and member required for sismember", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const isMember = await redis.sismember(key, params.member);
-      return {
-        success: true,
-        data: { operation, variableName: varName, member: params.member, value: isMember === 1 },
-      };
+      return createSuccessOutput({ operation, variableName: varName, member: params.member, value: isMember === 1 }, STORE_CONTEXT);
     }
 
     if (operation === "scard") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for scard" };
+        return createErrorOutput("workflow_id and variableName required for scard", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const count = await redis.scard(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: count },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: count }, STORE_CONTEXT);
     }
 
     if (operation === "sinter" || operation === "sunion" || operation === "sdiff") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for set operations" };
+        return createErrorOutput("workflow_id and variableName required for set operations", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const otherKeysList = Array.isArray(params.otherKeys) ? params.otherKeys : [];
@@ -461,16 +383,13 @@ export class StoreService {
         result = await redis.sdiff(...allKeys);
       }
 
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: result.map(parseStoredValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: result.map(parseStoredValue) }, STORE_CONTEXT);
     }
 
     // ============ SORTED SET OPERATIONS ============
     if (operation === "zadd") {
       if (!workflowId || !params.variableName) {
-        return { success: false, error: "workflow_id and variableName required for zadd" };
+        return createErrorOutput("workflow_id and variableName required for zadd", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, workflowId, params.variableName);
       
@@ -478,7 +397,7 @@ export class StoreService {
       if (params.score !== undefined && params.member) {
         const score = parseFloat(String(params.score));
         if (isNaN(score)) {
-          return { success: false, error: "Score must be a valid number" };
+          return createErrorOutput("Score must be a valid number", STORE_CONTEXT);
         }
         // Serialize member if it's an object
         const memberValue = typeof params.member === 'object' 
@@ -487,34 +406,28 @@ export class StoreService {
         
         await redis.zadd(key, score, memberValue);
         await applyTTL(key);
-        return {
-          success: true,
-          data: { 
-            operation, 
-            variableName: params.variableName, 
-            score,
-            member: memberValue,
-            message: "Member added to sorted set" 
-          },
-        };
+        return createSuccessOutput({ 
+          operation, 
+          variableName: params.variableName, 
+          score,
+          member: memberValue,
+          message: "Member added to sorted set" 
+        }, STORE_CONTEXT);
       }
       
       // Mode 2: Batch scoreMembers format (backwards compatible)
       const scoreMembersList = parseScoreMembers(params.scoreMembers || "");
       if (scoreMembersList.length === 0) {
-        return { success: false, error: "score and member are required for zadd" };
+        return createErrorOutput("score and member are required for zadd", STORE_CONTEXT);
       }
       await redis.zadd(key, ...scoreMembersList);
       await applyTTL(key);
-      return {
-        success: true,
-        data: { operation, variableName: params.variableName, message: `Added ${scoreMembersList.length / 2} member(s)` },
-      };
+      return createSuccessOutput({ operation, variableName: params.variableName, message: `Added ${scoreMembersList.length / 2} member(s)` }, STORE_CONTEXT);
     }
 
     if (operation === "zrange") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for zrange" };
+        return createErrorOutput("workflow_id and variableName required for zrange", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const start = params.startIndex ?? 0;
@@ -531,65 +444,50 @@ export class StoreService {
           : await redis.zrange(key, start, end);
       }
 
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: result.map(parseStoredValue) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: result.map(parseStoredValue) }, STORE_CONTEXT);
     }
 
     if (operation === "zscore") {
       if (!targetWorkflowId || !varName || !params.member) {
-        return { success: false, error: "workflow_id, variableName, and member required for zscore" };
+        return createErrorOutput("workflow_id, variableName, and member required for zscore", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const scoreVal = await redis.zscore(key, params.member);
-      return {
-        success: true,
-        data: { operation, variableName: varName, member: params.member, value: scoreVal ? parseFloat(scoreVal) : null },
-      };
+      return createSuccessOutput({ operation, variableName: varName, member: params.member, value: scoreVal ? parseFloat(scoreVal) : null }, STORE_CONTEXT);
     }
 
     if (operation === "zcount") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for zcount" };
+        return createErrorOutput("workflow_id and variableName required for zcount", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const min = params.minScore ?? "-inf";
       const max = params.maxScore ?? "+inf";
       const count = await redis.zcount(key, min, max);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: count },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: count }, STORE_CONTEXT);
     }
 
     if (operation === "zincrby") {
       if (!targetWorkflowId || !varName || !params.member) {
-        return { success: false, error: "workflow_id, variableName, and member required for zincrby" };
+        return createErrorOutput("workflow_id, variableName, and member required for zincrby", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const amount = params.incrementBy || 1;
       const newScore = await redis.zincrby(key, amount, params.member);
-      return {
-        success: true,
-        data: { operation, variableName: varName, member: params.member, value: parseFloat(newScore) },
-      };
+      return createSuccessOutput({ operation, variableName: varName, member: params.member, value: parseFloat(newScore) }, STORE_CONTEXT);
     }
 
     if (operation === "zrem") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for zrem" };
+        return createErrorOutput("workflow_id and variableName required for zrem", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const memberList = parseMembers(params.members || "");
       if (memberList.length === 0) {
-        return { success: false, error: "members required for zrem" };
+        return createErrorOutput("members required for zrem", STORE_CONTEXT);
       }
       await redis.zrem(key, ...memberList);
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: `Removed ${memberList.length} member(s)` },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: `Removed ${memberList.length} member(s)` }, STORE_CONTEXT);
     }
 
     // ============ UTILITY OPERATIONS ============
@@ -598,61 +496,46 @@ export class StoreService {
       const keyPrefix = buildStoreKey(userId, targetWorkflowId || workflowId || "", "");
       const fullPattern = keyPrefix + keyPattern;
       const matchedKeys = await redis.keys(fullPattern);
-      return {
-        success: true,
-        data: { operation, pattern: keyPattern, value: matchedKeys.map(extractVariableNameFromKey) },
-      };
+      return createSuccessOutput({ operation, pattern: keyPattern, value: matchedKeys.map(extractVariableNameFromKey) }, STORE_CONTEXT);
     }
 
     if (operation === "list") {
       // Legacy "list" operation - same as keys with "*" pattern
       if (!workflowId) {
-        return { success: false, error: "workflow_id required for list" };
+        return createErrorOutput("workflow_id required for list", STORE_CONTEXT);
       }
       const pattern = buildStoreKey(userId, workflowId, "*");
       const keys = await redis.keys(pattern);
-      return {
-        success: true,
-        data: { operation, variables: keys.map(extractVariableNameFromKey) },
-      };
+      return createSuccessOutput({ operation, variables: keys.map(extractVariableNameFromKey) }, STORE_CONTEXT);
     }
 
     if (operation === "exists") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for exists" };
+        return createErrorOutput("workflow_id and variableName required for exists", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const existsResult = await redis.exists(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: existsResult === 1 },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: existsResult === 1 }, STORE_CONTEXT);
     }
 
     if (operation === "expire") {
       if (!targetWorkflowId || !varName || !params.ttl) {
-        return { success: false, error: "workflow_id, variableName, and ttl required for expire" };
+        return createErrorOutput("workflow_id, variableName, and ttl required for expire", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       await redis.expire(key, params.ttl);
-      return {
-        success: true,
-        data: { operation, variableName: varName, message: `TTL set to ${params.ttl} seconds` },
-      };
+      return createSuccessOutput({ operation, variableName: varName, message: `TTL set to ${params.ttl} seconds` }, STORE_CONTEXT);
     }
 
     if (operation === "ttl") {
       if (!targetWorkflowId || !varName) {
-        return { success: false, error: "workflow_id and variableName required for ttl" };
+        return createErrorOutput("workflow_id and variableName required for ttl", STORE_CONTEXT);
       }
       const key = buildStoreKey(userId, targetWorkflowId, varName);
       const ttlValue = await redis.ttl(key);
-      return {
-        success: true,
-        data: { operation, variableName: varName, value: ttlValue },
-      };
+      return createSuccessOutput({ operation, variableName: varName, value: ttlValue }, STORE_CONTEXT);
     }
 
-    return { success: false, error: `Unknown Store operation: ${operation}` };
+    return createErrorOutput(`Unknown Store operation: ${operation}`, STORE_CONTEXT);
   }
 }

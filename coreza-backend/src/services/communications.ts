@@ -18,6 +18,8 @@ import { google, gmail_v1 } from "googleapis";
 import axios from "axios";
 import { createError } from "../middleware/errorHandler";
 import CredentialManager from "../utils/credentialManager";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import type { StandardNodeOutput } from "../types/nodeOutput";
 
 export interface CommunicationInput {
   user_id?: string;
@@ -40,7 +42,7 @@ abstract class BaseCommunicationService {
   abstract execute(
     operation: string,
     input: CommunicationInput
-  ): Promise<CommunicationResult>;
+  ): Promise<StandardNodeOutput>;
 }
 
 // Gmail service
@@ -77,7 +79,8 @@ class GmailService extends BaseCommunicationService {
   async execute(
     operation: string,
     input: CommunicationInput
-  ): Promise<CommunicationResult> {
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Gmail', category: 'communication' };
     try {
       const { userId, credentialId } = this.normalizeIds(input);
 
@@ -86,7 +89,7 @@ class GmailService extends BaseCommunicationService {
           throw createError("user_id is required", 400);
         }
         const creds = await CredentialManager.listCredentials(userId, "gmail");
-        return { success: true, data: creds };
+        return createSuccessOutput(creds, context);
       }
 
       if (!userId || !credentialId) {
@@ -130,15 +133,12 @@ class GmailService extends BaseCommunicationService {
           throw createError(`Unsupported Gmail operation: ${operation}`, 400);
       }
 
-      return { success: true, data: operationResult };
+      return createSuccessOutput(operationResult, context);
     } catch (error: any) {
       if (error.response?.status === 401) {
-        return {
-          success: false,
-          error: "Gmail authentication expired. Please re-authorize.",
-        };
+        return createErrorOutput("Gmail authentication expired. Please re-authorize.", context);
       }
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
@@ -301,7 +301,8 @@ class WhatsAppService extends BaseCommunicationService {
   async execute(
     operation: string,
     input: CommunicationInput
-  ): Promise<CommunicationResult> {
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'WhatsApp', category: 'communication' };
     try {
       const { userId, credentialId } = this.normalizeIds(input);
       let credentials: any = null;
@@ -361,9 +362,9 @@ class WhatsAppService extends BaseCommunicationService {
           );
       }
 
-      return { success: true, data: operationResult };
+      return createSuccessOutput(operationResult, context);
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return createErrorOutput(error, context);
     }
   }
 
@@ -533,17 +534,15 @@ export class CommunicationService {
     service: string,
     operation: string,
     input: CommunicationInput
-  ): Promise<CommunicationResult> {
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: service, category: 'communication' };
     switch (service.toLowerCase()) {
       case "gmail":
         return this.gmailService.execute(operation, input);
       case "whatsapp":
         return this.whatsappService.execute(operation, input);
       default:
-        return {
-          success: false,
-          error: `Unsupported communication service: ${service}`,
-        };
+        return createErrorOutput(`Unsupported communication service: ${service}`, context);
     }
   }
 }

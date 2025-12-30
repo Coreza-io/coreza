@@ -14,12 +14,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3 } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3, List } from "lucide-react";
 import { isStandardNodeOutput } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
 import { truncateForDisplay } from "./outputTruncation";
+import { VirtualizedArrayBrowser } from "@/components/workflow/VirtualizedArrayBrowser";
 
 
 // Props strongly typed, mirroring InputPanel
@@ -64,15 +65,33 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
 };
 
 // Special component for bars data summary
-const BarsDataSummary: React.FC<{ stats: { count: number; dateRange: string; priceRange: string }; preview: any[] }> = ({ stats, preview }) => {
+const BarsDataSummary: React.FC<{ 
+  stats: { count: number; dateRange: string; priceRange: string }; 
+  preview: any[];
+  fullData?: any[];
+  onBrowse?: (data: any[], title: string) => void;
+}> = ({ stats, preview, fullData, onBrowse }) => {
   const [showPreview, setShowPreview] = useState(false);
   
   return (
     <div className="bg-muted/30 rounded-md border border-border/30 overflow-hidden">
       <div className="p-2 space-y-1">
-        <div className="flex items-center gap-2 text-primary">
-          <BarChart3 className="w-3 h-3" />
-          <span className="text-xs font-semibold">Bars Data</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-primary">
+            <BarChart3 className="w-3 h-3" />
+            <span className="text-xs font-semibold">Bars Data</span>
+          </div>
+          {fullData && onBrowse && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-5 text-[10px] px-2"
+              onClick={() => onBrowse(fullData, 'bars')}
+            >
+              <List className="w-3 h-3 mr-1" />
+              Browse
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
           <span className="text-muted-foreground">Count:</span>
@@ -106,7 +125,13 @@ const BarsDataSummary: React.FC<{ stats: { count: number; dateRange: string; pri
 };
 
 // Truncated array display component
-const TruncatedArrayDisplay: React.FC<{ total: number; preview: any[]; parentKey: string }> = ({ total, preview, parentKey }) => {
+const TruncatedArrayDisplay: React.FC<{ 
+  total: number; 
+  preview: any[]; 
+  parentKey: string;
+  fullData?: any[];
+  onBrowse?: (data: any[], title: string) => void;
+}> = ({ total, preview, parentKey, fullData, onBrowse }) => {
   const [expanded, setExpanded] = useState(false);
   
   return (
@@ -123,15 +148,30 @@ const TruncatedArrayDisplay: React.FC<{ total: number; preview: any[]; parentKey
       </button>
       
       {expanded && (
-        <div className="p-2 space-y-1 max-h-48 overflow-auto">
-          {preview.map((item, i) => (
-            <div key={i} className="text-[10px] font-mono text-foreground bg-background p-1 rounded truncate">
-              [{i}] {typeof item === 'object' ? JSON.stringify(item) : String(item)}
-            </div>
-          ))}
+        <div className="p-2 space-y-1">
+          <div className="max-h-32 overflow-auto space-y-1">
+            {preview.map((item, i) => (
+              <div key={i} className="text-[10px] font-mono text-foreground bg-background p-1 rounded truncate">
+                [{i}] {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+              </div>
+            ))}
+          </div>
           {total > preview.length && (
-            <div className="text-[10px] text-muted-foreground italic pt-1">
-              ...and {(total - preview.length).toLocaleString()} more items
+            <div className="flex items-center justify-between pt-2 border-t border-border/20">
+              <span className="text-[10px] text-muted-foreground italic">
+                ...and {(total - preview.length).toLocaleString()} more
+              </span>
+              {fullData && onBrowse && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-5 text-[10px] px-2"
+                  onClick={() => onBrowse(fullData, parentKey || 'Array')}
+                >
+                  <List className="w-3 h-3 mr-1" />
+                  Browse All
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -140,86 +180,125 @@ const TruncatedArrayDisplay: React.FC<{ total: number; preview: any[]; parentKey
   );
 };
 
+// Helper to get original array from data structure by key path
+const getOriginalArrayByPath = (data: any, path: string): any[] | null => {
+  if (!data || !path) return null;
+  const parts = path.split('.');
+  let current = data;
+  for (const part of parts) {
+    if (current && typeof current === 'object' && part in current) {
+      current = current[part];
+    } else {
+      return null;
+    }
+  }
+  return Array.isArray(current) ? current : null;
+};
+
 // Recursively render output data with truncation support
-const renderData = (data: any, parentKey = ""): React.ReactNode => {
-  // Handle truncated bars data
-  if (data?.__truncated && data.__type === 'bars' && data.__stats) {
-    return <BarsDataSummary stats={data.__stats} preview={data.__preview || []} />;
-  }
-  
-  // Handle truncated arrays
-  if (data?.__truncated && data.__type === 'array') {
-    return <TruncatedArrayDisplay total={data.__total} preview={data.__preview || []} parentKey={parentKey} />;
-  }
-  
-  if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
-    return (
-      <div className="text-sm text-muted-foreground italic text-center py-6">
-        No output yet.
-      </div>
-    );
-  }
-  
-  if (typeof data === "object" && data !== null) {
-    // Filter out internal truncation metadata
-    const entries = Object.entries(data).filter(([key]) => !key.startsWith('__'));
+const createRenderData = (
+  originalData: any,
+  onBrowse?: (data: any[], title: string) => void
+) => {
+  const renderData = (data: any, parentKey = ""): React.ReactNode => {
+    // Handle truncated bars data
+    if (data?.__truncated && data.__type === 'bars' && data.__stats) {
+      const fullData = parentKey ? getOriginalArrayByPath(originalData, parentKey) : null;
+      return (
+        <BarsDataSummary 
+          stats={data.__stats} 
+          preview={data.__preview || []} 
+          fullData={fullData ?? undefined}
+          onBrowse={onBrowse}
+        />
+      );
+    }
     
-    return (
-      <div className="flex flex-col gap-2">
-        {entries.map(([key, value]) => {
-          const fullKey = parentKey ? `${parentKey}.${key}` : key;
-          
-          // Check if value is a truncated structure
-          const valueObj = value as any;
-          if (valueObj?.__truncated) {
+    // Handle truncated arrays
+    if (data?.__truncated && data.__type === 'array') {
+      const fullData = parentKey ? getOriginalArrayByPath(originalData, parentKey) : null;
+      return (
+        <TruncatedArrayDisplay 
+          total={data.__total} 
+          preview={data.__preview || []} 
+          parentKey={parentKey}
+          fullData={fullData ?? undefined}
+          onBrowse={onBrowse}
+        />
+      );
+    }
+    
+    if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
+      return (
+        <div className="text-sm text-muted-foreground italic text-center py-6">
+          No output yet.
+        </div>
+      );
+    }
+    
+    if (typeof data === "object" && data !== null) {
+      // Filter out internal truncation metadata
+      const entries = Object.entries(data).filter(([key]) => !key.startsWith('__'));
+      
+      return (
+        <div className="flex flex-col gap-2">
+          {entries.map(([key, value]) => {
+            const fullKey = parentKey ? `${parentKey}.${key}` : key;
+            
+            // Check if value is a truncated structure
+            const valueObj = value as any;
+            if (valueObj?.__truncated) {
+              return (
+                <div key={fullKey} className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-primary px-1">{key}</span>
+                  {renderData(value, fullKey)}
+                </div>
+              );
+            }
+            
             return (
-              <div key={fullKey} className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-primary px-1">{key}</span>
-                {renderData(value, key)}
+              <div
+                key={fullKey}
+                className="flex flex-col px-3 py-2 rounded-md bg-background hover:bg-muted/50 transition-colors border border-border/30"
+              >
+                <span className="text-xs font-semibold text-primary">{key}</span>
+                <span className="text-xs text-foreground pl-2 mt-1">
+                  {value === undefined ? (
+                    <span className="text-muted-foreground">undefined</span>
+                  ) : value === null ? (
+                    <span className="text-muted-foreground">null</span>
+                  ) : typeof value === "object" ? (
+                    Array.isArray(value) ? (
+                      <span className="text-muted-foreground">Array[{value.length}]</span>
+                    ) : (
+                      <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
+                        {JSON.stringify(value).slice(0, 200)}
+                        {JSON.stringify(value).length > 200 && '...'}
+                      </span>
+                    )
+                  ) : (
+                    <span className="break-words">
+                      {String(value).slice(0, 500)}
+                      {String(value).length > 500 && '...'}
+                    </span>
+                  )}
+                </span>
               </div>
             );
-          }
-          
-          return (
-            <div
-              key={fullKey}
-              className="flex flex-col px-3 py-2 rounded-md bg-background hover:bg-muted/50 transition-colors border border-border/30"
-            >
-              <span className="text-xs font-semibold text-primary">{key}</span>
-              <span className="text-xs text-foreground pl-2 mt-1">
-                {value === undefined ? (
-                  <span className="text-muted-foreground">undefined</span>
-                ) : value === null ? (
-                  <span className="text-muted-foreground">null</span>
-                ) : typeof value === "object" ? (
-                  Array.isArray(value) ? (
-                    <span className="text-muted-foreground">Array[{value.length}]</span>
-                  ) : (
-                    <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
-                      {JSON.stringify(value).slice(0, 200)}
-                      {JSON.stringify(value).length > 200 && '...'}
-                    </span>
-                  )
-                ) : (
-                  <span className="break-words">
-                    {String(value).slice(0, 500)}
-                    {String(value).length > 500 && '...'}
-                  </span>
-                )}
-              </span>
-            </div>
-          );
-        })}
+          })}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex items-center gap-2 p-3 bg-background rounded-md border border-border/30">
+        <span className="text-xs font-semibold text-primary">value:</span>
+        <span className="text-xs text-foreground break-words">{String(data)}</span>
       </div>
     );
-  }
+  };
   
-  return (
-    <div className="flex items-center gap-2 p-3 bg-background rounded-md border border-border/30">
-      <span className="text-xs font-semibold text-primary">value:</span>
-      <span className="text-xs text-foreground break-words">{String(data)}</span>
-    </div>
-  );
+  return renderData;
 };
 
 const OutputPanel: React.FC<OutputPanelProps> = ({
@@ -236,12 +315,22 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [browsingArray, setBrowsingArray] = useState<{ data: any[]; title: string } | null>(null);
+  
+  // Keep reference to original data for browsing
+  const originalDataRef = useRef<any>(data);
+  
+  // Update original data ref when data changes
+  useEffect(() => {
+    originalDataRef.current = data;
+  }, [data]);
 
   // Sync internal state when upstream data changes, unless pinned
   useEffect(() => {
     if (!pinned) {
       setInternalData(data);
       setIsEditing(false);
+      setBrowsingArray(null);
     }
   }, [data, pinned]);
 
@@ -262,6 +351,24 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
     }
     return truncateForDisplay(internalData).data;
   }, [internalData]);
+  
+  // Get original data for browsing (handles StandardNodeOutput)
+  const originalDataForBrowsing = useMemo(() => {
+    if (isStandardNodeOutput(internalData)) {
+      return internalData.data;
+    }
+    return internalData;
+  }, [internalData]);
+  
+  // Handle browse callback
+  const handleBrowse = (data: any[], title: string) => {
+    setBrowsingArray({ data, title });
+  };
+  
+  // Create renderData with browse callback
+  const renderData = useMemo(() => {
+    return createRenderData(originalDataForBrowsing, handleBrowse);
+  }, [originalDataForBrowsing]);
 
   if (!isExpanded) return null;
 
@@ -312,7 +419,16 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           : "right-full top-0 mr-2"
       } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col`}
     >
-      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+      {/* Virtualized array browser overlay */}
+      {browsingArray ? (
+        <VirtualizedArrayBrowser
+          data={browsingArray.data}
+          title={browsingArray.title}
+          onClose={() => setBrowsingArray(null)}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-foreground text-sm tracking-tight">
             Output
@@ -420,6 +536,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
             </Button>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

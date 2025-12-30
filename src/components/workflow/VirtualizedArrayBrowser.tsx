@@ -128,8 +128,12 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
         const currentDown = virtualizer.getVirtualItems()[0]?.index ?? 0;
         virtualizer.scrollToIndex(Math.min(filteredData.length - 1, currentDown + 1), { align: 'start' });
         break;
+      case 'Escape':
+        e.preventDefault();
+        onClose();
+        break;
     }
-  }, [virtualizer, filteredData.length]);
+  }, [virtualizer, filteredData.length, onClose]);
   
   // Attach keyboard listener
   useEffect(() => {

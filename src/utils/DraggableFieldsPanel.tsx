@@ -14,10 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useMemo, useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { VirtualizedArrayBrowser } from "@/components/workflow/VirtualizedArrayBrowser";
-import { List } from "lucide-react";
+import React, { useMemo } from "react";
 
 type DraggableFieldsPanelProps = {
   data: unknown;
@@ -56,9 +53,6 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   parentKey = "",
   maxItems = 25,
 }) => {
-  const [browserOpen, setBrowserOpen] = useState(false);
-  const [browserData, setBrowserData] = useState<{ data: unknown[]; title: string } | null>(null);
-
   if (!isObjectLike(data)) return null;
 
   const isArray = Array.isArray(data);
@@ -76,122 +70,72 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
 
   const remainingCount = isArray ? totalLength - entriesToShow.length : 0;
 
-  const handleBrowseAll = (arrayData: unknown[], title: string) => {
-    setBrowserData({ data: arrayData, title });
-    setBrowserOpen(true);
-  };
-
   return (
-    <>
-      <div className="flex flex-col gap-2 mb-2">
-        {entriesToShow.map(({ key, value }) => {
-          const fullKey = buildPath(parentKey, key);
-          const isNestedObject = isObjectLike(value);
-          const isNestedArray = Array.isArray(value);
-          const nestedArrayLength = isNestedArray ? value.length : 0;
-          const displayKey = isArray ? `[${key}]` : key;
+    <div className="flex flex-col gap-2 mb-2">
+      {entriesToShow.map(({ key, value }) => {
+        const fullKey = buildPath(parentKey, key);
+        const isNestedObject = isObjectLike(value);
+        const displayKey = isArray ? `[${key}]` : key;
 
-          return (
-            <div key={fullKey} className="flex flex-col ml-2">
-              <div className="flex items-center gap-2">
-                <div
-                  className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors cursor-grab active:cursor-grabbing"
-                  draggable
-                  onDragStart={(e) => {
-                    const asString = toStringValue(value);
-                    e.dataTransfer.setData(
-                      "application/reactflow",
-                      JSON.stringify({
-                        type: "jsonReference",
-                        keyPath: fullKey,
-                        value: asString,
-                      })
-                    );
-                    e.dataTransfer.effectAllowed = "copy";
-                    onDragStart(e, fullKey, asString);
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  title={
-                    isNestedObject ? (isNestedArray ? "Array" : "Object") : toStringValue(value)
-                  }
-                >
-                  {displayKey}
-                </div>
-
-                <span className="text-xs text-muted-foreground">
-                  {isNestedObject ? (
-                    <span className="font-mono text-muted-foreground/60">
-                      {isNestedArray ? `[${nestedArrayLength}]` : "{...}"}
-                    </span>
-                  ) : (
-                    toStringValue(value)
-                  )}
-                </span>
-
-                {/* Browse All button for nested arrays with many items */}
-                {isNestedArray && nestedArrayLength > maxItems && (
-                  <button
-                    className="nodrag text-xs text-primary hover:text-primary/80 flex items-center gap-1 ml-1"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleBrowseAll(value, fullKey);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <List size={12} />
-                    <span>Browse</span>
-                  </button>
-                )}
+        return (
+          <div key={fullKey} className="flex flex-col ml-2">
+            <div className="flex items-center gap-2">
+              <div
+                className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors cursor-grab active:cursor-grabbing"
+                draggable
+                onDragStart={(e) => {
+                  const asString = toStringValue(value);
+                  e.dataTransfer.setData(
+                    "application/reactflow",
+                    JSON.stringify({
+                      type: "jsonReference",
+                      keyPath: fullKey,
+                      value: asString,
+                    })
+                  );
+                  e.dataTransfer.effectAllowed = "copy";
+                  onDragStart(e, fullKey, asString);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={
+                  isNestedObject ? (Array.isArray(value) ? "Array" : "Object") : toStringValue(value)
+                }
+              >
+                {displayKey}
               </div>
 
-              {isNestedObject && (
-                <div className="ml-4">
-                  <DraggableFieldsPanel
-                    data={value}
-                    onDragStart={onDragStart}
-                    parentKey={fullKey}
-                    maxItems={maxItems}
-                  />
-                </div>
-              )}
+              <span className="text-xs text-muted-foreground">
+                {isNestedObject ? (
+                  <span className="font-mono text-muted-foreground/60">
+                    {Array.isArray(value) ? "[...]" : "{...}"}
+                  </span>
+                ) : (
+                  toStringValue(value)
+                )}
+              </span>
             </div>
-          );
-        })}
 
-        {/* Show remaining items indicator for arrays */}
-        {isArray && remainingCount > 0 && (
-          <div className="ml-2 mt-1 flex items-center gap-2">
-            <span className="text-xs text-muted-foreground italic">
-              ... and {remainingCount.toLocaleString()} more item{remainingCount !== 1 ? 's' : ''}
-            </span>
-            <button
-              className="nodrag text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleBrowseAll(data as unknown[], parentKey || 'Array');
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <List size={12} />
-              <span>Browse All</span>
-            </button>
+            {isNestedObject && (
+              <div className="ml-4">
+                <DraggableFieldsPanel
+                  data={value}
+                  onDragStart={onDragStart}
+                  parentKey={fullKey}
+                  maxItems={maxItems}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })}
 
-      {/* Virtualized Array Browser Dialog */}
-      <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
-        <DialogContent className="max-w-4xl h-[80vh] p-0 overflow-hidden">
-          {browserData && (
-            <VirtualizedArrayBrowser
-              data={browserData.data}
-              title={browserData.title}
-              onClose={() => setBrowserOpen(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
+      {/* Show remaining items indicator for arrays */}
+      {isArray && remainingCount > 0 && (
+        <div className="ml-2 mt-1 text-xs text-muted-foreground italic">
+          ... and {remainingCount.toLocaleString()} more item{remainingCount !== 1 ? 's' : ''}
+        </div>
+      )}
+    </div>
   );
 };
 

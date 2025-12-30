@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
-import { getBrokerConfig } from "../../brokers";
+import { getBrokerConfig, BrokerOperation, PaginationConfig } from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import {
@@ -31,6 +31,8 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
+
+const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -182,25 +184,46 @@ export class BrokerExecutor implements INodeExecutor {
 
       console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
 
-      // Execute request to external broker (Alpaca/Dhan/Schwab/Binance)
-      // Only add Content-Type header when body exists (Binance requires no body for orders)
-      const response = await axios({
-        method: op.method,
-        url,
-        headers: body
-          ? { ...headers, "Content-Type": "application/json" }
-          : headers,
-        params,
-        data: body,
-        timeout: 30000,
-      });
+      // Check if pagination is enabled and requested
+      const autoPaginate = resolvedParams.auto_paginate !== false; // Default true
+      const maxPages = Number(resolvedParams.max_pages) || 100;
+      const pagination = op.pagination;
+
+      let data: any;
+
+      if (pagination?.enabled && autoPaginate) {
+        // Execute with automatic pagination
+        data = await this.executeWithPagination(
+          op,
+          url,
+          headers,
+          params,
+          body,
+          resolvedParams,
+          pagination,
+          maxPages,
+          broker,
+          operation
+        );
+      } else {
+        // Single request (no pagination or disabled)
+        const response = await axios({
+          method: op.method,
+          url,
+          headers: body
+            ? { ...headers, "Content-Type": "application/json" }
+            : headers,
+          params,
+          data: body,
+          timeout: 30000,
+        });
+
+        data = op.transformResult
+          ? op.transformResult(response.data, resolvedParams)
+          : response.data;
+      }
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
-
-      // Transform result
-      const data = op.transformResult
-        ? op.transformResult(response.data, resolvedParams)
-        : response.data;
 
       if (isPlaceOrder && idempotencyKey) {
         await updateOrderCache(
@@ -238,5 +261,94 @@ export class BrokerExecutor implements INodeExecutor {
       );
       return toNodeResult(normalized);
     }
+  }
+
+  private async executeWithPagination(
+    op: BrokerOperation,
+    baseUrl: string,
+    headers: Record<string, string>,
+    baseParams: Record<string, any>,
+    body: any,
+    resolvedParams: any,
+    pagination: PaginationConfig,
+    maxPages: number,
+    broker: string,
+    operation: string
+  ): Promise<any> {
+    let allData: any[] = [];
+    let pageToken: string | null = null;
+    let requestCount = 0;
+
+    do {
+      // Add page token if we have one
+      const pageParams = pageToken
+        ? { ...baseParams, [pagination.paramField]: pageToken }
+        : baseParams;
+
+      // Rate limit between requests (except first)
+      if (requestCount > 0) {
+        await this.delay(RATE_LIMIT_DELAY_MS);
+      }
+
+      const response = await axios({
+        method: op.method,
+        url: baseUrl,
+        headers: body
+          ? { ...headers, "Content-Type": "application/json" }
+          : headers,
+        params: pageParams,
+        data: body,
+        timeout: 30000,
+      });
+
+      // Extract data from response
+      const responseData = response.data;
+      const pageData = responseData[pagination.dataField];
+
+      // Merge data based on strategy
+      if (pagination.mergeStrategy === "concat") {
+        if (typeof pageData === "object" && !Array.isArray(pageData)) {
+          // For object responses like {AAPL: [...bars]}
+          Object.values(pageData).forEach((value) => {
+            if (Array.isArray(value)) {
+              allData = allData.concat(value);
+            }
+          });
+        } else if (Array.isArray(pageData)) {
+          allData = allData.concat(pageData);
+        }
+      }
+
+      // Get next page token
+      pageToken = responseData[pagination.tokenField] || null;
+      requestCount++;
+
+      console.log(
+        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${allData.length} total items`
+      );
+    } while (pageToken && requestCount < maxPages);
+
+    // Build merged response for transformResult
+    const symbol = resolvedParams.symbol;
+    const mergedResponse = {
+      [pagination.dataField]: symbol ? { [symbol]: allData } : allData,
+      next_page_token: pageToken,
+    };
+
+    // Transform and add pagination metadata
+    const transformed = op.transformResult
+      ? op.transformResult(mergedResponse, resolvedParams)
+      : mergedResponse;
+
+    return {
+      ...transformed,
+      total_count: allData.length,
+      pages_fetched: requestCount,
+      pagination_complete: !pageToken,
+    };
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

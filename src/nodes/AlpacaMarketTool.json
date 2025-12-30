@@ -342,6 +342,42 @@
         }
       },
       "showDescription": false
+    },
+    {
+      "key": "auto_paginate",
+      "label": "Auto-Paginate All Data",
+      "type": "toggle",
+      "default": true,
+      "description": "Automatically fetch all pages of data. Recommended for large date ranges (10+ years).",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "max_pages",
+      "label": "Max Pages",
+      "type": "text",
+      "placeholder": "100",
+      "default": "100",
+      "description": "Maximum pages to fetch (safety limit). Each page = up to 10,000 bars.",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ],
+          "auto_paginate": [
+            true
+          ]
+        }
+      },
+      "showDescription": false
     }
   ]
 }

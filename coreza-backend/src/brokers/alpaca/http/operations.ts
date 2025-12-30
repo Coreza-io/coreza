@@ -28,20 +28,31 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       input.asset_type === 'crypto' ? '/v1beta3/crypto/us/bars' : '/v2/stocks/bars',
     makeParams: (input: any) => {
       if (!input.symbol) throw new Error('Symbol is required for get_candle operation');
-      return {
+      const params: Record<string, any> = {
         symbols: input.symbol,
         timeframe: input.interval,
         start: input.start,
-        ...(input.end ? { end: input.end } : {}),
-        ...(input.limit ? { limit: input.limit } : {}),
         adjustment: 'raw',
         feed: input.feed,
         sort: input.sort,
+        limit: Math.min(Number(input.limit) || 10000, 10000), // Max 10000 per request
       };
+      if (input.end) params.end = input.end;
+      if (input.page_token) params.page_token = input.page_token;
+      return params;
+    },
+    pagination: {
+      enabled: true,
+      tokenField: 'next_page_token',
+      paramField: 'page_token',
+      dataField: 'bars',
+      mergeStrategy: 'concat',
     },
     transformResult: (raw: any, input: any) => ({
       symbol: input.symbol,
-      candles: raw.bars?.[input.symbol] ?? [],
+      candles: raw.bars?.[input.symbol] ?? raw.bars ?? [],
+      next_page_token: raw.next_page_token || null,
+      has_more: !!raw.next_page_token,
     }),
   },
   get_latest_bar: {

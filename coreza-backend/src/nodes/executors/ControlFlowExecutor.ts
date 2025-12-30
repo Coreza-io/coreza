@@ -31,17 +31,23 @@ export class ControlFlowExecutor implements INodeExecutor {
     const startTime = Date.now();
     try {
       const nodeName = node.name;
+      let result: NodeResult;
       switch (nodeName) {
         case "If":
-          return this.executeIfNode(node, input, context);
+          result = await this.executeIfNode(node, input, context);
+          break;
         case "Switch":
-          return this.executeSwitchNode(node, input, context);
+          result = await this.executeSwitchNode(node, input, context);
+          break;
         case "Edit Fields":
-          return this.executeFieldNode(node, input, context);
+          result = await this.executeFieldNode(node, input, context);
+          break;
         case "Compute":
-          return this.executeComputeNode(node, input, context);
+          result = await this.executeComputeNode(node, input, context);
+          break;
         case "Loop":
-          return this.executeLoopNode(node, input, context);
+          result = await this.executeLoopNode(node, input, context);
+          break;
         default:
           const errOutput = createErrorOutput(
             `Unsupported control flow node type: ${nodeName}`,
@@ -49,6 +55,14 @@ export class ControlFlowExecutor implements INodeExecutor {
           );
           return toNodeResult(errOutput);
       }
+
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error ? error : String(error),

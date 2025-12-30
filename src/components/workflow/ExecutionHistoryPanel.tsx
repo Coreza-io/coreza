@@ -104,6 +104,11 @@ export function ExecutionHistoryPanel({
         return "border-l-destructive";
       case "running":
         return "border-l-warning";
+      case "cancelled":
+        return "border-l-muted-foreground";
+      case "queued":
+      case "pending":
+        return "border-l-muted";
       default:
         return "border-l-muted";
     }
@@ -119,6 +124,10 @@ export function ExecutionHistoryPanel({
         return "Running";
       case "pending":
         return "Pending";
+      case "queued":
+        return "Queued";
+      case "cancelled":
+        return "Cancelled";
       default:
         return status;
     }
@@ -194,6 +203,7 @@ export function ExecutionHistoryPanel({
                         <SelectItem value="failed">Failed</SelectItem>
                         <SelectItem value="running">Running</SelectItem>
                         <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

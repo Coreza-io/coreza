@@ -20,6 +20,8 @@ import { RSI, EMA, SMA, MACD, BollingerBands } from "trading-signals";
 import { ADX, Stochastic, IchimokuCloud } from "technicalindicators";
 import Big from "big.js";
 import { createError } from "../middleware/errorHandler";
+import { StandardNodeOutput } from "../types/nodeOutput";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
 
 export interface IndicatorInput {
   prices?: any;
@@ -49,11 +51,7 @@ export interface IndicatorInput {
   [key: string]: any;
 }
 
-export interface IndicatorResult {
-  success: boolean;
-  data: any[];
-  error?: string;
-}
+export type IndicatorResult = StandardNodeOutput<any[]>;
 
 // Helper to parse JSON string arrays
 function parseArray<T>(raw: any, fieldName: string): T[] {
@@ -100,639 +98,668 @@ function toNumber(raw: any): number {
   return Number(raw);
 }
 
+const INDICATOR_CONTEXT = { category: "indicators" };
+
 export class IndicatorService {
   static async calculateRSI(input: IndicatorInput): Promise<IndicatorResult> {
-    const {
-      prices: rawPrices,
-      candle_data: rawCandles,
-      period: rawPeriod,
-      window: rawWindow,
-    } = input;
-    const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod || rawWindow);
-    if (!Number.isFinite(period) || period <= 0) {
-      throw createError(
-        "period/window is required and must be a positive number",
-        400
-      );
-    }
-
-    const rsi = new RSI(period);
-    const results: number[] = [];
-    for (const price of prices) {
-      rsi.update(price, false);
-      if (rsi.isStable) {
-        const raw = rsi.getResult();
-        results.push(toNumber(raw));
+    try {
+      const {
+        prices: rawPrices,
+        candle_data: rawCandles,
+        period: rawPeriod,
+        window: rawWindow,
+      } = input;
+      const prices = extractPrices(rawPrices, rawCandles);
+      const period = Number(rawPeriod || rawWindow);
+      if (!Number.isFinite(period) || period <= 0) {
+        throw createError(
+          "period/window is required and must be a positive number",
+          400
+        );
       }
-    }
 
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const rsi = new RSI(period);
+      const results: number[] = [];
+      for (const price of prices) {
+        rsi.update(price, false);
+        if (rsi.isStable) {
+          const raw = rsi.getResult();
+          results.push(toNumber(raw));
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "RSI" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "RSI" });
+    }
   }
 
   static async calculateEMA(input: IndicatorInput): Promise<IndicatorResult> {
-    const {
-      prices: rawPrices,
-      candle_data: rawCandles,
-      window: rawPeriod,
-    } = input;
-    const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod);
-    if (!Number.isFinite(period) || period <= 0) {
-      throw createError("period must be a positive number", 400);
-    }
-
-    const ema = new EMA(period);
-    const results: number[] = [];
-    for (const price of prices) {
-      ema.update(price, false);
-      if (ema.isStable) {
-        const raw = ema.getResult();
-        results.push(toNumber(raw));
+    try {
+      const {
+        prices: rawPrices,
+        candle_data: rawCandles,
+        window: rawPeriod,
+      } = input;
+      const prices = extractPrices(rawPrices, rawCandles);
+      const period = Number(rawPeriod);
+      if (!Number.isFinite(period) || period <= 0) {
+        throw createError("period must be a positive number", 400);
       }
-    }
 
-    //const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const ema = new EMA(period);
+      const results: number[] = [];
+      for (const price of prices) {
+        ema.update(price, false);
+        if (ema.isStable) {
+          const raw = ema.getResult();
+          results.push(toNumber(raw));
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "EMA" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "EMA" });
+    }
   }
 
   static async calculateSMA(input: IndicatorInput): Promise<IndicatorResult> {
-    const {
-      prices: rawPrices,
-      candle_data: rawCandles,
-      period: rawPeriod,
-    } = input;
-    const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod);
-    if (!Number.isFinite(period) || period <= 0) {
-      throw createError(
-        "period is required and must be a positive number",
-        400
-      );
-    }
-
-    const sma = new SMA(period);
-    const results: number[] = [];
-    for (const price of prices) {
-      sma.update(price, false);
-      if (sma.isStable) {
-        const raw = sma.getResult();
-        results.push(toNumber(raw));
+    try {
+      const {
+        prices: rawPrices,
+        candle_data: rawCandles,
+        period: rawPeriod,
+      } = input;
+      const prices = extractPrices(rawPrices, rawCandles);
+      const period = Number(rawPeriod);
+      if (!Number.isFinite(period) || period <= 0) {
+        throw createError(
+          "period is required and must be a positive number",
+          400
+        );
       }
-    }
 
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const sma = new SMA(period);
+      const results: number[] = [];
+      for (const price of prices) {
+        sma.update(price, false);
+        if (sma.isStable) {
+          const raw = sma.getResult();
+          results.push(toNumber(raw));
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "SMA" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "SMA" });
+    }
   }
 
   static async calculateMACD(input: IndicatorInput): Promise<IndicatorResult> {
-    const {
-      prices: rawPrices,
-      candle_data: rawCandles,
-      fastPeriod: rawFast,
-      slowPeriod: rawSlow,
-      signalPeriod: rawSignal,
-    } = input;
-    const prices = extractPrices(rawPrices, rawCandles);
-    const fast = Number(rawFast),
-      slow = Number(rawSlow),
-      signal = Number(rawSignal);
-    if ([fast, slow, signal].some((v) => !Number.isFinite(v) || v <= 0)) {
-      throw createError("Periods must be positive numbers", 400);
-    }
-
-    const macd = new MACD({
-      indicator: EMA,
-      shortInterval: fast,
-      longInterval: slow,
-      signalInterval: signal,
-    });
-    const results: { macd: number; signal: number; histogram: number }[] = [];
-    for (const price of prices) {
-      macd.update(price, false);
-      if (macd.isStable) {
-        const r = macd.getResult();
-        if (!r) {
-          continue;
-        }
-        results.push({
-          macd: toNumber(r.macd),
-          signal: toNumber(r.signal),
-          histogram: toNumber(r.histogram),
-        });
+    try {
+      const {
+        prices: rawPrices,
+        candle_data: rawCandles,
+        fastPeriod: rawFast,
+        slowPeriod: rawSlow,
+        signalPeriod: rawSignal,
+      } = input;
+      const prices = extractPrices(rawPrices, rawCandles);
+      const fast = Number(rawFast),
+        slow = Number(rawSlow),
+        signal = Number(rawSignal);
+      if ([fast, slow, signal].some((v) => !Number.isFinite(v) || v <= 0)) {
+        throw createError("Periods must be positive numbers", 400);
       }
-    }
 
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const macd = new MACD({
+        indicator: EMA,
+        shortInterval: fast,
+        longInterval: slow,
+        signalInterval: signal,
+      });
+      const results: { macd: number; signal: number; histogram: number }[] = [];
+      for (const price of prices) {
+        macd.update(price, false);
+        if (macd.isStable) {
+          const r = macd.getResult();
+          if (!r) {
+            continue;
+          }
+          results.push({
+            macd: toNumber(r.macd),
+            signal: toNumber(r.signal),
+            histogram: toNumber(r.histogram),
+          });
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "MACD" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "MACD" });
+    }
   }
 
   static async calculateBollinger(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const {
-      prices: rawPrices,
-      candle_data: rawCandles,
-      period: rawPeriod,
-      stdDev: rawStd,
-      std_dev_multiplier: rawStdMult,
-    } = input;
-    const prices = extractPrices(rawPrices, rawCandles);
-    const period = Number(rawPeriod);
-    const stdDev = Number(rawStd || rawStdMult);
-    if (!Number.isFinite(period) || period <= 0) {
-      throw createError(
-        "period is required and must be a positive number",
-        400
-      );
-    }
-    if (!Number.isFinite(stdDev) || stdDev <= 0) {
-      throw createError(
-        "stdDev/std_dev_multiplier is required and must be a positive number",
-        400
-      );
-    }
-
-    const bb = new BollingerBands(period, stdDev);
-    const results: {
-      upper: number;
-      middle: number;
-      lower: number;
-      bb_width: number;
-    }[] = [];
-    for (const price of prices) {
-      bb.update(price, false);
-      if (bb.isStable) {
-        const r = bb.getResult();
-        if (!r) {
-          continue;
-        }
-        results.push({
-          upper: toNumber(r.upper),
-          middle: toNumber(r.middle),
-          lower: toNumber(r.lower),
-          bb_width:
-            ((toNumber(r.upper) - toNumber(r.lower)) / toNumber(r.middle)) *
-            100,
-        });
+    try {
+      const {
+        prices: rawPrices,
+        candle_data: rawCandles,
+        period: rawPeriod,
+        stdDev: rawStd,
+        std_dev_multiplier: rawStdMult,
+      } = input;
+      const prices = extractPrices(rawPrices, rawCandles);
+      const period = Number(rawPeriod);
+      const stdDev = Number(rawStd || rawStdMult);
+      if (!Number.isFinite(period) || period <= 0) {
+        throw createError(
+          "period is required and must be a positive number",
+          400
+        );
       }
-    }
+      if (!Number.isFinite(stdDev) || stdDev <= 0) {
+        throw createError(
+          "stdDev/std_dev_multiplier is required and must be a positive number",
+          400
+        );
+      }
 
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const bb = new BollingerBands(period, stdDev);
+      const results: {
+        upper: number;
+        middle: number;
+        lower: number;
+        bb_width: number;
+      }[] = [];
+      for (const price of prices) {
+        bb.update(price, false);
+        if (bb.isStable) {
+          const r = bb.getResult();
+          if (!r) {
+            continue;
+          }
+          results.push({
+            upper: toNumber(r.upper),
+            middle: toNumber(r.middle),
+            lower: toNumber(r.lower),
+            bb_width:
+              ((toNumber(r.upper) - toNumber(r.lower)) / toNumber(r.middle)) *
+              100,
+          });
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Bollinger Bands" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Bollinger Bands" });
+    }
   }
 
   static async calculateADX(input: IndicatorInput): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, period: rawPeriod } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const period = Number(rawPeriod);
-    if (!Number.isFinite(period) || period <= 0) {
-      throw createError(
-        "period is required and must be a positive number",
-        400
-      );
-    }
+    try {
+      const { candle_data: rawCandles, period: rawPeriod } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const period = Number(rawPeriod);
+      if (!Number.isFinite(period) || period <= 0) {
+        throw createError(
+          "period is required and must be a positive number",
+          400
+        );
+      }
 
-    const high = candles.map((c) => Number(c.h ?? c.high));
-    const low = candles.map((c) => Number(c.l ?? c.low));
-    const close = candles.map((c) => Number(c.c ?? c.close));
-    if ([...high, ...low, ...close].some((v) => !Number.isFinite(v))) {
-      throw createError("Invalid numeric value in candles", 400);
-    }
+      const high = candles.map((c) => Number(c.h ?? c.high));
+      const low = candles.map((c) => Number(c.l ?? c.low));
+      const close = candles.map((c) => Number(c.c ?? c.close));
+      if ([...high, ...low, ...close].some((v) => !Number.isFinite(v))) {
+        throw createError("Invalid numeric value in candles", 400);
+      }
 
-    const results = ADX.calculate({ high, low, close, period });
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const results = ADX.calculate({ high, low, close, period });
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "ADX" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "ADX" });
+    }
   }
 
   static async calculateStochastic(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, k_period: rawK, d_period: rawD } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const periodK = Number(rawK);
-    const periodD = Number(rawD);
-    if (!Number.isFinite(periodK) || periodK <= 0) {
-      throw createError(
-        "k_period is required and must be a positive number",
-        400
-      );
-    }
-    if (!Number.isFinite(periodD) || periodD <= 0) {
-      throw createError(
-        "d_period is required and must be a positive number",
-        400
-      );
-    }
+    try {
+      const { candle_data: rawCandles, k_period: rawK, d_period: rawD } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const periodK = Number(rawK);
+      const periodD = Number(rawD);
+      if (!Number.isFinite(periodK) || periodK <= 0) {
+        throw createError(
+          "k_period is required and must be a positive number",
+          400
+        );
+      }
+      if (!Number.isFinite(periodD) || periodD <= 0) {
+        throw createError(
+          "d_period is required and must be a positive number",
+          400
+        );
+      }
 
-    const high = candles.map((c) => Number(c.h ?? c.high));
-    const low = candles.map((c) => Number(c.l ?? c.low));
-    const close = candles.map((c) => Number(c.c ?? c.close));
+      const high = candles.map((c) => Number(c.h ?? c.high));
+      const low = candles.map((c) => Number(c.l ?? c.low));
+      const close = candles.map((c) => Number(c.c ?? c.close));
 
-    const results = Stochastic.calculate({
-      high,
-      low,
-      close,
-      period: periodK,
-      signalPeriod: periodD,
-    });
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
+      const results = Stochastic.calculate({
+        high,
+        low,
+        close,
+        period: periodK,
+        signalPeriod: periodD,
+      });
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Stochastic" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Stochastic" });
+    }
   }
 
   static async calculateIchimoku(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const {
-      candle_data: rawCandles,
-      conversion_period: rawConv,
-      base_period: rawBase,
-      leading_span_b_period: rawSpan,
-      displacement: rawDisp,
-    } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const conv = Number(rawConv);
-    const base = Number(rawBase);
-    const span = Number(rawSpan);
-    const disp = Number(rawDisp);
-    if ([conv, base, span, disp].some((v) => !Number.isFinite(v) || v <= 0)) {
-      throw createError(
-        "All Ichimoku periods are required and must be positive numbers",
-        400
-      );
+    try {
+      const {
+        candle_data: rawCandles,
+        conversion_period: rawConv,
+        base_period: rawBase,
+        leading_span_b_period: rawSpan,
+        displacement: rawDisp,
+      } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const conv = Number(rawConv);
+      const base = Number(rawBase);
+      const span = Number(rawSpan);
+      const disp = Number(rawDisp);
+      if ([conv, base, span, disp].some((v) => !Number.isFinite(v) || v <= 0)) {
+        throw createError(
+          "All Ichimoku periods are required and must be positive numbers",
+          400
+        );
+      }
+
+      const high = candles.map((c) => Number(c.h ?? c.high));
+      const low = candles.map((c) => Number(c.l ?? c.low));
+
+      const results = IchimokuCloud.calculate({
+        high,
+        low,
+        conversionPeriod: conv,
+        basePeriod: base,
+        spanPeriod: span,
+        displacement: disp,
+      });
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
     }
-
-    const high = candles.map((c) => Number(c.h ?? c.high));
-    const low = candles.map((c) => Number(c.l ?? c.low));
-
-    const results = IchimokuCloud.calculate({
-      high,
-      low,
-      conversionPeriod: conv,
-      basePeriod: base,
-      spanPeriod: span,
-      displacement: disp,
-    });
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-    return { success: true, data: results };
   }
 
   static async calculateOBV(input: IndicatorInput): Promise<IndicatorResult> {
-    const { candle_data: rawCandles } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const obvValues: { timestamp: string; obv: number }[] = [];
-    let obv = 0;
+    try {
+      const { candle_data: rawCandles } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const obvValues: { timestamp: string; obv: number }[] = [];
+      let obv = 0;
 
-    candles.forEach((c, i) => {
-      const close = Number(c.c ?? c.close),
-        volume = Number(c.v ?? c.volume);
-      if (!Number.isFinite(close) || !Number.isFinite(volume)) {
-        throw createError(
-          "Each candle must have numeric close and volume",
-          400
-        );
-      }
+      candles.forEach((c, i) => {
+        const close = Number(c.c ?? c.close),
+          volume = Number(c.v ?? c.volume);
+        if (!Number.isFinite(close) || !Number.isFinite(volume)) {
+          throw createError(
+            "Each candle must have numeric close and volume",
+            400
+          );
+        }
 
-      if (i === 0) obv = volume;
-      else {
-        const prevClose = Number(candles[i - 1].c ?? candles[i - 1].close);
-        obv += close > prevClose ? volume : close < prevClose ? -volume : 0;
-      }
-      obvValues.push({ timestamp: c.t ?? c.timestamp, obv });
-    });
+        if (i === 0) obv = volume;
+        else {
+          const prevClose = Number(candles[i - 1].c ?? candles[i - 1].close);
+          obv += close > prevClose ? volume : close < prevClose ? -volume : 0;
+        }
+        obvValues.push({ timestamp: c.t ?? c.timestamp, obv });
+      });
 
-    const latest =
-      obvValues.length > 0 ? obvValues[obvValues.length - 1] : null;
-    return { success: true, data: obvValues };
+      return createSuccessOutput(obvValues, { ...INDICATOR_CONTEXT, nodeName: "OBV" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "OBV" });
+    }
   }
 
   static async calculateVWAP(input: IndicatorInput): Promise<IndicatorResult> {
-    const {
-      candle_data: rawCandles,
-      session_type = "daily",
-      custom_start_time,
-    } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const vwapValues: {
-      timestamp: string;
-      vwap: number;
-      sessionStart: number;
-    }[] = [];
-    let cumTPV = 0,
-      cumVol = 0,
-      sessionStartIdx = 0;
+    try {
+      const {
+        candle_data: rawCandles,
+        session_type = "daily",
+        custom_start_time,
+      } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const vwapValues: {
+        timestamp: string;
+        vwap: number;
+        sessionStart: number;
+      }[] = [];
+      let cumTPV = 0,
+        cumVol = 0,
+        sessionStartIdx = 0;
 
-    candles.forEach((c, i) => {
-      const high = Number(c.h ?? c.high),
-        low = Number(c.l ?? c.low),
-        close = Number(c.c ?? c.close),
-        volume = Number(c.v ?? c.volume);
-      if (![high, low, close, volume].every(Number.isFinite)) {
-        throw createError(
-          "Each candle must have numeric high, low, close, and volume",
-          400
-        );
-      }
-
-      const tp = (high + low + close) / 3;
-      let reset = false;
-      const curr = new Date(c.t ?? c.timestamp);
-      if (i > 0) {
-        const prev = new Date(candles[i - 1].t ?? candles[i - 1].timestamp);
-        if (session_type === "daily") {
-          reset = curr.getDate() !== prev.getDate();
-        } else if (session_type === "weekly") {
-          reset =
-            Math.floor(curr.getTime() / (7 * 24 * 60 * 60 * 1000)) !==
-            Math.floor(prev.getTime() / (7 * 24 * 60 * 60 * 1000));
-        } else if (session_type === "custom" && custom_start_time) {
-          reset = curr < new Date(custom_start_time);
+      candles.forEach((c, i) => {
+        const high = Number(c.h ?? c.high),
+          low = Number(c.l ?? c.low),
+          close = Number(c.c ?? c.close),
+          volume = Number(c.v ?? c.volume);
+        if (![high, low, close, volume].every(Number.isFinite)) {
+          throw createError(
+            "Each candle must have numeric high, low, close, and volume",
+            400
+          );
         }
-      }
-      if (reset || i === 0) {
-        cumTPV = 0;
-        cumVol = 0;
-        sessionStartIdx = i;
-      }
 
-      cumTPV += tp * volume;
-      cumVol += volume;
-      const vwap = cumVol > 0 ? cumTPV / cumVol : tp;
-      vwapValues.push({
-        timestamp: c.t ?? c.timestamp,
-        vwap,
-        sessionStart: sessionStartIdx,
+        const tp = (high + low + close) / 3;
+        let reset = false;
+        const curr = new Date(c.t ?? c.timestamp);
+        if (i > 0) {
+          const prev = new Date(candles[i - 1].t ?? candles[i - 1].timestamp);
+          if (session_type === "daily") {
+            reset = curr.getDate() !== prev.getDate();
+          } else if (session_type === "weekly") {
+            reset =
+              Math.floor(curr.getTime() / (7 * 24 * 60 * 60 * 1000)) !==
+              Math.floor(prev.getTime() / (7 * 24 * 60 * 60 * 1000));
+          } else if (session_type === "custom" && custom_start_time) {
+            reset = curr < new Date(custom_start_time);
+          }
+        }
+        if (reset || i === 0) {
+          cumTPV = 0;
+          cumVol = 0;
+          sessionStartIdx = i;
+        }
+
+        cumTPV += tp * volume;
+        cumVol += volume;
+        const vwap = cumVol > 0 ? cumTPV / cumVol : tp;
+        vwapValues.push({
+          timestamp: c.t ?? c.timestamp,
+          vwap,
+          sessionStart: sessionStartIdx,
+        });
       });
-    });
 
-    const latest =
-      vwapValues.length > 0 ? vwapValues[vwapValues.length - 1] : null;
-    return {
-      success: true,
-      data: vwapValues,
-    };
+      return createSuccessOutput(vwapValues, { ...INDICATOR_CONTEXT, nodeName: "VWAP" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "VWAP" });
+    }
   }
 
   static async calculateVolumeOscillator(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const {
-      candle_data: rawCandles,
-      short_period: rawShort,
-      long_period: rawLong,
-      type,
-    } = input;
+    try {
+      const {
+        candle_data: rawCandles,
+        short_period: rawShort,
+        long_period: rawLong,
+        type,
+      } = input;
 
-    const candles = parseArray<any>(rawCandles, "candle_data");
-    const shortPeriod = Number(rawShort);
-    const longPeriod = Number(rawLong);
+      const candles = parseArray<any>(rawCandles, "candle_data");
+      const shortPeriod = Number(rawShort);
+      const longPeriod = Number(rawLong);
 
-    if (!Number.isFinite(shortPeriod) || shortPeriod <= 0) {
-      throw createError(
-        "short_period is required and must be a positive number",
-        400
-      );
-    }
-    if (!Number.isFinite(longPeriod) || longPeriod <= 0) {
-      throw createError(
-        "long_period is required and must be a positive number",
-        400
-      );
-    }
-    if (shortPeriod >= longPeriod) {
-      throw createError("short_period must be less than long_period", 400);
-    }
-    if (!type) {
-      throw createError("type (percentage or absolute) is required", 400);
-    }
-
-    // Extract volumes from candle data
-    const volumes = candles.map((c) => Number(c.v ?? c.volume));
-    if (volumes.some((v) => !Number.isFinite(v) || v < 0)) {
-      throw createError("Invalid volume values in candle data", 400);
-    }
-
-    // Calculate short and long EMAs for volume
-    const shortEMA = new EMA(shortPeriod);
-    const longEMA = new EMA(longPeriod);
-    const results: { value: number; shortEMA: number; longEMA: number }[] = [];
-
-    for (const volume of volumes) {
-      shortEMA.update(volume, false);
-      longEMA.update(volume, false);
-
-      if (shortEMA.isStable && longEMA.isStable) {
-        const shortValue = toNumber(shortEMA.getResult());
-        const longValue = toNumber(longEMA.getResult());
-
-        let oscillatorValue: number;
-        if (type === "percentage") {
-          // Percentage Volume Oscillator (PVO)
-          oscillatorValue = ((shortValue - longValue) / longValue) * 100;
-        } else {
-          // Absolute difference
-          oscillatorValue = shortValue - longValue;
-        }
-
-        results.push({
-          value: oscillatorValue,
-          shortEMA: shortValue,
-          longEMA: longValue,
-        });
+      if (!Number.isFinite(shortPeriod) || shortPeriod <= 0) {
+        throw createError(
+          "short_period is required and must be a positive number",
+          400
+        );
       }
+      if (!Number.isFinite(longPeriod) || longPeriod <= 0) {
+        throw createError(
+          "long_period is required and must be a positive number",
+          400
+        );
+      }
+      if (shortPeriod >= longPeriod) {
+        throw createError("short_period must be less than long_period", 400);
+      }
+      if (!type) {
+        throw createError("type (percentage or absolute) is required", 400);
+      }
+
+      // Extract volumes from candle data
+      const volumes = candles.map((c) => Number(c.v ?? c.volume));
+      if (volumes.some((v) => !Number.isFinite(v) || v < 0)) {
+        throw createError("Invalid volume values in candle data", 400);
+      }
+
+      // Calculate short and long EMAs for volume
+      const shortEMA = new EMA(shortPeriod);
+      const longEMA = new EMA(longPeriod);
+      const results: { value: number; shortEMA: number; longEMA: number }[] = [];
+
+      for (const volume of volumes) {
+        shortEMA.update(volume, false);
+        longEMA.update(volume, false);
+
+        if (shortEMA.isStable && longEMA.isStable) {
+          const shortValue = toNumber(shortEMA.getResult());
+          const longValue = toNumber(longEMA.getResult());
+
+          let oscillatorValue: number;
+          if (type === "percentage") {
+            // Percentage Volume Oscillator (PVO)
+            oscillatorValue = ((shortValue - longValue) / longValue) * 100;
+          } else {
+            // Absolute difference
+            oscillatorValue = shortValue - longValue;
+          }
+
+          results.push({
+            value: oscillatorValue,
+            shortEMA: shortValue,
+            longEMA: longValue,
+          });
+        }
+      }
+
+      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Volume Oscillator" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Volume Oscillator" });
     }
-
-    const latest = results.length > 0 ? results[results.length - 1] : null;
-
-    return {
-      success: true,
-      data: results,
-    };
   }
 
   static async calculateSupportResistancePivot(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, num_levels } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
+    try {
+      const { candle_data: rawCandles, num_levels } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
 
-    if (!num_levels) throw createError("num_levels is required", 400);
-    if (candles.length === 0) throw createError("No candle data provided", 400);
+      if (!num_levels) throw createError("num_levels is required", 400);
+      if (candles.length === 0) throw createError("No candle data provided", 400);
 
-    const lastCandle = candles[candles.length - 1];
-    const high = Number(lastCandle.h ?? lastCandle.high);
-    const low = Number(lastCandle.l ?? lastCandle.low);
-    const close = Number(lastCandle.c ?? lastCandle.close);
+      const lastCandle = candles[candles.length - 1];
+      const high = Number(lastCandle.h ?? lastCandle.high);
+      const low = Number(lastCandle.l ?? lastCandle.low);
+      const close = Number(lastCandle.c ?? lastCandle.close);
 
-    if (
-      !Number.isFinite(high) ||
-      !Number.isFinite(low) ||
-      !Number.isFinite(close)
-    ) {
-      throw createError("Invalid OHLC data in last candle", 400);
+      if (
+        !Number.isFinite(high) ||
+        !Number.isFinite(low) ||
+        !Number.isFinite(close)
+      ) {
+        throw createError("Invalid OHLC data in last candle", 400);
+      }
+
+      const PP = (high + low + close) / 3;
+
+      const levels = {
+        pivot: PP,
+        resistance: [] as number[],
+        support: [] as number[],
+      };
+
+      const numLevels = Math.min(Number(num_levels), 5);
+
+      if (numLevels >= 1) {
+        levels.resistance.push(2 * PP - low);
+        levels.support.push(2 * PP - high);
+      }
+      if (numLevels >= 2) {
+        levels.resistance.push(PP + (high - low));
+        levels.support.push(PP - (high - low));
+      }
+      if (numLevels >= 3) {
+        levels.resistance.push(high + 2 * (PP - low));
+        levels.support.push(low - 2 * (high - PP));
+      }
+
+      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Pivot" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Pivot" });
     }
-
-    const PP = (high + low + close) / 3;
-
-    const levels = {
-      pivot: PP,
-      resistance: [] as number[],
-      support: [] as number[],
-    };
-
-    const numLevels = Math.min(Number(num_levels), 5);
-
-    if (numLevels >= 1) {
-      levels.resistance.push(2 * PP - low);
-      levels.support.push(2 * PP - high);
-    }
-    if (numLevels >= 2) {
-      levels.resistance.push(PP + (high - low));
-      levels.support.push(PP - (high - low));
-    }
-    if (numLevels >= 3) {
-      levels.resistance.push(high + 2 * (PP - low));
-      levels.support.push(low - 2 * (high - PP));
-    }
-
-    return {
-      success: true,
-      data: [levels],
-    };
   }
 
   static async calculateSupportResistanceSwing(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const {
-      candle_data: rawCandles,
-      lookback_period,
-      sensitivity,
-      num_levels,
-    } = input;
+    try {
+      const {
+        candle_data: rawCandles,
+        lookback_period,
+        sensitivity,
+        num_levels,
+      } = input;
 
-    const candles = parseArray<any>(rawCandles, "candle_data");
+      const candles = parseArray<any>(rawCandles, "candle_data");
 
-    if (!lookback_period) throw createError("lookback_period is required", 400);
-    if (!sensitivity) throw createError("sensitivity is required", 400);
-    if (!num_levels) throw createError("num_levels is required", 400);
+      if (!lookback_period) throw createError("lookback_period is required", 400);
+      if (!sensitivity) throw createError("sensitivity is required", 400);
+      if (!num_levels) throw createError("num_levels is required", 400);
 
-    const lookback = Number(lookback_period);
-    const sens = Number(sensitivity) / 100;
-    const numLevels = Math.min(Number(num_levels), 5);
+      const lookback = Number(lookback_period);
+      const sens = Number(sensitivity) / 100;
+      const numLevels = Math.min(Number(num_levels), 5);
 
-    if (candles.length < lookback) {
-      throw createError(`Need at least ${lookback} candles`, 400);
-    }
-
-    const recentCandles = candles.slice(-lookback);
-    const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
-    const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
-
-    const swingHighs: number[] = [];
-    for (let i = 2; i < highs.length - 2; i++) {
-      if (
-        highs[i] > highs[i - 1] &&
-        highs[i] > highs[i - 2] &&
-        highs[i] > highs[i + 1] &&
-        highs[i] > highs[i + 2]
-      ) {
-        swingHighs.push(highs[i]);
+      if (candles.length < lookback) {
+        throw createError(`Need at least ${lookback} candles`, 400);
       }
-    }
 
-    const swingLows: number[] = [];
-    for (let i = 2; i < lows.length - 2; i++) {
-      if (
-        lows[i] < lows[i - 1] &&
-        lows[i] < lows[i - 2] &&
-        lows[i] < lows[i + 1] &&
-        lows[i] < lows[i + 2]
-      ) {
-        swingLows.push(lows[i]);
-      }
-    }
+      const recentCandles = candles.slice(-lookback);
+      const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
+      const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
 
-    const clusterLevels = (prices: number[]): number[] => {
-      if (prices.length === 0) return [];
-
-      prices.sort((a, b) => a - b);
-      const clusters: number[][] = [[prices[0]]];
-
-      for (let i = 1; i < prices.length; i++) {
-        const lastCluster = clusters[clusters.length - 1];
-        const lastPrice = lastCluster[lastCluster.length - 1];
-
-        if (Math.abs(prices[i] - lastPrice) / lastPrice <= sens) {
-          lastCluster.push(prices[i]);
-        } else {
-          clusters.push([prices[i]]);
+      const swingHighs: number[] = [];
+      for (let i = 2; i < highs.length - 2; i++) {
+        if (
+          highs[i] > highs[i - 1] &&
+          highs[i] > highs[i - 2] &&
+          highs[i] > highs[i + 1] &&
+          highs[i] > highs[i + 2]
+        ) {
+          swingHighs.push(highs[i]);
         }
       }
 
-      return clusters
-        .sort((a, b) => b.length - a.length)
-        .slice(0, numLevels)
-        .map(
-          (cluster) => cluster.reduce((sum, p) => sum + p, 0) / cluster.length
-        )
-        .sort((a, b) => b - a);
-    };
+      const swingLows: number[] = [];
+      for (let i = 2; i < lows.length - 2; i++) {
+        if (
+          lows[i] < lows[i - 1] &&
+          lows[i] < lows[i - 2] &&
+          lows[i] < lows[i + 1] &&
+          lows[i] < lows[i + 2]
+        ) {
+          swingLows.push(lows[i]);
+        }
+      }
 
-    const resistanceLevels = clusterLevels(swingHighs);
-    const supportLevels = clusterLevels(swingLows).reverse();
+      const clusterLevels = (prices: number[]): number[] => {
+        if (prices.length === 0) return [];
 
-    const levels = {
-      resistance: resistanceLevels,
-      support: supportLevels,
-      swing_highs_count: swingHighs.length,
-      swing_lows_count: swingLows.length,
-    };
+        prices.sort((a, b) => a - b);
+        const clusters: number[][] = [[prices[0]]];
 
-    return {
-      success: true,
-      data: [levels],
-    };
+        for (let i = 1; i < prices.length; i++) {
+          const lastCluster = clusters[clusters.length - 1];
+          const lastPrice = lastCluster[lastCluster.length - 1];
+
+          if (Math.abs(prices[i] - lastPrice) / lastPrice <= sens) {
+            lastCluster.push(prices[i]);
+          } else {
+            clusters.push([prices[i]]);
+          }
+        }
+
+        return clusters
+          .sort((a, b) => b.length - a.length)
+          .slice(0, numLevels)
+          .map(
+            (cluster) => cluster.reduce((sum, p) => sum + p, 0) / cluster.length
+          )
+          .sort((a, b) => b - a);
+      };
+
+      const resistanceLevels = clusterLevels(swingHighs);
+      const supportLevels = clusterLevels(swingLows).reverse();
+
+      const levels = {
+        resistance: resistanceLevels,
+        support: supportLevels,
+        swing_highs_count: swingHighs.length,
+        swing_lows_count: swingLows.length,
+      };
+
+      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Swing" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Swing" });
+    }
   }
 
   static async calculateSupportResistanceHistorical(
     input: IndicatorInput
   ): Promise<IndicatorResult> {
-    const { candle_data: rawCandles, lookback_period, num_levels } = input;
-    const candles = parseArray<any>(rawCandles, "candle_data");
+    try {
+      const { candle_data: rawCandles, lookback_period, num_levels } = input;
+      const candles = parseArray<any>(rawCandles, "candle_data");
 
-    if (!lookback_period) throw createError("lookback_period is required", 400);
-    if (!num_levels) throw createError("num_levels is required", 400);
+      if (!lookback_period) throw createError("lookback_period is required", 400);
+      if (!num_levels) throw createError("num_levels is required", 400);
 
-    const lookback = Number(lookback_period);
-    const numLevels = Math.min(Number(num_levels), 5);
+      const lookback = Number(lookback_period);
+      const numLevels = Math.min(Number(num_levels), 5);
 
-    if (candles.length < lookback) {
-      throw createError(`Need at least ${lookback} candles`, 400);
+      if (candles.length < lookback) {
+        throw createError(`Need at least ${lookback} candles`, 400);
+      }
+
+      const recentCandles = candles.slice(-lookback);
+      const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
+      const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
+
+      const sortedHighs = [...highs].sort((a, b) => b - a);
+      const sortedLows = [...lows].sort((a, b) => a - b);
+
+      const resistanceLevels = sortedHighs.slice(0, numLevels);
+      const supportLevels = sortedLows.slice(0, numLevels);
+
+      const levels = {
+        resistance: resistanceLevels,
+        support: supportLevels,
+        highest_high: Math.max(...highs),
+        lowest_low: Math.min(...lows),
+      };
+
+      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Historical" });
+    } catch (error) {
+      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Historical" });
     }
-
-    const recentCandles = candles.slice(-lookback);
-    const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
-    const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
-
-    const sortedHighs = [...highs].sort((a, b) => b - a);
-    const sortedLows = [...lows].sort((a, b) => a - b);
-
-    const resistanceLevels = sortedHighs.slice(0, numLevels);
-    const supportLevels = sortedLows.slice(0, numLevels);
-
-    const levels = {
-      resistance: resistanceLevels,
-      support: supportLevels,
-      highest_high: Math.max(...highs),
-      lowest_low: Math.min(...lows),
-    };
-
-    return {
-      success: true,
-      data: [levels],
-    };
   }
 
   static async calculate(
@@ -763,16 +790,14 @@ export class IndicatorService {
       case "volume-oscillator":
       case "volumeoscillator":
         return this.calculateVolumeOscillator(input);
-      case "vwap":
-        return this.calculateVWAP(input);
       case "support-resistance":
       case "support & resistance":
       case "supportresistance":
         const method = input.method?.toLowerCase();
         if (!method) {
-          throw createError(
-            "method is required (pivot, swing, or historical)",
-            400
+          return createErrorOutput(
+            createError("method is required (pivot, swing, or historical)", 400),
+            INDICATOR_CONTEXT
           );
         }
         switch (method) {
@@ -783,10 +808,16 @@ export class IndicatorService {
           case "historical":
             return this.calculateSupportResistanceHistorical(input);
           default:
-            throw createError(`Unsupported S&R method: ${method}`, 400);
+            return createErrorOutput(
+              createError(`Unsupported S&R method: ${method}`, 400),
+              INDICATOR_CONTEXT
+            );
         }
       default:
-        throw createError(`Unsupported indicator: ${indicatorType}`, 400);
+        return createErrorOutput(
+          createError(`Unsupported indicator: ${indicatorType}`, 400),
+          INDICATOR_CONTEXT
+        );
     }
   }
 }

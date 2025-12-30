@@ -14,6 +14,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { StandardNodeOutput } from "../types/nodeOutput";
+import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+
 export interface RiskInput {
   buying_power?: string;
   symbol?: string;
@@ -40,11 +43,9 @@ export interface RiskOutput {
   action?: string;
 }
 
-export interface RiskResult {
-  success: boolean;
-  data?: RiskOutput;
-  error?: string;
-}
+export type RiskResult = StandardNodeOutput<RiskOutput>;
+
+const RISK_CONTEXT = { category: "risk", nodeName: "Risk Engine" };
 
 export class RiskEngineService {
   static evaluate(input: RiskInput): RiskResult {
@@ -143,9 +144,9 @@ export class RiskEngineService {
         violations:    violations.length > 0 ? violations : undefined
       };
 
-      return { success: true, data: output };
+      return createSuccessOutput(output, RISK_CONTEXT);
     } catch (err: any) {
-      return { success: false, error: err.message };
+      return createErrorOutput(err, RISK_CONTEXT);
     }
   }
 }

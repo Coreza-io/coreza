@@ -491,26 +491,39 @@ const workflowWorker = new Worker(
       return createSuccessOutput(result, { nodeName: "workflow", category: "execution" });
     } catch (error) {
       const errorOutput = createErrorOutput(error, { nodeName: "workflow", category: "execution" });
-      console.error(
-        `❌ Workflow execution failed for run ${runId}:`,
-        errorOutput.error
+      const errorMessage = errorOutput.error || (error as Error).message || 'Unknown error';
+      
+      // Detect if this was a cancellation (not a real failure)
+      const isCancellation = errorMessage.toLowerCase().includes('cancelled') || 
+                             errorMessage.toLowerCase().includes('deactivated');
+      
+      const status = isCancellation ? 'cancelled' : 'failed';
+      
+      console.log(
+        `${isCancellation ? '🛑' : '❌'} Workflow run ${runId} ${status}:`,
+        errorMessage
       );
 
-      // Save error
+      // Save error with appropriate status
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'failed', { errorMessage: errorOutput.error });
+        await updateRunStatusInRedis(runId, status, { errorMessage });
       } else {
         await supabase
           .from("workflow_runs")
           .update({
-            status: "failed",
-            error_message: errorOutput.error,
+            status,
+            error_message: errorMessage,
             completed_at: new Date().toISOString(),
           })
           .eq("id", runId);
       }
 
-      throw new Error(errorOutput.error);
+      // For cancellations, don't throw (job completed successfully by stopping)
+      if (isCancellation) {
+        return { cancelled: true, reason: errorMessage };
+      }
+
+      throw new Error(errorMessage);
     }
   },
   {

@@ -241,7 +241,7 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
       
       {/* Footer with scroll position and keyboard hints */}
       <div className="p-2 border-t border-border text-xs text-muted-foreground text-center bg-muted/20 flex items-center justify-between">
-        <span className="text-[10px] opacity-70">Home/End • PgUp/PgDn</span>
+        <span className="text-[10px] opacity-70">↑↓ scroll • PgUp/Dn • Home/End • Esc close</span>
         <span>Scroll: {scrollPercent}%</span>
       </div>
     </div>

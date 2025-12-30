@@ -1685,7 +1685,19 @@ const WorkflowEditorContent = () => {
               edges={edges}
               nodeExecutions={getNodeExecutions(selectedExecution)}
               loading={loadingExecution}
-              onCopyToEditor={() => setActiveTab("editor")}
+              onCopyToEditor={() => {
+                if (selectedExecution?.nodes && selectedExecution?.edges) {
+                  handleRestoreFromVersion(
+                    selectedExecution.nodes as Node[],
+                    selectedExecution.edges as Edge[]
+                  );
+                  toast({
+                    title: "Workflow restored",
+                    description: `Restored ${(selectedExecution.nodes as any[]).length} nodes from execution snapshot`,
+                  });
+                }
+                setActiveTab("editor");
+              }}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground bg-trading-grid">

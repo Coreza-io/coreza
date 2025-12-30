@@ -40,6 +40,16 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Save,
   Play,
   Pause,
@@ -199,6 +209,7 @@ const WorkflowEditorContent = () => {
   const [dateToInput, setDateToInput] = useState<Date | null>(null);
   const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
   const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
@@ -1685,19 +1696,7 @@ const WorkflowEditorContent = () => {
               edges={edges}
               nodeExecutions={getNodeExecutions(selectedExecution)}
               loading={loadingExecution}
-              onCopyToEditor={() => {
-                if (selectedExecution?.nodes && selectedExecution?.edges) {
-                  handleRestoreFromVersion(
-                    selectedExecution.nodes as Node[],
-                    selectedExecution.edges as Edge[]
-                  );
-                  toast({
-                    title: "Workflow restored",
-                    description: `Restored ${(selectedExecution.nodes as any[]).length} nodes from execution snapshot`,
-                  });
-                }
-                setActiveTab("editor");
-              }}
+              onCopyToEditor={() => setShowRestoreConfirm(true)}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground bg-trading-grid">
@@ -1725,6 +1724,40 @@ const WorkflowEditorContent = () => {
           )}
         </button>
       )}
+
+      {/* Restore Confirmation Dialog */}
+      <AlertDialog open={showRestoreConfirm} onOpenChange={setShowRestoreConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore workflow from snapshot?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will replace your current workflow with {(selectedExecution?.nodes as any[])?.length || 0} nodes 
+              and {(selectedExecution?.edges as any[])?.length || 0} edges from the execution snapshot. 
+              Your current unsaved changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedExecution?.nodes && selectedExecution?.edges) {
+                  handleRestoreFromVersion(
+                    selectedExecution.nodes as Node[],
+                    selectedExecution.edges as Edge[]
+                  );
+                  toast({
+                    title: "Workflow restored",
+                    description: `Restored ${(selectedExecution.nodes as any[]).length} nodes from execution snapshot`,
+                  });
+                }
+                setActiveTab("editor");
+              }}
+            >
+              Restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -14,11 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square } from "lucide-react";
-import { isStandardNodeOutput, extractOutputData } from "@/types/nodeOutput";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3 } from "lucide-react";
+import { isStandardNodeOutput } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
+import { truncateForDisplay } from "./outputTruncation";
 
 
 // Props strongly typed, mirroring InputPanel
@@ -62,9 +63,94 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
   );
 };
 
-// Recursively render output data, modern UI with design system
+// Special component for bars data summary
+const BarsDataSummary: React.FC<{ stats: { count: number; dateRange: string; priceRange: string }; preview: any[] }> = ({ stats, preview }) => {
+  const [showPreview, setShowPreview] = useState(false);
+  
+  return (
+    <div className="bg-muted/30 rounded-md border border-border/30 overflow-hidden">
+      <div className="p-2 space-y-1">
+        <div className="flex items-center gap-2 text-primary">
+          <BarChart3 className="w-3 h-3" />
+          <span className="text-xs font-semibold">Bars Data</span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <span className="text-muted-foreground">Count:</span>
+          <span className="font-mono">{stats.count.toLocaleString()}</span>
+          <span className="text-muted-foreground">Range:</span>
+          <span className="font-mono text-[10px]">{stats.dateRange}</span>
+          <span className="text-muted-foreground">Price:</span>
+          <span className="font-mono">{stats.priceRange}</span>
+        </div>
+      </div>
+      
+      <button
+        onClick={() => setShowPreview(!showPreview)}
+        className="w-full flex items-center justify-between px-2 py-1 text-xs text-muted-foreground hover:bg-muted/50 border-t border-border/30"
+      >
+        <span>Preview first 3 bars</span>
+        {showPreview ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      </button>
+      
+      {showPreview && preview && (
+        <div className="p-2 border-t border-border/30 bg-background/50 max-h-32 overflow-auto">
+          {preview.map((bar, i) => (
+            <div key={i} className="text-[10px] font-mono text-muted-foreground truncate">
+              {JSON.stringify(bar)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Truncated array display component
+const TruncatedArrayDisplay: React.FC<{ total: number; preview: any[]; parentKey: string }> = ({ total, preview, parentKey }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <div className="rounded-md border border-border/30 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-muted/20 hover:bg-muted/40 transition-colors"
+      >
+        <span className="text-xs font-semibold text-primary">{parentKey || 'Array'}</span>
+        <span className="text-xs text-muted-foreground flex items-center gap-1">
+          {total.toLocaleString()} items
+          {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        </span>
+      </button>
+      
+      {expanded && (
+        <div className="p-2 space-y-1 max-h-48 overflow-auto">
+          {preview.map((item, i) => (
+            <div key={i} className="text-[10px] font-mono text-foreground bg-background p-1 rounded truncate">
+              [{i}] {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+            </div>
+          ))}
+          {total > preview.length && (
+            <div className="text-[10px] text-muted-foreground italic pt-1">
+              ...and {(total - preview.length).toLocaleString()} more items
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Recursively render output data with truncation support
 const renderData = (data: any, parentKey = ""): React.ReactNode => {
-  console.log("Payload:", data);
+  // Handle truncated bars data
+  if (data?.__truncated && data.__type === 'bars' && data.__stats) {
+    return <BarsDataSummary stats={data.__stats} preview={data.__preview || []} />;
+  }
+  
+  // Handle truncated arrays
+  if (data?.__truncated && data.__type === 'array') {
+    return <TruncatedArrayDisplay total={data.__total} preview={data.__preview || []} parentKey={parentKey} />;
+  }
   
   if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
     return (
@@ -75,11 +161,24 @@ const renderData = (data: any, parentKey = ""): React.ReactNode => {
   }
   
   if (typeof data === "object" && data !== null) {
+    // Filter out internal truncation metadata
+    const entries = Object.entries(data).filter(([key]) => !key.startsWith('__'));
+    
     return (
       <div className="flex flex-col gap-2">
-        {Object.entries(data).map(([key, value]) => {
+        {entries.map(([key, value]) => {
           const fullKey = parentKey ? `${parentKey}.${key}` : key;
-          const displayValue = value;
+          
+          // Check if value is a truncated structure
+          const valueObj = value as any;
+          if (valueObj?.__truncated) {
+            return (
+              <div key={fullKey} className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-primary px-1">{key}</span>
+                {renderData(value, key)}
+              </div>
+            );
+          }
           
           return (
             <div
@@ -88,17 +187,23 @@ const renderData = (data: any, parentKey = ""): React.ReactNode => {
             >
               <span className="text-xs font-semibold text-primary">{key}</span>
               <span className="text-xs text-foreground pl-2 mt-1">
-                {displayValue === undefined ? (
+                {value === undefined ? (
                   <span className="text-muted-foreground">undefined</span>
-                ) : displayValue === null ? (
+                ) : value === null ? (
                   <span className="text-muted-foreground">null</span>
-                ) : typeof displayValue === "object" ? (
-                  <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs">
-                    {JSON.stringify(displayValue, null, 2)}
-                  </span>
+                ) : typeof value === "object" ? (
+                  Array.isArray(value) ? (
+                    <span className="text-muted-foreground">Array[{value.length}]</span>
+                  ) : (
+                    <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
+                      {JSON.stringify(value).slice(0, 200)}
+                      {JSON.stringify(value).length > 200 && '...'}
+                    </span>
+                  )
                 ) : (
                   <span className="break-words">
-                    {String(displayValue)}
+                    {String(value).slice(0, 500)}
+                    {String(value).length > 500 && '...'}
                   </span>
                 )}
               </span>
@@ -140,12 +245,42 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
     }
   }, [data, pinned]);
 
+  // Truncate data for display - memoized to avoid re-processing
+  const displayData = useMemo(() => {
+    if (isStandardNodeOutput(internalData)) {
+      // Truncate the data field within StandardNodeOutput
+      const truncatedData = internalData.data !== undefined 
+        ? truncateForDisplay(internalData.data).data 
+        : undefined;
+      
+      return {
+        success: internalData.success,
+        status: internalData.status,
+        ...(internalData.error !== undefined ? { error: internalData.error } : {}),
+        ...(truncatedData !== undefined ? { data: truncatedData } : {}),
+      };
+    }
+    return truncateForDisplay(internalData).data;
+  }, [internalData]);
+
   if (!isExpanded) return null;
 
   // Handlers
   const handleEdit = () => {
-    setEditText(JSON.stringify(internalData, null, 2));
-    setIsEditing(true);
+    // For editing, we need to be careful with large data
+    try {
+      const dataStr = JSON.stringify(internalData, null, 2);
+      if (dataStr.length > 100000) {
+        // Too large to edit safely
+        setEditText('// Data too large to edit directly\n// Export to JSON file for editing');
+      } else {
+        setEditText(dataStr);
+      }
+      setIsEditing(true);
+    } catch {
+      setEditText('// Unable to serialize data for editing');
+      setIsEditing(true);
+    }
   };
 
   const handleSave = () => {
@@ -158,7 +293,6 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
       setIsEditing(false);
     } catch (error) {
       console.error("Invalid JSON:", error);
-      // Could add toast notification here
     }
   };
 
@@ -251,16 +385,9 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {/* Always render output data */}
             {isStandardNodeOutput(internalData) ? (
               <>
-                {/* Render full output structure: success, status, data/error */}
-                {renderData({
-                  success: internalData.success,
-                  status: internalData.status,
-                  ...(internalData.error !== undefined ? { error: internalData.error } : {}),
-                  ...(internalData.data !== undefined ? { data: internalData.data } : {}),
-                }, "")}
+                {renderData(displayData, "")}
                 {internalData.meta?.executionTime && (
                   <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
                     Executed in {internalData.meta.executionTime}ms
@@ -268,7 +395,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
                 )}
               </>
             ) : (
-              renderData(internalData, "")
+              renderData(displayData, "")
             )}
           </div>
         )}

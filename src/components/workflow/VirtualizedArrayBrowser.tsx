@@ -6,7 +6,7 @@
  * (at your option) any later version.
  */
 
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,6 +91,48 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
   const scrollPercent = virtualizer.getTotalSize() > 0 
     ? Math.round((virtualizer.scrollOffset / virtualizer.getTotalSize()) * 100) 
     : 0;
+  
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!parentRef.current) return;
+    
+    const visibleCount = Math.floor(parentRef.current.clientHeight / 40);
+    const pageSize = Math.max(1, visibleCount - 2); // Leave 2 items overlap for context
+    
+    switch (e.key) {
+      case 'Home':
+        e.preventDefault();
+        virtualizer.scrollToIndex(0, { align: 'start' });
+        break;
+      case 'End':
+        e.preventDefault();
+        virtualizer.scrollToIndex(filteredData.length - 1, { align: 'end' });
+        break;
+      case 'PageUp':
+        e.preventDefault();
+        const currentStartUp = virtualizer.getVirtualItems()[0]?.index ?? 0;
+        virtualizer.scrollToIndex(Math.max(0, currentStartUp - pageSize), { align: 'start' });
+        break;
+      case 'PageDown':
+        e.preventDefault();
+        const currentStartDown = virtualizer.getVirtualItems()[0]?.index ?? 0;
+        virtualizer.scrollToIndex(Math.min(filteredData.length - 1, currentStartDown + pageSize), { align: 'start' });
+        break;
+    }
+  }, [virtualizer, filteredData.length]);
+  
+  // Attach keyboard listener
+  useEffect(() => {
+    const container = parentRef.current;
+    if (!container) return;
+    
+    // Make container focusable and focus it
+    container.tabIndex = 0;
+    container.focus();
+    
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
   
   return (
     <div className="flex flex-col h-full bg-card">
@@ -183,9 +225,10 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
         </div>
       </div>
       
-      {/* Footer with scroll position */}
-      <div className="p-2 border-t border-border text-xs text-muted-foreground text-center bg-muted/20">
-        Scroll: {scrollPercent}%
+      {/* Footer with scroll position and keyboard hints */}
+      <div className="p-2 border-t border-border text-xs text-muted-foreground text-center bg-muted/20 flex items-center justify-between">
+        <span className="text-[10px] opacity-70">Home/End • PgUp/PgDn</span>
+        <span>Scroll: {scrollPercent}%</span>
       </div>
     </div>
   );

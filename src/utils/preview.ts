@@ -129,14 +129,63 @@ export function summarizePreview(
   }
 }
 
-// Format preview without truncation so users can see the full resolved value
-export function fullePreview(value: any): string {
+// Truncate large data structures for preview to avoid performance issues
+function truncateForPreview(obj: any, maxItems: number, depth: number): any {
+  if (depth <= 0) return "[Object]";
+
+  if (Array.isArray(obj)) {
+    if (obj.length > maxItems) {
+      const truncated = obj.slice(0, maxItems).map((item) =>
+        typeof item === "object" && item !== null
+          ? truncateForPreview(item, maxItems, depth - 1)
+          : item
+      );
+      return truncated;
+    }
+    return obj.map((item) =>
+      typeof item === "object" && item !== null
+        ? truncateForPreview(item, maxItems, depth - 1)
+        : item
+    );
+  }
+
+  if (typeof obj === "object" && obj !== null) {
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] =
+        typeof value === "object" && value !== null
+          ? truncateForPreview(value, maxItems, depth - 1)
+          : value;
+    }
+    return result;
+  }
+
+  return obj;
+}
+
+// Format preview with smart truncation for large arrays
+export function fullePreview(value: any, maxItems = 5, maxDepth = 3): string {
   try {
     if (value === null) return "null";
     if (value === undefined) return "undefined";
 
     if (typeof value === "string") {
       return value;
+    }
+
+    // For large arrays, truncate and show summary
+    if (Array.isArray(value) && value.length > maxItems) {
+      const totalItems = value.length;
+      const truncated = truncateForPreview(value.slice(0, maxItems), maxItems, maxDepth);
+      const previewJson = JSON.stringify(truncated, null, 2);
+      // Remove closing bracket and add indicator
+      return `${previewJson.slice(0, -1)},\n  // ... and ${(totalItems - maxItems).toLocaleString()} more items\n]`;
+    }
+
+    // For objects, truncate any large nested arrays
+    if (typeof value === "object" && value !== null) {
+      const truncated = truncateForPreview(value, maxItems, maxDepth);
+      return JSON.stringify(truncated, null, 2);
     }
 
     return JSON.stringify(value, null, 2);

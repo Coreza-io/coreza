@@ -18,7 +18,7 @@ import { useState, useCallback } from "react";
 import { useNodes } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
-import { fullePreview } from "@/utils/preview";
+import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 
 interface UseNodeReferencesProps {
@@ -157,19 +157,9 @@ export function useNodeReferences({
       try {
         const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
 
-        // Extract timezone from the source node being referenced
-        // Parse the expression to find the source node name
-        const nodeMatch = expr.match(/\$\(['"]([^'"]+)['"]\)/);
-        let timezone: string | undefined;
-
-        if (nodeMatch) {
-          const sourceName = nodeMatch[1];
-          const sourceData = allNodeData[sourceName];
-          // Look for timezone in common locations
-          timezone =
-            sourceData?.schedule?.timezone ||
-            sourceData?.timezone ||
-            sourceData?.config?.timezone;
+        // For very large arrays, use quick summarized preview to avoid performance issues
+        if (Array.isArray(resolved) && resolved.length > 100) {
+          return summarizePreview(resolved, 5, 200);
         }
 
         return fullePreview(resolved);

@@ -270,11 +270,20 @@ const createRenderData = (
                   ) : typeof value === "object" ? (
                     Array.isArray(value) ? (
                       <span className="text-muted-foreground">Array[{value.length}]</span>
+                    ) : Object.keys(value).length > 0 ? (
+                      // Check if any nested values contain truncated data
+                      Object.values(value).some((v: any) => v?.__truncated) ? (
+                        <div className="pl-2 mt-1">
+                          {renderData(value, fullKey)}
+                        </div>
+                      ) : (
+                        <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
+                          {JSON.stringify(value).slice(0, 200)}
+                          {JSON.stringify(value).length > 200 && '...'}
+                        </span>
+                      )
                     ) : (
-                      <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
-                        {JSON.stringify(value).slice(0, 200)}
-                        {JSON.stringify(value).length > 200 && '...'}
-                      </span>
+                      <span className="text-muted-foreground">{'{}'}</span>
                     )
                   ) : (
                     <span className="break-words">

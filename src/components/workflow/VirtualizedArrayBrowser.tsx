@@ -118,6 +118,16 @@ export const VirtualizedArrayBrowser: React.FC<VirtualizedArrayBrowserProps> = (
         const currentStartDown = virtualizer.getVirtualItems()[0]?.index ?? 0;
         virtualizer.scrollToIndex(Math.min(filteredData.length - 1, currentStartDown + pageSize), { align: 'start' });
         break;
+      case 'ArrowUp':
+        e.preventDefault();
+        const currentUp = virtualizer.getVirtualItems()[0]?.index ?? 0;
+        virtualizer.scrollToIndex(Math.max(0, currentUp - 1), { align: 'start' });
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        const currentDown = virtualizer.getVirtualItems()[0]?.index ?? 0;
+        virtualizer.scrollToIndex(Math.min(filteredData.length - 1, currentDown + 1), { align: 'start' });
+        break;
     }
   }, [virtualizer, filteredData.length]);
   

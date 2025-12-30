@@ -76,6 +76,8 @@ export interface IWorkflowJobQueue {
     items: any[],
     options?: ParallelLoopOptions
   ): Promise<void>;
+  /** Cancel all queued/running jobs for a workflow and return count of cancelled jobs */
+  cancelWorkflowJobs(workflowId: string): Promise<number>;
   getQueueStats(): Promise<any>;
   cleanup(): Promise<void>;
 }

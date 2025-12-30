@@ -802,7 +802,51 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           }
         }
       } else {
-        // Deactivate - unschedule and unsubscribe
+        // Deactivate - unschedule, unsubscribe, and cancel running jobs
+        
+        // Cancel all running/queued jobs for this workflow
+        const cancelledJobs = await jobQueue.cancelWorkflowJobs(workflowId);
+        console.log(`🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`);
+        
+        // Mark any "running" or "queued" workflow runs as cancelled
+        const { data: cancelledRuns, error: runUpdateError } = await supabase
+          .from('workflow_runs')
+          .update({ 
+            status: 'cancelled',
+            completed_at: new Date().toISOString(),
+            error_message: 'Workflow deactivated by user'
+          })
+          .eq('workflow_id', workflowId)
+          .in('status', ['running', 'queued'])
+          .select('id');
+
+        if (cancelledRuns?.length) {
+          console.log(`🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`);
+        }
+        
+        // If this is a backtest workflow, cancel any active backtests
+        if (triggerNode?.node_type === 'backtest' || triggerNode?.name === 'BacktestInit') {
+          const { data: activeBacktests, error: btError } = await supabase
+            .from('backtests')
+            .select('id')
+            .eq('workflow_id', workflowId)
+            .in('status', ['pending', 'running']);
+            
+          if (activeBacktests?.length) {
+            await supabase
+              .from('backtests')
+              .update({ 
+                status: 'cancelled',
+                completed_at: new Date().toISOString(),
+                error_message: 'Workflow deactivated by user'
+              })
+              .eq('workflow_id', workflowId)
+              .in('status', ['pending', 'running']);
+            
+            console.log(`🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`);
+          }
+        }
+        
         if (triggerNode) {
           await workflowScheduler.unscheduleWorkflow(workflowId);
         }

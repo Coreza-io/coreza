@@ -414,6 +414,28 @@ const workflowWorker = new Worker(
     // Normal workflow execution
     console.log(`🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`);
 
+    // Check if workflow was cancelled while job was queued
+    const isCancelled = await redis.get(`workflow:${workflowId}:cancelled`);
+    if (isCancelled) {
+      console.log(`🛑 Workflow ${workflowId} was cancelled, skipping execution for run ${runId}`);
+      
+      // Mark run as cancelled
+      if (useRedisStorage) {
+        await updateRunStatusInRedis(runId, 'failed', { errorMessage: 'Workflow deactivated by user' });
+      } else {
+        await supabase
+          .from("workflow_runs")
+          .update({
+            status: "cancelled",
+            error_message: "Workflow deactivated by user",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+      }
+      
+      return { cancelled: true, reason: 'workflow_deactivated' };
+    }
+
     try {
       // Update run status to running
       if (useRedisStorage) {
@@ -756,6 +778,65 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await queue.obliterate({ force: true });
     await queue.close();
     console.log(`✅ Queue ${queueName} obliterated`);
+  }
+
+  /**
+   * Cancel all queued/running jobs for a workflow.
+   * - Removes waiting/delayed jobs immediately
+   * - Sets cancellation flag in Redis for active jobs to check
+   * - Returns count of jobs affected
+   */
+  async cancelWorkflowJobs(workflowId: string): Promise<number> {
+    console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
+    
+    try {
+      // Set cancellation flag in Redis (active jobs will check this)
+      await redis.set(`workflow:${workflowId}:cancelled`, '1', 'EX', 300); // 5 min TTL
+      
+      // Get all waiting, delayed, and active jobs
+      const allJobs = await workflowQueue.getJobs(['waiting', 'delayed', 'active']);
+      
+      let cancelledCount = 0;
+      for (const job of allJobs) {
+        if (job.data.workflowId === workflowId) {
+          try {
+            const state = await job.getState();
+            if (state === 'waiting' || state === 'delayed') {
+              // Can directly remove these jobs
+              await job.remove();
+              cancelledCount++;
+              console.log(`  ↳ Removed ${state} job ${job.id}`);
+            } else if (state === 'active') {
+              // Active jobs will check the cancellation flag
+              cancelledCount++;
+              console.log(`  ↳ Flagged active job ${job.id} for cancellation`);
+            }
+          } catch (err) {
+            console.error(`  ↳ Failed to cancel job ${job.id}:`, err);
+          }
+        }
+      }
+      
+      // Also cancel scheduled jobs
+      const scheduledJobs = await scheduledQueue.getJobs(['waiting', 'delayed', 'active']);
+      for (const job of scheduledJobs) {
+        if (job.data.workflowId === workflowId) {
+          try {
+            await job.remove();
+            cancelledCount++;
+            console.log(`  ↳ Removed scheduled job ${job.id}`);
+          } catch (err) {
+            console.error(`  ↳ Failed to cancel scheduled job ${job.id}:`, err);
+          }
+        }
+      }
+      
+      console.log(`✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`);
+      return cancelledCount;
+    } catch (error) {
+      console.error(`❌ Error cancelling jobs for workflow ${workflowId}:`, error);
+      throw error;
+    }
   }
 
   async getQueueStats() {

@@ -17,7 +17,11 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, SimBrokerConfig, Bar } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
-import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
@@ -28,23 +32,48 @@ export class BacktestExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     const nodeName = node.name;
+    const startTime = Date.now();
 
-    switch (nodeName) {
-      case "BacktestInit":
-        return this.executeBacktestInit(node, input, context);
-      case "BacktestTrade":
-        return this.executeBacktestTrade(node, input, context);
-      case "BacktestSnapshot":
-        return this.executeBacktestSnapshot(node, input, context);
-      case "BacktestResults":
-        return this.executeBacktestResults(node, input, context);
-      case "BacktestPortfolio":
-        return this.executeBacktestPortfolio(node, input, context);
-      default:
-        return {
-          success: false,
-          error: `Unknown backtest node type: ${nodeName}`,
-        };
+    try {
+      let result: NodeResult;
+      switch (nodeName) {
+        case "BacktestInit":
+          result = await this.executeBacktestInit(node, input, context);
+          break;
+        case "BacktestTrade":
+          result = await this.executeBacktestTrade(node, input, context);
+          break;
+        case "BacktestSnapshot":
+          result = await this.executeBacktestSnapshot(node, input, context);
+          break;
+        case "BacktestResults":
+          result = await this.executeBacktestResults(node, input, context);
+          break;
+        case "BacktestPortfolio":
+          result = await this.executeBacktestPortfolio(node, input, context);
+          break;
+        default: {
+          const errOutput = createErrorOutput(
+            `Unknown backtest node type: ${nodeName}`,
+            { nodeId: node.id, nodeName, category: this.category, startTime }
+          );
+          return toNodeResult(errOutput);
+        }
+      }
+
+      const normalized = normalizeOutput(result, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+        startTime,
+      });
+      return toNodeResult(normalized);
+    } catch (error) {
+      const errOutput = createErrorOutput(
+        error instanceof Error ? error : String(error),
+        { nodeId: node.id, nodeName, category: this.category, startTime }
+      );
+      return toNodeResult(errOutput);
     }
   }
 

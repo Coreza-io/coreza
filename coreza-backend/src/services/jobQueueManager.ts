@@ -27,6 +27,7 @@ import { StandardNodeOutput } from "../types/nodeOutput";
 import { WorkflowJobResult, LoopItemResult, isWorkflowCancelled } from "../types/workflowJobResult";
 
 const redis = getRedisQueue();
+const WORKFLOW_JOB_ATTEMPTS = parseInt(process.env.WORKFLOW_JOB_ATTEMPTS || "1", 10);
 
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
@@ -615,11 +616,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     return await workflowQueue.add("execute-workflow", data, {
       removeOnComplete: 50,
       removeOnFail: 100,
-      attempts: 3,
-      backoff: {
+      attempts: WORKFLOW_JOB_ATTEMPTS,
+      backoff: WORKFLOW_JOB_ATTEMPTS > 1 ? {
         type: "exponential",
         delay: 2000,
-      },
+      } : undefined,
     });
   }
 
@@ -724,12 +725,12 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         opts: {
           removeOnComplete: 50,
           removeOnFail: continueOnError ? 50 : 100,
-          attempts: continueOnError ? 1 : 3,
+          attempts: continueOnError ? 1 : WORKFLOW_JOB_ATTEMPTS,
           delay: delayMs,
-          backoff: continueOnError ? undefined : {
+          backoff: (!continueOnError && WORKFLOW_JOB_ATTEMPTS > 1) ? {
             type: "exponential" as const,
             delay: 2000,
-          },
+          } : undefined,
           failParentOnFailure: !continueOnError,
         },
       };

@@ -150,9 +150,9 @@ async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<voi
 }
 
 // Workflow execution worker
-const workflowWorker = new Worker(
+const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
   "workflow-execution",
-  async (job: Job<WorkflowJobData>, token?: string, signal?: AbortSignal) => {
+  async (job: Job<WorkflowJobData>, token?: string, signal?: AbortSignal): Promise<WorkflowJobResult> => {
     // Ensure node executors are registered (handles circular dependency race condition)
     const registeredCategories = getAllRegisteredCategories();
     if (registeredCategories.length === 0) {
@@ -844,7 +844,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               console.log(`  ↳ Removed ${state} job ${job.id} (${job.data.trigger || 'normal'})`);
             } else if (state === 'active') {
               // Use BullMQ's native job cancellation - sends abort signal to worker
-              const cancelled = await workflowWorker.cancelJob(job.id!, 'Workflow deactivated by user');
+              const cancelled = workflowWorker.cancelJob(job.id!, 'Workflow deactivated by user');
               if (cancelled) {
                 cancelledCount++;
                 console.log(`  ↳ Cancelled active job ${job.id} (${job.data.trigger || 'normal'})`);

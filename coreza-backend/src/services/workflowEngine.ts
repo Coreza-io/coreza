@@ -263,7 +263,18 @@ export class WorkflowEngine {
 
       await this.run(initialInput, startNodeId);
 
-      console.log(`✅ Workflow execution completed successfully`);
+      const hasFailedNodes = this.failed.size > 0;
+      const failedNodeIds = Array.from(this.failed);
+
+      if (hasFailedNodes) {
+        console.log(
+          `⚠️ Workflow completed with ${failedNodeIds.length} failed node(s): ${failedNodeIds.join(
+            ", "
+          )}`
+        );
+      } else {
+        console.log(`✅ Workflow execution completed successfully`);
+      }
 
       // Log DataContext stats before cleanup
       const ctxStats = this.dataContext.getStats();
@@ -274,6 +285,25 @@ export class WorkflowEngine {
 
       // Cleanup DataContext on successful completion
       DataContextManager.getInstance().destroyContext(this.runId);
+
+      if (hasFailedNodes) {
+        const failedExecution = this.nodeExecutions.find(
+          (ne) => ne.nodeId === failedNodeIds[0] && ne.status === "failed"
+        );
+        const errorMessage =
+          failedExecution?.error ||
+          `Workflow completed with failures in nodes: ${failedNodeIds.join(
+            ", "
+          )}`;
+
+        return {
+          success: false,
+          error: errorMessage,
+          result: this.store.getAllResults(),
+          nodeExecutions: this.nodeExecutions,
+          executionOrder: this.executionOrder,
+        };
+      }
 
       return {
         success: true,

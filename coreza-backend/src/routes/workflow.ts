@@ -808,50 +808,59 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         }
       } else {
         // Deactivate - unschedule, unsubscribe, and cancel running jobs
-        
+
         // Cancel all running/queued jobs for this workflow
         const cancelledJobs = await jobQueue.cancelWorkflowJobs(workflowId);
-        console.log(`🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`);
-        
+        console.log(
+          `🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`
+        );
+
         // Mark any "running" or "queued" workflow runs as cancelled
         const { data: cancelledRuns, error: runUpdateError } = await supabase
-          .from('workflow_runs')
-          .update({ 
-            status: 'cancelled',
+          .from("workflow_runs")
+          .update({
+            status: "cancelled",
             completed_at: new Date().toISOString(),
-            error_message: 'Workflow deactivated by user'
+            error_message: "Workflow deactivated by user",
           })
-          .eq('workflow_id', workflowId)
-          .in('status', ['running', 'queued'])
-          .select('id');
+          .eq("workflow_id", workflowId)
+          .in("status", ["running", "queued"])
+          .select("id");
 
         if (cancelledRuns?.length) {
-          console.log(`🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`);
+          console.log(
+            `🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`
+          );
         }
-        
+
         // If this is a backtest workflow, cancel any active backtests
-        if (triggerNode?.node_type === 'backtest' || triggerNode?.name === 'BacktestInit') {
+        if (
+          triggerNode?.node_type === "backtest" ||
+          triggerNode?.name === "BacktestInit"
+        ) {
           const { data: activeBacktests, error: btError } = await supabase
-            .from('backtests')
-            .select('id')
-            .eq('workflow_id', workflowId)
-            .in('status', ['pending', 'running']);
-            
+            .from("backtests")
+            .select("id")
+            .eq("workflow_id", workflowId)
+            .in("status", ["pending", "running"]);
+
           if (activeBacktests?.length) {
             await supabase
-              .from('backtests')
-              .update({ 
-                status: 'cancelled',
+              .from("backtests")
+              .update({
+                status: "cancelled",
                 completed_at: new Date().toISOString(),
-                error_message: 'Workflow deactivated by user'
+                error_message: "Workflow deactivated by user",
               })
-              .eq('workflow_id', workflowId)
-              .in('status', ['pending', 'running']);
-            
-            console.log(`🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`);
+              .eq("workflow_id", workflowId)
+              .in("status", ["pending", "running"]);
+
+            console.log(
+              `🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`
+            );
           }
         }
-        
+
         if (triggerNode) {
           await workflowScheduler.unscheduleWorkflow(workflowId);
         }
@@ -901,12 +910,14 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
         // Clean up workflow-scoped symbol subscriptions (from Subscribe nodes like BinanceSubscribe, AlpacaSubscribe, DhanSubscribe)
         const redis = getRedisCache();
-        const workflowSymbolKeys = await redis.keys(`workflow:${workflowId}:subscribed_symbols:*`);
-        
+        const workflowSymbolKeys = await redis.keys(
+          `workflow:${workflowId}:subscribed_symbols:*`
+        );
+
         for (const key of workflowSymbolKeys) {
-          const source = key.split(':').pop(); // Extract source from key (e.g., "binance_stream")
+          const source = key.split(":").pop(); // Extract source from key (e.g., "binance_stream")
           const symbols = await redis.smembers(key);
-          
+
           if (symbols.length > 0) {
             const unsubscribeMessage = {
               action: "unsubscribe",
@@ -919,12 +930,12 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               REDIS_CHANNELS.controlUnsubscribe,
               JSON.stringify(unsubscribeMessage)
             );
-            
+
             console.log(
               `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`
             );
           }
-          
+
           // Clean up the Redis key
           await redis.del(key);
         }

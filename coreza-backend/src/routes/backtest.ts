@@ -99,11 +99,9 @@ router.post("/trade", async (req: Request, res: Response) => {
     } = req.body;
 
     if (!backtest_id || !symbol || !side || !quantity) {
-      return res
-        .status(400)
-        .json({
-          error: "backtest_id, symbol, side, and quantity are required",
-        });
+      return res.status(400).json({
+        error: "backtest_id, symbol, side, and quantity are required",
+      });
     }
 
     const result = await backtestExecutor.execute(
@@ -130,7 +128,7 @@ router.post("/trade", async (req: Request, res: Response) => {
       return res.status(400).json({ error: result.error });
     }
 
-    return res.json(result.data);
+    return res.json({ success: true, data: result.data, meta: result.meta });
   } catch (error) {
     console.error("[BacktestRoutes] /trade error:", error);
     return res.status(500).json({ error: "Failed to execute trade" });
@@ -172,7 +170,7 @@ router.post("/snapshot", async (req: Request, res: Response) => {
       return res.status(400).json({ error: result.error });
     }
 
-    return res.json(result.data);
+    return res.json({ success: true, data: result.data, meta: result.meta });
   } catch (error) {
     console.error("[BacktestRoutes] /snapshot error:", error);
     return res.status(500).json({ error: "Failed to record snapshot" });
@@ -208,7 +206,7 @@ router.post("/results", async (req: Request, res: Response) => {
       return res.status(400).json({ error: result.error });
     }
 
-    return res.json(result.data);
+    return res.json({ success: true, data: result.data, meta: result.meta });
   } catch (error) {
     console.error("[BacktestRoutes] /results error:", error);
     return res.status(500).json({ error: "Failed to finalize backtest" });
@@ -244,7 +242,7 @@ router.post("/portfolio", async (req: Request, res: Response) => {
       return res.status(400).json({ error: result.error });
     }
 
-    return res.json(result.data);
+    return res.json({ success: true, data: result.data, meta: result.meta });
   } catch (error) {
     console.error("[BacktestRoutes] /portfolio error:", error);
     return res.status(500).json({ error: "Failed to get portfolio state" });

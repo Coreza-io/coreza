@@ -922,8 +922,12 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 }
 
 // Event listeners for monitoring
-workflowWorker.on("completed", (job) => {
-  console.log(`✅ Workflow job ${job.id} completed`);
+workflowWorker.on("completed", (job, result) => {
+  if (result?.cancelled) {
+    console.log(`🛑 Workflow job ${job.id} cancelled: ${result.reason || 'user request'}`);
+  } else {
+    console.log(`✅ Workflow job ${job.id} completed`);
+  }
 });
 
 workflowWorker.on("failed", (job, err) => {

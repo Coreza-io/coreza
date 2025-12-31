@@ -24,6 +24,7 @@ import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
 import { StandardNodeOutput } from "../types/nodeOutput";
+import { WorkflowJobResult, LoopItemResult, isWorkflowCancelled } from "../types/workflowJobResult";
 
 const redis = getRedisQueue();
 
@@ -44,10 +45,7 @@ interface ScheduledWorkflowJobData {
   cronExpression: string;
 }
 
-/** Result structure for each loop item - uses StandardNodeOutput format */
-interface LoopItemResult extends StandardNodeOutput {
-  itemIndex: number;
-}
+// LoopItemResult is now imported from ../types/workflowJobResult
 
 /**
  * Collects and orders results from Redis hash by itemIndex.
@@ -435,7 +433,7 @@ const workflowWorker = new Worker(
           .eq("id", runId);
       }
       
-      return { cancelled: true, reason: 'workflow_deactivated' };
+      return { cancelled: true, reason: 'workflow_deactivated' } as const;
     }
 
     // Check abort signal before starting (in case job was cancelled immediately)
@@ -922,9 +920,9 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 }
 
 // Event listeners for monitoring
-workflowWorker.on("completed", (job, result) => {
-  if (result?.cancelled) {
-    console.log(`🛑 Workflow job ${job.id} cancelled: ${result.reason || 'user request'}`);
+workflowWorker.on("completed", (job, result: WorkflowJobResult) => {
+  if (isWorkflowCancelled(result)) {
+    console.log(`🛑 Workflow job ${job.id} cancelled: ${result.reason}`);
   } else {
     console.log(`✅ Workflow job ${job.id} completed`);
   }

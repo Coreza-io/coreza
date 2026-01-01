@@ -64,7 +64,9 @@ router.post("/if", async (req, res) => {
         });
       }
 
-      results.push(result.result);
+      if (result.data !== undefined) {
+        results.push(result.data);
+      }
     }
 
     // Combine results based on logicalOp
@@ -95,7 +97,7 @@ router.post("/if", async (req, res) => {
 // Switch case routing logic using ComparatorService
 router.post("/switch", async (req, res) => {
   try {
-    const { cases = [], defaultCase = "fallback", inputValue } = req.body;
+    const { cases = [], defaultCase = "fallback" } = req.body;
     if (!Array.isArray(cases)) {
       return res.status(400).json({
         error: "cases must be an array",
@@ -111,8 +113,8 @@ router.post("/switch", async (req, res) => {
     }
 
     for (const caseItem of cases) {
-      const leftValue = caseItem.left ?? inputValue;
-      const rightValue = caseItem.right ?? caseItem.caseValue;
+      const leftValue = caseItem.left;
+      const rightValue = caseItem.right;
 
       if (leftValue === undefined || rightValue === undefined) {
         return res.status(400).json({
@@ -125,16 +127,12 @@ router.post("/switch", async (req, res) => {
     // Transform cases to ComparatorService format
     const serviceCases = cases.map((caseItem, idx) => ({
       condition: {
-        left: caseItem.left ?? inputValue,
-        operator: caseItem.operator || "===",
-        right: caseItem.right ?? caseItem.caseValue,
-        dataType: caseItem.dataType || "any",
+        left: caseItem.left,
+        operator: caseItem.operator,
+        right: caseItem.right,
+        dataType: caseItem.dataType,
       } as ComparatorInput,
-      value:
-        caseItem.outputName ??
-        caseItem.caseName ??
-        caseItem.caseValue ??
-        `case${idx + 1}`,
+      value: caseItem.outputName,
     }));
 
     // Use ComparatorService to evaluate switch
@@ -150,13 +148,9 @@ router.post("/switch", async (req, res) => {
       });
     }
 
-    // Maintain backward compatibility with existing response format
-    const matchedCase =
-      result.matchedCase !== undefined ? cases[result.matchedCase] : null;
-
     res.json({
       success: true,
-      data: result.result,
+      data: result.data,
     });
   } catch (error) {
     console.error("Switch case evaluation error:", error);

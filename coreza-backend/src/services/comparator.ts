@@ -17,7 +17,10 @@
 import { createError } from "../middleware/errorHandler";
 import { Item } from "../nodes/types";
 import { StandardNodeOutput } from "../types/nodeOutput";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../utils/normalizeOutput";
 
 export interface ComparatorInput {
   left: any;
@@ -33,11 +36,7 @@ export interface ComparatorInput {
     | "any";
 }
 
-export interface ComparatorResultData {
-  result: boolean;
-}
-
-export type ComparatorResult = StandardNodeOutput<ComparatorResultData>;
+export type ComparatorResult = StandardNodeOutput<boolean>;
 
 function parseValueByType(value: any, dataType: string): any {
   if (typeof value !== "string") return value;
@@ -178,10 +177,9 @@ export class ComparatorService {
             .startsWith(String(right).toLowerCase());
           break;
         case "not_starts_with":
-          result =
-            !String(left)
-              .toLowerCase()
-              .startsWith(String(right).toLowerCase());
+          result = !String(left)
+            .toLowerCase()
+            .startsWith(String(right).toLowerCase());
           break;
         case "ends_with":
           result = String(left)
@@ -189,10 +187,9 @@ export class ComparatorService {
             .endsWith(String(right).toLowerCase());
           break;
         case "not_ends_with":
-          result =
-            !String(left)
-              .toLowerCase()
-              .endsWith(String(right).toLowerCase());
+          result = !String(left)
+            .toLowerCase()
+            .endsWith(String(right).toLowerCase());
           break;
         case "matches_regex": {
           const regex = new RegExp(String(right), "i");
@@ -275,16 +272,10 @@ export class ComparatorService {
           throw createError(`Unsupported operator: ${operator}`, 400);
       }
 
-      return createSuccessOutput({ result }, COMPARATOR_CONTEXT);
+      return createSuccessOutput(result, COMPARATOR_CONTEXT);
     } catch (error: any) {
       return createErrorOutput(error, COMPARATOR_CONTEXT);
     }
-  }
-
-  static async executeIf(
-    condition: ComparatorInput
-  ): Promise<ComparatorResult> {
-    return this.evaluate(condition);
   }
 
   static async executeSwitch(
@@ -294,11 +285,11 @@ export class ComparatorService {
     try {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = await this.evaluate(cases[i].condition);
-        if (caseResult.success && caseResult.data?.result) {
-          return createSuccessOutput(
-            { result: cases[i].value, matchedCase: i },
-            { ...COMPARATOR_CONTEXT, nodeName: "Switch" }
-          );
+        if (caseResult.success && caseResult.data) {
+          return createSuccessOutput(cases[i].value, {
+            ...COMPARATOR_CONTEXT,
+            nodeName: "Switch",
+          });
         }
       }
 
@@ -308,40 +299,10 @@ export class ComparatorService {
         { ...COMPARATOR_CONTEXT, nodeName: "Switch" }
       );
     } catch (error: any) {
-      return createErrorOutput(error, { ...COMPARATOR_CONTEXT, nodeName: "Switch" });
-    }
-  }
-
-  /**
-   * Evaluate a single condition against each item and split into true/false arrays.
-   */
-  static async evaluateIfItems(
-    items: Item[],
-    condition: { left: string; operator: string; right: any }
-  ): Promise<{ trueItems: Item[]; falseItems: Item[] }> {
-    const trueItems: Item[] = [];
-    const falseItems: Item[] = [];
-
-    for (const item of items) {
-      const leftValue = this.resolvePath(item, condition.left);
-      const rightValue =
-        typeof condition.right === "string"
-          ? this.resolvePath(item, condition.right) ?? condition.right
-          : condition.right;
-
-      const evalResult = await this.evaluate({
-        left: leftValue,
-        operator: condition.operator,
-        right: rightValue,
+      return createErrorOutput(error, {
+        ...COMPARATOR_CONTEXT,
+        nodeName: "Switch",
       });
-      const result = evalResult.success && evalResult.data?.result;
-      (result ? trueItems : falseItems).push(item);
     }
-
-    return { trueItems, falseItems };
-  }
-
-  private static resolvePath(obj: any, path: string): any {
-    return path.split(".").reduce((acc, key) => acc?.[key], obj);
   }
 }

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Exchange building -->
+  <path d="M4 10L12 5L20 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+
+  <path d="M6 10V18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M10 10V18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M14 10V18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M18 10V18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+
+  <!-- Market base -->
+  <path d="M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+</svg>

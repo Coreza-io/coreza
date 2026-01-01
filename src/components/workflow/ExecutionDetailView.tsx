@@ -26,6 +26,7 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import EdgeManager from "./EdgeManager";
 import { nodeManifest } from "@/nodes/manifest";
+import { StaticExecutionStoreProvider } from "@/contexts/StaticExecutionStoreContext";
 
 // Create execution-specific node types using NodeRouter for all node types
 const executionNodeTypes = Object.fromEntries([
@@ -61,18 +62,20 @@ export function ExecutionDetailView({
 
   // Use execution's stored snapshot if available, otherwise fall back to current workflow
   // This ensures historical executions display the workflow state at execution time
+  // Deep clone nodes to prevent mutation of original editor nodes
   const sourceNodes = useMemo(() => {
     if (execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0) {
-      return execution.nodes as Node[];
+      return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
     }
-    return nodes;
+    return JSON.parse(JSON.stringify(nodes)) as Node[];
   }, [execution.nodes, nodes]);
 
+  // Deep clone edges to prevent mutation
   const sourceEdges = useMemo(() => {
     if (execution.edges && Array.isArray(execution.edges) && execution.edges.length > 0) {
-      return execution.edges as Edge[];
+      return JSON.parse(JSON.stringify(execution.edges)) as Edge[];
     }
-    return edges;
+    return JSON.parse(JSON.stringify(edges)) as Edge[];
   }, [execution.edges, edges]);
 
   // Get node execution data by nodeId
@@ -242,7 +245,7 @@ export function ExecutionDetailView({
         </div>
       )}
 
-      {/* Main Content */}
+      {/* Main Content - Wrapped in isolated execution store */}
       <div className="flex flex-1 overflow-hidden">
         {/* Canvas */}
         <div className="flex-1 bg-trading-grid relative">
@@ -264,35 +267,46 @@ export function ExecutionDetailView({
               </div>
             </div>
           )}
-          <ReactFlow
-            nodes={executionNodes}
-            edges={executionEdges}
-            nodeTypes={executionNodeTypes}
-            edgeTypes={executionEdgeTypes}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={true}
-            zoomOnDoubleClick={false}
-            fitView
-            className={cn(
-              "execution-canvas",
-              resolvedTheme === "dark" && "dark",
-              loading && "opacity-50 pointer-events-none"
-            )}
-            style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+          
+          {/* Isolated execution store for historical view - prevents pollution of editor store */}
+          <StaticExecutionStoreProvider 
+            nodeExecutions={nodeExecutions.map(exec => ({
+              nodeId: exec.nodeId,
+              output: exec.output,
+              input: exec.input,
+              status: exec.status,
+            }))}
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={16}
-              size={0.8}
-              color="hsl(var(--muted-foreground) / 0.40)"
-            />
-            <MiniMap
-              className="!bg-card !border-border"
-              maskColor="hsl(var(--muted) / 0.6)"
-            />
-            <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
-          </ReactFlow>
+            <ReactFlow
+              nodes={executionNodes}
+              edges={executionEdges}
+              nodeTypes={executionNodeTypes}
+              edgeTypes={executionEdgeTypes}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={true}
+              zoomOnDoubleClick={false}
+              fitView
+              className={cn(
+                "execution-canvas",
+                resolvedTheme === "dark" && "dark",
+                loading && "opacity-50 pointer-events-none"
+              )}
+              style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={16}
+                size={0.8}
+                color="hsl(var(--muted-foreground) / 0.40)"
+              />
+              <MiniMap
+                className="!bg-card !border-border"
+                maskColor="hsl(var(--muted) / 0.6)"
+              />
+              <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+            </ReactFlow>
+          </StaticExecutionStoreProvider>
         </div>
       </div>
     </div>

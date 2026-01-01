@@ -18,6 +18,7 @@ import { createContext, useContext, useRef, useEffect, useState } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { StaticExecutionStoreContext } from './StaticExecutionStoreContext';
 
 const ExecutionStoreContext = createContext<{
   store: ExecutionContext;
@@ -247,6 +248,11 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 };
 
 export const useExecutionStore = (): ExecutionContext => {
+  // Check for static (historical view) context first - this provides isolation
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  if (staticCtx) return staticCtx.store;
+  
+  // Fall back to main editor context
   const ctx = useContext(ExecutionStoreContext);
   if (!ctx) {
     throw new Error('useExecutionStore must be used within an ExecutionStoreProvider');
@@ -255,11 +261,19 @@ export const useExecutionStore = (): ExecutionContext => {
 };
 
 export const useExecutionStoreVersion = (): number => {
+  // Check for static context first
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  if (staticCtx) return staticCtx.version;
+  
   const ctx = useContext(ExecutionStoreContext);
   return ctx?.version ?? 0;
 };
 
 export const useExecutionStoreNotify = (): (() => void) => {
+  // Check for static context first
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  if (staticCtx) return staticCtx.notifyUpdate;
+  
   const ctx = useContext(ExecutionStoreContext);
   return ctx?.notifyUpdate ?? (() => {});
 };

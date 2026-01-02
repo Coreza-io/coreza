@@ -304,8 +304,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             // Use inline SVG components for instant rendering
             const IconComponent =
               IconRegistry[definition.name as keyof typeof IconRegistry];
-            if (IconComponent) {
-              return <IconComponent className="w-10 h-10" />;
+            if (IconComponent && typeof IconComponent === 'function') {
+              return React.createElement(IconComponent, { className: "w-10 h-10" });
             }
 
             // Fallback to cached image for other icons

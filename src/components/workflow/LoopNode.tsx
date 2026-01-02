@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, createElement } from "react";
 import { NodeProps, useNodes, useEdges } from "@xyflow/react";
 import BaseNode from "@/components/nodes/BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
@@ -45,8 +45,8 @@ export function LoopNode({ id, data, selected }: NodeProps) {
     }
     const IconComponent =
       IconRegistry[definition.name as keyof typeof IconRegistry];
-    if (IconComponent) {
-      return <IconComponent className="w-10 h-10" />;
+    if (IconComponent && typeof IconComponent === 'function') {
+      return React.createElement(IconComponent, { className: "w-10 h-10" });
     }
     return (
       <CachedIcon

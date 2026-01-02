@@ -65,7 +65,9 @@ export function ExecutionDetailView({
   // This ensures historical executions display the workflow state at execution time
   // Deep clone nodes to prevent mutation of original editor nodes
   const sourceNodes = useMemo(() => {
-    if (execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0) {
+    const hasExecutionNodes = execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0;
+    console.log('[ExecutionDetailView] Using execution nodes:', hasExecutionNodes, 'execution.nodes:', execution.nodes?.length, 'fallback nodes:', nodes.length);
+    if (hasExecutionNodes) {
       return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
     }
     return JSON.parse(JSON.stringify(nodes)) as Node[];

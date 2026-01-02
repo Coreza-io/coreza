@@ -134,8 +134,8 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             (() => {
               const IconComponent =
                 IconRegistry[definition.name as keyof typeof IconRegistry];
-              if (IconComponent) {
-                return <IconComponent className="w-6 h-6" />;
+              if (IconComponent && typeof IconComponent === 'function') {
+                return React.createElement(IconComponent, { className: "w-6 h-6" });
               }
 
               return (

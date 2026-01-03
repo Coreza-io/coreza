@@ -18,7 +18,13 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { ComputeService } from "../../services/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 import { ComparatorService } from "../../services/comparator";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+  NormalizeContext,
+} from "../../utils/normalizeOutput";
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
@@ -50,10 +56,12 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "Loop":
           return this.executeLoopNode(node, input, context, normalizeCtx);
         default:
-          return toNodeResult(createErrorOutput(
-            `Unsupported control flow node type: ${nodeName}`,
-            normalizeCtx
-          ));
+          return toNodeResult(
+            createErrorOutput(
+              `Unsupported control flow node type: ${nodeName}`,
+              normalizeCtx
+            )
+          );
       }
     } catch (error) {
       return toNodeResult(createErrorOutput(error, normalizeCtx));
@@ -87,21 +95,24 @@ export class ControlFlowExecutor implements INodeExecutor {
           right: cond.right,
           dataType: cond.dataType,
         });
-        return evalResult.success && evalResult.data?.result;
+        return evalResult.success && evalResult.data;
       });
 
       const evals = await Promise.all(evalPromises);
 
       // Aggregate based on logicalOp
       result =
-        logicalOp === "OR"
-          ? evals.some((e) => e)
-          : evals.every((e) => e);
+        logicalOp === "OR" ? evals.some((e) => e) : evals.every((e) => e);
 
-      return toNodeResult(createSuccessOutput({
-        true: result,
-        false: !result,
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            true: result,
+            false: !result,
+          },
+          normalizeCtx
+        )
+      );
     }
 
     // Otherwise fallback to single comparison or direct condition
@@ -132,10 +143,15 @@ export class ControlFlowExecutor implements INodeExecutor {
       result = evalResult.success && evalResult.data?.result === true;
     }
 
-    return toNodeResult(createSuccessOutput({
-      true: result,
-      false: !result,
-    }, normalizeCtx));
+    return toNodeResult(
+      createSuccessOutput(
+        {
+          true: result,
+          false: !result,
+        },
+        normalizeCtx
+      )
+    );
   }
 
   private async executeSwitchNode(
@@ -161,7 +177,9 @@ export class ControlFlowExecutor implements INodeExecutor {
     const baseInput = resolvedParams.inputValue ?? resolvedParams.value;
 
     const switchCases = cases
-      .filter((c: any) => c && (c.left !== undefined || baseInput !== undefined))
+      .filter(
+        (c: any) => c && (c.left !== undefined || baseInput !== undefined)
+      )
       .map((c: any, idx: number) => ({
         condition: {
           left: c.left ?? baseInput,
@@ -169,8 +187,7 @@ export class ControlFlowExecutor implements INodeExecutor {
           right: c.right ?? c.caseValue,
           dataType: c.dataType, // Add dataType support for proper type handling
         },
-        value:
-          c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
+        value: c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
       }));
 
     const result = await ComparatorService.executeSwitch(
@@ -185,7 +202,12 @@ export class ControlFlowExecutor implements INodeExecutor {
     });
 
     if (!result.success) {
-      return toNodeResult(createErrorOutput(result.error || "Switch evaluation failed", normalizeCtx));
+      return toNodeResult(
+        createErrorOutput(
+          result.error || "Switch evaluation failed",
+          normalizeCtx
+        )
+      );
     }
 
     return toNodeResult(createSuccessOutput(result.result, normalizeCtx));
@@ -291,18 +313,29 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const { value, operator, arg1, arg2, filterOperator, unit, date2, timezone, inputFormat, targetDay } = resolvedParams;
-    const result = ComputeService.compute({ 
-      value, 
-      operator, 
-      arg1, 
-      arg2, 
+    const {
+      value,
+      operator,
+      arg1,
+      arg2,
       filterOperator,
       unit,
       date2,
       timezone,
       inputFormat,
-      targetDay
+      targetDay,
+    } = resolvedParams;
+    const result = ComputeService.compute({
+      value,
+      operator,
+      arg1,
+      arg2,
+      filterOperator,
+      unit,
+      date2,
+      timezone,
+      inputFormat,
+      targetDay,
     });
 
     // ComputeService already returns StandardNodeOutput, just convert to NodeResult
@@ -403,10 +436,12 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      return toNodeResult(createErrorOutput(
-        `No array found for field: ${inputArray} or array is empty`,
-        normalizeCtx
-      ));
+      return toNodeResult(
+        createErrorOutput(
+          `No array found for field: ${inputArray} or array is empty`,
+          normalizeCtx
+        )
+      );
     }
 
     // Get current loop state from context
@@ -476,5 +511,4 @@ export class ControlFlowExecutor implements INodeExecutor {
       meta: normalizeCtx,
     };
   }
-
 }

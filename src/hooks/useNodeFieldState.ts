@@ -21,6 +21,7 @@ import type { Node } from "@xyflow/react";
 interface UseNodeFieldStateProps {
   definition: any;
   data: any;
+  readOnly?: boolean;
 }
 
 interface UseNodeFieldStateReturn {
@@ -36,6 +37,7 @@ interface UseNodeFieldStateReturn {
 export function useNodeFieldState({
   definition,
   data,
+  readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
   const nodes = useNodes();
@@ -126,7 +128,9 @@ export function useNodeFieldState({
   }, [definition?.name]);
 
   // Sync fieldState changes to node data.values for proper persistence
+  // Skip in readOnly mode to prevent execution view from mutating nodes
   useEffect(() => {
+    if (readOnly) return; // Don't sync in read-only/execution view mode
     if (Object.keys(fieldState).length === 0 || !nodeId || !hasInitialized.current) return;
     
     setNodes((nds) =>
@@ -148,11 +152,14 @@ export function useNodeFieldState({
         };
       })
     );
-  }, [fieldState, nodeId, setNodes]);
+  }, [fieldState, nodeId, setNodes, readOnly]);
 
   // Handle single field change with dynamic options support
   const handleChange = useCallback(
     (key: string, value: any) => {
+      // Don't allow changes in readOnly mode
+      if (readOnly) return;
+      
       let newFieldState = { ...fieldState, [key]: value };
       
       // Check if any field has dynamicOptions that depends on this key
@@ -184,12 +191,15 @@ export function useNodeFieldState({
         )
       );
     },
-    [fieldState, nodeId, setNodes, definition?.fields]
+    [fieldState, nodeId, setNodes, definition?.fields, readOnly]
   );
 
   // Handle batch field updates
   const handleFieldStateBatch = useCallback(
     (updates: Record<string, any>) => {
+      // Don't allow changes in readOnly mode
+      if (readOnly) return;
+      
       const newFS = { ...fieldState, ...updates };
       setFieldState(newFS);
       setNodes((nds) =>
@@ -200,7 +210,7 @@ export function useNodeFieldState({
         )
       );
     },
-    [fieldState, nodeId, setNodes]
+    [fieldState, nodeId, setNodes, readOnly]
   );
 
   return {

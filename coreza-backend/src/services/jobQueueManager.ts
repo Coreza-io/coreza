@@ -443,6 +443,8 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
       throw new Error('Workflow cancelled by user');
     }
 
+    let executionResult: Awaited<ReturnType<typeof executeWorkflow>> | undefined;
+
     try {
       // Update run status to running
       if (useRedisStorage) {
@@ -471,6 +473,7 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           abortSignal: signal, // Pass abort signal from BullMQ for cancellation
         }
       );
+      executionResult = result;
 
       // Check if workflow actually succeeded - if not, throw to enter catch block
       if (result.success !== true) {
@@ -512,12 +515,16 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
 
       // Save error with appropriate status
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, status, { errorMessage });
+        await updateRunStatusInRedis(runId, status, {
+          errorMessage,
+          result: executionResult,
+        });
       } else {
         await supabase
           .from("workflow_runs")
           .update({
             status,
+            result: executionResult ?? null,
             error_message: errorMessage,
             completed_at: new Date().toISOString(),
           })

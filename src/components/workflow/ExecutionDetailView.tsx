@@ -66,7 +66,6 @@ export function ExecutionDetailView({
   // Deep clone nodes to prevent mutation of original editor nodes
   const sourceNodes = useMemo(() => {
     const hasExecutionNodes = execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0;
-    console.log('[ExecutionDetailView] Using execution nodes:', hasExecutionNodes, 'execution.nodes:', execution.nodes?.length, 'fallback nodes:', nodes.length);
     if (hasExecutionNodes) {
       return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
     }
@@ -272,7 +271,8 @@ export function ExecutionDetailView({
           )}
           
           {/* Isolated React Flow context + execution store for historical view */}
-          <ReactFlowProvider>
+          {/* Key by execution.id to force remount when switching runs - ensures field state reinitializes */}
+          <ReactFlowProvider key={execution.id}>
             <StaticExecutionStoreProvider 
               nodeExecutions={nodeExecutions.map(exec => ({
                 nodeId: exec.nodeId,

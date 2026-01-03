@@ -141,6 +141,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const fieldStateHook = useNodeFieldState({
     definition,
     data,
+    readOnly,
   });
 
   // Node renaming

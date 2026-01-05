@@ -3,7 +3,7 @@
   "def": "Fetch Market Data",
   "node_type": "main",
   "category": "Broker",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "auth": "GenericAuthModal",
   "authFields": [
     {

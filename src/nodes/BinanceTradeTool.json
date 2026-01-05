@@ -3,7 +3,7 @@
   "def": "Execute Trade",
   "node_type": "sub",
   "category": "Tool",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "parentNode": "Binance",
   "description": "Execute crypto trades through Binance. Supports market, limit, stop loss, and take profit orders for spot, futures, and margin.",
   "auth": "GenericAuthModal",
@@ -179,11 +179,7 @@
       "description": "Execution price for limit orders.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       },
       "showDescription": false
@@ -228,11 +224,7 @@
       "description": "GTC stays until filled/cancelled, IOC fills partially then cancels, FOK requires full fill or cancel.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       },
       "showDescription": false
@@ -245,9 +237,7 @@
       "description": "Visible portion of a large order. Hides true order size.",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT"
-          ]
+          "type": ["LIMIT"]
         }
       },
       "showDescription": false

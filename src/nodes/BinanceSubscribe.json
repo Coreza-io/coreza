@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/binance.svg",
   "category": "Market",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "description": "Subscribe or unsubscribe to Binance real-time market data. Subscriptions persist and can be received by any activated BinanceStreamData trigger.",
   "color": "text-yellow-500",
   "size": {

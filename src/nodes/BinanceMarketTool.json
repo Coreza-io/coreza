@@ -3,7 +3,7 @@
   "def": "Fetch Market Data",
   "node_type": "sub",
   "category": "Tool",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "description": "Fetch crypto market data from Binance. Get historical candles, latest prices, account info, positions, and orders for spot and futures.",
   "auth": "GenericAuthModal",
   "authFields": [
@@ -160,9 +160,7 @@
       "description": "Binance order ID for cancellation.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "cancel_order"
-          ]
+          "operation": ["cancel_order"]
         }
       },
       "required": true,
@@ -214,9 +212,7 @@
       "description": "Kline/candlestick interval.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ]
+          "operation": ["get_candle"]
         }
       },
       "showDescription": false
@@ -230,10 +226,7 @@
       "description": "Maximum number of records to return.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "get_orders"
-          ]
+          "operation": ["get_candle", "get_orders"]
         }
       },
       "showDescription": false
@@ -246,10 +239,7 @@
       "description": "Start time for historical data query.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "get_orders"
-          ]
+          "operation": ["get_candle", "get_orders"]
         }
       },
       "showDescription": false
@@ -262,10 +252,7 @@
       "description": "End time for historical data query.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "get_orders"
-          ]
+          "operation": ["get_candle", "get_orders"]
         }
       },
       "showDescription": false

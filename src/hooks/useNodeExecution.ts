@@ -274,6 +274,8 @@ export function useNodeExecution({
         const payload = buildPayload(fieldState, supportData, effectiveInput);
         payload.node_id = nodeId;
         payload.workflow_id = workflowId;
+        payload.category = definition.category;
+        payload.subCategory = definition.subCategory;
 
         // // Auto-include node_id and workflow_id for all streaming nodes
         // if (definition?.executionMode === "streaming" && nodeId) {

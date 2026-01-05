@@ -4,7 +4,7 @@
   "node_type": "sub",
   "icon": "/assets/icons/binance.svg",
   "category": "Tool",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "description": "Screen crypto assets on Binance. Find top gainers, losers, most active by volume, and new listings for spot and futures markets.",
   "color": "text-yellow-400",
   "size": {
@@ -134,9 +134,7 @@
       "description": "Quote currency to filter pairs (e.g., USDT shows only *USDT pairs).",
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "spot"
-          ]
+          "asset_type": ["spot"]
         }
       },
       "showDescription": false
@@ -149,9 +147,7 @@
       "description": "Minimum 24-hour trading volume in quote currency.",
       "displayOptions": {
         "show": {
-          "filter_type": [
-            "most_active"
-          ]
+          "filter_type": ["most_active"]
         }
       },
       "showDescription": false
@@ -164,10 +160,7 @@
       "description": "Minimum absolute price change percentage to include.",
       "displayOptions": {
         "show": {
-          "filter_type": [
-            "top_gainers",
-            "top_losers"
-          ]
+          "filter_type": ["top_gainers", "top_losers"]
         }
       },
       "showDescription": false

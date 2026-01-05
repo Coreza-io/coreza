@@ -3,7 +3,7 @@
   "def": "Screen Assets",
   "node_type": "main",
   "category": "Screener",
-  "parentNode": "Binance",
+  "parentNode": "binance",
   "icon": "/assets/icons/binance.svg",
   "size": { "width": 340, "height": 340 },
   "handles": [

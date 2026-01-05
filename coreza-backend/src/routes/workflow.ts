@@ -20,7 +20,6 @@ import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
 import { workflowScheduler } from "../services/scheduler";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
-import CredentialManager from "../utils/credentialManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedisCache } from "../config/redis";
@@ -377,12 +376,7 @@ function computeCronFromSchedulerNodes(nodes: any[]): {
   next: string;
 } {
   const list = Array.isArray(nodes) ? nodes : [];
-  const schedulers = list.filter(
-    (n) =>
-      n?.name === "Scheduler" ||
-      n?.type === "Scheduler" ||
-      n?.data?.kind === "scheduler"
-  );
+  const schedulers = list.filter((n) => n?.name === "Scheduler");
 
   if (schedulers.length === 0) {
     throw createError("No Scheduler node found in the workflow.", 400);
@@ -516,72 +510,6 @@ function mapDOW(s: string | number) {
   return idx >= 0 ? String(idx) : "*";
 }
 
-// Helper function to validate if workflow has Scheduler/Trigger nodes
-function hasSchedulerOrTriggerNodes(nodes: any[]): boolean {
-  return nodes.some(
-    (node) =>
-      node.name === "Scheduler" ||
-      node.name === "trigger" ||
-      node.type === "Scheduler" ||
-      node.type === "trigger"
-  );
-}
-
-// Helper function to validate cron expression for future scheduling
-function validateCronForFutureExecution(cronExpression: string): {
-  valid: boolean;
-  message?: string;
-} {
-  try {
-    // Parse cron expression to check if it's valid
-    const cronParts = cronExpression.split(" ");
-    if (cronParts.length !== 5) {
-      return {
-        valid: false,
-        message:
-          "Invalid cron expression format. Expected 5 parts (minute hour day month dayofweek)",
-      };
-    }
-
-    // For basic validation, we'll check if the cron would execute in the future
-    // This is a simplified check - for production, consider using a cron parsing library
-    const now = new Date();
-    const currentMinute = now.getMinutes();
-    const currentHour = now.getHours();
-    const currentDay = now.getDate();
-
-    const [minute, hour, day, month, dayOfWeek] = cronParts;
-
-    // Check if it's scheduled for a specific future time
-    if (hour !== "*" && minute !== "*") {
-      const scheduledHour = parseInt(hour);
-      const scheduledMinute = parseInt(minute);
-
-      if (!isNaN(scheduledHour) && !isNaN(scheduledMinute)) {
-        const scheduledTime = new Date(now);
-        scheduledTime.setHours(scheduledHour, scheduledMinute, 0, 0);
-
-        // If scheduled time is in the past today, it should run tomorrow
-        if (scheduledTime <= now) {
-          scheduledTime.setDate(scheduledTime.getDate() + 1);
-        }
-
-        // The scheduled time should be in the future
-        return { valid: scheduledTime > now };
-      }
-    }
-
-    return { valid: true };
-  } catch (error) {
-    return {
-      valid: false,
-      message: `Invalid cron expression: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
-    };
-  }
-}
-
 // Activate/Deactivate workflow scheduling and triggers
 router.put("/:workflowId/schedule", async (req, res, next) => {
   try {
@@ -687,14 +615,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             filterConfig
           );
 
-          // Map node name to source for proper subscription routing
-          const nodeName = triggerNode.name || "";
-          const source =
-            nodeNameToSourceMap[nodeName] ||
-            nodeName
-              .toLowerCase()
-              .replace("streamdata", "")
-              .replace("stream", "");
+          // source for proper subscription routing
+          const source = triggerNode.streamingConfig.sourceId;
 
           // Get subscription mode - determines whether to receive global or workflow-scoped data only
           const subscriptionMode = nodeValues.subscriptionMode || "workflow";
@@ -778,7 +700,6 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             const nodeValues = triggerNode.values || {};
             const initialInput = {
               name: nodeValues.name,
-              description: nodeValues.description,
               initial_capital: nodeValues.initial_capital,
               start_date: nodeValues.start_date,
               end_date: nodeValues.end_date,

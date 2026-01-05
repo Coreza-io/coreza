@@ -3,7 +3,7 @@
   "def": "Execute Trade",
   "node_type": "main",
   "category": "Broker",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "parentNode": "Binance",
   "auth": "GenericAuthModal",
   "authFields": [

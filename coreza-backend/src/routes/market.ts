@@ -321,6 +321,8 @@ router.post("/:source/subscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
+      category,
+      subCategory,
       workflow_id,
       stream_types,
       symbolSource,
@@ -333,19 +335,19 @@ router.post("/:source/subscribe", async (req, res) => {
       kline_interval, // Binance: 1m, 5m, 15m, etc.
       // Subscription scope
       subscriptionScope,
-      target_workflow_id,
       targetWorkflowId,
     } = req.body;
 
     // Use camelCase first (frontend convention), fallback to snake_case
     const finalSubscriptionScope = subscriptionScope || "global";
-    const finalTargetWorkflowId = targetWorkflowId || target_workflow_id;
+    const finalTargetWorkflowId = targetWorkflowId;
 
     if (!credential_id)
       return res.status(400).json({ error: "credential_id is required" });
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
-    const marketSource = getMarketSource(source);
+    //const marketSource = getMarketSource(source);
+    const marketSource = subCategory;
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }
@@ -409,6 +411,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const {
       symbols,
       node_id,
+      category,
+      subCategory,
       workflow_id,
       stream_types,
       symbolSource,
@@ -417,7 +421,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       subscriptionScope, // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    const marketSource = getMarketSource(source);
+    //const marketSource = getMarketSource(source);
+    const marketSource = subCategory;
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }
@@ -843,6 +848,8 @@ router.post("/execute-stream-node", async (req, res) => {
     const {
       workflow_id,
       node_id,
+      category,
+      subCategory,
       node_type,
       mode = "listen",
       // Subscribe params
@@ -877,7 +884,8 @@ router.post("/execute-stream-node", async (req, res) => {
       return res.status(400).json({ error: `Unknown node_type: ${node_type}` });
     }
 
-    const marketSource = getMarketSource(source);
+    //const marketSource = getMarketSource(source);
+    const marketSource = subCategory;
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }

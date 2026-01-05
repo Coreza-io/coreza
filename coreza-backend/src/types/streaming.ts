@@ -11,6 +11,8 @@ export interface StreamExecutionRequest {
   workflow_id: string;
   node_id: string;
   node_type: string; // "BinanceStreamData", "AlpacaStreamData", etc.
+  category: string;
+  subCategory: string;
   mode: "listen" | "subscribe"; // User-selected mode
 
   // For subscribe mode

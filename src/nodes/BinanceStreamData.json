@@ -4,7 +4,7 @@
   "node_type": "trigger",
   "icon": "/assets/icons/binance.svg",
   "category": "Market",
-  "subCategory": "Binance",
+  "subCategory": "binance",
   "executionMode": "streaming",
   "action": {
     "url": "/market/execute-stream-node",

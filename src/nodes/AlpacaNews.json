@@ -7,6 +7,7 @@
   "subCategory": "Alpaca",
   "executionMode": "streaming",
   "streamingConfig": {
+    "sourceId": "alpaca_news",
     "waitForFirstEvent": true,
     "timeout": 30000
   },
@@ -105,9 +106,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "manual"
-          ]
+          "symbolSource": ["manual"]
         }
       },
       "showDescription": false
@@ -121,9 +120,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "store"
-          ]
+          "symbolSource": ["store"]
         }
       }
     },
@@ -137,9 +134,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "store"
-          ]
+          "symbolSource": ["store"]
         }
       }
     }

@@ -170,7 +170,6 @@ export function useNodeExecution({
 
       const visibleFieldKeys = new Set<string>();
       const definedFields = definition?.fields || [];
-      const definedKeys = new Set<string>(definedFields.map((f: any) => f.key));
 
       for (const field of definedFields) {
         if (isFieldVisible(field, fieldState)) {
@@ -180,7 +179,7 @@ export function useNodeExecution({
 
       const payload: Record<string, any> = {};
       for (const [key, value] of Object.entries(fieldState)) {
-        if (visibleFieldKeys.has(key) || !definedKeys.has(key)) {
+        if (visibleFieldKeys.has(key)) {
           payload[key] = resolveDeep(value, selectedInputData, allNodeData);
         }
       }

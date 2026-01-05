@@ -201,8 +201,8 @@ export function useNodeExecution({
         // Serialize nodes and edges for backend
         payload.nodes = nodes.map((n) => ({
           id: n.id,
-          name: (n.data?.definition as any)?.name || n.type,
-          node_type: (n.data?.definition as any)?.node_type || "main",
+          name: (n.data?.definition as any)?.name,
+          node_type: (n.data?.definition as any)?.node_type,
           category: (n.data?.definition as any)?.category,
           subCategory: (n.data?.definition as any)?.subCategory,
           values: n.data?.fieldState || n.data?.values || {},
@@ -220,14 +220,6 @@ export function useNodeExecution({
           nodesCount: payload.nodes.length,
           edgesCount: payload.edges.length,
         });
-      }
-
-      // For streaming trigger nodes, add node_type so backend can resolve source
-      if (
-        definition?.executionMode === "streaming" &&
-        definition?.node_type === "trigger"
-      ) {
-        payload.node_type = definition.name;
       }
 
       return {
@@ -300,6 +292,7 @@ export function useNodeExecution({
 
         const payload = buildPayload(fieldState, supportData, effectiveInput);
         payload.node_id = nodeId;
+        payload.node_type = definition.node_type;
         payload.workflow_id = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;

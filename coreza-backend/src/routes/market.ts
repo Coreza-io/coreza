@@ -1013,7 +1013,7 @@ router.post("/execute-stream-node", async (req, res) => {
       status: "listening",
       symbols: [],
       testKey,
-      message: `Listening for ${node_type} data`,
+      message: `Listening for ${node_id} data`,
     };
 
     console.log(`✅ [ExecuteStreamNode] Complete - testKey: ${testKey}`);

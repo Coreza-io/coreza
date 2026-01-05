@@ -249,6 +249,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
+          "mode": ["subscribe"],
           "stream_types": ["kline"]
         }
       }
@@ -294,61 +295,6 @@
       ],
       "default": "workflow",
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
-      "displayOptions": {
-        "show": {
-          "mode": ["listen"]
-        }
-      },
-      "showDescription": false
-    },
-    {
-      "key": "filter_symbols",
-      "label": "Filter Symbols (Optional)",
-      "type": "text",
-      "placeholder": "BTCUSDT, ETHUSDT (leave empty for all)",
-      "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
-      "displayOptions": {
-        "show": {
-          "mode": ["listen"]
-        }
-      },
-      "showDescription": false
-    },
-    {
-      "key": "filter_types",
-      "label": "Filter Event Types (Optional)",
-      "type": "select",
-      "options": [
-        {
-          "id": "trade",
-          "name": "Trades"
-        },
-        {
-          "id": "aggTrade",
-          "name": "Aggregated Trades"
-        },
-        {
-          "id": "bar",
-          "name": "Klines/Bars"
-        },
-        {
-          "id": "miniTicker",
-          "name": "Mini Ticker"
-        },
-        {
-          "id": "ticker",
-          "name": "24h Ticker"
-        },
-        {
-          "id": "quote",
-          "name": "Book Ticker"
-        },
-        {
-          "id": "depth",
-          "name": "Depth (Order Book)"
-        }
-      ],
-      "description": "Filter specific event types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
           "mode": ["listen"]

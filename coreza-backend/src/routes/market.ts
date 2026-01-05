@@ -20,7 +20,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { MarketSource } from "../types/marketEvent";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
-import { getMarketSource } from "../config/marketSources";
+//import { getMarketSource } from "../config/marketSources";
 import { getAllowedSymbols } from "../utils/streamFilters";
 import {
   MAX_TEST_LISTENERS_PER_USER,
@@ -34,7 +34,6 @@ import {
 import {
   StreamExecutionRequest,
   StreamExecutionResponse,
-  resolveSourceFromNodeType,
 } from "../types/streaming";
 const router = express.Router();
 
@@ -860,9 +859,6 @@ router.post("/execute-stream-node", async (req, res) => {
       asset_type,
       feed,
       kline_interval,
-      // Filter params
-      filter_symbols,
-      filter_types,
       subscriptionMode,
     } = req.body as StreamExecutionRequest;
 
@@ -878,20 +874,14 @@ router.post("/execute-stream-node", async (req, res) => {
 
     const redis = getRedisCache();
 
-    // 1. Backend resolves source from node type (frontend never derives this)
-    const source = resolveSourceFromNodeType(node_type);
-    if (source === "unknown") {
-      return res.status(400).json({ error: `Unknown node_type: ${node_type}` });
-    }
-
     //const marketSource = getMarketSource(source);
     const marketSource = subCategory;
     if (!marketSource) {
-      return res.status(400).json({ error: `Unknown source: ${source}` });
+      return res.status(400).json({ error: `Unknown source: ${marketSource}` });
     }
 
     console.log(
-      `🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${source})`
+      `🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${marketSource})`
     );
 
     // 2. Parse symbols
@@ -949,17 +939,6 @@ router.post("/execute-stream-node", async (req, res) => {
       );
     }
 
-    // 4. Determine effective filter symbols (for listener registration)
-    const effectiveFilterSymbols = filter_symbols?.length
-      ? filter_symbols.map((s: string) => s.toUpperCase())
-      : mode === "subscribe"
-      ? parsedSymbols
-      : [];
-
-    const effectiveFilterTypes = filter_types?.length
-      ? filter_types
-      : stream_types || [];
-
     // 5. Rate limit check for test listener
     const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
     const allowed = await redis.eval(
@@ -993,9 +972,7 @@ router.post("/execute-stream-node", async (req, res) => {
       startedAt: now,
       mode,
       subscriptionMode: subscriptionMode,
-      source,
-      filterSymbols: effectiveFilterSymbols,
-      filterTypes: effectiveFilterTypes,
+      marketSource,
     };
 
     // Store test listener with TTL (auto-expire)
@@ -1012,12 +989,6 @@ router.post("/execute-stream-node", async (req, res) => {
     const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
     await redis.sadd(userTestListenersKey, testKey);
 
-    console.log(`📝 [ExecuteStreamNode] Stored test listener: ${testKey}`);
-    console.log(
-      `   Filter symbols: ${effectiveFilterSymbols.join(", ") || "NONE"}`
-    );
-    console.log(`   Filter types: ${effectiveFilterTypes.join(", ") || "ALL"}`);
-
     // 7. Register with MarketDataSubscriber via control message
     // CRITICAL: Include filter_symbols so MarketControlHandler subscribes to correct Redis channels
     const controlMessage = {
@@ -1025,9 +996,7 @@ router.post("/execute-stream-node", async (req, res) => {
       userId,
       workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
       nodeId: node_id,
-      source,
-      filter_symbols: effectiveFilterSymbols, // ✅ Always passed with resolved symbols
-      filter_types: effectiveFilterTypes,
+      marketSource,
       subscriptionMode: subscriptionMode,
       isTestListener: true,
     };
@@ -1036,18 +1005,13 @@ router.post("/execute-stream-node", async (req, res) => {
       "md:control:register_workflow",
       JSON.stringify(controlMessage)
     );
-    console.log(
-      `📡 [ExecuteStreamNode] Published register_workflow with symbols: ${effectiveFilterSymbols.join(
-        ", "
-      )}`
-    );
+    console.log(`📡 [ExecuteStreamNode] Published register_workflow}`);
 
     // 8. Return success response
     const response: StreamExecutionResponse = {
       success: true,
       status: "listening",
-      source,
-      symbols: effectiveFilterSymbols,
+      symbols: [],
       testKey,
       message: `Listening for ${node_type} data`,
     };

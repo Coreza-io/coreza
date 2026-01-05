@@ -36,6 +36,22 @@ const makeArraySignature = (arr: any[]): string => {
   }
 };
 
+const isFieldVisible = (
+  field: any,
+  currentFieldState: Record<string, any>
+): boolean => {
+  if (!field.displayOptions?.show) return true;
+
+  return Object.entries(field.displayOptions.show).every(
+    ([depKey, rawAllowed]) => {
+      const allowedValues = Array.isArray(rawAllowed)
+        ? rawAllowed
+        : [rawAllowed];
+      return allowedValues.includes(currentFieldState[depKey]);
+    }
+  );
+};
+
 interface UseNodeExecutionProps {
   definition: any;
   fieldState: Record<string, any>;
@@ -152,9 +168,20 @@ export function useNodeExecution({
 
       console.log("🔧 All node data map:", allNodeData);
 
+      const visibleFieldKeys = new Set<string>();
+      const definedFields = definition?.fields || [];
+
+      for (const field of definedFields) {
+        if (isFieldVisible(field, fieldState)) {
+          visibleFieldKeys.add(field.key);
+        }
+      }
+
       const payload: Record<string, any> = {};
       for (const [key, value] of Object.entries(fieldState)) {
-        payload[key] = resolveDeep(value, selectedInputData, allNodeData);
+        if (visibleFieldKeys.has(key)) {
+          payload[key] = resolveDeep(value, selectedInputData, allNodeData);
+        }
       }
 
       if (definition?.name === "If") {

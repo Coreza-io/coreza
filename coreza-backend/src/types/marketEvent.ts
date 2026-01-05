@@ -17,15 +17,19 @@
 // Unified market event format - all sources normalize to this
 // Uses short field names to match REST API format (t, o, h, l, c, v)
 export type MarketEventType =
-  | "trade"
-  | "quote"
-  | "bar"
-  | "daily_bar"
-  | "news"
-  | "ticker";
+  | 'trade'
+  | 'aggTrade'
+  | 'quote'
+  | 'bar'
+  | 'daily_bar'
+  | 'news'
+  | 'ticker'
+  | 'miniTicker'
+  | 'depth';
+
 export type MarketSource =
-  keyof typeof import("../brokers").GATEWAY_CONFIGS;
-export type Timeframe = "tick" | "1m" | "5m" | "15m" | "1h" | "1d";
+  keyof typeof import('../brokers').GATEWAY_CONFIGS;
+export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
 
 export interface MarketEvent {
   // Identification
@@ -59,13 +63,23 @@ export interface MarketEvent {
   pc?: number; // price change
   pcp?: number; // price change percent
 
+  // Depth data (order book)
+  bids?: Array<{ p: number; q: number }>;
+  asks?: Array<{ p: number; q: number }>;
+
+  // AggTrade specific
+  aggregateTradeId?: number;
+  firstTradeId?: number;
+  lastTradeId?: number;
+  isBuyerMaker?: boolean;
+
   // Metadata
   timeframe?: string;
   isClosed?: boolean;
 }
 
 export interface ControlMessage {
-  action: "subscribe" | "unsubscribe";
+  action: 'subscribe' | 'unsubscribe';
   userId: string;
   sessionId?: string;
   symbols: string[];

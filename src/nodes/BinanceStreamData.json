@@ -141,27 +141,39 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Types",
-      "type": "multiselect",
+      "label": "Stream Type",
+      "type": "select",
       "options": [
         {
           "id": "trade",
-          "name": "Trades"
+          "name": "Trade - Individual trades (high frequency)"
+        },
+        {
+          "id": "aggTrade",
+          "name": "Aggregated Trade - Grouped trades (less noise)"
         },
         {
           "id": "kline",
-          "name": "Klines (Candlesticks)"
+          "name": "Kline (Candlestick) - OHLCV data"
         },
         {
-          "id": "bookTicker",
-          "name": "Book Ticker"
+          "id": "miniTicker",
+          "name": "Mini Ticker - Lightweight price updates"
         },
         {
           "id": "ticker",
-          "name": "24h Ticker"
+          "name": "Ticker (24h) - 24h statistics"
+        },
+        {
+          "id": "bookTicker",
+          "name": "Book Ticker - Best bid/ask"
+        },
+        {
+          "id": "depth",
+          "name": "Depth (Order Book) - Bid/ask levels"
         }
       ],
-      "default": ["trade"],
+      "default": "kline",
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]
@@ -178,6 +190,10 @@
           "name": "1 Minute"
         },
         {
+          "id": "3m",
+          "name": "3 Minutes"
+        },
+        {
           "id": "5m",
           "name": "5 Minutes"
         },
@@ -186,18 +202,79 @@
           "name": "15 Minutes"
         },
         {
+          "id": "30m",
+          "name": "30 Minutes"
+        },
+        {
           "id": "1h",
           "name": "1 Hour"
         },
         {
+          "id": "2h",
+          "name": "2 Hours"
+        },
+        {
+          "id": "4h",
+          "name": "4 Hours"
+        },
+        {
+          "id": "6h",
+          "name": "6 Hours"
+        },
+        {
+          "id": "8h",
+          "name": "8 Hours"
+        },
+        {
+          "id": "12h",
+          "name": "12 Hours"
+        },
+        {
           "id": "1d",
           "name": "1 Day"
+        },
+        {
+          "id": "3d",
+          "name": "3 Days"
+        },
+        {
+          "id": "1w",
+          "name": "1 Week"
+        },
+        {
+          "id": "1M",
+          "name": "1 Month"
         }
       ],
       "default": "1m",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "stream_types": ["kline"]
+        }
+      }
+    },
+    {
+      "key": "depth_levels",
+      "label": "Order Book Depth",
+      "type": "select",
+      "options": [
+        {
+          "id": "5",
+          "name": "Top 5 Levels"
+        },
+        {
+          "id": "10",
+          "name": "Top 10 Levels"
+        },
+        {
+          "id": "20",
+          "name": "Top 20 Levels"
+        }
+      ],
+      "default": "10",
+      "displayOptions": {
+        "show": {
+          "stream_types": ["depth"]
         }
       }
     },
@@ -240,23 +317,35 @@
     {
       "key": "filter_types",
       "label": "Filter Event Types (Optional)",
-      "type": "multiselect",
+      "type": "select",
       "options": [
         {
           "id": "trade",
           "name": "Trades"
         },
         {
+          "id": "aggTrade",
+          "name": "Aggregated Trades"
+        },
+        {
           "id": "bar",
           "name": "Klines/Bars"
+        },
+        {
+          "id": "miniTicker",
+          "name": "Mini Ticker"
+        },
+        {
+          "id": "ticker",
+          "name": "24h Ticker"
         },
         {
           "id": "quote",
           "name": "Book Ticker"
         },
         {
-          "id": "ticker",
-          "name": "24h Ticker"
+          "id": "depth",
+          "name": "Depth (Order Book)"
         }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",

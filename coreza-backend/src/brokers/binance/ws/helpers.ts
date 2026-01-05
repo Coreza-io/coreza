@@ -1,19 +1,55 @@
 import type { MarketEvent } from '../../../types/marketEvent';
 
-export function buildBinanceSubscribeMessage(symbols: string[], types: string[] = ['trade']) {
-  return {
-    method: 'SUBSCRIBE',
-    params: symbols.flatMap((s) => types.map((t) => `${s.toLowerCase()}@${t}`)),
-    id: Date.now(),
-  };
+export interface BinanceSubscribeOptions {
+  klineInterval?: string;
+  depthLevels?: string;
 }
 
-export function buildBinanceUnsubscribeMessage(symbols: string[], types: string[] = ['trade']) {
-  return {
-    method: 'UNSUBSCRIBE',
-    params: symbols.flatMap((s) => types.map((t) => `${s.toLowerCase()}@${t}`)),
-    id: Date.now(),
-  };
+export function buildBinanceSubscribeMessage(
+  symbols: string[],
+  types: string[] = ['trade'],
+  options?: BinanceSubscribeOptions
+) {
+  const params = symbols.flatMap((s) =>
+    types.map((t) => {
+      const sym = s.toLowerCase();
+      if (t === 'kline' && options?.klineInterval) {
+        return `${sym}@kline_${options.klineInterval}`;
+      }
+      if (t === 'depth' && options?.depthLevels) {
+        return `${sym}@depth${options.depthLevels}`;
+      }
+      // ticker maps to 24hrTicker stream name in Binance
+      if (t === 'ticker') {
+        return `${sym}@ticker`;
+      }
+      return `${sym}@${t}`;
+    })
+  );
+  return { method: 'SUBSCRIBE', params, id: Date.now() };
+}
+
+export function buildBinanceUnsubscribeMessage(
+  symbols: string[],
+  types: string[] = ['trade'],
+  options?: BinanceSubscribeOptions
+) {
+  const params = symbols.flatMap((s) =>
+    types.map((t) => {
+      const sym = s.toLowerCase();
+      if (t === 'kline' && options?.klineInterval) {
+        return `${sym}@kline_${options.klineInterval}`;
+      }
+      if (t === 'depth' && options?.depthLevels) {
+        return `${sym}@depth${options.depthLevels}`;
+      }
+      if (t === 'ticker') {
+        return `${sym}@ticker`;
+      }
+      return `${sym}@${t}`;
+    })
+  );
+  return { method: 'UNSUBSCRIBE', params, id: Date.now() };
 }
 
 export function parseBinanceMessage(buffer: Buffer): any[] {
@@ -25,7 +61,15 @@ export function identifyBinanceMessageType(msg: any): string {
 }
 
 export function shouldPublishBinanceMessage(msg: any): boolean {
-  return ['trade', 'kline', 'bookTicker', '24hrTicker'].includes(msg.e);
+  return [
+    'trade',
+    'aggTrade',
+    'kline',
+    'bookTicker',
+    '24hrTicker',
+    'miniTicker',
+    'depthUpdate',
+  ].includes(msg.e);
 }
 
 export function normalizeBinanceMessage(msg: any): MarketEvent | null {
@@ -41,6 +85,20 @@ export function normalizeBinanceMessage(msg: any): MarketEvent | null {
         q: parseFloat(msg.q),
         type: 'trade' as const,
         source: 'binance' as const,
+      };
+
+    case 'aggTrade':
+      return {
+        symbol,
+        t,
+        p: parseFloat(msg.p),
+        q: parseFloat(msg.q),
+        type: 'aggTrade' as const,
+        source: 'binance' as const,
+        aggregateTradeId: msg.a,
+        firstTradeId: msg.f,
+        lastTradeId: msg.l,
+        isBuyerMaker: msg.m,
       };
 
     case 'kline': {
@@ -81,6 +139,35 @@ export function normalizeBinanceMessage(msg: any): MarketEvent | null {
         pcp: parseFloat(msg.P),
         v: parseFloat(msg.v),
         type: 'ticker' as const,
+        source: 'binance' as const,
+      };
+
+    case 'miniTicker':
+      return {
+        symbol,
+        t,
+        c: parseFloat(msg.c),
+        o: parseFloat(msg.o),
+        h: parseFloat(msg.h),
+        l: parseFloat(msg.l),
+        v: parseFloat(msg.v),
+        type: 'miniTicker' as const,
+        source: 'binance' as const,
+      };
+
+    case 'depthUpdate':
+      return {
+        symbol,
+        t,
+        bids: msg.b?.map(([price, qty]: [string, string]) => ({
+          p: parseFloat(price),
+          q: parseFloat(qty),
+        })),
+        asks: msg.a?.map(([price, qty]: [string, string]) => ({
+          p: parseFloat(price),
+          q: parseFloat(qty),
+        })),
+        type: 'depth' as const,
         source: 'binance' as const,
       };
 

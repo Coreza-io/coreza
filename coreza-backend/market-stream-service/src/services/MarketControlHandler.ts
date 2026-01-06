@@ -232,7 +232,7 @@ export class MarketControlHandler {
             nodeId,
             userId,
             [], // No symbols yet
-            source: source as MarketSource | undefined,
+            source as MarketSource
           );
           return;
         }
@@ -244,8 +244,7 @@ export class MarketControlHandler {
         nodeId,
         userId,
         symbolsToSubscribe,
-        source: source as MarketSource | undefined,
-        
+        source as MarketSource
       );
 
       console.log(

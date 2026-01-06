@@ -91,7 +91,7 @@ export class MarketDataSubscriber {
     nodeId: string,
     userId: string,
     symbols: string[],
-    source: MarketSource | string;
+    source: MarketSource
   ): Promise<void> {
     try {
       console.log(
@@ -254,8 +254,7 @@ export class MarketDataSubscriber {
             subscription.nodeId,
             subscription.userId,
             subscription.symbols,
-            subscription.source,
-              
+            subscription.source
           );
 
           restored++;

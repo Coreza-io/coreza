@@ -342,7 +342,10 @@ export class WebSocketManager {
       console.warn(
         `⚠️ User ${userId} exceeded max connections (${MAX_CONNECTIONS_PER_USER}), rejecting`
       );
-      ws.close(1013, `Maximum connections (${MAX_CONNECTIONS_PER_USER}) exceeded`);
+      ws.close(
+        1013,
+        `Maximum connections (${MAX_CONNECTIONS_PER_USER}) exceeded`
+      );
       return;
     }
 
@@ -366,7 +369,9 @@ export class WebSocketManager {
 
     console.log(`👤 User ${userId} connected (session: ${sessionId})`);
     console.log(
-      `📊 Total clients for user ${userId}: ${this.clients.get(userId)?.size}/${MAX_CONNECTIONS_PER_USER}`
+      `📊 Total clients for user ${userId}: ${
+        this.clients.get(userId)?.size
+      }/${MAX_CONNECTIONS_PER_USER}`
     );
     console.log(`📊 Total connected users: ${this.clients.size}`);
 
@@ -623,22 +628,31 @@ export class WebSocketManager {
   ): Promise<void> {
     try {
       // Use circuit breaker for SMEMBERS - returns empty array on failure
-      const activeTestKeys = await redisSMembersBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS) as string[];
-      
+      const activeTestKeys = (await redisSMembersBreaker.fire(
+        redis,
+        REDIS_KEY_ACTIVE_TEST_LISTENERS
+      )) as string[];
+
       if (!activeTestKeys || activeTestKeys.length === 0) return;
 
       // Extract event data from payload
       const eventData = payload.payload || payload;
       const eventSymbol = eventData.symbol?.toUpperCase();
       const eventType = eventData.type;
-      
+
       for (const testKey of activeTestKeys) {
         // Use circuit breaker for GET - returns null on failure (skip this listener)
-        const listenerStr = await redisGetBreaker.fire(redis, testKey) as string | null;
-        
+        const listenerStr = (await redisGetBreaker.fire(redis, testKey)) as
+          | string
+          | null;
+
         // Key expired or circuit breaker fallback - clean up stale entry
         if (!listenerStr) {
-          await redisSRemBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          await redisSRemBreaker.fire(
+            redis,
+            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            testKey
+          );
           continue;
         }
 
@@ -646,21 +660,27 @@ export class WebSocketManager {
         try {
           listener = JSON.parse(listenerStr);
         } catch {
-          await redisSRemBreaker.fire(redis, REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+          await redisSRemBreaker.fire(
+            redis,
+            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            testKey
+          );
           continue;
         }
-        
+
         // Only process if this listener belongs to the current user
         if (listener.userId !== userId) continue;
-        
+
         // Check if still in listening status
-        if (listener.status !== 'listening') continue;
+        if (listener.status !== "listening") continue;
 
         // Check symbol and type filters using shared utility
-        if (!matchesEventFilters(eventSymbol, eventType, {
-          filterSymbols: listener.filterSymbols,
-          filterTypes: listener.filterTypes,
-        })) {
+        if (
+          !matchesEventFilters(eventSymbol, eventType, {
+            filterSymbols: listener.filterSymbols,
+            filterTypes: listener.filterTypes,
+          })
+        ) {
           continue; // Doesn't match filters
         }
 
@@ -689,50 +709,57 @@ export class WebSocketManager {
           );
 
           if (result) {
-            // Decrement user's test listener count (circuit breaker wrapped)
-            const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
-            await redisEvalBreaker.fire(redis, LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
-            
-            // Unregister from MarketDataSubscriber to stop receiving data for this test listener
-            const unsubscribeMessage = {
-              action: 'unregister_workflow',
-              workflowId: testKey, // Same pseudo workflow ID used during registration
-              userId,
-              isTestListener: true,
-            };
-            await redis.publish('md:control:unregister_workflow', JSON.stringify(unsubscribeMessage));
-            
+            //  Decrement user's test listener count (circuit breaker wrapped)
+            // const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+            // await redisEvalBreaker.fire(redis, LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+
+            // // Unregister from MarketDataSubscriber to stop receiving data for this test listener
+            // const unsubscribeMessage = {
+            //   action: 'unregister_workflow',
+            //   workflowId: testKey, // Same pseudo workflow ID used during registration
+            //   userId,
+            //   isTestListener: true,
+            // };
+            // await redis.publish('md:control:unregister_workflow', JSON.stringify(unsubscribeMessage));
+
             // Push result directly to user via WebSocket (replaces polling)
             WebSocketManager.sendToUser(userId, {
-              type: 'test_data_received',
+              type: "test_data_received",
               payload: {
                 workflowId: listener.workflowId,
                 nodeId: listener.nodeId,
                 testKey,
                 data: resultData,
-              }
+              },
             });
-            
-            console.log(`🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`);
+
+            console.log(
+              `🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`
+            );
             break; // Only match first listener per event
           }
           // If result is null, another event already claimed this listener OR circuit breaker fired
         } catch (luaError) {
           // Fallback - still try to push via WebSocket even if Redis failed
-          console.warn(`⚠️ Test listener processing failed for ${testKey}:`, luaError);
-          
+          console.warn(
+            `⚠️ Test listener processing failed for ${testKey}:`,
+            luaError
+          );
+
           // Attempt to push the data anyway - better to notify user than lose the event
           WebSocketManager.sendToUser(userId, {
-            type: 'test_data_received',
+            type: "test_data_received",
             payload: {
               workflowId: listener.workflowId,
               nodeId: listener.nodeId,
               testKey,
               data: resultData,
-            }
+            },
           });
-          
-          console.log(`🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`);
+
+          console.log(
+            `🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`
+          );
           break;
         }
       }

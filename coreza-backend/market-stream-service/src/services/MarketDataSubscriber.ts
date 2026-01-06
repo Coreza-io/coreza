@@ -68,16 +68,16 @@ export class MarketDataSubscriber {
   /**
    * Normalize WebSocket source IDs to gateway/broker source names.
    * This ensures subscription.source matches CorezaMarketEvent.source.
-   * 
+   *
    * Examples:
    *   - 'binance_stream' → 'binance'
-   *   - 'alpaca_stream' → 'alpaca'  
+   *   - 'alpaca_stream' → 'alpaca'
    *   - 'alpaca_news' → 'alpaca_news' (same, news has dedicated gateway)
    *   - 'binance' → 'binance' (already normalized)
    */
   private normalizeSource(source?: string): MarketSource | undefined {
     if (!source) return undefined;
-    
+
     // Use centralized source mapping from marketGateways.ts
     const { gatewaySource } = getSourceMapping(source);
     return gatewaySource;
@@ -91,10 +91,7 @@ export class MarketDataSubscriber {
     nodeId: string,
     userId: string,
     symbols: string[],
-    options?: {
-      source?: MarketSource | string;
-      eventTypes?: MarketEventType[];
-    }
+    source: MarketSource | string;
   ): Promise<void> {
     try {
       console.log(
@@ -103,8 +100,10 @@ export class MarketDataSubscriber {
       );
 
       // Normalize source from gateway ID to broker name (e.g., 'binance_stream' → 'binance')
-      const normalizedSource = this.normalizeSource(options?.source);
-      console.log(`📊 [MarketDataSubscriber] Normalized source: ${options?.source} → ${normalizedSource}`);
+      const normalizedSource = this.normalizeSource(source);
+      console.log(
+        `📊 [MarketDataSubscriber] Normalized source: ${source} → ${normalizedSource}`
+      );
 
       // Create subscription object
       const subscription: WorkflowSubscription = {
@@ -113,7 +112,6 @@ export class MarketDataSubscriber {
         userId,
         symbols: new Set(symbols.map((s) => s.toUpperCase())),
         source: normalizedSource,
-        eventTypes: options?.eventTypes,
       };
 
       // Store in memory
@@ -256,10 +254,8 @@ export class MarketDataSubscriber {
             subscription.nodeId,
             subscription.userId,
             subscription.symbols,
-            {
-              source: subscription.source,
-              eventTypes: subscription.eventTypes,
-            }
+            subscription.source,
+              
           );
 
           restored++;
@@ -281,7 +277,7 @@ export class MarketDataSubscriber {
    */
   private setupMessageHandler(): void {
     const { sub } = this.ensureRedisConnections();
-    
+
     // Remove existing handler to prevent duplicates
     if (this.messageHandler) {
       sub.off("message", this.messageHandler);
@@ -375,7 +371,7 @@ export class MarketDataSubscriber {
           }
 
           // Skip workflow execution for test listeners (they only need WebSocket data)
-          if (workflowId.startsWith('stream:test:')) {
+          if (workflowId.startsWith("stream:test:")) {
             logger.debug(
               { workflowId },
               "Skipping workflow execution for test listener"
@@ -474,7 +470,7 @@ export class MarketDataSubscriber {
         id: runId,
         workflow_id: workflowId,
         initiated_by: userId,
-        status: 'queued',
+        status: "queued",
         started_at: new Date().toISOString(),
       };
 
@@ -482,7 +478,7 @@ export class MarketDataSubscriber {
       await redis.expire(`runs:data:${runId}`, 86400); // 24 hour TTL
 
       // Add to pending sync list
-      await redis.lpush('runs:pending:all', runId);
+      await redis.lpush("runs:pending:all", runId);
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
@@ -515,7 +511,7 @@ export class MarketDataSubscriber {
         );
         // Clean up Redis entry on queue failure
         await redis.del(`runs:data:${runId}`);
-        await redis.lrem('runs:pending:all', 1, runId);
+        await redis.lrem("runs:pending:all", 1, runId);
       }
     } catch (error) {
       logger.error(

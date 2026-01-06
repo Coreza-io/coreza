@@ -153,8 +153,6 @@ export class MarketControlHandler {
     workflowId: string;
     nodeId: string;
     source?: string;
-    filter_symbols?: string[];
-    filter_types?: string[];
     subscriptionMode?: "workflow" | "global";
     isTestListener?: boolean;
   }): Promise<void> {
@@ -163,25 +161,20 @@ export class MarketControlHandler {
       workflowId,
       nodeId,
       source,
-      filter_symbols,
-      filter_types,
       subscriptionMode = "workflow",
     } = msg;
-    
+
     // Detect test listener by explicit flag OR workflowId prefix (fallback for race conditions)
-    const isTestListener = msg.isTestListener === true || workflowId.startsWith('stream:test:');
+    const isTestListener =
+      msg.isTestListener === true || workflowId.startsWith("stream:test:");
 
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
-        }, mode: ${subscriptionMode}, isTestListener: ${isTestListener}, filter_symbols: ${JSON.stringify(filter_symbols)})`
+        }, mode: ${subscriptionMode}, isTestListener: ${isTestListener}
+        )})`
       );
-
-      // Normalize event types for proper filtering
-      const normalizedEventTypes = source
-        ? this.normalizeEventTypes(source, filter_types)
-        : filter_types;
 
       const subscriber = MarketDataSubscriber.getInstance();
       let symbolsToSubscribe: string[];
@@ -189,35 +182,37 @@ export class MarketControlHandler {
       // TEST LISTENER MODE: Use filter_symbols directly without intersection
       // OR: Fallback to loading from Redis if filter_symbols missing (handles race condition)
       if (isTestListener) {
-        if (filter_symbols && filter_symbols.length > 0) {
-          // filter_symbols provided in message - use directly
-          symbolsToSubscribe = filter_symbols.map((s) => s.toUpperCase());
+        if (subscriptionMode === "global") {
+          // Fetch globally subscribed symbols for this user
+          const globalSymbols = await this.getUserSubscribedSymbols(userId);
+          symbolsToSubscribe = globalSymbols;
           console.log(
-            `🧪 [MarketControl] Test listener - using provided symbols directly: ${symbolsToSubscribe.join(', ')}`
+            `🧪 [MarketControl] Test listener - found ${
+              globalSymbols.length
+            } global symbols: ${globalSymbols.join(", ")}`
           );
         } else {
-          // No filter_symbols - resolve from existing subscriptions based on scope
-          console.log(`🧪 [MarketControl] Test listener - no filter_symbols, resolving from ${subscriptionMode} subscriptions`);
-          
-          if (subscriptionMode === 'global') {
-            // Fetch globally subscribed symbols for this user
-            const globalSymbols = await this.getUserSubscribedSymbols(userId);
-            symbolsToSubscribe = globalSymbols;
-            console.log(`🧪 [MarketControl] Test listener - found ${globalSymbols.length} global symbols: ${globalSymbols.join(', ')}`);
-          } else {
-            // Workflow scope - get workflow-scoped symbols
-            // testKey format: stream:test:{workflowId}:{nodeId}
-            const parts = workflowId.split(':');
-            const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
-            
-            const workflowSymbols = await this.getWorkflowScopedSymbols(actualWorkflowId, source);
-            symbolsToSubscribe = workflowSymbols;
-            console.log(`🧪 [MarketControl] Test listener - found ${workflowSymbols.length} workflow-scoped symbols: ${workflowSymbols.join(', ')}`);
-          }
-          
-          if (symbolsToSubscribe.length === 0) {
-            console.log(`ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`);
-          }
+          // Workflow scope - get workflow-scoped symbols
+          // testKey format: stream:test:{workflowId}:{nodeId}
+          const parts = workflowId.split(":");
+          const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
+
+          const workflowSymbols = await this.getWorkflowScopedSymbols(
+            actualWorkflowId,
+            source
+          );
+          symbolsToSubscribe = workflowSymbols;
+          console.log(
+            `🧪 [MarketControl] Test listener - found ${
+              workflowSymbols.length
+            } workflow-scoped symbols: ${workflowSymbols.join(", ")}`
+          );
+        }
+
+        if (symbolsToSubscribe.length === 0) {
+          console.log(
+            `ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`
+          );
         }
       } else {
         // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
@@ -237,23 +232,11 @@ export class MarketControlHandler {
             nodeId,
             userId,
             [], // No symbols yet
-            {
-              source: source as MarketSource | undefined,
-              eventTypes: normalizedEventTypes as any,
-            }
+            source: source as MarketSource | undefined,
           );
           return;
         }
-
-        // If filter_symbols specified, only subscribe to those that are in available subscriptions
-        symbolsToSubscribe =
-          filter_symbols && filter_symbols.length > 0
-            ? subscribedSymbols.filter((s) =>
-                filter_symbols
-                  .map((fs) => fs.toUpperCase())
-                  .includes(s.toUpperCase())
-              )
-            : subscribedSymbols;
+        symbolsToSubscribe = subscribedSymbols;
       }
 
       await subscriber.subscribe(
@@ -261,14 +244,14 @@ export class MarketControlHandler {
         nodeId,
         userId,
         symbolsToSubscribe,
-        {
-          source: source as MarketSource | undefined,
-          eventTypes: normalizedEventTypes as any,
-        }
+        source: source as MarketSource | undefined,
+        
       );
 
       console.log(
-        `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${symbolsToSubscribe.length} symbols: ${symbolsToSubscribe.join(', ')}`
+        `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
+          symbolsToSubscribe.length
+        } symbols: ${symbolsToSubscribe.join(", ")}`
       );
     } catch (error) {
       console.error(
@@ -291,14 +274,18 @@ export class MarketControlHandler {
 
     try {
       console.log(
-        `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: ${isTestListener || false})`
+        `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: ${
+          isTestListener || false
+        })`
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
       await subscriber.unsubscribe(workflowId);
 
       console.log(
-        `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${isTestListener ? ' (test listener)' : ''}`
+        `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${
+          isTestListener ? " (test listener)" : ""
+        }`
       );
     } catch (error) {
       console.error(
@@ -416,22 +403,31 @@ export class MarketControlHandler {
           `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`
         );
         await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
-        
+
         // Also update any test listeners for this workflow (handles race condition)
         const testListenerPattern = `stream:test:${targetWorkflowId}:*`;
         try {
-          const testListenerKeys = await this.redisPub.keys(testListenerPattern);
+          const testListenerKeys = await this.redisPub.keys(
+            testListenerPattern
+          );
           if (testListenerKeys.length > 0) {
-            console.log(`🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`);
+            console.log(
+              `🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`
+            );
             for (const testKey of testListenerKeys) {
               await subscriber.addSymbolsToSubscription(testKey, newSymbols);
-              console.log(`🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`);
+              console.log(
+                `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`
+              );
             }
           }
         } catch (err) {
-          console.warn(`⚠️ [MarketControl] Failed to update test listeners for ${targetWorkflowId}:`, err);
+          console.warn(
+            `⚠️ [MarketControl] Failed to update test listeners for ${targetWorkflowId}:`,
+            err
+          );
         }
-        
+
         console.log(
           `✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`
         );
@@ -502,7 +498,9 @@ export class MarketControlHandler {
       // Use user-specific SET for O(1) lookup instead of pattern scanning
       const userTestListenersKey = `user:active_test_listeners:${userId}`;
       try {
-        const testListenerKeys = await this.redisPub.smembers(userTestListenersKey);
+        const testListenerKeys = await this.redisPub.smembers(
+          userTestListenersKey
+        );
 
         if (testListenerKeys.length > 0) {
           console.log(
@@ -741,7 +739,7 @@ export class MarketControlHandler {
           console.log(
             `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`
           );
-          
+
           // Also track in workflow-scoped key for cleanup on workflow deactivation
           // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
           if (workflowId) {

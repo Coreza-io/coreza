@@ -972,7 +972,7 @@ router.post("/execute-stream-node", async (req, res) => {
       startedAt: now,
       mode,
       subscriptionMode: subscriptionMode,
-      marketSource,
+      source: marketSource,
     };
 
     // Store test listener with TTL (auto-expire)
@@ -996,7 +996,7 @@ router.post("/execute-stream-node", async (req, res) => {
       userId,
       workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
       nodeId: node_id,
-      marketSource,
+      source: marketSource,
       subscriptionMode: subscriptionMode,
       isTestListener: true,
     };

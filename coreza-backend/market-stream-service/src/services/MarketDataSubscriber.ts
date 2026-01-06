@@ -91,7 +91,7 @@ export class MarketDataSubscriber {
     nodeId: string,
     userId: string,
     symbols: string[],
-    source: MarketSource
+    source?: MarketSource | string
   ): Promise<void> {
     try {
       console.log(
@@ -100,10 +100,7 @@ export class MarketDataSubscriber {
       );
 
       // Normalize source from gateway ID to broker name (e.g., 'binance_stream' → 'binance')
-      const normalizedSource = this.normalizeSource(source);
-      console.log(
-        `📊 [MarketDataSubscriber] Normalized source: ${source} → ${normalizedSource}`
-      );
+      //const normalizedSource = this.normalizeSource(source);
 
       // Create subscription object
       const subscription: WorkflowSubscription = {
@@ -111,7 +108,7 @@ export class MarketDataSubscriber {
         nodeId,
         userId,
         symbols: new Set(symbols.map((s) => s.toUpperCase())),
-        source: normalizedSource,
+        source,
       };
 
       // Store in memory
@@ -232,7 +229,6 @@ export class MarketDataSubscriber {
             userId: string;
             symbols: string[];
             source?: MarketSource;
-            eventTypes?: MarketEventType[];
           };
 
           // Verify workflow is still active (use cache)
@@ -331,11 +327,11 @@ export class MarketDataSubscriber {
             continue;
 
           // Filter by event type if specified
-          if (
-            subscription.eventTypes &&
-            !subscription.eventTypes.includes(event.type)
-          )
-            continue;
+          // if (
+          //   subscription.eventTypes &&
+          //   !subscription.eventTypes.includes(event.type)
+          // )
+          //   continue;
 
           // Format event using shared helper (same format for frontend and backend)
           const formattedPayload = this.formatMarketEventPayload(event);
@@ -409,7 +405,7 @@ export class MarketDataSubscriber {
   private formatMarketEventPayload(event: CorezaMarketEvent): {
     data: Record<string, any>;
   } {
-    const { symbol, type, source, isClosed, ...cleanEventData } = event;
+    const { symbol, type, source, ...cleanEventData } = event;
 
     const typeKeyMap: Record<string, string> = {
       bar: "bar",

@@ -332,13 +332,14 @@ router.post("/:source/subscribe", async (req, res) => {
       environment, // Binance: testnet or live
       asset_type, // Binance: spot or futures
       kline_interval, // Binance: 1m, 5m, 15m, etc.
+      depth_levels,
       // Subscription scope
       subscriptionScope,
       targetWorkflowId,
     } = req.body;
 
     // Use camelCase first (frontend convention), fallback to snake_case
-    const finalSubscriptionScope = subscriptionScope || "global";
+    const finalSubscriptionScope = subscriptionScope;
     const finalTargetWorkflowId = targetWorkflowId;
 
     if (!credential_id)
@@ -361,15 +362,12 @@ router.post("/:source/subscribe", async (req, res) => {
       symbolSource,
       sourceWorkflowId,
       sourceVariable,
-      streamTypes: stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : undefined,
+      streamTypes: stream_types,
       feed,
       environment,
       assetType: asset_type,
       klineInterval: kline_interval,
+      depth_levels: depth_levels,
       subscriptionScope: finalSubscriptionScope,
       targetWorkflowId: finalTargetWorkflowId,
     });
@@ -859,6 +857,7 @@ router.post("/execute-stream-node", async (req, res) => {
       asset_type,
       feed,
       kline_interval,
+      depth_levels,
       subscriptionMode,
     } = req.body as StreamExecutionRequest;
 

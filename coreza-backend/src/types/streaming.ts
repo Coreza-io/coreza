@@ -23,10 +23,7 @@ export interface StreamExecutionRequest {
   asset_type?: "spot" | "futures";
   feed?: "iex" | "sip";
   kline_interval?: string;
-
-  // For filtering (both modes)
-  filter_symbols?: string[];
-  filter_types?: string[];
+  depth_levels?: string;
   subscriptionMode?: "workflow" | "global";
 }
 

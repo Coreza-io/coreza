@@ -254,64 +254,13 @@
       "showDescription": false
     },
     {
-      "key": "symbolSource",
-      "label": "Symbol Source",
-      "type": "select",
-      "options": [
-        {
-          "id": "manual",
-          "name": "Enter Manually"
-        },
-        {
-          "id": "store",
-          "name": "From Store Variable"
-        },
-        {
-          "id": "input",
-          "name": "From Input"
-        }
-      ],
-      "default": "manual",
-      "required": true
-    },
-    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
       "placeholder": "BTCUSDT, ETHUSDT",
       "description": "Comma-separated symbols (uppercase)",
-      "displayOptions": {
-        "show": {
-          "symbolSource": ["manual"]
-        }
-      },
-      "required": false,
+      "required": true,
       "showDescription": false
-    },
-    {
-      "key": "sourceWorkflowId",
-      "label": "Source Workflow",
-      "type": "select",
-      "optionsSource": "storeWorkflowsApi",
-      "placeholder": "Select workflow containing symbols",
-      "displayOptions": {
-        "show": {
-          "symbolSource": ["store"]
-        }
-      }
-    },
-    {
-      "key": "sourceVariable",
-      "label": "Variable Name",
-      "type": "select",
-      "optionsSource": "storeVariablesApi",
-      "dependsOn": "sourceWorkflowId",
-      "placeholder": "Select stored variable",
-      "displayOptions": {
-        "show": {
-          "symbolSource": ["store"]
-        }
-      }
     },
     {
       "key": "subscriptionScope",

@@ -170,7 +170,6 @@ export class SubscriptionService {
         credentialId,
         operation,
         streamTypes,
-        streamTypes,
         feed,
         environment,
         assetType,

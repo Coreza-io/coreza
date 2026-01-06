@@ -30,7 +30,7 @@ export interface SubscriptionParams {
   symbols?: string | string[];
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
-  streamType?: string;
+  streamTypes?: string[];
   // Alpaca-specific
   feed?: string;
   environment?: string;
@@ -49,7 +49,7 @@ export interface SubscriptionResult {
     status: string;
     source: MarketSource;
     symbols: string[];
-    streamType?: string;
+    streamTypes?: string[];
     message: string;
   };
   error?: string;
@@ -85,15 +85,15 @@ export class SubscriptionService {
    * Process stream types with broker-specific transformations
    */
   private static processStreamTypes(
-    streamType: string | undefined,
+    streamTypes: string[] | undefined,
     source: MarketSource,
     Interval?: string
-  ): string {
-    let types = streamType ?? "trade";
+  ): string[] {
+    let types = streamTypes || ["trade"];
 
     // For Binance kline streams, append the interval
     if (source === "binance" && Interval) {
-      types = `${types}_${Interval}`;
+      types = types.map((t) => `${t}_${Interval}`);
     }
 
     return types;
@@ -116,7 +116,7 @@ export class SubscriptionService {
         workflowId,
         credentialId,
         operation,
-        streamType,
+        streamTypes,
         feed,
         environment,
         assetType,
@@ -158,7 +158,11 @@ export class SubscriptionService {
       }
 
       // Process stream types
-      const eventType = this.processStreamTypes(streamType, source, interval);
+      const eventTypes = this.processStreamTypes(
+        streamTypes,
+        source,
+        interval ?? depth_levels
+      );
 
       // Build control message
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
@@ -171,7 +175,7 @@ export class SubscriptionService {
         symbols: symbolArray,
         source: `${source}_stream`,
         credentialId,
-        eventType,
+        eventTypes,
         subscriptionScope,
       };
 
@@ -205,7 +209,7 @@ export class SubscriptionService {
           status: operation === "subscribe" ? "subscribed" : "unsubscribed",
           source,
           symbols: symbolArray,
-          streamType: eventType,
+          streamTypes: eventTypes,
           message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },
       };

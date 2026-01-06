@@ -323,7 +323,7 @@ router.post("/:source/subscribe", async (req, res) => {
       category,
       subCategory,
       workflow_id,
-      stream_type,
+      stream_types,
       // Source-specific fields
       feed, // Alpaca: iex or sip
       environment, // Binance: testnet or live
@@ -356,7 +356,11 @@ router.post("/:source/subscribe", async (req, res) => {
       nodeId: node_id,
       credentialId: credential_id,
       symbols,
-      streamType: stream_type,
+      streamTypes: stream_types
+        ? typeof stream_types === "string"
+          ? stream_types.split(",").map((s: string) => s.trim())
+          : stream_types
+        : undefined,
       feed,
       environment,
       assetType: asset_type,

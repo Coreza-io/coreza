@@ -113,7 +113,7 @@
       "required": true
     },
     {
-      "key": "stream_type",
+      "key": "stream_types",
       "label": "Stream Type",
       "type": "select",
       "options": [
@@ -220,7 +220,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "stream_type": ["kline"]
+          "stream_types": ["kline"]
         }
       },
       "description": "Candlestick timeframe for kline data",
@@ -247,7 +247,7 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_type": ["depth"]
+          "stream_types": ["depth"]
         }
       },
       "description": "Number of order book levels to receive",

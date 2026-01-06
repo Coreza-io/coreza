@@ -36,10 +36,10 @@ export interface SubscriptionParams {
   streamTypes?: string[];
   // Alpaca-specific
   feed?: string;
-  // Binance-specific
   environment?: string;
   assetType?: string;
-  klineInterval?: string;
+  interval?: string;
+  // Binance-specific
   depth_levels?: string;
   // Subscription scope
   subscriptionScope?: "global" | "workflow";
@@ -172,7 +172,7 @@ export class SubscriptionService {
         feed,
         environment,
         assetType,
-        klineInterval,
+        interval,
         depth_levels,
         subscriptionScope,
         targetWorkflowId,

@@ -52,24 +52,27 @@ export function useNodeFieldState({
     const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => {
         const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
-        
+
         // For select fields, ensure we use default if saved value is empty/undefined
-        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+        if (
+          f.type === "select" &&
+          (savedValue === undefined || savedValue === null || savedValue === "")
+        ) {
           return [f.key, f.default || ""];
         }
-        
+
         // For repeater fields
         if (f.type === "repeater") {
           return [f.key, savedValue || f.default || []];
         }
-        
+
         // For all other fields
         return [f.key, savedValue ?? f.default ?? ""];
       })
     );
 
     // Preserve additional dynamic fields (like logicalOps) from saved data
-    const existingValues = data.fieldState || data.values || {};
+    const existingValues = data.values || {};
     const definedKeys = new Set(definition.fields.map((f: any) => f.key));
     const dynamicFields = Object.fromEntries(
       Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
@@ -81,7 +84,7 @@ export function useNodeFieldState({
   // Initialize fieldState when definition changes
   useEffect(() => {
     if (!definition?.fields) return;
-    
+
     // Only initialize once when component mounts or definition actually changes
     if (hasInitialized.current) return;
 
@@ -89,17 +92,20 @@ export function useNodeFieldState({
     const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => {
         const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
-        
+
         // For select fields, ensure we use default if saved value is empty/undefined
-        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+        if (
+          f.type === "select" &&
+          (savedValue === undefined || savedValue === null || savedValue === "")
+        ) {
           return [f.key, f.default || ""];
         }
-        
+
         // For repeater fields
         if (f.type === "repeater") {
           return [f.key, savedValue || f.default || []];
         }
-        
+
         // For all other fields
         return [f.key, savedValue ?? f.default ?? ""];
       })
@@ -131,18 +137,24 @@ export function useNodeFieldState({
   // Skip in readOnly mode to prevent execution view from mutating nodes
   useEffect(() => {
     if (readOnly) return; // Don't sync in read-only/execution view mode
-    if (Object.keys(fieldState).length === 0 || !nodeId || !hasInitialized.current) return;
-    
+    if (
+      Object.keys(fieldState).length === 0 ||
+      !nodeId ||
+      !hasInitialized.current
+    )
+      return;
+
     setNodes((nds) =>
       nds.map((n) => {
         if (n.id !== nodeId) return n;
-        
+
         // Check if values actually changed to prevent redundant updates
         const currentValues = (n.data as any)?.values || {};
-        const valuesChanged = JSON.stringify(currentValues) !== JSON.stringify(fieldState);
-        
+        const valuesChanged =
+          JSON.stringify(currentValues) !== JSON.stringify(fieldState);
+
         if (!valuesChanged) return n;
-        
+
         return {
           ...n,
           data: {
@@ -159,9 +171,9 @@ export function useNodeFieldState({
     (key: string, value: any) => {
       // Don't allow changes in readOnly mode
       if (readOnly) return;
-      
-      let newFieldState = { ...fieldState, [key]: value };
-      
+
+      const newFieldState = { ...fieldState, [key]: value };
+
       // Check if any field has dynamicOptions that depends on this key
       if (definition?.fields) {
         for (const field of definition.fields) {
@@ -174,7 +186,7 @@ export function useNodeFieldState({
           }
         }
       }
-      
+
       setFieldState(newFieldState);
       setNodes((nds) =>
         nds.map((n) =>
@@ -199,7 +211,7 @@ export function useNodeFieldState({
     (updates: Record<string, any>) => {
       // Don't allow changes in readOnly mode
       if (readOnly) return;
-      
+
       const newFS = { ...fieldState, ...updates };
       setFieldState(newFS);
       setNodes((nds) =>
@@ -219,4 +231,3 @@ export function useNodeFieldState({
     handleFieldStateBatch,
   };
 }
-

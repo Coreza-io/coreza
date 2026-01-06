@@ -113,7 +113,7 @@
       "required": true
     },
     {
-      "key": "stream_type",
+      "key": "stream_types",
       "label": "Stream Type",
       "type": "select",
       "options": [
@@ -152,7 +152,7 @@
       "showDescription": false
     },
     {
-      "key": "interval",
+      "key": "kline_interval",
       "label": "Kline Interval",
       "type": "select",
       "options": [
@@ -220,7 +220,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "stream_type": ["kline"]
+          "stream_types": ["kline"]
         }
       },
       "description": "Candlestick timeframe for kline data",
@@ -247,11 +247,32 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_type": ["depth"]
+          "stream_types": ["depth"]
         }
       },
       "description": "Number of order book levels to receive",
       "showDescription": false
+    },
+    {
+      "key": "symbolSource",
+      "label": "Symbol Source",
+      "type": "select",
+      "options": [
+        {
+          "id": "manual",
+          "name": "Enter Manually"
+        },
+        {
+          "id": "store",
+          "name": "From Store Variable"
+        },
+        {
+          "id": "input",
+          "name": "From Input"
+        }
+      ],
+      "default": "manual",
+      "required": true
     },
     {
       "key": "symbols",
@@ -259,8 +280,38 @@
       "type": "text",
       "placeholder": "BTCUSDT, ETHUSDT",
       "description": "Comma-separated symbols (uppercase)",
-      "required": true,
+      "displayOptions": {
+        "show": {
+          "symbolSource": ["manual"]
+        }
+      },
+      "required": false,
       "showDescription": false
+    },
+    {
+      "key": "sourceWorkflowId",
+      "label": "Source Workflow",
+      "type": "select",
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow containing symbols",
+      "displayOptions": {
+        "show": {
+          "symbolSource": ["store"]
+        }
+      }
+    },
+    {
+      "key": "sourceVariable",
+      "label": "Variable Name",
+      "type": "select",
+      "optionsSource": "storeVariablesApi",
+      "dependsOn": "sourceWorkflowId",
+      "placeholder": "Select stored variable",
+      "displayOptions": {
+        "show": {
+          "symbolSource": ["store"]
+        }
+      }
     },
     {
       "key": "subscriptionScope",

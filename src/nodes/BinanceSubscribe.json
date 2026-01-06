@@ -152,7 +152,7 @@
       "showDescription": false
     },
     {
-      "key": "kline_interval",
+      "key": "interval",
       "label": "Kline Interval",
       "type": "select",
       "options": [

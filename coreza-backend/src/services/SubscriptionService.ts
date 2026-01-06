@@ -39,7 +39,7 @@ export interface SubscriptionParams {
   // Binance-specific
   environment?: string;
   assetType?: string;
-  klineInterval?: string;
+  interval?: string;
   depth_levels?: string;
   // Subscription scope
   subscriptionScope?: "global" | "workflow";
@@ -138,7 +138,6 @@ export class SubscriptionService {
    */
   private static processStreamTypes(
     streamTypes: string[] | undefined,
-    streamTypes: string[] | undefined,
     source: MarketSource,
     Interval?: string
   ): string[] {
@@ -173,7 +172,7 @@ export class SubscriptionService {
         feed,
         environment,
         assetType,
-        klineInterval,
+        interval,
         depth_levels,
         subscriptionScope,
         targetWorkflowId,
@@ -229,7 +228,6 @@ export class SubscriptionService {
         source: `${source}_stream`,
         credentialId,
         eventTypes,
-        eventTypes,
         subscriptionScope,
       };
 
@@ -267,7 +265,6 @@ export class SubscriptionService {
           status: operation === "subscribe" ? "subscribed" : "unsubscribed",
           source,
           symbols: symbolArray,
-          streamTypes: eventTypes,
           streamTypes: eventTypes,
           message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },

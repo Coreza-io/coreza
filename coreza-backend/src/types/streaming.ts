@@ -22,7 +22,7 @@ export interface StreamExecutionRequest {
   environment?: "testnet" | "live";
   asset_type?: "spot" | "futures";
   feed?: "iex" | "sip";
-  kline_interval?: string;
+  interval?: string;
   depth_levels?: string;
   subscriptionMode?: "workflow" | "global";
 }

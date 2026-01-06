@@ -616,6 +616,7 @@ export class MarketControlHandler {
       source,
       userId,
       workflowId,
+      nodeId,
       symbols,
       eventTypes,
       feed,

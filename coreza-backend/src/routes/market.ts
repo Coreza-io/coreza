@@ -328,7 +328,7 @@ router.post("/:source/subscribe", async (req, res) => {
       feed, // Alpaca: iex or sip
       environment, // Binance: testnet or live
       asset_type, // Binance: spot or futures
-      interval, // Binance: 1m, 5m, 15m, etc.
+      kline_interval, // Binance: 1m, 5m, 15m, etc.
       depth_levels,
       // Subscription scope
       subscriptionScope,
@@ -364,7 +364,7 @@ router.post("/:source/subscribe", async (req, res) => {
       feed,
       environment,
       assetType: asset_type,
-      interval: interval,
+      klineInterval: kline_interval,
       depth_levels: depth_levels,
       subscriptionScope: finalSubscriptionScope,
       targetWorkflowId: finalTargetWorkflowId,
@@ -431,7 +431,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
       symbolSource,
       sourceWorkflowId,
       sourceVariable,
-      streamTypes: stream_types,
+      streamTypes: stream_types
+        ? typeof stream_types === "string"
+          ? stream_types.split(",").map((s: string) => s.trim())
+          : stream_types
+        : undefined,
     });
 
     if (!result.success) {

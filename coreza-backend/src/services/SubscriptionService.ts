@@ -28,12 +28,9 @@ export interface SubscriptionParams {
   operation: "subscribe" | "unsubscribe";
   // Symbol sources
   symbols?: string | string[];
-  symbolSource?: "manual" | "store" | "input";
-  sourceWorkflowId?: string;
-  sourceVariable?: string;
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
-  streamTypes?: string[];
+  streamType?: string;
   // Alpaca-specific
   feed?: string;
   environment?: string;
@@ -52,7 +49,7 @@ export interface SubscriptionResult {
     status: string;
     source: MarketSource;
     symbols: string[];
-    streamTypes?: string[];
+    streamType?: string;
     message: string;
   };
   error?: string;
@@ -70,56 +67,7 @@ export class SubscriptionService {
   private static async resolveSymbols(
     params: SubscriptionParams
   ): Promise<string[]> {
-    const {
-      symbols,
-      symbolSource = "manual",
-      sourceWorkflowId,
-      sourceVariable,
-      userId,
-      initialInput,
-    } = params;
-
-    if (symbolSource === "store") {
-      if (!sourceWorkflowId || !sourceVariable) {
-        throw new Error(
-          "Source workflow and variable are required when using stored symbols"
-        );
-      }
-
-      const redis = getRedisCache();
-      const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
-      const storedValue = await getStoreValue(redis, storeKey);
-
-      if (Array.isArray(storedValue)) {
-        return storedValue
-          .map((symbol) => String(symbol).trim())
-          .filter(Boolean);
-      }
-
-      if (typeof storedValue === "string") {
-        return storedValue
-          .split(",")
-          .map((symbol) => symbol.trim())
-          .filter(Boolean);
-      }
-
-      if (storedValue !== null && storedValue !== undefined) {
-        const coerced = String(storedValue).trim();
-        return coerced ? [coerced] : [];
-      }
-
-      return [];
-    }
-
-    if (symbolSource === "input" && initialInput?.symbols) {
-      return Array.isArray(initialInput.symbols)
-        ? initialInput.symbols
-        : String(initialInput.symbols)
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-    }
-
+    const { symbols } = params;
     // Manual entry
     if (!symbols) return [];
 
@@ -137,15 +85,15 @@ export class SubscriptionService {
    * Process stream types with broker-specific transformations
    */
   private static processStreamTypes(
-    streamTypes: string[] | undefined,
+    streamType: string | undefined,
     source: MarketSource,
-    klineInterval?: string
-  ): string[] {
-    let types = streamTypes || ["trade"];
+    Interval?: string
+  ): string {
+    let types = streamType ?? "trade";
 
     // For Binance kline streams, append the interval
-    if (source === "binance" && klineInterval) {
-      types = types.map((t) => (t === "kline" ? `kline_${klineInterval}` : t));
+    if (source === "binance" && Interval) {
+      types = `${types}_${Interval}`;
     }
 
     return types;
@@ -168,7 +116,7 @@ export class SubscriptionService {
         workflowId,
         credentialId,
         operation,
-        streamTypes,
+        streamType,
         feed,
         environment,
         assetType,
@@ -210,11 +158,7 @@ export class SubscriptionService {
       }
 
       // Process stream types
-      const eventTypes = this.processStreamTypes(
-        streamTypes,
-        source,
-        klineInterval
-      );
+      const eventType = this.processStreamTypes(streamType, source, interval);
 
       // Build control message
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
@@ -227,7 +171,7 @@ export class SubscriptionService {
         symbols: symbolArray,
         source: `${source}_stream`,
         credentialId,
-        eventTypes,
+        eventType,
         subscriptionScope,
       };
 
@@ -237,13 +181,9 @@ export class SubscriptionService {
       }
 
       // Add source-specific fields
-      if (source === "alpaca" && feed) {
-        controlMessage.feed = feed;
-      }
-      if (source === "binance") {
-        if (environment) controlMessage.environment = environment;
-        if (assetType) controlMessage.assetType = assetType;
-      }
+      if (feed) controlMessage.feed = feed;
+      if (environment) controlMessage.environment = environment;
+      if (assetType) controlMessage.assetType = assetType;
 
       // Publish to appropriate control channel
       const redis = getRedisCache();
@@ -265,7 +205,7 @@ export class SubscriptionService {
           status: operation === "subscribe" ? "subscribed" : "unsubscribed",
           source,
           symbols: symbolArray,
-          streamTypes: eventTypes,
+          streamType: eventType,
           message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },
       };

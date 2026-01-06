@@ -23,7 +23,7 @@ interface ControlMessage {
   symbols: string[];
   source: MarketSource;
   credentialId?: string;
-  eventTypes?: string[];
+  eventType?: string;
   feed?: string;
   environment?: string; // For Binance: testnet/live
   assetType?: string; // For Binance: spot/futures
@@ -616,9 +616,8 @@ export class MarketControlHandler {
       source,
       userId,
       workflowId,
-      nodeId,
       symbols,
-      eventTypes,
+      eventType,
       feed,
       environment,
       assetType,
@@ -659,19 +658,18 @@ export class MarketControlHandler {
 
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];
-        const requestedTypes = eventTypes || ["trades"];
 
         for (const symbol of symbols) {
           const upperSymbol = symbol.toUpperCase();
           const existingTypes = state.symbolTypes.get(upperSymbol) || new Set();
 
           // Check if any requested type is new for this symbol
-          const hasNewTypes = requestedTypes.some((t) => !existingTypes.has(t));
+          const hasNewTypes = !existingTypes.has(eventType);
 
           if (!state.symbols.has(upperSymbol) || hasNewTypes) {
             subscriptionNeeded.push(upperSymbol);
             // Add all requested types to tracking
-            requestedTypes.forEach((t) => existingTypes.add(t));
+            existingTypes.add(eventType);
             state.symbolTypes.set(upperSymbol, existingTypes);
             state.symbols.add(upperSymbol);
           }
@@ -681,9 +679,9 @@ export class MarketControlHandler {
           console.log(
             `➕ [MarketControl] Subscribing to symbols with new types on ${source}:`,
             subscriptionNeeded,
-            `(types: ${requestedTypes.join(", ")})`
+            `(type: ${eventType})`
           );
-          state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
+          state.gateway.subscribeSymbols(subscriptionNeeded, eventType);
 
           // Persist to Redis
           await this.persistState(source);

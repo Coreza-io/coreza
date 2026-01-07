@@ -20,7 +20,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { MarketSource } from "../types/marketEvent";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
-//import { getMarketSource } from "../config/marketSources";
+import { getMarketSource } from "../config/marketSources";
 import { getAllowedSymbols } from "../utils/streamFilters";
 import {
   MAX_TEST_LISTENERS_PER_USER,
@@ -410,14 +410,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
       subCategory,
       workflow_id,
       stream_types,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
-      subscriptionScope, // 'global' or 'workflow' - determines which Redis key to use
+      subscription_scope, // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    //const marketSource = getMarketSource(source);
-    const marketSource = subCategory;
+    const marketSource = subCategory ?? getMarketSource(source);
+
     if (!marketSource) {
       return res.status(400).json({ error: `Unknown source: ${source}` });
     }
@@ -428,9 +425,6 @@ router.post("/:source/unsubscribe", async (req, res) => {
       workflowId: workflow_id,
       nodeId: node_id,
       symbols,
-      symbolSource,
-      sourceWorkflowId,
-      sourceVariable,
       streamTypes: stream_types
         ? typeof stream_types === "string"
           ? stream_types.split(",").map((s: string) => s.trim())
@@ -449,7 +443,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
     // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
     if (
-      subscriptionScope === "workflow" &&
+      subscription_scope === "workflow" &&
       workflow_id &&
       resolvedSymbols.length > 0
     ) {
@@ -910,11 +904,16 @@ router.post("/execute-stream-node", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id || "",
         symbols: parsedSymbols,
-        streamTypes: stream_types,
+        streamTypes: stream_types
+          ? typeof stream_types === "string"
+            ? stream_types.split(",").map((s: string) => s.trim())
+            : stream_types
+          : undefined,
         feed,
         environment,
         assetType: asset_type,
         interval,
+        depth_levels: depth_levels,
         subscriptionScope: "workflow",
         targetWorkflowId: workflow_id,
       });

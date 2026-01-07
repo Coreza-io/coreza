@@ -141,11 +141,18 @@ export class SubscriptionService {
     source: MarketSource,
     Interval?: string
   ): string[] {
-    let types = streamTypes || ["trade"];
+    let types = streamTypes ?? ["trade"];
 
-    // For Binance kline streams, append the interval
     if (source === "binance" && Interval) {
-      types = types.map((t) => `${t}_${Interval}`);
+      types = types.map((t) => {
+        // Depth streams: depth20, depth10, etc.
+        if (t === "depth_levels") {
+          return `depth${Interval}`;
+        }
+
+        // Interval-based streams: kline_1m, kline_5m, etc.
+        return `${t}_${Interval}`;
+      });
     }
 
     return types;
@@ -237,13 +244,9 @@ export class SubscriptionService {
       }
 
       // Add source-specific fields
-      if (source === "alpaca" && feed) {
-        controlMessage.feed = feed;
-      }
-      if (source === "binance") {
-        if (environment) controlMessage.environment = environment;
-        if (assetType) controlMessage.assetType = assetType;
-      }
+      if (feed) controlMessage.feed = feed;
+      if (environment) controlMessage.environment = environment;
+      if (assetType) controlMessage.assetType = assetType;
 
       // Publish to appropriate control channel
       const redis = getRedisCache();

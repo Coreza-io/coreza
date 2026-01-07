@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
-import { GatewayConfig, GATEWAY_CONFIGS } from "../marketGateways";
+import { GatewayConfig, GATEWAY_CONFIGS, SubscribeOptions } from "../marketGateways";
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";
@@ -17,10 +17,12 @@ import {
 } from "../utils/alerting";
 
 export class MarketDataGateway {
-  private static instances = new Map<MarketSource, MarketDataGateway>();
+  // Key: full source_id (e.g., 'alpaca_news', 'alpaca_stream') for unique instances
+  private static instances = new Map<string, MarketDataGateway>();
 
   private ws: WebSocket | null = null;
   private config: GatewayConfig;
+  private source: string; // Full source_id for behavior routing (e.g., 'alpaca_news')
   private credentials: any = null;
   private subscribedSymbolTypes = new Map<string, Set<string>>(); // symbol → event types
   private isAuthenticated = false;
@@ -29,17 +31,26 @@ export class MarketDataGateway {
   private logger = createLogger("MarketDataGateway");
   private keepaliveInterval: NodeJS.Timeout | null = null;
 
-  private constructor(config: GatewayConfig) {
+  private constructor(config: GatewayConfig, source: string) {
     this.config = config;
+    this.source = source;
   }
 
-  static getInstance(source: MarketSource): MarketDataGateway {
-    if (!this.instances.has(source)) {
-      const config = GATEWAY_CONFIGS[source];
-      if (!config) throw new Error(`Unknown market source: ${source}`);
-      this.instances.set(source, new MarketDataGateway(config));
+  /**
+   * Get or create a gateway instance.
+   * @param gatewaySource - The gateway config key (e.g., 'alpaca')
+   * @param sourceId - The full source_id for behavior routing (e.g., 'alpaca_news', 'alpaca_stream')
+   */
+  static getInstance(gatewaySource: MarketSource, sourceId?: string): MarketDataGateway {
+    // Use sourceId as instance key if provided, otherwise use gatewaySource
+    const key = sourceId || gatewaySource;
+
+    if (!this.instances.has(key)) {
+      const config = GATEWAY_CONFIGS[gatewaySource];
+      if (!config) throw new Error(`Unknown market source: ${gatewaySource}`);
+      this.instances.set(key, new MarketDataGateway(config, key));
     }
-    return this.instances.get(source)!;
+    return this.instances.get(key)!;
   }
 
   async connect(credentials: any): Promise<void> {
@@ -49,13 +60,14 @@ export class MarketDataGateway {
 
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch)
     if (this.config.requiresPreConnect && this.config.preConnect) {
-      this.logger.info({ source: this.config.id }, "Running pre-connect setup");
+      this.logger.info({ source: this.source }, "Running pre-connect setup");
       this.credentials = await this.config.preConnect(credentials);
     }
 
+    // Pass source to wsUrl function for behavior routing (e.g., alpaca_news uses different URL)
     const url =
       typeof this.config.wsUrl === "function"
-        ? this.config.wsUrl(this.credentials)
+        ? this.config.wsUrl(this.credentials, this.source)
         : this.config.wsUrl;
 
     return new Promise((resolve, reject) => {
@@ -64,8 +76,8 @@ export class MarketDataGateway {
       });
 
       this.ws.on("open", () => {
-        this.logger.info({ source: this.config.id }, "Gateway connected");
-        activeGatewayConnectionsGauge.set({ source: this.config.id }, 1);
+        this.logger.info({ source: this.source }, "Gateway connected");
+        activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
         const authMsg = this.config.makeAuthMessage?.(this.credentials);
         if (authMsg) {
@@ -87,12 +99,12 @@ export class MarketDataGateway {
       this.ws.on("close", (code: number, reason: Buffer) => {
         const reasonStr = reason.toString() || "No reason provided";
         this.logger.warn(
-          { source: this.config.id, code, reason: reasonStr },
+          { source: this.source, code, reason: reasonStr },
           "Gateway disconnected"
         );
-        activeGatewayConnectionsGauge.set({ source: this.config.id }, 0);
+        activeGatewayConnectionsGauge.set({ source: this.source }, 0);
         alertGatewayDisconnected(
-          this.config.id,
+          this.source,
           `Connection closed: ${code} - ${reasonStr}`
         );
         this.isAuthenticated = false;
@@ -102,7 +114,7 @@ export class MarketDataGateway {
 
       this.ws.on("error", (err) => {
         this.logger.error(
-          { source: this.config.id, error: err },
+          { source: this.source, error: err },
           "Gateway error"
         );
         reject(err);
@@ -120,7 +132,7 @@ export class MarketDataGateway {
 
       // Debug log ALL incoming messages
       this.logger.debug(
-        { source: this.config.id, rawMessages: messages },
+        { source: this.source, rawMessages: messages },
         "Raw messages received"
       );
 
@@ -134,7 +146,7 @@ export class MarketDataGateway {
           this.config.isAuthSuccess(msg)
         ) {
           this.logger.info(
-            { source: this.config.id },
+            { source: this.source },
             "Authentication successful"
           );
           this.isAuthenticated = true;
@@ -145,22 +157,23 @@ export class MarketDataGateway {
 
         if (this.config.isAuthError && this.config.isAuthError(msg)) {
           this.logger.error(
-            { source: this.config.id, msg },
+            { source: this.source, msg },
             "Authentication failed"
           );
           this.ws?.close();
           continue;
         }
 
-        // Handle control messages (subscription confirmations, etc.)
+        // Handle control messages (subscription confirmations, etc.) - pass source
         if (this.config.handleControlMessage) {
-          this.config.handleControlMessage(msg, this.logger);
+          this.config.handleControlMessage(msg, this.logger, this.source);
         }
 
-        // Only publish market data messages
-        if (!this.config.shouldPublish(msg)) continue;
+        // Only publish market data messages - pass source for filtering
+        if (!this.config.shouldPublish(msg, this.source)) continue;
 
-        const event = this.config.normalize(msg);
+        // Normalize message - pass source for proper event formatting
+        const event = this.config.normalize(msg, this.source);
         if (!event || !event.symbol) continue;
 
         // Publish to Redis symbol channel with circuit breaker
@@ -172,19 +185,19 @@ export class MarketDataGateway {
 
         // Metrics
         marketMessagesCounter.inc({
-          source: this.config.id,
+          source: this.source,
           symbol: event.symbol,
           type: event.type,
         });
         const latency = (Date.now() - startTime) / 1000;
         marketMessageLatencyHistogram.observe(
-          { source: this.config.id },
+          { source: this.source },
           latency
         );
 
         this.logger.debug(
           {
-            source: this.config.id,
+            source: this.source,
             symbol: event.symbol,
             type: event.type,
             price: event.p || event.c,
@@ -194,7 +207,7 @@ export class MarketDataGateway {
       }
     } catch (error) {
       this.logger.error(
-        { source: this.config.id, error },
+        { source: this.source, error },
         "Message parse error"
       );
     }
@@ -211,14 +224,14 @@ export class MarketDataGateway {
       await redisPublishBreaker.fire(channel, message);
     } catch (error) {
       this.logger.warn(
-        { source: this.config.id, channel },
+        { source: this.source, channel },
         "Redis unavailable, buffering message"
       );
       RedisBuffer.getInstance().bufferMessage(channel, message);
     }
   }
 
-  subscribeSymbols(symbols: string[], types?: string[]): void {
+  subscribeSymbols(symbols: string[], types?: string[], options?: SubscribeOptions): void {
     const requestedTypes = types || ["trades"];
     const subscriptionUpdates: string[] = [];
 
@@ -240,22 +253,25 @@ export class MarketDataGateway {
 
     if (subscriptionUpdates.length === 0) {
       this.logger.debug(
-        { source: this.config.id },
+        { source: this.source },
         "All symbols already subscribed with requested types"
       );
       return;
     }
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
+      // Pass source for behavior routing (e.g., alpaca_news subscribes differently)
       const msg = this.config.makeSubscribeMessage(
         subscriptionUpdates,
-        requestedTypes
+        requestedTypes,
+        options,
+        this.source
       );
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
         {
-          source: this.config.id,
+          source: this.source,
           symbols: subscriptionUpdates,
           types: requestedTypes,
         },
@@ -264,7 +280,7 @@ export class MarketDataGateway {
     }
   }
 
-  unsubscribeSymbols(symbols: string[]): void {
+  unsubscribeSymbols(symbols: string[], types?: string[], options?: SubscribeOptions): void {
     const toRemove = symbols.filter((s) =>
       this.subscribedSymbolTypes.has(s.toUpperCase())
     );
@@ -273,11 +289,12 @@ export class MarketDataGateway {
     toRemove.forEach((s) => this.subscribedSymbolTypes.delete(s.toUpperCase()));
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const msg = this.config.makeUnsubscribeMessage(toRemove);
+      // Pass source for behavior routing
+      const msg = this.config.makeUnsubscribeMessage(toRemove, types, options, this.source);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
-        { source: this.config.id, symbols: toRemove },
+        { source: this.source, symbols: toRemove },
         "Unsubscribed from symbols"
       );
     }
@@ -294,14 +311,14 @@ export class MarketDataGateway {
         typeGroups.get(typeKey)!.push(symbol);
       }
 
-      // Send subscription for each type group
+      // Send subscription for each type group - pass source for behavior routing
       for (const [typeKey, symbols] of typeGroups) {
         const types = typeKey.split(",");
-        const msg = this.config.makeSubscribeMessage(symbols, types);
+        const msg = this.config.makeSubscribeMessage(symbols, types, undefined, this.source);
         const payload = this.encodeMessage(msg);
         this.ws?.send(payload);
         this.logger.info(
-          { source: this.config.id, symbols: symbols.length, types },
+          { source: this.source, symbols: symbols.length, types },
           "Resubscribed to symbols"
         );
       }
@@ -336,7 +353,7 @@ export class MarketDataGateway {
   private handleReconnect(): void {
     const maxAttempts = this.config.maxReconnectAttempts ?? 5;
     if (this.reconnectAttempts >= maxAttempts) {
-      console.error(`[${this.config.id}] Max reconnection attempts reached`);
+      console.error(`[${this.source}] Max reconnection attempts reached`);
       return;
     }
 
@@ -346,7 +363,7 @@ export class MarketDataGateway {
     this.reconnectAttempts++;
 
     console.log(
-      `[${this.config.id}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`
+      `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`
     );
 
     setTimeout(() => {
@@ -359,7 +376,7 @@ export class MarketDataGateway {
     this.keepaliveInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.ping();
-        this.logger.debug({ source: this.config.id }, "Sent keepalive ping");
+        this.logger.debug({ source: this.source }, "Sent keepalive ping");
       }
     }, 30000); // Ping every 30 seconds
   }
@@ -383,7 +400,7 @@ export class MarketDataGateway {
 
   getStats() {
     return {
-      source: this.config.id,
+      source: this.source,
       connected: this.ws?.readyState === WebSocket.OPEN,
       authenticated: this.isAuthenticated,
       subscribedSymbols: Array.from(this.subscribedSymbolTypes.entries()).map(

@@ -3,6 +3,7 @@ import {
   buildAlpacaAuthMessage,
   buildAlpacaSubscribeMessage,
   buildAlpacaUnsubscribeMessage,
+  getAlpacaWsUrl,
   handleAlpacaControlMessage,
   identifyAlpacaMessageType,
   isAlpacaAuthError,
@@ -14,20 +15,17 @@ import {
 
 export const alpacaGatewayConfig: GatewayConfig = {
   id: 'alpaca',
-  wsUrl: (creds) => {
-    const feed = creds.feed || 'iex';
-    return `wss://stream.data.alpaca.markets/v2/${feed}`;
-  },
+  wsUrl: (creds, source) => getAlpacaWsUrl(creds, source),
   makeAuthMessage: (creds) => buildAlpacaAuthMessage(creds),
   isAuthSuccess: (msg) => isAlpacaAuthSuccess(msg),
   isAuthError: (msg) => isAlpacaAuthError(msg),
-  handleControlMessage: (msg, logger) => handleAlpacaControlMessage(msg, logger),
-  makeSubscribeMessage: (symbols, types) => buildAlpacaSubscribeMessage(symbols, types),
-  makeUnsubscribeMessage: (symbols, types) => buildAlpacaUnsubscribeMessage(symbols, types),
+  handleControlMessage: (msg, logger, source) => handleAlpacaControlMessage(msg, logger, source),
+  makeSubscribeMessage: (symbols, types, _opts, source) => buildAlpacaSubscribeMessage(symbols, types, source),
+  makeUnsubscribeMessage: (symbols, types, _opts, source) => buildAlpacaUnsubscribeMessage(symbols, types, source),
   parseMessage: (buffer) => parseAlpacaMessage(buffer),
   identifyMessageType: (msg) => identifyAlpacaMessageType(msg),
-  shouldPublish: (msg) => shouldPublishAlpacaMessage(msg),
-  normalize: (msg) => normalizeAlpacaMessage(msg),
+  shouldPublish: (msg, source) => shouldPublishAlpacaMessage(msg, source),
+  normalize: (msg, source) => normalizeAlpacaMessage(msg, source),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
 };

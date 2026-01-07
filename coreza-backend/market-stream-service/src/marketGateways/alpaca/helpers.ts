@@ -1,5 +1,6 @@
 import type { CorezaMarketEvent } from '../../types/marketEvent';
 
+// ============ TYPE MAPPING ============
 const ALPACA_TYPE_TO_KEY: Record<string, string> = {
   trade: 'trades',
   quote: 'quotes',
@@ -11,6 +12,17 @@ const ALPACA_TYPE_TO_KEY: Record<string, string> = {
   dailyBars: 'dailyBars',
 };
 
+// ============ URL BUILDER (source-aware) ============
+export function getAlpacaWsUrl(creds: any, source?: string): string {
+  if (source === 'alpaca_news') {
+    return 'wss://stream.data.alpaca.markets/v1beta1/news';
+  }
+  // Default: market data stream
+  const feed = creds.feed || 'iex';
+  return `wss://stream.data.alpaca.markets/v2/${feed}`;
+}
+
+// ============ AUTH (shared - identical for both) ============
 export function buildAlpacaAuthMessage(creds: any) {
   return {
     action: 'auth',
@@ -27,20 +39,18 @@ export function isAlpacaAuthError(msg: any): boolean {
   return Array.isArray(msg) ? msg.some((m) => m.T === 'error') : msg.T === 'error';
 }
 
-export function handleAlpacaControlMessage(msg: any, logger: any) {
-  const messages = Array.isArray(msg) ? msg : [msg];
-  for (const m of messages) {
-    if (m.T === 'subscription') {
-      logger.info({ source: 'alpaca', subscriptions: m }, 'Subscription confirmation received');
-    } else if (m.T === 'error') {
-      logger.error({ source: 'alpaca', error: m }, 'Error message received');
-    } else if (m.T === 'success') {
-      logger.info({ source: 'alpaca', msg: m.msg }, 'Success message received');
-    }
+// ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============
+export function buildAlpacaSubscribeMessage(
+  symbols: string[],
+  types: string[] = ['trade'],
+  source?: string
+) {
+  // NEWS source: subscribe to news stream
+  if (source === 'alpaca_news') {
+    return { action: 'subscribe', news: symbols };
   }
-}
 
-export function buildAlpacaSubscribeMessage(symbols: string[], types: string[] = ['trade']) {
+  // STREAM source (default): subscribe to market data
   const msg: any = { action: 'subscribe' };
   types.forEach((t) => {
     const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
@@ -49,7 +59,15 @@ export function buildAlpacaSubscribeMessage(symbols: string[], types: string[] =
   return msg;
 }
 
-export function buildAlpacaUnsubscribeMessage(symbols: string[], types: string[] = ['trade']) {
+export function buildAlpacaUnsubscribeMessage(
+  symbols: string[],
+  types: string[] = ['trade'],
+  source?: string
+) {
+  if (source === 'alpaca_news') {
+    return { action: 'unsubscribe', news: symbols };
+  }
+
   const msg: any = { action: 'unsubscribe' };
   types.forEach((t) => {
     const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
@@ -58,6 +76,7 @@ export function buildAlpacaUnsubscribeMessage(symbols: string[], types: string[]
   return msg;
 }
 
+// ============ MESSAGE PARSING (shared) ============
 export function parseAlpacaMessage(buffer: Buffer): any[] {
   const parsed = JSON.parse(buffer.toString());
   return Array.isArray(parsed) ? parsed : [parsed];
@@ -67,11 +86,49 @@ export function identifyAlpacaMessageType(msg: any): string {
   return msg.T;
 }
 
-export function shouldPublishAlpacaMessage(msg: any): boolean {
-  return ['t', 'q', 'b', 'd'].includes(msg.T);
+// ============ PUBLISH FILTER (source-aware) ============
+export function shouldPublishAlpacaMessage(msg: any, source?: string): boolean {
+  if (source === 'alpaca_news') {
+    return msg.T === 'n'; // News messages
+  }
+  return ['t', 'q', 'b', 'd'].includes(msg.T); // Market data messages
 }
 
-export function normalizeAlpacaMessage(msg: any): CorezaMarketEvent | null {
+// ============ CONTROL MESSAGES (source-aware for logging) ============
+export function handleAlpacaControlMessage(msg: any, logger: any, source?: string) {
+  const logSource = source || 'alpaca';
+  const messages = Array.isArray(msg) ? msg : [msg];
+  for (const m of messages) {
+    if (m.T === 'subscription') {
+      logger.info({ source: logSource, subscriptions: m }, 'Subscription confirmation received');
+    } else if (m.T === 'error') {
+      logger.error({ source: logSource, error: m }, 'Error message received');
+    } else if (m.T === 'success') {
+      logger.info({ source: logSource, msg: m.msg }, 'Success message received');
+    }
+  }
+}
+
+// ============ NORMALIZATION (source-aware) ============
+export function normalizeAlpacaMessage(msg: any, source?: string): CorezaMarketEvent | null {
+  // NEWS source
+  if (source === 'alpaca_news') {
+    if (msg.T !== 'n') return null;
+    return {
+      source: 'alpaca_news' as any,
+      symbol: msg.symbols?.[0]?.toUpperCase() || '*',
+      type: 'news' as const,
+      t: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
+      headline: msg.headline,
+      summary: msg.summary,
+      author: msg.author,
+      url: msg.url,
+      symbols: msg.symbols,
+      newsSource: msg.source,
+    } as CorezaMarketEvent;
+  }
+
+  // STREAM source (default) - market data
   const symbol = msg.S?.toUpperCase();
   const t = msg.t ? new Date(msg.t).getTime() : Date.now();
 

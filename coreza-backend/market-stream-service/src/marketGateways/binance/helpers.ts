@@ -1,14 +1,10 @@
 import type { CorezaMarketEvent } from '../../types/marketEvent';
-
-export interface BinanceSubscribeOptions {
-  klineInterval?: string;
-  depthLevels?: string;
-}
+import type { SubscribeOptions } from '../types';
 
 export function buildBinanceSubscribeMessage(
   symbols: string[],
   types: string[] = ['trade'],
-  options?: BinanceSubscribeOptions
+  options?: SubscribeOptions
 ) {
   const params = symbols.flatMap((s) =>
     types.map((t) => {
@@ -32,7 +28,7 @@ export function buildBinanceSubscribeMessage(
 export function buildBinanceUnsubscribeMessage(
   symbols: string[],
   types: string[] = ['trade'],
-  options?: BinanceSubscribeOptions
+  options?: SubscribeOptions
 ) {
   const params = symbols.flatMap((s) =>
     types.map((t) => {

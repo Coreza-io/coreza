@@ -10,15 +10,15 @@ import {
 
 export const dhanGatewayConfig: GatewayConfig = {
   id: 'dhan',
-  wsUrl: (creds) =>
+  wsUrl: (creds, _source) =>
     `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
   makeAuthMessage: undefined,
-  makeSubscribeMessage: (symbols) => buildDhanSubscribeMessage(symbols),
-  makeUnsubscribeMessage: (symbols) => buildDhanUnsubscribeMessage(symbols),
+  makeSubscribeMessage: (symbols, _types, _options, _source) => buildDhanSubscribeMessage(symbols),
+  makeUnsubscribeMessage: (symbols, _types, _options, _source) => buildDhanUnsubscribeMessage(symbols),
   parseMessage: (buffer) => parseDhanMessage(buffer),
   identifyMessageType: (msg) => identifyDhanMessageType(msg),
-  shouldPublish: (msg) => shouldPublishDhanMessage(msg),
-  normalize: (msg) => normalizeDhanMessage(msg),
+  shouldPublish: (msg, _source) => shouldPublishDhanMessage(msg),
+  normalize: (msg, _source) => normalizeDhanMessage(msg),
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,
   isBinary: true,

@@ -922,7 +922,8 @@ export class MarketControlHandler {
       }
 
       // Get or create gateway instance using mapped gateway source
-      const gateway = MarketDataGateway.getInstance(gatewaySource);
+      // Pass original source (e.g., 'alpaca_news') for behavior routing
+      const gateway = MarketDataGateway.getInstance(gatewaySource, source);
 
       // Connect gateway with credentials
       await gateway.connect(creds);

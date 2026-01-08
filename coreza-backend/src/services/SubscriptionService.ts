@@ -34,6 +34,8 @@ export interface SubscriptionParams {
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
   streamTypes?: string[];
+  // Data type (market, news, etc.) - used to build sourceId as {subCategory}_{dataType}
+  dataType?: "market" | "news";
   // Alpaca-specific
   feed?: string;
   // Binance-specific
@@ -176,6 +178,7 @@ export class SubscriptionService {
         credentialId,
         operation,
         streamTypes,
+        dataType = "market", // Default to market if not specified
         feed,
         environment,
         assetType,
@@ -223,6 +226,9 @@ export class SubscriptionService {
         interval ?? depth_levels
       );
 
+      // Build sourceId from subCategory + dataType (e.g., "alpaca_market", "alpaca_news")
+      const sourceId = `${source}_${dataType}`;
+
       // Build control message
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
       // This allows proper cleanup when the workflow is deactivated
@@ -232,7 +238,7 @@ export class SubscriptionService {
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
         symbols: symbolArray,
-        source: `${source}_stream`,
+        source: sourceId, // Use constructed sourceId: {subCategory}_{dataType}
         credentialId,
         eventTypes,
         subscriptionScope,

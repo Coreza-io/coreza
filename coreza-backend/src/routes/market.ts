@@ -324,6 +324,7 @@ router.post("/:source/subscribe", async (req, res) => {
       subCategory,
       workflow_id,
       stream_types,
+      data_type, // NEW: Data type (market, news, etc.)
       // Source-specific fields
       feed, // Alpaca: iex or sip
       environment, // Binance: testnet or live
@@ -361,6 +362,7 @@ router.post("/:source/subscribe", async (req, res) => {
           ? stream_types.split(",").map((s: string) => s.trim())
           : stream_types
         : undefined,
+      dataType: data_type || "market", // Pass data_type to build sourceId
       feed,
       environment,
       assetType: asset_type,

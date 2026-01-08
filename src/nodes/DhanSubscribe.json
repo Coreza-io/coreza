@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/dhan.svg",
   "category": "Broker",
-  "subCategory": "Dhan",
+  "subCategory": "dhan",
   "description": "Subscribe or unsubscribe to Dhan real-time market data. Subscriptions persist and can be received by any activated DhanStreamData trigger.",
   "color": "text-blue-500",
   "size": {
@@ -47,10 +47,15 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/dhan_stream/{{operation}}",
+    "url": "/market/dhan_market/{{operation}}",
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "data_type",
+      "type": "hidden",
+      "default": "market"
+    },
     {
       "key": "credential_id",
       "label": "Credential",

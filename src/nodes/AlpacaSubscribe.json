@@ -5,11 +5,11 @@
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
   "subCategory": "alpaca",
-  "description": "Subscribe or unsubscribe to Alpaca real-time market data. Subscriptions persist and can be received by any activated AlpacaStreamData trigger.",
+  "description": "Subscribe or unsubscribe to Alpaca real-time market data or news. Subscriptions persist and can be received by any activated AlpacaStreamData trigger.",
   "color": "text-yellow-500",
   "size": {
     "width": 380,
-    "height": 420
+    "height": 480
   },
   "handles": [
     {
@@ -49,7 +49,7 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/alpaca_stream/{{operation}}",
+    "url": "/market/alpaca_market/{{operation}}",
     "method": "POST"
   },
   "fields": [
@@ -59,6 +59,23 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "data_type",
+      "label": "Data Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "market",
+          "name": "Market Data (Trades, Quotes, Bars)"
+        },
+        {
+          "id": "news",
+          "name": "News"
+        }
+      ],
+      "default": "market",
       "required": true
     },
     {
@@ -103,7 +120,12 @@
       "default": "trade",
       "description": "Select data stream types to subscribe to",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["market"]
+        }
+      }
     },
     {
       "key": "symbols",
@@ -131,7 +153,12 @@
       "default": "iex",
       "description": "SIP feed requires Alpaca subscription for pre/after-market data",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["market"]
+        }
+      }
     },
     {
       "key": "subscriptionScope",

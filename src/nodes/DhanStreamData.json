@@ -4,14 +4,14 @@
   "node_type": "trigger",
   "icon": "/assets/icons/dhan.svg",
   "category": "Broker",
-  "subCategory": "Dhan",
+  "subCategory": "dhan",
   "executionMode": "streaming",
   "action": {
     "url": "/market/execute-stream-node",
     "method": "POST"
   },
   "streamingConfig": {
-    "sourceId": "dhan_stream",
+    "sourceId": "dhan_market",
     "waitForFirstEvent": false,
     "timeout": 300000
   },
@@ -52,6 +52,11 @@
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "data_type",
+      "type": "hidden",
+      "default": "market"
+    },
     {
       "key": "mode",
       "label": "Mode",

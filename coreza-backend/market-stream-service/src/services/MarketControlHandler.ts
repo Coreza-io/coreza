@@ -564,47 +564,6 @@ export class MarketControlHandler {
   }
 
   /**
-   * Map broker-specific stream types to normalized CorezaMarketEvent types
-   * This ensures MarketDataSubscriber filters work correctly
-   */
-  private normalizeEventTypes(
-    source: string,
-    eventTypes?: string[]
-  ): string[] | undefined {
-    if (!eventTypes || eventTypes.length === 0) return undefined;
-
-    // Binance-specific mappings
-    if (source.includes("binance")) {
-      const normalized = eventTypes.map((type) => {
-        // All kline types normalize to 'bar'
-        if (type.startsWith("kline")) return "bar";
-        // bookTicker normalizes to 'quote'
-        if (type === "bookTicker") return "quote";
-        // ticker (24h) stays as 'ticker'
-        if (type === "ticker") return "ticker";
-        // trade stays as 'trade'
-        return type;
-      });
-      // Remove duplicates
-      return [...new Set(normalized)];
-    }
-
-    // Alpaca-specific mappings (plural → singular)
-    if (source.includes("alpaca")) {
-      const normalized = eventTypes.map((type) => {
-        if (type === "trades") return "trade";
-        if (type === "quotes") return "quote";
-        if (type === "bars") return "bar";
-        if (type === "dailyBars") return "daily_bar";
-        return type;
-      });
-      return [...new Set(normalized)];
-    }
-
-    return eventTypes;
-  }
-
-  /**
    * Handle subscribe control message (with mutex protection)
    *
    * IMPORTANT: Subscribe nodes ONLY manage gateway subscriptions.

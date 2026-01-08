@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
-  "subCategory": "Alpaca",
+  "subCategory": "alpaca",
   "description": "Subscribe or unsubscribe to Alpaca real-time market data. Subscriptions persist and can be received by any activated AlpacaStreamData trigger.",
   "color": "text-yellow-500",
   "size": {
@@ -100,33 +100,10 @@
           "name": "Daily Bars"
         }
       ],
-      "default": [
-        "trade"
-      ],
+      "default": ["trade"],
       "description": "Select data stream types to subscribe to",
       "required": true,
       "showDescription": false
-    },
-    {
-      "key": "symbolSource",
-      "label": "Symbol Source",
-      "type": "select",
-      "options": [
-        {
-          "id": "manual",
-          "name": "Enter Manually"
-        },
-        {
-          "id": "store",
-          "name": "From Store Variable"
-        },
-        {
-          "id": "input",
-          "name": "From Input"
-        }
-      ],
-      "default": "manual",
-      "required": true
     },
     {
       "key": "symbols",
@@ -134,44 +111,8 @@
       "type": "text",
       "placeholder": "AAPL, TSLA, MSFT",
       "description": "Comma-separated symbols or * for all",
-      "displayOptions": {
-        "show": {
-          "symbolSource": [
-            "manual"
-          ]
-        }
-      },
-      "required": false,
+      "required": true,
       "showDescription": false
-    },
-    {
-      "key": "sourceWorkflowId",
-      "label": "Source Workflow",
-      "type": "select",
-      "optionsSource": "storeWorkflowsApi",
-      "placeholder": "Select workflow containing symbols",
-      "displayOptions": {
-        "show": {
-          "symbolSource": [
-            "store"
-          ]
-        }
-      }
-    },
-    {
-      "key": "sourceVariable",
-      "label": "Variable Name",
-      "type": "select",
-      "optionsSource": "storeVariablesApi",
-      "dependsOn": "sourceWorkflowId",
-      "placeholder": "Select stored variable",
-      "displayOptions": {
-        "show": {
-          "symbolSource": [
-            "store"
-          ]
-        }
-      }
     },
     {
       "key": "feed",
@@ -225,9 +166,7 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": [
-            "workflow"
-          ]
+          "subscriptionScope": ["workflow"]
         }
       },
       "default": "__current__"

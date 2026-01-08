@@ -4,7 +4,7 @@
   "node_type": "trigger",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
-  "subCategory": "Alpaca",
+  "subCategory": "alpaca",
   "executionMode": "streaming",
   "action": {
     "url": "/market/execute-stream-node",
@@ -79,9 +79,7 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": false
@@ -104,9 +102,7 @@
       "description": "IEX is free but regular hours only. SIP includes pre/post market.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false
@@ -119,9 +115,7 @@
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false
@@ -148,14 +142,10 @@
           "name": "Daily Bars"
         }
       ],
-      "default": [
-        "trade"
-      ],
+      "default": ["trade"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -177,9 +167,7 @@
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -192,9 +180,7 @@
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -224,9 +210,7 @@
       "description": "Filter specific event types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

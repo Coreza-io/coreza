@@ -52,7 +52,7 @@ export interface SubscriptionResult {
   success: boolean;
   data?: {
     status: string;
-    source: MarketSource;
+    source: string;
     symbols: string[];
     streamTypes?: string[];
     message: string;
@@ -139,13 +139,13 @@ export class SubscriptionService {
    * Process stream types with broker-specific transformations
    */
   private static processStreamTypes(
-    streamTypes: string[] | undefined,
-    source: MarketSource,
+    streamTypes: string[],
+    source: string,
     Interval?: string
   ): string[] {
-    let types = streamTypes ?? ["trade"];
+    let types = streamTypes;
 
-    if (source === "binance" && Interval) {
+    if (source === "binance_market" && Interval) {
       types = types.map((t) => {
         // Depth streams: depth20, depth10, etc.
         if (t === "depth_levels") {
@@ -219,15 +219,15 @@ export class SubscriptionService {
         };
       }
 
+      let eventTypes: string[] = [];
       // Process stream types
-      const eventTypes = this.processStreamTypes(
-        streamTypes,
-        source,
-        interval ?? depth_levels
-      );
-
-      // Build sourceId from subCategory + dataType (e.g., "alpaca_market", "alpaca_news")
-      const sourceId = `${source}_${dataType}`;
+      if (streamTypes && streamTypes.length > 0) {
+        eventTypes = this.processStreamTypes(
+          streamTypes,
+          source,
+          interval ?? depth_levels
+        );
+      }
 
       // Build control message
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
@@ -238,7 +238,7 @@ export class SubscriptionService {
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
         symbols: symbolArray,
-        source: sourceId, // Use constructed sourceId: {subCategory}_{dataType}
+        source, // Use constructed sourceId: {subCategory}_{dataType}
         credentialId,
         eventTypes,
         subscriptionScope,

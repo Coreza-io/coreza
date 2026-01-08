@@ -315,7 +315,6 @@ router.post("/:source/subscribe", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { source } = req.params;
     const {
       credential_id,
       symbols,
@@ -345,13 +344,14 @@ router.post("/:source/subscribe", async (req, res) => {
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
     //const marketSource = getMarketSource(source);
-    const marketSource = subCategory;
-    if (!marketSource) {
-      return res.status(400).json({ error: `Unknown source: ${source}` });
+    const sourceId = `${subCategory}_${data_type}`;
+
+    if (!sourceId) {
+      return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
     const result = await SubscriptionService.subscribe({
-      source: marketSource,
+      source: sourceId,
       userId,
       workflowId: workflow_id,
       nodeId: node_id,
@@ -381,6 +381,7 @@ router.post("/:source/subscribe", async (req, res) => {
       message: result.data?.message,
       symbols: result.data?.symbols,
       stream_types: result.data?.streamTypes,
+      sourceId,
       node_id,
       workflow_id: workflow_id || null,
     });
@@ -404,29 +405,30 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { source } = req.params;
     const {
       symbols,
       node_id,
       category,
       subCategory,
+      data_type, // NEW: Data type (market, news, etc.)
       workflow_id,
       stream_types,
       subscription_scope, // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    const marketSource = subCategory ?? getMarketSource(source);
+    const sourceId = `${subCategory}_${data_type}`;
 
-    if (!marketSource) {
-      return res.status(400).json({ error: `Unknown source: ${source}` });
+    if (!sourceId) {
+      return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
     const result = await SubscriptionService.unsubscribe({
-      source: marketSource,
+      source: sourceId,
       userId,
       workflowId: workflow_id,
       nodeId: node_id,
       symbols,
+      dataType: data_type || "market", // Pass data_type to build sourceId
       streamTypes: stream_types
         ? typeof stream_types === "string"
           ? stream_types.split(",").map((s: string) => s.trim())
@@ -449,7 +451,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       workflow_id &&
       resolvedSymbols.length > 0
     ) {
-      const workflowSubKey = `workflow:${workflow_id}:subscribed_symbols:${source}`;
+      const workflowSubKey = `workflow:${workflow_id}:subscribed_symbols:${sourceId}`;
       for (const sym of resolvedSymbols) {
         await redis.srem(workflowSubKey, sym.toUpperCase());
       }
@@ -461,7 +463,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
     // Handle global symbol unsubscription (user-level)
     else if (resolvedSymbols.length > 0 && !workflow_id) {
-      const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
+      const userSubKey = `user:${userId}:subscribed_symbols:${sourceId}`;
       for (const sym of resolvedSymbols) {
         await redis.srem(userSubKey, sym.toUpperCase());
       }
@@ -488,6 +490,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     res.json({
       success: true,
       message: result.data?.message,
+      sourceId,
       symbols: result.data?.symbols,
       stream_types: result.data?.streamTypes,
       node_id: node_id ?? null,

@@ -49,7 +49,7 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/alpaca_market/{{operation}}",
+    "url": "/market/alpaca_stream/{{operation}}",
     "method": "POST"
   },
   "fields": [

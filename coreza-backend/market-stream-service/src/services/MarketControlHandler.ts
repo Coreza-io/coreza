@@ -618,7 +618,7 @@ export class MarketControlHandler {
 
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];
-        const requestedTypes = eventTypes || ["trades"];
+        const requestedTypes = eventTypes || [];
 
         for (const symbol of symbols) {
           const upperSymbol = symbol.toUpperCase();
@@ -820,8 +820,10 @@ export class MarketControlHandler {
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
-      const { credentialServiceType: serviceType, gatewaySource } =
-        getSourceMapping(source);
+      const baseSource = source.split("_")[0];
+
+      const serviceType = baseSource;
+      const gatewaySource = baseSource;
 
       let creds: any;
 

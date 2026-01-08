@@ -1,7 +1,11 @@
 import WebSocket from "ws";
 import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
-import { GatewayConfig, GATEWAY_CONFIGS, SubscribeOptions } from "../marketGateways";
+import {
+  GatewayConfig,
+  GATEWAY_CONFIGS,
+  SubscribeOptions,
+} from "../marketGateways";
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";
@@ -41,7 +45,10 @@ export class MarketDataGateway {
    * @param gatewaySource - The gateway config key (e.g., 'alpaca')
    * @param sourceId - The full source_id for behavior routing (e.g., 'alpaca_news', 'alpaca_stream')
    */
-  static getInstance(gatewaySource: MarketSource, sourceId?: string): MarketDataGateway {
+  static getInstance(
+    gatewaySource: MarketSource,
+    sourceId?: string
+  ): MarketDataGateway {
     // Use sourceId as instance key if provided, otherwise use gatewaySource
     const key = sourceId || gatewaySource;
 
@@ -113,10 +120,7 @@ export class MarketDataGateway {
       });
 
       this.ws.on("error", (err) => {
-        this.logger.error(
-          { source: this.source, error: err },
-          "Gateway error"
-        );
+        this.logger.error({ source: this.source, error: err }, "Gateway error");
         reject(err);
       });
     });
@@ -190,10 +194,7 @@ export class MarketDataGateway {
           type: event.type,
         });
         const latency = (Date.now() - startTime) / 1000;
-        marketMessageLatencyHistogram.observe(
-          { source: this.source },
-          latency
-        );
+        marketMessageLatencyHistogram.observe({ source: this.source }, latency);
 
         this.logger.debug(
           {
@@ -206,10 +207,7 @@ export class MarketDataGateway {
         );
       }
     } catch (error) {
-      this.logger.error(
-        { source: this.source, error },
-        "Message parse error"
-      );
+      this.logger.error({ source: this.source, error }, "Message parse error");
     }
   }
 
@@ -231,8 +229,12 @@ export class MarketDataGateway {
     }
   }
 
-  subscribeSymbols(symbols: string[], types?: string[], options?: SubscribeOptions): void {
-    const requestedTypes = types || ["trades"];
+  subscribeSymbols(
+    symbols: string[],
+    types?: string[],
+    options?: SubscribeOptions
+  ): void {
+    const requestedTypes = types || [];
     const subscriptionUpdates: string[] = [];
 
     for (const symbol of symbols) {
@@ -280,7 +282,11 @@ export class MarketDataGateway {
     }
   }
 
-  unsubscribeSymbols(symbols: string[], types?: string[], options?: SubscribeOptions): void {
+  unsubscribeSymbols(
+    symbols: string[],
+    types?: string[],
+    options?: SubscribeOptions
+  ): void {
     const toRemove = symbols.filter((s) =>
       this.subscribedSymbolTypes.has(s.toUpperCase())
     );
@@ -290,7 +296,12 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       // Pass source for behavior routing
-      const msg = this.config.makeUnsubscribeMessage(toRemove, types, options, this.source);
+      const msg = this.config.makeUnsubscribeMessage(
+        toRemove,
+        types,
+        options,
+        this.source
+      );
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
@@ -314,7 +325,12 @@ export class MarketDataGateway {
       // Send subscription for each type group - pass source for behavior routing
       for (const [typeKey, symbols] of typeGroups) {
         const types = typeKey.split(",");
-        const msg = this.config.makeSubscribeMessage(symbols, types, undefined, this.source);
+        const msg = this.config.makeSubscribeMessage(
+          symbols,
+          types,
+          undefined,
+          this.source
+        );
         const payload = this.encodeMessage(msg);
         this.ws?.send(payload);
         this.logger.info(

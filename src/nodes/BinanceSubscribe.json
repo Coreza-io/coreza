@@ -49,10 +49,15 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/binance_stream/{{operation}}",
+    "url": "/market/binance_market/{{operation}}",
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "data_type",
+      "type": "hidden",
+      "default": "market"
+    },
     {
       "key": "credential_id",
       "label": "Credential",

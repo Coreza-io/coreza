@@ -11,15 +11,17 @@
     "method": "POST"
   },
   "streamingConfig": {
-    "sourceId": "alpaca_stream",
+    "sourceId": "alpaca_market",
+    "sourceIdPrefix": "alpaca_",
+    "sourceIdField": "data_type",
     "waitForFirstEvent": false,
     "timeout": 300000
   },
-  "description": "Receives real-time market data from Alpaca. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Receives real-time market data or news from Alpaca. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
-    "height": 280
+    "height": 320
   },
   "handles": [
     {
@@ -54,6 +56,23 @@
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "data_type",
+      "label": "Data Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "market",
+          "name": "Market Data (Trades, Quotes, Bars)"
+        },
+        {
+          "id": "news",
+          "name": "News"
+        }
+      ],
+      "default": "market",
+      "required": true
+    },
     {
       "key": "mode",
       "label": "Mode",
@@ -102,7 +121,8 @@
       "description": "IEX is free but regular hours only. SIP includes pre/post market.",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "mode": ["subscribe"],
+          "data_type": ["market"]
         }
       },
       "showDescription": false
@@ -145,7 +165,8 @@
       "default": ["trade"],
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "mode": ["subscribe"],
+          "data_type": ["market"]
         }
       }
     },
@@ -205,6 +226,10 @@
         {
           "id": "daily_bar",
           "name": "Daily Bars"
+        },
+        {
+          "id": "news",
+          "name": "News"
         }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",

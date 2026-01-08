@@ -27,24 +27,29 @@ export interface SourceMapping {
   gatewaySource: MarketSource;
 }
 
-// Maps source_id (e.g., 'alpaca_news', 'alpaca_stream') to gateway config
+// Maps source_id (e.g., 'alpaca_news', 'alpaca_market') to gateway config
 // The original source_id is passed through to config functions for behavior routing
+// Pattern: {subCategory}_{dataType} (e.g., alpaca_market, alpaca_news, binance_market)
 export const SOURCE_MAPPING: Record<string, SourceMapping> = {
-  // Alpaca - both use same gateway, source param differentiates behavior
-  alpaca_stream: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
+  // Alpaca - both use same gateway, source param differentiates behavior (market vs news)
+  alpaca_market: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
   alpaca_news: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
+  alpaca_stream: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' }, // Legacy support
   alpaca: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
 
   // Binance
-  binance_stream: { credentialServiceType: 'binance', gatewaySource: 'binance' },
+  binance_market: { credentialServiceType: 'binance', gatewaySource: 'binance' },
+  binance_stream: { credentialServiceType: 'binance', gatewaySource: 'binance' }, // Legacy support
   binance: { credentialServiceType: 'binance', gatewaySource: 'binance' },
 
   // Dhan
-  dhan_stream: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
+  dhan_market: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
+  dhan_stream: { credentialServiceType: 'dhan', gatewaySource: 'dhan' }, // Legacy support
   dhan: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
 
   // Schwab
-  schwab_stream: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
+  schwab_market: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
+  schwab_stream: { credentialServiceType: 'schwab', gatewaySource: 'schwab' }, // Legacy support
   schwab: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
 };
 

@@ -81,7 +81,7 @@
     {
       "key": "stream_types",
       "label": "Stream Types",
-      "type": "multiselect",
+      "type": "select",
       "options": [
         {
           "id": "trade",
@@ -100,7 +100,7 @@
           "name": "Daily Bars"
         }
       ],
-      "default": ["trade"],
+      "default": "trade",
       "description": "Select data stream types to subscribe to",
       "required": true,
       "showDescription": false

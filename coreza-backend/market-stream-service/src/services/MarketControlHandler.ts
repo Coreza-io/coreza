@@ -79,8 +79,8 @@ export class MarketControlHandler {
       await this.redisSub.subscribe(
         REDIS_CHANNELS.controlSubscribe,
         REDIS_CHANNELS.controlUnsubscribe,
-        "md:control:register_workflow",
-        "md:control:unregister_workflow"
+        REDIS_CHANNELS.controlRegister,
+        REDIS_CHANNELS.controlUnregister
       );
       console.log(
         "✅ [MarketControl] Subscribed to control channels (including workflow registration/unregistration)"
@@ -121,9 +121,9 @@ export class MarketControlHandler {
           await this.handleSubscribe(msg as ControlMessage);
         } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
           await this.handleUnsubscribe(msg as ControlMessage);
-        } else if (channel === "md:control:register_workflow") {
+        } else if (channel === REDIS_CHANNELS.controlRegister) {
           await this.handleRegisterStreamingWorkflow(msg);
-        } else if (channel === "md:control:unregister_workflow") {
+        } else if (channel === REDIS_CHANNELS.controlUnregister) {
           await this.handleUnregisterStreamingWorkflow(msg);
         }
       } catch (error) {

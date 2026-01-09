@@ -66,8 +66,9 @@ export class BacktestExecutor implements INodeExecutor {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     
     // Check if instance exists in dataContext
-    if (context?.dataContext) {
-      const existing = context.dataContext.get(key);
+    const dataContext = context?.dataContext;
+    if (dataContext?.getDataByKey) {
+      const existing = dataContext.getDataByKey(key);
       if (existing instanceof SimBroker) {
         return existing;
       }
@@ -77,8 +78,8 @@ export class BacktestExecutor implements INodeExecutor {
     const simBroker = new SimBroker(backtestId, config);
     
     // Store in dataContext for reuse
-    if (context?.dataContext) {
-      context.dataContext.set(key, simBroker);
+    if (dataContext?.setData) {
+      dataContext.setData(key, simBroker, { type: 'simBroker' });
     }
     
     return simBroker;
@@ -89,8 +90,11 @@ export class BacktestExecutor implements INodeExecutor {
    */
   private cleanupSimBroker(backtestId: string, context: any): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    if (context?.dataContext) {
-      context.dataContext.delete(key);
+    const dataContext = context?.dataContext;
+    if (dataContext?.deleteData) {
+      dataContext.deleteData(key);
+    } else if (dataContext?.getStore) {
+      dataContext.getStore().delete(key);
     }
   }
 

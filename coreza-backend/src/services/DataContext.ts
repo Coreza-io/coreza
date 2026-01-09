@@ -244,6 +244,13 @@ export class DataContext {
   }
 
   /**
+   * Delete data by key
+   */
+  deleteData(key: string): boolean {
+    return this.inMemoryStore.delete(key);
+  }
+
+  /**
    * Get memory usage statistics
    */
   getStats(): ReturnType<InMemoryStore['getStats']> {

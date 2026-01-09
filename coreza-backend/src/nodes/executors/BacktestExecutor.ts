@@ -19,6 +19,9 @@ import { SimBroker, SimBrokerConfig, Bar } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 
+// Key prefix for storing SimBroker instances in dataContext
+const SIM_BROKER_KEY_PREFIX = 'simBroker:';
+
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
 
@@ -52,6 +55,42 @@ export class BacktestExecutor implements INodeExecutor {
           `Unknown backtest node type: ${nodeName}`,
           normalizeCtx
         ));
+    }
+  }
+
+  /**
+   * Get or create SimBroker instance from dataContext
+   * Uses dataContext for in-memory sharing across nodes in the same execution
+   */
+  private getSimBroker(backtestId: string, context: any, config?: Partial<SimBrokerConfig>): SimBroker {
+    const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
+    
+    // Check if instance exists in dataContext
+    if (context?.dataContext) {
+      const existing = context.dataContext.get(key);
+      if (existing instanceof SimBroker) {
+        return existing;
+      }
+    }
+    
+    // Create new instance
+    const simBroker = new SimBroker(backtestId, config);
+    
+    // Store in dataContext for reuse
+    if (context?.dataContext) {
+      context.dataContext.set(key, simBroker);
+    }
+    
+    return simBroker;
+  }
+
+  /**
+   * Remove SimBroker instance from dataContext after backtest completion
+   */
+  private cleanupSimBroker(backtestId: string, context: any): void {
+    const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
+    if (context?.dataContext) {
+      context.dataContext.delete(key);
     }
   }
 
@@ -123,12 +162,12 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = backtest.id;
 
-      // Initialize SimBroker with Redis state
-      const simBroker = new SimBroker(backtestId, config);
-      await simBroker.initializePortfolio();
+      // Initialize SimBroker - SYNCHRONOUS, stored in dataContext
+      const simBroker = this.getSimBroker(backtestId, context, config);
+      simBroker.initializePortfolio();
 
       console.log(
-        `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital}`
+        `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital} (in-memory mode)`
       );
 
       return toNodeResult(createSuccessOutput({
@@ -182,19 +221,19 @@ export class BacktestExecutor implements INodeExecutor {
         ));
       }
 
-      // Get SimBroker instance
-      const simBroker = new SimBroker(backtestId);
+      // Get SimBroker instance from dataContext - SYNCHRONOUS
+      const simBroker = this.getSimBroker(backtestId, context);
 
       // Parse current bar from input (passed from loop iteration)
       const currentBar = this.parseBar(params.current_bar || input);
 
-      // If we have a current bar, process pending orders first
+      // If we have a current bar, process pending orders first - SYNCHRONOUS
       if (currentBar) {
-        await simBroker.onBar(symbol, currentBar);
+        simBroker.onBar(symbol, currentBar);
       }
 
-      // Place the new order
-      const orderResult = await simBroker.placeOrder({
+      // Place the new order - SYNCHRONOUS
+      const orderResult = simBroker.placeOrder({
         symbol,
         side: side as "buy" | "sell",
         type: orderType as "market" | "limit" | "stop" | "stop_limit",
@@ -214,14 +253,14 @@ export class BacktestExecutor implements INodeExecutor {
       // For immediate fills, process the newly placed order right away
       // This allows market orders to fill at current bar's close price
       if (currentBar && orderResult.status === "pending") {
-        const fills = await simBroker.onBar(symbol, currentBar);
+        const fills = simBroker.onBar(symbol, currentBar);
 
         // If order was filled, return fill details
         if (fills.length > 0) {
           const fill = fills.find((f) => f.orderId === orderResult.orderId);
           if (fill) {
-            const cash = await simBroker.getCash();
-            const positions = await simBroker.getPositions();
+            const cash = simBroker.getCash();
+            const positions = simBroker.getPositions();
 
             return toNodeResult(createSuccessOutput({
               order_id: orderResult.orderId,
@@ -242,10 +281,10 @@ export class BacktestExecutor implements INodeExecutor {
         }
       }
 
-      // Get updated state (for pending orders that weren't filled)
-      const cash = await simBroker.getCash();
-      const positions = await simBroker.getPositions();
-      const pendingOrders = await simBroker.getPendingOrders();
+      // Get updated state (for pending orders that weren't filled) - SYNCHRONOUS
+      const cash = simBroker.getCash();
+      const positions = simBroker.getPositions();
+      const pendingOrders = simBroker.getPendingOrders();
 
       return toNodeResult(createSuccessOutput({
         order_id: orderResult.orderId,
@@ -295,16 +334,16 @@ export class BacktestExecutor implements INodeExecutor {
         Object.assign(prices, params.prices);
       }
 
-      // Get SimBroker and process bar if provided
-      const simBroker = new SimBroker(backtestId);
+      // Get SimBroker from dataContext - SYNCHRONOUS
+      const simBroker = this.getSimBroker(backtestId, context);
 
-      // Process pending orders with current bar
+      // Process pending orders with current bar - SYNCHRONOUS
       if (currentBar && params.symbol) {
-        await simBroker.onBar(params.symbol, currentBar);
+        simBroker.onBar(params.symbol, currentBar);
       }
 
-      // Record equity snapshot
-      const snapshot = await simBroker.recordSnapshot(timestamp, prices);
+      // Record equity snapshot - SYNCHRONOUS
+      const snapshot = simBroker.recordSnapshot(timestamp, prices);
 
       return toNodeResult(createSuccessOutput({
         timestamp: snapshot.timestamp,
@@ -336,16 +375,16 @@ export class BacktestExecutor implements INodeExecutor {
         return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
-      // Get SimBroker
-      const simBroker = new SimBroker(backtestId);
+      // Get SimBroker from dataContext - SYNCHRONOUS
+      const simBroker = this.getSimBroker(backtestId, context);
 
-      // Calculate metrics
-      const metrics = await simBroker.getMetrics();
-      const trades = await simBroker.getTrades();
-      const equityCurve = await simBroker.getEquityCurve();
-      const portfolioState = await simBroker.getPortfolioState();
+      // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
+      const metrics = simBroker.getMetrics();
+      const trades = simBroker.getTrades();
+      const equityCurve = simBroker.getEquityCurve();
+      const portfolioState = simBroker.getPortfolioState();
 
-      // Persist to Supabase
+      // Persist to Supabase (only at the END of backtest)
       const supabaseClient = supabase;
 
       // Update backtest status
@@ -389,7 +428,7 @@ export class BacktestExecutor implements INodeExecutor {
           timestamp: t.exitTime,
           commission: t.commission,
           slippage: t.slippage,
-          portfolio_value_before: null, // Would need to track
+          portfolio_value_before: null,
           portfolio_value_after: null,
         }));
 
@@ -411,7 +450,7 @@ export class BacktestExecutor implements INodeExecutor {
           cash_balance: p.cash,
           stock_value: p.positionsValue,
           total_value: p.totalEquity,
-          daily_return: null, // Could calculate
+          daily_return: null,
         }));
 
         await supabaseClient
@@ -419,13 +458,13 @@ export class BacktestExecutor implements INodeExecutor {
           .insert(snapshotRows);
       }
 
-      // Cleanup Redis state
-      await simBroker.cleanup();
+      // Cleanup: remove SimBroker from dataContext (free memory)
+      this.cleanupSimBroker(backtestId, context);
 
       console.log(
         `[BacktestExecutor] Backtest completed: ${backtestId}, Total Return: ${metrics.totalReturnPct.toFixed(
           2
-        )}%`
+        )}%, Bars: ${metrics.totalBars} (in-memory mode)`
       );
 
       return toNodeResult(createSuccessOutput({
@@ -487,15 +526,9 @@ export class BacktestExecutor implements INodeExecutor {
         return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
       }
 
-      const simBroker = new SimBroker(backtestId);
-      const portfolioState = await simBroker.getPortfolioState();
-
-      if (!portfolioState) {
-        return toNodeResult(createErrorOutput(
-          "Portfolio not found - run BacktestInit first",
-          normalizeCtx
-        ));
-      }
+      // Get SimBroker from dataContext - SYNCHRONOUS
+      const simBroker = this.getSimBroker(backtestId, context);
+      const portfolioState = simBroker.getPortfolioState();
 
       // Convert positions object to array format
       const positionsArray = Object.values(portfolioState.positions);
@@ -516,7 +549,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       return toNodeResult(createSuccessOutput({
         cash: portfolioState.cash,
-        initial_capital: portfolioState.initialCapital,
+        initial_capital: simBroker.getConfig().initialCapital,
         positions: positionsArray,
         positions_count: positionsArray.length,
         positions_value: positionsValue,

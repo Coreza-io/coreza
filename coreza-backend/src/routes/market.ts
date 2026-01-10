@@ -35,6 +35,7 @@ import {
   StreamExecutionRequest,
   StreamExecutionResponse,
 } from "../types/streaming";
+import { string } from "zod";
 const router = express.Router();
 
 // Apply JWT auth to all routes
@@ -405,6 +406,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const source = req.params.source;
+
     const {
       symbols,
       node_id,
@@ -416,7 +419,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       subscription_scope, // 'global' or 'workflow' - determines which Redis key to use
     } = req.body;
 
-    const sourceId = `${subCategory}_${data_type}`;
+    const sourceId =
+      subCategory && data_type ? `${subCategory}_${data_type}` : source;
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });

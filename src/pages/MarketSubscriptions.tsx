@@ -15,10 +15,23 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,18 +44,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { 
-  Radio, 
-  Activity, 
-  RefreshCw, 
-  Wifi, 
-  WifiOff, 
+import {
+  Radio,
+  Activity,
+  RefreshCw,
+  Wifi,
+  WifiOff,
   Search,
   ExternalLink,
   Loader2,
   TrendingUp,
   X,
-  Trash2
+  Trash2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -86,8 +99,8 @@ interface WorkflowScopedSubscription {
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
-  userSubscriptions: Record<string, string[]>;  // source → symbols (global scope)
-  workflowScopedSubscriptions: WorkflowScopedSubscription[];  // workflow-scoped subscriptions
+  userSubscriptions: Record<string, string[]>; // source → symbols (global scope)
+  workflowScopedSubscriptions: WorkflowScopedSubscription[]; // workflow-scoped subscriptions
   stats: SubscriptionStats;
   symbolSourceMap: Record<string, string[]>;
 }
@@ -116,180 +129,239 @@ const MarketSubscriptions = () => {
   const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    type: 'symbol' | 'workflow' | 'source';
+    type: "symbol" | "workflow" | "source";
     title: string;
     description: string;
     onConfirm: () => void;
-  }>({ open: false, type: 'symbol', title: '', description: '', onConfirm: () => {} });
+  }>({
+    open: false,
+    type: "symbol",
+    title: "",
+    description: "",
+    onConfirm: () => {},
+  });
 
-  const fetchStatus = useCallback(async (showRefreshToast = false) => {
-    if (!user) return;
-    
-    try {
-      if (showRefreshToast) setRefreshing(true);
-      
-      const response = await apiClient.get(
-        '/market/subscriptions/status',
-        session?.access_token
-      );
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch subscription status');
-      }
-      
-      const result = await response.json();
-      setData(result);
-      
-      if (showRefreshToast) {
-        toast({
-          title: "Refreshed",
-          description: "Subscription status updated",
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching subscription status:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load subscription status",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [user, toast]);
+  const fetchStatus = useCallback(
+    async (showRefreshToast = false) => {
+      if (!user) return;
 
-  const handleUnsubscribeSymbol = useCallback(async (symbol: string, source: string) => {
-    if (!user) return;
-    
-    setUnsubscribing(`symbol-${symbol}`);
-    try {
-      // Source may already have _stream suffix or not
-      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await apiClient.post(
-        `/market/${sourceRoute}/unsubscribe`,
-        { symbols: [symbol] },
-        session?.access_token
-      );
-      
-      if (!response.ok) throw new Error('Failed to unsubscribe');
-      
-      toast({ title: "Unsubscribed", description: `Removed ${symbol} from ${source}` });
-      fetchStatus(false);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to unsubscribe symbol", variant: "destructive" });
-    } finally {
-      setUnsubscribing(null);
-    }
-  }, [user, toast, fetchStatus]);
+      try {
+        if (showRefreshToast) setRefreshing(true);
 
-  // Handler for workflow-scoped symbol unsubscription (needs workflowId to target correct Redis key)
-  const handleUnsubscribeWorkflowScopedSymbol = useCallback(async (symbol: string, source: string, workflowId: string) => {
-    if (!user) return;
-    
-    setUnsubscribing(`symbol-${workflowId}-${symbol}`);
-    try {
-      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await apiClient.post(
-        `/market/${sourceRoute}/unsubscribe`,
-        {
-          workflow_id: workflowId,  // Include workflowId for workflow-scoped removal
-          symbols: [symbol],
-          subscription_scope: 'workflow',  // Tell backend this is workflow-scoped
-        },
-        session?.access_token
-      );
-      
-      if (!response.ok) throw new Error('Failed to unsubscribe');
-      
-      toast({ title: "Unsubscribed", description: `Removed ${symbol} from workflow` });
-      fetchStatus(false);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to unsubscribe symbol", variant: "destructive" });
-    } finally {
-      setUnsubscribing(null);
-    }
-  }, [user, toast, fetchStatus]);
-
-  const handleUnsubscribeWorkflow = useCallback(async (wf: WorkflowSubscription) => {
-    if (!user) return;
-    
-    setUnsubscribing(`workflow-${wf.workflowId}-${wf.nodeId}`);
-    try {
-      // Use fallback endpoint when source is unknown
-      let response: Response;
-      if (!wf.source || wf.source === 'unknown') {
-        response = await apiClient.delete(
-          `/market/workflows/${wf.workflowId}/unsubscribe`,
+        const response = await apiClient.get(
+          "/market/subscriptions/status",
           session?.access_token
         );
-      } else {
-        // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
-        const sourceRoute = wf.source.endsWith('_stream') ? wf.source : `${wf.source}_stream`;
-        response = await apiClient.post(
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch subscription status");
+        }
+
+        const result = await response.json();
+        setData(result);
+
+        if (showRefreshToast) {
+          toast({
+            title: "Refreshed",
+            description: "Subscription status updated",
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching subscription status:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load subscription status",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user, toast]
+  );
+
+  const handleUnsubscribeSymbol = useCallback(
+    async (symbol: string, source: string) => {
+      if (!user) return;
+
+      setUnsubscribing(`symbol-${symbol}`);
+      try {
+        // Source may already have _stream suffix or not
+        const sourceRoute = source.endsWith("_stream")
+          ? source
+          : `${source}_stream`;
+        const response = await apiClient.post(
           `/market/${sourceRoute}/unsubscribe`,
+          { symbols: [symbol] },
+          session?.access_token
+        );
+
+        if (!response.ok) throw new Error("Failed to unsubscribe");
+
+        toast({
+          title: "Unsubscribed",
+          description: `Removed ${symbol} from ${source}`,
+        });
+        fetchStatus(false);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to unsubscribe symbol",
+          variant: "destructive",
+        });
+      } finally {
+        setUnsubscribing(null);
+      }
+    },
+    [user, toast, fetchStatus]
+  );
+
+  // Handler for workflow-scoped symbol unsubscription (needs workflowId to target correct Redis key)
+  const handleUnsubscribeWorkflowScopedSymbol = useCallback(
+    async (symbol: string, source: string, workflowId: string) => {
+      if (!user) return;
+
+      setUnsubscribing(`symbol-${workflowId}-${symbol}`);
+      try {
+        const response = await apiClient.post(
+          `/market/${source}/unsubscribe`,
           {
-            workflow_id: wf.workflowId,
-            node_id: wf.nodeId,
-            symbols: wf.symbols,
+            workflow_id: workflowId, // Include workflowId for workflow-scoped removal
+            symbols: [symbol],
+            subscription_scope: "workflow", // Tell backend this is workflow-scoped
           },
           session?.access_token
         );
+
+        if (!response.ok) throw new Error("Failed to unsubscribe");
+
+        toast({
+          title: "Unsubscribed",
+          description: `Removed ${symbol} from workflow`,
+        });
+        fetchStatus(false);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to unsubscribe symbol",
+          variant: "destructive",
+        });
+      } finally {
+        setUnsubscribing(null);
       }
-      
-      if (!response.ok) throw new Error('Failed to unsubscribe');
-      
-      toast({ title: "Unsubscribed", description: `${wf.workflowName} removed from market data` });
-      fetchStatus(false);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to unsubscribe workflow", variant: "destructive" });
-    } finally {
-      setUnsubscribing(null);
-    }
-  }, [user, toast, fetchStatus]);
+    },
+    [user, toast, fetchStatus]
+  );
 
-  const handleClearSource = useCallback(async (source: string, symbols: string[]) => {
-    if (!user || symbols.length === 0) return;
-    
-    setUnsubscribing(`source-${source}`);
-    try {
-      // Source may already have _stream suffix or not
-      const sourceRoute = source.endsWith('_stream') ? source : `${source}_stream`;
-      const response = await apiClient.post(
-        `/market/${sourceRoute}/unsubscribe`,
-        { symbols },
-        session?.access_token
-      );
-      
-      if (!response.ok) throw new Error('Failed to unsubscribe');
-      
-      toast({ title: "Cleared", description: `All ${source} subscriptions removed` });
-      fetchStatus(false);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to clear source", variant: "destructive" });
-    } finally {
-      setUnsubscribing(null);
-    }
-  }, [user, toast, fetchStatus]);
+  const handleUnsubscribeWorkflow = useCallback(
+    async (wf: WorkflowSubscription) => {
+      if (!user) return;
 
-  const confirmUnsubscribeSymbol = (symbol: string, source: string, workflowId?: string) => {
+      setUnsubscribing(`workflow-${wf.workflowId}-${wf.nodeId}`);
+      try {
+        // Use fallback endpoint when source is unknown
+        let response: Response;
+        if (!wf.source || wf.source === "unknown") {
+          response = await apiClient.delete(
+            `/market/workflows/${wf.workflowId}/unsubscribe`,
+            session?.access_token
+          );
+        } else {
+          // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
+          const sourceRoute = wf.source.endsWith("_stream")
+            ? wf.source
+            : `${wf.source}_stream`;
+          response = await apiClient.post(
+            `/market/${sourceRoute}/unsubscribe`,
+            {
+              workflow_id: wf.workflowId,
+              node_id: wf.nodeId,
+              symbols: wf.symbols,
+            },
+            session?.access_token
+          );
+        }
+
+        if (!response.ok) throw new Error("Failed to unsubscribe");
+
+        toast({
+          title: "Unsubscribed",
+          description: `${wf.workflowName} removed from market data`,
+        });
+        fetchStatus(false);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to unsubscribe workflow",
+          variant: "destructive",
+        });
+      } finally {
+        setUnsubscribing(null);
+      }
+    },
+    [user, toast, fetchStatus]
+  );
+
+  const handleClearSource = useCallback(
+    async (source: string, symbols: string[]) => {
+      if (!user || symbols.length === 0) return;
+
+      setUnsubscribing(`source-${source}`);
+      try {
+        // Source may already have _stream suffix or not
+        const sourceRoute = source.endsWith("_stream")
+          ? source
+          : `${source}_stream`;
+        const response = await apiClient.post(
+          `/market/${sourceRoute}/unsubscribe`,
+          { symbols },
+          session?.access_token
+        );
+
+        if (!response.ok) throw new Error("Failed to unsubscribe");
+
+        toast({
+          title: "Cleared",
+          description: `All ${source} subscriptions removed`,
+        });
+        fetchStatus(false);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to clear source",
+          variant: "destructive",
+        });
+      } finally {
+        setUnsubscribing(null);
+      }
+    },
+    [user, toast, fetchStatus]
+  );
+
+  const confirmUnsubscribeSymbol = (
+    symbol: string,
+    source: string,
+    workflowId?: string
+  ) => {
     setConfirmDialog({
       open: true,
-      type: 'symbol',
+      type: "symbol",
       title: `Unsubscribe ${symbol}?`,
-      description: workflowId 
+      description: workflowId
         ? `This will stop streaming ${symbol} data for this specific workflow.`
         : `This will stop streaming ${symbol} data from ${source}. Any workflows using this symbol will no longer receive updates.`,
-      onConfirm: () => workflowId 
-        ? handleUnsubscribeWorkflowScopedSymbol(symbol, source, workflowId)
-        : handleUnsubscribeSymbol(symbol, source),
+      onConfirm: () =>
+        workflowId
+          ? handleUnsubscribeWorkflowScopedSymbol(symbol, source, workflowId)
+          : handleUnsubscribeSymbol(symbol, source),
     });
   };
 
   const confirmUnsubscribeWorkflow = (wf: WorkflowSubscription) => {
     setConfirmDialog({
       open: true,
-      type: 'workflow',
+      type: "workflow",
       title: `Unsubscribe ${wf.workflowName}?`,
       description: `This will stop ${wf.workflowName} from receiving market data for ${wf.symbols.length} symbol(s).`,
       onConfirm: () => handleUnsubscribeWorkflow(wf),
@@ -299,7 +371,7 @@ const MarketSubscriptions = () => {
   const confirmClearSource = (source: string, symbols: string[]) => {
     setConfirmDialog({
       open: true,
-      type: 'source',
+      type: "source",
       title: `Clear all ${source} subscriptions?`,
       description: `This will unsubscribe all ${symbols.length} symbol(s) from ${source}. All workflows using these symbols will stop receiving data.`,
       onConfirm: () => handleClearSource(source, symbols),
@@ -308,31 +380,41 @@ const MarketSubscriptions = () => {
 
   useEffect(() => {
     fetchStatus();
-    
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => fetchStatus(), 30000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  const filteredWorkflows = data?.workflows.filter(wf => 
-    symbolFilter === "" || 
-    wf.symbols.some(s => s.toLowerCase().includes(symbolFilter.toLowerCase())) ||
-    wf.workflowName.toLowerCase().includes(symbolFilter.toLowerCase())
-  ) || [];
+  const filteredWorkflows =
+    data?.workflows.filter(
+      (wf) =>
+        symbolFilter === "" ||
+        wf.symbols.some((s) =>
+          s.toLowerCase().includes(symbolFilter.toLowerCase())
+        ) ||
+        wf.workflowName.toLowerCase().includes(symbolFilter.toLowerCase())
+    ) || [];
 
   const allSymbols = new Set<string>();
-  data?.sources.forEach(s => s.symbols.forEach(sym => allSymbols.add(sym)));
-  data?.workflows.forEach(w => w.symbols.forEach(sym => allSymbols.add(sym)));
+  data?.sources.forEach((s) => s.symbols.forEach((sym) => allSymbols.add(sym)));
+  data?.workflows.forEach((w) =>
+    w.symbols.forEach((sym) => allSymbols.add(sym))
+  );
 
-  const filteredSymbols = Array.from(allSymbols).filter(sym =>
-    symbolFilter === "" || sym.toLowerCase().includes(symbolFilter.toLowerCase())
+  const filteredSymbols = Array.from(allSymbols).filter(
+    (sym) =>
+      symbolFilter === "" ||
+      sym.toLowerCase().includes(symbolFilter.toLowerCase())
   );
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-2 text-muted-foreground">Loading subscriptions...</span>
+        <span className="ml-2 text-muted-foreground">
+          Loading subscriptions...
+        </span>
       </div>
     );
   }
@@ -340,18 +422,23 @@ const MarketSubscriptions = () => {
   return (
     <div className="space-y-6">
       {/* Confirmation Dialog */}
-      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmDialog.description}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {confirmDialog.description}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 confirmDialog.onConfirm();
-                setConfirmDialog(prev => ({ ...prev, open: false }));
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -372,12 +459,14 @@ const MarketSubscriptions = () => {
             Monitor active market data streams and workflow receivers
           </p>
         </div>
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           onClick={() => fetchStatus(true)}
           disabled={refreshing}
         >
-          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
+          />
           Refresh
         </Button>
       </div>
@@ -390,36 +479,50 @@ const MarketSubscriptions = () => {
       >
         <Card className="bg-gradient-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Connected Sources</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Connected Sources
+            </CardTitle>
             <Wifi className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data?.stats.totalSources || 0}</div>
+            <div className="text-2xl font-bold">
+              {data?.stats.totalSources || 0}
+            </div>
             <p className="text-xs text-muted-foreground">
-              {data?.stats.connectedSources.join(', ') || 'None'}
+              {data?.stats.connectedSources.join(", ") || "None"}
             </p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Subscribed Symbols</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Subscribed Symbols
+            </CardTitle>
             <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data?.stats.totalSymbols || 0}</div>
+            <div className="text-2xl font-bold">
+              {data?.stats.totalSymbols || 0}
+            </div>
             <p className="text-xs text-muted-foreground">Across all sources</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Workflows</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Active Workflows
+            </CardTitle>
             <Activity className="h-4 w-4 text-chart-2" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data?.stats.totalWorkflows || 0}</div>
-            <p className="text-xs text-muted-foreground">Receiving market data</p>
+            <div className="text-2xl font-bold">
+              {data?.stats.totalWorkflows || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Receiving market data
+            </p>
           </CardContent>
         </Card>
 
@@ -429,7 +532,9 @@ const MarketSubscriptions = () => {
             <Radio className="h-4 w-4 text-chart-3" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{data?.sources.length || 0}</div>
+            <div className="text-2xl font-bold">
+              {data?.sources.length || 0}
+            </div>
             <p className="text-xs text-muted-foreground">Configured gateways</p>
           </CardContent>
         </Card>
@@ -447,52 +552,82 @@ const MarketSubscriptions = () => {
               <Wifi className="h-5 w-5" />
               Data Source Status
             </CardTitle>
-            <CardDescription>Real-time connection status for each broker</CardDescription>
+            <CardDescription>
+              Real-time connection status for each broker
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {['alpaca', 'binance', 'dhan', 'schwab'].map(source => {
-                const sourceData = data?.sources.find(s => s.source === source);
+              {["alpaca", "binance", "dhan", "schwab"].map((source) => {
+                const sourceData = data?.sources.find(
+                  (s) => s.source === source
+                );
                 const isConnected = sourceData?.connected || false;
-                
+
                 return (
-                  <Card 
-                    key={source} 
-                    className={`border ${isConnected ? 'border-success/30 bg-success/5' : 'border-muted bg-muted/5'}`}
+                  <Card
+                    key={source}
+                    className={`border ${
+                      isConnected
+                        ? "border-success/30 bg-success/5"
+                        : "border-muted bg-muted/5"
+                    }`}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-2xl">{sourceIcons[source]}</span>
-                          <span className="font-semibold capitalize">{source}</span>
+                          <span className="text-2xl">
+                            {sourceIcons[source]}
+                          </span>
+                          <span className="font-semibold capitalize">
+                            {source}
+                          </span>
                         </div>
                         {isConnected ? (
-                          <Badge variant="outline" className="bg-success/20 text-success border-success/30">
+                          <Badge
+                            variant="outline"
+                            className="bg-success/20 text-success border-success/30"
+                          >
                             <Wifi className="h-3 w-3 mr-1" />
                             Connected
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="bg-muted text-muted-foreground">
+                          <Badge
+                            variant="outline"
+                            className="bg-muted text-muted-foreground"
+                          >
                             <WifiOff className="h-3 w-3 mr-1" />
                             Offline
                           </Badge>
                         )}
                       </div>
-                      
+
                       {sourceData && (
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Symbols:</span>
-                            <span className="font-medium">{sourceData.symbols.length}</span>
+                            <span className="text-muted-foreground">
+                              Symbols:
+                            </span>
+                            <span className="font-medium">
+                              {sourceData.symbols.length}
+                            </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Events:</span>
-                            <span className="font-medium">{sourceData.eventTypes.length}</span>
+                            <span className="text-muted-foreground">
+                              Events:
+                            </span>
+                            <span className="font-medium">
+                              {sourceData.eventTypes.length}
+                            </span>
                           </div>
                           {sourceData.eventTypes.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
-                              {sourceData.eventTypes.slice(0, 3).map(type => (
-                                <Badge key={type} variant="secondary" className="text-xs">
+                              {sourceData.eventTypes.slice(0, 3).map((type) => (
+                                <Badge
+                                  key={type}
+                                  variant="secondary"
+                                  className="text-xs"
+                                >
                                   {type}
                                 </Badge>
                               ))}
@@ -508,7 +643,9 @@ const MarketSubscriptions = () => {
                               variant="ghost"
                               size="sm"
                               className="w-full mt-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => confirmClearSource(source, sourceData.symbols)}
+                              onClick={() =>
+                                confirmClearSource(source, sourceData.symbols)
+                              }
                               disabled={unsubscribing === `source-${source}`}
                             >
                               {unsubscribing === `source-${source}` ? (
@@ -553,7 +690,9 @@ const MarketSubscriptions = () => {
               <Activity className="h-5 w-5" />
               Workflow Receivers
             </CardTitle>
-            <CardDescription>Workflows currently receiving market data streams</CardDescription>
+            <CardDescription>
+              Workflows currently receiving market data streams
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[400px]">
@@ -576,17 +715,21 @@ const MarketSubscriptions = () => {
                           {wf.workflowName}
                         </TableCell>
                         <TableCell>
-                          <Badge 
-                            variant="outline" 
-                            className={sourceColors[wf.source] || 'bg-muted'}
+                          <Badge
+                            variant="outline"
+                            className={sourceColors[wf.source] || "bg-muted"}
                           >
-                            {sourceIcons[wf.source] || '📡'} {wf.source}
+                            {sourceIcons[wf.source] || "📡"} {wf.source}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {wf.symbols.slice(0, 3).map(sym => (
-                              <Badge key={sym} variant="secondary" className="text-xs">
+                            {wf.symbols.slice(0, 3).map((sym) => (
+                              <Badge
+                                key={sym}
+                                variant="secondary"
+                                className="text-xs"
+                              >
                                 {sym}
                               </Badge>
                             ))}
@@ -599,17 +742,23 @@ const MarketSubscriptions = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {wf.eventTypes.map(type => (
-                              <Badge key={type} variant="outline" className="text-xs">
+                            {wf.eventTypes.map((type) => (
+                              <Badge
+                                key={type}
+                                variant="outline"
+                                className="text-xs"
+                              >
                                 {type}
                               </Badge>
                             ))}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge 
+                          <Badge
                             variant={wf.isActive ? "default" : "secondary"}
-                            className={wf.isActive ? "bg-success/20 text-success" : ""}
+                            className={
+                              wf.isActive ? "bg-success/20 text-success" : ""
+                            }
                           >
                             {wf.isActive ? "Active" : "Inactive"}
                           </Badge>
@@ -621,9 +770,13 @@ const MarketSubscriptions = () => {
                               size="sm"
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => confirmUnsubscribeWorkflow(wf)}
-                              disabled={unsubscribing === `workflow-${wf.workflowId}-${wf.nodeId}`}
+                              disabled={
+                                unsubscribing ===
+                                `workflow-${wf.workflowId}-${wf.nodeId}`
+                              }
                             >
-                              {unsubscribing === `workflow-${wf.workflowId}-${wf.nodeId}` ? (
+                              {unsubscribing ===
+                              `workflow-${wf.workflowId}-${wf.nodeId}` ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <X className="h-4 w-4" />
@@ -640,8 +793,13 @@ const MarketSubscriptions = () => {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        {symbolFilter ? "No matching workflows found" : "No active market data subscriptions"}
+                      <TableCell
+                        colSpan={6}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        {symbolFilter
+                          ? "No matching workflows found"
+                          : "No active market data subscriptions"}
                       </TableCell>
                     </TableRow>
                   )}
@@ -653,134 +811,189 @@ const MarketSubscriptions = () => {
       </motion.div>
 
       {/* User Symbol Subscriptions - Global (from Subscribe nodes) */}
-      {data?.userSubscriptions && Object.keys(data.userSubscriptions).length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Radio className="h-5 w-5 text-primary" />
-                Global Symbol Subscriptions
-              </CardTitle>
-              <CardDescription>Symbols available to all workflows (subscribed via Subscribe nodes with Global scope)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {Object.entries(data.userSubscriptions).map(([source, symbols]) => (
-                  <div key={source} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={sourceColors[source] || 'bg-muted'}>
-                        {sourceIcons[source] || '📡'} {source}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {symbols.length} symbol{symbols.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 pl-2">
-                      {symbols
-                        .filter(sym => symbolFilter === "" || sym.toLowerCase().includes(symbolFilter.toLowerCase()))
-                        .map(symbol => (
-                          <Badge 
-                            key={`${source}-${symbol}`} 
-                            variant="outline" 
-                            className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+      {data?.userSubscriptions &&
+        Object.keys(data.userSubscriptions).length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Radio className="h-5 w-5 text-primary" />
+                  Global Symbol Subscriptions
+                </CardTitle>
+                <CardDescription>
+                  Symbols available to all workflows (subscribed via Subscribe
+                  nodes with Global scope)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Object.entries(data.userSubscriptions).map(
+                    ([source, symbols]) => (
+                      <div key={source} className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={sourceColors[source] || "bg-muted"}
                           >
-                            {symbol}
-                            <button
-                              onClick={() => confirmUnsubscribeSymbol(symbol, source)}
-                              disabled={unsubscribing === `symbol-${symbol}`}
-                              className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                            >
-                              {unsubscribing === `symbol-${symbol}` ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <X className="h-3 w-3" />
-                              )}
-                            </button>
+                            {sourceIcons[source] || "📡"} {source}
                           </Badge>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+                          <span className="text-sm text-muted-foreground">
+                            {symbols.length} symbol
+                            {symbols.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pl-2">
+                          {symbols
+                            .filter(
+                              (sym) =>
+                                symbolFilter === "" ||
+                                sym
+                                  .toLowerCase()
+                                  .includes(symbolFilter.toLowerCase())
+                            )
+                            .map((symbol) => (
+                              <Badge
+                                key={`${source}-${symbol}`}
+                                variant="outline"
+                                className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+                              >
+                                {symbol}
+                                <button
+                                  onClick={() =>
+                                    confirmUnsubscribeSymbol(symbol, source)
+                                  }
+                                  disabled={
+                                    unsubscribing === `symbol-${symbol}`
+                                  }
+                                  className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                                >
+                                  {unsubscribing === `symbol-${symbol}` ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <X className="h-3 w-3" />
+                                  )}
+                                </button>
+                              </Badge>
+                            ))}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
       {/* Workflow-Scoped Subscriptions */}
-      {data?.workflowScopedSubscriptions && data.workflowScopedSubscriptions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35 }}
-        >
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-chart-2" />
-                Workflow-Scoped Subscriptions
-              </CardTitle>
-              <CardDescription>Symbols only accessible by specific workflows (subscribed via Subscribe nodes with Workflow scope)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {data.workflowScopedSubscriptions
-                  .filter(sub => 
-                    symbolFilter === "" || 
-                    sub.symbols.some(s => s.toLowerCase().includes(symbolFilter.toLowerCase())) ||
-                    (sub.workflowName?.toLowerCase().includes(symbolFilter.toLowerCase()))
-                  )
-                  .map((sub, idx) => (
-                  <div key={`${sub.workflowId}-${sub.source}-${idx}`} className="space-y-2 p-3 rounded-lg border border-border bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={sourceColors[sub.source] || 'bg-muted'}>
-                          {sourceIcons[sub.source] || '📡'} {sub.source}
-                        </Badge>
-                        <span className="text-sm font-medium">→</span>
-                        <Link to={`/dashboard/workflow/${sub.workflowId}`} className="text-sm text-primary hover:underline">
-                          {sub.workflowName || sub.workflowId}
-                        </Link>
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        {sub.symbols.length} symbol{sub.symbols.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 pl-2">
-                      {sub.symbols
-                        .filter(sym => symbolFilter === "" || sym.toLowerCase().includes(symbolFilter.toLowerCase()))
-                        .map(symbol => (
-                          <Badge 
-                            key={`${sub.workflowId}-${sub.source}-${symbol}`} 
-                            variant="outline" 
-                            className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
-                          >
-                            {symbol}
-                            <button
-                              onClick={() => confirmUnsubscribeSymbol(symbol, sub.source, sub.workflowId)}
-                              disabled={unsubscribing === `symbol-${sub.workflowId}-${symbol}`}
-                              className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+      {data?.workflowScopedSubscriptions &&
+        data.workflowScopedSubscriptions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+          >
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-chart-2" />
+                  Workflow-Scoped Subscriptions
+                </CardTitle>
+                <CardDescription>
+                  Symbols only accessible by specific workflows (subscribed via
+                  Subscribe nodes with Workflow scope)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {data.workflowScopedSubscriptions
+                    .filter(
+                      (sub) =>
+                        symbolFilter === "" ||
+                        sub.symbols.some((s) =>
+                          s.toLowerCase().includes(symbolFilter.toLowerCase())
+                        ) ||
+                        sub.workflowName
+                          ?.toLowerCase()
+                          .includes(symbolFilter.toLowerCase())
+                    )
+                    .map((sub, idx) => (
+                      <div
+                        key={`${sub.workflowId}-${sub.source}-${idx}`}
+                        className="space-y-2 p-3 rounded-lg border border-border bg-muted/20"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={sourceColors[sub.source] || "bg-muted"}
                             >
-                              {unsubscribing === `symbol-${sub.workflowId}-${symbol}` ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <X className="h-3 w-3" />
-                              )}
-                            </button>
-                          </Badge>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+                              {sourceIcons[sub.source] || "📡"} {sub.source}
+                            </Badge>
+                            <span className="text-sm font-medium">→</span>
+                            <Link
+                              to={`/dashboard/workflow/${sub.workflowId}`}
+                              className="text-sm text-primary hover:underline"
+                            >
+                              {sub.workflowName || sub.workflowId}
+                            </Link>
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            {sub.symbols.length} symbol
+                            {sub.symbols.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pl-2">
+                          {sub.symbols
+                            .filter(
+                              (sym) =>
+                                symbolFilter === "" ||
+                                sym
+                                  .toLowerCase()
+                                  .includes(symbolFilter.toLowerCase())
+                            )
+                            .map((symbol) => (
+                              <Badge
+                                key={`${sub.workflowId}-${sub.source}-${symbol}`}
+                                variant="outline"
+                                className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
+                              >
+                                {symbol}
+                                <button
+                                  onClick={() =>
+                                    confirmUnsubscribeSymbol(
+                                      symbol,
+                                      sub.source,
+                                      sub.workflowId
+                                    )
+                                  }
+                                  disabled={
+                                    unsubscribing ===
+                                    `symbol-${sub.workflowId}-${symbol}`
+                                  }
+                                  className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                                >
+                                  {unsubscribing ===
+                                  `symbol-${sub.workflowId}-${symbol}` ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <X className="h-3 w-3" />
+                                  )}
+                                </button>
+                              </Badge>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
       {/* All Subscribed Symbols */}
       <motion.div
@@ -794,24 +1007,28 @@ const MarketSubscriptions = () => {
               <TrendingUp className="h-5 w-5" />
               All Subscribed Symbols
             </CardTitle>
-            <CardDescription>All symbols currently being streamed across all sources</CardDescription>
+            <CardDescription>
+              All symbols currently being streamed across all sources
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {filteredSymbols.length > 0 ? (
-                filteredSymbols.map(symbol => {
+                filteredSymbols.map((symbol) => {
                   const sources = data?.symbolSourceMap?.[symbol] || [];
-                  const primarySource = sources[0] || 'alpaca';
-                  
+                  const primarySource = sources[0] || "alpaca";
+
                   return (
-                    <Badge 
-                      key={symbol} 
-                      variant="outline" 
+                    <Badge
+                      key={symbol}
+                      variant="outline"
                       className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
                     >
                       {symbol}
                       <button
-                        onClick={() => confirmUnsubscribeSymbol(symbol, primarySource)}
+                        onClick={() =>
+                          confirmUnsubscribeSymbol(symbol, primarySource)
+                        }
                         disabled={unsubscribing === `symbol-${symbol}`}
                         className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                       >
@@ -826,7 +1043,9 @@ const MarketSubscriptions = () => {
                 })
               ) : (
                 <p className="text-muted-foreground">
-                  {symbolFilter ? "No matching symbols found" : "No symbols subscribed"}
+                  {symbolFilter
+                    ? "No matching symbols found"
+                    : "No symbols subscribed"}
                 </p>
               )}
             </div>

@@ -21,7 +21,10 @@ import type { SearchResult } from "yahoo-finance2/dist/esm/src/modules/search";
 import type { TrendingSymbolsResult } from "yahoo-finance2/dist/esm/src/modules/trendingSymbols";
 import { createError } from "../middleware/errorHandler";
 import CredentialManager from "../utils/credentialManager";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../utils/normalizeOutput";
 import type { StandardNodeOutput } from "../types/nodeOutput";
 import { supabase } from "../config/supabase";
 
@@ -62,7 +65,10 @@ abstract class BaseDataService {
     };
   }
 
-  abstract execute(operation: string, input: DataInput): Promise<StandardNodeOutput>;
+  abstract execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput>;
 }
 
 // FinnHub service
@@ -70,8 +76,11 @@ class FinnHubService extends BaseDataService {
   protected serviceName = "finnhub";
   private baseUrl = "https://finnhub.io/api/v1";
 
-  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'FinnHub', category: 'data' };
+  async execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "FinnHub", category: "data" };
     try {
       const { user_id, credential_id } = input;
 
@@ -126,8 +135,11 @@ class FinnHubService extends BaseDataService {
 class YahooFinanceService extends BaseDataService {
   protected serviceName = "yahoofinance";
 
-  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'YahooFinance', category: 'data' };
+  async execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "YahooFinance", category: "data" };
     try {
       let result;
       switch (operation) {
@@ -186,15 +198,15 @@ class YahooFinanceService extends BaseDataService {
   }
 
   private async getHistory(input: DataInput): Promise<any> {
-    const { 
-      symbol, 
-      period1, 
-      period2, 
+    const {
+      symbol,
+      period1,
+      period2,
       interval = "1d",
       date_mode = "lookback",
       lookback = 100,
       start_date,
-      end_date
+      end_date,
     } = input;
 
     if (!symbol) {
@@ -221,7 +233,7 @@ class YahooFinanceService extends BaseDataService {
       } else {
         endDate = new Date();
       }
-    } 
+    }
     // Handle date_mode for direct executor calls
     else if (date_mode === "range") {
       if (!start_date) {
@@ -229,7 +241,7 @@ class YahooFinanceService extends BaseDataService {
       }
       startDate = new Date(start_date);
       endDate = end_date ? new Date(end_date) : new Date();
-    } 
+    }
     // Lookback mode (default)
     else {
       endDate = new Date();
@@ -286,9 +298,7 @@ class YahooFinanceService extends BaseDataService {
 
     const chart = await yahooFinance.chart(symbol, options);
     const history = chart.quotes || [];
-    console.log(
-      `Retrieved ${history.length} historical records for ${symbol}`
-    );
+    console.log(`Retrieved ${history.length} historical records for ${symbol}`);
 
     return history.map((item) => ({
       date: item.date,
@@ -335,7 +345,9 @@ class YahooFinanceService extends BaseDataService {
               type: quoteType ?? null,
             };
           })
-          .filter((quote): quote is NonNullable<typeof quote> => quote !== null) || [],
+          .filter(
+            (quote): quote is NonNullable<typeof quote> => quote !== null
+          ) || [],
     };
   }
 
@@ -406,8 +418,11 @@ class PolygonService extends BaseDataService {
   protected serviceName = "polygon";
   private baseUrl = "https://api.polygon.io";
 
-  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Polygon', category: 'data' };
+  async execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "Polygon", category: "data" };
     try {
       const { user_id, credential_id, api_key } = input;
 
@@ -461,14 +476,19 @@ class PolygonService extends BaseDataService {
     }
   }
 
-  private async validateCredentials(apiKey: string): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Polygon', category: 'data' };
+  private async validateCredentials(
+    apiKey: string
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "Polygon", category: "data" };
     try {
-      const response = await axios.get(`${this.baseUrl}/v3/reference/tickers/AAPL`, {
-        params: { apiKey },
-        timeout: 10000,
-      });
-      
+      const response = await axios.get(
+        `${this.baseUrl}/v3/reference/tickers/AAPL`,
+        {
+          params: { apiKey },
+          timeout: 10000,
+        }
+      );
+
       if (response.data && response.data.results) {
         return createSuccessOutput({ valid: true }, context);
       }
@@ -482,7 +502,7 @@ class PolygonService extends BaseDataService {
   }
 
   private async listCredentials(userId: string): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Polygon', category: 'data' };
+    const context = { nodeName: "Polygon", category: "data" };
     const { data, error } = await supabase
       .from("user_credentials")
       .select("id, name, created_at")
@@ -500,10 +520,13 @@ class PolygonService extends BaseDataService {
     const { ticker } = input;
     if (!ticker) throw new Error("ticker is required");
 
-    const response = await axios.get(`${this.baseUrl}/v3/reference/tickers/${ticker.toUpperCase()}`, {
-      params: { apiKey: creds.api_key },
-      timeout: 10000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/v3/reference/tickers/${ticker.toUpperCase()}`,
+      {
+        params: { apiKey: creds.api_key },
+        timeout: 10000,
+      }
+    );
 
     return response.data.results;
   }
@@ -512,15 +535,18 @@ class PolygonService extends BaseDataService {
     const { ticker, timeframe = "annual", limit = 10 } = input;
     if (!ticker) throw new Error("ticker is required");
 
-    const response = await axios.get(`${this.baseUrl}/vX/reference/financials`, {
-      params: {
-        ticker: ticker.toUpperCase(),
-        timeframe,
-        limit,
-        apiKey: creds.api_key,
-      },
-      timeout: 15000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/vX/reference/financials`,
+      {
+        params: {
+          ticker: ticker.toUpperCase(),
+          timeframe,
+          limit,
+          apiKey: creds.api_key,
+        },
+        timeout: 15000,
+      }
+    );
 
     return response.data.results;
   }
@@ -573,14 +599,20 @@ class PolygonService extends BaseDataService {
     return response.data.results;
   }
 
-  private async getRelatedCompanies(creds: any, input: DataInput): Promise<any> {
+  private async getRelatedCompanies(
+    creds: any,
+    input: DataInput
+  ): Promise<any> {
     const { ticker } = input;
     if (!ticker) throw new Error("ticker is required");
 
-    const response = await axios.get(`${this.baseUrl}/v1/related-companies/${ticker.toUpperCase()}`, {
-      params: { apiKey: creds.api_key },
-      timeout: 10000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/v1/related-companies/${ticker.toUpperCase()}`,
+      {
+        params: { apiKey: creds.api_key },
+        timeout: 10000,
+      }
+    );
 
     return response.data.results;
   }
@@ -591,20 +623,13 @@ class FMPService extends BaseDataService {
   protected serviceName = "fmp";
   private baseUrl = "https://financialmodelingprep.com/stable";
 
-  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'FMP', category: 'data' };
+  async execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "FMP", category: "data" };
     try {
-      const { user_id, credential_id, api_key } = input;
-
-      // For validation, api_key is passed directly
-      if (operation === "validate_credentials") {
-        return this.validateCredentials(api_key);
-      }
-
-      // For list_credentials, just return stored credentials
-      if (operation === "list_credentials") {
-        return this.listCredentials(user_id!);
-      }
+      const { user_id, credential_id } = input;
 
       if (!user_id || !credential_id) {
         throw new Error("user_id and credential_id are required");
@@ -688,15 +713,21 @@ class FMPService extends BaseDataService {
     }
   }
 
-  private async validateCredentials(apiKey: string): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'FMP', category: 'data' };
+  private async validateCredentials(
+    apiKey: string
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "FMP", category: "data" };
     try {
       const response = await axios.get(`${this.baseUrl}/profile`, {
         params: { symbol: "AAPL", apikey: apiKey },
         timeout: 10000,
       });
 
-      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+      if (
+        response.data &&
+        Array.isArray(response.data) &&
+        response.data.length > 0
+      ) {
         return createSuccessOutput({ valid: true }, context);
       }
       return createErrorOutput("Invalid API response", context);
@@ -709,7 +740,7 @@ class FMPService extends BaseDataService {
   }
 
   private async listCredentials(userId: string): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'FMP', category: 'data' };
+    const context = { nodeName: "FMP", category: "data" };
     const { data, error } = await supabase
       .from("user_credentials")
       .select("id, name, created_at")
@@ -768,15 +799,18 @@ class FMPService extends BaseDataService {
     const { symbol, period = "annual", limit = 10 } = input;
     if (!symbol) throw new Error("symbol is required");
 
-    const response = await axios.get(`${this.baseUrl}/balance-sheet-statement`, {
-      params: {
-        symbol: symbol.toUpperCase(),
-        period,
-        limit,
-        apikey: creds.api_key,
-      },
-      timeout: 15000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/balance-sheet-statement`,
+      {
+        params: {
+          symbol: symbol.toUpperCase(),
+          period,
+          limit,
+          apikey: creds.api_key,
+        },
+        timeout: 15000,
+      }
+    );
 
     return response.data;
   }
@@ -889,7 +923,10 @@ class FMPService extends BaseDataService {
     return response.data;
   }
 
-  private async getAnalystEstimates(creds: any, input: DataInput): Promise<any> {
+  private async getAnalystEstimates(
+    creds: any,
+    input: DataInput
+  ): Promise<any> {
     const { symbol, limit = 10 } = input;
     if (!symbol) throw new Error("symbol is required");
 
@@ -921,7 +958,10 @@ class FMPService extends BaseDataService {
     return response.data;
   }
 
-  private async getEarningsCalendar(creds: any, input: DataInput): Promise<any> {
+  private async getEarningsCalendar(
+    creds: any,
+    input: DataInput
+  ): Promise<any> {
     const { symbol, limit = 10 } = input;
     if (!symbol) throw new Error("symbol is required");
 
@@ -941,14 +981,17 @@ class FMPService extends BaseDataService {
     const { symbol, limit = 10 } = input;
     if (!symbol) throw new Error("symbol is required");
 
-    const response = await axios.get(`${this.baseUrl}/historical-price-eod/dividend`, {
-      params: {
-        symbol: symbol.toUpperCase(),
-        limit,
-        apikey: creds.api_key,
-      },
-      timeout: 10000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/historical-price-eod/dividend`,
+      {
+        params: {
+          symbol: symbol.toUpperCase(),
+          limit,
+          apikey: creds.api_key,
+        },
+        timeout: 10000,
+      }
+    );
 
     return response.data;
   }
@@ -957,14 +1000,17 @@ class FMPService extends BaseDataService {
     const { symbol, limit = 10 } = input;
     if (!symbol) throw new Error("symbol is required");
 
-    const response = await axios.get(`${this.baseUrl}/historical-price-eod/stock_split`, {
-      params: {
-        symbol: symbol.toUpperCase(),
-        limit,
-        apikey: creds.api_key,
-      },
-      timeout: 10000,
-    });
+    const response = await axios.get(
+      `${this.baseUrl}/historical-price-eod/stock_split`,
+      {
+        params: {
+          symbol: symbol.toUpperCase(),
+          limit,
+          apikey: creds.api_key,
+        },
+        timeout: 10000,
+      }
+    );
 
     return response.data;
   }
@@ -1001,7 +1047,10 @@ class FMPService extends BaseDataService {
     return response.data;
   }
 
-  private async getInstitutionalHolders(creds: any, input: DataInput): Promise<any> {
+  private async getInstitutionalHolders(
+    creds: any,
+    input: DataInput
+  ): Promise<any> {
     const { symbol } = input;
     if (!symbol) throw new Error("symbol is required");
 
@@ -1039,15 +1088,19 @@ class FMPService extends BaseDataService {
       limit,
     };
 
-    if (market_cap_more_than) params.marketCapMoreThan = parseFloat(market_cap_more_than);
-    if (market_cap_lower_than) params.marketCapLowerThan = parseFloat(market_cap_lower_than);
+    if (market_cap_more_than)
+      params.marketCapMoreThan = parseFloat(market_cap_more_than);
+    if (market_cap_lower_than)
+      params.marketCapLowerThan = parseFloat(market_cap_lower_than);
     if (price_more_than) params.priceMoreThan = parseFloat(price_more_than);
     if (price_lower_than) params.priceLowerThan = parseFloat(price_lower_than);
     if (beta_more_than) params.betaMoreThan = parseFloat(beta_more_than);
     if (beta_lower_than) params.betaLowerThan = parseFloat(beta_lower_than);
     if (volume_more_than) params.volumeMoreThan = parseFloat(volume_more_than);
-    if (dividend_more_than) params.dividendMoreThan = parseFloat(dividend_more_than);
-    if (dividend_lower_than) params.dividendLowerThan = parseFloat(dividend_lower_than);
+    if (dividend_more_than)
+      params.dividendMoreThan = parseFloat(dividend_more_than);
+    if (dividend_lower_than)
+      params.dividendLowerThan = parseFloat(dividend_lower_than);
     if (sector) params.sector = sector;
     if (industry) params.industry = industry;
     if (country) params.country = country;
@@ -1070,8 +1123,11 @@ class FMPService extends BaseDataService {
 class MarketService extends BaseDataService {
   protected serviceName = "market";
 
-  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Market', category: 'data' };
+  async execute(
+    operation: string,
+    input: DataInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: "Market", category: "data" };
     try {
       let result;
       switch (operation) {
@@ -1105,7 +1161,7 @@ export class DataService {
     operation: string,
     input: DataInput
   ): Promise<StandardNodeOutput> {
-    const context = { nodeName: service, category: 'data' };
+    const context = { nodeName: service, category: "data" };
     switch (service.toLowerCase()) {
       case "finnhub":
         return this.finnhubService.execute(operation, input);
@@ -1118,7 +1174,10 @@ export class DataService {
       case "fmp":
         return this.fmpService.execute(operation, input);
       default:
-        return createErrorOutput(`Unsupported data service: ${service}`, context);
+        return createErrorOutput(
+          `Unsupported data service: ${service}`,
+          context
+        );
     }
   }
 

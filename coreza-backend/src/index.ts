@@ -61,6 +61,7 @@ import redisTriggerRoutes from "./routes/redisTrigger";
 import storeRoutes from "./routes/store";
 import backtestRoutes from "./routes/backtest";
 import polygonRoutes from "./routes/polygon";
+import fmpRoutes from "./routes/fmp";
 
 import WebSocketManager from "./services/websocketManager";
 import { initializeNodeExecutors } from "./nodes";
@@ -164,6 +165,7 @@ app.use("/redis/trigger", redisTriggerRoutes);
 app.use("/store", storeRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/polygon", polygonRoutes);
+app.use("/fmp", fmpRoutes);
 
 logger.info("All routes mounted");
 

@@ -586,6 +586,431 @@ class PolygonService extends BaseDataService {
   }
 }
 
+// FMP (Financial Modeling Prep) service
+class FMPService extends BaseDataService {
+  protected serviceName = "fmp";
+  private baseUrl = "https://financialmodelingprep.com/stable";
+
+  async execute(operation: string, input: DataInput): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'FMP', category: 'data' };
+    try {
+      const { user_id, credential_id, api_key } = input;
+
+      // For validation, api_key is passed directly
+      if (operation === "validate_credentials") {
+        return this.validateCredentials(api_key);
+      }
+
+      // For list_credentials, just return stored credentials
+      if (operation === "list_credentials") {
+        return this.listCredentials(user_id!);
+      }
+
+      if (!user_id || !credential_id) {
+        throw new Error("user_id and credential_id are required");
+      }
+
+      const creds = await this.getCredentials(user_id, credential_id);
+
+      if (!creds.api_key) {
+        throw new Error("Invalid FMP API credentials");
+      }
+
+      let result;
+      switch (operation) {
+        case "profile":
+          result = await this.getProfile(creds, input);
+          break;
+        case "quote":
+          result = await this.getQuote(creds, input);
+          break;
+        case "income_statement":
+          result = await this.getIncomeStatement(creds, input);
+          break;
+        case "balance_sheet":
+          result = await this.getBalanceSheet(creds, input);
+          break;
+        case "cash_flow":
+          result = await this.getCashFlow(creds, input);
+          break;
+        case "key_metrics":
+          result = await this.getKeyMetrics(creds, input);
+          break;
+        case "ratios":
+          result = await this.getRatios(creds, input);
+          break;
+        case "financial_growth":
+          result = await this.getFinancialGrowth(creds, input);
+          break;
+        case "financial_scores":
+          result = await this.getFinancialScores(creds, input);
+          break;
+        case "enterprise_value":
+          result = await this.getEnterpriseValue(creds, input);
+          break;
+        case "stock_peers":
+          result = await this.getStockPeers(creds, input);
+          break;
+        case "analyst_estimates":
+          result = await this.getAnalystEstimates(creds, input);
+          break;
+        case "price_target":
+          result = await this.getPriceTarget(creds, input);
+          break;
+        case "earnings_calendar":
+          result = await this.getEarningsCalendar(creds, input);
+          break;
+        case "dividends":
+          result = await this.getDividends(creds, input);
+          break;
+        case "splits":
+          result = await this.getSplits(creds, input);
+          break;
+        case "news":
+          result = await this.getNews(creds, input);
+          break;
+        case "insider_trading":
+          result = await this.getInsiderTrading(creds, input);
+          break;
+        case "institutional_holders":
+          result = await this.getInstitutionalHolders(creds, input);
+          break;
+        default:
+          throw new Error(`Unsupported FMP operation: ${operation}`);
+      }
+
+      return createSuccessOutput(result, context);
+    } catch (error: any) {
+      return createErrorOutput(error, context);
+    }
+  }
+
+  private async validateCredentials(apiKey: string): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'FMP', category: 'data' };
+    try {
+      const response = await axios.get(`${this.baseUrl}/profile`, {
+        params: { symbol: "AAPL", apikey: apiKey },
+        timeout: 10000,
+      });
+
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        return createSuccessOutput({ valid: true }, context);
+      }
+      return createErrorOutput("Invalid API response", context);
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return createErrorOutput("Invalid FMP API key", context);
+      }
+      return createErrorOutput(error, context);
+    }
+  }
+
+  private async listCredentials(userId: string): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'FMP', category: 'data' };
+    const { data, error } = await supabase
+      .from("user_credentials")
+      .select("id, name, created_at")
+      .eq("user_id", userId)
+      .eq("service_type", "fmp");
+
+    if (error) {
+      return createErrorOutput(error.message, context);
+    }
+
+    return createSuccessOutput(data || [], context);
+  }
+
+  private async getProfile(creds: any, input: DataInput): Promise<any> {
+    const { symbol } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/profile`, {
+      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getQuote(creds: any, input: DataInput): Promise<any> {
+    const { symbol } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/quote`, {
+      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getIncomeStatement(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/income-statement`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getBalanceSheet(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/balance-sheet-statement`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getCashFlow(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/cash-flow-statement`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getKeyMetrics(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/key-metrics`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getRatios(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/ratios`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getFinancialGrowth(creds: any, input: DataInput): Promise<any> {
+    const { symbol, period = "annual", limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/financial-growth`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        period,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  private async getFinancialScores(creds: any, input: DataInput): Promise<any> {
+    const { symbol } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/score`, {
+      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getEnterpriseValue(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/enterprise-values`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getStockPeers(creds: any, input: DataInput): Promise<any> {
+    const { symbol } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/stock_peers`, {
+      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getAnalystEstimates(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/analyst-estimates`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getPriceTarget(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/price-target`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getEarningsCalendar(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/earning_calendar`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getDividends(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/historical-price-eod/dividend`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getSplits(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/historical-price-eod/stock_split`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getNews(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/stock_news`, {
+      params: {
+        tickers: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getInsiderTrading(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10 } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/insider-trading`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getInstitutionalHolders(creds: any, input: DataInput): Promise<any> {
+    const { symbol } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/institutional-holder`, {
+      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+}
+
 // Market service (simple market data aggregator)
 class MarketService extends BaseDataService {
   protected serviceName = "market";
@@ -618,6 +1043,7 @@ export class DataService {
   private static yahooFinanceService = new YahooFinanceService();
   private static marketService = new MarketService();
   private static polygonService = new PolygonService();
+  private static fmpService = new FMPService();
 
   static async execute(
     service: string,
@@ -634,6 +1060,8 @@ export class DataService {
         return this.marketService.execute(operation, input);
       case "polygon":
         return this.polygonService.execute(operation, input);
+      case "fmp":
+        return this.fmpService.execute(operation, input);
       default:
         return createErrorOutput(`Unsupported data service: ${service}`, context);
     }

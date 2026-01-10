@@ -664,7 +664,7 @@ export function useNodeExecution({
             token: session?.access_token,
           });
           const responseData = await res.json();
-          if (!res.ok)
+          if (!res.ok || responseData.status === "error")
             throw new Error(JSON.stringify(responseData) || "Action failed");
 
           // Handle streaming nodes generically
@@ -1027,7 +1027,7 @@ export function useNodeExecution({
           errOutput = {
             status: "error",
             success: false,
-            error: parsed.data || parsed.error || err.message,
+            error: parsed.data || parsed.details || parsed.error || err.message,
             timestamp: new Date().toISOString(),
           };
         } catch {

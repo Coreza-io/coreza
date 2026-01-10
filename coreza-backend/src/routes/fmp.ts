@@ -83,7 +83,29 @@ router.post("/auth", async (req: Request, res: Response) => {
 router.post("/execute", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { credential_id, operation, symbol, period, limit } = req.body;
+    const { 
+      credential_id, 
+      operation, 
+      symbol, 
+      period, 
+      limit,
+      // Stock screener params
+      market_cap_more_than,
+      market_cap_lower_than,
+      price_more_than,
+      price_lower_than,
+      beta_more_than,
+      beta_lower_than,
+      volume_more_than,
+      dividend_more_than,
+      dividend_lower_than,
+      sector,
+      industry,
+      country,
+      exchange,
+      is_etf,
+      is_actively_trading,
+    } = req.body;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: "Not authenticated" });
@@ -99,6 +121,22 @@ router.post("/execute", async (req: Request, res: Response) => {
       symbol,
       period,
       limit: limit ? parseInt(limit, 10) : 10,
+      // Pass screener params
+      market_cap_more_than,
+      market_cap_lower_than,
+      price_more_than,
+      price_lower_than,
+      beta_more_than,
+      beta_lower_than,
+      volume_more_than,
+      dividend_more_than,
+      dividend_lower_than,
+      sector,
+      industry,
+      country,
+      exchange,
+      is_etf,
+      is_actively_trading,
     });
 
     return res.json(result);

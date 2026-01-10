@@ -675,6 +675,9 @@ class FMPService extends BaseDataService {
         case "institutional_holders":
           result = await this.getInstitutionalHolders(creds, input);
           break;
+        case "stock_screener":
+          result = await this.getStockScreener(creds, input);
+          break;
         default:
           throw new Error(`Unsupported FMP operation: ${operation}`);
       }
@@ -1005,6 +1008,58 @@ class FMPService extends BaseDataService {
     const response = await axios.get(`${this.baseUrl}/institutional-holder`, {
       params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
       timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getStockScreener(creds: any, input: DataInput): Promise<any> {
+    const {
+      limit = 100,
+      market_cap_more_than,
+      market_cap_lower_than,
+      price_more_than,
+      price_lower_than,
+      beta_more_than,
+      beta_lower_than,
+      volume_more_than,
+      dividend_more_than,
+      dividend_lower_than,
+      sector,
+      industry,
+      country,
+      exchange,
+      is_etf,
+      is_actively_trading,
+    } = input;
+
+    // Build params object, only including non-empty values
+    const params: Record<string, any> = {
+      apikey: creds.api_key,
+      limit,
+    };
+
+    if (market_cap_more_than) params.marketCapMoreThan = parseFloat(market_cap_more_than);
+    if (market_cap_lower_than) params.marketCapLowerThan = parseFloat(market_cap_lower_than);
+    if (price_more_than) params.priceMoreThan = parseFloat(price_more_than);
+    if (price_lower_than) params.priceLowerThan = parseFloat(price_lower_than);
+    if (beta_more_than) params.betaMoreThan = parseFloat(beta_more_than);
+    if (beta_lower_than) params.betaLowerThan = parseFloat(beta_lower_than);
+    if (volume_more_than) params.volumeMoreThan = parseFloat(volume_more_than);
+    if (dividend_more_than) params.dividendMoreThan = parseFloat(dividend_more_than);
+    if (dividend_lower_than) params.dividendLowerThan = parseFloat(dividend_lower_than);
+    if (sector) params.sector = sector;
+    if (industry) params.industry = industry;
+    if (country) params.country = country;
+    if (exchange) params.exchange = exchange;
+    if (is_etf !== undefined && is_etf !== "") params.isEtf = is_etf === "true";
+    if (is_actively_trading !== undefined && is_actively_trading !== "") {
+      params.isActivelyTrading = is_actively_trading === "true";
+    }
+
+    const response = await axios.get(`${this.baseUrl}/stock-screener`, {
+      params,
+      timeout: 20000,
     });
 
     return response.data;

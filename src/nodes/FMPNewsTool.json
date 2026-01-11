@@ -1,7 +1,7 @@
 {
   "name": "FMPNewsTool",
   "def": "FMP News",
-  "description": "Fetch stock news from Financial Modeling Prep (FMP)",
+  "description": "Fetch news and articles from Financial Modeling Prep (FMP)",
   "node_type": "tool",
   "category": "Data",
   "subCategory": "FMP",
@@ -22,19 +22,13 @@
   ],
   "authAction": { "url": "/fmp/auth", "method": "POST" },
   "icon": "/assets/icons/fmp.svg",
-  "size": { "width": 340, "height": 300 },
+  "size": { "width": 340, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": { "url": "/fmp/execute", "method": "POST" },
   "fields": [
-    {
-      "key": "operation",
-      "label": "Operation",
-      "type": "hidden",
-      "default": "news"
-    },
     {
       "key": "credential_id",
       "label": "Credential",
@@ -44,11 +38,96 @@
       "required": true
     },
     {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        { "id": "general_news", "name": "General News" },
+        { "id": "stock_news", "name": "Stock News" },
+        { "id": "press_releases", "name": "Press Releases" },
+        { "id": "crypto_news", "name": "Crypto News" },
+        { "id": "forex_news", "name": "Forex News" },
+        { "id": "fmp_articles", "name": "FMP Articles" },
+        { "id": "search_stock_news", "name": "Search Stock News" },
+        { "id": "search_press_releases", "name": "Search Press Releases" },
+        { "id": "search_crypto_news", "name": "Search Crypto News" },
+        { "id": "search_forex_news", "name": "Search Forex News" }
+      ],
+      "default": "stock_news",
+      "required": true
+    },
+    {
+      "key": "tickers",
+      "label": "Tickers",
+      "type": "text",
+      "placeholder": "e.g. AAPL,MSFT",
+      "displayOptions": { "show": { "operation": ["stock_news", "search_stock_news"] } }
+    },
+    {
       "key": "symbol",
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "press_releases",
+            "crypto_news",
+            "forex_news",
+            "search_press_releases",
+            "search_crypto_news",
+            "search_forex_news"
+          ]
+        }
+      }
+    },
+    {
+      "key": "query",
+      "label": "Query",
+      "type": "text",
+      "placeholder": "e.g. earnings",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "search_stock_news",
+            "search_press_releases",
+            "search_crypto_news",
+            "search_forex_news"
+          ]
+        }
+      }
+    },
+    {
+      "key": "from",
+      "label": "From Date",
+      "type": "text",
+      "placeholder": "YYYY-MM-DD",
+      "displayOptions": { "show": { "operation": ["general_news", "stock_news"] } }
+    },
+    {
+      "key": "to",
+      "label": "To Date",
+      "type": "text",
+      "placeholder": "YYYY-MM-DD",
+      "displayOptions": { "show": { "operation": ["general_news", "stock_news"] } }
+    },
+    {
+      "key": "page",
+      "label": "Page",
+      "type": "text",
+      "placeholder": "0",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "general_news",
+            "stock_news",
+            "press_releases",
+            "crypto_news",
+            "forex_news",
+            "fmp_articles"
+          ]
+        }
+      }
     },
     {
       "key": "limit",

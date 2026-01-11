@@ -17,20 +17,16 @@
 import fs from 'fs';
 import path from 'path';
 import { registerScreener } from './registry';
-import { RestScreenerService } from './RestScreenerService';
-import { YahooFinanceScreenerService } from './YahooFinanceScreenerService';
-import { SchwabScreenerService } from './SchwabScreenerService';
+import { ScreenerService } from './ScreenerService';
 
-// Registry of custom screener services that don't use RestScreenerService
+// Registry of custom screener services that don't use ScreenerService configs
 const CUSTOM_SCREENERS: Record<string, () => any> = {
-  yahoofinance: () => new YahooFinanceScreenerService(),
-  schwab: () => new SchwabScreenerService(),
 };
 
 export function initializeScreenerServices() {
   console.log('📊 Initializing screener services...');
 
-  // 1. Auto-discover and register REST-based screeners from configs/ directory
+  // 1. Auto-discover and register config-based screeners from configs/ directory
   const configDir = path.join(__dirname, 'configs');
   
   if (fs.existsSync(configDir)) {
@@ -45,8 +41,8 @@ export function initializeScreenerServices() {
         const config = configModule.default || configModule[`${screenerKey}ScreenerConfig`];
         
         if (config?.ops) {
-          registerScreener(new RestScreenerService(screenerKey, config));
-          console.log(`  ✅ Registered REST screener: ${screenerKey}`);
+          registerScreener(new ScreenerService(screenerKey, config));
+          console.log(`  ✅ Registered screener: ${screenerKey}`);
         }
       } catch (error) {
         console.error(`  ❌ Failed to load screener config: ${file}`, error);

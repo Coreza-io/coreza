@@ -15,12 +15,13 @@
  */
 
 import axios, { AxiosRequestConfig } from 'axios';
-import { BaseScreenerService } from './BaseScreenerService';
 import { ScreenerInput, ScreenerResult, IScreenerService } from './types';
+import CredentialManager from '../../utils/credentialManager';
+import { refreshOAuthTokenIfNeeded } from '../../utils/oauthTokenManager';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
 
-export interface RestScreenerOperation {
+export interface ScreenerOperation {
   path: string | ((input: ScreenerInput) => string);
   method: HttpMethod;
   makeParams?: (input: ScreenerInput, creds?: any) => Record<string, any>;
@@ -28,24 +29,20 @@ export interface RestScreenerOperation {
   transformResult?: (data: any, input: ScreenerInput) => any;
 }
 
-export interface RestScreenerConfig {
+export interface ScreenerConfig {
+  authType?: 'api_key' | 'oauth';
   baseUrl: string | ((creds: any, input?: ScreenerInput) => string);
-  makeAuthHeaders: (creds: any) => Record<string, string>;
-  ops: Record<string, RestScreenerOperation>;
+  makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
+  ops: Record<string, ScreenerOperation>;
 }
 
-export class RestScreenerService
-  extends BaseScreenerService
-  implements IScreenerService
-{
+export class ScreenerService implements IScreenerService {
   constructor(
     public readonly screenerKey: string,
-    private readonly config: RestScreenerConfig
-  ) {
-    super();
-  }
+    private readonly config: ScreenerConfig
+  ) {}
 
-  protected handlers: Record<string, (input: ScreenerInput) => Promise<any>> = 
+  private handlers: Record<string, (input: ScreenerInput) => Promise<any>> =
     new Proxy({}, {
       get: (target, prop: string) => {
         return async (input: ScreenerInput) => {
@@ -54,21 +51,19 @@ export class RestScreenerService
             throw new Error(`Operation ${prop} not configured`);
           }
 
-          // Get credentials if credential_id provided
           let creds = null;
           if (input.credential_id) {
-            const { credentials: { client_json } } = 
+            const { credentials } =
               await this.getCredentials(input.user_id, input.credential_id);
-            creds = client_json;
+            creds = await this.resolveCredentials(credentials, input);
           }
 
-          // Build request
           const baseUrl = typeof this.config.baseUrl === 'function'
             ? this.config.baseUrl(creds, input)
             : this.config.baseUrl;
           const path = typeof op.path === 'function' ? op.path(input) : op.path;
           const url = `${baseUrl}${path}`;
-          const headers = creds ? this.config.makeAuthHeaders(creds) : {};
+          const headers = creds ? await this.config.makeAuthHeaders(creds) : {};
           const params = op.makeParams?.(input, creds) ?? {};
           const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
 
@@ -84,7 +79,7 @@ export class RestScreenerService
             axiosConfig.data = body;
           }
 
-          console.log(`📊 [RestScreenerService] Executing ${this.screenerKey}.${prop}:`, {
+          console.log(`📊 [ScreenerService] Executing ${this.screenerKey}.${prop}:`, {
             url,
             method: op.method,
             params
@@ -92,10 +87,57 @@ export class RestScreenerService
 
           const res = await axios.request(axiosConfig);
           const rawData = res.data;
-          return op.transformResult 
-            ? op.transformResult(rawData, input) 
+          return op.transformResult
+            ? op.transformResult(rawData, input)
             : rawData;
         };
       }
     });
+
+  async execute(input: ScreenerInput): Promise<ScreenerResult> {
+    const handler = this.handlers[input.operation];
+    if (!handler) {
+      return {
+        success: false,
+        error: `Unsupported operation: ${input.operation} for screener: ${this.screenerKey}`
+      };
+    }
+
+    try {
+      const data = await handler.call(this, input);
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  private async getCredentials(userId: string, credentialId: string): Promise<any> {
+    return CredentialManager.getCredentials(userId, this.screenerKey, credentialId);
+  }
+
+  private async resolveCredentials(credentials: any, input: ScreenerInput): Promise<any> {
+    const clientCreds = credentials?.client_json;
+    if (!clientCreds) {
+      return null;
+    }
+
+    if (this.config.authType !== 'oauth') {
+      return clientCreds;
+    }
+
+    const mergedCreds = {
+      ...clientCreds,
+      ...credentials?.token_json,
+    };
+
+    return refreshOAuthTokenIfNeeded(
+      this.screenerKey,
+      mergedCreds,
+      input.user_id,
+      input.credential_id ?? ''
+    );
+  }
 }

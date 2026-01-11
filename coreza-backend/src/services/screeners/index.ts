@@ -16,37 +16,36 @@
 
 import fs from 'fs';
 import path from 'path';
-import { registerScreener } from './registry';
-import { RestScreenerService } from './RestScreenerService';
-import { YahooFinanceScreenerService } from './YahooFinanceScreenerService';
-import { SchwabScreenerService } from './SchwabScreenerService';
+import { ScreenerService, ScreenerConfig } from './ScreenerService';
+import { IScreenerService } from './types';
 
-// Registry of custom screener services that don't use RestScreenerService
-const CUSTOM_SCREENERS: Record<string, () => any> = {
-  yahoofinance: () => new YahooFinanceScreenerService(),
-  schwab: () => new SchwabScreenerService(),
-};
+const configCache = new Map<string, ScreenerConfig>();
+const serviceCache = new Map<string, IScreenerService>();
+let isLoaded = false;
 
-export function initializeScreenerServices() {
-  console.log('📊 Initializing screener services...');
+function loadConfigs(): void {
+  if (isLoaded) {
+    return;
+  }
 
-  // 1. Auto-discover and register REST-based screeners from configs/ directory
+  console.log('📊 Loading screener configs...');
   const configDir = path.join(__dirname, 'configs');
-  
+
   if (fs.existsSync(configDir)) {
-    const configFiles = fs.readdirSync(configDir).filter(f => f.endsWith('.ts') || f.endsWith('.js'));
-    
+    const configFiles = fs.readdirSync(configDir).filter((file) => (
+      file.endsWith('.ts') || file.endsWith('.js')
+    ));
+
     for (const file of configFiles) {
-      const screenerKey = file.replace(/\.(ts|js)$/, '');
-      
+      const screenerKey = file.replace(/\.(ts|js)$/, '').toLowerCase();
+
       try {
-        // Use require for synchronous loading
         const configModule = require(path.join(configDir, file));
         const config = configModule.default || configModule[`${screenerKey}ScreenerConfig`];
-        
+
         if (config?.ops) {
-          registerScreener(new RestScreenerService(screenerKey, config));
-          console.log(`  ✅ Registered REST screener: ${screenerKey}`);
+          configCache.set(screenerKey, config);
+          console.log(`  ✅ Loaded screener config: ${screenerKey}`);
         }
       } catch (error) {
         console.error(`  ❌ Failed to load screener config: ${file}`, error);
@@ -54,19 +53,35 @@ export function initializeScreenerServices() {
     }
   }
 
-  // 2. Register custom screeners (non-REST based)
-  for (const [key, factory] of Object.entries(CUSTOM_SCREENERS)) {
-    try {
-      registerScreener(factory());
-      console.log(`  ✅ Registered custom screener: ${key}`);
-    } catch (error) {
-      console.error(`  ❌ Failed to register custom screener: ${key}`, error);
-    }
-  }
-
-  console.log('✅ All screener services initialized');
+  isLoaded = true;
+  console.log('✅ Screener configs loaded');
 }
 
-// Re-export for convenience
-export { getScreenerService, getAllRegisteredScreeners } from './registry';
+export function initializeScreenerServices(): void {
+  loadConfigs();
+}
+
+export function getScreenerService(key: string): IScreenerService | undefined {
+  loadConfigs();
+  const normalizedKey = key.toLowerCase();
+  const cached = serviceCache.get(normalizedKey);
+  if (cached) {
+    return cached;
+  }
+
+  const config = configCache.get(normalizedKey);
+  if (!config) {
+    return undefined;
+  }
+
+  const service = new ScreenerService(normalizedKey, config);
+  serviceCache.set(normalizedKey, service);
+  return service;
+}
+
+export function getAllRegisteredScreeners(): string[] {
+  loadConfigs();
+  return Array.from(configCache.keys());
+}
+
 export { ScreenerInput, ScreenerResult, IScreenerService } from './types';

@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { getScreenerService } from "../../services/screeners/registry";
+import { getScreenerService } from "../../services/screeners";
 import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
 
 export class ScreenerExecutor implements INodeExecutor {

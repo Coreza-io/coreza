@@ -14,23 +14,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { IScreenerService } from './types';
+/**
+ * Backward-compatibility shim for older imports.
+ * Screeners now resolve via config loading in services/screeners/index.ts.
+ */
 
-const registry = new Map<string, IScreenerService>();
-
-export function registerScreener(service: IScreenerService) {
-  const key = service.screenerKey.toLowerCase();
-  if (registry.has(key)) {
-    throw new Error(`Screener "${service.screenerKey}" already registered`);
-  }
-  registry.set(key, service);
-  console.log(`📊 Registered screener service: ${service.screenerKey}`);
-}
-
-export function getScreenerService(key: string): IScreenerService | undefined {
-  return registry.get(key.toLowerCase());
-}
-
-export function getAllRegisteredScreeners(): string[] {
-  return Array.from(registry.keys());
-}
+export {
+  getScreenerService,
+  getAllRegisteredScreeners,
+  initializeScreenerServices,
+} from './index';

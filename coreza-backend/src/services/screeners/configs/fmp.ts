@@ -14,10 +14,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { RestScreenerConfig } from "../RestScreenerService";
+import { ScreenerConfig } from "../ScreenerService";
 import { ScreenerInput } from "../types";
 
-export const fmpScreenerConfig: RestScreenerConfig = {
+export const fmpScreenerConfig: ScreenerConfig = {
   baseUrl: "https://financialmodelingprep.com/stable",
 
   makeAuthHeaders: () => ({}),

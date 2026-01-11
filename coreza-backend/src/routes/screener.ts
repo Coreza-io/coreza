@@ -16,7 +16,7 @@
 
 import express from 'express';
 import { requireAuth } from '../middleware/jwtAuth';
-import { getScreenerService } from '../services/screeners/registry';
+import { getScreenerService } from '../services/screeners';
 
 const router = express.Router();
 

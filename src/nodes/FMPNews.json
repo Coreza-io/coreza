@@ -57,35 +57,10 @@
       "required": true
     },
     {
-      "key": "tickers",
-      "label": "Tickers",
-      "type": "text",
-      "placeholder": "e.g. AAPL,MSFT",
-      "displayOptions": { "show": { "operation": ["stock_news", "search_stock_news"] } }
-    },
-    {
-      "key": "symbol",
+      "key": "symbols",
       "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. AAPL",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "press_releases",
-            "crypto_news",
-            "forex_news",
-            "search_press_releases",
-            "search_crypto_news",
-            "search_forex_news"
-          ]
-        }
-      }
-    },
-    {
-      "key": "query",
-      "label": "Query",
-      "type": "text",
-      "placeholder": "e.g. earnings",
+      "placeholder": "e.g. AAPL, BKSY",
       "displayOptions": {
         "show": {
           "operation": [
@@ -102,20 +77,6 @@
       "label": "From Date",
       "type": "text",
       "placeholder": "YYYY-MM-DD",
-      "displayOptions": { "show": { "operation": ["general_news", "stock_news"] } }
-    },
-    {
-      "key": "to",
-      "label": "To Date",
-      "type": "text",
-      "placeholder": "YYYY-MM-DD",
-      "displayOptions": { "show": { "operation": ["general_news", "stock_news"] } }
-    },
-    {
-      "key": "page",
-      "label": "Page",
-      "type": "text",
-      "placeholder": "0",
       "displayOptions": {
         "show": {
           "operation": [
@@ -124,17 +85,47 @@
             "press_releases",
             "crypto_news",
             "forex_news",
-            "fmp_articles"
+            "search_stock_news",
+            "search_press_releases",
+            "search_crypto_news",
+            "search_forex_news"
           ]
         }
       }
     },
     {
+      "key": "to",
+      "label": "To Date",
+      "type": "text",
+      "placeholder": "YYYY-MM-DD",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "general_news",
+            "stock_news",
+            "press_releases",
+            "crypto_news",
+            "forex_news",
+            "search_stock_news",
+            "search_press_releases",
+            "search_crypto_news",
+            "search_forex_news"
+          ]
+        }
+      }
+    },
+    {
+      "key": "page",
+      "label": "Page",
+      "type": "text",
+      "placeholder": "0"
+    },
+    {
       "key": "limit",
       "label": "Limit (Results)",
       "type": "text",
-      "placeholder": "10",
-      "default": "10"
+      "placeholder": "5",
+      "default": "5"
     }
   ]
 }

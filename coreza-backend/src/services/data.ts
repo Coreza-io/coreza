@@ -27,6 +27,7 @@ import {
 } from "../utils/normalizeOutput";
 import type { StandardNodeOutput } from "../types/nodeOutput";
 import { supabase } from "../config/supabase";
+import { symbol } from "zod";
 
 export interface DataInput {
   user_id?: string;
@@ -1093,9 +1094,9 @@ class FMPService extends BaseDataService {
   }
 
   private async getGeneralNews(creds: any, input: DataInput): Promise<any> {
-    const { limit = 10, page, from, to } = input;
+    const { limit, page, from, to } = input;
 
-    const response = await axios.get(`${this.baseUrl}/news`, {
+    const response = await axios.get(`${this.baseUrl}/news/general-latest`, {
       params: this.cleanParams({
         limit,
         page,
@@ -1110,13 +1111,10 @@ class FMPService extends BaseDataService {
   }
 
   private async getStockNews(creds: any, input: DataInput): Promise<any> {
-    const { tickers, symbol, limit = 10, page, from, to } = input;
-    const resolvedTickers = tickers || symbol;
-    if (!resolvedTickers) throw new Error("tickers is required");
+    const { limit, page, from, to } = input;
 
-    const response = await axios.get(`${this.baseUrl}/stock_news`, {
+    const response = await axios.get(`${this.baseUrl}/news/stock-latest`, {
       params: this.cleanParams({
-        tickers: String(resolvedTickers).toUpperCase(),
         limit,
         page,
         from,
@@ -1130,30 +1128,33 @@ class FMPService extends BaseDataService {
   }
 
   private async getPressReleases(creds: any, input: DataInput): Promise<any> {
-    const { symbol, limit = 10, page } = input;
-    if (!symbol) throw new Error("symbol is required");
-
-    const response = await axios.get(`${this.baseUrl}/press-releases`, {
-      params: this.cleanParams({
-        symbol: symbol.toUpperCase(),
-        limit,
-        page,
-        apikey: creds.api_key,
-      }),
-      timeout: 10000,
-    });
+    const { from, to, limit, page } = input;
+    const response = await axios.get(
+      `${this.baseUrl}/news/press-releases-latest`,
+      {
+        params: this.cleanParams({
+          from,
+          to,
+          limit,
+          page,
+          apikey: creds.api_key,
+        }),
+        timeout: 10000,
+      }
+    );
 
     return response.data;
   }
 
   private async getCryptoNews(creds: any, input: DataInput): Promise<any> {
-    const { symbol, limit = 10, page } = input;
+    const { limit, page, from, to } = input;
 
-    const response = await axios.get(`${this.baseUrl}/crypto_news`, {
+    const response = await axios.get(`${this.baseUrl}/news/crypto-latest`, {
       params: this.cleanParams({
-        symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         page,
+        from,
+        to,
         apikey: creds.api_key,
       }),
       timeout: 10000,
@@ -1163,12 +1164,13 @@ class FMPService extends BaseDataService {
   }
 
   private async getForexNews(creds: any, input: DataInput): Promise<any> {
-    const { symbol, limit = 10, page } = input;
+    const { limit, page, from, to } = input;
 
-    const response = await axios.get(`${this.baseUrl}/forex_news`, {
+    const response = await axios.get(`${this.baseUrl}/news/forex-latest`, {
       params: this.cleanParams({
-        symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
+        from,
+        to,
         page,
         apikey: creds.api_key,
       }),
@@ -1179,7 +1181,7 @@ class FMPService extends BaseDataService {
   }
 
   private async getFmpArticles(creds: any, input: DataInput): Promise<any> {
-    const { limit = 10, page } = input;
+    const { limit, page } = input;
 
     const response = await axios.get(`${this.baseUrl}/fmp-articles`, {
       params: this.cleanParams({
@@ -1194,14 +1196,15 @@ class FMPService extends BaseDataService {
   }
 
   private async searchStockNews(creds: any, input: DataInput): Promise<any> {
-    const { query, tickers, limit = 10 } = input;
-    if (!query) throw new Error("query is required");
+    const { symbols, from, to, page, limit } = input;
 
-    const response = await axios.get(`${this.baseUrl}/stock_news/search`, {
+    const response = await axios.get(`${this.baseUrl}/news/stock`, {
       params: this.cleanParams({
-        query,
-        tickers: tickers ? String(tickers).toUpperCase() : undefined,
+        symbols,
+        from,
+        to,
         limit,
+        page,
         apikey: creds.api_key,
       }),
       timeout: 10000,
@@ -1214,13 +1217,14 @@ class FMPService extends BaseDataService {
     creds: any,
     input: DataInput
   ): Promise<any> {
-    const { query, symbol, limit = 10 } = input;
-    if (!query) throw new Error("query is required");
+    const { symbols, from, to, page, limit } = input;
 
     const response = await axios.get(`${this.baseUrl}/press-releases/search`, {
       params: this.cleanParams({
-        query,
-        symbol: symbol ? symbol.toUpperCase() : undefined,
+        symbols,
+        from,
+        to,
+        page,
         limit,
         apikey: creds.api_key,
       }),
@@ -1231,13 +1235,14 @@ class FMPService extends BaseDataService {
   }
 
   private async searchCryptoNews(creds: any, input: DataInput): Promise<any> {
-    const { query, symbol, limit = 10 } = input;
-    if (!query) throw new Error("query is required");
+    const { symbols, from, to, page, limit } = input;
 
     const response = await axios.get(`${this.baseUrl}/crypto_news/search`, {
       params: this.cleanParams({
-        query,
-        symbol: symbol ? symbol.toUpperCase() : undefined,
+        symbol,
+        from,
+        to,
+        page,
         limit,
         apikey: creds.api_key,
       }),
@@ -1248,13 +1253,14 @@ class FMPService extends BaseDataService {
   }
 
   private async searchForexNews(creds: any, input: DataInput): Promise<any> {
-    const { query, symbol, limit = 10 } = input;
-    if (!query) throw new Error("query is required");
+    const { symbols, from, to, page, limit } = input;
 
     const response = await axios.get(`${this.baseUrl}/forex_news/search`, {
       params: this.cleanParams({
-        query,
-        symbol: symbol ? symbol.toUpperCase() : undefined,
+        symbols,
+        from,
+        to,
+        page,
         limit,
         apikey: creds.api_key,
       }),
@@ -1297,7 +1303,6 @@ class FMPService extends BaseDataService {
 
     return response.data;
   }
-
 }
 
 // Market service (simple market data aggregator)

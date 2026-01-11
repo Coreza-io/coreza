@@ -10,10 +10,18 @@
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/yahoofinance/get-candle",
+    "url": "/datasource/yahoofinance/:operation",
     "method": "POST"
   },
   "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [{ "id": "get_history", "name": "Get Candle" }],
+      "default": "get_history",
+      "required": true
+    },
     {
       "key": "symbol",
       "label": "Ticker Symbol",

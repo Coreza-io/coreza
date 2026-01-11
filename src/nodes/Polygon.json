@@ -18,14 +18,14 @@
       "placeholder": "Your Polygon.io API key"
     }
   ],
-  "authAction": { "url": "/polygon/auth", "method": "POST" },
+  "authAction": { "url": "/datasource/polygon/auth", "method": "POST" },
   "icon": "/assets/icons/polygon.svg",
   "size": { "width": 340, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": { "url": "/polygon/execute", "method": "POST" },
+  "action": { "url": "/datasource/polygon/:operation", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",
@@ -75,7 +75,9 @@
       "type": "text",
       "placeholder": "10",
       "default": "10",
-      "displayOptions": { "show": { "operation": ["news", "dividends", "splits", "financials"] } }
+      "displayOptions": {
+        "show": { "operation": ["news", "dividends", "splits", "financials"] }
+      }
     }
   ]
 }

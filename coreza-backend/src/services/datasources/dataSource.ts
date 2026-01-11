@@ -39,7 +39,9 @@ export interface DataSourceConfig {
   ) => Record<string, string> | Promise<Record<string, string>>;
   ops: Record<string, DataSourceOperation>;
   // For validation
-  validateCredentials?: (apiKey: string) => Promise<{ valid: boolean; error?: string }>;
+  validateCredentials?: (
+    apiKey: string
+  ) => Promise<{ valid: boolean; error?: string }>;
 }
 
 export class DataSourceService implements IDataSourceService {
@@ -56,7 +58,9 @@ export class DataSourceService implements IDataSourceService {
           return async (input: DataSourceInput) => {
             const op = this.config.ops[prop];
             if (!op) {
-              throw new Error(`Operation ${prop} not configured for ${this.serviceKey}`);
+              throw new Error(
+                `Operation ${prop} not configured for ${this.serviceKey}`
+              );
             }
 
             const requiresCreds = op.requiresCredentials !== false;
@@ -77,9 +81,7 @@ export class DataSourceService implements IDataSourceService {
             const path =
               typeof op.path === "function" ? op.path(input) : op.path;
             const url = `${baseUrl}${path}`;
-            const headers = creds
-              ? await this.config.makeAuthHeaders(creds)
-              : {};
+            const headers = await this.config.makeAuthHeaders(creds ?? {});
             const params = op.makeParams?.(input, creds) ?? {};
             const body = op.makeBody
               ? await op.makeBody(input, creds)
@@ -129,7 +131,10 @@ export class DataSourceService implements IDataSourceService {
       const data = await handler.call(this, input);
       return { success: true, data };
     } catch (error) {
-      console.error(`[DataSourceService] ${this.serviceKey}.${input.operation} error:`, error);
+      console.error(
+        `[DataSourceService] ${this.serviceKey}.${input.operation} error:`,
+        error
+      );
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -175,7 +180,9 @@ export class DataSourceService implements IDataSourceService {
   }
 
   // Validate credentials for save operations
-  async validateCredentials(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  async validateCredentials(
+    apiKey: string
+  ): Promise<{ valid: boolean; error?: string }> {
     if (this.config.validateCredentials) {
       return this.config.validateCredentials(apiKey);
     }

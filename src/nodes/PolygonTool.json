@@ -20,7 +20,7 @@
     }
   ],
   "authAction": {
-    "url": "/polygon/auth",
+    "url": "/datasource/polygon/auth",
     "method": "POST"
   },
   "icon": "/assets/icons/polygon.svg",
@@ -36,7 +36,7 @@
     }
   ],
   "action": {
-    "url": "/polygon/execute",
+    "url": "/datasource/polygon/:operation",
     "method": "POST"
   },
   "fields": [
@@ -116,9 +116,7 @@
       "description": "Reporting period for financial data.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "financials"
-          ]
+          "operation": ["financials"]
         }
       },
       "showDescription": false
@@ -132,12 +130,7 @@
       "description": "Maximum number of results to return.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "news",
-            "dividends",
-            "splits",
-            "financials"
-          ]
+          "operation": ["news", "dividends", "splits", "financials"]
         }
       },
       "showDescription": false

@@ -16,7 +16,10 @@
 
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
-import { getDataSourceService, DataSourceService } from "../services/datasources";
+import {
+  getDataSourceService,
+  DataSourceService,
+} from "../services/datasources";
 import CredentialManager from "../utils/credentialManager";
 
 const router = Router();
@@ -33,8 +36,8 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    const { service, operation } = req.params;
-    const { credential_id, ...params } = req.body;
+    const { service } = req.params;
+    const { credential_id, operation, ...params } = req.body;
 
     console.log(`📊 [DATASOURCE-ROUTE] ${service}/${operation} request:`, {
       userId,
@@ -57,7 +60,10 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
       ...params,
     });
 
-    console.log(`📊 [DATASOURCE-ROUTE] ${service}/${operation} result:`, result.success);
+    console.log(
+      `📊 [DATASOURCE-ROUTE] ${service}/${operation} result:`,
+      result.success
+    );
     res.json(result);
   } catch (error: any) {
     console.error("[DATASOURCE-ROUTE] Error:", error);
@@ -78,7 +84,10 @@ router.get("/:service/credentials", async (req: Request, res: Response) => {
     }
 
     const { service } = req.params;
-    const credentials = await CredentialManager.getCredentialsList(service, userId);
+    const credentials = await CredentialManager.getCredentialsList(
+      service,
+      userId
+    );
     res.json({ success: true, credentials });
   } catch (error: any) {
     console.error("[DATASOURCE-ROUTE] Credentials error:", error);
@@ -106,8 +115,13 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
     }
 
     // Validate credentials using service's validateCredentials method
-    const dataSourceService = getDataSourceService(service) as DataSourceService | undefined;
-    if (dataSourceService && typeof dataSourceService.validateCredentials === "function") {
+    const dataSourceService = getDataSourceService(service) as
+      | DataSourceService
+      | undefined;
+    if (
+      dataSourceService &&
+      typeof dataSourceService.validateCredentials === "function"
+    ) {
       const validation = await dataSourceService.validateCredentials(api_key);
 
       if (!validation.valid) {

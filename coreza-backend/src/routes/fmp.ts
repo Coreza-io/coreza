@@ -115,12 +115,15 @@ router.post("/execute", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "credential_id and operation are required" });
     }
 
+    const parsedLimit =
+      limit !== undefined && limit !== "" ? parseInt(limit, 10) : undefined;
+
     const result = await DataService.execute("fmp", operation, {
       user_id: userId,
       credential_id,
       symbol,
       period,
-      limit: limit ? parseInt(limit, 10) : 10,
+      limit: parsedLimit,
       // Pass screener params
       market_cap_more_than,
       market_cap_lower_than,

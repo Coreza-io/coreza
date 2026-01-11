@@ -43,7 +43,6 @@
       "options": [
         { "id": "profile", "name": "Company Profile" },
         { "id": "quote", "name": "Stock Quote" },
-        { "id": "stock_screener", "name": "Stock Screener" },
         { "id": "income_statement", "name": "Income Statement" },
         { "id": "balance_sheet", "name": "Balance Sheet" },
         { "id": "cash_flow", "name": "Cash Flow Statement" },
@@ -58,7 +57,6 @@
         { "id": "earnings_calendar", "name": "Earnings Calendar" },
         { "id": "dividends", "name": "Dividends" },
         { "id": "splits", "name": "Stock Splits" },
-        { "id": "news", "name": "Stock News" },
         { "id": "insider_trading", "name": "Insider Trading" },
         { "id": "institutional_holders", "name": "Institutional Holders" }
       ],
@@ -70,11 +68,7 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "displayOptions": {
-        "hide": {
-          "operation": ["stock_screener"]
-        }
-      }
+      "required": true
     },
     {
       "key": "period",
@@ -106,175 +100,9 @@
             "income_statement", "balance_sheet", "cash_flow",
             "key_metrics", "ratios", "financial_growth",
             "analyst_estimates", "price_target", "earnings_calendar",
-            "dividends", "splits", "news", "insider_trading", "stock_screener"
+            "dividends", "splits", "insider_trading"
           ]
         }
-      }
-    },
-    {
-      "key": "market_cap_more_than",
-      "label": "Min Market Cap",
-      "type": "text",
-      "placeholder": "e.g. 1000000000 (1B)",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "market_cap_lower_than",
-      "label": "Max Market Cap",
-      "type": "text",
-      "placeholder": "e.g. 10000000000 (10B)",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "price_more_than",
-      "label": "Min Price",
-      "type": "text",
-      "placeholder": "e.g. 10",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "price_lower_than",
-      "label": "Max Price",
-      "type": "text",
-      "placeholder": "e.g. 500",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "beta_more_than",
-      "label": "Min Beta",
-      "type": "text",
-      "placeholder": "e.g. 0.5",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "beta_lower_than",
-      "label": "Max Beta",
-      "type": "text",
-      "placeholder": "e.g. 2.0",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "volume_more_than",
-      "label": "Min Volume",
-      "type": "text",
-      "placeholder": "e.g. 1000000",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "dividend_more_than",
-      "label": "Min Dividend Yield",
-      "type": "text",
-      "placeholder": "e.g. 0.02 (2%)",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "dividend_lower_than",
-      "label": "Max Dividend Yield",
-      "type": "text",
-      "placeholder": "e.g. 0.10 (10%)",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "sector",
-      "label": "Sector",
-      "type": "select",
-      "options": [
-        { "id": "", "name": "All Sectors" },
-        { "id": "Technology", "name": "Technology" },
-        { "id": "Healthcare", "name": "Healthcare" },
-        { "id": "Financial Services", "name": "Financial Services" },
-        { "id": "Consumer Cyclical", "name": "Consumer Cyclical" },
-        { "id": "Consumer Defensive", "name": "Consumer Defensive" },
-        { "id": "Industrials", "name": "Industrials" },
-        { "id": "Energy", "name": "Energy" },
-        { "id": "Basic Materials", "name": "Basic Materials" },
-        { "id": "Communication Services", "name": "Communication Services" },
-        { "id": "Real Estate", "name": "Real Estate" },
-        { "id": "Utilities", "name": "Utilities" }
-      ],
-      "default": "",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "industry",
-      "label": "Industry",
-      "type": "text",
-      "placeholder": "e.g. Software—Application",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "country",
-      "label": "Country",
-      "type": "text",
-      "placeholder": "e.g. US, CA, GB",
-      "default": "US",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "exchange",
-      "label": "Exchange",
-      "type": "select",
-      "options": [
-        { "id": "", "name": "All Exchanges" },
-        { "id": "NYSE", "name": "NYSE" },
-        { "id": "NASDAQ", "name": "NASDAQ" },
-        { "id": "AMEX", "name": "AMEX" }
-      ],
-      "default": "",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "is_etf",
-      "label": "Include ETFs",
-      "type": "select",
-      "options": [
-        { "id": "", "name": "Include All" },
-        { "id": "true", "name": "ETFs Only" },
-        { "id": "false", "name": "Exclude ETFs" }
-      ],
-      "default": "false",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
-      }
-    },
-    {
-      "key": "is_actively_trading",
-      "label": "Actively Trading",
-      "type": "select",
-      "options": [
-        { "id": "", "name": "All" },
-        { "id": "true", "name": "Active Only" },
-        { "id": "false", "name": "Inactive Only" }
-      ],
-      "default": "true",
-      "displayOptions": {
-        "show": { "operation": ["stock_screener"] }
       }
     }
   ]

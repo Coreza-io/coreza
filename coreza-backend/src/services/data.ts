@@ -65,6 +65,14 @@ abstract class BaseDataService {
     };
   }
 
+  protected cleanParams(params: Record<string, any>): Record<string, any> {
+    return Object.fromEntries(
+      Object.entries(params).filter(
+        ([, value]) => value !== undefined && value !== ""
+      )
+    );
+  }
+
   abstract execute(
     operation: string,
     input: DataInput
@@ -117,10 +125,10 @@ class FinnHubService extends BaseDataService {
     }
 
     const response = await axios.get(`${this.baseUrl}/quote`, {
-      params: {
+      params: this.cleanParams({
         symbol: ticker.toUpperCase(),
         token: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -514,7 +522,7 @@ class PolygonService extends BaseDataService {
       const response = await axios.get(
         `${this.baseUrl}/v3/reference/tickers/AAPL`,
         {
-          params: { apiKey },
+          params: this.cleanParams({ apiKey }),
           timeout: 10000,
         }
       );
@@ -553,7 +561,7 @@ class PolygonService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/v3/reference/tickers/${ticker.toUpperCase()}`,
       {
-        params: { apiKey: creds.api_key },
+        params: this.cleanParams({ apiKey: creds.api_key }),
         timeout: 10000,
       }
     );
@@ -568,12 +576,12 @@ class PolygonService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/vX/reference/financials`,
       {
-        params: {
+        params: this.cleanParams({
           ticker: ticker.toUpperCase(),
           timeframe,
           limit,
           apiKey: creds.api_key,
-        },
+        }),
         timeout: 15000,
       }
     );
@@ -586,11 +594,11 @@ class PolygonService extends BaseDataService {
     if (!ticker) throw new Error("ticker is required");
 
     const response = await axios.get(`${this.baseUrl}/v3/reference/dividends`, {
-      params: {
+      params: this.cleanParams({
         ticker: ticker.toUpperCase(),
         limit,
         apiKey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -602,11 +610,11 @@ class PolygonService extends BaseDataService {
     if (!ticker) throw new Error("ticker is required");
 
     const response = await axios.get(`${this.baseUrl}/v3/reference/splits`, {
-      params: {
+      params: this.cleanParams({
         ticker: ticker.toUpperCase(),
         limit,
         apiKey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -618,11 +626,11 @@ class PolygonService extends BaseDataService {
     if (!ticker) throw new Error("ticker is required");
 
     const response = await axios.get(`${this.baseUrl}/v2/reference/news`, {
-      params: {
+      params: this.cleanParams({
         ticker: ticker.toUpperCase(),
         limit,
         apiKey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -639,7 +647,7 @@ class PolygonService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/v1/related-companies/${ticker.toUpperCase()}`,
       {
-        params: { apiKey: creds.api_key },
+        params: this.cleanParams({ apiKey: creds.api_key }),
         timeout: 10000,
       }
     );
@@ -776,7 +784,7 @@ class FMPService extends BaseDataService {
     const context = { nodeName: "FMP", category: "data" };
     try {
       const response = await axios.get(`${this.baseUrl}/profile`, {
-        params: { symbol: "AAPL", apikey: apiKey },
+        params: this.cleanParams({ symbol: "AAPL", apikey: apiKey }),
         timeout: 10000,
       });
 
@@ -816,7 +824,10 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/profile`, {
-      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      params: this.cleanParams({
+        symbol: symbol.toUpperCase(),
+        apikey: creds.api_key,
+      }),
       timeout: 10000,
     });
 
@@ -828,7 +839,10 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/quote`, {
-      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      params: this.cleanParams({
+        symbol: symbol.toUpperCase(),
+        apikey: creds.api_key,
+      }),
       timeout: 10000,
     });
 
@@ -840,12 +854,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/income-statement`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         period,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 15000,
     });
 
@@ -859,12 +873,12 @@ class FMPService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/balance-sheet-statement`,
       {
-        params: {
+        params: this.cleanParams({
           symbol: symbol.toUpperCase(),
           period,
           limit,
           apikey: creds.api_key,
-        },
+        }),
         timeout: 15000,
       }
     );
@@ -877,12 +891,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/cash-flow-statement`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         period,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 15000,
     });
 
@@ -894,12 +908,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/key-metrics`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         period,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 15000,
     });
 
@@ -911,12 +925,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/ratios`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         period,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 15000,
     });
 
@@ -928,12 +942,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/financial-growth`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         period,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 15000,
     });
 
@@ -945,7 +959,10 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/score`, {
-      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      params: this.cleanParams({
+        symbol: symbol.toUpperCase(),
+        apikey: creds.api_key,
+      }),
       timeout: 10000,
     });
 
@@ -957,11 +974,11 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/enterprise-values`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -973,7 +990,10 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/stock_peers`, {
-      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      params: this.cleanParams({
+        symbol: symbol.toUpperCase(),
+        apikey: creds.api_key,
+      }),
       timeout: 10000,
     });
 
@@ -988,11 +1008,11 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/analyst-estimates`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1004,11 +1024,11 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/price-target`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1023,11 +1043,11 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/earning_calendar`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1041,11 +1061,11 @@ class FMPService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/historical-price-eod/dividend`,
       {
-        params: {
+        params: this.cleanParams({
           symbol: symbol.toUpperCase(),
           limit,
           apikey: creds.api_key,
-        },
+        }),
         timeout: 10000,
       }
     );
@@ -1060,11 +1080,11 @@ class FMPService extends BaseDataService {
     const response = await axios.get(
       `${this.baseUrl}/historical-price-eod/stock_split`,
       {
-        params: {
+        params: this.cleanParams({
           symbol: symbol.toUpperCase(),
           limit,
           apikey: creds.api_key,
-        },
+        }),
         timeout: 10000,
       }
     );
@@ -1076,13 +1096,13 @@ class FMPService extends BaseDataService {
     const { limit = 10, page, from, to } = input;
 
     const response = await axios.get(`${this.baseUrl}/news`, {
-      params: {
+      params: this.cleanParams({
         limit,
         page,
         from,
         to,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1095,14 +1115,14 @@ class FMPService extends BaseDataService {
     if (!resolvedTickers) throw new Error("tickers is required");
 
     const response = await axios.get(`${this.baseUrl}/stock_news`, {
-      params: {
+      params: this.cleanParams({
         tickers: String(resolvedTickers).toUpperCase(),
         limit,
         page,
         from,
         to,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1114,12 +1134,12 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/press-releases`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         page,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1130,12 +1150,12 @@ class FMPService extends BaseDataService {
     const { symbol, limit = 10, page } = input;
 
     const response = await axios.get(`${this.baseUrl}/crypto_news`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         page,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1146,12 +1166,12 @@ class FMPService extends BaseDataService {
     const { symbol, limit = 10, page } = input;
 
     const response = await axios.get(`${this.baseUrl}/forex_news`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         page,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1162,11 +1182,11 @@ class FMPService extends BaseDataService {
     const { limit = 10, page } = input;
 
     const response = await axios.get(`${this.baseUrl}/fmp-articles`, {
-      params: {
+      params: this.cleanParams({
         limit,
         page,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1178,12 +1198,12 @@ class FMPService extends BaseDataService {
     if (!query) throw new Error("query is required");
 
     const response = await axios.get(`${this.baseUrl}/stock_news/search`, {
-      params: {
+      params: this.cleanParams({
         query,
         tickers: tickers ? String(tickers).toUpperCase() : undefined,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1198,12 +1218,12 @@ class FMPService extends BaseDataService {
     if (!query) throw new Error("query is required");
 
     const response = await axios.get(`${this.baseUrl}/press-releases/search`, {
-      params: {
+      params: this.cleanParams({
         query,
         symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1215,12 +1235,12 @@ class FMPService extends BaseDataService {
     if (!query) throw new Error("query is required");
 
     const response = await axios.get(`${this.baseUrl}/crypto_news/search`, {
-      params: {
+      params: this.cleanParams({
         query,
         symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1232,12 +1252,12 @@ class FMPService extends BaseDataService {
     if (!query) throw new Error("query is required");
 
     const response = await axios.get(`${this.baseUrl}/forex_news/search`, {
-      params: {
+      params: this.cleanParams({
         query,
         symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1249,11 +1269,11 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/insider-trading`, {
-      params: {
+      params: this.cleanParams({
         symbol: symbol.toUpperCase(),
         limit,
         apikey: creds.api_key,
-      },
+      }),
       timeout: 10000,
     });
 
@@ -1268,7 +1288,10 @@ class FMPService extends BaseDataService {
     if (!symbol) throw new Error("symbol is required");
 
     const response = await axios.get(`${this.baseUrl}/institutional-holder`, {
-      params: { symbol: symbol.toUpperCase(), apikey: creds.api_key },
+      params: this.cleanParams({
+        symbol: symbol.toUpperCase(),
+        apikey: creds.api_key,
+      }),
       timeout: 10000,
     });
 

@@ -23,7 +23,7 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
 export interface RestScreenerOperation {
   path: string | ((input: ScreenerInput) => string);
   method: HttpMethod;
-  makeParams?: (input: ScreenerInput) => Record<string, any>;
+  makeParams?: (input: ScreenerInput, creds?: any) => Record<string, any>;
   makeBody?: (input: ScreenerInput, creds?: any) => any;
   transformResult?: (data: any, input: ScreenerInput) => any;
 }
@@ -69,7 +69,7 @@ export class RestScreenerService
           const path = typeof op.path === 'function' ? op.path(input) : op.path;
           const url = `${baseUrl}${path}`;
           const headers = creds ? this.config.makeAuthHeaders(creds) : {};
-          const params = op.makeParams?.(input) ?? {};
+          const params = op.makeParams?.(input, creds) ?? {};
           const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
 
           const axiosConfig: AxiosRequestConfig = {

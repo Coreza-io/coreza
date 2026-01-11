@@ -1,0 +1,61 @@
+{
+  "name": "FMPNews",
+  "def": "FMP News",
+  "description": "Fetch stock news from Financial Modeling Prep (FMP)",
+  "node_type": "main",
+  "category": "Data",
+  "subCategory": "FMP",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My FMP API"
+    },
+    {
+      "key": "api_key",
+      "label": "FMP API Key",
+      "type": "password",
+      "placeholder": "Your FMP API key"
+    }
+  ],
+  "authAction": { "url": "/fmp/auth", "method": "POST" },
+  "icon": "/assets/icons/fmp.svg",
+  "size": { "width": 340, "height": 300 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/fmp/execute", "method": "POST" },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "hidden",
+      "default": "news"
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "limit",
+      "label": "Limit (Results)",
+      "type": "text",
+      "placeholder": "10",
+      "default": "10"
+    }
+  ]
+}

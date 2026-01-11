@@ -1,0 +1,175 @@
+{
+  "name": "FMPScreener",
+  "def": "FMP Screener",
+  "description": "Screen stocks using Financial Modeling Prep (FMP)",
+  "node_type": "main",
+  "category": "Screener",
+  "subCategory": "FMP",
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My FMP API"
+    },
+    {
+      "key": "api_key",
+      "label": "FMP API Key",
+      "type": "password",
+      "placeholder": "Your FMP API key"
+    }
+  ],
+  "authAction": { "url": "/fmp/auth", "method": "POST" },
+  "icon": "/assets/icons/fmp.svg",
+  "size": { "width": 340, "height": 600 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/screener/fmp/{{operation}}", "method": "POST" },
+  "fields": [
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "hidden",
+      "default": "stock_screener"
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "limit",
+      "label": "Limit (Results)",
+      "type": "text",
+      "placeholder": "100",
+      "default": "100"
+    },
+    {
+      "key": "market_cap_more_than",
+      "label": "Min Market Cap",
+      "type": "text",
+      "placeholder": "e.g. 1000000000 (1B)"
+    },
+    {
+      "key": "market_cap_lower_than",
+      "label": "Max Market Cap",
+      "type": "text",
+      "placeholder": "e.g. 10000000000 (10B)"
+    },
+    {
+      "key": "price_more_than",
+      "label": "Min Price",
+      "type": "text",
+      "placeholder": "e.g. 10"
+    },
+    {
+      "key": "price_lower_than",
+      "label": "Max Price",
+      "type": "text",
+      "placeholder": "e.g. 500"
+    },
+    {
+      "key": "beta_more_than",
+      "label": "Min Beta",
+      "type": "text",
+      "placeholder": "e.g. 0.5"
+    },
+    {
+      "key": "beta_lower_than",
+      "label": "Max Beta",
+      "type": "text",
+      "placeholder": "e.g. 2.0"
+    },
+    {
+      "key": "volume_more_than",
+      "label": "Min Volume",
+      "type": "text",
+      "placeholder": "e.g. 1000000"
+    },
+    {
+      "key": "dividend_more_than",
+      "label": "Min Dividend Yield",
+      "type": "text",
+      "placeholder": "e.g. 0.02 (2%)"
+    },
+    {
+      "key": "dividend_lower_than",
+      "label": "Max Dividend Yield",
+      "type": "text",
+      "placeholder": "e.g. 0.10 (10%)"
+    },
+    {
+      "key": "sector",
+      "label": "Sector",
+      "type": "select",
+      "options": [
+        { "id": "", "name": "All Sectors" },
+        { "id": "Technology", "name": "Technology" },
+        { "id": "Healthcare", "name": "Healthcare" },
+        { "id": "Financial Services", "name": "Financial Services" },
+        { "id": "Consumer Cyclical", "name": "Consumer Cyclical" },
+        { "id": "Consumer Defensive", "name": "Consumer Defensive" },
+        { "id": "Industrials", "name": "Industrials" },
+        { "id": "Energy", "name": "Energy" },
+        { "id": "Basic Materials", "name": "Basic Materials" },
+        { "id": "Communication Services", "name": "Communication Services" },
+        { "id": "Real Estate", "name": "Real Estate" },
+        { "id": "Utilities", "name": "Utilities" }
+      ],
+      "default": ""
+    },
+    {
+      "key": "industry",
+      "label": "Industry",
+      "type": "text",
+      "placeholder": "e.g. Software—Application"
+    },
+    {
+      "key": "country",
+      "label": "Country",
+      "type": "text",
+      "placeholder": "e.g. US, CA, GB",
+      "default": "US"
+    },
+    {
+      "key": "exchange",
+      "label": "Exchange",
+      "type": "select",
+      "options": [
+        { "id": "", "name": "All Exchanges" },
+        { "id": "NYSE", "name": "NYSE" },
+        { "id": "NASDAQ", "name": "NASDAQ" },
+        { "id": "AMEX", "name": "AMEX" }
+      ],
+      "default": ""
+    },
+    {
+      "key": "is_etf",
+      "label": "Include ETFs",
+      "type": "select",
+      "options": [
+        { "id": "", "name": "Include All" },
+        { "id": "true", "name": "ETFs Only" },
+        { "id": "false", "name": "Exclude ETFs" }
+      ],
+      "default": "false"
+    },
+    {
+      "key": "is_actively_trading",
+      "label": "Actively Trading",
+      "type": "select",
+      "options": [
+        { "id": "", "name": "All" },
+        { "id": "true", "name": "Active Only" },
+        { "id": "false", "name": "Inactive Only" }
+      ],
+      "default": "true"
+    }
+  ]
+}

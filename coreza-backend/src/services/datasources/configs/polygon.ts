@@ -15,7 +15,7 @@
  */
 
 import axios from "axios";
-import { DataSourceConfig } from "../dataSourceService";
+import { DataSourceConfig } from "../dataSource";
 import { DataSourceInput } from "../types";
 
 const cleanParams = (params: Record<string, any>): Record<string, any> => {

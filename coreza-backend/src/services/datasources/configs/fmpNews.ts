@@ -15,7 +15,7 @@
  */
 
 import axios from "axios";
-import { DataSourceConfig } from "../dataSourceService";
+import { DataSourceConfig } from "../dataSource";
 import { DataSourceInput } from "../types";
 
 const cleanParams = (params: Record<string, any>): Record<string, any> => {
@@ -41,7 +41,11 @@ export const fmpNewsDataSourceConfig: DataSourceConfig = {
           timeout: 10000,
         }
       );
-      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+      if (
+        response.data &&
+        Array.isArray(response.data) &&
+        response.data.length > 0
+      ) {
         return { valid: true };
       }
       return { valid: false, error: "Invalid API response" };

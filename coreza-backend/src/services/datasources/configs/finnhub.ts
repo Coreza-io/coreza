@@ -15,7 +15,7 @@
  */
 
 import axios from "axios";
-import { DataSourceConfig } from "../dataSourceService";
+import { DataSourceConfig } from "../dataSource";
 import { DataSourceInput } from "../types";
 
 const cleanParams = (params: Record<string, any>): Record<string, any> => {
@@ -34,13 +34,10 @@ export const finnhubDataSourceConfig: DataSourceConfig = {
 
   validateCredentials: async (apiKey: string) => {
     try {
-      const response = await axios.get(
-        "https://finnhub.io/api/v1/quote",
-        {
-          params: { symbol: "AAPL", token: apiKey },
-          timeout: 10000,
-        }
-      );
+      const response = await axios.get("https://finnhub.io/api/v1/quote", {
+        params: { symbol: "AAPL", token: apiKey },
+        timeout: 10000,
+      });
       if (response.data && response.data.c !== undefined) {
         return { valid: true };
       }

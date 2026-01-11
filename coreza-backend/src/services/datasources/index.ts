@@ -17,7 +17,7 @@
 import fs from "fs";
 import path from "path";
 import { registerDataSource } from "./registry";
-import { DataSourceService } from "./dataSourceService";
+import { DataSourceService } from "./dataSource";
 import { YahooFinanceDataSourceService } from "./yahoofinanceService";
 
 export function initializeDataSourceServices() {
@@ -57,4 +57,9 @@ export function initializeDataSourceServices() {
 // Re-export for convenience
 export { getDataSourceService, getAllRegisteredDataSources } from "./registry";
 export { DataSourceInput, DataSourceResult, IDataSourceService } from "./types";
-export { DataSourceService, DataSourceConfig, DataSourceOperation, HttpMethod } from "./dataSourceService";
+export {
+  DataSourceService,
+  DataSourceConfig,
+  DataSourceOperation,
+  HttpMethod,
+} from "./dataSource";

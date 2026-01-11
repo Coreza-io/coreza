@@ -34,7 +34,6 @@ export function initializeScreenerServices() {
       const screenerKey = file.replace(/\.(ts|js)$/, "");
 
       try {
-        // Use require for synchronous loading
         const configModule = require(path.join(configDir, file));
         const config =
           configModule.default || configModule[`${screenerKey}ScreenerConfig`];

@@ -14,20 +14,27 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ScreenerConfig } from '../ScreenerService';
-import { ScreenerInput } from '../types';
+import { ScreenerConfig } from "../screener";
+import { ScreenerInput } from "../types";
 
-type Environment = 'live' | 'testnet';
-type AssetType = 'spot' | 'futures';
+type Environment = "live" | "testnet";
+type AssetType = "spot" | "futures";
 
-const getBaseUrl = (environment: Environment = 'live', assetType: AssetType = 'spot') => {
-  const isTestnet = environment === 'testnet';
+const getBaseUrl = (
+  environment: Environment = "live",
+  assetType: AssetType = "spot"
+) => {
+  const isTestnet = environment === "testnet";
 
-  if (assetType === 'futures') {
-    return isTestnet ? 'https://testnet.binancefuture.com' : 'https://fapi.binance.com';
+  if (assetType === "futures") {
+    return isTestnet
+      ? "https://testnet.binancefuture.com"
+      : "https://fapi.binance.com";
   }
 
-  return isTestnet ? 'https://testnet.binance.vision' : 'https://api.binance.com';
+  return isTestnet
+    ? "https://testnet.binance.vision"
+    : "https://api.binance.com";
 };
 
 const mapTicker = (ticker: any) => ({
@@ -43,32 +50,36 @@ const mapTicker = (ticker: any) => ({
 
 export const binanceScreenerConfig: ScreenerConfig = {
   baseUrl: (_creds: any, input?: ScreenerInput) => {
-    const environment = (input?.environment as Environment) || 'testnet';
-    const assetType = (input?.asset_type as AssetType) || 'spot';
+    const environment = (input?.environment as Environment) || "testnet";
+    const assetType = (input?.asset_type as AssetType) || "spot";
 
     return getBaseUrl(environment, assetType);
   },
 
   makeAuthHeaders: (creds: any) => ({
-    'X-MBX-APIKEY': creds?.api_key || '',
+    "X-MBX-APIKEY": creds?.api_key || "",
   }),
 
   ops: {
     top_gainers: {
-      method: 'get',
+      method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || 'spot';
-        return assetType === 'futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+        const assetType = (input.asset_type as AssetType) || "spot";
+        return assetType === "futures"
+          ? "/fapi/v1/ticker/24hr"
+          : "/api/v3/ticker/24hr";
       },
       makeParams: () => ({}),
       transformResult: (raw: any[], input: ScreenerInput) => {
-        const quoteAsset = input.quote_asset || 'USDT';
+        const quoteAsset = input.quote_asset || "USDT";
         const limit = Number(input.limit) || 10;
         const minChange = Number(input.min_price_change) || 0;
 
         const gainers = raw
           .filter(
-            (t: any) => t.symbol.endsWith(quoteAsset) && parseFloat(t.priceChangePercent) > minChange
+            (t: any) =>
+              t.symbol.endsWith(quoteAsset) &&
+              parseFloat(t.priceChangePercent) > minChange
           )
           .map(mapTicker)
           .sort((a, b) => b.priceChangePercent - a.priceChangePercent)
@@ -83,20 +94,24 @@ export const binanceScreenerConfig: ScreenerConfig = {
     },
 
     top_losers: {
-      method: 'get',
+      method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || 'spot';
-        return assetType === 'futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+        const assetType = (input.asset_type as AssetType) || "spot";
+        return assetType === "futures"
+          ? "/fapi/v1/ticker/24hr"
+          : "/api/v3/ticker/24hr";
       },
       makeParams: () => ({}),
       transformResult: (raw: any[], input: ScreenerInput) => {
-        const quoteAsset = input.quote_asset || 'USDT';
+        const quoteAsset = input.quote_asset || "USDT";
         const limit = Number(input.limit) || 10;
         const minChange = Number(input.min_price_change) || 0;
 
         const losers = raw
           .filter(
-            (t: any) => t.symbol.endsWith(quoteAsset) && parseFloat(t.priceChangePercent) < -minChange
+            (t: any) =>
+              t.symbol.endsWith(quoteAsset) &&
+              parseFloat(t.priceChangePercent) < -minChange
           )
           .map(mapTicker)
           .sort((a, b) => a.priceChangePercent - b.priceChangePercent)
@@ -111,20 +126,24 @@ export const binanceScreenerConfig: ScreenerConfig = {
     },
 
     most_active: {
-      method: 'get',
+      method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || 'spot';
-        return assetType === 'futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+        const assetType = (input.asset_type as AssetType) || "spot";
+        return assetType === "futures"
+          ? "/fapi/v1/ticker/24hr"
+          : "/api/v3/ticker/24hr";
       },
       makeParams: () => ({}),
       transformResult: (raw: any[], input: ScreenerInput) => {
-        const quoteAsset = input.quote_asset || 'USDT';
+        const quoteAsset = input.quote_asset || "USDT";
         const limit = Number(input.limit) || 10;
         const minVolume = Number(input.min_volume) || 0;
 
         const most_actives = raw
           .filter(
-            (t: any) => t.symbol.endsWith(quoteAsset) && parseFloat(t.quoteVolume) >= minVolume
+            (t: any) =>
+              t.symbol.endsWith(quoteAsset) &&
+              parseFloat(t.quoteVolume) >= minVolume
           )
           .map(mapTicker)
           .sort((a, b) => b.quoteVolume - a.quoteVolume)
@@ -139,18 +158,22 @@ export const binanceScreenerConfig: ScreenerConfig = {
     },
 
     new_listings: {
-      method: 'get',
+      method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || 'spot';
-        return assetType === 'futures' ? '/fapi/v1/exchangeInfo' : '/api/v3/exchangeInfo';
+        const assetType = (input.asset_type as AssetType) || "spot";
+        return assetType === "futures"
+          ? "/fapi/v1/exchangeInfo"
+          : "/api/v3/exchangeInfo";
       },
       makeParams: () => ({}),
       transformResult: (raw: any, input: ScreenerInput) => {
-        const quoteAsset = input.quote_asset || 'USDT';
+        const quoteAsset = input.quote_asset || "USDT";
         const limit = Number(input.limit) || 10;
 
         const new_listings = (raw.symbols || [])
-          .filter((s: any) => s.status === 'TRADING' && s.quoteAsset === quoteAsset)
+          .filter(
+            (s: any) => s.status === "TRADING" && s.quoteAsset === quoteAsset
+          )
           .map((s: any) => ({
             symbol: s.symbol,
             baseAsset: s.baseAsset,
@@ -164,7 +187,7 @@ export const binanceScreenerConfig: ScreenerConfig = {
           new_listings,
           count: new_listings.length,
           quote_asset: quoteAsset,
-          note: 'Approximate - Binance does not provide listing dates',
+          note: "Approximate - Binance does not provide listing dates",
         };
       },
     },

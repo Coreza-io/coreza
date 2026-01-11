@@ -14,12 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ScreenerConfig } from '../ScreenerService';
-import { ScreenerInput } from '../types';
+import { ScreenerConfig } from "../screener";
+import { ScreenerInput } from "../types";
 
 export const alpacaScreenerConfig: ScreenerConfig = {
   baseUrl: "https://data.alpaca.markets",
-  
+
   makeAuthHeaders: (creds: any) => ({
     "APCA-API-KEY-ID": creds.api_key,
     "APCA-API-SECRET-KEY": creds.secret_key,
@@ -38,8 +38,8 @@ export const alpacaScreenerConfig: ScreenerConfig = {
       transformResult: (raw: any) => ({
         most_actives: raw.most_actives || [],
         count: raw.most_actives?.length || 0,
-        last_updated: raw.last_updated || null
-      })
+        last_updated: raw.last_updated || null,
+      }),
     },
 
     market_movers: {
@@ -59,8 +59,8 @@ export const alpacaScreenerConfig: ScreenerConfig = {
         gainers_count: raw.gainers?.length || 0,
         losers_count: raw.losers?.length || 0,
         market_type: raw.market_type || null,
-        last_updated: raw.last_updated || null
-      })
-    }
-  }
+        last_updated: raw.last_updated || null,
+      }),
+    },
+  },
 };

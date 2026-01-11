@@ -14,38 +14,33 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { ScreenerService, ScreenerConfig } from './ScreenerService';
-import { IScreenerService } from './types';
+import fs from "fs";
+import path from "path";
+import { registerScreener } from "./registry";
+import { ScreenerService } from "./screener";
 
-const configCache = new Map<string, ScreenerConfig>();
-const serviceCache = new Map<string, IScreenerService>();
-let isLoaded = false;
+export function initializeScreenerServices() {
+  console.log("📊 Initializing screener services...");
 
-function loadConfigs(): void {
-  if (isLoaded) {
-    return;
-  }
-
-  console.log('📊 Loading screener configs...');
-  const configDir = path.join(__dirname, 'configs');
+  // 1. Auto-discover and register config-based screeners from configs/ directory
+  const configDir = path.join(__dirname, "configs");
 
   if (fs.existsSync(configDir)) {
-    const configFiles = fs.readdirSync(configDir).filter((file) => (
-      file.endsWith('.ts') || file.endsWith('.js')
-    ));
+    const configFiles = fs
+      .readdirSync(configDir)
+      .filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
 
     for (const file of configFiles) {
-      const screenerKey = file.replace(/\.(ts|js)$/, '').toLowerCase();
+      const screenerKey = file.replace(/\.(ts|js)$/, "");
 
       try {
         const configModule = require(path.join(configDir, file));
-        const config = configModule.default || configModule[`${screenerKey}ScreenerConfig`];
+        const config =
+          configModule.default || configModule[`${screenerKey}ScreenerConfig`];
 
         if (config?.ops) {
-          configCache.set(screenerKey, config);
-          console.log(`  ✅ Loaded screener config: ${screenerKey}`);
+          registerScreener(new ScreenerService(screenerKey, config));
+          console.log(`  ✅ Registered screener: ${screenerKey}`);
         }
       } catch (error) {
         console.error(`  ❌ Failed to load screener config: ${file}`, error);
@@ -53,35 +48,9 @@ function loadConfigs(): void {
     }
   }
 
-  isLoaded = true;
-  console.log('✅ Screener configs loaded');
+  console.log("✅ All screener services initialized");
 }
 
-export function initializeScreenerServices(): void {
-  loadConfigs();
-}
-
-export function getScreenerService(key: string): IScreenerService | undefined {
-  loadConfigs();
-  const normalizedKey = key.toLowerCase();
-  const cached = serviceCache.get(normalizedKey);
-  if (cached) {
-    return cached;
-  }
-
-  const config = configCache.get(normalizedKey);
-  if (!config) {
-    return undefined;
-  }
-
-  const service = new ScreenerService(normalizedKey, config);
-  serviceCache.set(normalizedKey, service);
-  return service;
-}
-
-export function getAllRegisteredScreeners(): string[] {
-  loadConfigs();
-  return Array.from(configCache.keys());
-}
-
-export { ScreenerInput, ScreenerResult, IScreenerService } from './types';
+// Re-export for convenience
+export { getScreenerService, getAllRegisteredScreeners } from "./registry";
+export { ScreenerInput, ScreenerResult, IScreenerService } from "./types";

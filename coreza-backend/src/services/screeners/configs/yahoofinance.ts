@@ -14,8 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ScreenerConfig } from '../ScreenerService';
-import { ScreenerInput } from '../types';
+import { ScreenerConfig } from "../screener";
+import { ScreenerInput } from "../types";
 
 const BASE_COUNT = 100;
 
@@ -54,15 +54,15 @@ const buildParams = (input: ScreenerInput, scrId: string) => ({
 });
 
 export const yahoofinanceScreenerConfig: ScreenerConfig = {
-  baseUrl: 'https://query1.finance.yahoo.com/v1/finance/screener/predefined',
+  baseUrl: "https://query1.finance.yahoo.com/v1/finance/screener/predefined",
 
   makeAuthHeaders: () => ({}),
 
   ops: {
     day_gainers: {
-      method: 'get',
-      path: '/saved',
-      makeParams: (input: ScreenerInput) => buildParams(input, 'day_gainers'),
+      method: "get",
+      path: "/saved",
+      makeParams: (input: ScreenerInput) => buildParams(input, "day_gainers"),
       transformResult: (raw: any, input: ScreenerInput) => {
         const minGap = Number(input.min_gap_percent || 0);
         const filtered = extractQuotes(raw).filter(
@@ -72,45 +72,46 @@ export const yahoofinanceScreenerConfig: ScreenerConfig = {
         return {
           gainers: filtered.map(transformQuote),
           count: filtered.length,
-          source: 'yahoo_finance_day_gainers',
+          source: "yahoo_finance_day_gainers",
         };
       },
     },
     small_cap_gainers: {
-      method: 'get',
-      path: '/saved',
+      method: "get",
+      path: "/saved",
       makeParams: (input: ScreenerInput) =>
-        buildParams(input, 'small_cap_gainers'),
+        buildParams(input, "small_cap_gainers"),
       transformResult: (raw: any) => {
         const quotes = extractQuotes(raw);
         return {
           gainers: quotes.map(transformQuote),
           count: quotes.length,
-          source: 'yahoo_finance_small_cap_gainers',
+          source: "yahoo_finance_small_cap_gainers",
         };
       },
     },
     most_actives: {
-      method: 'get',
-      path: '/saved',
-      makeParams: (input: ScreenerInput) => buildParams(input, 'most_actives'),
+      method: "get",
+      path: "/saved",
+      makeParams: (input: ScreenerInput) => buildParams(input, "most_actives"),
       transformResult: (raw: any, input: ScreenerInput) => {
         const minChange = Number(input.min_change_percent || 1.0);
         const filtered = extractQuotes(raw).filter(
-          (quote) => Math.abs(quote.regularMarketChangePercent || 0) >= minChange
+          (quote) =>
+            Math.abs(quote.regularMarketChangePercent || 0) >= minChange
         );
 
         return {
           actives: filtered.map(transformQuote),
           count: filtered.length,
-          source: 'yahoo_finance_most_actives',
+          source: "yahoo_finance_most_actives",
         };
       },
     },
     day_losers: {
-      method: 'get',
-      path: '/saved',
-      makeParams: (input: ScreenerInput) => buildParams(input, 'day_losers'),
+      method: "get",
+      path: "/saved",
+      makeParams: (input: ScreenerInput) => buildParams(input, "day_losers"),
       transformResult: (raw: any, input: ScreenerInput) => {
         const minLoss = Number(input.min_loss_percent || 0);
         const filtered = extractQuotes(raw).filter(
@@ -120,63 +121,63 @@ export const yahoofinanceScreenerConfig: ScreenerConfig = {
         return {
           losers: filtered.map(transformQuote),
           count: filtered.length,
-          source: 'yahoo_finance_day_losers',
+          source: "yahoo_finance_day_losers",
         };
       },
     },
     undervalued_large_caps: {
-      method: 'get',
-      path: '/saved',
+      method: "get",
+      path: "/saved",
       makeParams: (input: ScreenerInput) =>
-        buildParams(input, 'undervalued_large_caps'),
+        buildParams(input, "undervalued_large_caps"),
       transformResult: (raw: any) => {
         const quotes = extractQuotes(raw);
         return {
           stocks: quotes.map(transformQuote),
           count: quotes.length,
-          source: 'yahoo_finance_undervalued_large_caps',
+          source: "yahoo_finance_undervalued_large_caps",
         };
       },
     },
     growth_technology_stocks: {
-      method: 'get',
-      path: '/saved',
+      method: "get",
+      path: "/saved",
       makeParams: (input: ScreenerInput) =>
-        buildParams(input, 'growth_technology_stocks'),
+        buildParams(input, "growth_technology_stocks"),
       transformResult: (raw: any) => {
         const quotes = extractQuotes(raw);
         return {
           stocks: quotes.map(transformQuote),
           count: quotes.length,
-          source: 'yahoo_finance_growth_technology_stocks',
+          source: "yahoo_finance_growth_technology_stocks",
         };
       },
     },
     aggressive_small_caps: {
-      method: 'get',
-      path: '/saved',
+      method: "get",
+      path: "/saved",
       makeParams: (input: ScreenerInput) =>
-        buildParams(input, 'aggressive_small_caps'),
+        buildParams(input, "aggressive_small_caps"),
       transformResult: (raw: any) => {
         const quotes = extractQuotes(raw);
         return {
           stocks: quotes.map(transformQuote),
           count: quotes.length,
-          source: 'yahoo_finance_aggressive_small_caps',
+          source: "yahoo_finance_aggressive_small_caps",
         };
       },
     },
     undervalued_growth_stocks: {
-      method: 'get',
-      path: '/saved',
+      method: "get",
+      path: "/saved",
       makeParams: (input: ScreenerInput) =>
-        buildParams(input, 'undervalued_growth_stocks'),
+        buildParams(input, "undervalued_growth_stocks"),
       transformResult: (raw: any) => {
         const quotes = extractQuotes(raw);
         return {
           stocks: quotes.map(transformQuote),
           count: quotes.length,
-          source: 'yahoo_finance_undervalued_growth_stocks',
+          source: "yahoo_finance_undervalued_growth_stocks",
         };
       },
     },

@@ -18,6 +18,7 @@ import fs from "fs";
 import path from "path";
 import { registerDataSource } from "./registry";
 import { DataSourceService } from "./dataSourceService";
+import { YahooFinanceDataSourceService } from "./yahoofinanceService";
 
 export function initializeDataSourceServices() {
   console.log("📊 Initializing data source services...");
@@ -47,6 +48,8 @@ export function initializeDataSourceServices() {
       }
     }
   }
+
+  registerDataSource(new YahooFinanceDataSourceService());
 
   console.log("✅ All data source services initialized");
 }

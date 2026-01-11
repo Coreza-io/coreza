@@ -15,7 +15,7 @@
  */
 
 import express from "express";
-import { DataService } from "../services/data";
+import { getDataSourceService } from "../services/datasources";
 import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();
@@ -103,7 +103,16 @@ router.post("/get-candle", async (req, res, next) => {
       `[YahooFinance] Fetching ${symbol} from ${start.toISOString()} to ${end.toISOString()} interval=${interval}`
     );
 
-    const result = await DataService.execute("yahoofinance", "get_history", {
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "get_history",
       symbol,
       period1: start.toISOString(),
       period2: end.toISOString(),
@@ -125,7 +134,16 @@ router.get("/quote/:symbol", async (req, res, next) => {
   try {
     const { symbol } = req.params;
 
-    const result = await DataService.execute("yahoofinance", "get_quote", {
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "get_quote",
       symbol,
     });
 
@@ -145,7 +163,16 @@ router.get("/history/:symbol", async (req, res, next) => {
     const { symbol } = req.params;
     const { period1, period2, interval = "1d" } = req.query;
 
-    const result = await DataService.execute("yahoofinance", "get_history", {
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "get_history",
       symbol,
       period1: period1 as string,
       period2: period2 as string,
@@ -167,7 +194,16 @@ router.get("/search/:query", async (req, res, next) => {
   try {
     const { query } = req.params;
 
-    const result = await DataService.execute("yahoofinance", "search", {
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "search",
       query,
     });
 
@@ -184,7 +220,17 @@ router.get("/search/:query", async (req, res, next) => {
 // Get market summary
 router.get("/summary", async (req, res, next) => {
   try {
-    const result = await DataService.execute("yahoofinance", "get_summary", {});
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "get_summary",
+    });
 
     if (!result.success) {
       return res.status(500).json({ error: result.error });
@@ -199,11 +245,17 @@ router.get("/summary", async (req, res, next) => {
 // Get trending symbols
 router.get("/trending", async (req, res, next) => {
   try {
-    const result = await DataService.execute(
-      "yahoofinance",
-      "get_trending",
-      {}
-    );
+    const dataSourceService = getDataSourceService("yahoofinance");
+    if (!dataSourceService) {
+      return res
+        .status(500)
+        .json({ error: "Yahoo Finance data source unavailable" });
+    }
+
+    const result = await dataSourceService.execute({
+      user_id: req.user?.id ?? "system",
+      operation: "get_trending",
+    });
 
     if (!result.success) {
       return res.status(500).json({ error: result.error });

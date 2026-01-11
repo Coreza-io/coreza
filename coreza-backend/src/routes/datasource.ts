@@ -74,27 +74,6 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
   }
 });
 
-// Get credentials for any data service
-// GET /datasource/:service/credentials
-router.get("/:service/credentials", async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
-    }
-
-    const { service } = req.params;
-    const credentials = await CredentialManager.getCredentialsList(
-      service,
-      userId
-    );
-    res.json({ success: true, credentials });
-  } catch (error: any) {
-    console.error("[DATASOURCE-ROUTE] Credentials error:", error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Save/validate credentials for any data service
 // POST /datasource/:service/auth
 router.post("/:service/auth", async (req: Request, res: Response) => {

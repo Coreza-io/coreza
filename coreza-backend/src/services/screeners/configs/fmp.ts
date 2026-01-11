@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ScreenerConfig } from "../ScreenerService";
+import { ScreenerConfig } from "../screener";
 import { ScreenerInput } from "../types";
 
 export const fmpScreenerConfig: ScreenerConfig = {

@@ -17,10 +17,7 @@
 import fs from "fs";
 import path from "path";
 import { registerScreener } from "./registry";
-import { ScreenerService } from "./ScreenerService";
-
-// Registry of custom screener services that don't use ScreenerService configs
-const CUSTOM_SCREENERS: Record<string, () => any> = {};
+import { ScreenerService } from "./screener";
 
 export function initializeScreenerServices() {
   console.log("📊 Initializing screener services...");
@@ -49,16 +46,6 @@ export function initializeScreenerServices() {
       } catch (error) {
         console.error(`  ❌ Failed to load screener config: ${file}`, error);
       }
-    }
-  }
-
-  // 2. Register custom screeners (non-REST based)
-  for (const [key, factory] of Object.entries(CUSTOM_SCREENERS)) {
-    try {
-      registerScreener(factory());
-      console.log(`  ✅ Registered custom screener: ${key}`);
-    } catch (error) {
-      console.error(`  ❌ Failed to register custom screener: ${key}`, error);
     }
   }
 

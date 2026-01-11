@@ -17,6 +17,7 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { BaseScreenerService } from './BaseScreenerService';
 import { ScreenerInput, ScreenerResult, IScreenerService } from './types';
+import { refreshOAuthTokenIfNeeded } from '../../utils/oauthTokenManager';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
 
@@ -29,8 +30,9 @@ export interface RestScreenerOperation {
 }
 
 export interface RestScreenerConfig {
+  authType?: 'api_key' | 'oauth';
   baseUrl: string | ((creds: any, input?: ScreenerInput) => string);
-  makeAuthHeaders: (creds: any) => Record<string, string>;
+  makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   ops: Record<string, RestScreenerOperation>;
 }
 
@@ -57,9 +59,9 @@ export class RestScreenerService
           // Get credentials if credential_id provided
           let creds = null;
           if (input.credential_id) {
-            const { credentials: { client_json } } = 
+            const { credentials } =
               await this.getCredentials(input.user_id, input.credential_id);
-            creds = client_json;
+            creds = await this.resolveCredentials(credentials, input);
           }
 
           // Build request
@@ -68,7 +70,7 @@ export class RestScreenerService
             : this.config.baseUrl;
           const path = typeof op.path === 'function' ? op.path(input) : op.path;
           const url = `${baseUrl}${path}`;
-          const headers = creds ? this.config.makeAuthHeaders(creds) : {};
+          const headers = creds ? await this.config.makeAuthHeaders(creds) : {};
           const params = op.makeParams?.(input, creds) ?? {};
           const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
 
@@ -98,4 +100,27 @@ export class RestScreenerService
         };
       }
     });
+
+  private async resolveCredentials(credentials: any, input: ScreenerInput): Promise<any> {
+    const clientCreds = credentials?.client_json;
+    if (!clientCreds) {
+      return null;
+    }
+
+    if (this.config.authType !== 'oauth') {
+      return clientCreds;
+    }
+
+    const mergedCreds = {
+      ...clientCreds,
+      ...credentials?.token_json,
+    };
+
+    return refreshOAuthTokenIfNeeded(
+      this.screenerKey,
+      mergedCreds,
+      input.user_id,
+      input.credential_id ?? ''
+    );
+  }
 }

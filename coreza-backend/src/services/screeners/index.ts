@@ -19,12 +19,10 @@ import path from 'path';
 import { registerScreener } from './registry';
 import { RestScreenerService } from './RestScreenerService';
 import { YahooFinanceScreenerService } from './YahooFinanceScreenerService';
-import { SchwabScreenerService } from './SchwabScreenerService';
 
 // Registry of custom screener services that don't use RestScreenerService
 const CUSTOM_SCREENERS: Record<string, () => any> = {
   yahoofinance: () => new YahooFinanceScreenerService(),
-  schwab: () => new SchwabScreenerService(),
 };
 
 export function initializeScreenerServices() {

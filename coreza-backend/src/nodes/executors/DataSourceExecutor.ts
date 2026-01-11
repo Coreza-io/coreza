@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { DataService } from "../../services/data";
+import { getDataSourceService } from "../../services/datasources";
 import { RedisService } from "../../services/RedisService";
 import { StoreService, StoreOperationParams } from "../../services/StoreService";
 import { normalizeOutput, createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
@@ -61,21 +61,33 @@ export class DataSourceExecutor implements INodeExecutor {
         combinedInput
       );
 
+      const userId = context?.userId || resolvedParams.user_id || input.user_id;
+      const credentialId =
+        resolvedParams.credential_id || input.credential_id;
+
       let result;
       switch (nodeName) {
         case "FinnHub":
-          result = await DataService.execute(
+          result = await this.executeDataSource(
             "finnhub",
             resolvedParams.operation,
-            combinedInput
+            {
+              ...combinedInput,
+              user_id: userId,
+              credential_id: credentialId,
+            }
           );
           break;
         case "YahooFinance":
           resolvedParams.operation = "get_history";
-          result = await DataService.execute(
+          result = await this.executeDataSource(
             "yahoofinance",
             resolvedParams.operation,
-            combinedInput
+            {
+              ...combinedInput,
+              user_id: userId,
+              credential_id: credentialId,
+            }
           );
           break;
         case "RedisStore":
@@ -127,10 +139,14 @@ export class DataSourceExecutor implements INodeExecutor {
           result = await this.executeStoreNode(resolvedParams, context);
           break;
         case "Polygon":
-          result = await DataService.execute(
+          result = await this.executeDataSource(
             "polygon",
             resolvedParams.operation,
-            combinedInput
+            {
+              ...combinedInput,
+              user_id: userId,
+              credential_id: credentialId,
+            }
           );
           break;
         default:
@@ -163,6 +179,26 @@ export class DataSourceExecutor implements INodeExecutor {
     return StoreService.execute(params, {
       userId: context?.userId || params.workflow_id,
       workflowId: params.workflow_id || params.workflowId || context?.workflowId,
+    });
+  }
+
+  private async executeDataSource(
+    serviceKey: string,
+    operation: string,
+    input: NodeInput
+  ): Promise<any> {
+    const dataSourceService = getDataSourceService(serviceKey);
+    if (!dataSourceService) {
+      return {
+        success: false,
+        error: `Unsupported data source: ${serviceKey}`,
+      };
+    }
+
+    return dataSourceService.execute({
+      ...input,
+      user_id: input.user_id || "system",
+      operation,
     });
   }
 }

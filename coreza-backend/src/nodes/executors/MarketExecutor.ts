@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { DataService } from "../../services/data";
+import { getDataSourceService } from "../../services/datasources";
 import { MarketSource } from "../../types/marketEvent";
 import { SubscriptionService } from "../../services/SubscriptionService";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
@@ -69,7 +69,20 @@ export class MarketExecutor implements INodeExecutor {
         resolvedParams
       );
 
-      const result = await DataService.getMarketData(resolvedParams);
+      const dataSourceService = getDataSourceService("yahoofinance");
+      if (!dataSourceService) {
+        const errOutput = createErrorOutput(
+          "Yahoo Finance data source is not available",
+          normalizeCtx
+        );
+        return toNodeResult(errOutput);
+      }
+
+      const result = await dataSourceService.execute({
+        user_id: context?.userId || "system",
+        operation: resolvedParams.operation || "get_quote",
+        ...resolvedParams,
+      });
 
       if (!result.success) {
         const errOutput = createErrorOutput(result.error || "Market data fetch failed", normalizeCtx);

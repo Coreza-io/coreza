@@ -123,7 +123,7 @@ export class SecurityAuditor {
     const serviceFiles = [
       'BrokerService',
       'CommunicationService', 
-      'DataService'
+      'DataSourceService'
     ];
 
     // In a real implementation, we'd use static analysis to verify each service

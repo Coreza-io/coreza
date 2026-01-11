@@ -471,8 +471,16 @@ export class AgentSystem {
 
   private async getMarketDataTool(params: any, context: any): Promise<any> {
     try {
-      const { DataService } = await import('./data');
-      const result = await DataService.execute('market', 'get_quote', {
+      const { getDataSourceService } = await import('./datasources');
+      const dataSourceService = getDataSourceService('yahoofinance');
+
+      if (!dataSourceService) {
+        return { success: false, error: 'Yahoo Finance data source unavailable' };
+      }
+
+      const result = await dataSourceService.execute({
+        user_id: context.userId || 'system',
+        operation: 'get_quote',
         symbol: params.symbol
       });
       

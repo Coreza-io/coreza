@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { getDataSourceService } from "../../services/datasources";
+import { getAllRegisteredDataSources, getDataSourceService } from "../../services/datasources";
 import { RedisService } from "../../services/RedisService";
 import { StoreService, StoreOperationParams } from "../../services/StoreService";
 import { normalizeOutput, createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
@@ -33,23 +33,21 @@ export class DataSourceExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
-      // Check both node.type and node.name since JSON definitions use 'name'
-      const nodeName = node.name;
-      const operation = node.values?.operation || "get_quote";
-
+      const nodeName = node.subCategory ?? node.name;
+      if (!nodeName) {
+        const errOutput = createErrorOutput("Data source node name is missing", {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        });
+        return toNodeResult(errOutput);
+      }
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
-
-      // Special handling for backtesting - ensure historical data operations
-      if (
-        resolvedParams.historical ||
-        resolvedParams.start_date ||
-        resolvedParams.end_date
-      ) {
-        resolvedParams.operation = "get_historical_data";
-      }
+      const operation = resolvedParams.operation ?? node.values?.operation;
 
       const combinedInput = {
         ...input,
@@ -62,113 +60,137 @@ export class DataSourceExecutor implements INodeExecutor {
       );
 
       const userId = context?.userId || resolvedParams.user_id || input.user_id;
-      const credentialId =
-        resolvedParams.credential_id || input.credential_id;
+      const credentialId = resolvedParams.credential_id || input.credential_id;
 
-      let result;
-      switch (nodeName) {
-        case "FinnHub":
-          result = await this.executeDataSource(
-            "finnhub",
-            resolvedParams.operation,
-            {
-              ...combinedInput,
-              user_id: userId,
-              credential_id: credentialId,
-            }
-          );
-          break;
-        case "YahooFinance":
-          resolvedParams.operation = "get_history";
-          result = await this.executeDataSource(
-            "yahoofinance",
-            resolvedParams.operation,
-            {
-              ...combinedInput,
-              user_id: userId,
-              credential_id: credentialId,
-            }
-          );
-          break;
-        case "RedisStore":
-          const userId = context?.userId || input.userId;
-          const credentialId = resolvedParams.credential_id;
+      if (nodeName === "RedisStore") {
+        const redisUserId = context?.userId || input.userId;
+        const redisCredentialId = resolvedParams.credential_id;
 
-          if (!userId || !credentialId) {
-            return {
-              success: false,
-              error:
-                "userId and credential_id are required for Redis operations",
-            };
-          }
-
-          result = await RedisService.execute({
-            userId,
-            credentialId,
-            operation: resolvedParams.operation,
-            scope: resolvedParams.scope,
-            key: resolvedParams.key,
-            value: resolvedParams.value,
-            keyType: resolvedParams.keyType,
-            pattern: resolvedParams.pattern,
-            channel: resolvedParams.channel,
-            hashField: resolvedParams.hashField,
-            setMember: resolvedParams.setMember,
-            popDirection: resolvedParams.popDirection,
-            pushDirection: resolvedParams.pushDirection,
-            members: resolvedParams.members,
-            member: resolvedParams.member,
-            otherKeys: resolvedParams.otherKeys,
-            incrementBy: resolvedParams.incrementBy,
-            startIndex: resolvedParams.startIndex,
-            endIndex: resolvedParams.endIndex,
-            index: resolvedParams.index,
-            ttl: resolvedParams.ttl,
-            score: resolvedParams.score,
-            scoreMembers: resolvedParams.scoreMembers,
-            withScores: resolvedParams.withScores,
-            reverseOrder: resolvedParams.reverseOrder,
-            minScore: resolvedParams.minScore,
-            maxScore: resolvedParams.maxScore,
-            channelPattern: resolvedParams.channelPattern,
-            channels: resolvedParams.channels,
-            workflowId: context?.workflowId || input.workflowId,
-          });
-          break;
-        case "Store":
-          result = await this.executeStoreNode(resolvedParams, context);
-          break;
-        case "Polygon":
-          result = await this.executeDataSource(
-            "polygon",
-            resolvedParams.operation,
-            {
-              ...combinedInput,
-              user_id: userId,
-              credential_id: credentialId,
-            }
+        if (!redisUserId || !redisCredentialId) {
+          const errOutput = createErrorOutput(
+            "userId and credential_id are required for Redis operations",
+            { nodeId: node.id, nodeName, category: this.category, startTime }
           );
-          break;
-        default:
-          return {
-            success: false,
-            error: `Unsupported data source node type: ${nodeName}`,
-          };
+          return toNodeResult(errOutput);
+        }
+
+        const result = await RedisService.execute({
+          userId: redisUserId,
+          credentialId: redisCredentialId,
+          operation: resolvedParams.operation,
+          scope: resolvedParams.scope,
+          key: resolvedParams.key,
+          value: resolvedParams.value,
+          keyType: resolvedParams.keyType,
+          pattern: resolvedParams.pattern,
+          channel: resolvedParams.channel,
+          hashField: resolvedParams.hashField,
+          setMember: resolvedParams.setMember,
+          popDirection: resolvedParams.popDirection,
+          pushDirection: resolvedParams.pushDirection,
+          members: resolvedParams.members,
+          member: resolvedParams.member,
+          otherKeys: resolvedParams.otherKeys,
+          incrementBy: resolvedParams.incrementBy,
+          startIndex: resolvedParams.startIndex,
+          endIndex: resolvedParams.endIndex,
+          index: resolvedParams.index,
+          ttl: resolvedParams.ttl,
+          score: resolvedParams.score,
+          scoreMembers: resolvedParams.scoreMembers,
+          withScores: resolvedParams.withScores,
+          reverseOrder: resolvedParams.reverseOrder,
+          minScore: resolvedParams.minScore,
+          maxScore: resolvedParams.maxScore,
+          channelPattern: resolvedParams.channelPattern,
+          channels: resolvedParams.channels,
+          workflowId: context?.workflowId || input.workflowId,
+        });
+
+        const normalized = normalizeOutput(result, {
+          nodeId: node.id,
+          nodeName,
+          category: this.category,
+          startTime,
+        });
+        return toNodeResult(normalized);
       }
 
-      const normalized = normalizeOutput(result, {
+      if (nodeName === "Store") {
+        const result = await this.executeStoreNode(resolvedParams, context);
+        const normalized = normalizeOutput(result, {
+          nodeId: node.id,
+          nodeName,
+          category: this.category,
+          startTime,
+        });
+        return toNodeResult(normalized);
+      }
+
+      if (!credentialId && !this.isCredentialOptional(nodeName)) {
+        const errOutput = createErrorOutput(
+          `${nodeName} credential_id is required`,
+          { nodeId: node.id, nodeName, category: this.category, startTime }
+        );
+        return toNodeResult(errOutput);
+      }
+
+      const serviceKey = this.resolveServiceKey(nodeName);
+      if (!serviceKey) {
+        const errOutput = createErrorOutput(
+          `Unsupported data source: ${nodeName}`,
+          { nodeId: node.id, nodeName, category: this.category, startTime }
+        );
+        return toNodeResult(errOutput);
+      }
+
+      const resolvedOperation = this.resolveOperation(
+        serviceKey,
+        operation,
+        resolvedParams
+      );
+
+      const dataSourceService = getDataSourceService(serviceKey);
+      if (!dataSourceService) {
+        const errOutput = createErrorOutput(
+          `Unsupported data source: ${serviceKey}`,
+          { nodeId: node.id, nodeName, category: this.category, startTime }
+        );
+        return toNodeResult(errOutput);
+      }
+
+      console.log(
+        `📊 [DataSource] Executing ${serviceKey} with operation: ${resolvedOperation}`
+      );
+
+      const result = await dataSourceService.execute({
+        user_id: userId || "system",
+        credential_id: credentialId,
+        operation: resolvedOperation,
+        ...combinedInput,
+      });
+
+      if (!result.success) {
+        const errOutput = createErrorOutput(
+          result.error || `${nodeName} ${resolvedOperation} operation failed`,
+          { nodeId: node.id, nodeName, category: this.category, startTime }
+        );
+        return toNodeResult(errOutput);
+      }
+
+      const successOutput = createSuccessOutput(result.data, {
         nodeId: node.id,
         nodeName,
         category: this.category,
         startTime,
       });
-      return toNodeResult(normalized);
+      return toNodeResult(successOutput);
     } catch (error) {
-      const normalized = createErrorOutput(
+      const errOutput = createErrorOutput(
         error instanceof Error ? error : String(error),
         { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
       );
-      return toNodeResult(normalized);
+      return toNodeResult(errOutput);
     }
   }
 
@@ -182,23 +204,43 @@ export class DataSourceExecutor implements INodeExecutor {
     });
   }
 
-  private async executeDataSource(
-    serviceKey: string,
-    operation: string,
-    input: NodeInput
-  ): Promise<any> {
-    const dataSourceService = getDataSourceService(serviceKey);
-    if (!dataSourceService) {
-      return {
-        success: false,
-        error: `Unsupported data source: ${serviceKey}`,
-      };
+  private resolveServiceKey(dataSource: string): string | undefined {
+    const directMatch = getDataSourceService(dataSource) ? dataSource : undefined;
+    if (directMatch) {
+      return directMatch;
     }
 
-    return dataSourceService.execute({
-      ...input,
-      user_id: input.user_id || "system",
-      operation,
-    });
+    const normalized = dataSource.toLowerCase();
+    return getAllRegisteredDataSources().find(
+      (key) => key.toLowerCase() === normalized
+    );
+  }
+
+  private resolveOperation(
+    serviceKey: string,
+    operation: string | undefined,
+    params: Record<string, any>
+  ): string {
+    if (
+      params?.historical ||
+      params?.start_date ||
+      params?.end_date
+    ) {
+      return operation || (serviceKey === "yahoofinance" ? "get_history" : "get_quote");
+    }
+
+    if (operation) {
+      return operation;
+    }
+
+    if (serviceKey === "yahoofinance") {
+      return "get_history";
+    }
+
+    return "get_quote";
+  }
+
+  private isCredentialOptional(nodeName: string): boolean {
+    return ["yahoofinance"].includes(nodeName.toLowerCase());
   }
 }

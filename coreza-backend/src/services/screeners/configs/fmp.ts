@@ -36,45 +36,45 @@ export const fmpScreenerConfig: RestScreenerConfig = {
         };
 
         if (input.limit) params.limit = Number(input.limit);
-        if (input.market_cap_more_than) {
-          params.marketCapMoreThan = parseFloat(input.market_cap_more_than);
+        if (input.marketCapMoreThan) {
+          params.marketCapMoreThan = parseFloat(input.marketCapMoreThan);
         }
-        if (input.market_cap_lower_than) {
-          params.marketCapLowerThan = parseFloat(input.market_cap_lower_than);
+        if (input.marketCapLowerThan) {
+          params.marketCapLowerThan = parseFloat(input.marketCapLowerThan);
         }
-        if (input.price_more_than) {
-          params.priceMoreThan = parseFloat(input.price_more_than);
+        if (input.priceMoreThan) {
+          params.priceMoreThan = parseFloat(input.priceMoreThan);
         }
-        if (input.price_lower_than) {
-          params.priceLowerThan = parseFloat(input.price_lower_than);
+        if (input.priceLowerThan) {
+          params.priceLowerThan = parseFloat(input.priceLowerThan);
         }
-        if (input.beta_more_than) {
-          params.betaMoreThan = parseFloat(input.beta_more_than);
+        if (input.betaMoreThan) {
+          params.betaMoreThan = parseFloat(input.betaMoreThan);
         }
-        if (input.beta_lower_than) {
-          params.betaLowerThan = parseFloat(input.beta_lower_than);
+        if (input.betaLowerThan) {
+          params.betaLowerThan = parseFloat(input.betaLowerThan);
         }
-        if (input.volume_more_than) {
-          params.volumeMoreThan = parseFloat(input.volume_more_than);
+        if (input.volumeMoreThan) {
+          params.volumeMoreThan = parseFloat(input.volumeMoreThan);
         }
-        if (input.dividend_more_than) {
-          params.dividendMoreThan = parseFloat(input.dividend_more_than);
+        if (input.dividendMoreThan) {
+          params.dividendMoreThan = parseFloat(input.dividendMoreThan);
         }
-        if (input.dividend_lower_than) {
-          params.dividendLowerThan = parseFloat(input.dividend_lower_than);
+        if (input.dividendLowerThan) {
+          params.dividendLowerThan = parseFloat(input.dividendLowerThan);
         }
         if (input.sector) params.sector = input.sector;
         if (input.industry) params.industry = input.industry;
         if (input.country) params.country = input.country;
         if (input.exchange) params.exchange = input.exchange;
-        if (input.is_etf !== undefined && input.is_etf !== "") {
+        if (input.isEtf !== undefined && input.isEtf !== "") {
           params.isEtf = input.is_etf === "true";
         }
         if (
-          input.is_actively_trading !== undefined &&
-          input.is_actively_trading !== ""
+          input.isActivelyTrading !== undefined &&
+          input.isActivelyTrading !== ""
         ) {
-          params.isActivelyTrading = input.is_actively_trading === "true";
+          params.isActivelyTrading = input.isActivelyTrading === "true";
         }
 
         return params;

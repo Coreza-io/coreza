@@ -36,7 +36,7 @@ import logger from "./utils/logger";
 
 // Import routes
 import indicatorRoutes from "./routes/indicators";
-import marketRoutes from "./routes/market";
+import subscriptionRoutes from "./routes/subscription";
 import gmailRoutes from "./routes/gmail";
 import oauthRoutes from "./routes/oauth";
 import whatsappRoutes from "./routes/whatsapp";
@@ -143,7 +143,7 @@ app.use("/broker", brokerRoutes);
 app.use("/openai", openaiRoutes);
 app.use("/aiagent", aiAgentRoutes);
 app.use("/webhooks", webhookRoutes);
-app.use("/market", marketRoutes);
+app.use("/subscription", subscriptionRoutes);
 app.use("/workflows", workflowRoutes);
 app.use("/execute", schedulerRoutes);
 app.use("/screener", screenerRoutes);

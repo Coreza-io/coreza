@@ -14,32 +14,34 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { registerScreener } from './registry';
-import { ScreenerService } from './ScreenerService';
+import fs from "fs";
+import path from "path";
+import { registerScreener } from "./registry";
+import { ScreenerService } from "./ScreenerService";
 
 // Registry of custom screener services that don't use ScreenerService configs
-const CUSTOM_SCREENERS: Record<string, () => any> = {
-};
+const CUSTOM_SCREENERS: Record<string, () => any> = {};
 
 export function initializeScreenerServices() {
-  console.log('📊 Initializing screener services...');
+  console.log("📊 Initializing screener services...");
 
   // 1. Auto-discover and register config-based screeners from configs/ directory
-  const configDir = path.join(__dirname, 'configs');
-  
+  const configDir = path.join(__dirname, "configs");
+
   if (fs.existsSync(configDir)) {
-    const configFiles = fs.readdirSync(configDir).filter(f => f.endsWith('.ts') || f.endsWith('.js'));
-    
+    const configFiles = fs
+      .readdirSync(configDir)
+      .filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+
     for (const file of configFiles) {
-      const screenerKey = file.replace(/\.(ts|js)$/, '');
-      
+      const screenerKey = file.replace(/\.(ts|js)$/, "");
+
       try {
         // Use require for synchronous loading
         const configModule = require(path.join(configDir, file));
-        const config = configModule.default || configModule[`${screenerKey}ScreenerConfig`];
-        
+        const config =
+          configModule.default || configModule[`${screenerKey}ScreenerConfig`];
+
         if (config?.ops) {
           registerScreener(new ScreenerService(screenerKey, config));
           console.log(`  ✅ Registered screener: ${screenerKey}`);
@@ -60,9 +62,9 @@ export function initializeScreenerServices() {
     }
   }
 
-  console.log('✅ All screener services initialized');
+  console.log("✅ All screener services initialized");
 }
 
 // Re-export for convenience
-export { getScreenerService, getAllRegisteredScreeners } from './registry';
-export { ScreenerInput, ScreenerResult, IScreenerService } from './types';
+export { getScreenerService, getAllRegisteredScreeners } from "./registry";
+export { ScreenerInput, ScreenerResult, IScreenerService } from "./types";

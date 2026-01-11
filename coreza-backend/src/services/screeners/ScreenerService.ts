@@ -14,12 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import axios, { AxiosRequestConfig } from 'axios';
-import { ScreenerInput, ScreenerResult, IScreenerService } from './types';
-import CredentialManager from '../../utils/credentialManager';
-import { refreshOAuthTokenIfNeeded } from '../../utils/oauthTokenManager';
+import axios, { AxiosRequestConfig } from "axios";
+import { ScreenerInput, ScreenerResult, IScreenerService } from "./types";
+import CredentialManager from "../../utils/credentialManager";
+import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 
-export type HttpMethod = 'get' | 'post' | 'put' | 'delete';
+export type HttpMethod = "get" | "post" | "put" | "delete";
 
 export interface ScreenerOperation {
   path: string | ((input: ScreenerInput) => string);
@@ -30,9 +30,11 @@ export interface ScreenerOperation {
 }
 
 export interface ScreenerConfig {
-  authType?: 'api_key' | 'oauth';
+  authType?: "api_key" | "oauth";
   baseUrl: string | ((creds: any, input?: ScreenerInput) => string);
-  makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
+  makeAuthHeaders: (
+    creds: any
+  ) => Record<string, string> | Promise<Record<string, string>>;
   ops: Record<string, ScreenerOperation>;
 }
 
@@ -43,63 +45,77 @@ export class ScreenerService implements IScreenerService {
   ) {}
 
   private handlers: Record<string, (input: ScreenerInput) => Promise<any>> =
-    new Proxy({}, {
-      get: (target, prop: string) => {
-        return async (input: ScreenerInput) => {
-          const op = this.config.ops[prop];
-          if (!op) {
-            throw new Error(`Operation ${prop} not configured`);
-          }
+    new Proxy(
+      {},
+      {
+        get: (target, prop: string) => {
+          return async (input: ScreenerInput) => {
+            const op = this.config.ops[prop];
+            if (!op) {
+              throw new Error(`Operation ${prop} not configured`);
+            }
 
-          let creds = null;
-          if (input.credential_id) {
-            const { credentials } =
-              await this.getCredentials(input.user_id, input.credential_id);
-            creds = await this.resolveCredentials(credentials, input);
-          }
+            let creds = null;
+            if (input.credential_id) {
+              const { credentials } = await this.getCredentials(
+                input.user_id,
+                input.credential_id
+              );
+              creds = await this.resolveCredentials(credentials, input);
+            }
 
-          const baseUrl = typeof this.config.baseUrl === 'function'
-            ? this.config.baseUrl(creds, input)
-            : this.config.baseUrl;
-          const path = typeof op.path === 'function' ? op.path(input) : op.path;
-          const url = `${baseUrl}${path}`;
-          const headers = creds ? await this.config.makeAuthHeaders(creds) : {};
-          const params = op.makeParams?.(input, creds) ?? {};
-          const body = op.makeBody ? await op.makeBody(input, creds) : undefined;
+            const baseUrl =
+              typeof this.config.baseUrl === "function"
+                ? this.config.baseUrl(creds, input)
+                : this.config.baseUrl;
+            const path =
+              typeof op.path === "function" ? op.path(input) : op.path;
+            const url = `${baseUrl}${path}`;
+            const headers = creds
+              ? await this.config.makeAuthHeaders(creds)
+              : {};
+            const params = op.makeParams?.(input, creds) ?? {};
+            const body = op.makeBody
+              ? await op.makeBody(input, creds)
+              : undefined;
 
-          const axiosConfig: AxiosRequestConfig = {
-            method: op.method,
-            url,
-            headers,
-            params,
-            timeout: 30_000,
+            const axiosConfig: AxiosRequestConfig = {
+              method: op.method,
+              url,
+              headers,
+              params,
+              timeout: 30_000,
+            };
+
+            if (["post", "put", "patch", "delete"].includes(op.method)) {
+              axiosConfig.data = body;
+            }
+
+            console.log(
+              `📊 [ScreenerService] Executing ${this.screenerKey}.${prop}:`,
+              {
+                url,
+                method: op.method,
+                params,
+              }
+            );
+
+            const res = await axios.request(axiosConfig);
+            const rawData = res.data;
+            return op.transformResult
+              ? op.transformResult(rawData, input)
+              : rawData;
           };
-
-          if (['post', 'put', 'patch', 'delete'].includes(op.method)) {
-            axiosConfig.data = body;
-          }
-
-          console.log(`📊 [ScreenerService] Executing ${this.screenerKey}.${prop}:`, {
-            url,
-            method: op.method,
-            params
-          });
-
-          const res = await axios.request(axiosConfig);
-          const rawData = res.data;
-          return op.transformResult
-            ? op.transformResult(rawData, input)
-            : rawData;
-        };
+        },
       }
-    });
+    );
 
   async execute(input: ScreenerInput): Promise<ScreenerResult> {
     const handler = this.handlers[input.operation];
     if (!handler) {
       return {
         success: false,
-        error: `Unsupported operation: ${input.operation} for screener: ${this.screenerKey}`
+        error: `Unsupported operation: ${input.operation} for screener: ${this.screenerKey}`,
       };
     }
 
@@ -109,22 +125,32 @@ export class ScreenerService implements IScreenerService {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
 
-  private async getCredentials(userId: string, credentialId: string): Promise<any> {
-    return CredentialManager.getCredentials(userId, this.screenerKey, credentialId);
+  private async getCredentials(
+    userId: string,
+    credentialId: string
+  ): Promise<any> {
+    return CredentialManager.getCredentials(
+      userId,
+      this.screenerKey,
+      credentialId
+    );
   }
 
-  private async resolveCredentials(credentials: any, input: ScreenerInput): Promise<any> {
+  private async resolveCredentials(
+    credentials: any,
+    input: ScreenerInput
+  ): Promise<any> {
     const clientCreds = credentials?.client_json;
     if (!clientCreds) {
       return null;
     }
 
-    if (this.config.authType !== 'oauth') {
+    if (this.config.authType !== "oauth") {
       return clientCreds;
     }
 
@@ -137,7 +163,7 @@ export class ScreenerService implements IScreenerService {
       this.screenerKey,
       mergedCreds,
       input.user_id,
-      input.credential_id ?? ''
+      input.credential_id ?? ""
     );
   }
 }

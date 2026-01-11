@@ -87,24 +87,13 @@ router.post("/execute", async (req: Request, res: Response) => {
       credential_id, 
       operation, 
       symbol, 
+      tickers,
+      query,
       period, 
       limit,
-      // Stock screener params
-      market_cap_more_than,
-      market_cap_lower_than,
-      price_more_than,
-      price_lower_than,
-      beta_more_than,
-      beta_lower_than,
-      volume_more_than,
-      dividend_more_than,
-      dividend_lower_than,
-      sector,
-      industry,
-      country,
-      exchange,
-      is_etf,
-      is_actively_trading,
+      page,
+      from,
+      to,
     } = req.body;
 
     if (!userId) {
@@ -117,29 +106,20 @@ router.post("/execute", async (req: Request, res: Response) => {
 
     const parsedLimit =
       limit !== undefined && limit !== "" ? parseInt(limit, 10) : undefined;
+    const parsedPage =
+      page !== undefined && page !== "" ? parseInt(page, 10) : undefined;
 
     const result = await DataService.execute("fmp", operation, {
       user_id: userId,
       credential_id,
       symbol,
+      tickers,
+      query,
       period,
       limit: parsedLimit,
-      // Pass screener params
-      market_cap_more_than,
-      market_cap_lower_than,
-      price_more_than,
-      price_lower_than,
-      beta_more_than,
-      beta_lower_than,
-      volume_more_than,
-      dividend_more_than,
-      dividend_lower_than,
-      sector,
-      industry,
-      country,
-      exchange,
-      is_etf,
-      is_actively_trading,
+      page: parsedPage,
+      from,
+      to,
     });
 
     return res.json(result);

@@ -461,7 +461,37 @@ class PolygonService extends BaseDataService {
           result = await this.getSplits(creds, input);
           break;
         case "news":
-          result = await this.getNews(creds, input);
+          result = await this.getStockNews(creds, input);
+          break;
+        case "general_news":
+          result = await this.getGeneralNews(creds, input);
+          break;
+        case "stock_news":
+          result = await this.getStockNews(creds, input);
+          break;
+        case "press_releases":
+          result = await this.getPressReleases(creds, input);
+          break;
+        case "crypto_news":
+          result = await this.getCryptoNews(creds, input);
+          break;
+        case "forex_news":
+          result = await this.getForexNews(creds, input);
+          break;
+        case "fmp_articles":
+          result = await this.getFmpArticles(creds, input);
+          break;
+        case "search_stock_news":
+          result = await this.searchStockNews(creds, input);
+          break;
+        case "search_press_releases":
+          result = await this.searchPressReleases(creds, input);
+          break;
+        case "search_crypto_news":
+          result = await this.searchCryptoNews(creds, input);
+          break;
+        case "search_forex_news":
+          result = await this.searchForexNews(creds, input);
           break;
         case "related_companies":
           result = await this.getRelatedCompanies(creds, input);
@@ -692,16 +722,43 @@ class FMPService extends BaseDataService {
           result = await this.getSplits(creds, input);
           break;
         case "news":
-          result = await this.getNews(creds, input);
+          result = await this.getStockNews(creds, input);
+          break;
+        case "general_news":
+          result = await this.getGeneralNews(creds, input);
+          break;
+        case "stock_news":
+          result = await this.getStockNews(creds, input);
+          break;
+        case "press_releases":
+          result = await this.getPressReleases(creds, input);
+          break;
+        case "crypto_news":
+          result = await this.getCryptoNews(creds, input);
+          break;
+        case "forex_news":
+          result = await this.getForexNews(creds, input);
+          break;
+        case "fmp_articles":
+          result = await this.getFmpArticles(creds, input);
+          break;
+        case "search_stock_news":
+          result = await this.searchStockNews(creds, input);
+          break;
+        case "search_press_releases":
+          result = await this.searchPressReleases(creds, input);
+          break;
+        case "search_crypto_news":
+          result = await this.searchCryptoNews(creds, input);
+          break;
+        case "search_forex_news":
+          result = await this.searchForexNews(creds, input);
           break;
         case "insider_trading":
           result = await this.getInsiderTrading(creds, input);
           break;
         case "institutional_holders":
           result = await this.getInstitutionalHolders(creds, input);
-          break;
-        case "stock_screener":
-          result = await this.getStockScreener(creds, input);
           break;
         default:
           throw new Error(`Unsupported FMP operation: ${operation}`);
@@ -1015,13 +1072,169 @@ class FMPService extends BaseDataService {
     return response.data;
   }
 
-  private async getNews(creds: any, input: DataInput): Promise<any> {
-    const { symbol, limit = 10 } = input;
-    if (!symbol) throw new Error("symbol is required");
+  private async getGeneralNews(creds: any, input: DataInput): Promise<any> {
+    const { limit = 10, page, from, to } = input;
+
+    const response = await axios.get(`${this.baseUrl}/news`, {
+      params: {
+        limit,
+        page,
+        from,
+        to,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getStockNews(creds: any, input: DataInput): Promise<any> {
+    const { tickers, symbol, limit = 10, page, from, to } = input;
+    const resolvedTickers = tickers || symbol;
+    if (!resolvedTickers) throw new Error("tickers is required");
 
     const response = await axios.get(`${this.baseUrl}/stock_news`, {
       params: {
-        tickers: symbol.toUpperCase(),
+        tickers: String(resolvedTickers).toUpperCase(),
+        limit,
+        page,
+        from,
+        to,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getPressReleases(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10, page } = input;
+    if (!symbol) throw new Error("symbol is required");
+
+    const response = await axios.get(`${this.baseUrl}/press-releases`, {
+      params: {
+        symbol: symbol.toUpperCase(),
+        limit,
+        page,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getCryptoNews(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10, page } = input;
+
+    const response = await axios.get(`${this.baseUrl}/crypto_news`, {
+      params: {
+        symbol: symbol ? symbol.toUpperCase() : undefined,
+        limit,
+        page,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getForexNews(creds: any, input: DataInput): Promise<any> {
+    const { symbol, limit = 10, page } = input;
+
+    const response = await axios.get(`${this.baseUrl}/forex_news`, {
+      params: {
+        symbol: symbol ? symbol.toUpperCase() : undefined,
+        limit,
+        page,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async getFmpArticles(creds: any, input: DataInput): Promise<any> {
+    const { limit = 10, page } = input;
+
+    const response = await axios.get(`${this.baseUrl}/fmp-articles`, {
+      params: {
+        limit,
+        page,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async searchStockNews(creds: any, input: DataInput): Promise<any> {
+    const { query, tickers, limit = 10 } = input;
+    if (!query) throw new Error("query is required");
+
+    const response = await axios.get(`${this.baseUrl}/stock_news/search`, {
+      params: {
+        query,
+        tickers: tickers ? String(tickers).toUpperCase() : undefined,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async searchPressReleases(
+    creds: any,
+    input: DataInput
+  ): Promise<any> {
+    const { query, symbol, limit = 10 } = input;
+    if (!query) throw new Error("query is required");
+
+    const response = await axios.get(`${this.baseUrl}/press-releases/search`, {
+      params: {
+        query,
+        symbol: symbol ? symbol.toUpperCase() : undefined,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async searchCryptoNews(creds: any, input: DataInput): Promise<any> {
+    const { query, symbol, limit = 10 } = input;
+    if (!query) throw new Error("query is required");
+
+    const response = await axios.get(`${this.baseUrl}/crypto_news/search`, {
+      params: {
+        query,
+        symbol: symbol ? symbol.toUpperCase() : undefined,
+        limit,
+        apikey: creds.api_key,
+      },
+      timeout: 10000,
+    });
+
+    return response.data;
+  }
+
+  private async searchForexNews(creds: any, input: DataInput): Promise<any> {
+    const { query, symbol, limit = 10 } = input;
+    if (!query) throw new Error("query is required");
+
+    const response = await axios.get(`${this.baseUrl}/forex_news/search`, {
+      params: {
+        query,
+        symbol: symbol ? symbol.toUpperCase() : undefined,
         limit,
         apikey: creds.api_key,
       },
@@ -1062,61 +1275,6 @@ class FMPService extends BaseDataService {
     return response.data;
   }
 
-  private async getStockScreener(creds: any, input: DataInput): Promise<any> {
-    const {
-      limit = 100,
-      market_cap_more_than,
-      market_cap_lower_than,
-      price_more_than,
-      price_lower_than,
-      beta_more_than,
-      beta_lower_than,
-      volume_more_than,
-      dividend_more_than,
-      dividend_lower_than,
-      sector,
-      industry,
-      country,
-      exchange,
-      is_etf,
-      is_actively_trading,
-    } = input;
-
-    // Build params object, only including non-empty values
-    const params: Record<string, any> = {
-      apikey: creds.api_key,
-      limit,
-    };
-
-    if (market_cap_more_than)
-      params.marketCapMoreThan = parseFloat(market_cap_more_than);
-    if (market_cap_lower_than)
-      params.marketCapLowerThan = parseFloat(market_cap_lower_than);
-    if (price_more_than) params.priceMoreThan = parseFloat(price_more_than);
-    if (price_lower_than) params.priceLowerThan = parseFloat(price_lower_than);
-    if (beta_more_than) params.betaMoreThan = parseFloat(beta_more_than);
-    if (beta_lower_than) params.betaLowerThan = parseFloat(beta_lower_than);
-    if (volume_more_than) params.volumeMoreThan = parseFloat(volume_more_than);
-    if (dividend_more_than)
-      params.dividendMoreThan = parseFloat(dividend_more_than);
-    if (dividend_lower_than)
-      params.dividendLowerThan = parseFloat(dividend_lower_than);
-    if (sector) params.sector = sector;
-    if (industry) params.industry = industry;
-    if (country) params.country = country;
-    if (exchange) params.exchange = exchange;
-    if (is_etf !== undefined && is_etf !== "") params.isEtf = is_etf === "true";
-    if (is_actively_trading !== undefined && is_actively_trading !== "") {
-      params.isActivelyTrading = is_actively_trading === "true";
-    }
-
-    const response = await axios.get(`${this.baseUrl}/stock-screener`, {
-      params,
-      timeout: 20000,
-    });
-
-    return response.data;
-  }
 }
 
 // Market service (simple market data aggregator)

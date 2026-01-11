@@ -20,14 +20,14 @@
       "placeholder": "Your FMP API key"
     }
   ],
-  "authAction": { "url": "/fmp/auth", "method": "POST" },
+  "authAction": { "url": "/datasource/fmpNews/auth", "method": "POST" },
   "icon": "/assets/icons/fmp.svg",
   "size": { "width": 340, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": { "url": "/fmp/execute", "method": "POST" },
+  "action": { "url": "/datasource/fmpNews/:operation", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

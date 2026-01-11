@@ -62,10 +62,12 @@ import storeRoutes from "./routes/store";
 import backtestRoutes from "./routes/backtest";
 import polygonRoutes from "./routes/polygon";
 import fmpRoutes from "./routes/fmp";
+import datasourceRoutes from "./routes/datasource";
 
 import WebSocketManager from "./services/websocketManager";
 import { initializeNodeExecutors } from "./nodes";
 import { initializeScreenerServices } from "./services/screeners";
+import { initializeDataSourceServices } from "./services/datasources";
 import WorkflowCache from "./services/WorkflowCache";
 import {
   redisPublishBreaker,
@@ -166,6 +168,7 @@ app.use("/store", storeRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/polygon", polygonRoutes);
 app.use("/fmp", fmpRoutes);
+app.use("/datasource", datasourceRoutes);
 
 logger.info("All routes mounted");
 
@@ -190,7 +193,8 @@ async function startServer() {
       logger.info("Supabase connected successfully");
     }
 
-    // Initialize node executors and screener services
+    // Initialize node executors, screener services, and data source services
+    initializeDataSourceServices();
     initializeScreenerServices();
     initializeNodeExecutors();
 

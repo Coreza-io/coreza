@@ -19,14 +19,14 @@
       "placeholder": "Your FMP API key"
     }
   ],
-  "authAction": { "url": "/fmp/auth", "method": "POST" },
+  "authAction": { "url": "/datasource/fmp/auth", "method": "POST" },
   "icon": "/assets/icons/fmp.svg",
   "size": { "width": 340, "height": 580 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": { "url": "/fmp/execute", "method": "POST" },
+  "action": { "url": "/datasource/fmp/:operation", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

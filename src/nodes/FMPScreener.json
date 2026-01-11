@@ -31,7 +31,6 @@
   "fields": [
     {
       "key": "operation",
-      "label": "Operation",
       "type": "hidden",
       "default": "stock_screener"
     },
@@ -40,76 +39,73 @@
       "label": "Credential",
       "type": "select",
       "optionsSource": "credentialsApi",
-      "placeholder": "Select credential",
       "required": true
     },
     {
       "key": "limit",
       "label": "Limit (Results)",
       "type": "text",
-      "placeholder": "100",
       "default": "100"
     },
+
     {
-      "key": "market_cap_more_than",
+      "key": "marketCapMoreThan",
       "label": "Min Market Cap",
       "type": "text",
-      "placeholder": "e.g. 1000000000 (1B)"
+      "placeholder": "1000000000"
     },
     {
-      "key": "market_cap_lower_than",
+      "key": "marketCapLowerThan",
       "label": "Max Market Cap",
       "type": "text",
-      "placeholder": "e.g. 10000000000 (10B)"
+      "placeholder": "10000000000"
     },
+
     {
-      "key": "price_more_than",
+      "key": "priceMoreThan",
       "label": "Min Price",
-      "type": "text",
-      "placeholder": "e.g. 10"
+      "type": "text"
     },
     {
-      "key": "price_lower_than",
+      "key": "priceLowerThan",
       "label": "Max Price",
-      "type": "text",
-      "placeholder": "e.g. 500"
+      "type": "text"
     },
+
     {
-      "key": "beta_more_than",
+      "key": "betaMoreThan",
       "label": "Min Beta",
-      "type": "text",
-      "placeholder": "e.g. 0.5"
+      "type": "text"
     },
     {
-      "key": "beta_lower_than",
+      "key": "betaLowerThan",
       "label": "Max Beta",
-      "type": "text",
-      "placeholder": "e.g. 2.0"
+      "type": "text"
     },
+
     {
-      "key": "volume_more_than",
+      "key": "volumeMoreThan",
       "label": "Min Volume",
-      "type": "text",
-      "placeholder": "e.g. 1000000"
+      "type": "text"
     },
+
     {
-      "key": "dividend_more_than",
+      "key": "dividendMoreThan",
       "label": "Min Dividend Yield",
-      "type": "text",
-      "placeholder": "e.g. 0.02 (2%)"
+      "type": "text"
     },
     {
-      "key": "dividend_lower_than",
+      "key": "dividendLowerThan",
       "label": "Max Dividend Yield",
-      "type": "text",
-      "placeholder": "e.g. 0.10 (10%)"
+      "type": "text"
     },
+
     {
       "key": "sector",
       "label": "Sector",
       "type": "select",
       "options": [
-        { "id": "", "name": "All Sectors" },
+        { "id": "", "name": "All" },
         { "id": "Technology", "name": "Technology" },
         { "id": "Healthcare", "name": "Healthcare" },
         { "id": "Financial Services", "name": "Financial Services" },
@@ -121,20 +117,18 @@
         { "id": "Communication Services", "name": "Communication Services" },
         { "id": "Real Estate", "name": "Real Estate" },
         { "id": "Utilities", "name": "Utilities" }
-      ],
-      "default": ""
+      ]
     },
+
     {
       "key": "industry",
       "label": "Industry",
-      "type": "text",
-      "placeholder": "e.g. Software—Application"
+      "type": "text"
     },
     {
       "key": "country",
       "label": "Country",
       "type": "text",
-      "placeholder": "e.g. US, CA, GB",
       "default": "US"
     },
     {
@@ -142,26 +136,27 @@
       "label": "Exchange",
       "type": "select",
       "options": [
-        { "id": "", "name": "All Exchanges" },
+        { "id": "", "name": "All" },
         { "id": "NYSE", "name": "NYSE" },
         { "id": "NASDAQ", "name": "NASDAQ" },
         { "id": "AMEX", "name": "AMEX" }
-      ],
-      "default": ""
+      ]
     },
+
     {
-      "key": "is_etf",
-      "label": "Include ETFs",
+      "key": "isEtf",
+      "label": "ETF Filter",
       "type": "select",
       "options": [
-        { "id": "", "name": "Include All" },
+        { "id": "", "name": "All" },
         { "id": "true", "name": "ETFs Only" },
         { "id": "false", "name": "Exclude ETFs" }
       ],
       "default": "false"
     },
+
     {
-      "key": "is_actively_trading",
+      "key": "isActivelyTrading",
       "label": "Actively Trading",
       "type": "select",
       "options": [

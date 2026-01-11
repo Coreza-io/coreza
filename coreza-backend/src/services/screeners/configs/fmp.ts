@@ -14,21 +14,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { RestScreenerConfig } from '../RestScreenerService';
-import { ScreenerInput } from '../types';
+import { RestScreenerConfig } from "../RestScreenerService";
+import { ScreenerInput } from "../types";
 
 export const fmpScreenerConfig: RestScreenerConfig = {
-  baseUrl: 'https://financialmodelingprep.com/stable',
+  baseUrl: "https://financialmodelingprep.com/stable",
 
   makeAuthHeaders: () => ({}),
 
   ops: {
     stock_screener: {
-      method: 'get',
-      path: '/stock-screener',
+      method: "get",
+      path: "/company-screener",
       makeParams: (input: ScreenerInput, creds?: any) => {
         if (!creds?.api_key) {
-          throw new Error('Missing FMP API credentials');
+          throw new Error("Missing FMP API credentials");
         }
 
         const params: Record<string, any> = {
@@ -67,11 +67,14 @@ export const fmpScreenerConfig: RestScreenerConfig = {
         if (input.industry) params.industry = input.industry;
         if (input.country) params.country = input.country;
         if (input.exchange) params.exchange = input.exchange;
-        if (input.is_etf !== undefined && input.is_etf !== '') {
-          params.isEtf = input.is_etf === 'true';
+        if (input.is_etf !== undefined && input.is_etf !== "") {
+          params.isEtf = input.is_etf === "true";
         }
-        if (input.is_actively_trading !== undefined && input.is_actively_trading !== '') {
-          params.isActivelyTrading = input.is_actively_trading === 'true';
+        if (
+          input.is_actively_trading !== undefined &&
+          input.is_actively_trading !== ""
+        ) {
+          params.isActivelyTrading = input.is_actively_trading === "true";
         }
 
         return params;

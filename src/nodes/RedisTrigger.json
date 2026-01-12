@@ -68,11 +68,11 @@
     }
   ],
   "authAction": {
-    "url": "/redis/auth",
+    "url": "/storage/redis/auth",
     "method": "POST"
   },
   "action": {
-    "url": "/redis/trigger/subscribe",
+    "url": "/storage/redisTrigger/subscribe",
     "method": "POST"
   },
   "fields": [

@@ -52,9 +52,7 @@ import credentialsRoutes from "./routes/credentials";
 import googleSearchRoutes from "./routes/googlesearch";
 import screenerRoutes from "./routes/screener";
 import brokerRoutes from "./routes/broker";
-import redisRoutes from "./routes/redis";
-import redisTriggerRoutes from "./routes/redisTrigger";
-import storeRoutes from "./routes/store";
+import storageRoutes from "./routes/storage";
 import backtestRoutes from "./routes/backtest";
 import datasourceRoutes from "./routes/datasource";
 
@@ -62,6 +60,7 @@ import WebSocketManager from "./services/websocketManager";
 import { initializeNodeExecutors } from "./nodes";
 import { initializeScreenerServices } from "./services/screeners";
 import { initializeDataSourceServices } from "./services/datasources";
+import { initializeStorageServices } from "./services/storage";
 import WorkflowCache from "./services/WorkflowCache";
 import {
   redisPublishBreaker,
@@ -152,9 +151,7 @@ app.use("/comparator", comparatorRoutes);
 app.use("/risk", riskRoutes);
 app.use("/googlesearch", googleSearchRoutes);
 app.use("/credentials", credentialsRoutes);
-app.use("/redis", redisRoutes);
-app.use("/redis/trigger", redisTriggerRoutes);
-app.use("/store", storeRoutes);
+app.use("/storage", storageRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/datasource", datasourceRoutes);
 
@@ -181,7 +178,8 @@ async function startServer() {
       logger.info("Supabase connected successfully");
     }
 
-    // Initialize node executors, screener services, and data source services
+    // Initialize node executors, screener services, data source services, and storage services
+    initializeStorageServices();
     initializeDataSourceServices();
     initializeScreenerServices();
     initializeNodeExecutors();

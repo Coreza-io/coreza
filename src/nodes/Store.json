@@ -13,7 +13,7 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": { "url": "/store/execute", "method": "POST" },
+  "action": { "url": "/storage/store/:operation", "method": "POST" },
   "fields": [
     {
       "key": "dataType",

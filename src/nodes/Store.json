@@ -16,6 +16,24 @@
   "action": { "url": "/storage/store/:operation", "method": "POST" },
   "fields": [
     {
+      "key": "scope",
+      "label": "Scope",
+      "type": "select",
+      "options": [
+        {
+          "label": "local (this workflow only)",
+          "value": "local"
+        },
+        {
+          "label": "Global (shared across workflows)",
+          "value": "global"
+        }
+      ],
+      "default": "global",
+      "description": "Determines key namespace",
+      "showDescription": false
+    },
+    {
       "key": "dataType",
       "label": "Data Type",
       "type": "select",

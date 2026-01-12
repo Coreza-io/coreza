@@ -14,9 +14,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { IStorageService, StorageInput, StorageConfig, StorageContext } from "./types";
+import type {
+  IStorageService,
+  StorageInput,
+  StorageConfig,
+  StorageContext,
+} from "./types";
 import type { StandardNodeOutput } from "../../types/nodeOutput";
-import { createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../../utils/normalizeOutput";
 import CredentialManager from "../../utils/credentialManager";
 import { getUserRedisConnection } from "./helpers/redisConnection";
 import { getRedisCache } from "../../config/redis";
@@ -38,7 +46,8 @@ export class StorageService implements IStorageService {
 
   async execute(input: StorageInput): Promise<StandardNodeOutput> {
     try {
-      const { operation, user_id, credential_id, workflow_id, workflowId } = input;
+      const { operation, user_id, credential_id, workflow_id, subCategory } =
+        input;
 
       if (!operation) {
         return createErrorOutput("Operation is required", this.getContext());
@@ -46,23 +55,37 @@ export class StorageService implements IStorageService {
 
       const operationConfig = this.config.operations[operation];
       if (!operationConfig) {
-        return createErrorOutput(`Unknown operation: ${operation}`, this.getContext());
+        return createErrorOutput(
+          `Unknown operation: ${operation}`,
+          this.getContext()
+        );
       }
 
       // Build context
       const context: StorageContext = {
         userId: user_id,
-        workflowId: workflow_id || workflowId,
+        workflowId: workflow_id,
       };
 
       // Get Redis client based on service type
       if (this.requiresCredentials) {
         if (!credential_id) {
-          return createErrorOutput("credential_id is required", this.getContext());
+          return createErrorOutput(
+            "credential_id is required",
+            this.getContext()
+          );
         }
-        const credsResult = await CredentialManager.getCredentials(user_id, "redis", credential_id);
+        const credsResult = await CredentialManager.getCredentials(
+          user_id,
+          subCategory,
+          credential_id
+        );
         context.credentials = credsResult?.credentials;
-        context.redis = await getUserRedisConnection(user_id, credential_id, context.credentials);
+        context.redis = await getUserRedisConnection(
+          user_id,
+          credential_id,
+          context.credentials
+        );
       } else {
         // Internal Redis (Store node)
         context.redis = getRedisCache();
@@ -72,7 +95,10 @@ export class StorageService implements IStorageService {
       const result = await operationConfig.handler(input, context);
       return createSuccessOutput(result, this.getContext());
     } catch (error: any) {
-      return createErrorOutput(error.message || String(error), this.getContext());
+      return createErrorOutput(
+        error.message || String(error),
+        this.getContext()
+      );
     }
   }
 }

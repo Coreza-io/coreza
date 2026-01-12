@@ -101,6 +101,58 @@
       "required": true
     },
     {
+      "key": "scope",
+      "label": "Scope",
+      "type": "select",
+      "options": [
+        {
+          "label": "local (this workflow only)",
+          "value": "local"
+        },
+        {
+          "label": "Global (shared across workflows)",
+          "value": "global"
+        }
+      ],
+      "default": "global",
+      "description": "Determines key namespace",
+      "showDescription": false
+    },
+    {
+      "key": "keyType",
+      "label": "Key Type",
+      "type": "select",
+      "options": [
+        {
+          "label": "Automatic",
+          "value": "automatic",
+          "description": "Tries to figure out the type automatically depending on the data"
+        },
+        {
+          "label": "Hash",
+          "value": "hash",
+          "description": "Data in key is of type 'hash'"
+        },
+        {
+          "label": "List",
+          "value": "list",
+          "description": "Data in key is of type 'lists'"
+        },
+        {
+          "label": "Sets",
+          "value": "sets",
+          "description": "Data in key is of type 'sets'"
+        },
+        {
+          "label": "String",
+          "value": "string",
+          "description": "Data in key is of type 'string'"
+        }
+      ],
+      "default": "automatic",
+      "required": true
+    },
+    {
       "key": "operation",
       "label": "Operation",
       "type": "select",
@@ -280,137 +332,6 @@
       "required": true
     },
     {
-      "key": "scope",
-      "label": "Scope",
-      "type": "select",
-      "options": [
-        {
-          "label": "Workflow (this workflow only)",
-          "value": "workflow"
-        },
-        {
-          "label": "User (shared across workflows)",
-          "value": "user"
-        },
-        {
-          "label": "Global (shared across users)",
-          "value": "global"
-        }
-      ],
-      "default": "workflow",
-      "description": "Determines key namespace",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "get",
-            "set",
-            "delete",
-            "increment",
-            "pop",
-            "push",
-            "sadd",
-            "srem",
-            "smembers",
-            "sismember",
-            "scard",
-            "sinter",
-            "sunion",
-            "sdiff",
-            "hkeys",
-            "hvals",
-            "hexists",
-            "hincrby",
-            "lrange",
-            "llen",
-            "lindex",
-            "lset",
-            "ltrim",
-            "zadd",
-            "zrange",
-            "zscore",
-            "zcount",
-            "zincrby",
-            "zrem"
-          ]
-        }
-      },
-      "showDescription": false
-    },
-    {
-      "key": "keyType",
-      "label": "Key Type",
-      "type": "select",
-      "options": [
-        {
-          "label": "Automatic",
-          "value": "automatic",
-          "description": "Tries to figure out the type automatically depending on the data"
-        },
-        {
-          "label": "Hash",
-          "value": "hash",
-          "description": "Data in key is of type 'hash'"
-        },
-        {
-          "label": "List",
-          "value": "list",
-          "description": "Data in key is of type 'lists'"
-        },
-        {
-          "label": "Sets",
-          "value": "sets",
-          "description": "Data in key is of type 'sets'"
-        },
-        {
-          "label": "String",
-          "value": "string",
-          "description": "Data in key is of type 'string'"
-        }
-      ],
-      "default": "automatic",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "set",
-            "get",
-            "delete",
-            "exists",
-            "incr",
-            "decr",
-            "append",
-            "lpush",
-            "rpush",
-            "lpop",
-            "rpop",
-            "lrange",
-            "llen",
-            "lindex",
-            "lset",
-            "sadd",
-            "srem",
-            "smembers",
-            "scard",
-            "sismember",
-            "hset",
-            "hget",
-            "hgetall",
-            "hdel",
-            "hkeys",
-            "hvals",
-            "hexists",
-            "zadd",
-            "zrange",
-            "zscore",
-            "zcount",
-            "zincrby",
-            "zrem",
-            "pubsub_channels",
-            "pubsub_numsub"
-          ]
-        }
-      }
-    },
-    {
       "key": "key",
       "label": "Key",
       "type": "text",
@@ -460,9 +381,7 @@
       "description": "Pattern to match keys (supports * and ? wildcards)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "keys"
-          ]
+          "operation": ["keys"]
         }
       },
       "showDescription": false
@@ -475,9 +394,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "publish"
-          ]
+          "operation": ["publish"]
         }
       }
     },
@@ -488,12 +405,7 @@
       "placeholder": "{{ $('Scanner').json.tickers }} or static value",
       "displayOptions": {
         "show": {
-          "operation": [
-            "set",
-            "push",
-            "publish",
-            "lset"
-          ]
+          "operation": ["set", "push", "publish", "lset"]
         }
       }
     },
@@ -526,12 +438,8 @@
       "placeholder": "Member value for set operations",
       "displayOptions": {
         "show": {
-          "operation": [
-            "set"
-          ],
-          "keyType": [
-            "sets"
-          ]
+          "operation": ["set"],
+          "keyType": ["sets"]
         }
       }
     },
@@ -552,9 +460,7 @@
       "default": "left",
       "displayOptions": {
         "show": {
-          "operation": [
-            "pop"
-          ]
+          "operation": ["pop"]
         }
       }
     },
@@ -575,9 +481,7 @@
       "default": "left",
       "displayOptions": {
         "show": {
-          "operation": [
-            "push"
-          ]
+          "operation": ["push"]
         }
       }
     },
@@ -589,11 +493,7 @@
       "description": "Comma-separated values or array from previous node",
       "displayOptions": {
         "show": {
-          "operation": [
-            "sadd",
-            "srem",
-            "zrem"
-          ]
+          "operation": ["sadd", "srem", "zrem"]
         }
       },
       "showDescription": false
@@ -605,11 +505,7 @@
       "placeholder": "Member to check",
       "displayOptions": {
         "show": {
-          "operation": [
-            "sismember",
-            "zscore",
-            "zincrby"
-          ]
+          "operation": ["sismember", "zscore", "zincrby"]
         }
       }
     },
@@ -621,11 +517,7 @@
       "description": "Additional set keys for intersection/union/difference operations",
       "displayOptions": {
         "show": {
-          "operation": [
-            "sinter",
-            "sunion",
-            "sdiff"
-          ]
+          "operation": ["sinter", "sunion", "sdiff"]
         }
       },
       "showDescription": false
@@ -639,9 +531,7 @@
       "description": "Integer value to increment the hash field by (can be negative)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "hincrby"
-          ]
+          "operation": ["hincrby"]
         }
       },
       "showDescription": false
@@ -655,11 +545,7 @@
       "description": "Starting position (0-based, negative counts from end)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "lrange",
-            "ltrim",
-            "zrange"
-          ]
+          "operation": ["lrange", "ltrim", "zrange"]
         }
       },
       "showDescription": false
@@ -673,11 +559,7 @@
       "description": "Ending position (inclusive, -1 for last element)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "lrange",
-            "ltrim",
-            "zrange"
-          ]
+          "operation": ["lrange", "ltrim", "zrange"]
         }
       },
       "showDescription": false
@@ -690,10 +572,7 @@
       "description": "List position (0-based, negative counts from end)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "lindex",
-            "lset"
-          ]
+          "operation": ["lindex", "lset"]
         }
       },
       "showDescription": false
@@ -707,12 +586,7 @@
       "description": "Time to live in seconds (0 = no expiry)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "set",
-            "push",
-            "sadd",
-            "zadd"
-          ]
+          "operation": ["set", "push", "sadd", "zadd"]
         }
       },
       "showDescription": false
@@ -725,10 +599,7 @@
       "description": "Score value for sorting (can be integer or float)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zadd",
-            "zincrby"
-          ]
+          "operation": ["zadd", "zincrby"]
         }
       },
       "showDescription": false
@@ -741,9 +612,7 @@
       "description": "Comma-separated score:member pairs for batch add",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zadd"
-          ]
+          "operation": ["zadd"]
         }
       },
       "showDescription": false
@@ -766,9 +635,7 @@
       "description": "Include scores in the output",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zrange"
-          ]
+          "operation": ["zrange"]
         }
       },
       "showDescription": false
@@ -791,9 +658,7 @@
       "description": "Return results from highest to lowest score",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zrange"
-          ]
+          "operation": ["zrange"]
         }
       },
       "showDescription": false
@@ -807,9 +672,7 @@
       "description": "Minimum score (use -inf for no lower bound)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zcount"
-          ]
+          "operation": ["zcount"]
         }
       },
       "showDescription": false
@@ -823,9 +686,7 @@
       "description": "Maximum score (use +inf for no upper bound)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "zcount"
-          ]
+          "operation": ["zcount"]
         }
       },
       "showDescription": false
@@ -839,9 +700,7 @@
       "description": "Pattern to match channels (supports * wildcards)",
       "displayOptions": {
         "show": {
-          "operation": [
-            "pubsub_channels"
-          ]
+          "operation": ["pubsub_channels"]
         }
       },
       "showDescription": false
@@ -854,9 +713,7 @@
       "description": "Comma-separated list of channel names",
       "displayOptions": {
         "show": {
-          "operation": [
-            "pubsub_numsub"
-          ]
+          "operation": ["pubsub_numsub"]
         }
       },
       "showDescription": false

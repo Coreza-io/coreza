@@ -20,21 +20,23 @@ import type { StorageConfig, StorageInput, StorageContext } from "../types";
 function buildKey(
   scope: string,
   key: string,
-  context: { userId?: string; workflowId?: string }
+  context: { userId?: string; workflowId?: string; subCategory?: string }
 ): string {
   switch (scope) {
     case "global":
-      return `global:${key}`;
-    case "user":
-      return `user:${context.userId}:${key}`;
-    case "workflow":
+      return `user:${context.userId}:${context.subCategory}:${key}`;
+    case "local":
     default:
-      return `workflow:${context.workflowId}:${key}`;
+      return `user:${context.userId}:${context.workflowId}:${context.subCategory}:${key}`;
   }
 }
 
 // Helper to detect key type
-async function detectKeyType(redis: any, key: string, value: any): Promise<string> {
+async function detectKeyType(
+  redis: any,
+  key: string,
+  value: any
+): Promise<string> {
   const existingType = await redis.type(key);
   if (existingType !== "none") {
     return existingType;
@@ -101,43 +103,67 @@ export const redisConfig: StorageConfig = {
   operations: {
     set: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { key: rawKey, value, ttl, scope, keyType = "automatic" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        
-        const actualKeyType = keyType === "automatic"
-          ? await detectKeyType(ctx.redis!, key, value)
-          : keyType;
+        const { key: rawKey, value, ttl, scope, keyType, subCategory } = input;
+        const key = buildKey(scope || "global", rawKey || " ", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+          subCategory,
+        });
+
+        const actualKeyType =
+          keyType === "automatic"
+            ? await detectKeyType(ctx.redis!, key, value)
+            : keyType;
 
         if (actualKeyType === "hash") {
           const { hashField } = input;
-          if (!hashField) throw new Error("Hash field is required for hash type");
-          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          if (!hashField)
+            throw new Error("Hash field is required for hash type");
+          const serialized =
+            typeof value === "object" ? JSON.stringify(value) : String(value);
           await ctx.redis!.hset(key, hashField, serialized);
         } else if (actualKeyType === "list") {
-          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          const serialized =
+            typeof value === "object" ? JSON.stringify(value) : String(value);
           await ctx.redis!.rpush(key, serialized);
         } else if (actualKeyType === "sets") {
           const { setMember } = input;
-          if (!setMember) throw new Error("Set member is required for sets type");
+          if (!setMember)
+            throw new Error("Set member is required for sets type");
           await ctx.redis!.sadd(key, setMember);
         } else {
-          const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+          const serialized =
+            typeof value === "object" ? JSON.stringify(value) : String(value);
           await ctx.redis!.set(key, serialized);
         }
 
         if (ttl && ttl > 0) {
           await ctx.redis!.expire(key, ttl);
         }
-        return { message: "Value set successfully", key, keyType: actualKeyType };
+        return {
+          message: "Value set successfully",
+          key,
+          keyType: actualKeyType,
+        };
       },
     },
 
     get: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { key: rawKey, scope, keyType = "automatic" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        
-        const actualKeyType = keyType === "automatic" ? await ctx.redis!.type(key) : keyType;
+        const {
+          key: rawKey,
+          scope,
+          keyType = "automatic",
+          subCategory,
+        } = input;
+        const key = buildKey(scope || "global", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+          subCategory,
+        });
+
+        const actualKeyType =
+          keyType === "automatic" ? await ctx.redis!.type(key) : keyType;
 
         if (actualKeyType === "hash") {
           const { hashField } = input;
@@ -192,21 +218,35 @@ export const redisConfig: StorageConfig = {
     delete: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, keyType = "automatic" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        
-        const actualKeyType = keyType === "automatic" ? await ctx.redis!.type(key) : keyType;
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+
+        const actualKeyType =
+          keyType === "automatic" ? await ctx.redis!.type(key) : keyType;
 
         if (actualKeyType === "hash") {
           const { hashField } = input;
           if (hashField) {
             const deleted = await ctx.redis!.hdel(key, hashField);
-            return { message: deleted > 0 ? "Hash field deleted" : "Hash field not found", key, hashField };
+            return {
+              message:
+                deleted > 0 ? "Hash field deleted" : "Hash field not found",
+              key,
+              hashField,
+            };
           }
         } else if (actualKeyType === "sets") {
           const { setMember } = input;
           if (setMember) {
             const deleted = await ctx.redis!.srem(key, setMember);
-            return { message: deleted > 0 ? "Set member deleted" : "Set member not found", key, setMember };
+            return {
+              message:
+                deleted > 0 ? "Set member deleted" : "Set member not found",
+              key,
+              setMember,
+            };
           }
         }
 
@@ -218,7 +258,10 @@ export const redisConfig: StorageConfig = {
     increment: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const newValue = await ctx.redis!.incr(key);
         return { value: newValue, key };
       },
@@ -247,7 +290,7 @@ export const redisConfig: StorageConfig = {
 
     keys: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { pattern = "*" } = input;
+        const { pattern = "*", subCategory } = input;
         const keys = await ctx.redis!.keys(pattern);
         return { keys, count: keys.length, pattern };
       },
@@ -256,11 +299,15 @@ export const redisConfig: StorageConfig = {
     pop: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, popDirection = "left" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        
-        const result = popDirection === "left"
-          ? await ctx.redis!.lpop(key)
-          : await ctx.redis!.rpop(key);
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+
+        const result =
+          popDirection === "left"
+            ? await ctx.redis!.lpop(key)
+            : await ctx.redis!.rpop(key);
 
         if (!result) throw new Error("List is empty or key not found");
 
@@ -274,31 +321,52 @@ export const redisConfig: StorageConfig = {
 
     push: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { key: rawKey, value, scope, pushDirection = "left", ttl } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
-        
-        const length = pushDirection === "left"
-          ? await ctx.redis!.lpush(key, serialized)
-          : await ctx.redis!.rpush(key, serialized);
+        const {
+          key: rawKey,
+          value,
+          scope,
+          pushDirection = "left",
+          ttl,
+        } = input;
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+        const serialized =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
+
+        const length =
+          pushDirection === "left"
+            ? await ctx.redis!.lpush(key, serialized)
+            : await ctx.redis!.rpush(key, serialized);
 
         if (ttl && ttl > 0) {
           await ctx.redis!.expire(key, ttl);
         }
 
-        return { message: `Value pushed to ${pushDirection} of list`, length, key };
+        return {
+          message: `Value pushed to ${pushDirection} of list`,
+          length,
+          key,
+        };
       },
     },
 
     publish: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { channel, value } = input;
-        if (!channel) throw new Error("Channel is required for publish operation");
+        if (!channel)
+          throw new Error("Channel is required for publish operation");
 
-        const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+        const serialized =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
         const subscribers = await ctx.redis!.publish(channel, serialized);
 
-        return { message: `Message published to ${subscribers} subscriber(s)`, channel, subscribers };
+        return {
+          message: `Message published to ${subscribers} subscriber(s)`,
+          channel,
+          subscribers,
+        };
       },
     },
 
@@ -306,30 +374,51 @@ export const redisConfig: StorageConfig = {
     sadd: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, ttl } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const membersArray = parseMembers(input.members);
-        if (membersArray.length === 0) throw new Error("At least one member is required");
+        if (membersArray.length === 0)
+          throw new Error("At least one member is required");
         const added = await ctx.redis!.sadd(key, ...membersArray);
         if (ttl && ttl > 0) await ctx.redis!.expire(key, ttl);
-        return { added, members: membersArray, key, message: `${added} member(s) added to set` };
+        return {
+          added,
+          members: membersArray,
+          key,
+          message: `${added} member(s) added to set`,
+        };
       },
     },
 
     srem: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const membersArray = parseMembers(input.members);
-        if (membersArray.length === 0) throw new Error("At least one member is required");
+        if (membersArray.length === 0)
+          throw new Error("At least one member is required");
         const removed = await ctx.redis!.srem(key, ...membersArray);
-        return { removed, members: membersArray, key, message: `${removed} member(s) removed from set` };
+        return {
+          removed,
+          members: membersArray,
+          key,
+          message: `${removed} member(s) removed from set`,
+        };
       },
     },
 
     smembers: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const members = await ctx.redis!.smembers(key);
         return { members, count: members.length, key };
       },
@@ -339,7 +428,10 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, member } = input;
         if (!member) throw new Error("Member is required for SISMEMBER");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const isMember = await ctx.redis!.sismember(key, member);
         return { isMember: isMember === 1, member, key };
       },
@@ -348,7 +440,10 @@ export const redisConfig: StorageConfig = {
     scard: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const count = await ctx.redis!.scard(key);
         return { count, key };
       },
@@ -357,19 +452,37 @@ export const redisConfig: StorageConfig = {
     sinter: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        const otherKeysArray = parseOtherKeys(input.otherKeys, scope || "workflow", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+        const otherKeysArray = parseOtherKeys(
+          input.otherKeys,
+          scope || "workflow",
+          { userId: ctx.userId, workflowId: ctx.workflowId }
+        );
         const allKeys = [key, ...otherKeysArray];
         const intersection = await ctx.redis!.sinter(...allKeys);
-        return { members: intersection, count: intersection.length, keys: allKeys };
+        return {
+          members: intersection,
+          count: intersection.length,
+          keys: allKeys,
+        };
       },
     },
 
     sunion: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        const otherKeysArray = parseOtherKeys(input.otherKeys, scope || "workflow", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+        const otherKeysArray = parseOtherKeys(
+          input.otherKeys,
+          scope || "workflow",
+          { userId: ctx.userId, workflowId: ctx.workflowId }
+        );
         const allKeys = [key, ...otherKeysArray];
         const union = await ctx.redis!.sunion(...allKeys);
         return { members: union, count: union.length, keys: allKeys };
@@ -379,11 +492,23 @@ export const redisConfig: StorageConfig = {
     sdiff: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        const otherKeysArray = parseOtherKeys(input.otherKeys, scope || "workflow", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+        const otherKeysArray = parseOtherKeys(
+          input.otherKeys,
+          scope || "workflow",
+          { userId: ctx.userId, workflowId: ctx.workflowId }
+        );
         const allKeys = [key, ...otherKeysArray];
         const diff = await ctx.redis!.sdiff(...allKeys);
-        return { members: diff, count: diff.length, keys: allKeys, message: "Members in first set but not in other sets" };
+        return {
+          members: diff,
+          count: diff.length,
+          keys: allKeys,
+          message: "Members in first set but not in other sets",
+        };
       },
     },
 
@@ -391,16 +516,27 @@ export const redisConfig: StorageConfig = {
     hkeys: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const fields = await ctx.redis!.hkeys(key);
-        return { fields, count: fields.length, key, message: `Found ${fields.length} field(s) in hash` };
+        return {
+          fields,
+          count: fields.length,
+          key,
+          message: `Found ${fields.length} field(s) in hash`,
+        };
       },
     },
 
     hvals: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const values = await ctx.redis!.hvals(key);
         const parsed = values.map((v: string) => {
           try {
@@ -409,7 +545,12 @@ export const redisConfig: StorageConfig = {
             return v;
           }
         });
-        return { values: parsed, count: parsed.length, key, message: `Found ${parsed.length} value(s) in hash` };
+        return {
+          values: parsed,
+          count: parsed.length,
+          key,
+          message: `Found ${parsed.length} value(s) in hash`,
+        };
       },
     },
 
@@ -417,7 +558,10 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, hashField } = input;
         if (!hashField) throw new Error("Hash field is required for HEXISTS");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const exists = await ctx.redis!.hexists(key, hashField);
         return { exists: exists === 1, field: hashField, key };
       },
@@ -427,9 +571,18 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, hashField, incrementBy = 1 } = input;
         if (!hashField) throw new Error("Hash field is required for HINCRBY");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const newValue = await ctx.redis!.hincrby(key, hashField, incrementBy);
-        return { value: newValue, field: hashField, incrementBy, key, message: `Field '${hashField}' incremented by ${incrementBy}, new value: ${newValue}` };
+        return {
+          value: newValue,
+          field: hashField,
+          incrementBy,
+          key,
+          message: `Field '${hashField}' incremented by ${incrementBy}, new value: ${newValue}`,
+        };
       },
     },
 
@@ -437,7 +590,10 @@ export const redisConfig: StorageConfig = {
     lrange: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, startIndex = 0, endIndex = -1 } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const elements = await ctx.redis!.lrange(key, startIndex, endIndex);
         const parsed = elements.map((item: string) => {
           try {
@@ -446,14 +602,24 @@ export const redisConfig: StorageConfig = {
             return item;
           }
         });
-        return { values: parsed, count: parsed.length, startIndex, endIndex, key, message: `Retrieved ${parsed.length} element(s) from index ${startIndex} to ${endIndex}` };
+        return {
+          values: parsed,
+          count: parsed.length,
+          startIndex,
+          endIndex,
+          key,
+          message: `Retrieved ${parsed.length} element(s) from index ${startIndex} to ${endIndex}`,
+        };
       },
     },
 
     llen: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const length = await ctx.redis!.llen(key);
         return { length, key, message: `List contains ${length} element(s)` };
       },
@@ -462,10 +628,15 @@ export const redisConfig: StorageConfig = {
     lindex: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, index } = input;
-        if (index === undefined) throw new Error("Index is required for LINDEX");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        if (index === undefined)
+          throw new Error("Index is required for LINDEX");
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const element = await ctx.redis!.lindex(key, index);
-        if (element === null) throw new Error("Index out of range or list not found");
+        if (element === null)
+          throw new Error("Index out of range or list not found");
         try {
           return { value: JSON.parse(element), key, index };
         } catch {
@@ -479,19 +650,35 @@ export const redisConfig: StorageConfig = {
         const { key: rawKey, scope, index, value } = input;
         if (index === undefined) throw new Error("Index is required for LSET");
         if (value === undefined) throw new Error("Value is required for LSET");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
-        const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
+        const serialized =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
         await ctx.redis!.lset(key, index, serialized);
-        return { key, index, message: `Element at index ${index} updated successfully` };
+        return {
+          key,
+          index,
+          message: `Element at index ${index} updated successfully`,
+        };
       },
     },
 
     ltrim: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, startIndex = 0, endIndex = -1 } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         await ctx.redis!.ltrim(key, startIndex, endIndex);
-        return { key, startIndex, endIndex, message: `List trimmed to range ${startIndex} to ${endIndex}` };
+        return {
+          key,
+          startIndex,
+          endIndex,
+          message: `List trimmed to range ${startIndex} to ${endIndex}`,
+        };
       },
     },
 
@@ -499,40 +686,72 @@ export const redisConfig: StorageConfig = {
     zadd: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, score, scoreMembers, member, ttl } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
 
         if (scoreMembers) {
           const pairs = parseScoreMembers(scoreMembers);
-          if (pairs.length === 0) throw new Error("Invalid score-member pairs format");
+          if (pairs.length === 0)
+            throw new Error("Invalid score-member pairs format");
           const args: (string | number)[] = [];
           pairs.forEach((p) => {
             args.push(p.score, p.member);
           });
           const added = await ctx.redis!.zadd(key, ...args);
           if (ttl && ttl > 0) await ctx.redis!.expire(key, ttl);
-          return { added, pairs, key, message: `${added} member(s) added to sorted set` };
+          return {
+            added,
+            pairs,
+            key,
+            message: `${added} member(s) added to sorted set`,
+          };
         }
 
         if (score === undefined || !member) {
-          throw new Error("Score and member are required, or provide scoreMembers for batch");
+          throw new Error(
+            "Score and member are required, or provide scoreMembers for batch"
+          );
         }
         const added = await ctx.redis!.zadd(key, score, member);
         if (ttl && ttl > 0) await ctx.redis!.expire(key, ttl);
-        return { added, score, member, key, message: added ? "Member added" : "Member score updated" };
+        return {
+          added,
+          score,
+          member,
+          key,
+          message: added ? "Member added" : "Member score updated",
+        };
       },
     },
 
     zrange: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { key: rawKey, scope, startIndex = 0, endIndex = -1, withScores = "true", reverseOrder = "false" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const {
+          key: rawKey,
+          scope,
+          startIndex = 0,
+          endIndex = -1,
+          withScores = "true",
+          reverseOrder = "false",
+        } = input;
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const useRev = reverseOrder === "true" || reverseOrder === true;
         const includeScores = withScores === "true" || withScores === true;
 
         let results: string[];
         if (useRev) {
           results = includeScores
-            ? await ctx.redis!.zrevrange(key, startIndex, endIndex, "WITHSCORES")
+            ? await ctx.redis!.zrevrange(
+                key,
+                startIndex,
+                endIndex,
+                "WITHSCORES"
+              )
             : await ctx.redis!.zrevrange(key, startIndex, endIndex);
         } else {
           results = includeScores
@@ -543,12 +762,21 @@ export const redisConfig: StorageConfig = {
         if (includeScores) {
           const members: Array<{ member: string; score: number }> = [];
           for (let i = 0; i < results.length; i += 2) {
-            members.push({ member: results[i], score: parseFloat(results[i + 1]) });
+            members.push({
+              member: results[i],
+              score: parseFloat(results[i + 1]),
+            });
           }
           return { members, count: members.length, key, startIndex, endIndex };
         }
 
-        return { members: results, count: results.length, key, startIndex, endIndex };
+        return {
+          members: results,
+          count: results.length,
+          key,
+          startIndex,
+          endIndex,
+        };
       },
     },
 
@@ -556,17 +784,29 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, member } = input;
         if (!member) throw new Error("Member is required for ZSCORE");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const scoreVal = await ctx.redis!.zscore(key, member);
-        if (scoreVal === null) throw new Error("Member not found in sorted set");
+        if (scoreVal === null)
+          throw new Error("Member not found in sorted set");
         return { score: parseFloat(scoreVal), member, key };
       },
     },
 
     zcount: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { key: rawKey, scope, minScore = "-inf", maxScore = "+inf" } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const {
+          key: rawKey,
+          scope,
+          minScore = "-inf",
+          maxScore = "+inf",
+        } = input;
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const count = await ctx.redis!.zcount(key, minScore, maxScore);
         return { count, minScore, maxScore, key };
       },
@@ -576,21 +816,39 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope, member, score } = input;
         if (!member) throw new Error("Member is required for ZINCRBY");
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const increment = score ?? 1;
         const newScore = await ctx.redis!.zincrby(key, increment, member);
-        return { newScore: parseFloat(newScore), member, increment, key, message: `Member '${member}' score incremented by ${increment}, new score: ${newScore}` };
+        return {
+          newScore: parseFloat(newScore),
+          member,
+          increment,
+          key,
+          message: `Member '${member}' score incremented by ${increment}, new score: ${newScore}`,
+        };
       },
     },
 
     zrem: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { key: rawKey, scope } = input;
-        const key = buildKey(scope || "workflow", rawKey || "", { userId: ctx.userId, workflowId: ctx.workflowId });
+        const key = buildKey(scope || "workflow", rawKey || "", {
+          userId: ctx.userId,
+          workflowId: ctx.workflowId,
+        });
         const membersArray = parseMembers(input.members);
-        if (membersArray.length === 0) throw new Error("At least one member is required for ZREM");
+        if (membersArray.length === 0)
+          throw new Error("At least one member is required for ZREM");
         const removed = await ctx.redis!.zrem(key, ...membersArray);
-        return { removed, members: membersArray, key, message: `${removed} member(s) removed from sorted set` };
+        return {
+          removed,
+          members: membersArray,
+          key,
+          message: `${removed} member(s) removed from sorted set`,
+        };
       },
     },
 
@@ -599,20 +857,33 @@ export const redisConfig: StorageConfig = {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const { channelPattern = "*" } = input;
         const channels = await ctx.redis!.pubsub("CHANNELS", channelPattern);
-        return { channels, count: channels.length, pattern: channelPattern, message: `Found ${channels.length} active channel(s)` };
+        return {
+          channels,
+          count: channels.length,
+          pattern: channelPattern,
+          message: `Found ${channels.length} active channel(s)`,
+        };
       },
     },
 
     pubsub_numsub: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
         const channelList = parseMembers(input.channels);
-        if (channelList.length === 0) throw new Error("At least one channel is required");
-        const result = (await ctx.redis!.pubsub("NUMSUB", ...channelList)) as any[];
+        if (channelList.length === 0)
+          throw new Error("At least one channel is required");
+        const result = (await ctx.redis!.pubsub(
+          "NUMSUB",
+          ...channelList
+        )) as any[];
         const subscribers: Record<string, number> = {};
         for (let i = 0; i < result.length; i += 2) {
           subscribers[result[i] as string] = result[i + 1] as number;
         }
-        return { subscribers, channels: channelList, message: `Subscriber counts for ${channelList.length} channel(s)` };
+        return {
+          subscribers,
+          channels: channelList,
+          message: `Subscriber counts for ${channelList.length} channel(s)`,
+        };
       },
     },
   },

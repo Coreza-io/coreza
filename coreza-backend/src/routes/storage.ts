@@ -39,8 +39,8 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    const { service, operation } = req.params;
-    const { credential_id, ...params } = req.body;
+    const { service } = req.params;
+    const { credential_id, operation, ...params } = req.body;
 
     console.log(`📦 [STORAGE-ROUTE] ${service}/${operation} request`);
 
@@ -76,7 +76,10 @@ router.get("/:service/credentials", async (req: Request, res: Response) => {
     }
 
     const { service } = req.params;
-    const credentials = await CredentialManager.listCredentials(userId, service);
+    const credentials = await CredentialManager.listCredentials(
+      userId,
+      service
+    );
 
     res.json({
       success: true,
@@ -98,7 +101,8 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     const { service } = req.params;
-    const { credential_name, host, port, password, user, database, tls } = req.body;
+    const { credential_name, host, port, password, user, database, tls } =
+      req.body;
 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -117,7 +121,10 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       const credentials = { host, port, password, user, database, tls };
 
       // Validate credential structure
-      const validation = CredentialValidator.validateCredentials("redis", credentials);
+      const validation = CredentialValidator.validateCredentials(
+        "redis",
+        credentials
+      );
       if (!validation.isValid) {
         return res.status(400).json({
           error: "Invalid credentials",
@@ -126,13 +133,17 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       }
 
       // Test connection before saving
-      logger.info({ userId, credential_name, host }, "Testing Redis connection");
+      logger.info(
+        { userId, credential_name, host },
+        "Testing Redis connection"
+      );
       const testResult = await testRedisConnection(credentials);
 
       if (!testResult.success) {
         return res.status(400).json({
           error: `Connection failed: ${testResult.error}`,
-          details: "Please verify your Redis host, port, password, and network connectivity",
+          details:
+            "Please verify your Redis host, port, password, and network connectivity",
         });
       }
 
@@ -145,7 +156,10 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
         "api"
       );
 
-      logger.info({ userId, credential_name, credentialId }, "Redis credentials saved successfully");
+      logger.info(
+        { userId, credential_name, credentialId },
+        "Redis credentials saved successfully"
+      );
 
       res.json({
         success: true,
@@ -239,12 +253,18 @@ router.get("/store/value", async (req: Request, res: Response) => {
     const { workflow_id, variable_name } = req.query;
 
     if (!workflow_id || !variable_name) {
-      return res.status(400).json({ error: "workflow_id and variable_name required" });
+      return res
+        .status(400)
+        .json({ error: "workflow_id and variable_name required" });
     }
 
     const { getStoreValue } = await import("../utils/store");
     const redis = getRedisCache();
-    const key = buildStoreKey(userId, workflow_id as string, variable_name as string);
+    const key = buildStoreKey(
+      userId,
+      workflow_id as string,
+      variable_name as string
+    );
     const storedValue = await getStoreValue(redis, key);
 
     res.json({

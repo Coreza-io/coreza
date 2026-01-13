@@ -925,6 +925,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await redis.quit();
     console.log("✅ Queue cleanup completed");
   }
+
+  /**
+   * Get workers for graceful shutdown handler.
+   */
+  getWorkers(): Worker[] {
+    return [workflowWorker, scheduledWorker];
+  }
 }
 
 // Event listeners for monitoring
@@ -946,13 +953,17 @@ scheduledWorker.on("completed", (job) => {
 
 export const bullMqJobQueue = new BullMQJobQueue();
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  await bullMqJobQueue.cleanup();
-  process.exit(0);
-});
+// Initialize graceful shutdown handler with workers
+import { GracefulShutdownHandler } from "./GracefulShutdownHandler";
 
-process.on("SIGTERM", async () => {
-  await bullMqJobQueue.cleanup();
-  process.exit(0);
+const gracefulShutdown = new GracefulShutdownHandler(
+  bullMqJobQueue.getWorkers()
+);
+
+// Register signal handlers for graceful shutdown
+gracefulShutdown.registerSignalHandlers(async () => {
+  // Additional cleanup after workers are shut down
+  await flowProducer.close();
+  await redis.quit();
+  console.log("✅ All queue resources cleaned up");
 });

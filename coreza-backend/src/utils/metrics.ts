@@ -47,6 +47,18 @@ export const websocketConnectionsCounter = new client.Counter({
   labelNames: ['action']
 });
 
+// Recovery metrics
+export const workflowRecoveryCounter = new client.Counter({
+  name: 'coreza_workflow_recovery_total',
+  help: 'Total workflow recovery operations',
+  labelNames: ['action'], // 'marked_interrupted', 'requeued', 'already_active'
+});
+
+export const staleRunsGauge = new client.Gauge({
+  name: 'coreza_stale_workflow_runs',
+  help: 'Number of stale workflow runs found on startup',
+});
+
 // Gauges
 export const activeGatewayConnectionsGauge = new client.Gauge({
   name: 'coreza_active_gateway_connections',

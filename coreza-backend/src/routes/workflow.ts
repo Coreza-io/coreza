@@ -697,19 +697,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             );
           } else {
             // Extract initial input from BacktestInit node values
-            const nodeValues = triggerNode.values || {};
-            const initialInput = {
-              name: nodeValues.name,
-              initial_capital: nodeValues.initial_capital,
-              start_date: nodeValues.start_date,
-              end_date: nodeValues.end_date,
-              fill_model: nodeValues.fill_model,
-              slippage_model: nodeValues.slippage_model,
-              slippage_value: nodeValues.slippage_value,
-              commission_model: nodeValues.commission_model,
-              commission_value: nodeValues.commission_value,
-              allow_short: nodeValues.allow_short,
-            };
+            const initialInput = triggerNode.values || {};
 
             // Queue workflow for execution
             await jobQueue.addWorkflowExecution({

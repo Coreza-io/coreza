@@ -16,12 +16,10 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getAllRegisteredDataSources, getDataSourceService } from "../../services/datasources";
-import { RedisService } from "../../services/RedisService";
-import { StoreService, StoreOperationParams } from "../../services/StoreService";
+import { getStorageService } from "../../services/storage";
+import type { StorageInput } from "../../services/storage/types";
 import { normalizeOutput, createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
-
-export { StoreOperationParams };
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -63,8 +61,8 @@ export class DataSourceExecutor implements INodeExecutor {
       const credentialId = resolvedParams.credential_id || input.credential_id;
 
       if (nodeName === "RedisStore") {
-        const redisUserId = context?.userId || input.userId;
-        const redisCredentialId = resolvedParams.credential_id;
+        const redisUserId = userId;
+        const redisCredentialId = credentialId;
 
         if (!redisUserId || !redisCredentialId) {
           const errOutput = createErrorOutput(
@@ -74,37 +72,12 @@ export class DataSourceExecutor implements INodeExecutor {
           return toNodeResult(errOutput);
         }
 
-        const result = await RedisService.execute({
-          userId: redisUserId,
-          credentialId: redisCredentialId,
-          operation: resolvedParams.operation,
-          scope: resolvedParams.scope,
-          key: resolvedParams.key,
-          value: resolvedParams.value,
-          keyType: resolvedParams.keyType,
-          pattern: resolvedParams.pattern,
-          channel: resolvedParams.channel,
-          hashField: resolvedParams.hashField,
-          setMember: resolvedParams.setMember,
-          popDirection: resolvedParams.popDirection,
-          pushDirection: resolvedParams.pushDirection,
-          members: resolvedParams.members,
-          member: resolvedParams.member,
-          otherKeys: resolvedParams.otherKeys,
-          incrementBy: resolvedParams.incrementBy,
-          startIndex: resolvedParams.startIndex,
-          endIndex: resolvedParams.endIndex,
-          index: resolvedParams.index,
-          ttl: resolvedParams.ttl,
-          score: resolvedParams.score,
-          scoreMembers: resolvedParams.scoreMembers,
-          withScores: resolvedParams.withScores,
-          reverseOrder: resolvedParams.reverseOrder,
-          minScore: resolvedParams.minScore,
-          maxScore: resolvedParams.maxScore,
-          channelPattern: resolvedParams.channelPattern,
-          channels: resolvedParams.channels,
-          workflowId: context?.workflowId || input.workflowId,
+        const result = await this.executeStorageNode("redis", {
+          ...resolvedParams,
+          user_id: redisUserId,
+          credential_id: redisCredentialId,
+          workflow_id: context?.workflowId || input.workflowId,
+          subCategory: "redis",
         });
 
         const normalized = normalizeOutput(result, {
@@ -195,12 +168,33 @@ export class DataSourceExecutor implements INodeExecutor {
   }
 
   async executeStoreNode(
-    params: StoreOperationParams,
+    params: StorageInput,
     context?: any
   ): Promise<NodeResult> {
-    return StoreService.execute(params, {
-      userId: context?.userId || params.workflow_id,
-      workflowId: params.workflow_id || params.workflowId || context?.workflowId,
+    return this.executeStorageNode("store", params, context);
+  }
+
+  private async executeStorageNode(
+    serviceKey: string,
+    params: StorageInput,
+    context?: any
+  ): Promise<NodeResult> {
+    const storageService = getStorageService(serviceKey);
+    if (!storageService) {
+      return {
+        success: false,
+        error: `Unsupported storage service: ${serviceKey}`,
+      };
+    }
+
+    const userId =
+      params.user_id || context?.userId || (params as any).userId || "system";
+
+    return storageService.execute({
+      ...params,
+      user_id: userId,
+      workflow_id:
+        params.workflow_id || params.workflowId || context?.workflowId,
     });
   }
 

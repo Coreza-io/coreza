@@ -71,6 +71,7 @@ import { RedisBuffer } from "./services/RedisBuffer";
 import { setupBufferFlush } from "./utils/flushRedisBuffer";
 import RunSyncService from "./services/RunSyncService";
 import streamingCleanupService from "./services/StreamingCleanupService";
+import { workflowRecoveryService } from "./services/WorkflowRecoveryService";
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -190,14 +191,23 @@ async function startServer() {
     await initBinanceTimeSync();
     logger.info("Binance time sync initialized");
 
+    // Run workflow recovery before starting workers
+    logger.info("🔄 Running workflow recovery...");
+    const recoveryStats = await workflowRecoveryService.recoverStaleRuns();
+    logger.info({ stats: recoveryStats }, "Workflow recovery complete");
+
+    // Clean up orphaned Redis data from interrupted loops
+    const orphanedKeysCleanedUp = await workflowRecoveryService.cleanupOrphanedLoopData();
+    if (orphanedKeysCleanedUp > 0) {
+      logger.info({ keysCleanedUp: orphanedKeysCleanedUp }, "Orphaned loop data cleanup complete");
+    }
+
     // Initialize BullMQ job queue workers
     logger.info("Starting BullMQ workers...");
     require("./services/jobQueueManager");
 
     // Initialize workflow scheduler
     await workflowScheduler.initialize();
-
-    // Start WorkflowCache cleanup timer (Phase 3)
     logger.info("Starting WorkflowCache periodic cleanup...");
     WorkflowCache.startCleanupTimer();
     logger.debug("WorkflowCache cleanup timer started");

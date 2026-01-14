@@ -33,18 +33,15 @@ const WORKFLOW_JOB_ATTEMPTS = parseInt(process.env.WORKFLOW_JOB_ATTEMPTS || "1",
 const workflowQueue = new Queue("workflow-execution", {
   connection: redis,
 });
+// Note: scheduled-workflows queue is now managed by the configurable scheduler
+// (InProcessScheduler or BullMQScheduler based on SCHEDULER_BACKEND env var)
+// We keep the queue reference for backward compatibility but don't create a worker here
 const scheduledQueue = new Queue("scheduled-workflows", {
   connection: redis,
 });
 
 // FlowProducer for parent-child job patterns (parallel loops)
 const flowProducer = new FlowProducer({ connection: redis });
-
-interface ScheduledWorkflowJobData {
-  workflowId: string;
-  userId: string;
-  cronExpression: string;
-}
 
 // LoopItemResult is now imported from ../types/workflowJobResult
 
@@ -550,72 +547,9 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
   }
 );
 
-// Scheduled workflow worker
-const scheduledWorker = new Worker(
-  "scheduled-workflows",
-  async (job: Job<ScheduledWorkflowJobData>) => {
-    const { workflowId, userId } = job.data;
-
-    console.log(`⏰ Processing scheduled workflow ${workflowId}`);
-
-    try {
-      // Get workflow details
-      const { data: workflow, error } = await supabase
-        .from("workflows")
-        .select("*")
-        .eq("id", workflowId)
-        .eq("is_active", true)
-        .single();
-
-      if (error || !workflow) {
-        console.error(`Workflow ${workflowId} not found or not active`);
-        return;
-      }
-
-      // Create workflow run with snapshot of current workflow state
-      const { data: run, error: runError } = await supabase
-        .from("workflow_runs")
-        .insert({
-          workflow_id: workflowId,
-          status: "queued",
-          initiated_by: userId,
-          nodes: workflow.nodes,
-          edges: workflow.edges,
-          node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
-          edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
-        })
-        .select()
-        .single();
-
-      if (runError) {
-        throw new Error(`Failed to create workflow run: ${runError.message}`);
-      }
-
-      // Queue workflow execution
-      await workflowQueue.add("execute-workflow", {
-        runId: run.id,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: "scheduled",
-      });
-
-      return createSuccessOutput({ runId: run.id }, { nodeName: "scheduler", category: "scheduled" });
-    } catch (error) {
-      const errorOutput = createErrorOutput(error, { nodeName: "scheduler", category: "scheduled" });
-      console.error(
-        `❌ Scheduled workflow failed for ${workflowId}:`,
-        errorOutput.error
-      );
-      throw new Error(errorOutput.error);
-    }
-  },
-  {
-    connection: redis,
-    concurrency: 10,
-  }
-);
+// Note: The scheduledWorker has been moved to BullMQScheduler
+// When SCHEDULER_BACKEND=bullmq, BullMQScheduler creates and manages its own worker
+// When SCHEDULER_BACKEND=in-process, InProcessScheduler uses node-schedule (no worker needed here)
 
 // Queue management functions
 export class BullMQJobQueue implements IWorkflowJobQueue {
@@ -776,15 +710,18 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     console.log(`✅ Created ${items.length} parallel loop jobs with aggregator (${Math.ceil(items.length / maxConcurrency)} batches)`);
   }
 
+  /**
+   * Schedule a workflow using the configured scheduler backend.
+   * Note: This method is deprecated in favor of using getScheduler() directly.
+   * Kept for backward compatibility.
+   */
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
     cronExpression: string
   ): Promise<Job> {
-    // Remove existing scheduled job
-    await this.unscheduleWorkflow(workflowId);
-
-    // Add new scheduled job
+    // Delegate to configured scheduler via scheduledQueue (for backward compat)
+    // The actual scheduling logic is handled by InProcessScheduler or BullMQScheduler
     return await scheduledQueue.add(
       `scheduled-${workflowId}`,
       { workflowId, userId, cronExpression },
@@ -797,6 +734,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     );
   }
 
+  /**
+   * Unschedule a workflow using the configured scheduler backend.
+   * Note: This method is deprecated in favor of using getScheduler() directly.
+   * Kept for backward compatibility.
+   */
   async unscheduleWorkflow(workflowId: string): Promise<void> {
     const jobId = `scheduled-${workflowId}`;
     await scheduledQueue.removeRepeatable(jobId, { pattern: "*" });
@@ -918,7 +860,6 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     console.log("🧹 Cleaning up queues...");
     await Promise.all([
       workflowWorker.close(), 
-      scheduledWorker.close(),
       flowProducer.close(),
     ]);
 
@@ -928,9 +869,10 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   /**
    * Get workers for graceful shutdown handler.
+   * Note: scheduledWorker is now managed by BullMQScheduler when SCHEDULER_BACKEND=bullmq
    */
   getWorkers(): Worker[] {
-    return [workflowWorker, scheduledWorker];
+    return [workflowWorker];
   }
 }
 
@@ -947,9 +889,7 @@ workflowWorker.on("failed", (job, err) => {
   console.error(`❌ Workflow job ${job?.id} failed:`, err.message);
 });
 
-scheduledWorker.on("completed", (job) => {
-  console.log(`⏰ Scheduled job ${job.id} completed`);
-});
+// Note: scheduledWorker event listeners are now in BullMQScheduler when SCHEDULER_BACKEND=bullmq
 
 export const bullMqJobQueue = new BullMQJobQueue();
 

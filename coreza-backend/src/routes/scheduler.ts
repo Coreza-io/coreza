@@ -159,7 +159,7 @@ router.post("/scheduler", async (req, res) => {
           cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
         } else {
           // Note: Cron cannot natively express "every N weeks", so this runs every week
-          // The actual interval logic would need to be handled by node-schedule or custom logic
+          // The actual interval logic would need to be handled by the scheduler worker logic
           cronExpression = `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
         }
         break;

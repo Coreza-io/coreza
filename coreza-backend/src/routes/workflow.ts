@@ -18,11 +18,8 @@ import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { getScheduler, getSchedulerBackend } from "../services/scheduling";
+import { workflowScheduler } from "../services/scheduler";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
-
-// Get scheduler instance (configured via SCHEDULER_BACKEND env var)
-const workflowScheduler = getScheduler();
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedisCache } from "../config/redis";
@@ -700,7 +697,19 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             );
           } else {
             // Extract initial input from BacktestInit node values
-            const initialInput = triggerNode.values || {};
+            const nodeValues = triggerNode.values || {};
+            const initialInput = {
+              name: nodeValues.name,
+              initial_capital: nodeValues.initial_capital,
+              start_date: nodeValues.start_date,
+              end_date: nodeValues.end_date,
+              fill_model: nodeValues.fill_model,
+              slippage_model: nodeValues.slippage_model,
+              slippage_value: nodeValues.slippage_value,
+              commission_model: nodeValues.commission_model,
+              commission_value: nodeValues.commission_value,
+              allow_short: nodeValues.allow_short,
+            };
 
             // Queue workflow for execution
             await jobQueue.addWorkflowExecution({
@@ -1029,28 +1038,6 @@ router.get("/:workflowId/runs/:runId/status", async (req, res, next) => {
     res.json({
       run,
       node_executions_count: count || 0,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Get scheduler status and stats
-router.get("/scheduler/status", async (req, res, next) => {
-  try {
-    const scheduler = workflowScheduler;
-    const jobs = scheduler.getScheduledJobs();
-
-    res.json({
-      backend: scheduler.type,
-      configuredVia: "SCHEDULER_BACKEND env var",
-      jobCount: jobs.length,
-      jobs: jobs.map((j) => ({
-        workflowId: j.workflowId,
-        cronExpression: j.cronExpression,
-        timezone: j.timezone,
-        nextRun: j.nextRun?.toISOString(),
-      })),
     });
   } catch (error) {
     next(error);

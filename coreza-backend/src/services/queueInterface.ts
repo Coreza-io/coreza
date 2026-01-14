@@ -22,7 +22,6 @@ export interface WorkflowJobData {
   edges: any[];
   trigger?:
     | "manual"
-    | "backtest"
     | "scheduled"
     | "webhook"
     | "redis_pubsub"
@@ -56,13 +55,7 @@ export interface ParallelLoopOptions {
   /** Use Redis storage for high-frequency runs (default: true) */
   useRedisStorage?: boolean;
   /** Done edges to route to after parallel loop completion */
-  doneEdges?: Array<{
-    id: string;
-    source: string;
-    target: string;
-    sourceHandle?: string;
-    targetHandle?: string;
-  }>;
+  doneEdges?: Array<{ id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }>;
   /** Full workflow nodes for continuation context */
   parentNodes?: any[];
   /** Full workflow edges for continuation context */

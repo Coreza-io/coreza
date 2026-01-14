@@ -755,7 +755,9 @@ const scheduledWorker = new Worker(
 // Queue management functions
 export class BullMQJobQueue implements IWorkflowJobQueue {
   async addWorkflowExecution(data: WorkflowJobData): Promise<Job> {
+    const jobId = `workflow-execution:${data.userId}:${data.workflowId}:${data.runId}`;
     return await workflowQueue.add("execute-workflow", data, {
+      jobId,
       removeOnComplete: 50,
       removeOnFail: 100,
       attempts: WORKFLOW_JOB_ATTEMPTS,

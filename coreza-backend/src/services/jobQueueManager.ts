@@ -28,6 +28,8 @@ import { WorkflowJobResult, LoopItemResult, isWorkflowCancelled } from "../types
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(process.env.WORKFLOW_JOB_ATTEMPTS || "1", 10);
+const SCHEDULE_JOB_ID_MODE =
+  process.env.SCHEDULE_JOB_ID_MODE?.toLowerCase() === "workflow" ? "workflow" : "run";
 
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
@@ -609,14 +611,23 @@ const scheduledWorker = new Worker(
       }
 
       // Queue workflow execution
-      await workflowQueue.add("execute-workflow", {
-        runId: run.id,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: "scheduled",
-      });
+      const executionJobId =
+        SCHEDULE_JOB_ID_MODE === "workflow"
+          ? `${workflowId}:${scheduleKey}`
+          : run.id;
+
+      await workflowQueue.add(
+        "execute-workflow",
+        {
+          runId: run.id,
+          workflowId,
+          userId,
+          nodes: workflow.nodes,
+          edges: workflow.edges,
+          trigger: "scheduled",
+        },
+        { jobId: executionJobId }
+      );
 
       console.log(
         `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${scheduleKey})`
@@ -842,10 +853,19 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
     );
 
-    // Remove any existing jobs
+    await Promise.all(
+      repeatableJobs
+        .filter((job) => job.id === jobId)
+        .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
+    );
+
+    // Remove any existing non-repeatable jobs
     const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
     for (const job of jobs) {
-      if (job.id === jobId) {
+      if (
+        (job.id === jobId || job.data.workflowId === workflowId) &&
+        !job.opts.repeatJobKey
+      ) {
         await job.remove();
       }
     }

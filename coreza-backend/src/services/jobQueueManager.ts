@@ -853,10 +853,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
     );
 
-    // Remove any existing jobs
+    // Remove any existing non-repeatable jobs
     const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
     for (const job of jobs) {
-      if (job.id === jobId || job.data.workflowId === workflowId) {
+      if (
+        (job.id === jobId || job.data.workflowId === workflowId) &&
+        !job.opts.repeatJobKey
+      ) {
         await job.remove();
       }
     }

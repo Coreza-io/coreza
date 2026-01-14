@@ -18,8 +18,11 @@ import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { workflowScheduler } from "../services/scheduler";
+import { getScheduler, getSchedulerBackend } from "../services/scheduling";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
+
+// Get scheduler instance (configured via SCHEDULER_BACKEND env var)
+const workflowScheduler = getScheduler();
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedisCache } from "../config/redis";
@@ -1026,6 +1029,28 @@ router.get("/:workflowId/runs/:runId/status", async (req, res, next) => {
     res.json({
       run,
       node_executions_count: count || 0,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get scheduler status and stats
+router.get("/scheduler/status", async (req, res, next) => {
+  try {
+    const scheduler = workflowScheduler;
+    const jobs = scheduler.getScheduledJobs();
+
+    res.json({
+      backend: scheduler.type,
+      configuredVia: "SCHEDULER_BACKEND env var",
+      jobCount: jobs.length,
+      jobs: jobs.map((j) => ({
+        workflowId: j.workflowId,
+        cronExpression: j.cronExpression,
+        timezone: j.timezone,
+        nextRun: j.nextRun?.toISOString(),
+      })),
     });
   } catch (error) {
     next(error);

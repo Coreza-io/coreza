@@ -19,18 +19,29 @@ import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "./workflowEngine";
 import { getRedisQueue } from "../config/redis";
-import { IWorkflowJobQueue, WorkflowJobData, ParallelLoopOptions } from "./queueInterface";
+import {
+  IWorkflowJobQueue,
+  WorkflowJobData,
+  ParallelLoopOptions,
+} from "./queueInterface";
 import { updateRunStatusInRedis } from "../utils/redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../utils/normalizeOutput";
 import { StandardNodeOutput } from "../types/nodeOutput";
-import { WorkflowJobResult, LoopItemResult, isWorkflowCancelled } from "../types/workflowJobResult";
+import {
+  WorkflowJobResult,
+  LoopItemResult,
+  isWorkflowCancelled,
+} from "../types/workflowJobResult";
 
 const redis = getRedisQueue();
-const WORKFLOW_JOB_ATTEMPTS = parseInt(process.env.WORKFLOW_JOB_ATTEMPTS || "1", 10);
-const SCHEDULE_JOB_ID_MODE =
-  process.env.SCHEDULE_JOB_ID_MODE?.toLowerCase() === "workflow" ? "workflow" : "run";
-
+const WORKFLOW_JOB_ATTEMPTS = parseInt(
+  process.env.WORKFLOW_JOB_ATTEMPTS || "1",
+  10
+);
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
   connection: redis,
@@ -60,14 +71,18 @@ async function collectOrderedResults(
   loopId: string,
   totalItems: number,
   continueOnError: boolean
-): Promise<{ results: LoopItemResult[]; hasErrors: boolean; errorCount: number }> {
+): Promise<{
+  results: LoopItemResult[];
+  hasErrors: boolean;
+  errorCount: number;
+}> {
   const key = `loop:${parentRunId}:${loopId}:results`;
   const resultsHash = await redis.hgetall(key);
-  
+
   const results: LoopItemResult[] = new Array(totalItems);
   let hasErrors = false;
   let errorCount = 0;
-  
+
   for (let i = 0; i < totalItems; i++) {
     const rawValue = resultsHash[String(i)];
     if (rawValue) {
@@ -76,10 +91,13 @@ async function collectOrderedResults(
         if (parsed.error || parsed.success === false) {
           hasErrors = true;
           errorCount++;
-          const errorOutput = createErrorOutput(parsed.error || "Unknown error", {
-            nodeName: `loop-item-${i}`,
-            category: "loop",
-          });
+          const errorOutput = createErrorOutput(
+            parsed.error || "Unknown error",
+            {
+              nodeName: `loop-item-${i}`,
+              category: "loop",
+            }
+          );
           results[i] = { ...errorOutput, itemIndex: i };
         } else {
           const successOutput = createSuccessOutput(parsed.data ?? parsed, {
@@ -108,7 +126,7 @@ async function collectOrderedResults(
       results[i] = { ...errorOutput, itemIndex: i };
     }
   }
-  
+
   return { results, hasErrors, errorCount };
 }
 
@@ -142,34 +160,41 @@ function createItemParentStore(
 /**
  * Cleans up Redis keys after loop aggregation completes.
  */
-async function cleanupLoopKeys(parentRunId: string, loopId: string): Promise<void> {
+async function cleanupLoopKeys(
+  parentRunId: string,
+  loopId: string
+): Promise<void> {
   const keysToDelete = [
     `loop:${parentRunId}:${loopId}:results`,
     `loop:${parentRunId}:${loopId}:aggregated`,
     `loop:${parentRunId}:${loopId}:meta`,
   ];
-  
-  await Promise.all(keysToDelete.map(key => redis.del(key)));
+
+  await Promise.all(keysToDelete.map((key) => redis.del(key)));
   console.log(`🧹 Cleaned up Redis keys for loop ${loopId}`);
 }
 
 // Workflow execution worker
 const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
   "workflow-execution",
-  async (job: Job<WorkflowJobData>, token?: string, signal?: AbortSignal): Promise<WorkflowJobResult> => {
+  async (
+    job: Job<WorkflowJobData>,
+    token?: string,
+    signal?: AbortSignal
+  ): Promise<WorkflowJobResult> => {
     // Ensure node executors are registered (handles circular dependency race condition)
     const registeredCategories = getAllRegisteredCategories();
     if (registeredCategories.length === 0) {
-      console.log('🔧 Initializing node executors from worker...');
+      console.log("🔧 Initializing node executors from worker...");
       initializeNodeExecutors();
     }
 
-    const { 
-      runId, 
-      nodes, 
-      edges, 
-      userId, 
-      workflowId, 
+    const {
+      runId,
+      nodes,
+      edges,
+      userId,
+      workflowId,
       useRedisStorage,
       trigger,
       isLoopAggregator,
@@ -181,12 +206,18 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
     } = job.data;
 
     // Handle parallel loop item execution
-    if (trigger === 'loop_parallel' && !isLoopAggregator) {
-      console.log(`🔄 Processing loop item ${(itemIndex ?? 0) + 1}/${totalItems} for loop ${loopId}`);
-      
+    if (trigger === "loop_parallel" && !isLoopAggregator) {
+      console.log(
+        `🔄 Processing loop item ${
+          (itemIndex ?? 0) + 1
+        }/${totalItems} for loop ${loopId}`
+      );
+
       const startNodeId = (job.data as any).startNodeId;
-      console.log(`🎯 Loop item starting from node: ${startNodeId || 'auto-detect'}`);
-      
+      console.log(
+        `🎯 Loop item starting from node: ${startNodeId || "auto-detect"}`
+      );
+
       try {
         const result = await executeWorkflow(
           runId,
@@ -194,7 +225,7 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           userId,
           nodes,
           edges,
-          { 
+          {
             initialInput: job.data.initialInput,
             startNodeId, // Pass entry point to workflow engine
             abortSignal: signal, // Pass abort signal from BullMQ for cancellation
@@ -206,7 +237,9 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
         await redis.hset(key, String(itemIndex), JSON.stringify(result));
         await redis.expire(key, 3600); // 1 hour TTL
 
-        console.log(`✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`);
+        console.log(
+          `✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`
+        );
         const successOutput = createSuccessOutput(result, {
           nodeName: `loop-item-${itemIndex}`,
           category: "loop",
@@ -217,18 +250,21 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           nodeName: `loop-item-${itemIndex}`,
           category: "loop",
         });
-        console.error(`❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`, errorOutput.error);
-        
+        console.error(
+          `❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`,
+          errorOutput.error
+        );
+
         // Store error in Redis for aggregation (allows continueOnError)
         const key = `loop:${parentRunId}:${loopId}:results`;
         await redis.hset(key, String(itemIndex), JSON.stringify(errorOutput));
         await redis.expire(key, 3600);
-        
+
         // If continueOnError is false, throw to fail the job
         if (!continueOnError) {
           throw new Error(errorOutput.error);
         }
-        
+
         // Return error result for aggregation
         return { ...errorOutput, itemIndex };
       }
@@ -236,8 +272,10 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
 
     // Handle aggregator (parent job that waits for all children)
     if (isLoopAggregator) {
-      console.log(`📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`);
-      
+      console.log(
+        `📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`
+      );
+
       // Extract continuation metadata
       const doneEdges = (job.data as any).doneEdges || [];
       const parentNodes = (job.data as any).parentNodes || [];
@@ -251,9 +289,9 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           totalItems ?? 0,
           continueOnError
         );
-        
+
         // Keep full StandardNodeOutput for each item, preserving structure
-        const aggregatedOutput = results.map(r => ({
+        const aggregatedOutput = results.map((r) => ({
           success: r.success,
           status: r.status,
           data: r.data,
@@ -264,133 +302,173 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
 
         // Store aggregated results for parent workflow to retrieve
         const aggregatedKey = `loop:${parentRunId}:${loopId}:aggregated`;
-        await redis.set(aggregatedKey, JSON.stringify({
-          results: aggregatedOutput,
-          meta: {
-            totalItems,
-            successCount: totalItems! - errorCount,
-            errorCount,
-            hasErrors,
-            completedAt: new Date().toISOString(),
-          }
-        }));
-        await redis.expire(aggregatedKey, 3600);
-
-        console.log(`✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`);
-        
-        // Queue continuation jobs for done edges (parent workflow continuation)
-        if (doneEdges.length > 0 && parentNodes.length > 0) {
-          console.log(`🔗 Queuing ${doneEdges.length} continuation jobs from loop ${loopId}`);
-          
-          for (const edge of doneEdges) {
-            const continuationRunId = uuidv4();
-            
-            await workflowQueue.add('workflow-continuation', {
-              runId: continuationRunId,
-              workflowId,
-              userId,
-              nodes: parentNodes,
-              edges: parentEdges,
-              trigger: 'loop_continuation',
-              initialInput: { 
-                data: aggregatedOutput,
-                $loopResult: {
-                  loopId,
-                  totalItems,
-                  successCount: totalItems! - errorCount,
-                  errorCount,
-                  hasErrors,
-                },
-              },
-              // Start execution from the done edge target node
-              startNodeId: edge.target,
-              parentRunId,
-              loopId,
-            } as WorkflowJobData & { startNodeId: string }, {
-              removeOnComplete: 50,
-              removeOnFail: 100,
-            });
-            
-            console.log(`📤 Queued continuation to node ${edge.target}`);
-          }
-        } else {
-          // No done edges - Loop is a terminal node, complete the parent workflow run with aggregated result
-          console.log(`📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`);
-          
-          const finalResult = createSuccessOutput({
-            finalOutput: aggregatedOutput,
-            loopResult: {
-              loopId,
+        await redis.set(
+          aggregatedKey,
+          JSON.stringify({
+            results: aggregatedOutput,
+            meta: {
               totalItems,
               successCount: totalItems! - errorCount,
               errorCount,
               hasErrors,
               completedAt: new Date().toISOString(),
-            }
-          }, { nodeName: loopId, category: "loop" });
-          
+            },
+          })
+        );
+        await redis.expire(aggregatedKey, 3600);
+
+        console.log(
+          `✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`
+        );
+
+        // Queue continuation jobs for done edges (parent workflow continuation)
+        if (doneEdges.length > 0 && parentNodes.length > 0) {
+          console.log(
+            `🔗 Queuing ${doneEdges.length} continuation jobs from loop ${loopId}`
+          );
+
+          for (const edge of doneEdges) {
+            const continuationRunId = uuidv4();
+
+            await workflowQueue.add(
+              "workflow-continuation",
+              {
+                runId: continuationRunId,
+                workflowId,
+                userId,
+                nodes: parentNodes,
+                edges: parentEdges,
+                trigger: "loop_continuation",
+                initialInput: {
+                  data: aggregatedOutput,
+                  $loopResult: {
+                    loopId,
+                    totalItems,
+                    successCount: totalItems! - errorCount,
+                    errorCount,
+                    hasErrors,
+                  },
+                },
+                // Start execution from the done edge target node
+                startNodeId: edge.target,
+                parentRunId,
+                loopId,
+              } as WorkflowJobData & { startNodeId: string },
+              {
+                removeOnComplete: 50,
+                removeOnFail: 100,
+              }
+            );
+
+            console.log(`📤 Queued continuation to node ${edge.target}`);
+          }
+        } else {
+          // No done edges - Loop is a terminal node, complete the parent workflow run with aggregated result
+          console.log(
+            `📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`
+          );
+
+          const finalResult = createSuccessOutput(
+            {
+              finalOutput: aggregatedOutput,
+              loopResult: {
+                loopId,
+                totalItems,
+                successCount: totalItems! - errorCount,
+                errorCount,
+                hasErrors,
+                completedAt: new Date().toISOString(),
+              },
+            },
+            { nodeName: loopId, category: "loop" }
+          );
+
           if (useRedisStorage) {
             // Update Redis-stored run
             await redis.hset(`runs:data:${parentRunId}`, {
-              status: 'success',
+              status: "success",
               result: JSON.stringify(finalResult),
               completed_at: new Date().toISOString(),
             });
-            console.log(`✅ Parent run ${parentRunId} completed in Redis with loop result`);
+            console.log(
+              `✅ Parent run ${parentRunId} completed in Redis with loop result`
+            );
           } else {
             // Update Supabase directly
-            await supabase.from('workflow_runs').update({
-              status: 'success',
-              result: finalResult,
-              completed_at: new Date().toISOString(),
-            }).eq('id', parentRunId);
-            console.log(`✅ Parent run ${parentRunId} completed in Supabase with loop result`);
+            await supabase
+              .from("workflow_runs")
+              .update({
+                status: "success",
+                result: finalResult,
+                completed_at: new Date().toISOString(),
+              })
+              .eq("id", parentRunId);
+            console.log(
+              `✅ Parent run ${parentRunId} completed in Supabase with loop result`
+            );
           }
         }
 
         // Signal completion via Redis pub/sub (for monitoring/debugging)
-        await redis.publish('loop:completed', JSON.stringify({
-          parentRunId,
-          loopId,
-          workflowId,
-          userId,
-          resultCount: results.length,
-          successCount: totalItems! - errorCount,
-          errorCount,
-          hasErrors,
-          continuationQueued: doneEdges.length > 0,
-        }));
-        
+        await redis.publish(
+          "loop:completed",
+          JSON.stringify({
+            parentRunId,
+            loopId,
+            workflowId,
+            userId,
+            resultCount: results.length,
+            successCount: totalItems! - errorCount,
+            errorCount,
+            hasErrors,
+            continuationQueued: doneEdges.length > 0,
+          })
+        );
+
         // Cleanup Redis keys after successful aggregation
         await cleanupLoopKeys(parentRunId!, loopId!);
-        
-        return createSuccessOutput({
-          aggregated: aggregatedOutput, 
-          count: results.length,
-          successCount: totalItems! - errorCount,
-          errorCount,
-          continuationQueued: doneEdges.length > 0,
-        }, { nodeName: loopId, category: "loop" });
+
+        return createSuccessOutput(
+          {
+            aggregated: aggregatedOutput,
+            count: results.length,
+            successCount: totalItems! - errorCount,
+            errorCount,
+            continuationQueued: doneEdges.length > 0,
+          },
+          { nodeName: loopId, category: "loop" }
+        );
       } catch (error) {
-        const errorOutput = createErrorOutput(error, { nodeName: loopId, category: "loop" });
-        console.error(`❌ Loop aggregation failed for ${loopId}:`, errorOutput.error);
-        
+        const errorOutput = createErrorOutput(error, {
+          nodeName: loopId,
+          category: "loop",
+        });
+        console.error(
+          `❌ Loop aggregation failed for ${loopId}:`,
+          errorOutput.error
+        );
+
         // Publish failure event
-        await redis.publish('loop:failed', JSON.stringify({
-          parentRunId,
-          loopId,
-          error: errorOutput.error,
-        }));
-        
+        await redis.publish(
+          "loop:failed",
+          JSON.stringify({
+            parentRunId,
+            loopId,
+            error: errorOutput.error,
+          })
+        );
+
         throw new Error(errorOutput.error);
       }
     }
 
     // Handle loop continuation (resuming parent workflow after parallel loop completes)
-    if (trigger === 'loop_continuation') {
+    if (trigger === "loop_continuation") {
       const startNodeId = (job.data as any).startNodeId;
-      console.log(`🔗 Continuing workflow from node ${startNodeId} after parallel loop ${loopId}`);
-      
+      console.log(
+        `🔗 Continuing workflow from node ${startNodeId} after parallel loop ${loopId}`
+      );
+
       try {
         // Execute continuation workflow starting from the done edge target
         const result = await executeWorkflow(
@@ -399,33 +477,50 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           userId,
           nodes,
           edges,
-          { 
+          {
             initialInput: job.data.initialInput,
             startNodeId, // Pass start node to workflow engine
             abortSignal: signal, // Pass abort signal from BullMQ for cancellation
           }
         );
 
-        console.log(`✅ Workflow continuation completed from node ${startNodeId}`);
-        return createSuccessOutput(result, { nodeName: startNodeId, category: "loop_continuation" });
+        console.log(
+          `✅ Workflow continuation completed from node ${startNodeId}`
+        );
+        return createSuccessOutput(result, {
+          nodeName: startNodeId,
+          category: "loop_continuation",
+        });
       } catch (error) {
-        const errorOutput = createErrorOutput(error, { nodeName: startNodeId, category: "loop_continuation" });
-        console.error(`❌ Workflow continuation failed from node ${startNodeId}:`, errorOutput.error);
+        const errorOutput = createErrorOutput(error, {
+          nodeName: startNodeId,
+          category: "loop_continuation",
+        });
+        console.error(
+          `❌ Workflow continuation failed from node ${startNodeId}:`,
+          errorOutput.error
+        );
         throw new Error(errorOutput.error);
       }
     }
 
     // Normal workflow execution
-    console.log(`🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`);
+    console.log(
+      `🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`
+    );
 
     // Check if workflow was cancelled while job was queued
     const isCancelled = await redis.get(`workflow:${workflowId}:cancelled`);
     if (isCancelled) {
-      console.log(`🛑 Workflow ${workflowId} was cancelled, skipping execution for run ${runId}`);
-      
+      console.log(
+        `🛑 Workflow ${workflowId} was cancelled, skipping execution for run ${runId}`
+      );
+
       // Mark run as cancelled
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'cancelled', { errorMessage: 'Workflow deactivated by user' });
+        await updateRunStatusInRedis(runId, "cancelled", {
+          errorMessage: "Workflow deactivated by user",
+        });
       } else {
         await supabase
           .from("workflow_runs")
@@ -436,22 +531,24 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
           })
           .eq("id", runId);
       }
-      
-      return { cancelled: true, reason: 'workflow_deactivated' } as const;
+
+      return { cancelled: true, reason: "workflow_deactivated" } as const;
     }
 
     // Check abort signal before starting (in case job was cancelled immediately)
     if (signal?.aborted) {
       console.log(`🛑 Job ${job.id} was cancelled before starting`);
-      throw new Error('Workflow cancelled by user');
+      throw new Error("Workflow cancelled by user");
     }
 
-    let executionResult: Awaited<ReturnType<typeof executeWorkflow>> | undefined;
+    let executionResult:
+      | Awaited<ReturnType<typeof executeWorkflow>>
+      | undefined;
 
     try {
       // Update run status to running
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'running');
+        await updateRunStatusInRedis(runId, "running");
       } else {
         await supabase
           .from("workflow_runs")
@@ -464,14 +561,14 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
       const renamed = {
         data: input?.marketEvent ?? input?.data ?? input,
       };
-      
+
       const result = await executeWorkflow(
         runId,
         workflowId,
         userId,
         nodes,
         edges,
-        { 
+        {
           initialInput: renamed,
           abortSignal: signal, // Pass abort signal from BullMQ for cancellation
         }
@@ -480,12 +577,12 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
 
       // Check if workflow actually succeeded - if not, throw to enter catch block
       if (result.success !== true) {
-        throw new Error(result.error || 'Workflow execution failed');
+        throw new Error(result.error || "Workflow execution failed");
       }
 
       // Save successful result (only if not already cancelled)
       if (useRedisStorage) {
-        await updateRunStatusInRedis(runId, 'success', { result });
+        await updateRunStatusInRedis(runId, "success", { result });
       } else {
         // Guard: only update to success if status is still running/queued (not cancelled)
         await supabase
@@ -500,19 +597,27 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
       }
 
       console.log(`✅ Workflow run ${runId} completed successfully`);
-      return createSuccessOutput(result, { nodeName: "workflow", category: "execution" });
+      return createSuccessOutput(result, {
+        nodeName: "workflow",
+        category: "execution",
+      });
     } catch (error) {
-      const errorOutput = createErrorOutput(error, { nodeName: "workflow", category: "execution" });
-      const errorMessage = errorOutput.error || (error as Error).message || 'Unknown error';
-      
+      const errorOutput = createErrorOutput(error, {
+        nodeName: "workflow",
+        category: "execution",
+      });
+      const errorMessage =
+        errorOutput.error || (error as Error).message || "Unknown error";
+
       // Detect if this was a cancellation (not a real failure)
-      const isCancellation = errorMessage.toLowerCase().includes('cancelled') || 
-                             errorMessage.toLowerCase().includes('deactivated');
-      
-      const status = isCancellation ? 'cancelled' : 'failed';
-      
+      const isCancellation =
+        errorMessage.toLowerCase().includes("cancelled") ||
+        errorMessage.toLowerCase().includes("deactivated");
+
+      const status = isCancellation ? "cancelled" : "failed";
+
       console.log(
-        `${isCancellation ? '🛑' : '❌'} Workflow run ${runId} ${status}:`,
+        `${isCancellation ? "🛑" : "❌"} Workflow run ${runId} ${status}:`,
         errorMessage
       );
 
@@ -547,9 +652,9 @@ const workflowWorker = new Worker<WorkflowJobData, WorkflowJobResult>(
     concurrency: parseInt(process.env.WORKFLOW_JOB_CONCURRENCY || "5"),
     removeOnComplete: { count: 50 },
     removeOnFail: { count: 100 },
-    lockDuration: 300000,      // 5 minutes (default is 30s) - for long-running loops
-    stalledInterval: 60000,    // Check for stalled jobs every 60 seconds
-    maxStalledCount: 3,        // Allow 3 stall checks before marking as stalled
+    lockDuration: 300000, // 5 minutes (default is 30s) - for long-running loops
+    stalledInterval: 60000, // Check for stalled jobs every 60 seconds
+    maxStalledCount: 3, // Allow 3 stall checks before marking as stalled
   }
 );
 
@@ -559,12 +664,11 @@ const scheduledWorker = new Worker(
   async (job: Job<ScheduledWorkflowJobData>) => {
     const { workflowId, userId } = job.data;
     const scheduledTimestamp = job.timestamp ?? Date.now();
-    const scheduleKey = `schedule:${workflowId}:${job.id ?? scheduledTimestamp}`;
 
     console.log(
-      `⏰ Processing scheduled workflow ${workflowId} (jobId=${job.id}, fireTime=${new Date(
-        scheduledTimestamp
-      ).toISOString()})`
+      `⏰ Processing scheduled workflow ${workflowId} (jobId=${
+        job.id
+      }, fireTime=${new Date(scheduledTimestamp).toISOString()})`
     );
 
     try {
@@ -588,7 +692,7 @@ const scheduledWorker = new Worker(
           workflow_id: workflowId,
           status: "queued",
           initiated_by: userId,
-          schedule_key: scheduleKey,
+          schedule_key: job.id,
           nodes: workflow.nodes,
           edges: workflow.edges,
           node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
@@ -600,21 +704,15 @@ const scheduledWorker = new Worker(
       if (runError) {
         if ((runError as any).code === "23505") {
           console.warn(
-            `⚠️ Duplicate scheduled run prevented for workflow ${workflowId} (schedule_key=${scheduleKey})`
+            `⚠️ Duplicate scheduled run prevented for workflow ${workflowId} (schedule_key=${job.id})`
           );
           return createSuccessOutput(
-            { skipped: true, scheduleKey },
+            { skipped: true, schedule_key: job.id },
             { nodeName: "scheduler", category: "scheduled" }
           );
         }
         throw new Error(`Failed to create workflow run: ${runError.message}`);
       }
-
-      // Queue workflow execution
-      const executionJobId =
-        SCHEDULE_JOB_ID_MODE === "workflow"
-          ? `${workflowId}:${scheduleKey}`
-          : run.id;
 
       await workflowQueue.add(
         "execute-workflow",
@@ -626,18 +724,21 @@ const scheduledWorker = new Worker(
           edges: workflow.edges,
           trigger: "scheduled",
         },
-        { jobId: executionJobId }
+        { jobId: job.id }
       );
 
       console.log(
-        `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${scheduleKey})`
+        `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${job.id})`
       );
       return createSuccessOutput(
-        { runId: run.id, scheduleKey },
+        { runId: run.id, scheduleKey: job.id },
         { nodeName: "scheduler", category: "scheduled" }
       );
     } catch (error) {
-      const errorOutput = createErrorOutput(error, { nodeName: "scheduler", category: "scheduled" });
+      const errorOutput = createErrorOutput(error, {
+        nodeName: "scheduler",
+        category: "scheduled",
+      });
       console.error(
         `❌ Scheduled workflow failed for ${workflowId}:`,
         errorOutput.error
@@ -658,23 +759,26 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       removeOnComplete: 50,
       removeOnFail: 100,
       attempts: WORKFLOW_JOB_ATTEMPTS,
-      backoff: WORKFLOW_JOB_ATTEMPTS > 1 ? {
-        type: "exponential",
-        delay: 2000,
-      } : undefined,
+      backoff:
+        WORKFLOW_JOB_ATTEMPTS > 1
+          ? {
+              type: "exponential",
+              delay: 2000,
+            }
+          : undefined,
     });
   }
 
   /**
    * Creates parallel loop execution jobs using BullMQ FlowProducer.
-   * 
+   *
    * Architecture:
    * - Creates one parent aggregator job and N child jobs (one per loop item)
    * - Children execute in parallel across workers (limited by maxConcurrency)
    * - Parent waits for all children to complete via BullMQ dependency system
    * - Results are stored in Redis hash by itemIndex for ordered retrieval
    * - Supports continueOnError for fault-tolerant parallel processing
-   * 
+   *
    * @param parentRunId - The parent workflow run ID
    * @param loopId - The loop node ID
    * @param workflowId - The workflow ID
@@ -699,26 +803,34 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       continueOnError = false,
       useRedisStorage = true,
     } = options;
-    
-    console.log(`🔄 Creating ${items.length} parallel loop jobs for loop ${loopId} (maxConcurrency: ${maxConcurrency}, continueOnError: ${continueOnError})`);
+
+    console.log(
+      `🔄 Creating ${items.length} parallel loop jobs for loop ${loopId} (maxConcurrency: ${maxConcurrency}, continueOnError: ${continueOnError})`
+    );
 
     // Store loop metadata in Redis for continuation
-    await redis.set(`loop:${parentRunId}:${loopId}:meta`, JSON.stringify({
-      totalItems: items.length,
-      maxConcurrency,
-      continueOnError,
-      startedAt: new Date().toISOString(),
-    }));
+    await redis.set(
+      `loop:${parentRunId}:${loopId}:meta`,
+      JSON.stringify({
+        totalItems: items.length,
+        maxConcurrency,
+        continueOnError,
+        startedAt: new Date().toISOString(),
+      })
+    );
     await redis.expire(`loop:${parentRunId}:${loopId}:meta`, 3600);
 
     // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
     const loopBodyEntryEdges = subgraphEdges.filter(
-      (e) => e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
+      (e) =>
+        e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
     );
     const startNodeId = loopBodyEntryEdges[0]?.target;
-    
+
     if (!startNodeId) {
-      console.warn(`⚠️ No entry node found for loop ${loopId} - loop body may be empty`);
+      console.warn(
+        `⚠️ No entry node found for loop ${loopId} - loop body may be empty`
+      );
     }
 
     // Create child jobs with rate limiting via delay
@@ -728,7 +840,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       // Calculate delay to implement per-loop rate limiting
       const batchIndex = Math.floor(i / maxConcurrency);
       const delayMs = batchIndex > 0 ? batchIndex * 100 : 0; // 100ms between batches
-      
+
       // Create per-item parent store with Loop node output as current item (not full array)
       // This allows resolveReferences() to handle ALL templates at runtime, including:
       // - {{ $('Loop').json.data }} → current item
@@ -741,10 +853,10 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         i,
         items.length
       );
-      
+
       return {
         name: `loop-item-${i}`,
-        queueName: 'workflow-execution',
+        queueName: "workflow-execution",
         data: {
           runId: uuidv4(),
           workflowId,
@@ -754,7 +866,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           // All data accessible via $parentStore.Loop (data + $loopContext)
           // No redundant top-level fields needed
           initialInput: { $parentStore: itemParentStore },
-          trigger: 'loop_parallel',
+          trigger: "loop_parallel",
           parentRunId,
           loopId,
           itemIndex: i,
@@ -768,21 +880,26 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           removeOnFail: continueOnError ? 50 : 100,
           attempts: continueOnError ? 1 : WORKFLOW_JOB_ATTEMPTS,
           delay: delayMs,
-          backoff: (!continueOnError && WORKFLOW_JOB_ATTEMPTS > 1) ? {
-            type: "exponential" as const,
-            delay: 2000,
-          } : undefined,
+          backoff:
+            !continueOnError && WORKFLOW_JOB_ATTEMPTS > 1
+              ? {
+                  type: "exponential" as const,
+                  delay: 2000,
+                }
+              : undefined,
           failParentOnFailure: !continueOnError,
         },
       };
     });
-    
-    console.log(`📦 Created ${items.length} child jobs with per-item store injection`);
+
+    console.log(
+      `📦 Created ${items.length} child jobs with per-item store injection`
+    );
 
     // Create the flow with parent aggregator and children
     await flowProducer.add({
-      name: 'loop-aggregator',
-      queueName: 'workflow-execution',
+      name: "loop-aggregator",
+      queueName: "workflow-execution",
       data: {
         isLoopAggregator: true,
         parentRunId,
@@ -799,7 +916,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         doneEdges: options.doneEdges || [],
         parentNodes: options.parentNodes || [],
         parentEdges: options.parentEdges || [],
-      } as WorkflowJobData & { doneEdges: any[]; parentNodes: any[]; parentEdges: any[] },
+      } as WorkflowJobData & {
+        doneEdges: any[];
+        parentNodes: any[];
+        parentEdges: any[];
+      },
       opts: {
         removeOnComplete: 50,
         removeOnFail: 100,
@@ -807,7 +928,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       children: childJobs,
     });
 
-    console.log(`✅ Created ${items.length} parallel loop jobs with aggregator (${Math.ceil(items.length / maxConcurrency)} batches)`);
+    console.log(
+      `✅ Created ${
+        items.length
+      } parallel loop jobs with aggregator (${Math.ceil(
+        items.length / maxConcurrency
+      )} batches)`
+    );
   }
 
   async scheduleWorkflow(
@@ -817,54 +944,62 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     timezone?: string
   ): Promise<Job> {
     // Remove existing scheduled job
-    await this.unscheduleWorkflow(workflowId);
-
-    const jobId = `schedule:${workflowId}`;
-    const repeatOptions = timezone
-      ? { pattern: cronExpression, tz: timezone }
-      : { pattern: cronExpression };
+    await this.unscheduleWorkflow(userId, workflowId);
 
     // Add new scheduled job
-    const job = await scheduledQueue.add(
-      "scheduled-workflow",
-      { workflowId, userId, cronExpression, timezone },
+    const job = await scheduledQueue.upsertJobScheduler(
+      `${userId}:${workflowId}`, // scheduler ID
       {
-        repeat: repeatOptions,
-        jobId,
-        removeOnComplete: 10,
-        removeOnFail: 50,
+        pattern: cronExpression,
+        tz: timezone,
+      },
+      {
+        name: "scheduled-workflow",
+        data: {
+          workflowId,
+          userId,
+          cronExpression,
+          timezone,
+        },
+        opts: {
+          attempts: WORKFLOW_JOB_ATTEMPTS,
+          backoff:
+            WORKFLOW_JOB_ATTEMPTS > 1
+              ? {
+                  type: "exponential",
+                  delay: 2000,
+                }
+              : undefined,
+          removeOnFail: true,
+        },
       }
     );
 
     console.log(
-      `📅 Registered scheduled workflow ${workflowId} (cron=${cronExpression}, timezone=${timezone ?? "UTC"}, jobId=${jobId})`
+      `📅 Registered scheduled workflow ${workflowId} (cron=${cronExpression}, timezone=${
+        timezone ?? "UTC"
+      }`
     );
 
     return job;
   }
 
-  async unscheduleWorkflow(workflowId: string): Promise<void> {
-    const jobId = `schedule:${workflowId}`;
-    const repeatableJobs = await scheduledQueue.getRepeatableJobs();
+  async unscheduleWorkflow(userId: string, workflowId: string): Promise<void> {
+    //const schedulers = await scheduledQueue.getJobSchedulers();
+    const schedulerId = `${userId}:${workflowId}`;
 
-    await Promise.all(
-      repeatableJobs
-        .filter((job) => job.id === jobId)
-        .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
-    );
+    // 1️⃣ Remove the job scheduler (cron definition)
+    // This stops all future scheduled executions
+    console.log(`🗑 Removing scheduler for: ${schedulerId}`);
+    await scheduledQueue.removeJobScheduler(schedulerId);
 
-    await Promise.all(
-      repeatableJobs
-        .filter((job) => job.id === jobId)
-        .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
-    );
-
-    // Remove any existing non-repeatable jobs
+    // 2️⃣ OPTIONAL: cleanup any pending non-scheduled jobs (rare safety net)
     const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
+
     for (const job of jobs) {
       if (
-        (job.id === jobId || job.data.workflowId === workflowId) &&
-        !job.opts.repeatJobKey
+        job.data?.workflowId === workflowId &&
+        job.name !== schedulerId // exclude scheduler-generated jobs
       ) {
         await job.remove();
       }
@@ -887,52 +1022,72 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
    * - Also cancels child jobs from parallel loops
    * - Returns count of jobs affected
    */
-  async cancelWorkflowJobs(workflowId: string): Promise<number> {
+  async cancelWorkflowJobs(
+    userId: string,
+    workflowId: string
+  ): Promise<number> {
     console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
-    
+
     try {
-      await this.unscheduleWorkflow(workflowId);
+      await this.unscheduleWorkflow(userId, workflowId);
       // Set cancellation flag in Redis (TTL 10 minutes) - running jobs will check this
-      await redis.set(`workflow:${workflowId}:cancelled`, '1', 'EX', 600);
+      await redis.set(`workflow:${workflowId}:cancelled`, "1", "EX", 600);
       console.log(`  ↳ Set cancellation flag for workflow ${workflowId}`);
-      
+
       // Get all waiting, delayed, and active jobs
-      const allJobs = await workflowQueue.getJobs(['waiting', 'delayed', 'active']);
-      
+      const allJobs = await workflowQueue.getJobs([
+        "waiting",
+        "delayed",
+        "active",
+      ]);
+
       let cancelledCount = 0;
       for (const job of allJobs) {
         // Cancel if job belongs to this workflow OR is a child job (parallel loop item, aggregator, continuation)
         const isWorkflowJob = job.data.workflowId === workflowId;
-        
+
         if (isWorkflowJob) {
           try {
             const state = await job.getState();
-            if (state === 'waiting' || state === 'delayed') {
+            if (state === "waiting" || state === "delayed") {
               // Can directly remove these jobs
               await job.remove();
               cancelledCount++;
-              console.log(`  ↳ Removed ${state} job ${job.id} (${job.data.trigger || 'normal'})`);
-            } else if (state === 'active') {
+              console.log(
+                `  ↳ Removed ${state} job ${job.id} (${
+                  job.data.trigger || "normal"
+                })`
+              );
+            } else if (state === "active") {
               // Use BullMQ's native job cancellation - sends abort signal to worker
-              const cancelled = workflowWorker.cancelJob(job.id!, 'Workflow deactivated by user');
+              const cancelled = workflowWorker.cancelJob(
+                job.id!,
+                "Workflow deactivated by user"
+              );
               if (cancelled) {
                 cancelledCount++;
-                console.log(`  ↳ Cancelled active job ${job.id} (${job.data.trigger || 'normal'})`);
+                console.log(
+                  `  ↳ Cancelled active job ${job.id} (${
+                    job.data.trigger || "normal"
+                  })`
+                );
               } else {
-                console.log(`  ↳ Could not cancel active job ${job.id} (may have already completed)`);
+                console.log(
+                  `  ↳ Could not cancel active job ${job.id} (may have already completed)`
+                );
               }
-              
+
               // Also update the run status immediately in DB for active jobs
               if (job.data.runId) {
                 await supabase
-                  .from('workflow_runs')
+                  .from("workflow_runs")
                   .update({
-                    status: 'cancelled',
+                    status: "cancelled",
                     completed_at: new Date().toISOString(),
-                    error_message: 'Workflow deactivated by user'
+                    error_message: "Workflow deactivated by user",
                   })
-                  .eq('id', job.data.runId)
-                  .in('status', ['running', 'queued']);
+                  .eq("id", job.data.runId)
+                  .in("status", ["running", "queued"]);
               }
             }
           } catch (err) {
@@ -940,9 +1095,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           }
         }
       }
-      
+
       // Also cancel scheduled jobs
-      const scheduledJobs = await scheduledQueue.getJobs(['waiting', 'delayed', 'active']);
+      const scheduledJobs = await scheduledQueue.getJobs([
+        "waiting",
+        "delayed",
+        "active",
+      ]);
       for (const job of scheduledJobs) {
         if (job.data.workflowId === workflowId) {
           try {
@@ -954,11 +1113,16 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           }
         }
       }
-      
-      console.log(`✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`);
+
+      console.log(
+        `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
+      );
       return cancelledCount;
     } catch (error) {
-      console.error(`❌ Error cancelling jobs for workflow ${workflowId}:`, error);
+      console.error(
+        `❌ Error cancelling jobs for workflow ${workflowId}:`,
+        error
+      );
       throw error;
     }
   }
@@ -1000,7 +1164,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   async cleanup(): Promise<void> {
     console.log("🧹 Cleaning up queues...");
     await Promise.all([
-      workflowWorker.close(), 
+      workflowWorker.close(),
       scheduledWorker.close(),
       flowProducer.close(),
     ]);

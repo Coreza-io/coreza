@@ -568,7 +568,12 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           tzToUse = timezone ?? "UTC";
           nextRun = next;
 
-          await jobQueue.scheduleWorkflow(workflowId, userId, cronToSave, tzToUse);
+          await jobQueue.scheduleWorkflow(
+            workflowId,
+            userId,
+            cronToSave,
+            tzToUse
+          );
         }
 
         // Handle streaming trigger node activation (AlpacaStreamData, BinanceStreamData)
@@ -690,18 +695,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           } else {
             // Extract initial input from BacktestInit node values
             const nodeValues = triggerNode.values || {};
-            const initialInput = {
-              name: nodeValues.name,
-              initial_capital: nodeValues.initial_capital,
-              start_date: nodeValues.start_date,
-              end_date: nodeValues.end_date,
-              fill_model: nodeValues.fill_model,
-              slippage_model: nodeValues.slippage_model,
-              slippage_value: nodeValues.slippage_value,
-              commission_model: nodeValues.commission_model,
-              commission_value: nodeValues.commission_value,
-              allow_short: nodeValues.allow_short,
-            };
+            const initialInput = nodeValues;
 
             // Queue workflow for execution
             await jobQueue.addWorkflowExecution({
@@ -723,7 +717,10 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         // Deactivate - unschedule, unsubscribe, and cancel running jobs
 
         // Cancel all running/queued jobs for this workflow
-        const cancelledJobs = await jobQueue.cancelWorkflowJobs(workflowId);
+        const cancelledJobs = await jobQueue.cancelWorkflowJobs(
+          userId,
+          workflowId
+        );
         console.log(
           `🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`
         );
@@ -929,7 +926,11 @@ router.get("/scheduler/status", async (req, res, next) => {
         cron_expression: job.pattern,
         timezone: job.timezone || "UTC",
         next_run: job.next
-          ? formatInTimeZone(job.next, job.timezone || "UTC", "yyyy-MM-dd HH:mm:ssXXX")
+          ? formatInTimeZone(
+              job.next,
+              job.timezone || "UTC",
+              "yyyy-MM-dd HH:mm:ssXXX"
+            )
           : null,
       })),
     });

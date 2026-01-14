@@ -18,7 +18,6 @@ import express from "express";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { workflowScheduler } from "../services/scheduler";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
@@ -160,7 +159,7 @@ router.delete("/:workflowId", async (req, res, next) => {
       const redis = getRedisCache();
 
       // Unschedule if has Scheduler node
-      await workflowScheduler.unscheduleWorkflow(workflowId);
+      await jobQueue.unscheduleWorkflow(workflowId);
 
       // Clean up streaming workflow from active set and filter config
       await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
@@ -569,14 +568,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           tzToUse = timezone ?? "UTC";
           nextRun = next;
 
-          await workflowScheduler.scheduleWorkflow(
-            workflowId,
-            userId,
-            cronToSave,
-            workflow.nodes,
-            workflow.edges,
-            { timezone: tzToUse, start: nextRun }
-          );
+          await jobQueue.scheduleWorkflow(workflowId, userId, cronToSave, tzToUse);
         }
 
         // Handle streaming trigger node activation (AlpacaStreamData, BinanceStreamData)
@@ -771,7 +763,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         }
 
         if (triggerNode) {
-          await workflowScheduler.unscheduleWorkflow(workflowId);
+          await jobQueue.unscheduleWorkflow(workflowId);
         }
 
         if (
@@ -913,27 +905,20 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 // Get scheduler status
 router.get("/scheduler/status", async (req, res, next) => {
   try {
-    const scheduledJobs = workflowScheduler.getScheduledJobs();
+    const scheduledJobs = await jobQueue.getScheduledJobs();
 
     res.json({
       status: "active",
       scheduled_workflows: scheduledJobs.length,
       jobs: scheduledJobs.map((job) => ({
-        workflow_id: job.workflowId,
-        user_id: job.userId,
-        cron_expression: job.cronExpression,
-        next_run: (() => {
-          const nextRunDate = workflowScheduler.getNextRunDate(job.job);
-          if (!nextRunDate) {
-            return null;
-          }
-          const timezone = job.timezone || "UTC";
-          return formatInTimeZone(
-            nextRunDate,
-            timezone,
-            "yyyy-MM-dd HH:mm:ssXXX"
-          );
-        })(),
+        workflow_id: job.id?.startsWith("schedule:")
+          ? job.id.replace("schedule:", "")
+          : job.id,
+        cron_expression: job.pattern,
+        timezone: job.timezone || "UTC",
+        next_run: job.next
+          ? formatInTimeZone(job.next, job.timezone || "UTC", "yyyy-MM-dd HH:mm:ssXXX")
+          : null,
       })),
     });
   } catch (error) {

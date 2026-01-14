@@ -29,7 +29,6 @@ import { supabase } from "./config/supabase";
 import { errorHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 import { metricsMiddleware } from "./middleware/metricsMiddleware";
-import { workflowScheduler } from "./services/scheduler";
 import client from "prom-client";
 import { register } from "./utils/metrics";
 import logger from "./utils/logger";
@@ -206,8 +205,6 @@ async function startServer() {
     logger.info("Starting BullMQ workers...");
     require("./services/jobQueueManager");
 
-    // Initialize workflow scheduler
-    await workflowScheduler.initialize();
     logger.info("Starting WorkflowCache periodic cleanup...");
     WorkflowCache.startCleanupTimer();
     logger.debug("WorkflowCache cleanup timer started");

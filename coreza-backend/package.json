@@ -47,7 +47,6 @@
     "jose": "^6.1.2",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
-    "node-schedule": "^2.1.1",
     "opossum": "^9.0.0",
     "pino-http": "^11.0.0",
     "rate-limit-redis": "^4.3.1",

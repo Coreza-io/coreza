@@ -28,6 +28,8 @@ import { WorkflowJobResult, LoopItemResult, isWorkflowCancelled } from "../types
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(process.env.WORKFLOW_JOB_ATTEMPTS || "1", 10);
+const SCHEDULE_JOB_ID_MODE =
+  process.env.SCHEDULE_JOB_ID_MODE?.toLowerCase() === "workflow" ? "workflow" : "run";
 
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
@@ -44,6 +46,7 @@ interface ScheduledWorkflowJobData {
   workflowId: string;
   userId: string;
   cronExpression: string;
+  timezone?: string;
 }
 
 // LoopItemResult is now imported from ../types/workflowJobResult
@@ -555,8 +558,14 @@ const scheduledWorker = new Worker(
   "scheduled-workflows",
   async (job: Job<ScheduledWorkflowJobData>) => {
     const { workflowId, userId } = job.data;
+    const scheduledTimestamp = job.timestamp ?? Date.now();
+    const scheduleKey = `schedule:${workflowId}:${job.id ?? scheduledTimestamp}`;
 
-    console.log(`⏰ Processing scheduled workflow ${workflowId}`);
+    console.log(
+      `⏰ Processing scheduled workflow ${workflowId} (jobId=${job.id}, fireTime=${new Date(
+        scheduledTimestamp
+      ).toISOString()})`
+    );
 
     try {
       // Get workflow details
@@ -579,6 +588,7 @@ const scheduledWorker = new Worker(
           workflow_id: workflowId,
           status: "queued",
           initiated_by: userId,
+          schedule_key: scheduleKey,
           nodes: workflow.nodes,
           edges: workflow.edges,
           node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
@@ -588,20 +598,44 @@ const scheduledWorker = new Worker(
         .single();
 
       if (runError) {
+        if ((runError as any).code === "23505") {
+          console.warn(
+            `⚠️ Duplicate scheduled run prevented for workflow ${workflowId} (schedule_key=${scheduleKey})`
+          );
+          return createSuccessOutput(
+            { skipped: true, scheduleKey },
+            { nodeName: "scheduler", category: "scheduled" }
+          );
+        }
         throw new Error(`Failed to create workflow run: ${runError.message}`);
       }
 
       // Queue workflow execution
-      await workflowQueue.add("execute-workflow", {
-        runId: run.id,
-        workflowId,
-        userId,
-        nodes: workflow.nodes,
-        edges: workflow.edges,
-        trigger: "scheduled",
-      });
+      const executionJobId =
+        SCHEDULE_JOB_ID_MODE === "workflow"
+          ? `${workflowId}:${scheduleKey}`
+          : run.id;
 
-      return createSuccessOutput({ runId: run.id }, { nodeName: "scheduler", category: "scheduled" });
+      await workflowQueue.add(
+        "execute-workflow",
+        {
+          runId: run.id,
+          workflowId,
+          userId,
+          nodes: workflow.nodes,
+          edges: workflow.edges,
+          trigger: "scheduled",
+        },
+        { jobId: executionJobId }
+      );
+
+      console.log(
+        `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${scheduleKey})`
+      );
+      return createSuccessOutput(
+        { runId: run.id, scheduleKey },
+        { nodeName: "scheduler", category: "scheduled" }
+      );
     } catch (error) {
       const errorOutput = createErrorOutput(error, { nodeName: "scheduler", category: "scheduled" });
       console.error(
@@ -779,32 +813,50 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
-    cronExpression: string
+    cronExpression: string,
+    timezone?: string
   ): Promise<Job> {
     // Remove existing scheduled job
     await this.unscheduleWorkflow(workflowId);
 
+    const jobId = `schedule:${workflowId}`;
+    const repeatOptions = timezone
+      ? { pattern: cronExpression, tz: timezone }
+      : { pattern: cronExpression };
+
     // Add new scheduled job
-    return await scheduledQueue.add(
-      `scheduled-${workflowId}`,
-      { workflowId, userId, cronExpression },
+    const job = await scheduledQueue.add(
+      "scheduled-workflow",
+      { workflowId, userId, cronExpression, timezone },
       {
-        repeat: { pattern: cronExpression },
-        jobId: `scheduled-${workflowId}`,
+        repeat: repeatOptions,
+        jobId,
         removeOnComplete: 10,
         removeOnFail: 50,
       }
     );
+
+    console.log(
+      `📅 Registered scheduled workflow ${workflowId} (cron=${cronExpression}, timezone=${timezone ?? "UTC"}, jobId=${jobId})`
+    );
+
+    return job;
   }
 
   async unscheduleWorkflow(workflowId: string): Promise<void> {
-    const jobId = `scheduled-${workflowId}`;
-    await scheduledQueue.removeRepeatable(jobId, { pattern: "*" });
+    const jobId = `schedule:${workflowId}`;
+    const repeatableJobs = await scheduledQueue.getRepeatableJobs();
+
+    await Promise.all(
+      repeatableJobs
+        .filter((job) => job.id === jobId)
+        .map((job) => scheduledQueue.removeRepeatableByKey(job.key))
+    );
 
     // Remove any existing jobs
     const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
     for (const job of jobs) {
-      if (job.id === jobId) {
+      if (job.id === jobId || job.data.workflowId === workflowId) {
         await job.remove();
       }
     }
@@ -830,6 +882,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
     
     try {
+      await this.unscheduleWorkflow(workflowId);
       // Set cancellation flag in Redis (TTL 10 minutes) - running jobs will check this
       await redis.set(`workflow:${workflowId}:cancelled`, '1', 'EX', 600);
       console.log(`  ↳ Set cancellation flag for workflow ${workflowId}`);
@@ -912,6 +965,27 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       scheduled: scheduledStats,
       mode: "bullmq",
     };
+  }
+
+  async getScheduledJobs(): Promise<
+    Array<{
+      id: string | null;
+      key: string;
+      name: string;
+      pattern: string | null;
+      timezone?: string;
+      next: number | null;
+    }>
+  > {
+    const repeatableJobs = await scheduledQueue.getRepeatableJobs();
+    return repeatableJobs.map((job) => ({
+      id: job.id ?? null,
+      key: job.key,
+      name: job.name,
+      pattern: job.cron ?? null,
+      timezone: job.tz ?? undefined,
+      next: job.next ?? null,
+    }));
   }
 
   async cleanup(): Promise<void> {

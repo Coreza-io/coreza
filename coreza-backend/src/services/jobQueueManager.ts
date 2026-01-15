@@ -1057,8 +1057,10 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         if (job.processedOn && !job.finishedOn) {
           // Active job - use BullMQ native cancellation
           // This triggers the AbortSignal in the worker IMMEDIATELY
-          await workflowWorker.cancelJob(job.id!);
-          console.log(`🛑 Cancelled active job ${job.id} via BullMQ AbortSignal`);
+          workflowWorker.cancelJob(job.id!, "Job cancelled by user");
+          console.log(
+            `🛑 Cancelled active job ${job.id} via BullMQ AbortSignal`
+          );
           cancelledCount++;
         } else {
           // Waiting/delayed - remove from queue directly
@@ -1096,16 +1098,18 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
    */
   async cancelWorkflowRun(runId: string): Promise<boolean> {
     console.log(`🛑 Cancelling workflow run ${runId}`);
-    
+
     const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
-    
+
     for (const job of jobs) {
       if (job.data?.runId === runId) {
         try {
           if (job.processedOn && !job.finishedOn) {
             // Active job - use BullMQ native cancellation
             await workflowWorker.cancelJob(job.id!);
-            console.log(`🛑 Cancelled active run ${runId} via BullMQ AbortSignal`);
+            console.log(
+              `🛑 Cancelled active run ${runId} via BullMQ AbortSignal`
+            );
           } else {
             // Waiting/delayed - remove from queue
             await job.remove();

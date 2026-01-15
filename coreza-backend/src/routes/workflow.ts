@@ -726,21 +726,23 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         );
 
         // Mark any "running" or "queued" workflow runs as cancelled
-        const { data: cancelledRuns, error: runUpdateError } = await supabase
-          .from("workflow_runs")
-          .update({
-            status: "cancelled",
-            completed_at: new Date().toISOString(),
-            error_message: "Workflow deactivated by user",
-          })
-          .eq("workflow_id", workflowId)
-          .in("status", ["running", "queued"])
-          .select("id");
+        if (cancelledJobs > 0) {
+          const { data: cancelledRuns, error: runUpdateError } = await supabase
+            .from("workflow_runs")
+            .update({
+              status: "cancelled",
+              completed_at: new Date().toISOString(),
+              error_message: "Workflow deactivated by user",
+            })
+            .eq("workflow_id", workflowId)
+            .in("status", ["running", "queued"])
+            .select("id");
 
-        if (cancelledRuns?.length) {
-          console.log(
-            `🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`
-          );
+          if (cancelledRuns?.length) {
+            console.log(
+              `🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`
+            );
+          }
         }
 
         // If this is a backtest workflow, cancel any active backtests
@@ -769,10 +771,6 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               `🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`
             );
           }
-        }
-
-        if (triggerNode) {
-          await jobQueue.unscheduleWorkflow(workflowId);
         }
 
         if (
@@ -821,7 +819,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         // Clean up workflow-scoped symbol subscriptions (from Subscribe nodes like BinanceSubscribe, AlpacaSubscribe, DhanSubscribe)
         const redis = getRedisCache();
         const workflowSymbolKeys = await redis.keys(
-          `workflow:${workflowId}:subscribed_symbols:*`
+          `workflow:${userId}:${workflowId}:subscribed_symbols:*`
         );
 
         for (const key of workflowSymbolKeys) {

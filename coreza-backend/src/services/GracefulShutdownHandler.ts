@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Worker, Queue } from "bullmq";
+import { Worker, Queue, FlowProducer } from "bullmq";
 import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
@@ -32,6 +32,8 @@ export class GracefulShutdownHandler {
   private shutdownPromise: Promise<ShutdownStats> | null = null;
   private workers: Worker[] = [];
   private workflowQueue: Queue;
+  private scheduledQueue: Queue;
+  private flowProducer: FlowProducer;
   private timeoutMs: number;
 
   constructor(
@@ -40,9 +42,14 @@ export class GracefulShutdownHandler {
   ) {
     this.workers = workers;
     this.timeoutMs = timeoutMs;
+    const connection = getRedisQueue();
     this.workflowQueue = new Queue("workflow-execution", {
-      connection: getRedisQueue(),
+      connection: connection,
     });
+    this.scheduledQueue = new Queue("scheduled-workflows", {
+      connection: connection,
+    });
+    this.flowProducer = new FlowProducer({ connection: connection });
   }
 
   /**
@@ -101,8 +108,7 @@ export class GracefulShutdownHandler {
         // 3. Wait for active jobs with timeout
         const completed = await this.waitForActiveJobs(activeJobs.length);
         stats.jobsCompletedDuringDrain = completed;
-        stats.timeoutOccurred =
-          completed < stats.activeJobsAtStart;
+        stats.timeoutOccurred = completed < stats.activeJobsAtStart;
 
         if (stats.timeoutOccurred) {
           logger.warn(
@@ -114,7 +120,8 @@ export class GracefulShutdownHandler {
           );
 
           // 4. Mark remaining jobs as interrupted
-          stats.jobsMarkedInterrupted = await this.markRemainingJobsInterrupted();
+          stats.jobsMarkedInterrupted =
+            await this.markRemainingJobsInterrupted();
         }
       }
 
@@ -123,23 +130,21 @@ export class GracefulShutdownHandler {
       await Promise.all(this.workers.map((w) => w.close()));
       logger.info("Workers closed");
 
+      // Close producers
+      await this.flowProducer.close();
+
       // 6. Close queue connection
       await this.workflowQueue.close();
+      await this.scheduledQueue.close();
 
       stats.totalDurationMs = Date.now() - startTime;
 
-      logger.info(
-        { stats },
-        "✅ Graceful shutdown completed"
-      );
+      logger.info({ stats }, "✅ Graceful shutdown completed");
 
       return stats;
     } catch (error) {
       stats.totalDurationMs = Date.now() - startTime;
-      logger.error(
-        { err: error, stats },
-        "❌ Error during graceful shutdown"
-      );
+      logger.error({ err: error, stats }, "❌ Error during graceful shutdown");
       throw error;
     }
   }
@@ -209,10 +214,7 @@ export class GracefulShutdownHandler {
             );
           }
         } catch (err) {
-          logger.error(
-            { err, runId },
-            "Failed to mark job as interrupted"
-          );
+          logger.error({ err, runId }, "Failed to mark job as interrupted");
         }
       }
 
@@ -227,9 +229,7 @@ export class GracefulShutdownHandler {
    * Register shutdown handlers for SIGINT and SIGTERM.
    * Returns a cleanup function to unregister the handlers.
    */
-  registerSignalHandlers(
-    additionalCleanup?: () => Promise<void>
-  ): () => void {
+  registerSignalHandlers(additionalCleanup?: () => Promise<void>): () => void {
     const handler = async (signal: string) => {
       logger.info({ signal }, "Received shutdown signal");
 

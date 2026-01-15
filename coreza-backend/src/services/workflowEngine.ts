@@ -268,9 +268,9 @@ export class WorkflowEngine {
 
       if (hasFailedNodes) {
         console.log(
-          `⚠️ Workflow completed with ${failedNodeIds.length} failed node(s): ${failedNodeIds.join(
-            ", "
-          )}`
+          `⚠️ Workflow completed with ${
+            failedNodeIds.length
+          } failed node(s): ${failedNodeIds.join(", ")}`
         );
       } else {
         console.log(`✅ Workflow execution completed successfully`);
@@ -406,9 +406,9 @@ export class WorkflowEngine {
     while (this.queue.length > 0) {
       // Check if job was cancelled via abort signal
       if (this.abortSignal?.aborted) {
-        throw new Error('Workflow cancelled by user');
+        throw new Error("Workflow cancelled by user");
       }
-      
+
       const item = this.dequeue();
       if (!item) break;
       await this.executeOnce(item);
@@ -422,11 +422,13 @@ export class WorkflowEngine {
    */
   async checkCancellation(): Promise<boolean> {
     if (this.abortSignal?.aborted) return true;
-    
+
     try {
-      const { getRedisCache } = await import('../config/redis');
+      const { getRedisCache } = await import("../config/redis");
       const redis = getRedisCache();
-      const isCancelled = await redis.get(`workflow:${this.workflowId}:cancelled`);
+      const isCancelled = await redis.get(
+        `bull:workflow-execution:${this.userId}:${this.workflowId}:${this.runId}:cancelled`
+      );
       return !!isCancelled;
     } catch {
       return false;
@@ -465,7 +467,7 @@ export class WorkflowEngine {
       // Check if workflow was cancelled before executing this node
       const wasCancelled = await this.checkCancellation();
       if (wasCancelled) {
-        throw new Error('Workflow cancelled by user');
+        throw new Error("Workflow cancelled by user");
       }
 
       // Create execution context with all necessary information
@@ -588,12 +590,18 @@ export class WorkflowEngine {
 
       this.clearIncomingEdgePayloads(nodeId);
     } catch (error) {
-      const errorMessage = (error as Error).message || '';
-      const isCancellation = errorMessage.toLowerCase().includes('cancelled') || 
-                             errorMessage.toLowerCase().includes('deactivated') ||
-                             this.abortSignal?.aborted;
-      
-      console.error(`${isCancellation ? '🛑' : '❌'} Node ${nodeId} ${isCancellation ? 'cancelled' : 'failed'}:`, error);
+      const errorMessage = (error as Error).message || "";
+      const isCancellation =
+        errorMessage.toLowerCase().includes("cancelled") ||
+        errorMessage.toLowerCase().includes("deactivated") ||
+        this.abortSignal?.aborted;
+
+      console.error(
+        `${isCancellation ? "🛑" : "❌"} Node ${nodeId} ${
+          isCancellation ? "cancelled" : "failed"
+        }:`,
+        error
+      );
 
       // Record failed execution
       const completedAt = new Date().toISOString();

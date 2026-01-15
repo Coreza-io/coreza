@@ -713,19 +713,42 @@ const scheduledWorker = new Worker(
         }
         throw new Error(`Failed to create workflow run: ${runError.message}`);
       }
+      const jobId = `${userId}:${workflowId}:${run.id}`;
+      const data = {
+        runId: run.id,
+        workflowId,
+        userId,
+        nodes: workflow.nodes,
+        edges: workflow.edges,
+        trigger: "scheduled",
+      };
 
-      await workflowQueue.add(
-        "execute-workflow",
-        {
-          runId: run.id,
-          workflowId,
-          userId,
-          nodes: workflow.nodes,
-          edges: workflow.edges,
-          trigger: "scheduled",
-        },
-        { jobId: job.id }
-      );
+      workflowQueue.add("execute-workflow", data, {
+        jobId,
+        removeOnComplete: 50,
+        removeOnFail: 100,
+        attempts: WORKFLOW_JOB_ATTEMPTS,
+        backoff:
+          WORKFLOW_JOB_ATTEMPTS > 1
+            ? {
+                type: "exponential",
+                delay: 2000,
+              }
+            : undefined,
+      });
+
+      // await workflowQueue.add(
+      //   "execute-workflow",
+      //   {
+      //     runId: run.id,
+      //     workflowId,
+      //     userId,
+      //     nodes: workflow.nodes,
+      //     edges: workflow.edges,
+      //     trigger: "scheduled",
+      //   },
+      //   { jobId: job.id }
+      // );
 
       console.log(
         `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${job.id})`
@@ -945,12 +968,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     cronExpression: string,
     timezone?: string
   ): Promise<Job> {
+    const schedulerId = `${userId}:${workflowId}`;
     // Remove existing scheduled job
-    await this.unscheduleWorkflow(userId, workflowId);
+    await this.unscheduleWorkflow(schedulerId);
 
     // Add new scheduled job
     const job = await scheduledQueue.upsertJobScheduler(
-      `${userId}:${workflowId}`, // scheduler ID
+      schedulerId, // scheduler ID
       {
         pattern: cronExpression,
         tz: timezone,
@@ -986,26 +1010,12 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     return job;
   }
 
-  async unscheduleWorkflow(userId: string, workflowId: string): Promise<void> {
-    const schedulers = await scheduledQueue.getJobSchedulers();
-    const schedulerId = `${userId}:${workflowId}`;
-
-    // 1️⃣ Remove the job scheduler (cron definition)
-    // This stops all future scheduled executions
+  async unscheduleWorkflow(schedulerId: string): Promise<void> {
     console.log(`🗑 Removing scheduler for: ${schedulerId}`);
+    const scheduledJobs = await scheduledQueue.getJobSchedulers();
+
+    // Stop all future scheduled executions
     await scheduledQueue.removeJobScheduler(schedulerId);
-
-    // 2️⃣ OPTIONAL: cleanup any pending non-scheduled jobs (rare safety net)
-    const jobs = await scheduledQueue.getJobs(["waiting", "delayed"]);
-
-    for (const job of jobs) {
-      if (
-        job.data?.workflowId === workflowId &&
-        job.name !== schedulerId // exclude scheduler-generated jobs
-      ) {
-        await job.remove();
-      }
-    }
   }
 
   async obliterateQueue(queueName: string): Promise<void> {
@@ -1028,105 +1038,59 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     userId: string,
     workflowId: string
   ): Promise<number> {
-    console.log(`🛑 Cancelling jobs for workflow ${workflowId}`);
+    console.log(`🛑 Cancelling workflow ${workflowId}`);
+    const schedulerId = `${userId}:${workflowId}`;
 
-    try {
-      await this.unscheduleWorkflow(userId, workflowId);
-      // Set cancellation flag in Redis (TTL 10 minutes) - running jobs will check this
-      await redis.set(`workflow:${workflowId}:cancelled`, "1", "EX", 600);
-      console.log(`  ↳ Set cancellation flag for workflow ${workflowId}`);
+    // 1️⃣ Stop future scheduled executions
+    await this.unscheduleWorkflow(schedulerId);
 
-      // Get all waiting, delayed, and active jobs
-      const allJobs = await workflowQueue.getJobs([
-        "waiting",
-        "delayed",
-        "active",
-      ]);
+    // 3️⃣ Cancel queued & active execution jobs
+    const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
 
-      let cancelledCount = 0;
-      for (const job of allJobs) {
-        // Cancel if job belongs to this workflow OR is a child job (parallel loop item, aggregator, continuation)
-        const isWorkflowJob = job.data.workflowId === workflowId;
+    let cancelledCount = 0;
 
-        if (isWorkflowJob) {
-          try {
-            const state = await job.getState();
-            if (state === "waiting" || state === "delayed") {
-              // Can directly remove these jobs
-              await job.remove();
-              cancelledCount++;
-              console.log(
-                `  ↳ Removed ${state} job ${job.id} (${
-                  job.data.trigger || "normal"
-                })`
-              );
-            } else if (state === "active") {
-              // Use BullMQ's native job cancellation - sends abort signal to worker
-              const cancelled = workflowWorker.cancelJob(
-                job.id!,
-                "Workflow deactivated by user"
-              );
-              if (cancelled) {
-                cancelledCount++;
-                console.log(
-                  `  ↳ Cancelled active job ${job.id} (${
-                    job.data.trigger || "normal"
-                  })`
-                );
-              } else {
-                console.log(
-                  `  ↳ Could not cancel active job ${job.id} (may have already completed)`
-                );
-              }
+    for (const job of jobs) {
+      if (job.data?.userId !== userId && job.data?.workflowId !== workflowId)
+        continue;
 
-              // Also update the run status immediately in DB for active jobs
-              if (job.data.runId) {
-                await supabase
-                  .from("workflow_runs")
-                  .update({
-                    status: "cancelled",
-                    completed_at: new Date().toISOString(),
-                    error_message: "Workflow deactivated by user",
-                  })
-                  .eq("id", job.data.runId)
-                  .in("status", ["running", "queued"]);
-              }
-            }
-          } catch (err) {
-            console.error(`  ↳ Failed to cancel job ${job.id}:`, err);
-          }
+      try {
+        if (job.processedOn && !job.finishedOn) {
+          // active job
+          // 2️⃣ Set cancellation flag (workers will check this)
+          await redis.set(
+            `bull:workflow-execution:${userId}:${workflowId}:${job.data?.runId}:cancelled`,
+            "1",
+            "EX",
+            600
+          );
+          cancelledCount++;
+        } else {
+          // waiting / delayed
+          await job.remove();
+          cancelledCount++;
         }
-      }
 
-      // Also cancel scheduled jobs
-      const scheduledJobs = await scheduledQueue.getJobs([
-        "waiting",
-        "delayed",
-        "active",
-      ]);
-      for (const job of scheduledJobs) {
-        if (job.data.workflowId === workflowId) {
-          try {
-            await job.remove();
-            cancelledCount++;
-            console.log(`  ↳ Removed scheduled job ${job.id}`);
-          } catch (err) {
-            console.error(`  ↳ Failed to cancel scheduled job ${job.id}:`, err);
-          }
+        // Update run status (once per job)
+        if (job.data.runId) {
+          await supabase
+            .from("workflow_runs")
+            .update({
+              status: "cancelled",
+              completed_at: new Date().toISOString(),
+              error_message: "Workflow deactivated by user",
+            })
+            .eq("id", job.data.runId)
+            .in("status", ["running", "queued"]);
         }
+      } catch (err) {
+        console.error(`Failed cancelling job ${job.id}`, err);
       }
-
-      console.log(
-        `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
-      );
-      return cancelledCount;
-    } catch (error) {
-      console.error(
-        `❌ Error cancelling jobs for workflow ${workflowId}:`,
-        error
-      );
-      throw error;
     }
+
+    console.log(
+      `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
+    );
+    return cancelledCount;
   }
 
   async getQueueStats() {
@@ -1140,27 +1104,6 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       scheduled: scheduledStats,
       mode: "bullmq",
     };
-  }
-
-  async getScheduledJobs(): Promise<
-    Array<{
-      id: string | null;
-      key: string;
-      name: string;
-      pattern: string | null;
-      timezone?: string;
-      next: number | null;
-    }>
-  > {
-    const repeatableJobs = await scheduledQueue.getRepeatableJobs();
-    return repeatableJobs.map((job) => ({
-      id: job.id ?? null,
-      key: job.key,
-      name: job.name,
-      pattern: job.cron ?? null,
-      timezone: job.tz ?? undefined,
-      next: job.next ?? null,
-    }));
   }
 
   async cleanup(): Promise<void> {
@@ -1212,7 +1155,6 @@ const gracefulShutdown = new GracefulShutdownHandler(
 // Register signal handlers for graceful shutdown
 gracefulShutdown.registerSignalHandlers(async () => {
   // Additional cleanup after workers are shut down
-  await flowProducer.close();
   await redis.quit();
   console.log("✅ All queue resources cleaned up");
 });

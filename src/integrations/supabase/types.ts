@@ -485,6 +485,7 @@ export type Database = {
           node_count: number | null
           nodes: Json | null
           result: Json | null
+          schedule_key: string | null
           started_at: string
           status: string
           workflow_id: string
@@ -499,6 +500,7 @@ export type Database = {
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
+          schedule_key?: string | null
           started_at?: string
           status: string
           workflow_id: string
@@ -513,6 +515,7 @@ export type Database = {
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
+          schedule_key?: string | null
           started_at?: string
           status?: string
           workflow_id?: string

@@ -416,23 +416,12 @@ export class WorkflowEngine {
   }
 
   /**
-   * Check if the workflow has been cancelled via Redis flag.
-   * This allows long-running operations to detect cancellation even if
-   * the abort signal hasn't propagated yet.
+   * Check if the workflow has been cancelled.
+   * Uses AbortSignal from BullMQ (immediate, event-driven) as single source of truth.
+   * No Redis polling needed - BullMQ's worker.cancelJob() triggers abort signal immediately.
    */
-  async checkCancellation(): Promise<boolean> {
-    if (this.abortSignal?.aborted) return true;
-
-    try {
-      const { getRedisCache } = await import("../config/redis");
-      const redis = getRedisCache();
-      const isCancelled = await redis.get(
-        `bull:workflow-execution:${this.userId}:${this.workflowId}:${this.runId}:cancelled`
-      );
-      return !!isCancelled;
-    } catch {
-      return false;
-    }
+  checkCancellation(): boolean {
+    return this.abortSignal?.aborted ?? false;
   }
 
   private async executeOnce(item: QueueItem): Promise<void> {
@@ -465,8 +454,8 @@ export class WorkflowEngine {
 
     try {
       // Check if workflow was cancelled before executing this node
-      const wasCancelled = await this.checkCancellation();
-      if (wasCancelled) {
+      // AbortSignal check is synchronous - no Redis polling needed
+      if (this.checkCancellation()) {
         throw new Error("Workflow cancelled by user");
       }
 

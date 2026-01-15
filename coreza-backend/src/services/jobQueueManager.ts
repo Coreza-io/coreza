@@ -1028,9 +1028,8 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
   /**
    * Cancel all queued/running jobs for a workflow.
-   * - Sets Redis cancellation flag for workflow (checked by running jobs)
+   * - Uses native BullMQ worker.cancelJob() for active jobs (triggers AbortSignal immediately)
    * - Removes waiting/delayed jobs immediately
-   * - Uses native BullMQ cancelJob() for active jobs
    * - Also cancels child jobs from parallel loops
    * - Returns count of jobs affected
    */
@@ -1044,40 +1043,38 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     // 1️⃣ Stop future scheduled executions
     await this.unscheduleWorkflow(schedulerId);
 
-    // 3️⃣ Cancel queued & active execution jobs
+    // 2️⃣ Cancel queued & active execution jobs
     const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
 
     let cancelledCount = 0;
 
     for (const job of jobs) {
-      if (job.data?.userId !== userId && job.data?.workflowId !== workflowId)
+      // Fix: Use OR (||) not AND (&&) - we want jobs matching userId OR workflowId
+      if (job.data?.userId !== userId || job.data?.workflowId !== workflowId)
         continue;
 
       try {
         if (job.processedOn && !job.finishedOn) {
-          // active job
-          // 2️⃣ Set cancellation flag (workers will check this)
-          await redis.set(
-            `bull:workflow-execution:${userId}:${workflowId}:${job.data?.runId}:cancelled`,
-            "1",
-            "EX",
-            600
-          );
+          // Active job - use BullMQ native cancellation
+          // This triggers the AbortSignal in the worker IMMEDIATELY
+          await workflowWorker.cancelJob(job.id!);
+          console.log(`🛑 Cancelled active job ${job.id} via BullMQ AbortSignal`);
           cancelledCount++;
         } else {
-          // waiting / delayed
+          // Waiting/delayed - remove from queue directly
           await job.remove();
+          console.log(`🗑️ Removed waiting/delayed job ${job.id}`);
           cancelledCount++;
         }
 
-        // Update run status (once per job)
+        // Update run status in database
         if (job.data.runId) {
           await supabase
             .from("workflow_runs")
             .update({
               status: "cancelled",
               completed_at: new Date().toISOString(),
-              error_message: "Workflow deactivated by user",
+              error_message: "Workflow cancelled by user",
             })
             .eq("id", job.data.runId)
             .in("status", ["running", "queued"]);
@@ -1091,6 +1088,51 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
     );
     return cancelledCount;
+  }
+
+  /**
+   * Cancel a specific workflow run by runId.
+   * Uses BullMQ native job cancellation for immediate AbortSignal triggering.
+   */
+  async cancelWorkflowRun(runId: string): Promise<boolean> {
+    console.log(`🛑 Cancelling workflow run ${runId}`);
+    
+    const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
+    
+    for (const job of jobs) {
+      if (job.data?.runId === runId) {
+        try {
+          if (job.processedOn && !job.finishedOn) {
+            // Active job - use BullMQ native cancellation
+            await workflowWorker.cancelJob(job.id!);
+            console.log(`🛑 Cancelled active run ${runId} via BullMQ AbortSignal`);
+          } else {
+            // Waiting/delayed - remove from queue
+            await job.remove();
+            console.log(`🗑️ Removed waiting/delayed run ${runId}`);
+          }
+
+          // Update run status in database
+          await supabase
+            .from("workflow_runs")
+            .update({
+              status: "cancelled",
+              completed_at: new Date().toISOString(),
+              error_message: "Run cancelled by user",
+            })
+            .eq("id", runId)
+            .in("status", ["running", "queued"]);
+
+          return true;
+        } catch (err) {
+          console.error(`Failed cancelling run ${runId}:`, err);
+          return false;
+        }
+      }
+    }
+
+    console.log(`⚠️ Run ${runId} not found in queue`);
+    return false;
   }
 
   async getQueueStats() {

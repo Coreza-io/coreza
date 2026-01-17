@@ -51,13 +51,13 @@ router.post("/scheduler", async (req, res) => {
     );
 
     res.json({
-      message: "Scheduler triggered successfully",
       schedule: {
         interval: scheduleResult.interval,
         count: scheduleResult.intervalCount,
         hour: scheduleResult.scheduleHour,
         minute: scheduleResult.scheduleMinute,
-        dow: scheduleResult.interval === "weeks" ? scheduleResult.dow : undefined,
+        dow:
+          scheduleResult.interval === "weeks" ? scheduleResult.dow : undefined,
         timezone: scheduleResult.timezone,
       },
       nextExecution: nextExecutionFormatted,
@@ -68,7 +68,11 @@ router.post("/scheduler", async (req, res) => {
     console.error("Scheduler error:", error);
 
     if (error && typeof error === "object" && "statusCode" in error) {
-      const err = error as { statusCode?: number; message?: string; details?: any };
+      const err = error as {
+        statusCode?: number;
+        message?: string;
+        details?: any;
+      };
       const statusCode = err.statusCode || 500;
       if (statusCode === 400) {
         return res.status(400).json({

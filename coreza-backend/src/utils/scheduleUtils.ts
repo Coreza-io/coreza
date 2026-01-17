@@ -21,11 +21,11 @@ import { createError, type AppError } from "../middleware/errorHandler";
 export type SchedulerInput = {
   interval?: string;
   mode?: string;
-  count?: string | number;
-  minute?: string | number;
-  hour?: string | number;
-  dom?: string | number;
-  dow?: Array<string | number>;
+  count?: string;
+  minute?: string;
+  hour?: string;
+  dom?: string;
+  dow?: string[];
   cron?: string;
   timezone?: string;
 };
@@ -43,7 +43,7 @@ export type SchedulerCalculation = {
 
 export function calculateSchedule(input: SchedulerInput): SchedulerCalculation {
   const timezone = input.timezone || "UTC";
-  const interval = input.interval;
+  const interval = input.interval || "Weeks";
   const nowInUserTz = toZonedTime(new Date(), timezone);
   const intervalCount = clampInt(input.count, 1, 1, 10000);
   const scheduleHour = resolveNumber(input.hour, nowInUserTz.getHours(), 0, 23);
@@ -55,18 +55,15 @@ export function calculateSchedule(input: SchedulerInput): SchedulerCalculation {
   );
 
   let dowValues: string[] | undefined;
-  if (interval === "weeks") {
-    if (!input.dow || !Array.isArray(input.dow) || input.dow.length === 0) {
+  dowValues = input.dow;
+
+  if (interval === "Weeks") {
+    if (!dowValues || !Array.isArray(dowValues) || dowValues.length === 0) {
       throw createError(
         'dow (days of week) is required for weekly intervals as an array (e.g., ["1", "5"] for Monday and Friday)',
         400
       );
     }
-
-    dowValues = input.dow.map((day) => {
-      const dayNum = Number.parseInt(String(day), 10);
-      return String(dayNum);
-    });
   }
 
   const cronExpression = buildCronExpression(
@@ -132,22 +129,22 @@ function resolveNextExecution(input: NextExecutionInput): Date {
   const nextExecution = new Date(nowInUserTz);
 
   switch (interval) {
-    case "minutes":
+    case "Minutes":
       nextExecution.setMinutes(nowInUserTz.getMinutes() + intervalCount);
       nextExecution.setHours(scheduleHour);
       nextExecution.setMinutes(scheduleMinute);
       break;
-    case "hours":
+    case "Hours":
       nextExecution.setHours(nowInUserTz.getHours() + intervalCount);
       nextExecution.setHours(scheduleHour);
       nextExecution.setMinutes(scheduleMinute);
       break;
-    case "days":
+    case "Days":
       nextExecution.setDate(nowInUserTz.getDate() + intervalCount);
       nextExecution.setHours(scheduleHour);
       nextExecution.setMinutes(scheduleMinute);
       break;
-    case "weeks": {
+    case "Weeks": {
       const selectedDays = (dowValues || [])
         .map((d) => Number.parseInt(d, 10))
         .sort((a, b) => a - b);
@@ -185,7 +182,7 @@ function resolveNextExecution(input: NextExecutionInput): Date {
       nextExecution.setMilliseconds(0);
       break;
     }
-    case "months":
+    case "Months":
       nextExecution.setMonth(nowInUserTz.getMonth() + intervalCount);
       nextExecution.setHours(scheduleHour);
       nextExecution.setMinutes(scheduleMinute);
@@ -213,17 +210,17 @@ function buildCronExpression(
   }
 
   switch (interval) {
-    case "minutes":
+    case "Minutes":
       return `*/${intervalCount} * * * *`;
-    case "hours":
+    case "Hours":
       return `${scheduleMinute} */${intervalCount} * * *`;
-    case "days":
+    case "Days":
       return `${scheduleMinute} ${scheduleHour} */${intervalCount} * *`;
-    case "weeks": {
+    case "Weeks": {
       const cronDays = (dowValues || []).join(",");
       return `${scheduleMinute} ${scheduleHour} * * ${cronDays}`;
     }
-    case "months":
+    case "Months":
       return `${scheduleMinute} ${scheduleHour} 1 */${intervalCount} *`;
     default:
       throw createError(`Invalid interval type: ${interval}`, 400);

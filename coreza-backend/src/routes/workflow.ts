@@ -390,7 +390,7 @@ function computeCron(node: any): {
   });
 
   const cron = scheduleResult.cronExpression;
-  const tz = scheduleResult.timezone;
+  const tz = SchedulerValues.timezone;
 
   // Validate cron & ensure a future run with 1-minute buffer
 

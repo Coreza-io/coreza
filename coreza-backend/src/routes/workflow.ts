@@ -370,13 +370,12 @@ type SchedulerValues = {
   timezone?: string;
 };
 
-function computeCronFromSchedulerNodes(nodes: any[]): {
+function computeCron(node: any): {
   cron: string;
   timezone: string;
   next: string;
 } {
-  const list = Array.isArray(nodes) ? nodes : [];
-  const schedulers = list.filter((n) => n?.name === "Scheduler");
+  const SchedulerValues = (node.values ?? {}) as any;
 
   if (schedulers.length === 0) {
     throw createError("No Scheduler node found in the workflow.", 400);
@@ -421,28 +420,11 @@ function computeCronFromSchedulerNodes(nodes: any[]): {
   const now = new Date();
   const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000);
 
-  let skipCount = 0;
   // Auto-skip occurrences that are too close (< 1 minute buffer)
-  while (nextInTZ <= oneMinuteFromNow) {
-    skipCount++;
-    console.log(
-      `⏭️  [SCHEDULER] Skipping execution at ${next.toISOString()} (too close to now), checking next occurrence...`
-    );
-    next = cronExpression.next().toDate();
-    nextInTZ = toScheduledUtc(next);
-
-    // Safety: prevent infinite loop
-    if (skipCount > 100) {
-      throw createError(
-        "Invalid cron expression: unable to find a valid future execution time within 100 iterations",
-        400
-      );
-    }
-  }
-
-  if (skipCount > 0) {
-    console.log(
-      `✅ [SCHEDULER] Auto-skipped ${skipCount} occurrence(s), using ${next.toISOString()} as next execution time`
+  if (nextInTZ < oneMinuteFromNow) {
+    throw createError(
+      "Invalid cron expression: unable to find a valid future execution time within 100 iterations",
+      400
     );
   }
 
@@ -494,26 +476,13 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
     try {
       if (is_active) {
-        // Clear any previous cancellation flag from prior deactivation
-        const redisForCancel = getRedisCache();
-        await redisForCancel.del(`workflow:${workflowId}:cancelled`);
-        console.log(`🔄 Cleared cancellation flag for workflow ${workflowId}`);
-
         // Handle Scheduler activation
         if (triggerNode.name == "Scheduler") {
-          const { cron, timezone, next } = computeCronFromSchedulerNodes(
-            workflow.nodes
-          );
-          cronToSave = cron;
+          const { cron, timezone, next } = computeCron(triggerNode);
           tzToUse = timezone ?? "UTC";
           nextRun = next;
 
-          await jobQueue.scheduleWorkflow(
-            workflowId,
-            userId,
-            cronToSave,
-            tzToUse
-          );
+          await jobQueue.scheduleWorkflow(workflowId, userId, cron, tzToUse);
         }
 
         // Handle streaming trigger node activation (AlpacaStreamData, BinanceStreamData)

@@ -24,6 +24,7 @@ import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { buildStoreKey, getStoreValue, setStoreValue } from "../utils/store";
+import { calculateSchedule } from "../utils/scheduleUtils";
 
 const router = express.Router();
 
@@ -376,15 +377,40 @@ function computeCron(node: any): {
 } {
   const SchedulerValues = (node.values ?? {}) as any;
 
-  const cron = toCronFromValues(SchedulerValues);
-  const tz = SchedulerValues.timezone;
+  if (schedulers.length === 0) {
+    throw createError("No Scheduler node found in the workflow.", 400);
+  }
+  if (schedulers.length > 1) {
+    throw createError(
+      "Multiple Scheduler nodes found. Support one per workflow or aggregate externally.",
+      400
+    );
+  }
+
+  const node = schedulers[0];
+  const v: SchedulerValues = (node.values ?? node.data?.values ?? {}) as any;
+
+  const scheduleResult = calculateSchedule({
+    interval: v.interval,
+    mode: v.mode,
+    count: v.count,
+    minute: v.minute,
+    hour: v.hour,
+    dom: v.dom,
+    dow: v.dow,
+    cron: v.cron,
+    timezone: v.timezone,
+  });
+
+  const cron = scheduleResult.cronExpression;
+  const tz = scheduleResult.timezone;
 
   // Validate cron & ensure a future run with 1-minute buffer
 
   const cronExpression = CronExpressionParser.parse(cron, { tz });
   let next = cronExpression.next().toDate();
-  const scheduledHour = clampInt(SchedulerValues.hour, 0, 0, 23);
-  const scheduledMinute = clampInt(SchedulerValues.minute, 0, 0, 59);
+  const scheduledHour = scheduleResult.scheduleHour;
+  const scheduledMinute = scheduleResult.scheduleMinute;
   const toScheduledUtc = (date: Date): Date => {
     const zoned = toZonedTime(date, tz);
     zoned.setHours(scheduledHour, scheduledMinute, 0, 0);
@@ -403,79 +429,6 @@ function computeCron(node: any): {
   }
 
   return { cron, timezone: tz, next: nextInTZ.toISOString() };
-}
-
-function toCronFromValues(v: SchedulerValues): string {
-  const interval = (v.interval || "Minutes").toString().toLowerCase();
-
-  const count = clampInt(v.count, 1, 1, 10000);
-  const minute = clampInt(v.minute, 0, 0, 59);
-  const hour = clampInt(v.hour, 0, 0, 23);
-
-  if (interval === "cron" && v.cron) return v.cron;
-
-  switch (interval) {
-    case "minutes":
-      // every N minutes
-      return `*/${count} * * * *`;
-
-    case "hours":
-      // at :minute, every N hours
-      return `${minute} */${count} * * *`;
-
-    case "days":
-      // at hour:minute, every N days
-      return `${minute} ${hour} */${count} * *`;
-
-    case "weeks": {
-      // at hour:minute on selected days of week (cron has no "every N weeks" → enforce count===1)
-      if (count !== 1)
-        throw createError(
-          'Standard cron does not support "every N weeks". Set specific weekdays.',
-          400
-        );
-      const dowList =
-        Array.isArray(v.dow) && v.dow.length
-          ? v.dow.map(mapDOW).join(",")
-          : "*";
-      return `${minute} ${hour} * * ${dowList}`;
-    }
-
-    case "months": {
-      // at hour:minute on day-of-month, every N months
-      const dom = clampInt(v.dom, 1, 1, 31);
-      return `${minute} ${hour} ${dom} */${count} *`;
-    }
-
-    // Friendly aliases
-    case "daily":
-      return `${minute} ${hour} * * *`;
-    case "weekly":
-      return `${minute} ${hour} * * ${
-        Array.isArray(v.dow) && v.dow.length ? v.dow.map(mapDOW).join(",") : "*"
-      }`;
-    case "monthly":
-      return `${minute} ${hour} ${clampInt(v.dom, 1, 1, 31)} * *`;
-
-    default:
-      throw createError(
-        `Unknown scheduler interval/mode: ${v.interval || v.mode}`,
-        400
-      );
-  }
-}
-
-function clampInt(x: any, fallback: number, min: number, max: number) {
-  const n = Number.parseInt(String(x ?? ""), 10);
-  if (Number.isFinite(n)) return Math.min(max, Math.max(min, n));
-  return fallback;
-}
-
-function mapDOW(s: string | number) {
-  if (typeof s === "number") return String(s);
-  const m = String(s).slice(0, 3).toLowerCase();
-  const idx = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(m);
-  return idx >= 0 ? String(idx) : "*";
 }
 
 // Activate/Deactivate workflow scheduling and triggers

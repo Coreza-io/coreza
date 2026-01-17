@@ -16,7 +16,12 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getScreenerService } from "../../services/screeners";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class ScreenerExecutor implements INodeExecutor {
   readonly category = "Screener";
@@ -29,7 +34,7 @@ export class ScreenerExecutor implements INodeExecutor {
     const startTime = Date.now();
     try {
       const operation = node.values?.operation;
-      const screener = node.subCategory ?? node.name;
+      const screener = node.subCategory ?? node.name ?? "";
       const credential_id = node.values?.credential_id;
 
       // Credential is optional for manual screeners
@@ -52,7 +57,7 @@ export class ScreenerExecutor implements INodeExecutor {
         resolvedParams
       );
 
-      const screenerService = getScreenerService(screener);
+      const screenerService = getScreenerService(screener.toLowerCase());
       if (!screenerService) {
         return {
           success: false,
@@ -74,7 +79,12 @@ export class ScreenerExecutor implements INodeExecutor {
       if (!result.success) {
         const errOutput = createErrorOutput(
           result.error || `${screener} ${operation} operation failed`,
-          { nodeId: node.id, nodeName: screener, category: this.category, startTime }
+          {
+            nodeId: node.id,
+            nodeName: screener,
+            category: this.category,
+            startTime,
+          }
         );
         return toNodeResult(errOutput);
       }
@@ -91,7 +101,12 @@ export class ScreenerExecutor implements INodeExecutor {
       console.error("[SCREENER] Execution error:", error);
       const errOutput = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        }
       );
       return toNodeResult(errOutput);
     }

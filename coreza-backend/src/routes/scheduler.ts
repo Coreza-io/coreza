@@ -44,18 +44,6 @@ router.post("/scheduler", async (req, res) => {
           received: { dow },
         });
       }
-
-      // Validate each day is between 0-6
-      for (const day of dow) {
-        const dayNum = parseInt(day);
-        if (isNaN(dayNum) || dayNum < 0 || dayNum > 6) {
-          return res.status(400).json({
-            error:
-              "Each day in dow must be between 0 (Sunday) and 6 (Saturday)",
-            received: { dow, invalidDay: day },
-          });
-        }
-      }
     }
 
     // Calculate next execution time based on the schedule

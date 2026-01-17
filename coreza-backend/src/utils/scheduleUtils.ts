@@ -43,16 +43,10 @@ export type SchedulerCalculation = {
 
 export function calculateSchedule(input: SchedulerInput): SchedulerCalculation {
   const timezone = input.timezone || "UTC";
-  const interval = normalizeInterval(input);
+  const interval = input.interval;
   const nowInUserTz = toZonedTime(new Date(), timezone);
-
   const intervalCount = clampInt(input.count, 1, 1, 10000);
-  const scheduleHour = resolveNumber(
-    input.hour,
-    nowInUserTz.getHours(),
-    0,
-    23
-  );
+  const scheduleHour = resolveNumber(input.hour, nowInUserTz.getHours(), 0, 23);
   const scheduleMinute = resolveNumber(
     input.minute,
     nowInUserTz.getMinutes(),
@@ -71,14 +65,6 @@ export function calculateSchedule(input: SchedulerInput): SchedulerCalculation {
 
     dowValues = input.dow.map((day) => {
       const dayNum = Number.parseInt(String(day), 10);
-      if (Number.isNaN(dayNum) || dayNum < 0 || dayNum > 6) {
-        const error = createError(
-          "Each day in dow must be between 0 (Sunday) and 6 (Saturday)",
-          400
-        ) as AppError & { details?: Record<string, unknown> };
-        error.details = { invalidDay: day };
-        throw error;
-      }
       return String(dayNum);
     });
   }
@@ -242,26 +228,6 @@ function buildCronExpression(
     default:
       throw createError(`Invalid interval type: ${interval}`, 400);
   }
-}
-
-function normalizeInterval(input: SchedulerInput): string {
-  const rawInterval = (input.interval ?? "").toString().toLowerCase();
-  if (rawInterval) {
-    return normalizeIntervalAlias(rawInterval);
-  }
-  const rawMode = (input.mode ?? "").toString().toLowerCase();
-  if (rawMode) {
-    return normalizeIntervalAlias(rawMode);
-  }
-  return "minutes";
-}
-
-function normalizeIntervalAlias(value: string): string {
-  if (value === "daily") return "days";
-  if (value === "weekly") return "weeks";
-  if (value === "monthly") return "months";
-  if (value === "cron") return "cron";
-  return value;
 }
 
 function resolveNumber(

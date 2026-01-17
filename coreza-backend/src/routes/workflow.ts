@@ -377,29 +377,16 @@ function computeCron(node: any): {
 } {
   const SchedulerValues = (node.values ?? {}) as any;
 
-  if (schedulers.length === 0) {
-    throw createError("No Scheduler node found in the workflow.", 400);
-  }
-  if (schedulers.length > 1) {
-    throw createError(
-      "Multiple Scheduler nodes found. Support one per workflow or aggregate externally.",
-      400
-    );
-  }
-
-  const node = schedulers[0];
-  const v: SchedulerValues = (node.values ?? node.data?.values ?? {}) as any;
-
   const scheduleResult = calculateSchedule({
-    interval: v.interval,
-    mode: v.mode,
-    count: v.count,
-    minute: v.minute,
-    hour: v.hour,
-    dom: v.dom,
-    dow: v.dow,
-    cron: v.cron,
-    timezone: v.timezone,
+    interval: SchedulerValues.interval,
+    mode: SchedulerValues.mode,
+    count: SchedulerValues.count,
+    minute: SchedulerValues.minute,
+    hour: SchedulerValues.hour,
+    dom: SchedulerValues.dom,
+    dow: SchedulerValues.dow,
+    cron: SchedulerValues.cron,
+    timezone: SchedulerValues.timezone,
   });
 
   const cron = scheduleResult.cronExpression;

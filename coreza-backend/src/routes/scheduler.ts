@@ -26,9 +26,8 @@ router.use(requireAuth);
 
 // Scheduler execution handler
 router.post("/scheduler", async (req, res) => {
+  const { interval, count, hour, minute, timezone, dow } = req.body;
   try {
-    const { interval, count, hour, minute, timezone, dow } = req.body;
-
     if (!interval || !count) {
       return res.status(400).json({
         error: "Interval and count are required",

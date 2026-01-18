@@ -20,7 +20,6 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { MarketSource } from "../types/marketEvent";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
-import { getMarketSource } from "../config/marketSources";
 import { getAllowedSymbols } from "../utils/streamFilters";
 import {
   MAX_TEST_LISTENERS_PER_USER,
@@ -312,6 +311,7 @@ router.get("/subscriptions/status", async (req, res) => {
 router.post("/:source/subscribe", async (req, res) => {
   try {
     const userId = req.user?.id;
+    const source = req.params.source;
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -345,7 +345,7 @@ router.post("/:source/subscribe", async (req, res) => {
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
     //const marketSource = getMarketSource(source);
-    const sourceId = `${subCategory}_${data_type}`;
+    const sourceId = `${source}_${data_type}`;
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
@@ -363,7 +363,6 @@ router.post("/:source/subscribe", async (req, res) => {
           ? stream_types.split(",").map((s: string) => s.trim())
           : stream_types
         : undefined,
-      dataType: data_type || "market", // Pass data_type to build sourceId
       feed,
       environment,
       assetType: asset_type,

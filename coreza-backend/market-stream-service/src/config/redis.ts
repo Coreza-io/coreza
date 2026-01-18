@@ -18,7 +18,7 @@ interface SentinelConfig {
 
 function parseSentinelConfig(masterEnvVar: string): SentinelConfig {
   const sentinelHosts = process.env.REDIS_SENTINEL_HOSTS;
-  
+
   if (!sentinelHosts) {
     return { enabled: false, sentinels: [], masterName: "" };
   }
@@ -28,8 +28,11 @@ function parseSentinelConfig(masterEnvVar: string): SentinelConfig {
     return { host: hostname, port: parseInt(port, 10) || 26379 };
   });
 
-  const masterName = process.env[masterEnvVar] || 
-    (masterEnvVar === "REDIS_SENTINEL_MASTER_QUEUE" ? "mymaster-queue" : "mymaster-cache");
+  const masterName =
+    process.env[masterEnvVar] ||
+    (masterEnvVar === "REDIS_SENTINEL_MASTER_QUEUE"
+      ? "mymaster-queue"
+      : "mymaster-cache");
 
   return {
     enabled: true,
@@ -84,7 +87,7 @@ const normalizeRedisInput = (rawValue: string | undefined) => {
 };
 
 const resolveRedisConfig = (
-  primaryEnvVar: "REDIS_QUEUE_URL" | "REDIS_CACHE_URL",
+  primaryEnvVar: "REDIS_QUEUE_URL" | "REDIS_CACHE_URL"
 ): { url: string | undefined; hasTlsFlag: boolean; sourceEnv: string } => {
   const primary = normalizeRedisInput(process.env[primaryEnvVar]);
   if (primary.url) {
@@ -97,10 +100,12 @@ const resolveRedisConfig = (
 
 const getRedisOrThrow = (
   resolveResult: { url: string | undefined; hasTlsFlag: boolean },
-  usage: string,
+  usage: string
 ): { redisUrl: string; hasTlsFlag: boolean } => {
   if (!resolveResult.url) {
-    throw new Error(`Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`);
+    throw new Error(
+      `Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`
+    );
   }
 
   return { redisUrl: resolveResult.url, hasTlsFlag: resolveResult.hasTlsFlag };
@@ -122,7 +127,7 @@ export const connectionOptions: RedisOptions = {
 // Build options for Queue Redis (latency-critical)
 const buildQueueOptions = (
   redisUrl: string | undefined,
-  hasTlsFlag: boolean,
+  hasTlsFlag: boolean
 ): RedisOptions => {
   const shouldUseTls =
     process.env.REDIS_TLS === "true" ||
@@ -145,7 +150,7 @@ const buildQueueOptions = (
 // Build options for Cache Redis (medium-latency)
 const buildCacheOptions = (
   redisUrl: string | undefined,
-  hasTlsFlag: boolean,
+  hasTlsFlag: boolean
 ): RedisOptions => {
   const shouldUseTls =
     process.env.REDIS_TLS === "true" ||
@@ -168,7 +173,7 @@ const buildCacheOptions = (
 // Build Sentinel options for high-availability
 const buildSentinelOptions = (
   sentinelConfig: SentinelConfig,
-  baseRedisOptions: RedisOptions,
+  baseRedisOptions: RedisOptions
 ): RedisOptions => {
   const shouldUseTls = process.env.REDIS_TLS === "true";
 
@@ -181,7 +186,9 @@ const buildSentinelOptions = (
     // Sentinel-specific options
     sentinelRetryStrategy: (times: number) => {
       const delay = Math.min(times * 100, 10000);
-      console.log(`[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`);
+      console.log(
+        `[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`
+      );
       return delay;
     },
     failoverDetector: true, // Automatically detect failover
@@ -200,26 +207,30 @@ const buildSentinelOptions = (
 // Create Redis instance with Sentinel or standalone mode
 function createRedisInstance(
   usage: "queue" | "cache",
-  logContext: string,
+  logContext: string
 ): Redis {
-  const sentinelMasterEnv = usage === "queue" 
-    ? "REDIS_SENTINEL_MASTER_QUEUE" 
-    : "REDIS_SENTINEL_MASTER_CACHE";
-  
+  const sentinelMasterEnv =
+    usage === "queue"
+      ? "REDIS_SENTINEL_MASTER_QUEUE"
+      : "REDIS_SENTINEL_MASTER_CACHE";
+
   const sentinelConfig = parseSentinelConfig(sentinelMasterEnv);
 
   if (sentinelConfig.enabled) {
     const baseOpts = usage === "queue" ? queueOptions : cacheOptions;
     const options = buildSentinelOptions(sentinelConfig, baseOpts);
-    
+
     const redis = new Redis(options);
-    
+
     // Add Sentinel event handlers
     redis.on("connect", () => {
       console.log(`[Redis Sentinel] ${logContext} connected to master`);
     });
     redis.on("+switch-master", (data) => {
-      console.log(`[Redis Sentinel] ${logContext} failover detected, switching to new master:`, data);
+      console.log(
+        `[Redis Sentinel] ${logContext} failover detected, switching to new master:`,
+        data
+      );
     });
     redis.on("error", (err) => {
       console.error(`[Redis Sentinel] ${logContext} error:`, err.message);
@@ -227,21 +238,25 @@ function createRedisInstance(
     redis.on("reconnecting", () => {
       console.log(`[Redis Sentinel] ${logContext} reconnecting...`);
     });
-    
-    console.log(`[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`);
+
+    console.log(
+      `[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`
+    );
     return redis;
   }
 
   // Fallback to standalone Redis
-  const primaryEnvVar = usage === "queue" ? "REDIS_QUEUE_URL" : "REDIS_CACHE_URL";
+  const primaryEnvVar =
+    usage === "queue" ? "REDIS_QUEUE_URL" : "REDIS_CACHE_URL";
   const resolved = resolveRedisConfig(primaryEnvVar);
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, logContext);
-  const options = usage === "queue" 
-    ? buildQueueOptions(redisUrl, hasTlsFlag)
-    : buildCacheOptions(redisUrl, hasTlsFlag);
+  const options =
+    usage === "queue"
+      ? buildQueueOptions(redisUrl, hasTlsFlag)
+      : buildCacheOptions(redisUrl, hasTlsFlag);
 
   const redis = new Redis(redisUrl, options);
-  
+
   // Add connection event handlers
   redis.on("connect", () => {
     console.log(`[Redis] ${logContext} connected`);
@@ -252,8 +267,10 @@ function createRedisInstance(
   redis.on("reconnecting", () => {
     console.log(`[Redis] ${logContext} reconnecting...`);
   });
-  
-  console.log(`[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`);
+
+  console.log(
+    `[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`
+  );
   return redis;
 }
 
@@ -325,21 +342,21 @@ export function getRedisConfigInfo(): {
   cache: { source: string; masterName?: string };
 } {
   const sentinelEnabled = isSentinelEnabled();
-  
+
   if (sentinelEnabled) {
     const queueConfig = parseSentinelConfig("REDIS_SENTINEL_MASTER_QUEUE");
     const cacheConfig = parseSentinelConfig("REDIS_SENTINEL_MASTER_CACHE");
-    
+
     return {
       mode: "sentinel",
       queue: { source: "sentinel", masterName: queueConfig.masterName },
       cache: { source: "sentinel", masterName: cacheConfig.masterName },
     };
   }
-  
+
   const queueResolved = resolveRedisConfig("REDIS_QUEUE_URL");
   const cacheResolved = resolveRedisConfig("REDIS_CACHE_URL");
-  
+
   return {
     mode: "standalone",
     queue: { source: queueResolved.sourceEnv },
@@ -349,7 +366,7 @@ export function getRedisConfigInfo(): {
 
 export async function closeRedis(): Promise<void> {
   const closePromises: Promise<void>[] = [];
-  
+
   if (redisQueueInstance) {
     closePromises.push(
       redisQueueInstance.quit().then(() => {
@@ -382,6 +399,6 @@ export async function closeRedis(): Promise<void> {
       })
     );
   }
-  
+
   await Promise.all(closePromises);
 }

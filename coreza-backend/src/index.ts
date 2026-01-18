@@ -35,7 +35,7 @@ import logger from "./utils/logger";
 
 // Import routes
 import indicatorRoutes from "./routes/indicators";
-import subscriptionRoutes from "./routes/subscription";
+import streamRoutes from "./routes/stream";
 import gmailRoutes from "./routes/gmail";
 import oauthRoutes from "./routes/oauth";
 import whatsappRoutes from "./routes/whatsapp";
@@ -138,7 +138,7 @@ app.use("/oauth", oauthRoutes);
 app.use("/broker", brokerRoutes);
 app.use("/aiagent", aiAgentRoutes);
 app.use("/webhooks", webhookRoutes);
-app.use("/subscription", subscriptionRoutes);
+app.use("/stream", streamRoutes);
 app.use("/workflows", workflowRoutes);
 app.use("/execute", schedulerRoutes);
 app.use("/screener", screenerRoutes);
@@ -196,9 +196,13 @@ async function startServer() {
     logger.info({ stats: recoveryStats }, "Workflow recovery complete");
 
     // Clean up orphaned Redis data from interrupted loops
-    const orphanedKeysCleanedUp = await workflowRecoveryService.cleanupOrphanedLoopData();
+    const orphanedKeysCleanedUp =
+      await workflowRecoveryService.cleanupOrphanedLoopData();
     if (orphanedKeysCleanedUp > 0) {
-      logger.info({ keysCleanedUp: orphanedKeysCleanedUp }, "Orphaned loop data cleanup complete");
+      logger.info(
+        { keysCleanedUp: orphanedKeysCleanedUp },
+        "Orphaned loop data cleanup complete"
+      );
     }
 
     // Initialize BullMQ job queue workers

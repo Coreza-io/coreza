@@ -178,7 +178,6 @@ export class SubscriptionService {
         credentialId,
         operation,
         streamTypes,
-        dataType = "market", // Default to market if not specified
         feed,
         environment,
         assetType,
@@ -238,7 +237,7 @@ export class SubscriptionService {
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
         symbols: symbolArray,
-        source, // Use constructed sourceId: {subCategory}_{dataType}
+        source,
         credentialId,
         eventTypes,
         subscriptionScope,

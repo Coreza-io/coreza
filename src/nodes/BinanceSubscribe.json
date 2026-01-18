@@ -49,7 +49,7 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/binance_market/{{operation}}",
+    "url": "/stream/binance/{{operation}}",
     "method": "POST"
   },
   "fields": [

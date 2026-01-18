@@ -80,10 +80,10 @@ export class MarketControlHandler {
         REDIS_CHANNELS.controlSubscribe,
         REDIS_CHANNELS.controlUnsubscribe,
         REDIS_CHANNELS.controlRegister,
-        REDIS_CHANNELS.controlUnregister
+        REDIS_CHANNELS.controlUnregister,
       );
       console.log(
-        "✅ [MarketControl] Subscribed to control channels (including workflow registration/unregistration)"
+        "✅ [MarketControl] Subscribed to control channels (including workflow registration/unregistration)",
       );
 
       // Set up message handler
@@ -129,7 +129,7 @@ export class MarketControlHandler {
       } catch (error) {
         console.error(
           `❌ [MarketControl] Error processing message on ${channel}:`,
-          error
+          error,
         );
       }
     });
@@ -172,7 +172,7 @@ export class MarketControlHandler {
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
         }, mode: ${subscriptionMode}, isTestListener: ${isTestListener}
-        )})`
+        )})`,
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
@@ -188,7 +188,7 @@ export class MarketControlHandler {
           console.log(
             `🧪 [MarketControl] Test listener - found ${
               globalSymbols.length
-            } global symbols: ${globalSymbols.join(", ")}`
+            } global symbols: ${globalSymbols.join(", ")}`,
           );
         } else {
           // Workflow scope - get workflow-scoped symbols
@@ -198,19 +198,19 @@ export class MarketControlHandler {
 
           const workflowSymbols = await this.getWorkflowScopedSymbols(
             actualWorkflowId,
-            source
+            source,
           );
           symbolsToSubscribe = workflowSymbols;
           console.log(
             `🧪 [MarketControl] Test listener - found ${
               workflowSymbols.length
-            } workflow-scoped symbols: ${workflowSymbols.join(", ")}`
+            } workflow-scoped symbols: ${workflowSymbols.join(", ")}`,
           );
         }
 
         if (symbolsToSubscribe.length === 0) {
           console.log(
-            `ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`
+            `ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`,
           );
         }
       } else {
@@ -222,7 +222,7 @@ export class MarketControlHandler {
 
         if (subscribedSymbols.length === 0) {
           console.log(
-            `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`
+            `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
           );
 
           // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
@@ -231,7 +231,7 @@ export class MarketControlHandler {
             nodeId,
             userId,
             [], // No symbols yet
-            source as MarketSource
+            source as MarketSource,
           );
           return;
         }
@@ -243,18 +243,18 @@ export class MarketControlHandler {
         nodeId,
         userId,
         symbolsToSubscribe,
-        source as MarketSource
+        source as MarketSource,
       );
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
           symbolsToSubscribe.length
-        } symbols: ${symbolsToSubscribe.join(", ")}`
+        } symbols: ${symbolsToSubscribe.join(", ")}`,
       );
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`,
-        error
+        error,
       );
     }
   }
@@ -274,7 +274,7 @@ export class MarketControlHandler {
       console.log(
         `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: ${
           isTestListener || false
-        })`
+        })`,
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
@@ -283,12 +283,12 @@ export class MarketControlHandler {
       console.log(
         `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${
           isTestListener ? " (test listener)" : ""
-        }`
+        }`,
       );
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to unregister streaming workflow ${workflowId}:`,
-        error
+        error,
       );
     }
   }
@@ -298,7 +298,7 @@ export class MarketControlHandler {
    */
   private async getWorkflowScopedSymbols(
     workflowId: string,
-    source?: string
+    source?: string,
   ): Promise<string[]> {
     const allSymbols = new Set<string>();
 
@@ -307,29 +307,29 @@ export class MarketControlHandler {
       if (source) {
         const key = `workflow:${workflowId}:subscribed_symbols:${source}`;
         console.log(
-          `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`
+          `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
         const symbols = await this.redisPub.smembers(key);
         console.log(
           `🔍 [MarketControl] Found ${symbols.length} workflow-scoped symbols:`,
-          symbols
+          symbols,
         );
         symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
       } else {
         // Check all sources for this workflow
         const pattern = `workflow:${workflowId}:subscribed_symbols:*`;
         console.log(
-          `🔍 [MarketControl] Checking workflow-scoped symbols with pattern: ${pattern}`
+          `🔍 [MarketControl] Checking workflow-scoped symbols with pattern: ${pattern}`,
         );
         const keys = await this.redisPub.keys(pattern);
         console.log(
-          `🔍 [MarketControl] Found ${keys.length} keys matching pattern`
+          `🔍 [MarketControl] Found ${keys.length} keys matching pattern`,
         );
         for (const key of keys) {
           const symbols = await this.redisPub.smembers(key);
           console.log(
             `🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`,
-            symbols
+            symbols,
           );
           symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
         }
@@ -337,7 +337,7 @@ export class MarketControlHandler {
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get workflow-scoped symbols for ${workflowId}:`,
-        err
+        err,
       );
     }
 
@@ -357,21 +357,21 @@ export class MarketControlHandler {
       const keys = await this.redisPub.keys(pattern);
 
       console.log(
-        `🔍 [MarketControl] Found ${keys.length} global subscription keys for user ${userId}`
+        `🔍 [MarketControl] Found ${keys.length} global subscription keys for user ${userId}`,
       );
 
       for (const key of keys) {
         const symbols = await this.redisPub.smembers(key);
         console.log(
           `🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`,
-          symbols
+          symbols,
         );
         symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
       }
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
-        err
+        err,
       );
     }
 
@@ -390,7 +390,7 @@ export class MarketControlHandler {
     userId: string,
     newSymbols: string[],
     subscriptionScope: "global" | "workflow" = "global",
-    targetWorkflowId?: string
+    targetWorkflowId?: string,
   ): Promise<void> {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
@@ -398,56 +398,54 @@ export class MarketControlHandler {
       // If workflow-scoped, only update the target workflow AND any test listeners for it
       if (subscriptionScope === "workflow" && targetWorkflowId) {
         console.log(
-          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`
+          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`,
         );
         await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
 
         // Also update any test listeners for this workflow (handles race condition)
         const testListenerPattern = `stream:test:${targetWorkflowId}:*`;
         try {
-          const testListenerKeys = await this.redisPub.keys(
-            testListenerPattern
-          );
+          const testListenerKeys =
+            await this.redisPub.keys(testListenerPattern);
           if (testListenerKeys.length > 0) {
             console.log(
-              `🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`
+              `🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
             );
             for (const testKey of testListenerKeys) {
               await subscriber.addSymbolsToSubscription(testKey, newSymbols);
               console.log(
-                `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`
+                `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`,
               );
             }
           }
         } catch (err) {
           console.warn(
             `⚠️ [MarketControl] Failed to update test listeners for ${targetWorkflowId}:`,
-            err
+            err,
           );
         }
 
         console.log(
-          `✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`
+          `✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`,
         );
         return;
       }
 
       // Global scope: update all active workflows for this user
       const activeWorkflowsKey = `user:${userId}:active_streaming_workflows`;
-      const activeWorkflowIds = await this.redisPub.smembers(
-        activeWorkflowsKey
-      );
+      const activeWorkflowIds =
+        await this.redisPub.smembers(activeWorkflowsKey);
 
       if (activeWorkflowIds.length === 0) {
         console.log(
-          `ℹ️ [MarketControl] No active streaming workflows for user ${userId}`
+          `ℹ️ [MarketControl] No active streaming workflows for user ${userId}`,
         );
         return;
       }
 
       console.log(
         `📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL symbols:`,
-        newSymbols
+        newSymbols,
       );
 
       for (const workflowId of activeWorkflowIds) {
@@ -464,15 +462,15 @@ export class MarketControlHandler {
             filterConfig.filter_symbols.length > 0
           ) {
             const allowedSymbols = filterConfig.filter_symbols.map(
-              (s: string) => s.toUpperCase()
+              (s: string) => s.toUpperCase(),
             );
             symbolsToAdd = newSymbols.filter((s) =>
-              allowedSymbols.includes(s.toUpperCase())
+              allowedSymbols.includes(s.toUpperCase()),
             );
 
             if (symbolsToAdd.length === 0) {
               console.log(
-                `ℹ️ [MarketControl] Workflow ${workflowId} filters exclude new symbols, skipping`
+                `ℹ️ [MarketControl] Workflow ${workflowId} filters exclude new symbols, skipping`,
               );
               continue;
             }
@@ -482,12 +480,12 @@ export class MarketControlHandler {
           await subscriber.addSymbolsToSubscription(workflowId, symbolsToAdd);
 
           console.log(
-            `✅ [MarketControl] Added ${symbolsToAdd.length} symbols to workflow ${workflowId}`
+            `✅ [MarketControl] Added ${symbolsToAdd.length} symbols to workflow ${workflowId}`,
           );
         } catch (err) {
           console.error(
             `❌ [MarketControl] Failed to update workflow ${workflowId}:`,
-            err
+            err,
           );
         }
       }
@@ -496,13 +494,12 @@ export class MarketControlHandler {
       // Use user-specific SET for O(1) lookup instead of pattern scanning
       const userTestListenersKey = `user:active_test_listeners:${userId}`;
       try {
-        const testListenerKeys = await this.redisPub.smembers(
-          userTestListenersKey
-        );
+        const testListenerKeys =
+          await this.redisPub.smembers(userTestListenersKey);
 
         if (testListenerKeys.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener(s) for user ${userId} to update with global symbols`
+            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener(s) for user ${userId} to update with global symbols`,
           );
 
           for (const testKey of testListenerKeys) {
@@ -523,15 +520,15 @@ export class MarketControlHandler {
                 listenerData.filterSymbols.length > 0
               ) {
                 const allowedSymbols = listenerData.filterSymbols.map(
-                  (s: string) => s.toUpperCase()
+                  (s: string) => s.toUpperCase(),
                 );
                 symbolsToAdd = newSymbols.filter((s) =>
-                  allowedSymbols.includes(s.toUpperCase())
+                  allowedSymbols.includes(s.toUpperCase()),
                 );
 
                 if (symbolsToAdd.length === 0) {
                   console.log(
-                    `ℹ️ [MarketControl] Test listener ${testKey} filters exclude new symbols, skipping`
+                    `ℹ️ [MarketControl] Test listener ${testKey} filters exclude new symbols, skipping`,
                   );
                   continue;
                 }
@@ -539,12 +536,12 @@ export class MarketControlHandler {
 
               await subscriber.addSymbolsToSubscription(testKey, symbolsToAdd);
               console.log(
-                `🧪 [MarketControl] Updated test listener ${testKey} with ${symbolsToAdd.length} global symbols`
+                `🧪 [MarketControl] Updated test listener ${testKey} with ${symbolsToAdd.length} global symbols`,
               );
             } catch (err) {
               console.warn(
                 `⚠️ [MarketControl] Failed to update test listener ${testKey}:`,
-                err
+                err,
               );
             }
           }
@@ -552,13 +549,13 @@ export class MarketControlHandler {
       } catch (err) {
         console.warn(
           `⚠️ [MarketControl] Failed to get user test listeners for global update:`,
-          err
+          err,
         );
       }
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to update active streaming workflows:`,
-        error
+        error,
       );
     }
   }
@@ -597,7 +594,7 @@ export class MarketControlHandler {
             msg.credentialId,
             feed,
             environment,
-            assetType
+            assetType,
           );
           state = this.sourceStates.get(source)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
@@ -640,14 +637,14 @@ export class MarketControlHandler {
           console.log(
             `➕ [MarketControl] Subscribing to symbols with new types on ${source}:`,
             subscriptionNeeded,
-            `(types: ${requestedTypes.join(", ")})`
+            `(types: ${requestedTypes.join(", ")})`,
           );
           state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
 
           // Persist to Redis
           await this.persistState(source);
           console.log(
-            `✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`
+            `✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`,
           );
 
           // Notify active streaming workflows about new symbols (respecting scope)
@@ -657,11 +654,11 @@ export class MarketControlHandler {
             userId,
             subscriptionNeeded,
             subscriptionScope,
-            targetWorkflowId
+            targetWorkflowId,
           );
         } else {
           console.log(
-            `ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`
+            `ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`,
           );
         }
 
@@ -673,40 +670,40 @@ export class MarketControlHandler {
           // Workflow-scoped subscription: only target workflow can access
           const workflowSubKey = `workflow:${targetWorkflowId}:subscribed_symbols:${source}`;
           console.log(
-            `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`
+            `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
           );
           console.log(
             `📝 [MarketControl] Symbols being written:`,
-            symbols.map((s) => s.toUpperCase())
+            symbols.map((s) => s.toUpperCase()),
           );
           await this.redisPub.sadd(
             workflowSubKey,
-            ...symbols.map((s) => s.toUpperCase())
+            ...symbols.map((s) => s.toUpperCase()),
           );
           console.log(
-            `📊 [MarketControl] Persisted ${symbols.length} workflow-scoped subscriptions for ${source} → ${targetWorkflowId}`
+            `📊 [MarketControl] Persisted ${symbols.length} workflow-scoped subscriptions for ${source} → ${targetWorkflowId}`,
           );
         } else {
           // Global subscription: all workflows can access
           const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
           await this.redisPub.sadd(
             userSubKey,
-            ...symbols.map((s) => s.toUpperCase())
+            ...symbols.map((s) => s.toUpperCase()),
           );
           console.log(
-            `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`
+            `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`,
           );
 
           // Also track in workflow-scoped key for cleanup on workflow deactivation
           // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
           if (workflowId) {
-            const workflowTrackingKey = `workflow:${workflowId}:subscribed_symbols:${source}`;
+            const workflowTrackingKey = `user:${userId}:workflow:${workflowId}:subscribed_symbols:${source}`;
             await this.redisPub.sadd(
               workflowTrackingKey,
-              ...symbols.map((s) => s.toUpperCase())
+              ...symbols.map((s) => s.toUpperCase()),
             );
             console.log(
-              `📊 [MarketControl] Also tracked ${symbols.length} symbols in workflow key for cleanup: ${workflowTrackingKey}`
+              `📊 [MarketControl] Also tracked ${symbols.length} symbols in workflow key for cleanup: ${workflowTrackingKey}`,
             );
           }
         }
@@ -714,7 +711,7 @@ export class MarketControlHandler {
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to handle subscribe for ${source}:`,
-        error
+        error,
       );
       throw error;
     }
@@ -738,15 +735,22 @@ export class MarketControlHandler {
         const subscriber = MarketDataSubscriber.getInstance();
         await subscriber.unsubscribe(workflowId);
         console.log(
-          `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`
+          `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );
       }
 
       // Remove workflow tracking
       if (workflowId) {
         state.workflowSymbols.delete(workflowId);
+        // Also untrack in workflow-scoped key for cleanup on workflow deactivation
+        // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
+        const workflowTrackingKey = `user:${msg.userId}:workflow:${workflowId}:subscribed_symbols:${source}`;
+        await this.redisPub.srem(
+          workflowTrackingKey,
+          ...symbols.map((s) => s.toUpperCase()),
+        );
         console.log(
-          `🗑️ [MarketControl] Removed workflow ${workflowId} from ${source}`
+          `🗑️ [MarketControl] Removed workflow ${workflowId} from ${source}`,
         );
       }
 
@@ -760,19 +764,19 @@ export class MarketControlHandler {
       const toRemove = symbols.filter(
         (s) =>
           !neededSymbols.has(s.toUpperCase()) &&
-          state.symbols.has(s.toUpperCase())
+          state.symbols.has(s.toUpperCase()),
       );
 
       if (toRemove.length > 0) {
         console.log(
           `➖ [MarketControl] Unsubscribing from symbols on ${source}:`,
-          toRemove
+          toRemove,
         );
         toRemove.forEach((s) => state.symbols.delete(s.toUpperCase()));
         state.gateway.unsubscribeSymbols(toRemove);
         await this.persistState(source);
         console.log(
-          `✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`
+          `✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`,
         );
       }
 
@@ -782,27 +786,28 @@ export class MarketControlHandler {
         const userSubKey = `user:${msg.userId}:subscribed_symbols:${source}`;
         await this.redisPub.srem(
           userSubKey,
-          ...toRemove.map((s) => s.toUpperCase())
+          ...toRemove.map((s) => s.toUpperCase()),
         );
         console.log(
-          `📊 [MarketControl] Removed ${toRemove.length} user-level subscriptions from ${source}`
+          `📊 [MarketControl] Removed ${toRemove.length} user-level subscriptions from ${source}`,
         );
       }
 
       // Disconnect if no more symbols
       if (state.symbols.size === 0) {
         console.log(
-          `🔌 [MarketControl] No symbols left, disconnecting ${source} gateway`
+          `🔌 [MarketControl] No symbols left, disconnecting ${source} gateway`,
         );
         state.gateway.disconnect();
         this.sourceStates.delete(source);
         await this.redisPub.del(REDIS_CHANNELS.gatewayState(source));
+        await this.redisPub.del(REDIS_CHANNELS.gatewaySymbols(source));
         console.log(`✅ [MarketControl] Disconnected ${source} gateway`);
       }
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to handle unsubscribe for ${source}:`,
-        error
+        error,
       );
     }
   }
@@ -816,7 +821,7 @@ export class MarketControlHandler {
     credentialId?: string,
     feed?: string,
     environment?: string,
-    assetType?: string
+    assetType?: string,
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
@@ -832,17 +837,17 @@ export class MarketControlHandler {
         const { credentials } = await CredentialManager.getCredentials(
           userId,
           serviceType,
-          credentialId
+          credentialId,
         );
 
         if (!credentials?.client_json) {
           throw new Error(
-            `No credentials found for ${serviceType}/${credentialId}`
+            `No credentials found for ${serviceType}/${credentialId}`,
           );
         }
 
         console.log(
-          `🔑 [MarketControl] Retrieved credentials for ${serviceType}/${credentialId}`
+          `🔑 [MarketControl] Retrieved credentials for ${serviceType}/${credentialId}`,
         );
         creds = credentials.client_json;
       } else {
@@ -855,7 +860,7 @@ export class MarketControlHandler {
         }
 
         console.log(
-          `🔑 [MarketControl] Retrieved credentials for ${serviceType} (fallback)`
+          `🔑 [MarketControl] Retrieved credentials for ${serviceType} (fallback)`,
         );
         creds = credentials;
       }
@@ -864,7 +869,7 @@ export class MarketControlHandler {
       if (feed) {
         creds = { ...creds, feed };
         console.log(
-          `📡 [MarketControl] Using ${feed.toUpperCase()} feed for ${source}`
+          `📡 [MarketControl] Using ${feed.toUpperCase()} feed for ${source}`,
         );
       }
 
@@ -872,13 +877,13 @@ export class MarketControlHandler {
       if (environment) {
         creds = { ...creds, environment };
         console.log(
-          `🌐 [MarketControl] Using ${environment} environment for ${source}`
+          `🌐 [MarketControl] Using ${environment} environment for ${source}`,
         );
       }
       if (assetType) {
         creds = { ...creds, assetType };
         console.log(
-          `📊 [MarketControl] Using ${assetType} asset type for ${source}`
+          `📊 [MarketControl] Using ${assetType} asset type for ${source}`,
         );
       }
 
@@ -900,12 +905,12 @@ export class MarketControlHandler {
       });
 
       console.log(
-        `✅ [MarketControl] Gateway ${source} connected for user ${userId}`
+        `✅ [MarketControl] Gateway ${source} connected for user ${userId}`,
       );
     } catch (error) {
       console.error(
         `❌ [MarketControl] Failed to connect gateway ${source}:`,
-        error
+        error,
       );
       throw error;
     }
@@ -926,13 +931,13 @@ export class MarketControlHandler {
         ([symbol, types]) => ({
           symbol,
           types: Array.from(types),
-        })
+        }),
       ),
       workflowSymbols: Array.from(state.workflowSymbols.entries()).map(
         ([wfId, symbols]) => ({
           workflowId: wfId,
           symbols: Array.from(symbols),
-        })
+        }),
       ),
       timestamp: new Date().toISOString(),
     };
@@ -940,19 +945,19 @@ export class MarketControlHandler {
     try {
       await redisSetBreaker.fire(
         REDIS_CHANNELS.gatewayState(source),
-        JSON.stringify(stateData)
+        JSON.stringify(stateData),
       );
 
       // Also persist symbols set (no circuit breaker for now, less critical)
       await this.redisPub.sadd(
         REDIS_CHANNELS.gatewaySymbols(source),
-        ...state.symbols
+        ...state.symbols,
       );
 
       console.log(`💾 [MarketControl] Persisted state for ${source}`);
     } catch (error) {
       console.warn(
-        `⚠️ [MarketControl] Failed to persist state for ${source}, continuing with in-memory state`
+        `⚠️ [MarketControl] Failed to persist state for ${source}, continuing with in-memory state`,
       );
       // Continue operation - state is still in memory
     }
@@ -991,7 +996,7 @@ export class MarketControlHandler {
             await this.connectGateway(
               source,
               stateData.userId,
-              stateData.credentialId
+              stateData.credentialId,
             );
             const state = this.sourceStates.get(source)!;
 
@@ -1025,7 +1030,7 @@ export class MarketControlHandler {
                 console.log(
                   `🔄 [MarketControl] Restored ${
                     symbols.length
-                  } symbols on ${source} (types: ${types.join(", ")})`
+                  } symbols on ${source} (types: ${types.join(", ")})`,
                 );
               }
             }
@@ -1033,7 +1038,7 @@ export class MarketControlHandler {
             // Also restore symbols set (for backwards compatibility)
             if (stateData.symbols && Array.isArray(stateData.symbols)) {
               stateData.symbols.forEach((s: string) =>
-                state.symbols.add(s.toUpperCase())
+                state.symbols.add(s.toUpperCase()),
               );
             }
 
@@ -1046,7 +1051,7 @@ export class MarketControlHandler {
                 const symbols = new Set<string>();
                 if (wf.symbols && Array.isArray(wf.symbols)) {
                   wf.symbols.forEach((s: string) =>
-                    symbols.add(s.toUpperCase())
+                    symbols.add(s.toUpperCase()),
                   );
                 }
                 state.workflowSymbols.set(wf.workflowId, symbols);
@@ -1055,19 +1060,19 @@ export class MarketControlHandler {
 
             restoredCount++;
             console.log(
-              `✅ [MarketControl] Restored ${source} gateway with ${state.symbols.size} symbols`
+              `✅ [MarketControl] Restored ${source} gateway with ${state.symbols.size} symbols`,
             );
           } catch (error) {
             console.error(
               `❌ [MarketControl] Failed to restore ${source}:`,
-              error
+              error,
             );
           }
         }
       }
 
       console.log(
-        `✅ [MarketControl] Restored ${restoredCount} gateway(s) from Redis`
+        `✅ [MarketControl] Restored ${restoredCount} gateway(s) from Redis`,
       );
     } catch (error) {
       console.error("❌ [MarketControl] Failed to restore from Redis:", error);
@@ -1092,7 +1097,7 @@ export class MarketControlHandler {
           ([wfId, symbols]) => ({
             workflowId: wfId,
             symbolCount: symbols.size,
-          })
+          }),
         ),
       };
     }
@@ -1117,7 +1122,7 @@ export class MarketControlHandler {
       } catch (error) {
         console.error(
           `❌ [MarketControl] Error disconnecting ${source}:`,
-          error
+          error,
         );
       }
     }

@@ -20,7 +20,11 @@ import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { useAuth } from "@/contexts/AuthContext";
-import { useExecutionStore, useExecutionStoreVersion, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
+import {
+  useExecutionStore,
+  useExecutionStoreVersion,
+  useExecutionStoreNotify,
+} from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
 // Custom hooks
 import { useNodeFieldState } from "@/hooks/useNodeFieldState";
@@ -71,7 +75,7 @@ export interface BaseNodeRenderProps {
     fieldKey: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
     e: React.DragEvent,
-    currentValue: string
+    currentValue: string,
   ) => void;
   handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   getFieldPreview: (fieldKey: string) => string | null;
@@ -205,17 +209,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {
     if (!workflowId || !nodeId || readOnly) return;
-    
+
     try {
-      console.log(`🛑 [BaseNode] Stopping test listener for ${workflowId}:${nodeId}`);
-      
+      console.log(
+        `🛑 [BaseNode] Stopping test listener for ${workflowId}:${nodeId}`,
+      );
+
       const response = await apiClient.post(
-        "/market/stop-listen-stream",
+        "/stream/stop-listen-stream",
         {
           workflow_id: workflowId,
           node_id: nodeId,
         },
-        session?.access_token
+        session?.access_token,
       );
 
       if (response.ok) {
@@ -243,15 +249,24 @@ const BaseNode: React.FC<BaseNodeProps> = ({
                     isTestListening: false,
                   },
                 }
-              : n
-          )
+              : n,
+          ),
         );
         console.log(`✅ [BaseNode] Test listener stopped successfully`);
       }
     } catch (error) {
       console.error("Failed to stop test listener:", error);
     }
-  }, [workflowId, nodeId, readOnly, session?.access_token, outputHook, executionStore, setNodes, notifyStoreUpdate]);
+  }, [
+    workflowId,
+    nodeId,
+    readOnly,
+    session?.access_token,
+    outputHook,
+    executionStore,
+    setNodes,
+    notifyStoreUpdate,
+  ]);
 
   // ========== Combine All Props ==========
 

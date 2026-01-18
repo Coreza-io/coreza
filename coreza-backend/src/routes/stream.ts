@@ -114,19 +114,19 @@ router.get("/subscriptions/status", async (req, res) => {
 
     // Also check active streaming workflows set and include those not in wf:sub:*
     const activeStreamingWorkflows = await redis.smembers(
-      `user:${userId}:active_streaming_workflows`
+      `user:${userId}:active_streaming_workflows`,
     );
     for (const workflowId of activeStreamingWorkflows) {
       workflowIds.add(workflowId);
 
       // Check if this workflow is already in workflowSubs
       const alreadyIncluded = workflowSubs.some(
-        (sub) => sub.workflowId === workflowId
+        (sub) => sub.workflowId === workflowId,
       );
       if (!alreadyIncluded) {
         // Try to get additional info from stream filter
         const filterStr = await redis.get(
-          `workflow:${workflowId}:stream_filter`
+          `workflow:${workflowId}:stream_filter`,
         );
         let source = "unknown";
         let eventTypes: string[] = [];
@@ -239,7 +239,7 @@ router.get("/subscriptions/status", async (req, res) => {
         if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
         if (!symbolSourceMap[sym].includes(s.source))
           symbolSourceMap[sym].push(s.source);
-      })
+      }),
     );
 
     workflowSubs.forEach((w) =>
@@ -248,7 +248,7 @@ router.get("/subscriptions/status", async (req, res) => {
         if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
         if (!symbolSourceMap[sym].includes(w.source))
           symbolSourceMap[sym].push(w.source);
-      })
+      }),
     );
 
     // Add user-level subscriptions to symbol counts
@@ -460,8 +460,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       }
       console.log(
         `📤 [Market Route] Removed ${resolvedSymbols.join(
-          ", "
-        )} from workflow-scoped key: ${workflowSubKey}`
+          ", ",
+        )} from workflow-scoped key: ${workflowSubKey}`,
       );
     }
     // Handle global symbol unsubscription (user-level)
@@ -472,8 +472,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       }
       console.log(
         `📤 [Market Route] Removed ${resolvedSymbols.join(
-          ", "
-        )} from global key: ${userSubKey}`
+          ", ",
+        )} from global key: ${userSubKey}`,
       );
     }
     // Handle full workflow cleanup (when removing entire workflow subscription)
@@ -482,11 +482,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
       await redis.del(subKey);
       await redis.srem(
         `user:${userId}:active_streaming_workflows`,
-        workflow_id
+        workflow_id,
       );
       await redis.del(`workflow:${workflow_id}:stream_filter`);
       console.log(
-        `📤 [Market Route] Direct cleanup for workflow ${workflow_id}`
+        `📤 [Market Route] Direct cleanup for workflow ${workflow_id}`,
       );
     }
 
@@ -557,14 +557,14 @@ router.delete("/workflows/:workflowId/unsubscribe", async (req, res) => {
 
     await redis.publish(
       "md:control:unsubscribe",
-      JSON.stringify(unsubscribeMessage)
+      JSON.stringify(unsubscribeMessage),
     );
 
     // Clean up subscription data
     await redis.del(subKey);
 
     console.log(
-      `📤 [Market Route] Unsubscribed workflow ${workflowId} via DELETE endpoint`
+      `📤 [Market Route] Unsubscribed workflow ${workflowId} via DELETE endpoint`,
     );
 
     res.json({
@@ -649,11 +649,11 @@ router.post("/register-streaming-workflow", async (req, res) => {
     };
     await redis.set(
       `workflow:${workflow_id}:stream_filter`,
-      JSON.stringify(filterData)
+      JSON.stringify(filterData),
     );
 
     console.log(
-      `📥 [Market Route] Registered streaming workflow: ${workflow_id}, node: ${node_id}, source: ${streamSource}`
+      `📥 [Market Route] Registered streaming workflow: ${workflow_id}, node: ${node_id}, source: ${streamSource}`,
     );
 
     res.json({
@@ -707,7 +707,7 @@ router.delete("/unregister-streaming-workflow", async (req, res) => {
       const subKey = `wf:sub:${workflow_id}:${node_id}`;
       await redis.del(subKey);
       console.log(
-        `📤 [Market Route] Unregistered streaming node: ${workflow_id}:${node_id}`
+        `📤 [Market Route] Unregistered streaming node: ${workflow_id}:${node_id}`,
       );
     }
 
@@ -719,11 +719,11 @@ router.delete("/unregister-streaming-workflow", async (req, res) => {
     if (remainingKeys.length === 0) {
       await redis.srem(
         `user:${userId}:active_streaming_workflows`,
-        workflow_id
+        workflow_id,
       );
       await redis.del(`workflow:${workflow_id}:stream_filter`);
       console.log(
-        `📤 [Market Route] Fully unregistered streaming workflow: ${workflow_id}`
+        `📤 [Market Route] Fully unregistered streaming workflow: ${workflow_id}`,
       );
     }
 
@@ -803,9 +803,8 @@ router.post("/streaming-activity", async (req, res) => {
  */
 router.post("/cleanup-streaming", async (req, res) => {
   try {
-    const { default: streamingCleanupService } = await import(
-      "../services/StreamingCleanupService"
-    );
+    const { default: streamingCleanupService } =
+      await import("../services/StreamingCleanupService");
     const result = await streamingCleanupService.runCleanup();
 
     res.json({
@@ -880,18 +879,18 @@ router.post("/execute-stream-node", async (req, res) => {
     }
 
     console.log(
-      `🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${marketSource})`
+      `🚀 [ExecuteStreamNode] Starting for ${node_type} (mode: ${mode}, source: ${marketSource})`,
     );
 
     // 2. Parse symbols
     const parsedSymbols: string[] = Array.isArray(symbols)
       ? symbols.map((s: string) => s.toUpperCase())
       : typeof symbols === "string"
-      ? symbols
-          .split(",")
-          .map((s: string) => s.trim().toUpperCase())
-          .filter(Boolean)
-      : [];
+        ? symbols
+            .split(",")
+            .map((s: string) => s.trim().toUpperCase())
+            .filter(Boolean)
+        : [];
 
     // 3. If subscribe mode, subscribe first and WAIT for completion
     if (mode === "subscribe") {
@@ -902,7 +901,7 @@ router.post("/execute-stream-node", async (req, res) => {
       }
 
       console.log(
-        `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`
+        `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
       );
 
       const subscribeResult = await SubscriptionService.subscribe({
@@ -929,7 +928,7 @@ router.post("/execute-stream-node", async (req, res) => {
       if (!subscribeResult.success) {
         console.error(
           `❌ [ExecuteStreamNode] Subscription failed:`,
-          subscribeResult.error
+          subscribeResult.error,
         );
         return res.status(400).json({
           success: false,
@@ -939,23 +938,23 @@ router.post("/execute-stream-node", async (req, res) => {
       }
 
       console.log(
-        `✅ [ExecuteStreamNode] Subscription successful for ${parsedSymbols.length} symbols`
+        `✅ [ExecuteStreamNode] Subscription successful for ${parsedSymbols.length} symbols`,
       );
     }
 
     // 5. Rate limit check for test listener
-    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const userCountKey = `user:${userId}:stream:listener_count`;
     const allowed = await redis.eval(
       LUA_INCREMENT_TEST_COUNT,
       1,
       userCountKey,
       String(MAX_TEST_LISTENERS_PER_USER),
-      String(TEST_LISTENER_TTL_SECONDS)
+      String(TEST_LISTENER_TTL_SECONDS),
     );
 
     if (allowed === 0) {
       console.warn(
-        `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`
+        `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`,
       );
       return res.status(429).json({
         success: false,
@@ -965,7 +964,7 @@ router.post("/execute-stream-node", async (req, res) => {
     }
 
     // 6. Create test listener key and store metadata
-    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const testKey = `user:${userId}:stream:${workflow_id}:${node_id}`;
     const now = new Date().toISOString();
 
     const testListenerData = {
@@ -983,14 +982,14 @@ router.post("/execute-stream-node", async (req, res) => {
     await redis.setex(
       testKey,
       TEST_LISTENER_TTL_SECONDS,
-      JSON.stringify(testListenerData)
+      JSON.stringify(testListenerData),
     );
 
     // Add to active listeners SETs for O(1) lookup
-    await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    await redis.sadd(`user:${userId}:stream:active`, testKey);
 
     // Add to user-specific SET for efficient per-user queries (no pattern scanning)
-    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    const userTestListenersKey = `user:${userId}:active_listeners`;
     await redis.sadd(userTestListenersKey, testKey);
 
     // 7. Register with MarketDataSubscriber via control message
@@ -1007,7 +1006,7 @@ router.post("/execute-stream-node", async (req, res) => {
 
     await redis.publish(
       "md:control:register_workflow",
-      JSON.stringify(controlMessage)
+      JSON.stringify(controlMessage),
     );
     console.log(`📡 [ExecuteStreamNode] Published register_workflow}`);
 
@@ -1079,12 +1078,12 @@ router.post("/test-listen-stream", async (req, res) => {
       1, // number of keys
       userCountKey,
       String(MAX_TEST_LISTENERS_PER_USER),
-      String(TEST_LISTENER_TTL_SECONDS)
+      String(TEST_LISTENER_TTL_SECONDS),
     );
 
     if (allowed === 0) {
       console.warn(
-        `⚠️ [Test Listen] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`
+        `⚠️ [Test Listen] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`,
       );
       return res.status(429).json({
         error: `Maximum concurrent test listeners (${MAX_TEST_LISTENERS_PER_USER}) exceeded. Please stop existing listeners first.`,
@@ -1102,12 +1101,12 @@ router.post("/test-listen-stream", async (req, res) => {
       // SUBSCRIBE MODE (Self-contained): Use provided symbols directly
       // These are the symbols the user just subscribed to in this node - no intersection needed
       allowedSymbols = (filter_symbols || []).map((s: string) =>
-        s.toUpperCase()
+        s.toUpperCase(),
       );
       console.log(
         `🔧 [Test Listen] Subscribe mode - using provided symbols directly: ${
           allowedSymbols.join(", ") || "NONE"
-        }`
+        }`,
       );
     } else {
       // LISTEN MODE: Get allowed symbols from existing subscriptions (with intersection)
@@ -1137,7 +1136,7 @@ router.post("/test-listen-stream", async (req, res) => {
     await redis.setex(
       testKey,
       TEST_LISTENER_TTL_SECONDS,
-      JSON.stringify(testListenerData)
+      JSON.stringify(testListenerData),
     );
 
     // Add to active listeners SETs for O(1) lookup
@@ -1162,7 +1161,7 @@ router.post("/test-listen-stream", async (req, res) => {
     };
     await redis.publish(
       "md:control:register_workflow",
-      JSON.stringify(controlMessage)
+      JSON.stringify(controlMessage),
     );
 
     console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
@@ -1210,7 +1209,7 @@ router.post("/stop-listen-stream", async (req, res) => {
     }
 
     const redis = getRedisCache();
-    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const testKey = `user:${userId}:stream:${workflow_id}:${node_id}`;
     const resultKey = `${testKey}:result`;
 
     // Delete both test listener and any stored result
@@ -1218,14 +1217,14 @@ router.post("/stop-listen-stream", async (req, res) => {
     await redis.del(resultKey);
 
     // Remove from active listeners SETs
-    await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+    await redis.srem(`user:${userId}:stream:active`, testKey);
 
     // Remove from user-specific SET
-    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    const userTestListenersKey = `"user:${userId}active_listeners:"`;
     await redis.srem(userTestListenersKey, testKey);
 
     // Decrement user's test listener count
-    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const userCountKey = `user:${userId}:listener_count`;
     await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
     // Unregister from MarketDataSubscriber by publishing unsubscribe control message
@@ -1237,7 +1236,7 @@ router.post("/stop-listen-stream", async (req, res) => {
     };
     await redis.publish(
       "md:control:unregister_workflow",
-      JSON.stringify(unsubscribeMessage)
+      JSON.stringify(unsubscribeMessage),
     );
 
     console.log(`🛑 [Test Listen] Stopped test listener: ${testKey}`);
@@ -1287,7 +1286,7 @@ router.get("/stream-test-result/:workflow_id/:node_id", async (req, res) => {
       await redis.del(resultKey);
 
       console.log(
-        `✅ [Test Listen] Returning cached result for: ${testKey} (recovery poll)`
+        `✅ [Test Listen] Returning cached result for: ${testKey} (recovery poll)`,
       );
 
       return res.json({
@@ -1355,7 +1354,7 @@ router.post("/cleanup-user-streams", async (req, res) => {
     // Get all test listener keys for this user
     const testListenerKeys = await redis.smembers(userTestListenersKey);
     console.log(
-      `🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`
+      `🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`,
     );
 
     let cleanedCount = 0;
@@ -1371,7 +1370,7 @@ router.post("/cleanup-user-streams", async (req, res) => {
             {
               source: listenerData.source,
               symbols: listenerData.filterSymbols,
-            }
+            },
           );
         }
 
@@ -1396,14 +1395,14 @@ router.post("/cleanup-user-streams", async (req, res) => {
         };
         await redis.publish(
           "md:control:unregister_workflow",
-          JSON.stringify(unregisterMsg)
+          JSON.stringify(unregisterMsg),
         );
 
         cleanedCount++;
       } catch (err) {
         console.error(
           `⚠️ [Market Cleanup] Failed to cleanup test listener ${testKey}:`,
-          err
+          err,
         );
       }
     }
@@ -1413,7 +1412,7 @@ router.post("/cleanup-user-streams", async (req, res) => {
     await redis.del(userCountKey);
 
     console.log(
-      `✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`
+      `✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`,
     );
 
     res.json({

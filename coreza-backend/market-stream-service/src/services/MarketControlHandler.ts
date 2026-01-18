@@ -164,8 +164,7 @@ export class MarketControlHandler {
     } = msg;
 
     // Detect test listener by explicit flag OR workflowId prefix (fallback for race conditions)
-    const isTestListener =
-      msg.isTestListener === true || workflowId.startsWith("stream:test:");
+    const isTestListener = msg.isTestListener === true;
 
     try {
       console.log(
@@ -403,7 +402,7 @@ export class MarketControlHandler {
         await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
 
         // Also update any test listeners for this workflow (handles race condition)
-        const testListenerPattern = `stream:test:${targetWorkflowId}:*`;
+        const testListenerPattern = `user:${userId}:stream:${targetWorkflowId}:*`;
         try {
           const testListenerKeys =
             await this.redisPub.keys(testListenerPattern);
@@ -451,7 +450,7 @@ export class MarketControlHandler {
       for (const workflowId of activeWorkflowIds) {
         try {
           // Get workflow's filter config from Redis (stored during activation)
-          const filterKey = `workflow:${workflowId}:stream_filter`;
+          const filterKey = `user:${userId}:workflow:${workflowId}:stream_filter`;
           const filterJson = await this.redisPub.get(filterKey);
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
 

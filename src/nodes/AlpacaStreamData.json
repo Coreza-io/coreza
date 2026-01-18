@@ -7,7 +7,7 @@
   "subCategory": "alpaca",
   "executionMode": "streaming",
   "action": {
-    "url": "/market/execute-stream-node",
+    "url": "/stream/execute-stream-node",
     "method": "POST"
   },
   "streamingConfig": {

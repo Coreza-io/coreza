@@ -985,11 +985,8 @@ router.post("/execute-stream-node", async (req, res) => {
       JSON.stringify(testListenerData),
     );
 
-    // Add to active listeners SETs for O(1) lookup
-    await redis.sadd(`user:${userId}:stream:active`, testKey);
-
     // Add to user-specific SET for efficient per-user queries (no pattern scanning)
-    const userTestListenersKey = `user:${userId}:active_listeners`;
+    const userTestListenersKey = `user:${userId}:stream:active_listeners`;
     await redis.sadd(userTestListenersKey, testKey);
 
     // 7. Register with MarketDataSubscriber via control message
@@ -1214,15 +1211,12 @@ router.post("/stop-listen-stream", async (req, res) => {
     // Delete both test listener and any stored result
     await redis.del(testKey);
 
-    // Remove from active listeners SETs
-    await redis.srem(`user:${userId}:stream:active`, testKey);
-
     // Remove from user-specific SET
-    const userTestListenersKey = `user:${userId}:active_listeners`;
+    const userTestListenersKey = `user:${userId}:stream:active_listeners`;
     await redis.srem(userTestListenersKey, testKey);
 
     // Decrement user's test listener count
-    const userCountKey = `user:${userId}:listener_count`;
+    const userCountKey = `user:${userId}:stream:listener_count`;
     await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
     // Unregister from MarketDataSubscriber by publishing unsubscribe control message

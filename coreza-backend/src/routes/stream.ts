@@ -997,7 +997,7 @@ router.post("/execute-stream-node", async (req, res) => {
     const controlMessage = {
       action: "register_workflow",
       userId,
-      workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
+      workflowId: workflow_id, // Use testKey as pseudo workflow ID for uniqueness
       nodeId: node_id,
       source: marketSource,
       subscriptionMode: subscriptionMode,
@@ -1210,17 +1210,15 @@ router.post("/stop-listen-stream", async (req, res) => {
 
     const redis = getRedisCache();
     const testKey = `user:${userId}:stream:${workflow_id}:${node_id}`;
-    const resultKey = `${testKey}:result`;
 
     // Delete both test listener and any stored result
     await redis.del(testKey);
-    await redis.del(resultKey);
 
     // Remove from active listeners SETs
     await redis.srem(`user:${userId}:stream:active`, testKey);
 
     // Remove from user-specific SET
-    const userTestListenersKey = `"user:${userId}active_listeners:"`;
+    const userTestListenersKey = `user:${userId}:active_listeners`;
     await redis.srem(userTestListenersKey, testKey);
 
     // Decrement user's test listener count

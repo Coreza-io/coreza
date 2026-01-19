@@ -176,66 +176,28 @@ export class MarketControlHandler {
 
       const subscriber = MarketDataSubscriber.getInstance();
       let symbolsToSubscribe: string[];
+      // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
+      const subscribedSymbols =
+        subscriptionMode === "global"
+          ? await this.getUserSubscribedSymbols(userId)
+          : await this.getWorkflowScopedSymbols(workflowId, source);
 
-      // TEST LISTENER MODE: Use filter_symbols directly without intersection
-      // OR: Fallback to loading from Redis if filter_symbols missing (handles race condition)
-      if (isTestListener) {
-        if (subscriptionMode === "global") {
-          // Fetch globally subscribed symbols for this user
-          const globalSymbols = await this.getUserSubscribedSymbols(userId);
-          symbolsToSubscribe = globalSymbols;
-          console.log(
-            `🧪 [MarketControl] Test listener - found ${
-              globalSymbols.length
-            } global symbols: ${globalSymbols.join(", ")}`,
-          );
-        } else {
-          // Workflow scope - get workflow-scoped symbols
-          // testKey format: stream:test:{workflowId}:{nodeId}
-          const parts = workflowId.split(":");
-          const actualWorkflowId = parts.length >= 3 ? parts[2] : workflowId;
+      if (subscribedSymbols.length === 0) {
+        console.log(
+          `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
+        );
 
-          const workflowSymbols = await this.getWorkflowScopedSymbols(
-            actualWorkflowId,
-            source,
-          );
-          symbolsToSubscribe = workflowSymbols;
-          console.log(
-            `🧪 [MarketControl] Test listener - found ${
-              workflowSymbols.length
-            } workflow-scoped symbols: ${workflowSymbols.join(", ")}`,
-          );
-        }
-
-        if (symbolsToSubscribe.length === 0) {
-          console.log(
-            `ℹ️ [MarketControl] Test listener ${workflowId} registered with 0 symbols - will receive data when symbols are subscribed`,
-          );
-        }
-      } else {
-        // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-        const subscribedSymbols =
-          subscriptionMode === "global"
-            ? await this.getUserSubscribedSymbols(userId)
-            : await this.getWorkflowScopedSymbols(workflowId, source);
-
-        if (subscribedSymbols.length === 0) {
-          console.log(
-            `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
-          );
-
-          // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
-          await subscriber.subscribe(
-            workflowId,
-            nodeId,
-            userId,
-            [], // No symbols yet
-            source as MarketSource,
-          );
-          return;
-        }
-        symbolsToSubscribe = subscribedSymbols;
+        // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
+        await subscriber.subscribe(
+          workflowId,
+          nodeId,
+          userId,
+          [], // No symbols yet
+          source as MarketSource,
+        );
+        return;
       }
+      symbolsToSubscribe = subscribedSymbols;
 
       await subscriber.subscribe(
         workflowId,

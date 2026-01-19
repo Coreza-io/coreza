@@ -25,10 +25,11 @@ import {
   MAX_TEST_LISTENERS_PER_USER,
   TEST_LISTENER_TTL_SECONDS,
   REDIS_KEY_ACTIVE_TEST_LISTENERS,
-  REDIS_KEY_USER_TEST_LISTENERS_PREFIX,
-  REDIS_KEY_USER_TEST_COUNT_PREFIX,
   LUA_INCREMENT_TEST_COUNT,
   LUA_DECREMENT_TEST_COUNT,
+  getUserTestListenersKey,
+  getUserTestCountKey,
+  getTestListenerKey,
 } from "../config/streaming";
 import {
   StreamExecutionRequest,
@@ -1069,7 +1070,7 @@ router.post("/test-listen-stream", async (req, res) => {
     const redis = getRedisCache();
 
     // Rate limit: check user's active test listener count using atomic Lua script
-    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const userCountKey = getUserTestCountKey(userId);
     const allowed = await redis.eval(
       LUA_INCREMENT_TEST_COUNT,
       1, // number of keys
@@ -1088,7 +1089,7 @@ router.post("/test-listen-stream", async (req, res) => {
       });
     }
 
-    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const testKey = getTestListenerKey(userId, workflow_id, node_id);
     const now = new Date().toISOString();
 
     // Get allowed symbols based on mode
@@ -1140,8 +1141,7 @@ router.post("/test-listen-stream", async (req, res) => {
     await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
 
     // Add to user-specific SET for efficient per-user queries (no pattern scanning)
-    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
-    await redis.sadd(userTestListenersKey, testKey);
+    await redis.sadd(getUserTestListenersKey(userId), testKey);
 
     // Register temporary subscription with MarketDataSubscriber via control message
     // This ensures data flows through ws:user:{userId} channel to reach checkTestListeners
@@ -1206,18 +1206,19 @@ router.post("/stop-listen-stream", async (req, res) => {
     }
 
     const redis = getRedisCache();
-    const testKey = `user:${userId}:stream:${workflow_id}:${node_id}`;
+    const testKey = getTestListenerKey(userId, workflow_id, node_id);
 
     // Delete both test listener and any stored result
     await redis.del(testKey);
 
+    // Remove from global active listeners SET
+    await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+
     // Remove from user-specific SET
-    const userTestListenersKey = `user:${userId}:stream:active_listeners`;
-    await redis.srem(userTestListenersKey, testKey);
+    await redis.srem(getUserTestListenersKey(userId), testKey);
 
     // Decrement user's test listener count
-    const userCountKey = `user:${userId}:stream:listener_count`;
-    await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
+    await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, getUserTestCountKey(userId));
 
     // Unregister from MarketDataSubscriber by publishing unsubscribe control message
     const unsubscribeMessage = {
@@ -1341,7 +1342,7 @@ router.post("/cleanup-user-streams", async (req, res) => {
     console.log(`🧹 [Market Cleanup] Starting cleanup for user ${userId}`);
 
     const redis = getRedisCache();
-    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    const userTestListenersKey = getUserTestListenersKey(userId);
 
     // Get all test listener keys for this user
     const testListenerKeys = await redis.smembers(userTestListenersKey);

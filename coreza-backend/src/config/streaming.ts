@@ -83,17 +83,42 @@ export const POLL_JITTER_MS = parseInt(
 /** Active test listeners SET key (global) */
 export const REDIS_KEY_ACTIVE_TEST_LISTENERS = 'stream:test:active';
 
-/** User-specific active test listeners SET key prefix */
-export const REDIS_KEY_USER_TEST_LISTENERS_PREFIX = 'user:active_test_listeners:';
+/** User-specific active test listeners SET key prefix (DEPRECATED - use helper functions) */
+export const REDIS_KEY_USER_TEST_LISTENERS_PREFIX = 'user:';
 
-/** User test listener count key prefix */
-export const REDIS_KEY_USER_TEST_COUNT_PREFIX = 'user:test_listener_count:';
+/** User test listener count key prefix (DEPRECATED - use helper functions) */
+export const REDIS_KEY_USER_TEST_COUNT_PREFIX = 'user:';
 
 /** Test listener key TTL check interval */
 export const TEST_LISTENER_CLEANUP_INTERVAL_MS = parseInt(
   process.env.TEST_LISTENER_CLEANUP_INTERVAL_MS || '60000',
   10
 );
+
+// ============================================
+// REDIS KEY HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Get the Redis key for a user's active test listeners SET.
+ * Pattern: user:${userId}:stream:active_listeners
+ */
+export const getUserTestListenersKey = (userId: string): string =>
+  `user:${userId}:stream:active_listeners`;
+
+/**
+ * Get the Redis key for a user's test listener count.
+ * Pattern: user:${userId}:stream:listener_count
+ */
+export const getUserTestCountKey = (userId: string): string =>
+  `user:${userId}:stream:listener_count`;
+
+/**
+ * Get the Redis key for a specific test listener.
+ * Pattern: user:${userId}:stream:${workflowId}:${nodeId}
+ */
+export const getTestListenerKey = (userId: string, workflowId: string, nodeId: string): string =>
+  `user:${userId}:stream:${workflowId}:${nodeId}`;
 
 // ============================================
 // LUA SCRIPTS

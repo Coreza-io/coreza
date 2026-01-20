@@ -33,8 +33,10 @@ export const REDIS_CHANNELS = {
   symbolWorkflows: (symbol: string) => `wf:subs:symbol:${symbol.toUpperCase()}`,
   
   // Gateway state persistence (Phase 5)
-  gatewayState: (source: string) => `md:gateway:${source}`,
-  gatewaySymbols: (source: string) => `md:gateway:${source}:symbols`,
+  gatewayState: (userId: string, source: string) =>
+    `md:gateway:${userId}:${source}:state`,
+  gatewaySymbols: (userId: string, source: string) =>
+    `md:gateway:${userId}:${source}:symbols`,
 } as const;
 
 type RedisChannelValue = typeof REDIS_CHANNELS[keyof typeof REDIS_CHANNELS];

@@ -31,6 +31,7 @@ interface ControlMessage {
 }
 
 interface SourceState {
+  source: MarketSource;
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
@@ -43,7 +44,7 @@ export class MarketControlHandler {
   private static instance: MarketControlHandler;
   private redisSub: Redis;
   private redisPub: Redis;
-  private sourceStates = new Map<MarketSource, SourceState>();
+  private sourceStates = new Map<string, SourceState>();
   private initialized = false;
   private gatewayMutex = new Mutex(); // Mutex to prevent race conditions
 
@@ -59,6 +60,10 @@ export class MarketControlHandler {
       MarketControlHandler.instance = new MarketControlHandler();
     }
     return MarketControlHandler.instance;
+  }
+
+  private getStateKey(userId: string, source: MarketSource): string {
+    return `${userId}:${source}`;
   }
 
   /**
@@ -523,7 +528,8 @@ export class MarketControlHandler {
     try {
       // Acquire mutex to prevent concurrent gateway connections
       await this.gatewayMutex.runExclusive(async () => {
-        let state = this.sourceStates.get(source);
+        const stateKey = this.getStateKey(userId, source);
+        let state = this.sourceStates.get(stateKey);
 
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
@@ -536,7 +542,7 @@ export class MarketControlHandler {
             environment,
             assetType,
           );
-          state = this.sourceStates.get(source)!;
+          state = this.sourceStates.get(stateKey)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
@@ -582,7 +588,7 @@ export class MarketControlHandler {
           state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
 
           // Persist to Redis
-          await this.persistState(source);
+          await this.persistState(userId, source);
           console.log(
             `✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`,
           );
@@ -664,9 +670,12 @@ export class MarketControlHandler {
     const { userId, source, workflowId, symbols } = msg;
 
     try {
-      const state = this.sourceStates.get(source);
+      const stateKey = this.getStateKey(userId, source);
+      const state = this.sourceStates.get(stateKey);
       if (!state) {
-        console.log(`⚠️ [MarketControl] No gateway state found for ${source}`);
+        console.log(
+          `⚠️ [MarketControl] No gateway state found for ${source} and user ${userId}`,
+        );
         return;
       }
 
@@ -714,7 +723,7 @@ export class MarketControlHandler {
         );
         toRemove.forEach((s) => state.symbols.delete(s.toUpperCase()));
         state.gateway.unsubscribeSymbols(toRemove);
-        await this.persistState(source);
+        await this.persistState(userId, source);
         console.log(
           `✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`,
         );
@@ -739,9 +748,9 @@ export class MarketControlHandler {
           `🔌 [MarketControl] No symbols left, disconnecting ${source} gateway`,
         );
         state.gateway.disconnect();
-        this.sourceStates.delete(source);
-        await this.redisPub.del(REDIS_CHANNELS.gatewayState(source));
-        await this.redisPub.del(REDIS_CHANNELS.gatewaySymbols(source));
+        this.sourceStates.delete(stateKey);
+        await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, source));
+        await this.redisPub.del(REDIS_CHANNELS.gatewaySymbols(userId, source));
         console.log(`✅ [MarketControl] Disconnected ${source} gateway`);
       }
     } catch (error) {
@@ -829,13 +838,18 @@ export class MarketControlHandler {
 
       // Get or create gateway instance using mapped gateway source
       // Pass original source (e.g., 'alpaca_news') for behavior routing
-      const gateway = MarketDataGateway.getInstance(gatewaySource, source);
+      const gateway = MarketDataGateway.getInstance(
+        gatewaySource,
+        source,
+        this.getStateKey(userId, source),
+      );
 
       // Connect gateway with credentials
       await gateway.connect(creds);
 
       // Track state
-      this.sourceStates.set(source, {
+      this.sourceStates.set(this.getStateKey(userId, source), {
+        source,
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
@@ -859,8 +873,11 @@ export class MarketControlHandler {
   /**
    * Persist gateway state to Redis (with circuit breaker)
    */
-  private async persistState(source: MarketSource): Promise<void> {
-    const state = this.sourceStates.get(source);
+  private async persistState(
+    userId: string,
+    source: MarketSource,
+  ): Promise<void> {
+    const state = this.sourceStates.get(this.getStateKey(userId, source));
     if (!state) return;
 
     const stateData = {
@@ -884,13 +901,13 @@ export class MarketControlHandler {
 
     try {
       await redisSetBreaker.fire(
-        REDIS_CHANNELS.gatewayState(source),
+        REDIS_CHANNELS.gatewayState(userId, source),
         JSON.stringify(stateData),
       );
 
       // Also persist symbols set (no circuit breaker for now, less critical)
       await this.redisPub.sadd(
-        REDIS_CHANNELS.gatewaySymbols(source),
+        REDIS_CHANNELS.gatewaySymbols(userId, source),
         ...state.symbols,
       );
 
@@ -910,17 +927,15 @@ export class MarketControlHandler {
     try {
       console.log("🔄 [MarketControl] Restoring gateway states from Redis...");
 
-      const sources: MarketSource[] = [
-        "alpaca",
-        "alpaca_news",
-        "binance",
-        "dhan",
-        "schwab",
-      ];
+      const stateKeys = await this.redisPub.keys("md:gateway:*:*:state");
       let restoredCount = 0;
 
-      for (const source of sources) {
-        const stateKey = REDIS_CHANNELS.gatewayState(source);
+      for (const stateKey of stateKeys) {
+        const match = stateKey.match(/^md:gateway:([^:]+):([^:]+):state$/);
+        if (!match) {
+          continue;
+        }
+        const [, userId, source] = match;
         const stateJson = await this.redisPub.get(stateKey);
 
         if (stateJson) {
@@ -934,11 +949,13 @@ export class MarketControlHandler {
 
             // Reconnect gateway
             await this.connectGateway(
-              source,
-              stateData.userId,
+              source as MarketSource,
+              userId,
               stateData.credentialId,
             );
-            const state = this.sourceStates.get(source)!;
+            const state = this.sourceStates.get(
+              this.getStateKey(userId, source as MarketSource),
+            )!;
 
             // Restore symbol types first
             if (stateData.symbolTypes && Array.isArray(stateData.symbolTypes)) {
@@ -1025,10 +1042,11 @@ export class MarketControlHandler {
   getStats() {
     const stats: Record<string, any> = {};
 
-    for (const [source, state] of this.sourceStates.entries()) {
-      stats[source] = {
+    for (const [stateKey, state] of this.sourceStates.entries()) {
+      stats[stateKey] = {
         connected: state.gateway.getStats().connected,
         authenticated: state.gateway.getStats().authenticated,
+        source: state.source,
         userId: state.connectedUserId,
         symbolCount: state.symbols.size,
         symbols: Array.from(state.symbols),
@@ -1055,13 +1073,13 @@ export class MarketControlHandler {
   async cleanup(): Promise<void> {
     console.log("🧹 [MarketControl] Cleaning up...");
 
-    for (const [source, state] of this.sourceStates.entries()) {
+    for (const [, state] of this.sourceStates.entries()) {
       try {
         state.gateway.disconnect();
-        console.log(`✅ [MarketControl] Disconnected ${source} gateway`);
+        console.log(`✅ [MarketControl] Disconnected ${state.source} gateway`);
       } catch (error) {
         console.error(
-          `❌ [MarketControl] Error disconnecting ${source}:`,
+          `❌ [MarketControl] Error disconnecting ${state.source}:`,
           error,
         );
       }

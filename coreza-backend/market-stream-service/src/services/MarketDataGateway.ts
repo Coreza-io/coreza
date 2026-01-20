@@ -44,18 +44,20 @@ export class MarketDataGateway {
    * Get or create a gateway instance.
    * @param gatewaySource - The gateway config key (e.g., 'alpaca')
    * @param sourceId - The full source_id for behavior routing (e.g., 'alpaca_news', 'alpaca_stream')
+   * @param instanceKey - Optional unique key for instance isolation (e.g., user+source)
    */
   static getInstance(
     gatewaySource: MarketSource,
-    sourceId?: string
+    sourceId?: string,
+    instanceKey?: string,
   ): MarketDataGateway {
-    // Use sourceId as instance key if provided, otherwise use gatewaySource
-    const key = sourceId || gatewaySource;
+    const sourceKey = sourceId || gatewaySource;
+    const key = instanceKey || sourceKey;
 
     if (!this.instances.has(key)) {
       const config = GATEWAY_CONFIGS[gatewaySource];
       if (!config) throw new Error(`Unknown market source: ${gatewaySource}`);
-      this.instances.set(key, new MarketDataGateway(config, key));
+      this.instances.set(key, new MarketDataGateway(config, sourceKey));
     }
     return this.instances.get(key)!;
   }

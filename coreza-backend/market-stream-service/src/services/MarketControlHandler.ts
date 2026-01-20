@@ -12,7 +12,6 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { getSourceMapping } from "../marketGateways";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -181,16 +180,16 @@ export class MarketControlHandler {
         console.log(
           `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
         );
-
-        // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
-        await subscriber.subscribe(
-          workflowId,
-          nodeId,
-          userId,
-          symbolsToSubscribe,
-          source as MarketSource,
-        );
       }
+
+      // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
+      await subscriber.subscribe(
+        workflowId,
+        nodeId,
+        userId,
+        symbolsToSubscribe,
+        source as MarketSource,
+      );
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${

@@ -74,6 +74,34 @@ export const LISTENER_CLEANUP_INTERVAL_MS = parseInt(
 );
 
 // ============================================
+// REDIS KEY HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Get the Redis key for a user's active test listeners SET.
+ * Pattern: user:${userId}:stream:active_listeners
+ */
+export const getUserTestListenersKey = (userId: string): string =>
+  `user:${userId}:stream:active_listeners`;
+
+/**
+ * Get the Redis key for a user's test listener count.
+ * Pattern: user:${userId}:stream:listener_count
+ */
+export const getUserTestCountKey = (userId: string): string =>
+  `user:${userId}:stream:listener_count`;
+
+/**
+ * Get the Redis key for a specific test listener.
+ * Pattern: user:${userId}:stream:${workflowId}:${nodeId}
+ */
+export const getTestListenerKey = (
+  userId: string,
+  workflowId: string,
+  nodeId: string,
+): string => `user:${userId}:stream:${workflowId}:${nodeId}`;
+
+// ============================================
 // LUA SCRIPTS
 // ============================================
 

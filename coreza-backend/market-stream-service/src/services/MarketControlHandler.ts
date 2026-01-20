@@ -432,7 +432,8 @@ export class MarketControlHandler {
 
       // Also update test listeners for global scope
       // Use user-specific SET for O(1) lookup instead of pattern scanning
-      const userTestListenersKey = `md:user:${userId}:stream:active_listeners`;
+      // Key pattern: user:${userId}:stream:active_listeners
+      const userTestListenersKey = `user:${userId}:stream:active_listeners`;
       try {
         const testListenerKeys =
           await this.redisPub.smembers(userTestListenersKey);

@@ -793,6 +793,159 @@ router.post("/:source/register", async (req, res) => {
   }
 });
 
+// ============================================
+// TEST LISTENING (WEBHOOK-LIKE BEHAVIOR)
+// ============================================
+
+/**
+ * Start test listening for stream data
+ * POST /market/test-listen-stream
+ *
+ * Initiates a test listening session like n8n webhooks - waits for first matching data.
+ * Returns immediately, client should poll /stream-test-result for data.
+ */
+router.post("/test-listen-stream", async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const {
+      workflow_id,
+      node_id,
+      mode,
+      subscriptionMode,
+      filter_symbols,
+      filter_types,
+      source,
+    } = req.body;
+
+    if (!workflow_id) {
+      return res.status(400).json({ error: "workflow_id is required" });
+    }
+    if (!node_id) {
+      return res.status(400).json({ error: "node_id is required" });
+    }
+
+    const redis = getRedisCache();
+
+    // Rate limit: check user's active test listener count using atomic Lua script
+    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
+    const allowed = await redis.eval(
+      LUA_INCREMENT_TEST_COUNT,
+      1, // number of keys
+      userCountKey,
+      String(MAX_TEST_LISTENERS_PER_USER),
+      String(TEST_LISTENER_TTL_SECONDS),
+    );
+
+    if (allowed === 0) {
+      console.warn(
+        `⚠️ [Test Listen] User ${userId} exceeded max test listeners (${MAX_TEST_LISTENERS_PER_USER})`,
+      );
+      return res.status(429).json({
+        error: `Maximum concurrent test listeners (${MAX_TEST_LISTENERS_PER_USER}) exceeded. Please stop existing listeners first.`,
+        maxListeners: MAX_TEST_LISTENERS_PER_USER,
+      });
+    }
+
+    const testKey = `stream:test:${workflow_id}:${node_id}`;
+    const now = new Date().toISOString();
+
+    // Get allowed symbols based on mode
+    let allowedSymbols: string[];
+
+    if (mode === "subscribe") {
+      // SUBSCRIBE MODE (Self-contained): Use provided symbols directly
+      // These are the symbols the user just subscribed to in this node - no intersection needed
+      allowedSymbols = (filter_symbols || []).map((s: string) =>
+        s.toUpperCase(),
+      );
+      console.log(
+        `🔧 [Test Listen] Subscribe mode - using provided symbols directly: ${
+          allowedSymbols.join(", ") || "NONE"
+        }`,
+      );
+    } else {
+      // LISTEN MODE: Get allowed symbols from existing subscriptions (with intersection)
+      allowedSymbols = await getAllowedSymbols(redis, {
+        userId,
+        workflowId: workflow_id,
+        source: source || "binance_stream",
+        subscriptionMode: subscriptionMode || "workflow",
+        filterSymbols: filter_symbols,
+      });
+    }
+
+    const testListenerData = {
+      userId,
+      workflowId: workflow_id,
+      nodeId: node_id,
+      status: "listening",
+      startedAt: now,
+      mode: mode || "listen",
+      subscriptionMode: subscriptionMode || "workflow",
+      source: source || "binance_stream",
+      filterSymbols: allowedSymbols.map((s: string) => s.toUpperCase()),
+      filterTypes: filter_types || [],
+    };
+
+    // Store test listener with TTL (auto-expire)
+    await redis.setex(
+      testKey,
+      TEST_LISTENER_TTL_SECONDS,
+      JSON.stringify(testListenerData),
+    );
+
+    // Add to active listeners SETs for O(1) lookup
+    await redis.sadd(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+
+    // Add to user-specific SET for efficient per-user queries (no pattern scanning)
+    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    await redis.sadd(userTestListenersKey, testKey);
+
+    // Register temporary subscription with MarketDataSubscriber via control message
+    // This ensures data flows through ws:user:{userId} channel to reach checkTestListeners
+    const controlMessage = {
+      action: "register_workflow",
+      userId,
+      workflowId: testKey, // Use testKey as pseudo workflow ID for uniqueness
+      nodeId: node_id,
+      source: source || "binance_stream",
+      filter_symbols: allowedSymbols.map((s: string) => s.toUpperCase()),
+      filter_types: filter_types || [],
+      subscriptionMode: subscriptionMode || "workflow",
+      isTestListener: true, // Mark as temporary test listener
+    };
+    await redis.publish(
+      "md:control:register_workflow",
+      JSON.stringify(controlMessage),
+    );
+
+    console.log(`🎯 [Test Listen] Started test listener: ${testKey}`);
+    console.log(`   Allowed symbols: ${allowedSymbols.join(", ") || "ALL"}`);
+    console.log(`   Filter types: ${filter_types?.join(", ") || "ALL"}`);
+    console.log(`   Registered with MarketDataSubscriber for data routing`);
+
+    res.json({
+      success: true,
+      status: "listening",
+      testKey,
+      listener: testListenerData,
+    });
+  } catch (error) {
+    console.error("Error starting test listener:", error);
+    res.status(500).json({
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to start test listener",
+    });
+  }
+});
+
 /**
  * Stop test listening for stream data
  * POST /market/stop-listen-stream
@@ -815,18 +968,21 @@ router.post("/stop-listen-stream", async (req, res) => {
     }
 
     const redis = getRedisCache();
-    const testKey = `md:user:${userId}:stream:${workflow_id}:${node_id}`;
+    const testKey = `user:${userId}:stream:${workflow_id}:${node_id}`;
 
     // Delete both test listener and any stored result
     await redis.del(testKey);
 
+    // Remove from global active listeners SET
+    await redis.srem(REDIS_KEY_ACTIVE_TEST_LISTENERS, testKey);
+
     // Remove from user-specific SET
-    const userTestListenersKey = `md:user:${userId}:stream:active_listeners`;
+    const userTestListenersKey = `user:${userId}:stream:active_listeners`;
     await redis.srem(userTestListenersKey, testKey);
 
     // Decrement user's test listener count
-    const userCountKey = `md:user:${userId}:stream:listener_count`;
-    await redis.eval(LUA_DECREMENT_LISTENER_COUNT, 1, userCountKey);
+    const userCountKey = `user:${userId}:stream:listener_count`;
+    await redis.eval(LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
 
     // Unregister from MarketDataSubscriber by publishing unsubscribe control message
     const unsubscribeMessage = {
@@ -876,7 +1032,7 @@ router.post("/cleanup-user-streams", async (req, res) => {
     console.log(`🧹 [Market Cleanup] Starting cleanup for user ${userId}`);
 
     const redis = getRedisCache();
-    const userTestListenersKey = `${REDIS_KEY_USER_TEST_LISTENERS_PREFIX}${userId}`;
+    const userTestListenersKey = getUserTestListenersKey(userId);
 
     // Get all test listener keys for this user
     const testListenerKeys = await redis.smembers(userTestListenersKey);

@@ -17,9 +17,9 @@ export const REDIS_CHANNELS = {
   // User-specific channels (optional for direct delivery)
   userData: (userId: string) => `md:user:${userId}`,
 
-  // Workflow subscription persistence
-  workflowSubscription: (workflowId: string) => `wf:sub:${workflowId}`,
-  symbolWorkflows: (symbol: string) => `wf:subs:symbol:${symbol.toUpperCase()}`,
+  // Registered Workflow persistence
+  registeredWorkflow: (userId: string, workflowId: string) =>
+    `md:user:${userId}:wf:sub:${workflowId}`,
 
   // Gateway state persistence (Phase 5)
   gatewayState: (source: string) => `md:gateway:${source}`,

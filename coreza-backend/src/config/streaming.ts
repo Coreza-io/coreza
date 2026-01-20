@@ -28,14 +28,14 @@
 
 /** Maximum WebSocket connections per user (prevents resource exhaustion) */
 export const MAX_CONNECTIONS_PER_USER = parseInt(
-  process.env.WS_MAX_CONNECTIONS_PER_USER || '10',
-  10
+  process.env.WS_MAX_CONNECTIONS_PER_USER || "10",
+  10,
 );
 
 /** WebSocket heartbeat interval in milliseconds */
 export const WS_HEARTBEAT_INTERVAL_MS = parseInt(
-  process.env.WS_HEARTBEAT_INTERVAL_MS || '30000',
-  10
+  process.env.WS_HEARTBEAT_INTERVAL_MS || "30000",
+  10,
 );
 
 // ============================================
@@ -43,21 +43,15 @@ export const WS_HEARTBEAT_INTERVAL_MS = parseInt(
 // ============================================
 
 /** Maximum concurrent test listeners per user */
-export const MAX_TEST_LISTENERS_PER_USER = parseInt(
-  process.env.MAX_TEST_LISTENERS_PER_USER || '5',
-  10
+export const MAX_LISTENERS_PER_USER = parseInt(
+  process.env.MAX_LISTENERS_PER_USER || "5",
+  10,
 );
 
 /** Test listener TTL in seconds (auto-expire) */
-export const TEST_LISTENER_TTL_SECONDS = parseInt(
-  process.env.TEST_LISTENER_TTL_SECONDS || '300',
-  10
-);
-
-/** Test result TTL in seconds */
-export const TEST_RESULT_TTL_SECONDS = parseInt(
-  process.env.TEST_RESULT_TTL_SECONDS || '60',
-  10
+export const LISTENER_TTL_SECONDS = parseInt(
+  process.env.LISTENER_TTL_SECONDS || "300",
+  10,
 );
 
 // ============================================
@@ -66,33 +60,17 @@ export const TEST_RESULT_TTL_SECONDS = parseInt(
 
 /** Default polling interval for frontend in milliseconds */
 export const DEFAULT_POLL_INTERVAL_MS = parseInt(
-  process.env.DEFAULT_POLL_INTERVAL_MS || '1000',
-  10
+  process.env.DEFAULT_POLL_INTERVAL_MS || "1000",
+  10,
 );
 
 /** Polling jitter range in milliseconds (prevents thundering herd) */
-export const POLL_JITTER_MS = parseInt(
-  process.env.POLL_JITTER_MS || '200',
-  10
-);
-
-// ============================================
-// REDIS KEYS
-// ============================================
-
-/** Active test listeners SET key (global) */
-export const REDIS_KEY_ACTIVE_TEST_LISTENERS = 'stream:test:active';
-
-/** User-specific active test listeners SET key prefix */
-export const REDIS_KEY_USER_TEST_LISTENERS_PREFIX = 'user:active_test_listeners:';
-
-/** User test listener count key prefix */
-export const REDIS_KEY_USER_TEST_COUNT_PREFIX = 'user:test_listener_count:';
+export const POLL_JITTER_MS = parseInt(process.env.POLL_JITTER_MS || "200", 10);
 
 /** Test listener key TTL check interval */
-export const TEST_LISTENER_CLEANUP_INTERVAL_MS = parseInt(
-  process.env.TEST_LISTENER_CLEANUP_INTERVAL_MS || '60000',
-  10
+export const LISTENER_CLEANUP_INTERVAL_MS = parseInt(
+  process.env.LISTENER_CLEANUP_INTERVAL_MS || "60000",
+  10,
 );
 
 // ============================================
@@ -102,17 +80,17 @@ export const TEST_LISTENER_CLEANUP_INTERVAL_MS = parseInt(
 /**
  * Lua script for atomic test listener check and delete
  * Prevents race conditions when multiple events arrive simultaneously
- * 
+ *
  * KEYS[1]: test listener key (stream:test:{workflow_id}:{node_id})
  * KEYS[2]: active test listeners SET key
  * KEYS[3]: result key (stream:test:{workflow_id}:{node_id}:result)
  * ARGV[1]: userId to match
  * ARGV[2]: result JSON string
  * ARGV[3]: result TTL in seconds
- * 
+ *
  * Returns: listener JSON if found and matches, nil otherwise
  */
-export const LUA_ATOMIC_TEST_LISTENER = `
+export const LUA_ATOMIC_LISTENER = `
   local listenerStr = redis.call('GET', KEYS[1])
   if not listenerStr then
     return nil
@@ -137,14 +115,14 @@ export const LUA_ATOMIC_TEST_LISTENER = `
 
 /**
  * Lua script for incrementing user test listener count with limit check
- * 
+ *
  * KEYS[1]: user test count key
  * ARGV[1]: max allowed listeners
  * ARGV[2]: TTL for the count key in seconds
- * 
+ *
  * Returns: 1 if allowed (incremented), 0 if limit reached
  */
-export const LUA_INCREMENT_TEST_COUNT = `
+export const LUA_INCREMENT_LISTENER_COUNT = `
   local current = tonumber(redis.call('GET', KEYS[1]) or '0')
   local max = tonumber(ARGV[1])
   
@@ -159,12 +137,12 @@ export const LUA_INCREMENT_TEST_COUNT = `
 
 /**
  * Lua script for decrementing user test listener count
- * 
+ *
  * KEYS[1]: user test count key
- * 
+ *
  * Returns: new count
  */
-export const LUA_DECREMENT_TEST_COUNT = `
+export const LUA_DECREMENT_LISTENER_COUNT = `
   local current = tonumber(redis.call('GET', KEYS[1]) or '0')
   if current > 0 then
     return redis.call('DECR', KEYS[1])

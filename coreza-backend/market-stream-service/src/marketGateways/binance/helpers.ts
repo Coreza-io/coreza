@@ -1,51 +1,51 @@
-import type { CorezaMarketEvent } from '../../types/marketEvent';
-import type { SubscribeOptions } from '../types';
+import type { CorezaMarketEvent } from "../../types/marketEvent";
+import type { SubscribeOptions } from "../types";
 
 export function buildBinanceSubscribeMessage(
   symbols: string[],
-  types: string[] = ['trade'],
-  options?: SubscribeOptions
+  types: string[] = ["trade"],
+  options?: SubscribeOptions,
 ) {
   const params = symbols.flatMap((s) =>
     types.map((t) => {
       const sym = s.toLowerCase();
-      if (t === 'kline' && options?.klineInterval) {
+      if (t === "kline" && options?.klineInterval) {
         return `${sym}@kline_${options.klineInterval}`;
       }
-      if (t === 'depth' && options?.depthLevels) {
+      if (t === "depth" && options?.depthLevels) {
         return `${sym}@depth${options.depthLevels}`;
       }
       // ticker maps to 24hrTicker stream name in Binance
-      if (t === 'ticker') {
+      if (t === "ticker") {
         return `${sym}@ticker`;
       }
       return `${sym}@${t}`;
-    })
+    }),
   );
-  return { method: 'SUBSCRIBE', params, id: Date.now() };
+  return { method: "SUBSCRIBE", params, id: Date.now() };
 }
 
 export function buildBinanceUnsubscribeMessage(
   symbols: string[],
-  types: string[] = ['trade'],
-  options?: SubscribeOptions
+  types: string[] = ["trade"],
+  options?: SubscribeOptions,
 ) {
   const params = symbols.flatMap((s) =>
     types.map((t) => {
       const sym = s.toLowerCase();
-      if (t === 'kline' && options?.klineInterval) {
+      if (t === "kline" && options?.klineInterval) {
         return `${sym}@kline_${options.klineInterval}`;
       }
-      if (t === 'depth' && options?.depthLevels) {
+      if (t === "depth" && options?.depthLevels) {
         return `${sym}@depth${options.depthLevels}`;
       }
-      if (t === 'ticker') {
+      if (t === "ticker") {
         return `${sym}@ticker`;
       }
       return `${sym}@${t}`;
-    })
+    }),
   );
-  return { method: 'UNSUBSCRIBE', params, id: Date.now() };
+  return { method: "UNSUBSCRIBE", params, id: Date.now() };
 }
 
 export function parseBinanceMessage(buffer: Buffer): any[] {
@@ -53,57 +53,58 @@ export function parseBinanceMessage(buffer: Buffer): any[] {
 }
 
 export function identifyBinanceMessageType(msg: any): string {
-  return msg.e || (msg.result !== undefined ? 'result' : 'unknown');
+  return msg.e;
 }
 
 export function shouldPublishBinanceMessage(msg: any): boolean {
   return [
-    'trade',
-    'aggTrade',
-    'kline',
-    'bookTicker',
-    '24hrTicker',
-    'miniTicker',
-    'depthUpdate',
+    "trade",
+    "aggTrade",
+    "kline",
+    "bookTicker",
+    "24hrTicker",
+    "miniTicker",
+    "depthUpdate",
   ].includes(msg.e);
 }
 
 export function handleBinanceControlMessage(msg: any, logger: any) {
-  if (msg.result !== undefined) {
-    logger.info({ source: 'binance', id: msg.id }, 'Subscription confirmed');
+  if (msg.e !== undefined) {
+    const msgId = msg.s && msg.E ? `${msg.s}:${msg.e}:${msg.E}` : undefined;
+    logger.info({ source: "binance", id: msgId }, "Subscription confirmed");
   }
 }
 
 export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
   const symbol = msg.s?.toUpperCase();
-  const t = msg.E || msg.T || Date.now();
+  const t = msg.E;
 
   switch (msg.e) {
-    case 'trade':
+    case "trade":
       return {
         symbol,
         t,
         p: parseFloat(msg.p),
         q: parseFloat(msg.q),
-        type: 'trade' as const,
-        source: 'binance' as const,
+        type: "trade" as const,
+        source: "binance" as const,
       };
 
-    case 'aggTrade':
+    case "aggTrade":
       return {
         symbol,
         t,
         p: parseFloat(msg.p),
         q: parseFloat(msg.q),
-        type: 'aggTrade' as const,
-        source: 'binance' as const,
+        type: "aggTrade" as const,
+        source: "binance" as const,
         aggregateTradeId: msg.a,
         firstTradeId: msg.f,
         lastTradeId: msg.l,
         isBuyerMaker: msg.m,
       };
 
-    case 'kline': {
+    case "kline": {
       const k = msg.k;
       return {
         symbol,
@@ -115,12 +116,12 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         v: parseFloat(k.v),
         timeframe: k.i,
         isClosed: k.x,
-        type: 'bar' as const,
-        source: 'binance' as const,
+        type: "bar" as const,
+        source: "binance" as const,
       };
     }
 
-    case 'bookTicker':
+    case "bookTicker":
       return {
         symbol,
         t,
@@ -128,11 +129,11 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         B: parseFloat(msg.B),
         a: parseFloat(msg.a),
         A: parseFloat(msg.A),
-        type: 'quote' as const,
-        source: 'binance' as const,
+        type: "quote" as const,
+        source: "binance" as const,
       };
 
-    case '24hrTicker':
+    case "24hrTicker":
       return {
         symbol,
         t,
@@ -140,11 +141,11 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         pc: parseFloat(msg.p),
         pcp: parseFloat(msg.P),
         v: parseFloat(msg.v),
-        type: 'ticker' as const,
-        source: 'binance' as const,
+        type: "ticker" as const,
+        source: "binance" as const,
       };
 
-    case 'miniTicker':
+    case "miniTicker":
       return {
         symbol,
         t,
@@ -153,11 +154,11 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         h: parseFloat(msg.h),
         l: parseFloat(msg.l),
         v: parseFloat(msg.v),
-        type: 'miniTicker' as const,
-        source: 'binance' as const,
+        type: "miniTicker" as const,
+        source: "binance" as const,
       };
 
-    case 'depthUpdate':
+    case "depthUpdate":
       return {
         symbol,
         t,
@@ -169,8 +170,8 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
           p: parseFloat(price),
           q: parseFloat(qty),
         })),
-        type: 'depth' as const,
-        source: 'binance' as const,
+        type: "depth" as const,
+        source: "binance" as const,
       };
 
     default:

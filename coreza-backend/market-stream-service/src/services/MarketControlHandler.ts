@@ -151,9 +151,8 @@ export class MarketControlHandler {
     userId: string;
     workflowId: string;
     nodeId: string;
-    source?: string;
+    source: string;
     subscriptionMode?: "workflow" | "global";
-    isTestListener?: boolean;
   }): Promise<void> {
     const {
       userId,
@@ -163,26 +162,22 @@ export class MarketControlHandler {
       subscriptionMode = "workflow",
     } = msg;
 
-    // Detect test listener by explicit flag OR workflowId prefix (fallback for race conditions)
-    const isTestListener = msg.isTestListener === true;
-
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
-        }, mode: ${subscriptionMode}, isTestListener: ${isTestListener}
+        }, mode: ${subscriptionMode}
         )})`,
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
-      let symbolsToSubscribe: string[];
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-      const subscribedSymbols =
+      const symbolsToSubscribe =
         subscriptionMode === "global"
-          ? await this.getUserSubscribedSymbols(userId)
-          : await this.getWorkflowScopedSymbols(workflowId, source);
+          ? await this.getUserSubscribedSymbols(userId, source)
+          : await this.getWorkflowScopedSymbols(userId, workflowId, source);
 
-      if (subscribedSymbols.length === 0) {
+      if (symbolsToSubscribe.length === 0) {
         console.log(
           `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
         );
@@ -192,20 +187,10 @@ export class MarketControlHandler {
           workflowId,
           nodeId,
           userId,
-          [], // No symbols yet
+          symbolsToSubscribe,
           source as MarketSource,
         );
-        return;
       }
-      symbolsToSubscribe = subscribedSymbols;
-
-      await subscriber.subscribe(
-        workflowId,
-        nodeId,
-        userId,
-        symbolsToSubscribe,
-        source as MarketSource,
-      );
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
@@ -239,7 +224,7 @@ export class MarketControlHandler {
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
-      await subscriber.unsubscribe(workflowId);
+      await subscriber.unsubscribe(userId, workflowId);
 
       console.log(
         `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${
@@ -258,6 +243,7 @@ export class MarketControlHandler {
    * Get symbols specifically scoped to a workflow
    */
   private async getWorkflowScopedSymbols(
+    userId: string,
     workflowId: string,
     source?: string,
   ): Promise<string[]> {
@@ -266,7 +252,7 @@ export class MarketControlHandler {
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `workflow:${workflowId}:subscribed_symbols:${source}`;
+        const key = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
@@ -278,7 +264,7 @@ export class MarketControlHandler {
         symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
       } else {
         // Check all sources for this workflow
-        const pattern = `workflow:${workflowId}:subscribed_symbols:*`;
+        const pattern = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:*`;
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols with pattern: ${pattern}`,
         );
@@ -309,26 +295,19 @@ export class MarketControlHandler {
    * Get all GLOBAL symbols currently subscribed for a user across all sources
    * Uses pattern matching to find ALL subscription keys (handles _stream suffix variants)
    */
-  private async getUserSubscribedSymbols(userId: string): Promise<string[]> {
+  private async getUserSubscribedSymbols(
+    userId: string,
+    source: string,
+  ): Promise<string[]> {
     const allSymbols = new Set<string>();
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const pattern = `user:${userId}:subscribed_symbols:*`;
-      const keys = await this.redisPub.keys(pattern);
+      const key = `md:user:${userId}:subscription:${source}:symbols`;
 
-      console.log(
-        `🔍 [MarketControl] Found ${keys.length} global subscription keys for user ${userId}`,
-      );
+      const symbols = await this.redisPub.smembers(key);
 
-      for (const key of keys) {
-        const symbols = await this.redisPub.smembers(key);
-        console.log(
-          `🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`,
-          symbols,
-        );
-        symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
-      }
+      symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
@@ -393,7 +372,7 @@ export class MarketControlHandler {
       }
 
       // Global scope: update all active workflows for this user
-      const activeWorkflowsKey = `user:${userId}:active_streaming_workflows`;
+      const activeWorkflowsKey = `md:user:${userId}:active_streaming_workflows`;
       const activeWorkflowIds =
         await this.redisPub.smembers(activeWorkflowsKey);
 
@@ -412,7 +391,7 @@ export class MarketControlHandler {
       for (const workflowId of activeWorkflowIds) {
         try {
           // Get workflow's filter config from Redis (stored during activation)
-          const filterKey = `user:${userId}:workflow:${workflowId}:stream_filter`;
+          const filterKey = `md:user:${userId}:workflow:${workflowId}:stream_filter`;
           const filterJson = await this.redisPub.get(filterKey);
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
 
@@ -453,7 +432,7 @@ export class MarketControlHandler {
 
       // Also update test listeners for global scope
       // Use user-specific SET for O(1) lookup instead of pattern scanning
-      const userTestListenersKey = `user:${userId}:stream:active_listeners`;
+      const userTestListenersKey = `md:user:${userId}:stream:active_listeners`;
       try {
         const testListenerKeys =
           await this.redisPub.smembers(userTestListenersKey);
@@ -646,7 +625,7 @@ export class MarketControlHandler {
           );
         } else {
           // Global subscription: all workflows can access
-          const userSubKey = `user:${userId}:subscribed_symbols:${source}`;
+          const userSubKey = `md:user:${userId}:subscription:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
@@ -658,7 +637,7 @@ export class MarketControlHandler {
           // Also track in workflow-scoped key for cleanup on workflow deactivation
           // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
           if (workflowId) {
-            const workflowTrackingKey = `user:${userId}:workflow:${workflowId}:subscribed_symbols:${source}`;
+            const workflowTrackingKey = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
             await this.redisPub.sadd(
               workflowTrackingKey,
               ...symbols.map((s) => s.toUpperCase()),
@@ -682,7 +661,7 @@ export class MarketControlHandler {
    * Handle unsubscribe control message
    */
   private async handleUnsubscribe(msg: ControlMessage): Promise<void> {
-    const { source, workflowId, symbols } = msg;
+    const { userId, source, workflowId, symbols } = msg;
 
     try {
       const state = this.sourceStates.get(source);
@@ -694,7 +673,7 @@ export class MarketControlHandler {
       // Unregister workflow from MarketDataSubscriber
       if (workflowId) {
         const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.unsubscribe(workflowId);
+        await subscriber.unsubscribe(userId, workflowId);
         console.log(
           `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );
@@ -705,7 +684,7 @@ export class MarketControlHandler {
         state.workflowSymbols.delete(workflowId);
         // Also untrack in workflow-scoped key for cleanup on workflow deactivation
         // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-        const workflowTrackingKey = `user:${msg.userId}:workflow:${workflowId}:subscribed_symbols:${source}`;
+        const workflowTrackingKey = `md:user:${msg.userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
         await this.redisPub.srem(
           workflowTrackingKey,
           ...symbols.map((s) => s.toUpperCase()),
@@ -744,7 +723,7 @@ export class MarketControlHandler {
       // Remove user-level subscriptions ONLY for symbols that were actually unsubscribed
       // This preserves symbols that are still needed by other active workflows
       if (toRemove.length > 0 && msg.userId) {
-        const userSubKey = `user:${msg.userId}:subscribed_symbols:${source}`;
+        const userSubKey = `md:user:${msg.userId}:subscription:${source}:symbols`;
         await this.redisPub.srem(
           userSubKey,
           ...toRemove.map((s) => s.toUpperCase()),

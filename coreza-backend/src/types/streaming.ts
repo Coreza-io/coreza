@@ -17,6 +17,7 @@ export interface StreamExecutionRequest {
 
   // For subscribe mode
   symbols?: string[];
+  data_type: string;
   stream_types?: string[];
   credential_id?: string;
   environment?: "testnet" | "live";
@@ -34,27 +35,6 @@ export interface StreamExecutionResponse {
   success: boolean;
   status: "listening" | "error";
   symbols: string[];
-  testKey: string;
   message?: string;
   error?: string;
 }
-
-// /**
-//  * Maps node types to their streaming source identifiers.
-//  * Backend owns this mapping - frontend never derives sources.
-//  */
-// export const NODE_TYPE_TO_SOURCE: Record<string, string> = {
-//   BinanceStreamData: "binance_stream",
-//   BinanceSubscribe: "binance_stream",
-//   AlpacaStreamData: "alpaca",
-//   AlpacaSubscribe: "alpaca",
-//   DhanStreamData: "dhan_stream",
-//   DhanSubscribe: "dhan_stream",
-// };
-
-// /**
-//  * Resolve streaming source from node type.
-//  */
-// export function resolveSourceFromNodeType(nodeType: string): string {
-//   return NODE_TYPE_TO_SOURCE[nodeType] || "unknown";
-// }

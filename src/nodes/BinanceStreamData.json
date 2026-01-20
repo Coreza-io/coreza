@@ -7,7 +7,7 @@
   "subCategory": "binance",
   "executionMode": "streaming",
   "action": {
-    "url": "/stream/execute-stream-node",
+    "url": "/stream/binance/register",
     "method": "POST"
   },
   "streamingConfig": {

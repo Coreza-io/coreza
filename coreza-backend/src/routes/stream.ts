@@ -54,7 +54,7 @@ router.get("/subscriptions/status", async (req, res) => {
     const redis = getRedisCache();
 
     // Get all gateway states
-    const gatewayKeys = await redis.keys("md:gateway:*:state");
+    const gatewayKeys = await redis.keys(`md:gateway:${userId}:*:state`);
     const sources: any[] = [];
 
     for (const key of gatewayKeys) {
@@ -62,7 +62,9 @@ router.get("/subscriptions/status", async (req, res) => {
       if (stateStr) {
         try {
           const state = JSON.parse(stateStr);
-          const sourceMatch = key.match(/md:gateway:(\w+):state/);
+          const sourceMatch = key.match(
+            new RegExp(`^md:gateway:${userId}:([^:]+):state$`),
+          );
           if (sourceMatch) {
             sources.push({
               source: sourceMatch[1],

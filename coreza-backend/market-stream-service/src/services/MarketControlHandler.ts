@@ -307,7 +307,7 @@ export class MarketControlHandler {
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const key = `md:user:${userId}:subscription:${source}:symbols`;
+      const key = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
 
       const symbols = await this.redisPub.smembers(key);
 

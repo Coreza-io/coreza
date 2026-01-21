@@ -88,8 +88,8 @@ class StreamingCleanupService {
     let remainingCount = 0;
 
     try {
-      // Find all streaming workflow subscriptions
-      const subKeys = await redis.keys("wf:sub:*");
+      // Find all streaming workflow subscriptions (user-scoped pattern)
+      const subKeys = await redis.keys("md:user:*:wf:sub:*");
 
       if (subKeys.length === 0) {
         logger.debug("No streaming subscriptions to clean up");
@@ -145,16 +145,16 @@ class StreamingCleanupService {
 
       // Clean up workflow-level data for fully cleaned workflows
       for (const [workflowId, { userId, nodeIds }] of workflowsToCleanup) {
-        // Check if any subscriptions remain for this workflow
-        const remainingKeys = await redis.keys(`wf:sub:${workflowId}:*`);
+        // Check if any subscriptions remain for this workflow (user-scoped pattern)
+        const remainingKeys = await redis.keys(`md:user:${userId}:wf:sub:${workflowId}`);
 
         if (remainingKeys.length === 0) {
           // No more subscriptions, clean up workflow-level data
           await redis.srem(
-            `user:${userId}:active_streaming_workflows`,
+            `md:user:${userId}:active_streaming_workflows`,
             workflowId
           );
-          await redis.del(`workflow:${workflowId}:stream_filter`);
+          await redis.del(`md:user:${userId}:workflow:${workflowId}:stream_filter`);
 
           logger.info(
             { workflowId, cleanedNodes: nodeIds.length },
@@ -180,9 +180,10 @@ class StreamingCleanupService {
   /**
    * Update last activity timestamp for a subscription
    */
-  async updateActivity(workflowId: string, nodeId: string): Promise<void> {
+  async updateActivity(userId: string, workflowId: string): Promise<void> {
     const redis = getRedisCache();
-    const subKey = `wf:sub:${workflowId}:${nodeId}`;
+    // Use user-scoped key pattern: md:user:{userId}:wf:sub:{workflowId}
+    const subKey = `md:user:${userId}:wf:sub:${workflowId}`;
 
     try {
       const data = await redis.get(subKey);
@@ -194,7 +195,7 @@ class StreamingCleanupService {
       await redis.set(subKey, JSON.stringify(subscription));
     } catch (error) {
       logger.warn(
-        { workflowId, nodeId, err: error },
+        { userId, workflowId, err: error },
         "Failed to update streaming activity timestamp"
       );
     }

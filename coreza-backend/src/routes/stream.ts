@@ -81,8 +81,8 @@ router.get("/subscriptions/status", async (req, res) => {
       }
     }
 
-    // Get workflow subscriptions for this user
-    const workflowSubKeys = await redis.keys(`wf:sub:*`);
+    // Get workflow subscriptions for this user (user-scoped pattern)
+    const workflowSubKeys = await redis.keys(`md:user:${userId}:wf:sub:*`);
     const workflowSubs: any[] = [];
     const workflowIds = new Set<string>();
 
@@ -91,18 +91,16 @@ router.get("/subscriptions/status", async (req, res) => {
       if (subStr) {
         try {
           const sub = JSON.parse(subStr);
-          if (sub.userId === userId) {
-            workflowSubs.push({
-              workflowId: sub.workflowId,
-              nodeId: sub.nodeId,
-              symbols: sub.symbols || [],
-              eventTypes: sub.eventTypes || [],
-              source: sub.source || "unknown",
-              isActive: true,
-            });
-            if (sub.workflowId) {
-              workflowIds.add(sub.workflowId);
-            }
+          workflowSubs.push({
+            workflowId: sub.workflowId,
+            nodeId: sub.nodeId,
+            symbols: sub.symbols || [],
+            eventTypes: sub.eventTypes || [],
+            source: sub.source || "unknown",
+            isActive: true,
+          });
+          if (sub.workflowId) {
+            workflowIds.add(sub.workflowId);
           }
         } catch (e) {
           console.error("Error parsing workflow subscription:", key, e);
@@ -547,7 +545,8 @@ router.post("/streaming-activity", async (req, res) => {
     }
 
     const redis = getRedisCache();
-    const subKey = `wf:sub:${workflow_id}:${node_id}`;
+    // Use user-scoped key pattern: md:user:{userId}:wf:sub:{workflowId}
+    const subKey = `md:user:${userId}:wf:sub:${workflow_id}`;
 
     const data = await redis.get(subKey);
     if (!data) {

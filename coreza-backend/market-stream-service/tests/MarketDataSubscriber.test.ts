@@ -116,7 +116,7 @@ describe('MarketDataSubscriber Integration Tests', () => {
         ['AAPL', 'TSLA']
       );
 
-      await subscriber.unsubscribe('workflow-1');
+      await subscriber.unsubscribe('user-123', 'workflow-1');
 
       const stats = subscriber.getStats();
       
@@ -139,7 +139,7 @@ describe('MarketDataSubscriber Integration Tests', () => {
         ['AAPL']
       );
 
-      await subscriber.unsubscribe('workflow-1');
+      await subscriber.unsubscribe('user-123', 'workflow-1');
 
       const stats = subscriber.getStats();
       

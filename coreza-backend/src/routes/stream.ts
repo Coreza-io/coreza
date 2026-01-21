@@ -327,8 +327,6 @@ router.post("/:source/subscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
-      category,
-      subCategory,
       workflow_id,
       stream_types,
       data_type, // NEW: Data type (market, news, etc.)
@@ -343,12 +341,9 @@ router.post("/:source/subscribe", async (req, res) => {
       targetWorkflowId,
     } = req.body;
 
-    // Use camelCase first (frontend convention), fallback to snake_case
-    const finalSubscriptionScope = subscriptionScope;
-    const finalTargetWorkflowId = targetWorkflowId;
-
     if (!credential_id)
       return res.status(400).json({ error: "credential_id is required" });
+
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
     const sourceId = `${source}_${data_type}`;
@@ -374,8 +369,8 @@ router.post("/:source/subscribe", async (req, res) => {
       assetType: asset_type,
       interval,
       depth_levels: depth_levels,
-      subscriptionScope: finalSubscriptionScope,
-      targetWorkflowId: finalTargetWorkflowId,
+      subscriptionScope,
+      targetWorkflowId,
     });
 
     if (!result.success) {
@@ -413,15 +408,27 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     const {
+      credential_id,
       symbols,
       node_id,
-      category,
-      subCategory,
-      data_type, // NEW: Data type (market, news, etc.)
       workflow_id,
       stream_types,
-      subscription_scope, // 'global' or 'workflow' - determines which Redis key to use
+      data_type, // NEW: Data type (market, news, etc.)
+      // Source-specific fields
+      feed, // Alpaca: iex or sip
+      environment, // Binance: testnet or live
+      asset_type, // Binance: spot or futures
+      interval, // Binance: 1m, 5m, 15m, etc.
+      depth_levels,
+      // Subscription scope
+      subscriptionScope,
+      targetWorkflowId,
     } = req.body;
+
+    if (!credential_id)
+      return res.status(400).json({ error: "credential_id is required" });
+
+    if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
     const sourceId = `${source}_${data_type}`;
 
@@ -434,13 +441,20 @@ router.post("/:source/unsubscribe", async (req, res) => {
       userId,
       workflowId: workflow_id,
       nodeId: node_id,
+      credentialId: credential_id,
       symbols,
-      dataType: data_type || "market", // Pass data_type to build sourceId
       streamTypes: stream_types
         ? typeof stream_types === "string"
           ? stream_types.split(",").map((s: string) => s.trim())
           : stream_types
         : undefined,
+      feed,
+      environment,
+      assetType: asset_type,
+      interval,
+      depth_levels: depth_levels,
+      subscriptionScope,
+      targetWorkflowId,
     });
 
     if (!result.success) {
@@ -449,16 +463,24 @@ router.post("/:source/unsubscribe", async (req, res) => {
 
     // Direct Redis cleanup for immediate effect
     const redis = getRedisCache();
-    const resolvedSymbols = Array.isArray(symbols) ? symbols : [];
+    const resolvedSymbols =
+      typeof symbols === "string"
+        ? symbols
+            .split(",")
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean)
+        : Array.isArray(symbols)
+          ? symbols.map((s) => s.trim().toUpperCase())
+          : [];
 
     // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
     // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
     if (
-      subscription_scope === "workflow" &&
-      workflow_id &&
+      subscriptionScope === "workflow" &&
+      targetWorkflowId &&
       resolvedSymbols.length > 0
     ) {
-      const workflowSubKey = `md:user:${userId}:subscription:subscribed_workflow:${workflow_id}:${sourceId}:symbols`;
+      const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${sourceId}:symbols`;
       for (const sym of resolvedSymbols) {
         await redis.srem(workflowSubKey, sym.toUpperCase());
       }
@@ -469,30 +491,19 @@ router.post("/:source/unsubscribe", async (req, res) => {
       );
     }
     // Handle global symbol unsubscription (user-level)
-    else if (resolvedSymbols.length > 0 && !workflow_id) {
-      const userSubKey = `user:${userId}:subscribed_symbols:${sourceId}`;
-      for (const sym of resolvedSymbols) {
-        await redis.srem(userSubKey, sym.toUpperCase());
+    else if (
+      subscriptionScope === "global" &&
+      !targetWorkflowId &&
+      resolvedSymbols.length > 0
+    ) {
+      const userSubKey = `md:user:${userId}:subscription:scope:global:${sourceId}:symbols`;
+      for (const symbol of resolvedSymbols) {
+        await redis.srem(userSubKey, symbol);
       }
       console.log(
         `📤 [Market Route] Removed ${resolvedSymbols.join(
           ", ",
         )} from global key: ${userSubKey}`,
-      );
-    }
-    // Handle full workflow cleanup (when removing entire workflow subscription)
-    else if (workflow_id && resolvedSymbols.length === 0) {
-      const subKey = `wf:sub:${workflow_id}`;
-      await redis.del(subKey);
-      await redis.srem(
-        `md:user:${userId}:active_streaming_workflows`,
-        workflow_id,
-      );
-      await redis.del(
-        `md:user:${userId}:workflow:${workflow_id}:stream_filter`,
-      );
-      console.log(
-        `📤 [Market Route] Direct cleanup for workflow ${workflow_id}`,
       );
     }
 
@@ -502,8 +513,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       sourceId,
       symbols: result.data?.symbols,
       stream_types: result.data?.streamTypes,
-      node_id: node_id ?? null,
-      workflow_id: workflow_id || null,
+      targetWorkflowId: targetWorkflowId || null,
     });
   } catch (error) {
     console.error("Unsubscribe error:", error);

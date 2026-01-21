@@ -614,7 +614,7 @@ export class MarketControlHandler {
 
         if (subscriptionScope === "workflow" && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
-          const workflowSubKey = `workflow:${targetWorkflowId}:subscribed_symbols:${source}`;
+          const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
           console.log(
             `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
           );
@@ -631,7 +631,7 @@ export class MarketControlHandler {
           );
         } else {
           // Global subscription: all workflows can access
-          const userSubKey = `md:user:${userId}:subscription:${source}:symbols`;
+          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
@@ -643,7 +643,7 @@ export class MarketControlHandler {
           // Also track in workflow-scoped key for cleanup on workflow deactivation
           // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
           if (workflowId) {
-            const workflowTrackingKey = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
+            const workflowTrackingKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:${source}:symbols`;
             await this.redisPub.sadd(
               workflowTrackingKey,
               ...symbols.map((s) => s.toUpperCase()),
@@ -693,7 +693,7 @@ export class MarketControlHandler {
         state.workflowSymbols.delete(workflowId);
         // Also untrack in workflow-scoped key for cleanup on workflow deactivation
         // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-        const workflowTrackingKey = `md:user:${msg.userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
+        const workflowTrackingKey = `md:user:${msg.userId}:subscription:subscribedWorkflow:${workflowId}:${source}:symbols`;
         await this.redisPub.srem(
           workflowTrackingKey,
           ...symbols.map((s) => s.toUpperCase()),
@@ -729,19 +729,6 @@ export class MarketControlHandler {
         );
       }
 
-      // Remove user-level subscriptions ONLY for symbols that were actually unsubscribed
-      // This preserves symbols that are still needed by other active workflows
-      if (toRemove.length > 0 && msg.userId) {
-        const userSubKey = `md:user:${msg.userId}:subscription:${source}:symbols`;
-        await this.redisPub.srem(
-          userSubKey,
-          ...toRemove.map((s) => s.toUpperCase()),
-        );
-        console.log(
-          `📊 [MarketControl] Removed ${toRemove.length} user-level subscriptions from ${source}`,
-        );
-      }
-
       // Disconnect if no more symbols
       if (state.symbols.size === 0) {
         console.log(
@@ -750,7 +737,6 @@ export class MarketControlHandler {
         state.gateway.disconnect();
         this.sourceStates.delete(stateKey);
         await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, source));
-        await this.redisPub.del(REDIS_CHANNELS.gatewaySymbols(userId, source));
         console.log(`✅ [MarketControl] Disconnected ${source} gateway`);
       }
     } catch (error) {
@@ -903,12 +889,6 @@ export class MarketControlHandler {
       await redisSetBreaker.fire(
         REDIS_CHANNELS.gatewayState(userId, source),
         JSON.stringify(stateData),
-      );
-
-      // Also persist symbols set (no circuit breaker for now, less critical)
-      await this.redisPub.sadd(
-        REDIS_CHANNELS.gatewaySymbols(userId, source),
-        ...state.symbols,
       );
 
       console.log(`💾 [MarketControl] Persisted state for ${source}`);

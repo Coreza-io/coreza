@@ -66,24 +66,6 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Normalize WebSocket source IDs to gateway/broker source names.
-   * This ensures subscription.source matches CorezaMarketEvent.source.
-   *
-   * Examples:
-   *   - 'binance_stream' → 'binance'
-   *   - 'alpaca_stream' → 'alpaca'
-   *   - 'alpaca_news' → 'alpaca_news' (same, news has dedicated gateway)
-   *   - 'binance' → 'binance' (already normalized)
-   */
-  private normalizeSource(source?: string): MarketSource | undefined {
-    if (!source) return undefined;
-
-    // Use centralized source mapping from marketGateways.ts
-    const { gatewaySource } = getSourceMapping(source);
-    return gatewaySource;
-  }
-
-  /**
    * Subscribe a workflow to market data streams
    */
   async subscribe(

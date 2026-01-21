@@ -70,7 +70,7 @@ export class SubscriptionService {
    * Resolve symbols from various sources (manual, store, input)
    */
   private static async resolveSymbols(
-    params: SubscriptionParams
+    params: SubscriptionParams,
   ): Promise<string[]> {
     const {
       symbols,
@@ -80,38 +80,6 @@ export class SubscriptionService {
       userId,
       initialInput,
     } = params;
-
-    if (symbolSource === "store") {
-      if (!sourceWorkflowId || !sourceVariable) {
-        throw new Error(
-          "Source workflow and variable are required when using stored symbols"
-        );
-      }
-
-      const redis = getRedisCache();
-      const storeKey = buildStoreKey(userId, sourceWorkflowId, sourceVariable);
-      const storedValue = await getStoreValue(redis, storeKey);
-
-      if (Array.isArray(storedValue)) {
-        return storedValue
-          .map((symbol) => String(symbol).trim())
-          .filter(Boolean);
-      }
-
-      if (typeof storedValue === "string") {
-        return storedValue
-          .split(",")
-          .map((symbol) => symbol.trim())
-          .filter(Boolean);
-      }
-
-      if (storedValue !== null && storedValue !== undefined) {
-        const coerced = String(storedValue).trim();
-        return coerced ? [coerced] : [];
-      }
-
-      return [];
-    }
 
     if (symbolSource === "input" && initialInput?.symbols) {
       return Array.isArray(initialInput.symbols)
@@ -131,8 +99,8 @@ export class SubscriptionService {
           .map((s) => s.trim())
           .filter(Boolean)
       : Array.isArray(symbols)
-      ? symbols
-      : [];
+        ? symbols
+        : [];
   }
 
   /**
@@ -141,7 +109,7 @@ export class SubscriptionService {
   private static processStreamTypes(
     streamTypes: string[],
     source: string,
-    Interval?: string
+    Interval?: string,
   ): string[] {
     let types = streamTypes;
 
@@ -168,7 +136,7 @@ export class SubscriptionService {
    * workflowId/nodeId are intentionally NOT sent to avoid routing data to Subscribe nodes.
    */
   static async execute(
-    params: SubscriptionParams
+    params: SubscriptionParams,
   ): Promise<SubscriptionResult> {
     try {
       const {
@@ -177,6 +145,7 @@ export class SubscriptionService {
         workflowId,
         credentialId,
         operation,
+        symbols,
         streamTypes,
         feed,
         environment,
@@ -192,7 +161,7 @@ export class SubscriptionService {
       if (targetWorkflowId === "__current__" && workflowId) {
         resolvedTargetWorkflowId = workflowId;
         console.log(
-          `📝 [SubscriptionService] Resolved __current__ to workflowId: ${workflowId}`
+          `📝 [SubscriptionService] Resolved __current__ to workflowId: ${workflowId}`,
         );
       }
 
@@ -208,7 +177,15 @@ export class SubscriptionService {
       }
 
       // Resolve symbols
-      const symbolArray = await this.resolveSymbols(params);
+      const symbolArray =
+        typeof symbols === "string"
+          ? symbols
+              .split(",")
+              .map((s) => s.trim().toUpperCase())
+              .filter(Boolean)
+          : Array.isArray(symbols)
+            ? symbols.map((s) => s.trim().toUpperCase())
+            : [];
 
       // For unsubscribe, allow empty symbols if workflowId is provided (workflow cleanup)
       if (symbolArray.length === 0 && operation === "subscribe") {
@@ -224,7 +201,7 @@ export class SubscriptionService {
         eventTypes = this.processStreamTypes(
           streamTypes,
           source,
-          interval ?? depth_levels
+          interval ?? depth_levels,
         );
       }
 
@@ -264,7 +241,7 @@ export class SubscriptionService {
 
       console.log(
         `📤 [SubscriptionService] Published ${operation} control message for ${source}:`,
-        symbolArray
+        symbolArray,
       );
 
       return {
@@ -291,7 +268,7 @@ export class SubscriptionService {
    * Convenience method for subscribe
    */
   static async subscribe(
-    params: Omit<SubscriptionParams, "operation">
+    params: Omit<SubscriptionParams, "operation">,
   ): Promise<SubscriptionResult> {
     return this.execute({ ...params, operation: "subscribe" });
   }
@@ -302,7 +279,7 @@ export class SubscriptionService {
   static async unsubscribe(
     params: Omit<SubscriptionParams, "operation" | "credentialId"> & {
       credentialId?: string;
-    }
+    },
   ): Promise<SubscriptionResult> {
     return this.execute({
       ...params,

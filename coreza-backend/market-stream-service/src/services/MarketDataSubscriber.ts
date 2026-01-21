@@ -196,7 +196,8 @@ export class MarketDataSubscriber {
       );
 
       const { pub } = this.ensureRedisConnections();
-      const pattern = "wf:sub:*";
+      // Use user-scoped pattern: md:user:{userId}:wf:sub:{workflowId}
+      const pattern = "md:user:*:wf:sub:*";
       const keys = await pub.keys(pattern);
 
       let restored = 0;

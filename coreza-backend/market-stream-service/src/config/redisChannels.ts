@@ -10,18 +10,14 @@ export const REDIS_CHANNELS = {
   controlRegister: "md:control:register_workflow",
   controlUnregister: "md:control:unregister_workflow",
 
-  // Source-specific channels (optional granularity)
-  sourceData: (source: string, symbol: string) =>
-    `md:${source}:${symbol.toUpperCase()}`,
+  // User-specific WebSocket delivery channel
+  userData: (userId: string) => `ws:user:${userId}`,
 
-  // User-specific channels (optional for direct delivery)
-  userData: (userId: string) => `md:user:${userId}`,
-
-  // Registered Workflow persistence
+  // Registered Workflow persistence (user-scoped)
   registeredWorkflow: (userId: string, workflowId: string) =>
     `md:user:${userId}:wf:sub:${workflowId}`,
 
-  // Gateway state persistence (Phase 5)
+  // Gateway state persistence (per-user, per-source)
   gatewayState: (userId: string, source: string) =>
     `md:gateway:${userId}:${source}:state`,
 } as const;

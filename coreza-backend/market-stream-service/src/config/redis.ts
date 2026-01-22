@@ -87,7 +87,7 @@ const normalizeRedisInput = (rawValue: string | undefined) => {
 };
 
 const resolveRedisConfig = (
-  primaryEnvVar: "REDIS_QUEUE_URL" | "REDIS_CACHE_URL"
+  primaryEnvVar: "REDIS_QUEUE_URL" | "REDIS_CACHE_URL",
 ): { url: string | undefined; hasTlsFlag: boolean; sourceEnv: string } => {
   const primary = normalizeRedisInput(process.env[primaryEnvVar]);
   if (primary.url) {
@@ -100,11 +100,11 @@ const resolveRedisConfig = (
 
 const getRedisOrThrow = (
   resolveResult: { url: string | undefined; hasTlsFlag: boolean },
-  usage: string
+  usage: string,
 ): { redisUrl: string; hasTlsFlag: boolean } => {
   if (!resolveResult.url) {
     throw new Error(
-      `Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`
+      `Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`,
     );
   }
 
@@ -127,7 +127,7 @@ export const connectionOptions: RedisOptions = {
 // Build options for Queue Redis (latency-critical)
 const buildQueueOptions = (
   redisUrl: string | undefined,
-  hasTlsFlag: boolean
+  hasTlsFlag: boolean,
 ): RedisOptions => {
   const shouldUseTls =
     process.env.REDIS_TLS === "true" ||
@@ -150,7 +150,7 @@ const buildQueueOptions = (
 // Build options for Cache Redis (medium-latency)
 const buildCacheOptions = (
   redisUrl: string | undefined,
-  hasTlsFlag: boolean
+  hasTlsFlag: boolean,
 ): RedisOptions => {
   const shouldUseTls =
     process.env.REDIS_TLS === "true" ||
@@ -173,7 +173,7 @@ const buildCacheOptions = (
 // Build Sentinel options for high-availability
 const buildSentinelOptions = (
   sentinelConfig: SentinelConfig,
-  baseRedisOptions: RedisOptions
+  baseRedisOptions: RedisOptions,
 ): RedisOptions => {
   const shouldUseTls = process.env.REDIS_TLS === "true";
 
@@ -187,7 +187,7 @@ const buildSentinelOptions = (
     sentinelRetryStrategy: (times: number) => {
       const delay = Math.min(times * 100, 10000);
       console.log(
-        `[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`
+        `[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`,
       );
       return delay;
     },
@@ -207,7 +207,7 @@ const buildSentinelOptions = (
 // Create Redis instance with Sentinel or standalone mode
 function createRedisInstance(
   usage: "queue" | "cache",
-  logContext: string
+  logContext: string,
 ): Redis {
   const sentinelMasterEnv =
     usage === "queue"
@@ -229,7 +229,7 @@ function createRedisInstance(
     redis.on("+switch-master", (data) => {
       console.log(
         `[Redis Sentinel] ${logContext} failover detected, switching to new master:`,
-        data
+        data,
       );
     });
     redis.on("error", (err) => {
@@ -240,7 +240,7 @@ function createRedisInstance(
     });
 
     console.log(
-      `[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`
+      `[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`,
     );
     return redis;
   }
@@ -269,7 +269,7 @@ function createRedisInstance(
   });
 
   console.log(
-    `[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`
+    `[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`,
   );
   return redis;
 }
@@ -288,7 +288,7 @@ export function getRedisQueue(): Redis {
  * Get Redis Pub/Sub for market data streaming (latency-critical)
  * Supports Sentinel for HA or standalone mode
  */
-export function getRedisQueuePubSub(): { pub: Redis; sub: Redis } {
+export function getRedisPubSub(): { pub: Redis; sub: Redis } {
   if (redisQueuePubInstance && redisQueueSubInstance) {
     return { pub: redisQueuePubInstance, sub: redisQueueSubInstance };
   }
@@ -304,7 +304,7 @@ export function getRedisQueuePubSub(): { pub: Redis; sub: Redis } {
  * Use this when services need isolated subscriber connections
  * Supports Sentinel for HA or standalone mode
  */
-export function createRedisQueuePubSub(): { pub: Redis; sub: Redis } {
+export function createRedisPubSub(): { pub: Redis; sub: Redis } {
   return {
     pub: createRedisInstance("queue", "Queue Pub (new)"),
     sub: createRedisInstance("queue", "Queue Sub (new)"),
@@ -320,11 +320,6 @@ export function getRedisCache(): Redis {
   redisCacheInstance = createRedisInstance("cache", "Cache");
   return redisCacheInstance;
 }
-
-// Backward compatibility (deprecated, maps to getRedisQueue)
-export const getRedis = getRedisQueue;
-export const getRedisPubSub = getRedisQueuePubSub;
-export const createRedisPubSub = createRedisQueuePubSub;
 
 /**
  * Check if Sentinel mode is enabled
@@ -372,7 +367,7 @@ export async function closeRedis(): Promise<void> {
       redisQueueInstance.quit().then(() => {
         redisQueueInstance = null;
         console.log("[Redis] Queue connection closed");
-      })
+      }),
     );
   }
   if (redisQueuePubInstance) {
@@ -380,7 +375,7 @@ export async function closeRedis(): Promise<void> {
       redisQueuePubInstance.quit().then(() => {
         redisQueuePubInstance = null;
         console.log("[Redis] Queue Pub connection closed");
-      })
+      }),
     );
   }
   if (redisQueueSubInstance) {
@@ -388,7 +383,7 @@ export async function closeRedis(): Promise<void> {
       redisQueueSubInstance.quit().then(() => {
         redisQueueSubInstance = null;
         console.log("[Redis] Queue Sub connection closed");
-      })
+      }),
     );
   }
   if (redisCacheInstance) {
@@ -396,7 +391,7 @@ export async function closeRedis(): Promise<void> {
       redisCacheInstance.quit().then(() => {
         redisCacheInstance = null;
         console.log("[Redis] Cache connection closed");
-      })
+      }),
     );
   }
 

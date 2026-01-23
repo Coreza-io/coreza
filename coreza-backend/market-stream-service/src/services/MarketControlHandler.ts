@@ -678,6 +678,42 @@ export class MarketControlHandler {
         return;
       }
 
+      const resolvedSymbols = symbols
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      const subscriptionScope = msg.subscriptionScope || "global";
+      const targetWorkflowId = msg.targetWorkflowId;
+
+      // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
+      // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
+      if (
+        subscriptionScope === "workflow" &&
+        targetWorkflowId &&
+        resolvedSymbols.length > 0
+      ) {
+        const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
+        await this.redisPub.srem(workflowSubKey, ...resolvedSymbols);
+        console.log(
+          `📤 [MarketControl] Removed ${resolvedSymbols.join(
+            ", ",
+          )} from workflow-scoped key: ${workflowSubKey}`,
+        );
+      }
+      // Handle global symbol unsubscription (user-level)
+      else if (
+        subscriptionScope === "global" &&
+        !targetWorkflowId &&
+        resolvedSymbols.length > 0
+      ) {
+        const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+        await this.redisPub.srem(userSubKey, ...resolvedSymbols);
+        console.log(
+          `📤 [MarketControl] Removed ${resolvedSymbols.join(
+            ", ",
+          )} from global key: ${userSubKey}`,
+        );
+      }
+
       // Unregister workflow from MarketDataSubscriber
       if (workflowId) {
         const subscriber = MarketDataSubscriber.getInstance();

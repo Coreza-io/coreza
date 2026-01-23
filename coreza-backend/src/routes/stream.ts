@@ -108,7 +108,7 @@ router.get("/subscriptions/status", async (req, res) => {
       }
     }
 
-    // Also check active streaming workflows set and include those not in wf:sub:*
+    // Also check active streaming workflows set and include those not in wf:reg:*
     const activeStreamingWorkflows = await redis.smembers(
       `md:user:${userId}:active_streaming_workflows`,
     );
@@ -545,21 +545,21 @@ router.post("/streaming-activity", async (req, res) => {
     }
 
     const redis = getRedisCache();
-    // Use user-scoped key pattern: md:user:{userId}:wf:sub:{workflowId}
-    const subKey = `md:user:${userId}:wf:sub:${workflow_id}`;
+    // Use user-scoped key pattern: md:user:{userId}:wf:reg:{workflowId}
+    const regKey = `md:user:${userId}:wf:reg:${workflow_id}`;
 
-    const data = await redis.get(subKey);
+    const data = await redis.get(regKey);
     if (!data) {
-      return res.status(404).json({ error: "Subscription not found" });
+      return res.status(404).json({ error: "Registration not found" });
     }
 
     const subscription = JSON.parse(data);
     subscription.lastActivityAt = new Date().toISOString();
-    await redis.set(subKey, JSON.stringify(subscription));
+    await redis.set(regKey, JSON.stringify(subscription));
 
     res.json({
       success: true,
-      message: "Activity updated",
+      message: "Registration activity updated",
       lastActivityAt: subscription.lastActivityAt,
     });
   } catch (error) {

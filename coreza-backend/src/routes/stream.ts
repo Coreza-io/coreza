@@ -459,52 +459,6 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(400).json({ success: false, error: result.error });
     }
 
-    // Direct Redis cleanup for immediate effect
-    const redis = getRedisCache();
-    const resolvedSymbols =
-      typeof symbols === "string"
-        ? symbols
-            .split(",")
-            .map((s) => s.trim().toUpperCase())
-            .filter(Boolean)
-        : Array.isArray(symbols)
-          ? symbols.map((s) => s.trim().toUpperCase())
-          : [];
-
-    // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
-    // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
-    if (
-      subscriptionScope === "workflow" &&
-      targetWorkflowId &&
-      resolvedSymbols.length > 0
-    ) {
-      const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${sourceId}:symbols`;
-      for (const sym of resolvedSymbols) {
-        await redis.srem(workflowSubKey, sym.toUpperCase());
-      }
-      console.log(
-        `📤 [Market Route] Removed ${resolvedSymbols.join(
-          ", ",
-        )} from workflow-scoped key: ${workflowSubKey}`,
-      );
-    }
-    // Handle global symbol unsubscription (user-level)
-    else if (
-      subscriptionScope === "global" &&
-      !targetWorkflowId &&
-      resolvedSymbols.length > 0
-    ) {
-      const userSubKey = `md:user:${userId}:subscription:scope:global:${sourceId}:symbols`;
-      for (const symbol of resolvedSymbols) {
-        await redis.srem(userSubKey, symbol);
-      }
-      console.log(
-        `📤 [Market Route] Removed ${resolvedSymbols.join(
-          ", ",
-        )} from global key: ${userSubKey}`,
-      );
-    }
-
     res.json({
       success: true,
       message: result.data?.message,

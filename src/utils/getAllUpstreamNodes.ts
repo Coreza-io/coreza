@@ -22,20 +22,29 @@ export function getAllUpstreamNodes(
   nodes: Node[],
   visited: Set<string> = new Set()
 ): Node[] {
-  if (visited.has(currentNodeId)) return [];
+  try {
+    if (visited.has(currentNodeId)) return [];
 
-  visited.add(currentNodeId);
+    visited.add(currentNodeId);
 
-  const incomingEdges = edges.filter(e => e.target === currentNodeId);
-  let result: Node[] = [];
+    const incomingEdges = edges.filter(e => e.target === currentNodeId);
+    let result: Node[] = [];
 
-  for (const edge of incomingEdges) {
-    const upstreamNode = nodes.find(n => n.id === edge.source);
-    if (upstreamNode && !result.some(n => n.id === upstreamNode.id)) {
-      result.push(upstreamNode);
-      result = result.concat(getAllUpstreamNodes(upstreamNode.id, edges, nodes, visited));
+    for (const edge of incomingEdges) {
+      const upstreamNode = nodes.find(n => n.id === edge.source);
+      if (upstreamNode && !result.some(n => n.id === upstreamNode.id)) {
+        result.push(upstreamNode);
+        result = result.concat(
+          getAllUpstreamNodes(upstreamNode.id, edges, nodes, visited)
+        );
+      }
     }
-  }
 
-  return result.filter((n, i, arr) => arr.findIndex(m => m.id === n.id) === i);
+    return result.filter(
+      (n, i, arr) => arr.findIndex(m => m.id === n.id) === i
+    );
+  } catch (error) {
+    console.warn("getAllUpstreamNodes failed, returning empty list.", error);
+    return [];
+  }
 }

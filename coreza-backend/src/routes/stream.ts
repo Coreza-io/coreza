@@ -576,8 +576,6 @@ router.post("/:source/register", async (req, res) => {
     const {
       workflow_id,
       node_id,
-      category,
-      subCategory,
       node_type,
       mode = "listen",
       // Subscribe params
@@ -763,7 +761,7 @@ router.post("/:source/register", async (req, res) => {
  *
  * Manually cancels a test listening session.
  */
-router.post("/stop-listen-stream", async (req, res) => {
+router.post("/unregister", async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -797,26 +795,24 @@ router.post("/stop-listen-stream", async (req, res) => {
       action: "unregister_workflow",
       workflowId: workflow_id,
       userId,
-      isTestListener: true,
     };
     await redis.publish(
       "md:control:unregister_workflow",
       JSON.stringify(unsubscribeMessage),
     );
 
-    console.log(`🛑 [Test Listen] Stopped test listener: ${listenerKey}`);
+    console.log(`🛑 Stopped listener: ${listenerKey}`);
 
     res.json({
       success: true,
       status: "stopped",
-      message: "Test listener stopped",
+      message: "listener stopped",
     });
   } catch (error) {
-    console.error("Error stopping test listener:", error);
+    console.error("Error stopping listener:", error);
     res.status(500).json({
       success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to stop test listener",
+      error: error instanceof Error ? error.message : "Failed to stop listener",
     });
   }
 });

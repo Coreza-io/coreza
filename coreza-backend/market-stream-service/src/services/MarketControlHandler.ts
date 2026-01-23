@@ -216,24 +216,20 @@ export class MarketControlHandler {
     action: string;
     userId: string;
     workflowId: string;
-    isTestListener?: boolean;
   }): Promise<void> {
-    const { userId, workflowId, isTestListener } = msg;
+    const { userId, workflowId } = msg;
 
     try {
       console.log(
-        `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: ${
-          isTestListener || false
-        })`,
+        `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: 
+        )`,
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
       await subscriber.unregisterWorkflow(userId, workflowId);
 
       console.log(
-        `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${
-          isTestListener ? " (test listener)" : ""
-        }`,
+        `✅ [MarketControl] Unregistered streaming workflow ${workflowId}`,
       );
     } catch (error) {
       console.error(
@@ -256,7 +252,7 @@ export class MarketControlHandler {
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:${source}:symbols`;
+        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
@@ -266,24 +262,6 @@ export class MarketControlHandler {
           symbols,
         );
         symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
-      } else {
-        // Check all sources for this workflow
-        const pattern = `md:user:${userId}:subscription:subscribed_workflow:${workflowId}:*`;
-        console.log(
-          `🔍 [MarketControl] Checking workflow-scoped symbols with pattern: ${pattern}`,
-        );
-        const keys = await this.redisPub.keys(pattern);
-        console.log(
-          `🔍 [MarketControl] Found ${keys.length} keys matching pattern`,
-        );
-        for (const key of keys) {
-          const symbols = await this.redisPub.smembers(key);
-          console.log(
-            `🔍 [MarketControl] Key ${key} has ${symbols.length} symbols:`,
-            symbols,
-          );
-          symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
-        }
       }
     } catch (err) {
       console.error(
@@ -678,9 +656,6 @@ export class MarketControlHandler {
         return;
       }
 
-      const resolvedSymbols = symbols
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean);
       const subscriptionScope = msg.subscriptionScope || "global";
       const targetWorkflowId = msg.targetWorkflowId;
 
@@ -689,12 +664,12 @@ export class MarketControlHandler {
       if (
         subscriptionScope === "workflow" &&
         targetWorkflowId &&
-        resolvedSymbols.length > 0
+        symbols.length > 0
       ) {
         const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
-        await this.redisPub.srem(workflowSubKey, ...resolvedSymbols);
+        await this.redisPub.srem(workflowSubKey, ...symbols);
         console.log(
-          `📤 [MarketControl] Removed ${resolvedSymbols.join(
+          `📤 [MarketControl] Removed ${symbols.join(
             ", ",
           )} from workflow-scoped key: ${workflowSubKey}`,
         );
@@ -703,12 +678,12 @@ export class MarketControlHandler {
       else if (
         subscriptionScope === "global" &&
         !targetWorkflowId &&
-        resolvedSymbols.length > 0
+        symbols.length > 0
       ) {
         const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
-        await this.redisPub.srem(userSubKey, ...resolvedSymbols);
+        await this.redisPub.srem(userSubKey, ...symbols);
         console.log(
-          `📤 [MarketControl] Removed ${resolvedSymbols.join(
+          `📤 [MarketControl] Removed ${symbols.join(
             ", ",
           )} from global key: ${userSubKey}`,
         );

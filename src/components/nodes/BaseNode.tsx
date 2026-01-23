@@ -216,7 +216,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       );
 
       const response = await apiClient.post(
-        "/stream/stop-listen-stream",
+        "/stream/unregister",
         {
           workflow_id: workflowId,
           node_id: nodeId,

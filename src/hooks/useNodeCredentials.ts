@@ -116,7 +116,7 @@ export function useNodeCredentials({
 
       try {
         const response = await apiClient.get(
-          `/store/workflows?user_id=${userId}`,
+          `/storage/store/workflows?user_id=${userId}`,
           session?.access_token
         );
 
@@ -153,7 +153,7 @@ export function useNodeCredentials({
 
       try {
         const response = await apiClient.get(
-          `/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
+          `/storage/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
           session?.access_token
         );
 

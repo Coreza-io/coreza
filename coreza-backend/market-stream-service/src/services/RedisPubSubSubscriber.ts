@@ -4,19 +4,19 @@
  * when messages arrive on subscribed channels/patterns
  */
 
-import Redis from 'ioredis';
-import { createRedisQueuePubSub } from '../config/redis';
-import logger from '../utils/logger';
-import { bullMqJobQueue } from './jobQueueManager';
-import { WorkflowJobData } from './queueInterface';
-import { v4 as uuidv4 } from 'uuid';
-import WorkflowCache from './WorkflowCache';
+import Redis from "ioredis";
+import { createRedisPubSub } from "../config/redis";
+import logger from "../utils/logger";
+import { bullMqJobQueue } from "./jobQueueManager";
+import { WorkflowJobData } from "./queueInterface";
+import { v4 as uuidv4 } from "uuid";
+import WorkflowCache from "./WorkflowCache";
 
 interface Subscription {
   workflowId: string;
   nodeId: string;
   userId: string;
-  type: 'channel' | 'pattern';
+  type: "channel" | "pattern";
   channels: string[];
 }
 
@@ -41,7 +41,7 @@ export class RedisPubSubSubscriber {
 
   private ensureRedisConnections(): { pub: Redis; sub: Redis } {
     if (!this.redisSub || !this.redisPub) {
-      const { pub, sub } = createRedisQueuePubSub();
+      const { pub, sub } = createRedisPubSub();
       this.redisPub = pub;
       this.redisSub = sub;
     }
@@ -50,58 +50,63 @@ export class RedisPubSubSubscriber {
 
   async initialize(): Promise<void> {
     if (this.initialized) {
-      logger.warn('RedisPubSubSubscriber already initialized');
+      logger.warn("RedisPubSubSubscriber already initialized");
       return;
     }
 
     try {
       // Ensure Redis connections exist
       this.ensureRedisConnections();
-      
+
       // Set up message handlers
       this.setupMessageHandlers();
-      
+
       // Restore subscriptions from Redis persistence
       await this.restoreSubscriptions();
 
       this.initialized = true;
-      logger.info('✅ RedisPubSubSubscriber initialized');
+      logger.info("✅ RedisPubSubSubscriber initialized");
     } catch (error) {
-      logger.error({ err: error }, 'Failed to initialize RedisPubSubSubscriber');
+      logger.error(
+        { err: error },
+        "Failed to initialize RedisPubSubSubscriber",
+      );
       throw error;
     }
   }
 
   private setupMessageHandlers(): void {
     const { sub } = this.ensureRedisConnections();
-    
+
     // Handle messages from exact channels (SUBSCRIBE)
-    sub.on('message', async (channel, message) => {
-      await this.handleMessage(channel, message, 'channel');
+    sub.on("message", async (channel, message) => {
+      await this.handleMessage(channel, message, "channel");
     });
 
     // Handle messages from pattern subscriptions (PSUBSCRIBE)
-    sub.on('pmessage', async (pattern, channel, message) => {
-      await this.handleMessage(channel, message, 'pattern', pattern);
+    sub.on("pmessage", async (pattern, channel, message) => {
+      await this.handleMessage(channel, message, "pattern", pattern);
     });
 
-    sub.on('error', (error) => {
-      logger.error({ err: error }, 'Redis subscription error');
+    sub.on("error", (error) => {
+      logger.error({ err: error }, "Redis subscription error");
     });
   }
 
   private async handleMessage(
     channel: string,
     message: string,
-    type: 'channel' | 'pattern',
-    pattern?: string
+    type: "channel" | "pattern",
+    pattern?: string,
   ): Promise<void> {
     try {
       // Find workflows subscribed to this channel
       const workflowIds = this.channelWorkflows.get(channel) || new Set();
 
-      logger.debug({ channel, pattern, workflowCount: workflowIds.size }, 
-        'Received Redis message');
+      logger.debug(
+        { channel, pattern, workflowCount: workflowIds.size },
+        "Received Redis message",
+      );
 
       for (const workflowId of workflowIds) {
         const subscription = this.subscriptions.get(workflowId);
@@ -124,17 +129,24 @@ export class RedisPubSubSubscriber {
           subscriptionType: type,
         };
 
-        logger.info({ 
-          workflowId, 
-          nodeId: subscription.nodeId, 
-          channel, 
-          pattern 
-        }, 'Triggering workflow from Redis message');
+        logger.info(
+          {
+            workflowId,
+            nodeId: subscription.nodeId,
+            channel,
+            pattern,
+          },
+          "Triggering workflow from Redis message",
+        );
 
         // Fetch workflow definition from cache
-        const workflowDef = await WorkflowCache.getInstance().getWorkflow(workflowId);
+        const workflowDef =
+          await WorkflowCache.getInstance().getWorkflow(workflowId);
         if (!workflowDef) {
-          logger.warn({ workflowId }, 'Workflow definition not found, skipping execution');
+          logger.warn(
+            { workflowId },
+            "Workflow definition not found, skipping execution",
+          );
           continue;
         }
 
@@ -145,14 +157,14 @@ export class RedisPubSubSubscriber {
           userId: subscription.userId,
           nodes: workflowDef.nodes || [],
           edges: workflowDef.edges || [],
-          trigger: 'redis_pubsub',
+          trigger: "redis_pubsub",
           initialInput: payload,
         };
 
         await bullMqJobQueue.addWorkflowExecution(jobData);
       }
     } catch (error) {
-      logger.error({ err: error, channel }, 'Error handling Redis message');
+      logger.error({ err: error, channel }, "Error handling Redis message");
     }
   }
 
@@ -161,10 +173,10 @@ export class RedisPubSubSubscriber {
     nodeId: string,
     userId: string,
     channels: string[],
-    type: 'channel' | 'pattern' = 'channel'
+    type: "channel" | "pattern" = "channel",
   ): Promise<void> {
     const { pub, sub } = this.ensureRedisConnections();
-    
+
     try {
       // Store subscription
       const subscription: Subscription = {
@@ -172,7 +184,7 @@ export class RedisPubSubSubscriber {
         nodeId,
         userId,
         type,
-        channels: channels.map(c => c.trim()),
+        channels: channels.map((c) => c.trim()),
       };
 
       this.subscriptions.set(workflowId, subscription);
@@ -186,40 +198,46 @@ export class RedisPubSubSubscriber {
         this.channelWorkflows.get(channel)!.add(workflowId);
 
         // Subscribe to Redis
-        if (type === 'pattern') {
+        if (type === "pattern") {
           await sub.psubscribe(channel);
-          logger.info({ workflowId, pattern: channel }, 
-            'Subscribed to Redis pattern');
+          logger.info(
+            { workflowId, pattern: channel },
+            "Subscribed to Redis pattern",
+          );
         } else {
           await sub.subscribe(channel);
-          logger.info({ workflowId, channel }, 
-            'Subscribed to Redis channel');
+          logger.info({ workflowId, channel }, "Subscribed to Redis channel");
         }
       }
 
       // Persist subscription
       await this.persistSubscription(workflowId, subscription);
 
-      logger.info({ 
-        workflowId, 
-        nodeId, 
-        channels: subscription.channels, 
-        type 
-      }, 'Redis Pub/Sub subscription created');
+      logger.info(
+        {
+          workflowId,
+          nodeId,
+          channels: subscription.channels,
+          type,
+        },
+        "Redis Pub/Sub subscription created",
+      );
     } catch (error) {
-      logger.error({ err: error, workflowId }, 
-        'Failed to create Redis Pub/Sub subscription');
+      logger.error(
+        { err: error, workflowId },
+        "Failed to create Redis Pub/Sub subscription",
+      );
       throw error;
     }
   }
 
   async unsubscribe(workflowId: string): Promise<void> {
     const { pub, sub } = this.ensureRedisConnections();
-    
+
     try {
       const subscription = this.subscriptions.get(workflowId);
       if (!subscription) {
-        logger.warn({ workflowId }, 'No subscription found to unsubscribe');
+        logger.warn({ workflowId }, "No subscription found to unsubscribe");
         return;
       }
 
@@ -228,17 +246,21 @@ export class RedisPubSubSubscriber {
         const workflows = this.channelWorkflows.get(channel);
         if (workflows) {
           workflows.delete(workflowId);
-          
+
           // If no more workflows for this channel, unsubscribe from Redis
           if (workflows.size === 0) {
-            if (subscription.type === 'pattern') {
+            if (subscription.type === "pattern") {
               await sub.punsubscribe(channel);
-              logger.info({ pattern: channel }, 
-                'Unsubscribed from Redis pattern (no more workflows)');
+              logger.info(
+                { pattern: channel },
+                "Unsubscribed from Redis pattern (no more workflows)",
+              );
             } else {
               await sub.unsubscribe(channel);
-              logger.info({ channel }, 
-                'Unsubscribed from Redis channel (no more workflows)');
+              logger.info(
+                { channel },
+                "Unsubscribed from Redis channel (no more workflows)",
+              );
             }
             this.channelWorkflows.delete(channel);
           }
@@ -251,41 +273,45 @@ export class RedisPubSubSubscriber {
       // Remove from Redis persistence
       await pub.del(`redis:sub:${workflowId}`);
 
-      logger.info({ workflowId }, 'Redis Pub/Sub subscription removed');
+      logger.info({ workflowId }, "Redis Pub/Sub subscription removed");
     } catch (error) {
-      logger.error({ err: error, workflowId }, 
-        'Failed to remove Redis Pub/Sub subscription');
+      logger.error(
+        { err: error, workflowId },
+        "Failed to remove Redis Pub/Sub subscription",
+      );
     }
   }
 
   private async persistSubscription(
-    workflowId: string, 
-    subscription: Subscription
+    workflowId: string,
+    subscription: Subscription,
   ): Promise<void> {
     const { pub } = this.ensureRedisConnections();
-    
+
     try {
       await pub.set(
         `redis:sub:${workflowId}`,
         JSON.stringify(subscription),
-        'EX',
-        86400 * 7 // 7 days TTL
+        "EX",
+        86400 * 7, // 7 days TTL
       );
     } catch (error) {
-      logger.warn({ err: error, workflowId }, 
-        'Failed to persist subscription to Redis');
+      logger.warn(
+        { err: error, workflowId },
+        "Failed to persist subscription to Redis",
+      );
     }
   }
 
   private async restoreSubscriptions(): Promise<void> {
     const { pub } = this.ensureRedisConnections();
-    
+
     try {
-      logger.info('Restoring Redis Pub/Sub subscriptions...');
-      
+      logger.info("Restoring Redis Pub/Sub subscriptions...");
+
       // Scan for subscription keys
-      const keys = await pub.keys('redis:sub:*');
-      
+      const keys = await pub.keys("redis:sub:*");
+
       let restoredCount = 0;
       for (const key of keys) {
         try {
@@ -293,27 +319,31 @@ export class RedisPubSubSubscriber {
           if (!data) continue;
 
           const subscription: Subscription = JSON.parse(data);
-          
+
           // Restore subscription
           await this.subscribe(
             subscription.workflowId,
             subscription.nodeId,
             subscription.userId,
             subscription.channels,
-            subscription.type
+            subscription.type,
           );
-          
+
           restoredCount++;
         } catch (error) {
-          logger.error({ err: error, key }, 'Failed to restore subscription');
+          logger.error({ err: error, key }, "Failed to restore subscription");
         }
       }
 
-      logger.info({ count: restoredCount }, 
-        'Restored Redis Pub/Sub subscriptions');
+      logger.info(
+        { count: restoredCount },
+        "Restored Redis Pub/Sub subscriptions",
+      );
     } catch (error) {
-      logger.error({ err: error }, 
-        'Failed to restore Redis Pub/Sub subscriptions');
+      logger.error(
+        { err: error },
+        "Failed to restore Redis Pub/Sub subscriptions",
+      );
     }
   }
 
@@ -321,35 +351,37 @@ export class RedisPubSubSubscriber {
     return {
       totalSubscriptions: this.subscriptions.size,
       totalChannels: this.channelWorkflows.size,
-      subscriptions: Array.from(this.subscriptions.entries()).map(([wfId, sub]) => ({
-        workflowId: wfId,
-        nodeId: sub.nodeId,
-        userId: sub.userId,
-        type: sub.type,
-        channels: sub.channels,
-      })),
+      subscriptions: Array.from(this.subscriptions.entries()).map(
+        ([wfId, sub]) => ({
+          workflowId: wfId,
+          nodeId: sub.nodeId,
+          userId: sub.userId,
+          type: sub.type,
+          channels: sub.channels,
+        }),
+      ),
     };
   }
 
   async shutdown(): Promise<void> {
     try {
-      logger.info('Shutting down RedisPubSubSubscriber...');
-      
+      logger.info("Shutting down RedisPubSubSubscriber...");
+
       if (this.redisSub) {
         // Unsubscribe from all
         await this.redisSub.unsubscribe();
         await this.redisSub.punsubscribe();
         await this.redisSub.quit();
       }
-      
+
       if (this.redisPub) {
         await this.redisPub.quit();
       }
-      
+
       this.initialized = false;
-      logger.info('RedisPubSubSubscriber shut down');
+      logger.info("RedisPubSubSubscriber shut down");
     } catch (error) {
-      logger.error({ err: error }, 'Error shutting down RedisPubSubSubscriber');
+      logger.error({ err: error }, "Error shutting down RedisPubSubSubscriber");
     }
   }
 }

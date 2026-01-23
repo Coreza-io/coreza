@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { v4 as uuidv4 } from "uuid";
-import { createRedisQueuePubSub, getRedisCache } from "../config/redis";
+import { createRedisPubSub, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
   CorezaMarketEvent,
@@ -47,7 +47,7 @@ export class MarketDataSubscriber {
 
   private ensureRedisConnections(): { pub: Redis; sub: Redis } {
     if (!this.redisSub || !this.redisPub) {
-      const { pub, sub } = createRedisQueuePubSub();
+      const { pub, sub } = createRedisPubSub();
       this.redisSub = sub;
       this.redisPub = pub;
     }

@@ -14,7 +14,7 @@ const DEFAULT_STALE_THRESHOLD_MS = 60 * 60 * 1000;
 // Cleanup interval: every 5 minutes
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
-interface StreamingSubscription {
+interface StreamingRegistration {
   userId: string;
   workflowId: string;
   nodeId: string;
@@ -88,11 +88,11 @@ class StreamingCleanupService {
     let remainingCount = 0;
 
     try {
-      // Find all streaming workflow subscriptions (user-scoped pattern)
-      const subKeys = await redis.keys("md:user:*:wf:sub:*");
+      // Find all streaming workflow registrations (user-scoped pattern)
+      const regKeys = await redis.keys("md:user:*:wf:reg:*");
 
-      if (subKeys.length === 0) {
-        logger.debug("No streaming subscriptions to clean up");
+      if (regKeys.length === 0) {
+        logger.debug("No streaming registrations to clean up");
         return { cleaned: 0, remaining: 0 };
       }
 
@@ -101,36 +101,36 @@ class StreamingCleanupService {
         { userId: string; nodeIds: string[] }
       >();
 
-      for (const key of subKeys) {
+      for (const key of regKeys) {
         try {
           const data = await redis.get(key);
           if (!data) continue;
 
-          const subscription: StreamingSubscription = JSON.parse(data);
+          const registration: StreamingRegistration = JSON.parse(data);
 
           // Determine last activity time
-          const lastActivity = subscription.lastActivityAt
-            ? new Date(subscription.lastActivityAt).getTime()
-            : new Date(subscription.registeredAt).getTime();
+          const lastActivity = registration.lastActivityAt
+            ? new Date(registration.lastActivityAt).getTime()
+            : new Date(registration.registeredAt).getTime();
 
           const timeSinceActivity = now - lastActivity;
 
           if (timeSinceActivity > this.staleThresholdMs) {
             // Mark for cleanup
-            const { workflowId, nodeId, userId } = subscription;
+            const { workflowId, nodeId, userId } = registration;
 
             if (!workflowsToCleanup.has(workflowId)) {
               workflowsToCleanup.set(workflowId, { userId, nodeIds: [] });
             }
             workflowsToCleanup.get(workflowId)!.nodeIds.push(nodeId);
 
-            // Delete the subscription key
+            // Delete the registration key
             await redis.del(key);
             cleanedCount++;
 
             logger.debug(
               { workflowId, nodeId, staleDurationMs: timeSinceActivity },
-              "Cleaned up stale streaming subscription"
+              "Cleaned up stale streaming registration"
             );
           } else {
             remainingCount++;
@@ -138,18 +138,18 @@ class StreamingCleanupService {
         } catch (parseErr) {
           logger.warn(
             { key, err: parseErr },
-            "Failed to parse subscription data"
+            "Failed to parse registration data"
           );
         }
       }
 
       // Clean up workflow-level data for fully cleaned workflows
       for (const [workflowId, { userId, nodeIds }] of workflowsToCleanup) {
-        // Check if any subscriptions remain for this workflow (user-scoped pattern)
-        const remainingKeys = await redis.keys(`md:user:${userId}:wf:sub:${workflowId}`);
+        // Check if any registrations remain for this workflow (user-scoped pattern)
+        const remainingKeys = await redis.keys(`md:user:${userId}:wf:reg:${workflowId}`);
 
         if (remainingKeys.length === 0) {
-          // No more subscriptions, clean up workflow-level data
+          // No more registrations, clean up workflow-level data
           await redis.srem(
             `md:user:${userId}:active_streaming_workflows`,
             workflowId
@@ -178,21 +178,21 @@ class StreamingCleanupService {
   }
 
   /**
-   * Update last activity timestamp for a subscription
+   * Update last activity timestamp for a workflow registration
    */
   async updateActivity(userId: string, workflowId: string): Promise<void> {
     const redis = getRedisCache();
-    // Use user-scoped key pattern: md:user:{userId}:wf:sub:{workflowId}
-    const subKey = `md:user:${userId}:wf:sub:${workflowId}`;
+    // Use user-scoped key pattern: md:user:{userId}:wf:reg:{workflowId}
+    const regKey = `md:user:${userId}:wf:reg:${workflowId}`;
 
     try {
-      const data = await redis.get(subKey);
+      const data = await redis.get(regKey);
       if (!data) return;
 
-      const subscription: StreamingSubscription = JSON.parse(data);
-      subscription.lastActivityAt = new Date().toISOString();
+      const registration: StreamingRegistration = JSON.parse(data);
+      registration.lastActivityAt = new Date().toISOString();
 
-      await redis.set(subKey, JSON.stringify(subscription));
+      await redis.set(regKey, JSON.stringify(registration));
     } catch (error) {
       logger.warn(
         { userId, workflowId, err: error },

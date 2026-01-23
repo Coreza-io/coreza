@@ -176,30 +176,30 @@ export class MarketControlHandler {
 
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-      const symbolsToSubscribe =
+      const symbolsToRegister =
         subscriptionMode === "global"
           ? await this.getUserSubscribedSymbols(userId, source)
           : await this.getWorkflowScopedSymbols(userId, workflowId, source);
 
-      if (symbolsToSubscribe.length === 0) {
+      if (symbolsToRegister.length === 0) {
         console.log(
           `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
         );
       }
 
       // Still register the workflow with empty symbols - it will receive data when symbols are subscribed later
-      await subscriber.subscribe(
+      await subscriber.registerWorkflow(
         workflowId,
         nodeId,
         userId,
-        symbolsToSubscribe,
+        symbolsToRegister,
         source as MarketSource,
       );
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
-          symbolsToSubscribe.length
-        } symbols: ${symbolsToSubscribe.join(", ")}`,
+          symbolsToRegister.length
+        } symbols: ${symbolsToRegister.join(", ")}`,
       );
     } catch (error) {
       console.error(
@@ -228,7 +228,7 @@ export class MarketControlHandler {
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
-      await subscriber.unsubscribe(userId, workflowId);
+      await subscriber.unregisterWorkflow(userId, workflowId);
 
       console.log(
         `✅ [MarketControl] Unregistered streaming workflow ${workflowId}${
@@ -344,7 +344,7 @@ export class MarketControlHandler {
         console.log(
           `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`,
         );
-        await subscriber.addSymbolsToSubscription(targetWorkflowId, newSymbols);
+        await subscriber.addSymbolsToRegistration(targetWorkflowId, newSymbols);
 
         // Also update any test listeners for this workflow (handles race condition)
         const testListenerPattern = `user:${userId}:stream:${targetWorkflowId}:*`;
@@ -356,7 +356,7 @@ export class MarketControlHandler {
               `🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
             );
             for (const testKey of testListenerKeys) {
-              await subscriber.addSymbolsToSubscription(testKey, newSymbols);
+              await subscriber.addSymbolsToRegistration(testKey, newSymbols);
               console.log(
                 `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`,
               );
@@ -421,7 +421,7 @@ export class MarketControlHandler {
           }
 
           // Add new symbols to existing subscription
-          await subscriber.addSymbolsToSubscription(workflowId, symbolsToAdd);
+          await subscriber.addSymbolsToRegistration(workflowId, symbolsToAdd);
 
           console.log(
             `✅ [MarketControl] Added ${symbolsToAdd.length} symbols to workflow ${workflowId}`,
@@ -479,7 +479,7 @@ export class MarketControlHandler {
                 }
               }
 
-              await subscriber.addSymbolsToSubscription(testKey, symbolsToAdd);
+              await subscriber.addSymbolsToRegistration(testKey, symbolsToAdd);
               console.log(
                 `🧪 [MarketControl] Updated test listener ${testKey} with ${symbolsToAdd.length} global symbols`,
               );
@@ -682,7 +682,7 @@ export class MarketControlHandler {
       // Unregister workflow from MarketDataSubscriber
       if (workflowId) {
         const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.unsubscribe(userId, workflowId);
+        await subscriber.unregisterWorkflow(userId, workflowId);
         console.log(
           `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );

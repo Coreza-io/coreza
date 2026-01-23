@@ -81,29 +81,29 @@ router.get("/subscriptions/status", async (req, res) => {
       }
     }
 
-    // Get workflow subscriptions for this user (user-scoped pattern)
-    const workflowSubKeys = await redis.keys(`md:user:${userId}:wf:sub:*`);
-    const workflowSubs: any[] = [];
+    // Get workflow registrations for this user (user-scoped pattern)
+    const workflowRegKeys = await redis.keys(`md:user:${userId}:wf:reg:*`);
+    const workflowRegs: any[] = [];
     const workflowIds = new Set<string>();
 
-    for (const key of workflowSubKeys) {
-      const subStr = await redis.get(key);
-      if (subStr) {
+    for (const key of workflowRegKeys) {
+      const regStr = await redis.get(key);
+      if (regStr) {
         try {
-          const sub = JSON.parse(subStr);
-          workflowSubs.push({
-            workflowId: sub.workflowId,
-            nodeId: sub.nodeId,
-            symbols: sub.symbols || [],
-            eventTypes: sub.eventTypes || [],
-            source: sub.source || "unknown",
+          const reg = JSON.parse(regStr);
+          workflowRegs.push({
+            workflowId: reg.workflowId,
+            nodeId: reg.nodeId,
+            symbols: reg.symbols || [],
+            eventTypes: reg.eventTypes || [],
+            source: reg.source || "unknown",
             isActive: true,
           });
-          if (sub.workflowId) {
-            workflowIds.add(sub.workflowId);
+          if (reg.workflowId) {
+            workflowIds.add(reg.workflowId);
           }
         } catch (e) {
-          console.error("Error parsing workflow subscription:", key, e);
+          console.error("Error parsing workflow registration:", key, e);
         }
       }
     }
@@ -115,9 +115,9 @@ router.get("/subscriptions/status", async (req, res) => {
     for (const workflowId of activeStreamingWorkflows) {
       workflowIds.add(workflowId);
 
-      // Check if this workflow is already in workflowSubs
-      const alreadyIncluded = workflowSubs.some(
-        (sub) => sub.workflowId === workflowId,
+      // Check if this workflow is already in workflowRegs
+      const alreadyIncluded = workflowRegs.some(
+        (reg) => reg.workflowId === workflowId,
       );
       if (!alreadyIncluded) {
         // Try to get additional info from stream filter
@@ -137,7 +137,7 @@ router.get("/subscriptions/status", async (req, res) => {
           }
         }
 
-        workflowSubs.push({
+        workflowRegs.push({
           workflowId,
           nodeId: "",
           symbols: [], // May not have explicit symbols
@@ -163,10 +163,10 @@ router.get("/subscriptions/status", async (req, res) => {
       }
     }
 
-    // Add workflow names to subscriptions
-    const workflowsWithNames = workflowSubs.map((sub) => ({
-      ...sub,
-      workflowName: workflowNames[sub.workflowId] || "Unknown Workflow",
+    // Add workflow names to registrations
+    const workflowsWithNames = workflowRegs.map((reg) => ({
+      ...reg,
+      workflowName: workflowNames[reg.workflowId] || "Unknown Workflow",
     }));
 
     // Get user-level symbol subscriptions (from Subscribe nodes - global scope)
@@ -247,7 +247,7 @@ router.get("/subscriptions/status", async (req, res) => {
       }),
     );
 
-    workflowSubs.forEach((w) =>
+    workflowRegs.forEach((w) =>
       w.symbols.forEach((sym: string) => {
         allSymbols.add(sym);
         if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
@@ -284,7 +284,7 @@ router.get("/subscriptions/status", async (req, res) => {
       stats: {
         totalSources: sources.filter((s) => s.connected).length,
         totalSymbols: allSymbols.size,
-        totalWorkflows: workflowSubs.length,
+        totalWorkflows: workflowRegs.length,
         connectedSources: sources
           .filter((s) => s.connected)
           .map((s) => s.source),

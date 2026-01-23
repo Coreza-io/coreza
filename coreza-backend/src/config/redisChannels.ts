@@ -18,20 +18,21 @@ export const REDIS_CHANNELS = {
   // Symbol-level market data (fanout)
   marketData: (symbol: string) => `md:symbol:${symbol.toUpperCase()}`,
 
-  // Control channels for subscription management
+  // Control channels for subscription management (broker connections)
   controlSubscribe: "md:control:subscribe",
   controlUnsubscribe: "md:control:unsubscribe",
 
-  // Control channels for register management
+  // Control channels for workflow registration (internal routing)
   controlRegister: "md:control:register_workflow",
   controlUnregister: "md:control:unregister_workflow",
 
   // User-specific WebSocket delivery channel
   userData: (userId: string) => `ws:user:${userId}`,
 
-  // Registered Workflow persistence (user-scoped)
-  registeredWorkflow: (userId: string, workflowId: string) =>
-    `md:user:${userId}:wf:sub:${workflowId}`,
+  // Workflow registration persistence (user-scoped)
+  // NOTE: This is for REGISTRATIONS (internal routing), not broker subscriptions
+  workflowRegistration: (userId: string, workflowId: string) =>
+    `md:user:${userId}:wf:reg:${workflowId}`,
 
   // Gateway state persistence (per-user, per-source)
   gatewayState: (userId: string, source: string) =>

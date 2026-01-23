@@ -347,15 +347,14 @@ export class MarketControlHandler {
         await subscriber.addSymbolsToRegistration(targetWorkflowId, newSymbols);
 
         // Also update any test listeners for this workflow (handles race condition)
-        const testListenerPattern = `user:${userId}:stream:${targetWorkflowId}:*`;
+        const ListenerPattern = `md:user:${userId}:stream:${targetWorkflowId}:*`;
         try {
-          const testListenerKeys =
-            await this.redisPub.keys(testListenerPattern);
-          if (testListenerKeys.length > 0) {
+          const ListenerKeys = await this.redisPub.keys(ListenerPattern);
+          if (ListenerKeys.length > 0) {
             console.log(
-              `🧪 [MarketControl] Found ${testListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
+              `🧪 [MarketControl] Found ${ListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
             );
-            for (const testKey of testListenerKeys) {
+            for (const testKey of ListenerKeys) {
               await subscriber.addSymbolsToRegistration(testKey, newSymbols);
               console.log(
                 `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`,
@@ -686,10 +685,8 @@ export class MarketControlHandler {
         console.log(
           `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );
-      }
 
-      // Remove workflow tracking
-      if (workflowId) {
+        // Remove workflow tracking
         state.workflowSymbols.delete(workflowId);
         // Also untrack in workflow-scoped key for cleanup on workflow deactivation
         // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated

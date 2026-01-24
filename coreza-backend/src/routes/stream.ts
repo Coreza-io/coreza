@@ -17,15 +17,9 @@
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { SubscriptionService } from "../services/SubscriptionService";
-import { getRedisCache } from "../config/redis";
-import { supabase } from "../config/supabase";
-import { getAllowedSymbols } from "../utils/streamFilters";
-import {
-  MAX_LISTENERS_PER_USER,
-  LISTENER_TTL_SECONDS,
-  LUA_INCREMENT_LISTENER_COUNT,
-  LUA_DECREMENT_LISTENER_COUNT,
-} from "../config/streaming";
+import { RegistrationService } from "../services/RegistrationService";
+import { StatusService } from "../services/StatusService";
+import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import {
   StreamExecutionRequest,
   StreamExecutionResponse,
@@ -51,246 +45,9 @@ router.get("/subscriptions/status", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const redis = getRedisCache();
+    const status = await StatusService.getSubscriptionStatus(userId);
 
-    // Get all gateway states
-    const gatewayKeys = await redis.keys(`md:gateway:${userId}:*:state`);
-    const sources: any[] = [];
-
-    for (const key of gatewayKeys) {
-      const stateStr = await redis.get(key);
-      if (stateStr) {
-        try {
-          const state = JSON.parse(stateStr);
-          const sourceMatch = key.match(
-            new RegExp(`^md:gateway:${userId}:([^:]+):state$`),
-          );
-          if (sourceMatch) {
-            sources.push({
-              source: sourceMatch[1],
-              connected: state.connected || false,
-              symbols: state.symbols || [],
-              eventTypes: state.eventTypes || [],
-              connectedAt: state.connectedAt || null,
-              lastMessageAt: state.lastMessageAt || null,
-            });
-          }
-        } catch (e) {
-          console.error("Error parsing gateway state:", key, e);
-        }
-      }
-    }
-
-    // Get workflow registrations for this user (user-scoped pattern)
-    const workflowRegKeys = await redis.keys(`md:user:${userId}:wf:reg:*`);
-    const workflowRegs: any[] = [];
-    const workflowIds = new Set<string>();
-
-    for (const key of workflowRegKeys) {
-      const regStr = await redis.get(key);
-      if (regStr) {
-        try {
-          const reg = JSON.parse(regStr);
-          workflowRegs.push({
-            workflowId: reg.workflowId,
-            nodeId: reg.nodeId,
-            symbols: reg.symbols || [],
-            eventTypes: reg.eventTypes || [],
-            source: reg.source || "unknown",
-            isActive: true,
-          });
-          if (reg.workflowId) {
-            workflowIds.add(reg.workflowId);
-          }
-        } catch (e) {
-          console.error("Error parsing workflow registration:", key, e);
-        }
-      }
-    }
-
-    // Also check active streaming workflows set and include those not in wf:reg:*
-    const activeStreamingWorkflows = await redis.smembers(
-      `md:user:${userId}:active_streaming_workflows`,
-    );
-    for (const workflowId of activeStreamingWorkflows) {
-      workflowIds.add(workflowId);
-
-      // Check if this workflow is already in workflowRegs
-      const alreadyIncluded = workflowRegs.some(
-        (reg) => reg.workflowId === workflowId,
-      );
-      if (!alreadyIncluded) {
-        // Try to get additional info from stream filter
-        const filterStr = await redis.get(
-          `md:user:${userId}:workflow:${workflowId}:stream_filter`,
-        );
-        let source = "unknown";
-        let eventTypes: string[] = [];
-
-        if (filterStr) {
-          try {
-            const filter = JSON.parse(filterStr);
-            source = filter.source || "unknown";
-            eventTypes = filter.eventTypes || [];
-          } catch (e) {
-            /* ignore parse errors */
-          }
-        }
-
-        workflowRegs.push({
-          workflowId,
-          nodeId: "",
-          symbols: [], // May not have explicit symbols
-          eventTypes,
-          source,
-          isActive: true,
-        });
-      }
-    }
-
-    // Fetch workflow names from Supabase
-    const workflowNames: Record<string, string> = {};
-    if (workflowIds.size > 0) {
-      const { data: workflows } = await supabase
-        .from("workflows")
-        .select("id, name")
-        .in("id", Array.from(workflowIds));
-
-      if (workflows) {
-        for (const wf of workflows) {
-          workflowNames[wf.id] = wf.name;
-        }
-      }
-    }
-
-    // Add workflow names to registrations
-    const workflowsWithNames = workflowRegs.map((reg) => ({
-      ...reg,
-      workflowName: workflowNames[reg.workflowId] || "Unknown Workflow",
-    }));
-
-    // Get user-level symbol subscriptions (from Subscribe nodes - global scope)
-    const userSubKeys = await redis.keys(
-      `md:user:${userId}:subscribed_symbols:*`,
-    );
-    const userSubscriptions: Record<string, string[]> = {};
-
-    for (const key of userSubKeys) {
-      const sourceMatch = key.match(/md:user:.*:subscribed_symbols:(\w+)/);
-      if (sourceMatch) {
-        const symbols = await redis.smembers(key);
-        if (symbols.length > 0) {
-          userSubscriptions[sourceMatch[1]] = symbols;
-        }
-      }
-    }
-
-    // Get workflow-scoped subscriptions (from Subscribe nodes - workflow scope)
-    const scopedSubKeys = await redis.keys(
-      `md:user:${userId}:workflow:*:subscribed_symbols:*`,
-    );
-    const workflowScopedSubscriptions: Array<{
-      workflowId: string;
-      workflowName?: string;
-      source: string;
-      symbols: string[];
-    }> = [];
-    const scopedWorkflowIds = new Set<string>();
-
-    for (const key of scopedSubKeys) {
-      // Pattern: workflow:{workflowId}:subscribed_symbols:{source}
-      const regex = new RegExp(
-        `^md:user:${userId}:workflow:([^:]+):subscribed_symbols:([a-zA-Z0-9_]+)$`,
-      );
-
-      const match = key.match(regex);
-
-      if (match) {
-        const [, wfId, source] = match;
-        const symbols = await redis.smembers(key);
-        if (symbols.length > 0) {
-          workflowScopedSubscriptions.push({
-            workflowId: wfId,
-            source,
-            symbols,
-          });
-          scopedWorkflowIds.add(wfId);
-        }
-      }
-    }
-
-    // Fetch workflow names for scoped subscriptions
-    if (scopedWorkflowIds.size > 0) {
-      const { data: scopedWorkflows } = await supabase
-        .from("workflows")
-        .select("id, name")
-        .in("id", Array.from(scopedWorkflowIds));
-
-      if (scopedWorkflows) {
-        for (const sub of workflowScopedSubscriptions) {
-          const wf = scopedWorkflows.find((w) => w.id === sub.workflowId);
-          sub.workflowName = wf?.name || "Unknown Workflow";
-        }
-      }
-    }
-
-    // Calculate stats and build symbol-source map
-    const allSymbols = new Set<string>();
-    const symbolSourceMap: Record<string, string[]> = {};
-
-    sources.forEach((s) =>
-      s.symbols.forEach((sym: string) => {
-        allSymbols.add(sym);
-        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
-        if (!symbolSourceMap[sym].includes(s.source))
-          symbolSourceMap[sym].push(s.source);
-      }),
-    );
-
-    workflowRegs.forEach((w) =>
-      w.symbols.forEach((sym: string) => {
-        allSymbols.add(sym);
-        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
-        if (!symbolSourceMap[sym].includes(w.source))
-          symbolSourceMap[sym].push(w.source);
-      }),
-    );
-
-    // Add user-level subscriptions to symbol counts
-    Object.entries(userSubscriptions).forEach(([source, symbols]) => {
-      symbols.forEach((sym) => {
-        allSymbols.add(sym);
-        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
-        if (!symbolSourceMap[sym].includes(source))
-          symbolSourceMap[sym].push(source);
-      });
-    });
-
-    // Add workflow-scoped subscriptions to symbol counts
-    workflowScopedSubscriptions.forEach((sub) => {
-      sub.symbols.forEach((sym) => {
-        allSymbols.add(sym);
-        if (!symbolSourceMap[sym]) symbolSourceMap[sym] = [];
-        if (!symbolSourceMap[sym].includes(sub.source))
-          symbolSourceMap[sym].push(sub.source);
-      });
-    });
-
-    res.json({
-      sources,
-      workflows: workflowsWithNames,
-      userSubscriptions, // Global subscriptions from Subscribe nodes
-      workflowScopedSubscriptions, // Workflow-scoped subscriptions from Subscribe nodes
-      stats: {
-        totalSources: sources.filter((s) => s.connected).length,
-        totalSymbols: allSymbols.size,
-        totalWorkflows: workflowRegs.length,
-        connectedSources: sources
-          .filter((s) => s.connected)
-          .map((s) => s.source),
-      },
-      symbolSourceMap,
-    });
+    res.json(status);
   } catch (error) {
     console.error("Error fetching subscription status:", error);
     res.status(500).json({
@@ -301,9 +58,6 @@ router.get("/subscriptions/status", async (req, res) => {
     });
   }
 });
-
-// Source mapping is now auto-generated in config/marketSources.ts
-// Import: SOURCE_TO_MARKET_SOURCE, getMarketSource
 
 // ============================================
 // MARKET DATA SUBSCRIPTION OPERATIONS
@@ -327,14 +81,12 @@ router.post("/:source/subscribe", async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      data_type, // NEW: Data type (market, news, etc.)
-      // Source-specific fields
-      feed, // Alpaca: iex or sip
-      environment, // Binance: testnet or live
-      asset_type, // Binance: spot or futures
-      interval, // Binance: 1m, 5m, 15m, etc.
+      data_type,
+      feed,
+      environment,
+      asset_type,
+      interval,
       depth_levels,
-      // Subscription scope
       subscriptionScope,
       targetWorkflowId,
     } = req.body;
@@ -411,14 +163,12 @@ router.post("/:source/unsubscribe", async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      data_type, // NEW: Data type (market, news, etc.)
-      // Source-specific fields
-      feed, // Alpaca: iex or sip
-      environment, // Binance: testnet or live
-      asset_type, // Binance: spot or futures
-      interval, // Binance: 1m, 5m, 15m, etc.
+      data_type,
+      feed,
+      environment,
+      asset_type,
+      interval,
       depth_levels,
-      // Subscription scope
       subscriptionScope,
       targetWorkflowId,
     } = req.body;
@@ -498,23 +248,16 @@ router.post("/streaming-activity", async (req, res) => {
         .json({ error: "workflow_id and node_id are required" });
     }
 
-    const redis = getRedisCache();
-    // Use user-scoped key pattern: md:user:{userId}:wf:reg:{workflowId}
-    const regKey = `md:user:${userId}:wf:reg:${workflow_id}`;
+    const success = await RegistrationService.updateActivity(userId, workflow_id);
 
-    const data = await redis.get(regKey);
-    if (!data) {
+    if (!success) {
       return res.status(404).json({ error: "Registration not found" });
     }
-
-    const subscription = JSON.parse(data);
-    subscription.lastActivityAt = new Date().toISOString();
-    await redis.set(regKey, JSON.stringify(subscription));
 
     res.json({
       success: true,
       message: "Registration activity updated",
-      lastActivityAt: subscription.lastActivityAt,
+      lastActivityAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error updating streaming activity:", error);
@@ -578,7 +321,6 @@ router.post("/:source/register", async (req, res) => {
       node_id,
       node_type,
       mode = "listen",
-      // Subscribe params
       symbols,
       data_type,
       stream_types,
@@ -607,9 +349,7 @@ router.post("/:source/register", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    const redis = getRedisCache();
-
-    // 2. Parse symbols
+    // Parse symbols
     const parsedSymbols: string[] = Array.isArray(symbols)
       ? symbols.map((s: string) => s.toUpperCase())
       : typeof symbols === "string"
@@ -619,7 +359,7 @@ router.post("/:source/register", async (req, res) => {
             .filter(Boolean)
         : [];
 
-    // 3. If subscribe mode, subscribe first and WAIT for completion
+    // If subscribe mode, subscribe first and WAIT for completion
     if (mode === "subscribe") {
       if (parsedSymbols.length === 0) {
         return res
@@ -669,17 +409,10 @@ router.post("/:source/register", async (req, res) => {
       );
     }
 
-    // 5. Rate limit check for test listener
-    const userListenerCountKey = `md:user:${userId}:stream:listener_count`;
-    const allowed = await redis.eval(
-      LUA_INCREMENT_LISTENER_COUNT,
-      1,
-      userListenerCountKey,
-      String(MAX_LISTENERS_PER_USER),
-      String(LISTENER_TTL_SECONDS),
-    );
+    // Rate limit check for test listener
+    const allowed = await RegistrationService.checkAndIncrementListenerCount(userId);
 
-    if (allowed === 0) {
+    if (!allowed) {
       console.warn(
         `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_LISTENERS_PER_USER})`,
       );
@@ -690,50 +423,28 @@ router.post("/:source/register", async (req, res) => {
       } as StreamExecutionResponse);
     }
 
-    // 6. Create listener key and store metadata
-    const listenerKey = `md:user:${userId}:stream:${workflow_id}:${node_id}`;
-    const now = new Date().toISOString();
-
-    const listenerData = {
+    // Create listener
+    const listenerKey = await RegistrationService.createListener({
       userId,
       workflowId: workflow_id,
       nodeId: node_id,
-      status: "listening",
-      startedAt: now,
-      mode,
-      subscriptionMode: subscriptionMode,
       source: sourceId,
-    };
+      mode,
+      subscriptionMode,
+    });
 
-    // Store test listener with TTL (auto-expire)
-    await redis.setex(
-      listenerKey,
-      LISTENER_TTL_SECONDS,
-      JSON.stringify(listenerData),
-    );
-
-    // Add to user-specific SET for efficient per-user queries (no pattern scanning)
-    const userListenersKey = `md:user:${userId}:stream:active_listeners`;
-    await redis.sadd(userListenersKey, listenerKey);
-
-    // 7. Register with MarketDataSubscriber via control message
-    // CRITICAL: Include filter_symbols so MarketControlHandler subscribes to correct Redis channels
-    const controlMessage = {
-      action: "register_workflow",
+    // Publish registration control message to market-stream-service
+    await RegistrationService.publishRegisterWorkflow({
       userId,
-      workflowId: workflow_id, // Use testKey as pseudo workflow ID for uniqueness
+      workflowId: workflow_id,
       nodeId: node_id,
       source: sourceId,
-      subscriptionMode: subscriptionMode,
-    };
+      subscriptionMode,
+    });
 
-    await redis.publish(
-      "md:control:register_workflow",
-      JSON.stringify(controlMessage),
-    );
-    console.log(`📡 [ExecuteStreamNode] Published register_workflow}`);
+    console.log(`📡 [ExecuteStreamNode] Published register_workflow`);
 
-    // 8. Return success response
+    // Return success response
     const response: StreamExecutionResponse = {
       success: true,
       status: "listening",
@@ -757,7 +468,7 @@ router.post("/:source/register", async (req, res) => {
 
 /**
  * Stop test listening for stream data
- * POST /stream/stop-listen-stream
+ * POST /stream/unregister
  *
  * Manually cancels a test listening session.
  */
@@ -776,32 +487,16 @@ router.post("/unregister", async (req, res) => {
         .json({ error: "workflow_id and node_id are required" });
     }
 
-    const redis = getRedisCache();
-    const listenerKey = `md:user:${userId}:stream:${workflow_id}:${node_id}`;
+    // Delete listener through service
+    await RegistrationService.deleteListener(userId, workflow_id, node_id);
 
-    // Delete both test listener and any stored result
-    await redis.del(listenerKey);
-
-    // Remove from user-specific SET
-    const userListenersKey = `md:user:${userId}:stream:active_listeners`;
-    await redis.srem(userListenersKey, listenerKey);
-
-    // Decrement user's test listener count
-    const userCountKey = `md:user:${userId}:stream:listener_count`;
-    await redis.eval(LUA_DECREMENT_LISTENER_COUNT, 1, userCountKey);
-
-    // Unregister from MarketDataSubscriber by publishing unsubscribe control message
-    const unsubscribeMessage = {
-      action: "unregister_workflow",
-      workflowId: workflow_id,
+    // Publish unregister control message to market-stream-service
+    await RegistrationService.publishUnregisterWorkflow({
       userId,
-    };
-    await redis.publish(
-      "md:control:unregister_workflow",
-      JSON.stringify(unsubscribeMessage),
-    );
+      workflowId: workflow_id,
+    });
 
-    console.log(`🛑 Stopped listener: ${listenerKey}`);
+    console.log(`🛑 Stopped listener: ${workflow_id}:${node_id}`);
 
     res.json({
       success: true,
@@ -835,77 +530,16 @@ router.post("/cleanup-user-streams", async (req, res) => {
 
     console.log(`🧹 [Market Cleanup] Starting cleanup for user ${userId}`);
 
-    const redis = getRedisCache();
-    const userTestListenersKey = getUserListenersKey(userId);
-
-    // Get all test listener keys for this user
-    const testListenerKeys = await redis.smembers(userTestListenersKey);
-    console.log(
-      `🧹 [Market Cleanup] Found ${testListenerKeys.length} test listeners to clean up`,
-    );
-
-    let cleanedCount = 0;
-
-    for (const testKey of testListenerKeys) {
-      try {
-        // Get listener data to log what we're cleaning
-        const listenerJson = await redis.get(testKey);
-        if (listenerJson) {
-          const listenerData = JSON.parse(listenerJson);
-          console.log(
-            `🧹 [Market Cleanup] Cleaning test listener: ${testKey}`,
-            {
-              source: listenerData.source,
-              symbols: listenerData.filterSymbols,
-            },
-          );
-        }
-
-        // Delete the test key
-        await redis.del(testKey);
-
-        // Delete the result key if exists
-        await redis.del(`${testKey}:result`);
-
-        // Remove from user's test listeners set
-        await redis.srem(userTestListenersKey, testKey);
-
-        // Remove from global active listeners
-        await redis.srem(REDIS_KEY_ACTIVE_LISTENERS, testKey);
-
-        // Publish unregister message to market-stream-service
-        const unregisterMsg = {
-          action: "unregister_workflow",
-          userId,
-          workflowId: testKey,
-          isTestListener: true,
-        };
-        await redis.publish(
-          "md:control:unregister_workflow",
-          JSON.stringify(unregisterMsg),
-        );
-
-        cleanedCount++;
-      } catch (err) {
-        console.error(
-          `⚠️ [Market Cleanup] Failed to cleanup test listener ${testKey}:`,
-          err,
-        );
-      }
-    }
-
-    // Reset user's test listener count
-    const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
-    await redis.del(userCountKey);
+    const result = await RegistrationService.cleanupUserListeners(userId);
 
     console.log(
-      `✅ [Market Cleanup] Cleaned ${cleanedCount}/${testListenerKeys.length} test listeners for user ${userId}`,
+      `✅ [Market Cleanup] Cleaned ${result.cleaned}/${result.total} test listeners for user ${userId}`,
     );
 
     res.json({
       success: true,
-      cleaned: cleanedCount,
-      total: testListenerKeys.length,
+      cleaned: result.cleaned,
+      total: result.total,
     });
   } catch (error) {
     console.error("Error during user stream cleanup:", error);

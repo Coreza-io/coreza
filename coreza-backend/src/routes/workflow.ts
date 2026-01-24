@@ -473,50 +473,6 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           await jobQueue.scheduleWorkflow(workflowId, userId, cron, tzToUse);
         }
 
-        // Handle streaming trigger node activation (AlpacaStreamData, BinanceStreamData)
-        // These are now pure data receivers - subscriptions are managed by separate Subscribe nodes
-        if (
-          triggerNode.node_type == "trigger" &&
-          triggerNode.executionMode == "streaming"
-        ) {
-          const nodeValues = triggerNode.values || {};
-
-          const redis = getRedisCache();
-
-          // Store workflow in active streaming workflows set for this user
-          await redis.sadd(
-            `md:user:${userId}:stream:active_streaming_workflows`,
-            workflowId,
-          );
-
-          const sourceId = `${triggerNode.subCategory}_${triggerNode.values.data_type}`;
-
-          // Get subscription mode - determines whether to receive global or workflow-scoped data only
-          const scope = nodeValues.scope;
-
-          // Publish registration message to market-stream-service
-          // This allows the trading workflow to receive data from symbols subscribed by other workflows
-          const registrationMessage = {
-            action: "register_workflow",
-            userId,
-            workflowId,
-            nodeId: triggerNode.id,
-            source: sourceId,
-            scope,
-          };
-          await redis.publish(
-            "md:control:register_workflow",
-            JSON.stringify(registrationMessage),
-          );
-
-          console.log(
-            `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
-            {
-              sourceId,
-            },
-          );
-        }
-
         // Handle WebhookTrigger activation
         if (
           triggerNode.node_type == "trigger" &&
@@ -566,7 +522,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               userId,
               nodes: workflow.nodes as any[],
               edges: workflow.edges as any[],
-              trigger: "backtest",
+              trigger: triggerNode.node_type,
               initialInput,
             });
 

@@ -706,28 +706,28 @@ export class MarketControlHandler {
       }
 
       // Recalculate needed symbols from all remaining workflows
-      const neededSymbols = new Set<string>();
-      for (const wfSymbols of state.workflowSymbols.values()) {
-        wfSymbols.forEach((s) => neededSymbols.add(s.toUpperCase()));
-      }
+      // const neededSymbols = new Set<string>();
+      // for (const wfSymbols of state.workflowSymbols.values()) {
+      //   wfSymbols.forEach((s) => neededSymbols.add(s.toUpperCase()));
+      // }
 
       // Find symbols to unsubscribe
-      const toRemove = symbols.filter(
-        (s) =>
-          !neededSymbols.has(s.toUpperCase()) &&
-          state.symbols.has(s.toUpperCase()),
-      );
+      // const toRemove = symbols.filter(
+      //   (s) =>
+      //     // !neededSymbols.has(s.toUpperCase()) &&
+      //     state.symbols.has(s.toUpperCase()),
+      // );
 
-      if (toRemove.length > 0) {
+      if (symbols.length > 0) {
         console.log(
           `➖ [MarketControl] Unsubscribing from symbols on ${source}:`,
-          toRemove,
+          symbols,
         );
-        toRemove.forEach((s) => state.symbols.delete(s.toUpperCase()));
-        state.gateway.unsubscribeSymbols(toRemove);
+        symbols.forEach((s) => state.symbols.delete(s.toUpperCase()));
+        state.gateway.unsubscribeSymbols(symbols);
         await this.persistState(userId, source);
         console.log(
-          `✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`,
+          `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,
         );
       }
 

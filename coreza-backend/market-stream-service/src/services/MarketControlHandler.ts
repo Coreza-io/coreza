@@ -585,7 +585,7 @@ export class MarketControlHandler {
 
         if (subscriptionScope === "workflow" && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
-          const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
+          const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
           console.log(
             `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
           );
@@ -602,7 +602,7 @@ export class MarketControlHandler {
           );
         } else {
           // Global subscription: all workflows can access
-          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
@@ -610,19 +610,6 @@ export class MarketControlHandler {
           console.log(
             `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`,
           );
-
-          // Also track in workflow-scoped key for cleanup on workflow deactivation
-          // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-          if (workflowId) {
-            const workflowTrackingKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:${source}:symbols`;
-            await this.redisPub.sadd(
-              workflowTrackingKey,
-              ...symbols.map((s) => s.toUpperCase()),
-            );
-            console.log(
-              `📊 [MarketControl] Also tracked ${symbols.length} symbols in workflow key for cleanup: ${workflowTrackingKey}`,
-            );
-          }
         }
       });
     } catch (error) {
@@ -660,7 +647,7 @@ export class MarketControlHandler {
         targetWorkflowId &&
         symbols.length > 0
       ) {
-        const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
+        const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
         await this.redisPub.srem(workflowSubKey, ...symbols);
         console.log(
           `📤 [MarketControl] Removed ${symbols.join(
@@ -674,13 +661,35 @@ export class MarketControlHandler {
         !targetWorkflowId &&
         symbols.length > 0
       ) {
-        const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
-        await this.redisPub.srem(userSubKey, ...symbols);
-        console.log(
-          `📤 [MarketControl] Removed ${symbols.join(
-            ", ",
-          )} from global key: ${userSubKey}`,
-        );
+        if (workflowId) {
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
+          await this.redisPub.srem(userSubKey, ...symbols);
+          console.log(
+            `📤 [MarketControl] Removed ${symbols.join(
+              ", ",
+            )} from global key: ${userSubKey}`,
+          );
+        } else {
+          // Remove user subscribed symbol at user level from Market Data page.But below command will be expansive if lots of workflow so be sure to optimize, ok for now
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:*:scope:global:${source}:symbols`;
+
+          const stream = this.redisPub.scanStream({ match: userSubKey });
+
+          for await (const keys of stream) {
+            for (const key of keys) {
+              await this.redisPub.srem(
+                key,
+                ...symbols.map((s) => s.toUpperCase()),
+              );
+            }
+          }
+
+          console.log(
+            `📤 [MarketControl] Removed ${symbols.join(
+              ", ",
+            )} from global key: ${userSubKey}`,
+          );
+        }
       }
 
       // Unregister workflow from MarketDataSubscriber
@@ -693,16 +702,6 @@ export class MarketControlHandler {
 
         // Remove workflow tracking
         state.workflowSymbols.delete(workflowId);
-        // Also untrack in workflow-scoped key for cleanup on workflow deactivation
-        // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-        const workflowTrackingKey = `md:user:${msg.userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
-        await this.redisPub.srem(
-          workflowTrackingKey,
-          ...symbols.map((s) => s.toUpperCase()),
-        );
-        console.log(
-          `🗑️ [MarketControl] Removed workflow ${workflowId} from ${source}`,
-        );
       }
 
       // Recalculate needed symbols from all remaining workflows

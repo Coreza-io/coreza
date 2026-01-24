@@ -44,8 +44,8 @@ export interface ListenerParams {
   workflowId: string;
   nodeId: string;
   source: string;
-  mode?: "listen" | "subscribe";
-  subscriptionMode?: "test" | "production";
+  mode: string;
+  scope: string;
 }
 
 export interface ListenerData {
@@ -55,7 +55,7 @@ export interface ListenerData {
   status: "listening" | "stopped";
   startedAt: string;
   mode: string;
-  subscriptionMode: string;
+  scope: string;
   source: string;
 }
 
@@ -73,7 +73,9 @@ export class RegistrationService {
    * Check and increment listener count (rate limiting)
    * Returns true if allowed, false if limit exceeded
    */
-  static async checkAndIncrementListenerCount(userId: string): Promise<boolean> {
+  static async checkAndIncrementListenerCount(
+    userId: string,
+  ): Promise<boolean> {
     const redis = getRedisCache();
     const countKey = REDIS_CHANNELS.userListenerCount(userId);
 
@@ -109,10 +111,17 @@ export class RegistrationService {
    * Create a test listener with TTL
    */
   static async createListener(params: ListenerParams): Promise<string> {
-    const { userId, workflowId, nodeId, source, mode = "listen", subscriptionMode = "test" } = params;
+    const {
+      userId,
+      workflowId,
+      nodeId,
+      source,
+      mode = "listen",
+      scope,
+    } = params;
     const redis = getRedisCache();
 
-    const listenerKey = REDIS_CHANNELS.testListener(userId, workflowId, nodeId);
+    const listenerKey = REDIS_CHANNELS.Listener(userId, workflowId, nodeId);
     const now = new Date().toISOString();
 
     const listenerData: ListenerData = {
@@ -122,12 +131,16 @@ export class RegistrationService {
       status: "listening",
       startedAt: now,
       mode,
-      subscriptionMode,
+      scope,
       source,
     };
 
     // Store listener with TTL (auto-expire)
-    await redis.setex(listenerKey, LISTENER_TTL_SECONDS, JSON.stringify(listenerData));
+    await redis.setex(
+      listenerKey,
+      LISTENER_TTL_SECONDS,
+      JSON.stringify(listenerData),
+    );
 
     // Add to user's active listeners SET for efficient per-user queries
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
@@ -151,8 +164,8 @@ export class RegistrationService {
   ): Promise<void> {
     const redis = getRedisCache();
 
-    const listenerKey = REDIS_CHANNELS.testListener(userId, workflowId, nodeId);
-    const resultKey = REDIS_CHANNELS.testListenerResult(userId, workflowId, nodeId);
+    const listenerKey = REDIS_CHANNELS.Listener(userId, workflowId, nodeId);
+    const resultKey = REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId);
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
 
     // Delete listener and result keys
@@ -165,7 +178,10 @@ export class RegistrationService {
     // Decrement count
     await this.decrementListenerCount(userId);
 
-    logger.debug({ userId, workflowId, nodeId, listenerKey }, "Deleted test listener");
+    logger.debug(
+      { userId, workflowId, nodeId, listenerKey },
+      "Deleted test listener",
+    );
   }
 
   /**
@@ -199,7 +215,10 @@ export class RegistrationService {
   /**
    * Update activity timestamp for a workflow registration
    */
-  static async updateActivity(userId: string, workflowId: string): Promise<boolean> {
+  static async updateActivity(
+    userId: string,
+    workflowId: string,
+  ): Promise<boolean> {
     const redis = getRedisCache();
     const regKey = REDIS_CHANNELS.workflowRegistration(userId, workflowId);
 
@@ -230,7 +249,7 @@ export class RegistrationService {
     workflowId: string;
     nodeId: string;
     source: string;
-    subscriptionMode?: string;
+    scope: string;
   }): Promise<void> {
     const redis = getRedisCache();
 
@@ -240,7 +259,7 @@ export class RegistrationService {
       workflowId: params.workflowId,
       nodeId: params.nodeId,
       source: params.source,
-      subscriptionMode: params.subscriptionMode,
+      scope: params.scope,
     };
 
     await redis.publish(
@@ -273,7 +292,10 @@ export class RegistrationService {
       JSON.stringify(controlMessage),
     );
 
-    logger.debug({ ...params }, "Published unregister_workflow control message");
+    logger.debug(
+      { ...params },
+      "Published unregister_workflow control message",
+    );
   }
 
   /**
@@ -315,7 +337,10 @@ export class RegistrationService {
 
         cleanedCount++;
       } catch (err) {
-        logger.error({ listenerKey, error: err }, "Failed to cleanup test listener");
+        logger.error(
+          { listenerKey, error: err },
+          "Failed to cleanup test listener",
+        );
       }
     }
 

@@ -27,9 +27,6 @@ export interface SubscriptionParams {
   operation: "subscribe" | "unsubscribe";
   // Symbol sources
   symbols?: string | string[];
-  symbolSource?: "manual" | "store" | "input";
-  sourceWorkflowId?: string;
-  sourceVariable?: string;
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
   streamTypes?: string[];
@@ -43,7 +40,7 @@ export interface SubscriptionParams {
   interval?: string;
   depth_levels?: string;
   // Subscription scope
-  subscriptionScope?: "global" | "workflow";
+  scope?: "global" | "workflow";
   targetWorkflowId?: string;
 }
 
@@ -151,7 +148,7 @@ export class SubscriptionService {
         assetType,
         interval,
         depth_levels,
-        subscriptionScope,
+        scope,
         targetWorkflowId,
       } = params;
 
@@ -216,11 +213,11 @@ export class SubscriptionService {
         source,
         credentialId,
         eventTypes,
-        subscriptionScope,
+        scope,
       };
 
       // Add target workflow ID for workflow-scoped subscriptions
-      if (subscriptionScope === "workflow" && resolvedTargetWorkflowId) {
+      if (scope === "workflow" && resolvedTargetWorkflowId) {
         controlMessage.targetWorkflowId = resolvedTargetWorkflowId;
       }
 

@@ -84,7 +84,9 @@ export class StatusService {
    */
   static async getGatewayStates(userId: string): Promise<GatewayState[]> {
     const redis = getRedisCache();
-    const gatewayKeys = await redis.keys(REDIS_KEY_PATTERNS.userGatewayStates(userId));
+    const gatewayKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userGatewayStates(userId),
+    );
     const sources: GatewayState[] = [];
 
     for (const key of gatewayKeys) {
@@ -118,9 +120,13 @@ export class StatusService {
   /**
    * Get all workflow registrations for a user
    */
-  static async getWorkflowRegistrations(userId: string): Promise<WorkflowRegistration[]> {
+  static async getWorkflowRegistrations(
+    userId: string,
+  ): Promise<WorkflowRegistration[]> {
     const redis = getRedisCache();
-    const regKeys = await redis.keys(REDIS_KEY_PATTERNS.userWorkflowRegistrations(userId));
+    const regKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userWorkflowRegistrations(userId),
+    );
     const registrations: WorkflowRegistration[] = [];
     const workflowIds = new Set<string>();
 
@@ -141,7 +147,10 @@ export class StatusService {
             workflowIds.add(reg.workflowId);
           }
         } catch (e) {
-          logger.error({ key, error: e }, "Error parsing workflow registration");
+          logger.error(
+            { key, error: e },
+            "Error parsing workflow registration",
+          );
         }
       }
     }
@@ -154,10 +163,15 @@ export class StatusService {
     for (const workflowId of activeWorkflows) {
       workflowIds.add(workflowId);
 
-      const alreadyIncluded = registrations.some((r) => r.workflowId === workflowId);
+      const alreadyIncluded = registrations.some(
+        (r) => r.workflowId === workflowId,
+      );
       if (!alreadyIncluded) {
         // Try to get additional info from stream filter
-        const filterKey = REDIS_CHANNELS.workflowStreamFilter(userId, workflowId);
+        const filterKey = REDIS_CHANNELS.workflowStreamFilter(
+          userId,
+          workflowId,
+        );
         const filterStr = await redis.get(filterKey);
         let source = "unknown";
         let eventTypes: string[] = [];
@@ -204,12 +218,16 @@ export class StatusService {
   /**
    * Get global (user-level) subscriptions
    */
-  static async getGlobalSubscriptions(userId: string): Promise<Record<string, string[]>> {
+  static async getGlobalSubscriptions(
+    userId: string,
+  ): Promise<Record<string, string[]>> {
     const redis = getRedisCache();
     const subscriptions: Record<string, string[]> = {};
 
     // Try new standardized key pattern first
-    const newKeys = await redis.keys(REDIS_KEY_PATTERNS.userGlobalSubscriptions(userId));
+    const newKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userGlobalSubscriptions(userId),
+    );
 
     for (const key of newKeys) {
       // Pattern: md:user:{userId}:subscription:scope:global:{source}:symbols
@@ -219,20 +237,6 @@ export class StatusService {
       if (match) {
         const symbols = await redis.smembers(key);
         if (symbols.length > 0) {
-          subscriptions[match[1]] = symbols;
-        }
-      }
-    }
-
-    // Also check legacy pattern for backward compatibility
-    const legacyKeys = await redis.keys(REDIS_KEY_PATTERNS.legacyUserSubscriptions(userId));
-
-    for (const key of legacyKeys) {
-      // Pattern: md:user:{userId}:subscribed_symbols:{source}
-      const match = key.match(/subscribed_symbols:(\w+)$/);
-      if (match) {
-        const symbols = await redis.smembers(key);
-        if (symbols.length > 0 && !subscriptions[match[1]]) {
           subscriptions[match[1]] = symbols;
         }
       }
@@ -252,7 +256,9 @@ export class StatusService {
     const workflowIds = new Set<string>();
 
     // Try new standardized key pattern first
-    const newKeys = await redis.keys(REDIS_KEY_PATTERNS.userWorkflowSubscriptions(userId));
+    const newKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userWorkflowSubscriptions(userId),
+    );
 
     for (const key of newKeys) {
       // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:symbols
@@ -265,30 +271,6 @@ export class StatusService {
         if (symbols.length > 0) {
           subscriptions.push({ workflowId, source, symbols });
           workflowIds.add(workflowId);
-        }
-      }
-    }
-
-    // Also check legacy pattern for backward compatibility
-    const legacyKeys = await redis.keys(
-      REDIS_KEY_PATTERNS.legacyUserWorkflowSubscriptions(userId),
-    );
-
-    for (const key of legacyKeys) {
-      // Pattern: md:user:{userId}:workflow:{workflowId}:subscribed_symbols:{source}
-      const match = key.match(/workflow:([^:]+):subscribed_symbols:(\w+)$/);
-      if (match) {
-        const [, workflowId, source] = match;
-        // Skip if already found in new pattern
-        const exists = subscriptions.some(
-          (s) => s.workflowId === workflowId && s.source === source,
-        );
-        if (!exists) {
-          const symbols = await redis.smembers(key);
-          if (symbols.length > 0) {
-            subscriptions.push({ workflowId, source, symbols });
-            workflowIds.add(workflowId);
-          }
         }
       }
     }
@@ -331,8 +313,12 @@ export class StatusService {
       }
     };
 
-    sources.forEach((s) => s.symbols.forEach((sym) => addSymbol(sym, s.source)));
-    workflows.forEach((w) => w.symbols.forEach((sym) => addSymbol(sym, w.source)));
+    sources.forEach((s) =>
+      s.symbols.forEach((sym) => addSymbol(sym, s.source)),
+    );
+    workflows.forEach((w) =>
+      w.symbols.forEach((sym) => addSymbol(sym, w.source)),
+    );
     Object.entries(globalSubs).forEach(([source, symbols]) =>
       symbols.forEach((sym) => addSymbol(sym, source)),
     );
@@ -346,7 +332,9 @@ export class StatusService {
   /**
    * Get complete subscription status for a user
    */
-  static async getSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
+  static async getSubscriptionStatus(
+    userId: string,
+  ): Promise<SubscriptionStatus> {
     const [sources, workflows, userSubscriptions, workflowScopedSubscriptions] =
       await Promise.all([
         this.getGatewayStates(userId),
@@ -371,7 +359,9 @@ export class StatusService {
         totalSources: sources.filter((s) => s.connected).length,
         totalSymbols: allSymbols.size,
         totalWorkflows: workflows.length,
-        connectedSources: sources.filter((s) => s.connected).map((s) => s.source),
+        connectedSources: sources
+          .filter((s) => s.connected)
+          .map((s) => s.source),
       },
       symbolSourceMap,
     };

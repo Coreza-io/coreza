@@ -95,11 +95,11 @@ export const REDIS_CHANNELS = {
 
   // Individual test listener data
   // Used by: stream.ts register/unregister endpoints
-  testListener: (userId: string, workflowId: string, nodeId: string) =>
+  Listener: (userId: string, workflowId: string, nodeId: string) =>
     `md:user:${userId}:stream:${workflowId}:${nodeId}`,
 
-  // Test listener result (stores captured market event)
-  testListenerResult: (userId: string, workflowId: string, nodeId: string) =>
+  // listener result (stores captured market event)
+  ListenerResult: (userId: string, workflowId: string, nodeId: string) =>
     `md:user:${userId}:stream:${workflowId}:${nodeId}:result`,
 
   // User's active test listeners SET (for efficient per-user queries)
@@ -109,23 +109,6 @@ export const REDIS_CHANNELS = {
   // User's test listener count (for rate limiting)
   userListenerCount: (userId: string) =>
     `md:user:${userId}:stream:listener_count`,
-
-  // ============================================
-  // LEGACY KEY PATTERNS (for migration/cleanup)
-  // ============================================
-
-  // Legacy subscription key pattern (before standardization)
-  // Pattern: md:user:{userId}:subscribed_symbols:{source}
-  legacySubscribedSymbols: (userId: string, source: string) =>
-    `md:user:${userId}:subscribed_symbols:${source}`,
-
-  // Legacy workflow-scoped subscription pattern
-  // Pattern: md:user:{userId}:workflow:{workflowId}:subscribed_symbols:{source}
-  legacyWorkflowSubscribedSymbols: (
-    userId: string,
-    workflowId: string,
-    source: string,
-  ) => `md:user:${userId}:workflow:${workflowId}:subscribed_symbols:${source}`,
 } as const;
 
 // ============================================
@@ -148,13 +131,7 @@ export const REDIS_KEY_PATTERNS = {
   userGatewayStates: (userId: string) => `md:gateway:${userId}:*:state`,
 
   // All test listeners for a user
-  userTestListeners: (userId: string) => `md:user:${userId}:stream:*`,
-
-  // Legacy patterns (for cleanup)
-  legacyUserSubscriptions: (userId: string) =>
-    `md:user:${userId}:subscribed_symbols:*`,
-  legacyUserWorkflowSubscriptions: (userId: string) =>
-    `md:user:${userId}:workflow:*:subscribed_symbols:*`,
+  userListeners: (userId: string) => `md:user:${userId}:stream:*`,
 } as const;
 
 // Type exports

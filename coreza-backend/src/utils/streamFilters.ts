@@ -9,7 +9,7 @@ export interface SymbolFilterConfig {
   userId: string;
   workflowId?: string;
   source: string;
-  subscriptionMode: "global" | "workflow";
+  scope: "global" | "workflow";
   filterSymbols?: string[];
 }
 
@@ -24,16 +24,16 @@ export interface EventFilterConfig {
  */
 export async function getAllowedSymbols(
   redis: Redis,
-  config: SymbolFilterConfig
+  config: SymbolFilterConfig,
 ): Promise<string[]> {
-  const { userId, workflowId, source, subscriptionMode, filterSymbols } = config;
+  const { userId, workflowId, source, scope, filterSymbols } = config;
 
   let subscribedSymbols: string[] = [];
 
-  if (subscriptionMode === "global") {
+  if (scope === "global") {
     // Fetch user's globally subscribed symbols
     subscribedSymbols = await redis.smembers(
-      `user:${userId}:subscribed_symbols:${source}`
+      `user:${userId}:subscribed_symbols:${source}`,
     );
   } else {
     // Workflow-scoped symbols
@@ -41,7 +41,7 @@ export async function getAllowedSymbols(
       return filterSymbols?.map((s) => s.toUpperCase()) || [];
     }
     subscribedSymbols = await redis.smembers(
-      `workflow:${workflowId}:subscribed_symbols:${source}`
+      `workflow:${workflowId}:subscribed_symbols:${source}`,
     );
   }
 
@@ -63,7 +63,7 @@ export async function getAllowedSymbols(
  */
 export function matchesSymbolFilter(
   eventSymbol: string | undefined,
-  allowedSymbols: string[]
+  allowedSymbols: string[],
 ): boolean {
   if (!allowedSymbols || allowedSymbols.length === 0) {
     return true; // No filter = allow all
@@ -80,7 +80,7 @@ export function matchesSymbolFilter(
  */
 export function matchesTypeFilter(
   eventType: string | undefined,
-  allowedTypes: string[]
+  allowedTypes: string[],
 ): boolean {
   if (!allowedTypes || allowedTypes.length === 0) {
     return true; // No filter = allow all
@@ -98,7 +98,7 @@ export function matchesTypeFilter(
 export function matchesEventFilters(
   eventSymbol: string | undefined,
   eventType: string | undefined,
-  config: EventFilterConfig
+  config: EventFilterConfig,
 ): boolean {
   const { filterSymbols, filterTypes } = config;
 

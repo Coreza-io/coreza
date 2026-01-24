@@ -156,28 +156,22 @@ export class MarketControlHandler {
     workflowId: string;
     nodeId: string;
     source: string;
-    subscriptionMode?: "workflow" | "global";
+    scope: string;
   }): Promise<void> {
-    const {
-      userId,
-      workflowId,
-      nodeId,
-      source,
-      subscriptionMode = "workflow",
-    } = msg;
+    const { userId, workflowId, nodeId, source, scope } = msg;
 
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
-        }, mode: ${subscriptionMode}
+        }, mode: ${scope}
         )})`,
       );
 
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
       const symbolsToRegister =
-        subscriptionMode === "global"
+        scope === "global"
           ? await this.getUserSubscribedSymbols(userId, source)
           : await this.getWorkflowScopedSymbols(userId, workflowId, source);
 

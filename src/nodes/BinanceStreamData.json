@@ -285,8 +285,8 @@
       }
     },
     {
-      "key": "subscriptionMode",
-      "label": "Subscription Mode",
+      "key": "scope",
+      "label": "Scope",
       "type": "select",
       "options": [
         {

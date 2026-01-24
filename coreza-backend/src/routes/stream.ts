@@ -87,7 +87,7 @@ router.post("/:source/subscribe", async (req, res) => {
       asset_type,
       interval,
       depth_levels,
-      subscriptionScope,
+      scope,
       targetWorkflowId,
     } = req.body;
 
@@ -119,7 +119,7 @@ router.post("/:source/subscribe", async (req, res) => {
       assetType: asset_type,
       interval,
       depth_levels: depth_levels,
-      subscriptionScope,
+      scope,
       targetWorkflowId,
     });
 
@@ -169,7 +169,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       asset_type,
       interval,
       depth_levels,
-      subscriptionScope,
+      scope,
       targetWorkflowId,
     } = req.body;
 
@@ -201,7 +201,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       assetType: asset_type,
       interval,
       depth_levels: depth_levels,
-      subscriptionScope,
+      scope,
       targetWorkflowId,
     });
 
@@ -248,7 +248,10 @@ router.post("/streaming-activity", async (req, res) => {
         .json({ error: "workflow_id and node_id are required" });
     }
 
-    const success = await RegistrationService.updateActivity(userId, workflow_id);
+    const success = await RegistrationService.updateActivity(
+      userId,
+      workflow_id,
+    );
 
     if (!success) {
       return res.status(404).json({ error: "Registration not found" });
@@ -330,7 +333,7 @@ router.post("/:source/register", async (req, res) => {
       feed,
       interval,
       depth_levels,
-      subscriptionMode,
+      scope,
     } = req.body as StreamExecutionRequest;
 
     if (!workflow_id) {
@@ -388,7 +391,7 @@ router.post("/:source/register", async (req, res) => {
         assetType: asset_type,
         interval,
         depth_levels: depth_levels,
-        subscriptionScope: "workflow",
+        scope,
         targetWorkflowId: workflow_id,
       });
 
@@ -410,7 +413,8 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Rate limit check for test listener
-    const allowed = await RegistrationService.checkAndIncrementListenerCount(userId);
+    const allowed =
+      await RegistrationService.checkAndIncrementListenerCount(userId);
 
     if (!allowed) {
       console.warn(
@@ -430,7 +434,7 @@ router.post("/:source/register", async (req, res) => {
       nodeId: node_id,
       source: sourceId,
       mode,
-      subscriptionMode,
+      scope,
     });
 
     // Publish registration control message to market-stream-service
@@ -439,7 +443,7 @@ router.post("/:source/register", async (req, res) => {
       workflowId: workflow_id,
       nodeId: node_id,
       source: sourceId,
-      subscriptionMode,
+      scope,
     });
 
     console.log(`📡 [ExecuteStreamNode] Published register_workflow`);

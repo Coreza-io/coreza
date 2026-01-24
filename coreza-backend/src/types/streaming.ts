@@ -25,7 +25,7 @@ export interface StreamExecutionRequest {
   feed?: "iex" | "sip";
   interval?: string;
   depth_levels?: string;
-  subscriptionMode?: "workflow" | "global";
+  scope: "workflow" | "global";
 }
 
 /**

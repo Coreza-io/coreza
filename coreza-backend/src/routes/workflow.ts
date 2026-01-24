@@ -176,7 +176,7 @@ router.delete("/:workflowId", async (req, res, next) => {
           n.name === "BinanceStreamData" ||
           n.type === "BinanceStreamData" ||
           n.name === "DhanStreamData" ||
-          n.type === "DhanStreamData"
+          n.type === "DhanStreamData",
       );
 
       if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
@@ -191,8 +191,8 @@ router.delete("/:workflowId", async (req, res, next) => {
                   .map((s: string) => s.trim())
                   .filter(Boolean)
               : Array.isArray(symbols)
-              ? symbols
-              : [];
+                ? symbols
+                : [];
 
           // Map node name to WebSocket source ID
           const source = nodeNameToSourceMap[node.name] || node.name;
@@ -209,19 +209,20 @@ router.delete("/:workflowId", async (req, res, next) => {
 
           await redis.publish(
             REDIS_CHANNELS.controlUnsubscribe,
-            JSON.stringify(controlMessage)
+            JSON.stringify(controlMessage),
           );
 
           console.log(
             `📤 [Workflow Delete] Published unsubscribe control message for ${source}:`,
-            symbolArray
+            symbolArray,
           );
         }
       }
 
       // Also unsubscribe streaming trigger workflows from MarketDataSubscriber
       const streamingTriggers = workflow.nodes?.filter(
-        (n: any) => n.node_type === "trigger" && n.executionMode === "streaming"
+        (n: any) =>
+          n.node_type === "trigger" && n.executionMode === "streaming",
       );
 
       for (const trigger of streamingTriggers || []) {
@@ -235,10 +236,10 @@ router.delete("/:workflowId", async (req, res, next) => {
         };
         await redis.publish(
           REDIS_CHANNELS.controlUnsubscribe,
-          JSON.stringify(unsubscribeMessage)
+          JSON.stringify(unsubscribeMessage),
         );
         console.log(
-          `📤 [Workflow Delete] Unsubscribed streaming workflow ${workflowId} from MarketDataSubscriber`
+          `📤 [Workflow Delete] Unsubscribed streaming workflow ${workflowId} from MarketDataSubscriber`,
         );
       }
     }
@@ -411,7 +412,7 @@ function computeCron(node: any): {
   if (nextInTZ < oneMinuteFromNow) {
     throw createError(
       "Invalid cron expression: unable to find a valid future execution time within 100 iterations",
-      400
+      400,
     );
   }
 
@@ -441,13 +442,13 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
     // Detect trigger nodes
     const triggerNodes = workflow.nodes.filter(
-      (n: any) => n.node_type === "trigger" || n.node_type === "backtest"
+      (n: any) => n.node_type === "trigger" || n.node_type === "backtest",
     );
 
     if (triggerNodes.length === 0) {
       throw createError(
         "No trigger node (Scheduler, Streaming or WebhookTrigger) found in workflow",
-        400
+        400,
       );
     }
 
@@ -479,76 +480,41 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           triggerNode.executionMode == "streaming"
         ) {
           const nodeValues = triggerNode.values || {};
-          const filterSymbols = nodeValues.filter_symbols;
-          const filterTypes = nodeValues.filter_types;
 
           const redis = getRedisCache();
 
           // Store workflow in active streaming workflows set for this user
           await redis.sadd(
-            `user:${userId}:active_streaming_workflows`,
-            workflowId
+            `md:user:${userId}:stream:active_streaming_workflows`,
+            workflowId,
           );
 
-          // Store filter configuration for this workflow
-          // Parse filter_symbols to array for consistent format with updateActiveStreamingWorkflows
-          const filterConfig = {
-            filter_symbols: filterSymbols
-              ? filterSymbols
-                  .split(",")
-                  .map((s: string) => s.trim().toUpperCase())
-                  .filter(Boolean)
-              : [],
-            filter_types: filterTypes || [],
-            nodeId: triggerNode.id,
-          };
-          await setStoreValue(
-            redis,
-            `workflow:${workflowId}:stream_filter`,
-            filterConfig
-          );
-
-          // source for proper subscription routing
-          const source = triggerNode.streamingConfig.sourceId;
+          const sourceId = `${triggerNode.subCategory}_${triggerNode.values.data_type}`;
 
           // Get subscription mode - determines whether to receive global or workflow-scoped data only
-          const subscriptionMode = nodeValues.subscriptionMode || "workflow";
+          const scope = nodeValues.scope;
 
           // Publish registration message to market-stream-service
           // This allows the trading workflow to receive data from symbols subscribed by other workflows
           const registrationMessage = {
-            action: "register_streaming_workflow",
+            action: "register_workflow",
             userId,
             workflowId,
             nodeId: triggerNode.id,
-            source, // Include source for proper subscription routing
-            filter_symbols: filterSymbols
-              ? filterSymbols
-                  .split(",")
-                  .map((s: string) => s.trim().toUpperCase())
-                  .filter(Boolean)
-              : [],
-            filter_types: filterTypes || [],
-            subscriptionMode, // NEW: controls whether to receive global or workflow-scoped symbols
+            source: sourceId,
+            scope,
           };
           await redis.publish(
             "md:control:register_workflow",
-            JSON.stringify(registrationMessage)
+            JSON.stringify(registrationMessage),
           );
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
             {
-              source,
-              filterSymbols,
-              filterTypes,
-            }
+              sourceId,
+            },
           );
-          newsSubscription = {
-            symbols: filterSymbols
-              ? filterSymbols.split(",").map((s: string) => s.trim())
-              : [],
-          };
         }
 
         // Handle WebhookTrigger activation
@@ -559,7 +525,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // For WebhookTrigger - no external service to call
           // The WebhookService.handleIncoming() will check is_active and route to BullMQ
           console.log(
-            `🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`
+            `🪝 [Workflow Route] WebhookTrigger activated for workflow ${workflowId}`,
           );
         }
 
@@ -586,7 +552,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           if (runError) {
             console.error(
-              `Failed to create workflow run for backtest: ${runError.message}`
+              `Failed to create workflow run for backtest: ${runError.message}`,
             );
           } else {
             // Extract initial input from BacktestInit node values
@@ -605,7 +571,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             });
 
             console.log(
-              `📊 [Workflow Route] BacktestInit workflow ${workflowId} queued for execution (run: ${run.id})`
+              `📊 [Workflow Route] BacktestInit workflow ${workflowId} queued for execution (run: ${run.id})`,
             );
           }
         }
@@ -615,10 +581,10 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         // Cancel all running/queued jobs for this workflow
         const cancelledJobs = await jobQueue.cancelWorkflowJobs(
           userId,
-          workflowId
+          workflowId,
         );
         console.log(
-          `🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`
+          `🛑 Cancelled ${cancelledJobs} running/queued jobs for workflow ${workflowId}`,
         );
 
         // Mark any "running" or "queued" workflow runs as cancelled
@@ -636,7 +602,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           if (cancelledRuns?.length) {
             console.log(
-              `🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`
+              `🛑 Marked ${cancelledRuns.length} workflow runs as cancelled`,
             );
           }
         }
@@ -664,7 +630,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               .in("status", ["pending", "running"]);
 
             console.log(
-              `🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`
+              `🛑 Cancelled ${activeBacktests.length} active backtests for workflow ${workflowId}`,
             );
           }
         }
@@ -674,7 +640,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           triggerNode.subCategory == "webhook"
         ) {
           console.log(
-            `🪝 [Workflow Route] WebhookTrigger deactivated for workflow ${workflowId}`
+            `🪝 [Workflow Route] WebhookTrigger deactivated for workflow ${workflowId}`,
           );
         }
 
@@ -687,12 +653,9 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           // Remove workflow from active streaming workflows set
           await redis.srem(
-            `user:${userId}:active_streaming_workflows`,
-            workflowId
+            `md:user:${userId}:active_streaming_workflows`,
+            workflowId,
           );
-
-          // Remove filter configuration
-          await redis.del(`workflow:${workflowId}:stream_filter`);
 
           // Publish unregister message to market-stream-service
           const unregisterMessage = {
@@ -704,18 +667,18 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           };
           await redis.publish(
             "md:control:unregister_workflow",
-            JSON.stringify(unregisterMessage)
+            JSON.stringify(unregisterMessage),
           );
 
           console.log(
-            `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`
+            `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`,
           );
         }
 
         // Clean up workflow-scoped symbol subscriptions (from Subscribe nodes like BinanceSubscribe, AlpacaSubscribe, DhanSubscribe)
         const redis = getRedisCache();
         const workflowSymbolKeys = await redis.keys(
-          `workflow:${userId}:${workflowId}:subscribed_symbols:*`
+          `workflow:${userId}:${workflowId}:subscribed_symbols:*`,
         );
 
         for (const key of workflowSymbolKeys) {
@@ -732,11 +695,11 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             };
             await redis.publish(
               REDIS_CHANNELS.controlUnsubscribe,
-              JSON.stringify(unsubscribeMessage)
+              JSON.stringify(unsubscribeMessage),
             );
 
             console.log(
-              `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`
+              `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`,
             );
           }
 
@@ -771,7 +734,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           triggerNode.executionMode == "streaming"
         )
           parts.push(
-            `subscribed to news for ${newsSubscription?.symbols.join(", ")}`
+            `subscribed to news for ${newsSubscription?.symbols.join(", ")}`,
           );
         if (
           triggerNode.node_type == "trigger" &&
@@ -823,7 +786,7 @@ router.get("/scheduler/status", async (req, res, next) => {
           ? formatInTimeZone(
               job.next,
               job.timezone || "UTC",
-              "yyyy-MM-dd HH:mm:ssXXX"
+              "yyyy-MM-dd HH:mm:ssXXX",
             )
           : null,
       })),

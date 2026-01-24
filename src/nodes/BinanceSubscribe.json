@@ -268,7 +268,7 @@
       "showDescription": false
     },
     {
-      "key": "subscriptionScope",
+      "key": "scope",
       "label": "Subscription Scope",
       "type": "select",
       "options": [

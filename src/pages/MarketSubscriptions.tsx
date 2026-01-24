@@ -149,8 +149,8 @@ const MarketSubscriptions = () => {
         if (showRefreshToast) setRefreshing(true);
 
         const response = await apiClient.get(
-          "/market/subscriptions/status",
-          session?.access_token
+          "/stream/subscriptions/status",
+          session?.access_token,
         );
 
         if (!response.ok) {
@@ -178,7 +178,7 @@ const MarketSubscriptions = () => {
         setRefreshing(false);
       }
     },
-    [user, toast]
+    [user, toast],
   );
 
   const handleUnsubscribeSymbol = useCallback(
@@ -187,14 +187,10 @@ const MarketSubscriptions = () => {
 
       setUnsubscribing(`symbol-${symbol}`);
       try {
-        // Source may already have _stream suffix or not
-        const sourceRoute = source.endsWith("_stream")
-          ? source
-          : `${source}_stream`;
         const response = await apiClient.post(
-          `/market/${sourceRoute}/unsubscribe`,
+          `/stream/${source}/unsubscribe`,
           { symbols: [symbol] },
-          session?.access_token
+          session?.access_token,
         );
 
         if (!response.ok) throw new Error("Failed to unsubscribe");
@@ -214,7 +210,7 @@ const MarketSubscriptions = () => {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus]
+    [user, toast, fetchStatus],
   );
 
   // Handler for workflow-scoped symbol unsubscription (needs workflowId to target correct Redis key)
@@ -225,13 +221,13 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`symbol-${workflowId}-${symbol}`);
       try {
         const response = await apiClient.post(
-          `/market/${source}/unsubscribe`,
+          `/stream/${source}/unsubscribe`,
           {
             workflow_id: workflowId, // Include workflowId for workflow-scoped removal
             symbols: [symbol],
             subscription_scope: "workflow", // Tell backend this is workflow-scoped
           },
-          session?.access_token
+          session?.access_token,
         );
 
         if (!response.ok) throw new Error("Failed to unsubscribe");
@@ -251,7 +247,7 @@ const MarketSubscriptions = () => {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus]
+    [user, toast, fetchStatus],
   );
 
   const handleUnsubscribeWorkflow = useCallback(
@@ -264,22 +260,18 @@ const MarketSubscriptions = () => {
         let response: Response;
         if (!wf.source || wf.source === "unknown") {
           response = await apiClient.delete(
-            `/market/workflows/${wf.workflowId}/unsubscribe`,
-            session?.access_token
+            `/stream/workflows/${wf.workflowId}/unsubscribe`,
+            session?.access_token,
           );
         } else {
-          // Source may already have _stream suffix (e.g., "binance_stream") or not (e.g., "binance")
-          const sourceRoute = wf.source.endsWith("_stream")
-            ? wf.source
-            : `${wf.source}_stream`;
           response = await apiClient.post(
-            `/market/${sourceRoute}/unsubscribe`,
+            `/stream/${wf.source}/unsubscribe`,
             {
               workflow_id: wf.workflowId,
               node_id: wf.nodeId,
               symbols: wf.symbols,
             },
-            session?.access_token
+            session?.access_token,
           );
         }
 
@@ -300,7 +292,7 @@ const MarketSubscriptions = () => {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus]
+    [user, toast, fetchStatus],
   );
 
   const handleClearSource = useCallback(
@@ -309,14 +301,10 @@ const MarketSubscriptions = () => {
 
       setUnsubscribing(`source-${source}`);
       try {
-        // Source may already have _stream suffix or not
-        const sourceRoute = source.endsWith("_stream")
-          ? source
-          : `${source}_stream`;
         const response = await apiClient.post(
-          `/market/${sourceRoute}/unsubscribe`,
+          `/stream/${source}/unsubscribe`,
           { symbols },
-          session?.access_token
+          session?.access_token,
         );
 
         if (!response.ok) throw new Error("Failed to unsubscribe");
@@ -336,13 +324,13 @@ const MarketSubscriptions = () => {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus]
+    [user, toast, fetchStatus],
   );
 
   const confirmUnsubscribeSymbol = (
     symbol: string,
     source: string,
-    workflowId?: string
+    workflowId?: string,
   ) => {
     setConfirmDialog({
       open: true,
@@ -391,21 +379,21 @@ const MarketSubscriptions = () => {
       (wf) =>
         symbolFilter === "" ||
         wf.symbols.some((s) =>
-          s.toLowerCase().includes(symbolFilter.toLowerCase())
+          s.toLowerCase().includes(symbolFilter.toLowerCase()),
         ) ||
-        wf.workflowName.toLowerCase().includes(symbolFilter.toLowerCase())
+        wf.workflowName.toLowerCase().includes(symbolFilter.toLowerCase()),
     ) || [];
 
   const allSymbols = new Set<string>();
   data?.sources.forEach((s) => s.symbols.forEach((sym) => allSymbols.add(sym)));
   data?.workflows.forEach((w) =>
-    w.symbols.forEach((sym) => allSymbols.add(sym))
+    w.symbols.forEach((sym) => allSymbols.add(sym)),
   );
 
   const filteredSymbols = Array.from(allSymbols).filter(
     (sym) =>
       symbolFilter === "" ||
-      sym.toLowerCase().includes(symbolFilter.toLowerCase())
+      sym.toLowerCase().includes(symbolFilter.toLowerCase()),
   );
 
   if (loading) {
@@ -560,7 +548,7 @@ const MarketSubscriptions = () => {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {["alpaca", "binance", "dhan", "schwab"].map((source) => {
                 const sourceData = data?.sources.find(
-                  (s) => s.source === source
+                  (s) => s.source === source,
                 );
                 const isConnected = sourceData?.connected || false;
 
@@ -853,7 +841,7 @@ const MarketSubscriptions = () => {
                                 symbolFilter === "" ||
                                 sym
                                   .toLowerCase()
-                                  .includes(symbolFilter.toLowerCase())
+                                  .includes(symbolFilter.toLowerCase()),
                             )
                             .map((symbol) => (
                               <Badge
@@ -881,7 +869,7 @@ const MarketSubscriptions = () => {
                             ))}
                         </div>
                       </div>
-                    )
+                    ),
                   )}
                 </div>
               </CardContent>
@@ -915,11 +903,11 @@ const MarketSubscriptions = () => {
                       (sub) =>
                         symbolFilter === "" ||
                         sub.symbols.some((s) =>
-                          s.toLowerCase().includes(symbolFilter.toLowerCase())
+                          s.toLowerCase().includes(symbolFilter.toLowerCase()),
                         ) ||
                         sub.workflowName
                           ?.toLowerCase()
-                          .includes(symbolFilter.toLowerCase())
+                          .includes(symbolFilter.toLowerCase()),
                     )
                     .map((sub, idx) => (
                       <div
@@ -954,7 +942,7 @@ const MarketSubscriptions = () => {
                                 symbolFilter === "" ||
                                 sym
                                   .toLowerCase()
-                                  .includes(symbolFilter.toLowerCase())
+                                  .includes(symbolFilter.toLowerCase()),
                             )
                             .map((symbol) => (
                               <Badge
@@ -968,7 +956,7 @@ const MarketSubscriptions = () => {
                                     confirmUnsubscribeSymbol(
                                       symbol,
                                       sub.source,
-                                      sub.workflowId
+                                      sub.workflowId,
                                     )
                                   }
                                   disabled={

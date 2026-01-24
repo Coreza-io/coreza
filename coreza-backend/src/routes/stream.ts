@@ -42,7 +42,7 @@ router.use(requireAuth);
 
 /**
  * Get all active market data subscriptions and their status
- * GET /market/subscriptions/status
+ * GET /stream/subscriptions/status
  */
 router.get("/subscriptions/status", async (req, res) => {
   try {
@@ -311,7 +311,7 @@ router.get("/subscriptions/status", async (req, res) => {
 
 /**
  * Subscribe to a market data source via Redis Pub/Sub
- * POST /market/:source/subscribe
+ * POST /stream/:source/subscribe
  */
 router.post("/:source/subscribe", async (req, res) => {
   try {
@@ -395,7 +395,7 @@ router.post("/:source/subscribe", async (req, res) => {
 
 /**
  * Unsubscribe from a market data source via Redis Pub/Sub
- * POST /market/:source/unsubscribe
+ * POST /stream/:source/unsubscribe
  */
 router.post("/:source/unsubscribe", async (req, res) => {
   try {
@@ -423,12 +423,12 @@ router.post("/:source/unsubscribe", async (req, res) => {
       targetWorkflowId,
     } = req.body;
 
-    if (!credential_id)
-      return res.status(400).json({ error: "credential_id is required" });
-
-    if (!node_id) return res.status(400).json({ error: "node_id is required" });
-
-    const sourceId = `${source}_${data_type}`;
+    let sourceId;
+    if (data_type) {
+      sourceId = `${source}_${data_type}`;
+    } else {
+      sourceId = source;
+    }
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
@@ -478,7 +478,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
 
 /**
  * Update activity timestamp for a streaming workflow
- * POST /market/streaming-activity
+ * POST /stream/streaming-activity
  *
  * Called periodically to indicate a streaming workflow is still active.
  * Prevents the cleanup service from removing it.
@@ -528,7 +528,7 @@ router.post("/streaming-activity", async (req, res) => {
 
 /**
  * Manually trigger cleanup of stale streaming workflows
- * POST /market/cleanup-streaming
+ * POST /stream/cleanup-streaming
  *
  * Admin endpoint to force cleanup of stale subscriptions.
  */
@@ -559,7 +559,7 @@ router.post("/cleanup-streaming", async (req, res) => {
 
 /**
  * Unified stream node execution endpoint
- * POST /market/execute-stream-node
+ * POST /stream/:source/register
  *
  * Single orchestrator for streaming trigger nodes (BinanceStreamData, AlpacaStreamData, etc.)
  * Handles subscription AND listener registration atomically - eliminates race conditions.
@@ -757,7 +757,7 @@ router.post("/:source/register", async (req, res) => {
 
 /**
  * Stop test listening for stream data
- * POST /market/stop-listen-stream
+ * POST /stream/stop-listen-stream
  *
  * Manually cancels a test listening session.
  */
@@ -824,7 +824,7 @@ router.post("/unregister", async (req, res) => {
 /**
  * Cleanup all test listeners for the current user
  * Called when user signs out or session expires
- * POST /market/cleanup-user-streams
+ * POST /stream/cleanup-user-streams
  */
 router.post("/cleanup-user-streams", async (req, res) => {
   try {

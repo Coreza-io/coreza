@@ -126,9 +126,9 @@ export class MarketControlHandler {
         } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
           await this.handleUnsubscribe(msg as ControlMessage);
         } else if (channel === REDIS_CHANNELS.controlRegister) {
-          await this.handleRegisterStreamingWorkflow(msg);
+          await this.handleRegister(msg);
         } else if (channel === REDIS_CHANNELS.controlUnregister) {
-          await this.handleUnregisterStreamingWorkflow(msg);
+          await this.handleUnregister(msg);
         }
       } catch (error) {
         console.error(
@@ -150,7 +150,7 @@ export class MarketControlHandler {
    * - 'workflow' (default): ONLY symbols specifically scoped to this workflow
    * - 'global': ALL symbols subscribed globally by the user + workflow-specific symbols
    */
-  private async handleRegisterStreamingWorkflow(msg: {
+  private async handleRegister(msg: {
     action: string;
     userId: string;
     workflowId: string;
@@ -212,7 +212,7 @@ export class MarketControlHandler {
   /**
    * Handle unregistration of streaming workflows (from workflow deactivation or test listener cleanup)
    */
-  private async handleUnregisterStreamingWorkflow(msg: {
+  private async handleUnregister(msg: {
     action: string;
     userId: string;
     workflowId: string;
@@ -701,7 +701,7 @@ export class MarketControlHandler {
         state.workflowSymbols.delete(workflowId);
         // Also untrack in workflow-scoped key for cleanup on workflow deactivation
         // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-        const workflowTrackingKey = `md:user:${msg.userId}:subscription:subscribedWorkflow:${workflowId}:${source}:symbols`;
+        const workflowTrackingKey = `md:user:${msg.userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
         await this.redisPub.srem(
           workflowTrackingKey,
           ...symbols.map((s) => s.toUpperCase()),

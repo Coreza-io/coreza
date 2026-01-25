@@ -26,7 +26,7 @@ interface ControlMessage {
   feed?: string;
   environment?: string; // For Binance: testnet/live
   assetType?: string; // For Binance: spot/futures
-  subscriptionScope?: "global" | "workflow";
+  scope: string;
   targetWorkflowId?: string;
 }
 
@@ -305,14 +305,14 @@ export class MarketControlHandler {
   private async updateActiveStreamingWorkflows(
     userId: string,
     newSymbols: string[],
-    subscriptionScope: "global" | "workflow" = "global",
+    scope: string,
     targetWorkflowId?: string,
   ): Promise<void> {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
 
       // If workflow-scoped, only update the target workflow AND any test listeners for it
-      if (subscriptionScope === "workflow" && targetWorkflowId) {
+      if (scope === "workflow" && targetWorkflowId) {
         console.log(
           `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`,
         );
@@ -565,12 +565,12 @@ export class MarketControlHandler {
           );
 
           // Notify active streaming workflows about new symbols (respecting scope)
-          const subscriptionScope = msg.subscriptionScope || "global";
+          const scope = msg.scope;
           const targetWorkflowId = msg.targetWorkflowId;
           await this.updateActiveStreamingWorkflows(
             userId,
             subscriptionNeeded,
-            subscriptionScope,
+            scope,
             targetWorkflowId,
           );
         } else {
@@ -580,12 +580,12 @@ export class MarketControlHandler {
         }
 
         // Persist subscriptions based on scope
-        const subscriptionScope = msg.subscriptionScope || "global";
+        const scope = msg.scope;
         const targetWorkflowId = msg.targetWorkflowId;
 
-        if (subscriptionScope === "workflow" && targetWorkflowId) {
+        if (scope === "workflow" && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
-          const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
+          const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
           console.log(
             `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
           );
@@ -602,7 +602,7 @@ export class MarketControlHandler {
           );
         } else {
           // Global subscription: all workflows can access
-          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
@@ -610,19 +610,6 @@ export class MarketControlHandler {
           console.log(
             `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`,
           );
-
-          // Also track in workflow-scoped key for cleanup on workflow deactivation
-          // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-          if (workflowId) {
-            const workflowTrackingKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:${source}:symbols`;
-            await this.redisPub.sadd(
-              workflowTrackingKey,
-              ...symbols.map((s) => s.toUpperCase()),
-            );
-            console.log(
-              `📊 [MarketControl] Also tracked ${symbols.length} symbols in workflow key for cleanup: ${workflowTrackingKey}`,
-            );
-          }
         }
       });
     } catch (error) {
@@ -650,17 +637,13 @@ export class MarketControlHandler {
         return;
       }
 
-      const subscriptionScope = msg.subscriptionScope || "global";
+      const scope = msg.scope;
       const targetWorkflowId = msg.targetWorkflowId;
 
-      // Use source as-is (e.g., "binance_stream") to match how market-stream-service stores keys
+      // Use source as-is (e.g., "binance_market") to match how market-stream-service stores keys
       // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
-      if (
-        subscriptionScope === "workflow" &&
-        targetWorkflowId &&
-        symbols.length > 0
-      ) {
-        const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
+      if (scope === "workflow" && targetWorkflowId && symbols.length > 0) {
+        const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
         await this.redisPub.srem(workflowSubKey, ...symbols);
         console.log(
           `📤 [MarketControl] Removed ${symbols.join(
@@ -669,18 +652,36 @@ export class MarketControlHandler {
         );
       }
       // Handle global symbol unsubscription (user-level)
-      else if (
-        subscriptionScope === "global" &&
-        !targetWorkflowId &&
-        symbols.length > 0
-      ) {
-        const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
-        await this.redisPub.srem(userSubKey, ...symbols);
-        console.log(
-          `📤 [MarketControl] Removed ${symbols.join(
-            ", ",
-          )} from global key: ${userSubKey}`,
-        );
+      else if (scope === "global" && !targetWorkflowId && symbols.length > 0) {
+        if (workflowId) {
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
+          await this.redisPub.srem(userSubKey, ...symbols);
+          console.log(
+            `📤 [MarketControl] Removed ${symbols.join(
+              ", ",
+            )} from global key: ${userSubKey}`,
+          );
+        } else {
+          // Remove user subscribed symbol at user level from Market Data page.But below command will be expansive if lots of workflow so be sure to optimize, ok for now
+          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:*:scope:global:${source}:symbols`;
+
+          const stream = this.redisPub.scanStream({ match: userSubKey });
+
+          for await (const keys of stream) {
+            for (const key of keys) {
+              await this.redisPub.srem(
+                key,
+                ...symbols.map((s) => s.toUpperCase()),
+              );
+            }
+          }
+
+          console.log(
+            `📤 [MarketControl] Removed ${symbols.join(
+              ", ",
+            )} from global key: ${userSubKey}`,
+          );
+        }
       }
 
       // Unregister workflow from MarketDataSubscriber
@@ -693,41 +694,31 @@ export class MarketControlHandler {
 
         // Remove workflow tracking
         state.workflowSymbols.delete(workflowId);
-        // Also untrack in workflow-scoped key for cleanup on workflow deactivation
-        // This ensures symbols subscribed by this workflow can be properly unsubscribed when deactivated
-        const workflowTrackingKey = `md:user:${msg.userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
-        await this.redisPub.srem(
-          workflowTrackingKey,
-          ...symbols.map((s) => s.toUpperCase()),
-        );
-        console.log(
-          `🗑️ [MarketControl] Removed workflow ${workflowId} from ${source}`,
-        );
       }
 
       // Recalculate needed symbols from all remaining workflows
-      const neededSymbols = new Set<string>();
-      for (const wfSymbols of state.workflowSymbols.values()) {
-        wfSymbols.forEach((s) => neededSymbols.add(s.toUpperCase()));
-      }
+      // const neededSymbols = new Set<string>();
+      // for (const wfSymbols of state.workflowSymbols.values()) {
+      //   wfSymbols.forEach((s) => neededSymbols.add(s.toUpperCase()));
+      // }
 
       // Find symbols to unsubscribe
-      const toRemove = symbols.filter(
-        (s) =>
-          !neededSymbols.has(s.toUpperCase()) &&
-          state.symbols.has(s.toUpperCase()),
-      );
+      // const toRemove = symbols.filter(
+      //   (s) =>
+      //     // !neededSymbols.has(s.toUpperCase()) &&
+      //     state.symbols.has(s.toUpperCase()),
+      // );
 
-      if (toRemove.length > 0) {
+      if (symbols.length > 0) {
         console.log(
           `➖ [MarketControl] Unsubscribing from symbols on ${source}:`,
-          toRemove,
+          symbols,
         );
-        toRemove.forEach((s) => state.symbols.delete(s.toUpperCase()));
-        state.gateway.unsubscribeSymbols(toRemove);
+        symbols.forEach((s) => state.symbols.delete(s.toUpperCase()));
+        state.gateway.unsubscribeSymbols(symbols);
         await this.persistState(userId, source);
         console.log(
-          `✅ [MarketControl] Unsubscribed from ${toRemove.length} symbols on ${source}`,
+          `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,
         );
       }
 

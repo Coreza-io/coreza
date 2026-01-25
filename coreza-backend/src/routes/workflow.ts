@@ -605,7 +605,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               userId,
               nodes: workflow.nodes as any[],
               edges: workflow.edges as any[],
-              trigger: "backtest",
+              trigger: triggerNode.node_type,
               initialInput,
             });
 

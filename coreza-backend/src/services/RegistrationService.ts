@@ -250,6 +250,7 @@ export class RegistrationService {
     nodeId: string;
     source: string;
     scope: string;
+    onlyClosedBars?: boolean;
   }): Promise<void> {
     const redis = getRedisCache();
 
@@ -260,6 +261,7 @@ export class RegistrationService {
       nodeId: params.nodeId,
       source: params.source,
       scope: params.scope,
+      onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
     };
 
     await redis.publish(

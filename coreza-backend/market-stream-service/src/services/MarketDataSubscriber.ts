@@ -28,6 +28,7 @@ interface WorkflowRegistration {
   symbols: Set<string>;
   source?: MarketSource;
   eventTypes?: MarketEventType[];
+  onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
 }
 
 export class MarketDataSubscriber {
@@ -81,6 +82,7 @@ export class MarketDataSubscriber {
     userId: string,
     symbols: string[],
     source?: MarketSource | string,
+    onlyClosedBars?: boolean,
   ): Promise<void> {
     try {
       console.log(
@@ -95,6 +97,7 @@ export class MarketDataSubscriber {
         userId,
         symbols: new Set(symbols.map((s) => s.toUpperCase())),
         source,
+        onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
       };
 
       // Store in memory
@@ -218,6 +221,7 @@ export class MarketDataSubscriber {
             userId: string;
             symbols: string[];
             source?: MarketSource;
+            onlyClosedBars?: boolean;
           };
 
           // Verify workflow is still active (use cache)
@@ -240,6 +244,7 @@ export class MarketDataSubscriber {
             registration.userId,
             registration.symbols,
             registration.source,
+            registration.onlyClosedBars,
           );
 
           restored++;
@@ -317,6 +322,27 @@ export class MarketDataSubscriber {
             registration.source.split("_")[0] !== event.source
           )
             continue;
+
+          // Filter unclosed bars for Binance when onlyClosedBars is enabled
+          // Binance klines stream continuously with isClosed=false until the candle closes
+          // Other sources (Alpaca) only emit bars when closed, so no filter needed
+          if (
+            registration.onlyClosedBars !== false && // Default is true
+            event.source === "binance" &&
+            event.type === "bar" &&
+            event.isClosed !== true
+          ) {
+            logger.debug(
+              {
+                symbol: event.symbol,
+                type: event.type,
+                isClosed: event.isClosed,
+                workflowId: registration.workflowId,
+              },
+              "Skipping unclosed Binance bar (onlyClosedBars enabled)",
+            );
+            continue;
+          }
 
           // Format event using shared helper (same format for frontend and backend)
           const formattedPayload = this.formatMarketEventPayload(event);
@@ -574,6 +600,7 @@ export class MarketDataSubscriber {
       symbols: Array.from(registration.symbols),
       source: registration.source,
       eventTypes: registration.eventTypes,
+      onlyClosedBars: registration.onlyClosedBars,
     });
 
     try {

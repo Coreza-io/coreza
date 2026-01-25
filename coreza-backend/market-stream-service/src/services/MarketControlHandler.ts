@@ -157,14 +157,15 @@ export class MarketControlHandler {
     nodeId: string;
     source: string;
     scope: string;
+    onlyClosedBars?: boolean;
   }): Promise<void> {
-    const { userId, workflowId, nodeId, source, scope } = msg;
+    const { userId, workflowId, nodeId, source, scope, onlyClosedBars } = msg;
 
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
           source || "all"
-        }, mode: ${scope}
+        }, mode: ${scope}, onlyClosedBars: ${onlyClosedBars ?? true}
         )})`,
       );
 
@@ -188,6 +189,7 @@ export class MarketControlHandler {
         userId,
         symbolsToRegister,
         source as MarketSource,
+        onlyClosedBars,
       );
 
       console.log(

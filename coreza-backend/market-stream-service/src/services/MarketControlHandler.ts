@@ -587,7 +587,7 @@ export class MarketControlHandler {
 
         if (scope === "workflow" && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
-          const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
+          const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
           console.log(
             `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
           );
@@ -604,7 +604,7 @@ export class MarketControlHandler {
           );
         } else {
           // Global subscription: all workflows can access
-          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
+          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
@@ -645,7 +645,7 @@ export class MarketControlHandler {
       // Use source as-is (e.g., "binance_market") to match how market-stream-service stores keys
       // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
       if (scope === "workflow" && targetWorkflowId && symbols.length > 0) {
-        const workflowSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:workflow:targetWorkflow:${targetWorkflowId}:${source}:symbols`;
+        const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
         await this.redisPub.srem(workflowSubKey, ...symbols);
         console.log(
           `📤 [MarketControl] Removed ${symbols.join(
@@ -656,7 +656,7 @@ export class MarketControlHandler {
       // Handle global symbol unsubscription (user-level)
       else if (scope === "global" && !targetWorkflowId && symbols.length > 0) {
         if (workflowId) {
-          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:${workflowId}:scope:global:${source}:symbols`;
+          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
           await this.redisPub.srem(userSubKey, ...symbols);
           console.log(
             `📤 [MarketControl] Removed ${symbols.join(
@@ -665,18 +665,11 @@ export class MarketControlHandler {
           );
         } else {
           // Remove user subscribed symbol at user level from Market Data page.But below command will be expansive if lots of workflow so be sure to optimize, ok for now
-          const userSubKey = `md:user:${userId}:subscription:subscribedWorkflow:*:scope:global:${source}:symbols`;
-
-          const stream = this.redisPub.scanStream({ match: userSubKey });
-
-          for await (const keys of stream) {
-            for (const key of keys) {
-              await this.redisPub.srem(
-                key,
-                ...symbols.map((s) => s.toUpperCase()),
-              );
-            }
-          }
+          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+          await this.redisPub.srem(
+            userSubKey,
+            ...symbols.map((s) => s.toUpperCase()),
+          );
 
           console.log(
             `📤 [MarketControl] Removed ${symbols.join(

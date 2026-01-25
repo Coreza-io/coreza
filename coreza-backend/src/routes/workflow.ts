@@ -19,6 +19,8 @@ import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
+import { RegistrationService } from "../services/RegistrationService";
+import { SubscriptionService } from "../services/SubscriptionService";
 import CronExpressionParser from "cron-parser";
 import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getRedisCache } from "../config/redis";
@@ -37,6 +39,63 @@ const nodeNameToSourceMap: Record<string, string> = {
   AlpacaStreamData: "alpaca_stream",
   AlpacaNews: "alpaca_news",
   DhanStreamData: "dhan_stream",
+};
+
+const resolveStreamSourceId = (node: any): string | null => {
+  const baseSource = node?.subCategory || nodeNameToSourceMap[node?.name];
+  if (!baseSource) {
+    return null;
+  }
+
+  const dataType = node?.values?.data_type ?? node?.data?.values?.data_type;
+  return dataType ? `${baseSource}_${dataType}` : baseSource;
+};
+
+const parseSymbols = (symbols: unknown): string[] => {
+  if (typeof symbols === "string") {
+    return symbols
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(symbols)) {
+    return symbols.filter((s): s is string => typeof s === "string");
+  }
+
+  return [];
+};
+
+const cleanupWorkflowSubscriptions = async (
+  userId: string,
+  workflowId: string,
+) => {
+  const redis = getRedisCache();
+  const workflowSubscriptionKeys = await redis.keys(
+    `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:symbols`,
+  );
+
+  for (const key of workflowSubscriptionKeys) {
+    const symbols = await redis.smembers(key);
+    const source = key.split(":")[7];
+
+    if (symbols.length > 0 && source) {
+      await SubscriptionService.unsubscribe({
+        source,
+        userId,
+        workflowId,
+        symbols,
+        scope: "workflow",
+        targetWorkflowId: workflowId,
+      });
+
+      console.log(
+        `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`,
+      );
+    }
+
+    await redis.del(key);
+  }
 };
 
 // Get all workflows for a user
@@ -163,8 +222,13 @@ router.delete("/:workflowId", async (req, res, next) => {
       await jobQueue.unscheduleWorkflow(workflowId);
 
       // Clean up streaming workflow from active set and filter config
-      await redis.srem(`user:${userId}:active_streaming_workflows`, workflowId);
-      await redis.del(`workflow:${workflowId}:stream_filter`);
+      await redis.srem(
+        REDIS_CHANNELS.activeStreamingWorkflows(userId),
+        workflowId,
+      );
+      await redis.del(
+        REDIS_CHANNELS.workflowStreamFilter(userId, workflowId),
+      );
 
       // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, BinanceStreamData, etc.)
       const streamingNodes = workflow.nodes?.filter(
@@ -182,38 +246,22 @@ router.delete("/:workflowId", async (req, res, next) => {
       if (streamingNodes && streamingNodes.length > 0 && workflow.is_active) {
         for (const node of streamingNodes) {
           const nodeValues = node.values || node.data?.values || {};
-          const symbols = nodeValues.symbols;
+          const symbolArray = parseSymbols(nodeValues.symbols);
+          const sourceId = resolveStreamSourceId(node);
 
-          const symbolArray =
-            typeof symbols === "string"
-              ? symbols
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : Array.isArray(symbols)
-                ? symbols
-                : [];
+          if (!sourceId) {
+            continue;
+          }
 
-          // Map node name to WebSocket source ID
-          const source = nodeNameToSourceMap[node.name] || node.name;
-
-          // Publish control message to Redis for unsubscription
-          const controlMessage = {
-            action: "unsubscribe",
+          await SubscriptionService.unsubscribe({
+            source: sourceId,
             userId,
             workflowId,
-            nodeId: node.id,
             symbols: symbolArray,
-            source,
-          };
-
-          await redis.publish(
-            REDIS_CHANNELS.controlUnsubscribe,
-            JSON.stringify(controlMessage),
-          );
+          });
 
           console.log(
-            `📤 [Workflow Delete] Published unsubscribe control message for ${source}:`,
+            `📤 [Workflow Delete] Published unsubscribe control message for ${sourceId}:`,
             symbolArray,
           );
         }
@@ -226,22 +274,16 @@ router.delete("/:workflowId", async (req, res, next) => {
       );
 
       for (const trigger of streamingTriggers || []) {
-        const unsubscribeMessage = {
-          action: "unsubscribe",
+        await RegistrationService.publishUnregisterWorkflow({
           userId,
           workflowId,
-          nodeId: trigger.id,
-          symbols: [],
-          source: "streaming_workflow",
-        };
-        await redis.publish(
-          REDIS_CHANNELS.controlUnsubscribe,
-          JSON.stringify(unsubscribeMessage),
-        );
+        });
         console.log(
-          `📤 [Workflow Delete] Unsubscribed streaming workflow ${workflowId} from MarketDataSubscriber`,
+          `📤 [Workflow Delete] Unregistered streaming workflow ${workflowId} from MarketDataSubscriber`,
         );
       }
+
+      await cleanupWorkflowSubscriptions(userId, workflowId);
     }
 
     const { error } = await supabase
@@ -485,29 +527,26 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           // Store workflow in active streaming workflows set for this user
           await redis.sadd(
-            `md:user:${userId}:stream:active_streaming_workflows`,
+            REDIS_CHANNELS.activeStreamingWorkflows(userId),
             workflowId,
           );
 
-          const sourceId = `${triggerNode.subCategory}_${triggerNode.values.data_type}`;
+          const sourceId = resolveStreamSourceId(triggerNode);
+
+          if (!sourceId) {
+            throw createError("Unknown streaming source", 400);
+          }
 
           // Get subscription mode - determines whether to receive global or workflow-scoped data only
           const scope = nodeValues.scope;
 
-          // Publish registration message to market-stream-service
-          // This allows the trading workflow to receive data from symbols subscribed by other workflows
-          const registrationMessage = {
-            action: "register_workflow",
+          await RegistrationService.publishRegisterWorkflow({
             userId,
             workflowId,
             nodeId: triggerNode.id,
             source: sourceId,
             scope,
-          };
-          await redis.publish(
-            "md:control:register_workflow",
-            JSON.stringify(registrationMessage),
-          );
+          });
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
@@ -653,22 +692,16 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           // Remove workflow from active streaming workflows set
           await redis.srem(
-            `md:user:${userId}:active_streaming_workflows`,
+            REDIS_CHANNELS.activeStreamingWorkflows(userId),
             workflowId,
           );
 
           // Publish unregister message to market-stream-service
-          const unregisterMessage = {
-            action: "unregister_workflow",
+          await RegistrationService.publishUnregisterWorkflow({
             userId,
             workflowId,
-            nodeId: triggerNode.id,
             isTestListener: false,
-          };
-          await redis.publish(
-            "md:control:unregister_workflow",
-            JSON.stringify(unregisterMessage),
-          );
+          });
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`,
@@ -676,36 +709,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         }
 
         // Clean up workflow-scoped symbol subscriptions (from Subscribe nodes like BinanceSubscribe, AlpacaSubscribe, DhanSubscribe)
-        const redis = getRedisCache();
-        const workflowSymbolKeys = await redis.keys(
-          `workflow:${userId}:${workflowId}:subscribed_symbols:*`,
-        );
-
-        for (const key of workflowSymbolKeys) {
-          const source = key.split(":").pop(); // Extract source from key (e.g., "binance_stream")
-          const symbols = await redis.smembers(key);
-
-          if (symbols.length > 0) {
-            const unsubscribeMessage = {
-              action: "unsubscribe",
-              userId,
-              workflowId,
-              symbols,
-              source,
-            };
-            await redis.publish(
-              REDIS_CHANNELS.controlUnsubscribe,
-              JSON.stringify(unsubscribeMessage),
-            );
-
-            console.log(
-              `📡 [Workflow Route] Unsubscribed ${symbols.length} symbols from ${source} for workflow ${workflowId}`,
-            );
-          }
-
-          // Clean up the Redis key
-          await redis.del(key);
-        }
+        await cleanupWorkflowSubscriptions(userId, workflowId);
       }
 
       // Persist workflow state

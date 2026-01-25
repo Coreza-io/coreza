@@ -540,12 +540,16 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // Get subscription mode - determines whether to receive global or workflow-scoped data only
           const scope = nodeValues.scope;
 
+          // Get onlyClosedBars setting - filters unclosed Binance klines (default: true)
+          const onlyClosedBars = nodeValues.onlyClosedBars ?? true;
+
           await RegistrationService.publishRegisterWorkflow({
             userId,
             workflowId,
             nodeId: triggerNode.id,
             source: sourceId,
             scope,
+            onlyClosedBars,
           });
 
           console.log(

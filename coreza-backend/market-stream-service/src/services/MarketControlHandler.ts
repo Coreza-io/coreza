@@ -625,7 +625,7 @@ export class MarketControlHandler {
           symbols,
         );
         symbols.forEach((s) => state.symbols.delete(s.toUpperCase()));
-        state.gateway.unsubscribeSymbols(symbols);
+        state.gateway.unsubscribeSymbols(symbols, eventTypes);
         await this.persistState(userId, source);
         console.log(
           `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,

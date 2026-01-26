@@ -52,13 +52,22 @@ export const REDIS_CHANNELS = {
   // SUBSCRIPTION KEYS (Broker connections via Subscribe nodes)
   // ============================================
 
-  // Global subscription symbols (user-level, shared across all workflows)
+  // Global subscription streams (user-level, shared across all workflows)
+  // Stores native stream names: btcusdt@kline_1m, bars.AAPL
   // Used by: SubscriptionService, MarketControlHandler
+  globalSubscriptionStreams: (userId: string, source: string) =>
+    `md:user:${userId}:subscription:scope:global:${source}:streams`,
+
+  // Workflow-scoped subscription streams (isolated to specific workflow)
+  // Stores native stream names: btcusdt@kline_1m, bars.AAPL
+  // Used by: SubscriptionService, MarketControlHandler
+  workflowSubscriptionStreams: (userId: string, workflowId: string, source: string) =>
+    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`,
+
+  // LEGACY: Symbol-only keys (for backward compatibility during migration)
+  // TODO: Remove after migration complete
   globalSubscription: (userId: string, source: string) =>
     `md:user:${userId}:subscription:scope:global:${source}:symbols`,
-
-  // Workflow-scoped subscription symbols (isolated to specific workflow)
-  // Used by: SubscriptionService, MarketControlHandler
   workflowSubscription: (userId: string, workflowId: string, source: string) =>
     `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`,
 
@@ -120,11 +129,17 @@ export const REDIS_KEY_PATTERNS = {
   // All workflow registrations for a user
   userWorkflowRegistrations: (userId: string) => `md:user:${userId}:wf:reg:*`,
 
-  // All global subscriptions for a user
+  // All global subscription streams for a user (new format)
+  userGlobalSubscriptionStreams: (userId: string) =>
+    `md:user:${userId}:subscription:scope:global:*:streams`,
+
+  // All workflow-scoped subscription streams for a user (new format)
+  userWorkflowSubscriptionStreams: (userId: string) =>
+    `md:user:${userId}:subscription:scope:workflow:*:*:streams`,
+
+  // LEGACY: Symbol-only patterns (for backward compatibility)
   userGlobalSubscriptions: (userId: string) =>
     `md:user:${userId}:subscription:scope:global:*:symbols`,
-
-  // All workflow-scoped subscriptions for a user
   userWorkflowSubscriptions: (userId: string) =>
     `md:user:${userId}:subscription:scope:workflow:*:*:symbols`,
 

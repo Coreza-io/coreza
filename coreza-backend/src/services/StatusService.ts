@@ -29,6 +29,7 @@ import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS, REDIS_KEY_PATTERNS } from "../config/redisChannels";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
+import { parseStreamName } from "../utils/streamName";
 
 // ============================================
 // TYPES
@@ -58,16 +59,19 @@ export interface WorkflowScopedSubscription {
   workflowName?: string;
   source: string;
   symbols: string[];
+  streams?: string[];  // Native stream names (e.g., btcusdt@kline_1m)
 }
 
 export interface SubscriptionStatus {
   sources: GatewayState[];
   workflows: WorkflowRegistration[];
-  userSubscriptions: Record<string, string[]>; // source -> symbols
+  userSubscriptions: Record<string, string[]>; // source -> symbols (legacy)
+  userSubscriptionStreams: Record<string, string[]>; // source -> stream names (new)
   workflowScopedSubscriptions: WorkflowScopedSubscription[];
   stats: {
     totalSources: number;
     totalSymbols: number;
+    totalStreams: number;
     totalWorkflows: number;
     connectedSources: string[];
   };
@@ -216,33 +220,61 @@ export class StatusService {
   }
 
   /**
-   * Get global (user-level) subscriptions
+   * Get global (user-level) subscriptions - returns both symbols (legacy) and streams (new)
    */
   static async getGlobalSubscriptions(
     userId: string,
-  ): Promise<Record<string, string[]>> {
+  ): Promise<{ symbols: Record<string, string[]>; streams: Record<string, string[]> }> {
     const redis = getRedisCache();
-    const subscriptions: Record<string, string[]> = {};
+    const symbols: Record<string, string[]> = {};
+    const streams: Record<string, string[]> = {};
 
-    // Try new standardized key pattern first
-    const newKeys = await redis.keys(
+    // Try new :streams key pattern first
+    const streamKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userGlobalSubscriptionStreams(userId),
+    );
+
+    for (const key of streamKeys) {
+      // Pattern: md:user:{userId}:subscription:scope:global:{source}:streams
+      const match = key.match(
+        /md:user:[^:]+:subscription:scope:global:([^:]+):streams$/,
+      );
+      if (match) {
+        const streamNames = await redis.smembers(key);
+        if (streamNames.length > 0) {
+          streams[match[1]] = streamNames;
+          // Also extract symbols from stream names for backward compatibility
+          const extractedSymbols = new Set<string>();
+          for (const streamName of streamNames) {
+            const parsed = parseStreamName(match[1], streamName);
+            extractedSymbols.add(parsed.symbol);
+          }
+          if (!symbols[match[1]]) {
+            symbols[match[1]] = Array.from(extractedSymbols);
+          }
+        }
+      }
+    }
+
+    // Also check legacy :symbols keys for backward compatibility
+    const symbolKeys = await redis.keys(
       REDIS_KEY_PATTERNS.userGlobalSubscriptions(userId),
     );
 
-    for (const key of newKeys) {
+    for (const key of symbolKeys) {
       // Pattern: md:user:{userId}:subscription:scope:global:{source}:symbols
       const match = key.match(
         /md:user:[^:]+:subscription:scope:global:([^:]+):symbols$/,
       );
       if (match) {
-        const symbols = await redis.smembers(key);
-        if (symbols.length > 0) {
-          subscriptions[match[1]] = symbols;
+        const legacySymbols = await redis.smembers(key);
+        if (legacySymbols.length > 0 && !symbols[match[1]]) {
+          symbols[match[1]] = legacySymbols;
         }
       }
     }
 
-    return subscriptions;
+    return { symbols, streams };
   }
 
   /**
@@ -252,28 +284,66 @@ export class StatusService {
     userId: string,
   ): Promise<WorkflowScopedSubscription[]> {
     const redis = getRedisCache();
-    const subscriptions: WorkflowScopedSubscription[] = [];
+    const subscriptionsMap = new Map<string, WorkflowScopedSubscription>();
     const workflowIds = new Set<string>();
 
-    // Try new standardized key pattern first
-    const newKeys = await redis.keys(
+    // Try new :streams key pattern first
+    const streamKeys = await redis.keys(
+      REDIS_KEY_PATTERNS.userWorkflowSubscriptionStreams(userId),
+    );
+
+    for (const key of streamKeys) {
+      // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:streams
+      const match = key.match(
+        /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):streams$/,
+      );
+      if (match) {
+        const [, workflowId, source] = match;
+        const streamNames = await redis.smembers(key);
+        if (streamNames.length > 0) {
+          const mapKey = `${workflowId}:${source}`;
+          // Extract symbols from stream names
+          const extractedSymbols = new Set<string>();
+          for (const streamName of streamNames) {
+            const parsed = parseStreamName(source, streamName);
+            extractedSymbols.add(parsed.symbol);
+          }
+          subscriptionsMap.set(mapKey, {
+            workflowId,
+            source,
+            symbols: Array.from(extractedSymbols),
+            streams: streamNames,
+          });
+          workflowIds.add(workflowId);
+        }
+      }
+    }
+
+    // Also check legacy :symbols keys for backward compatibility
+    const symbolKeys = await redis.keys(
       REDIS_KEY_PATTERNS.userWorkflowSubscriptions(userId),
     );
 
-    for (const key of newKeys) {
+    for (const key of symbolKeys) {
       // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:symbols
       const match = key.match(
         /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):symbols$/,
       );
       if (match) {
         const [, workflowId, source] = match;
-        const symbols = await redis.smembers(key);
-        if (symbols.length > 0) {
-          subscriptions.push({ workflowId, source, symbols });
-          workflowIds.add(workflowId);
+        const mapKey = `${workflowId}:${source}`;
+        // Only use legacy symbols if we don't have streams data
+        if (!subscriptionsMap.has(mapKey)) {
+          const symbols = await redis.smembers(key);
+          if (symbols.length > 0) {
+            subscriptionsMap.set(mapKey, { workflowId, source, symbols });
+            workflowIds.add(workflowId);
+          }
         }
       }
     }
+
+    const subscriptions = Array.from(subscriptionsMap.values());
 
     // Fetch workflow names from Supabase
     if (workflowIds.size > 0) {
@@ -335,13 +405,15 @@ export class StatusService {
   static async getSubscriptionStatus(
     userId: string,
   ): Promise<SubscriptionStatus> {
-    const [sources, workflows, userSubscriptions, workflowScopedSubscriptions] =
+    const [sources, workflows, globalSubsResult, workflowScopedSubscriptions] =
       await Promise.all([
         this.getGatewayStates(userId),
         this.getWorkflowRegistrations(userId),
         this.getGlobalSubscriptions(userId),
         this.getWorkflowScopedSubscriptions(userId),
       ]);
+
+    const { symbols: userSubscriptions, streams: userSubscriptionStreams } = globalSubsResult;
 
     const { allSymbols, symbolSourceMap } = this.buildSymbolSourceMap(
       sources,
@@ -350,14 +422,27 @@ export class StatusService {
       workflowScopedSubscriptions,
     );
 
+    // Count total streams
+    let totalStreams = 0;
+    for (const streamList of Object.values(userSubscriptionStreams)) {
+      totalStreams += streamList.length;
+    }
+    for (const sub of workflowScopedSubscriptions) {
+      if (sub.streams) {
+        totalStreams += sub.streams.length;
+      }
+    }
+
     return {
       sources,
       workflows,
       userSubscriptions,
+      userSubscriptionStreams,
       workflowScopedSubscriptions,
       stats: {
         totalSources: sources.filter((s) => s.connected).length,
         totalSymbols: allSymbols.size,
+        totalStreams,
         totalWorkflows: workflows.length,
         connectedSources: sources
           .filter((s) => s.connected)

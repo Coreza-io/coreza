@@ -12,6 +12,7 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
+import { buildStreamNames } from "../utils/streamName";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -584,33 +585,53 @@ export class MarketControlHandler {
         // Persist subscriptions based on scope
         const scope = msg.scope;
         const targetWorkflowId = msg.targetWorkflowId;
+        const requestedTypes = eventTypes || [];
+
+        // Build native stream names (e.g., btcusdt@kline_1m)
+        const streamNames = requestedTypes.length > 0
+          ? buildStreamNames(source, symbols.map(s => s.toUpperCase()), requestedTypes)
+          : [];
 
         if (scope === "workflow" && targetWorkflowId) {
           // Workflow-scoped subscription: only target workflow can access
+          // Store stream names in new :streams key
+          const workflowStreamsKey = REDIS_CHANNELS.workflowSubscriptionStreams(userId, targetWorkflowId, source);
+          console.log(
+            `📝 [MarketControl] Writing workflow-scoped streams to Redis key: ${workflowStreamsKey}`,
+          );
+          
+          if (streamNames.length > 0) {
+            await this.redisPub.sadd(workflowStreamsKey, ...streamNames);
+            console.log(
+              `📊 [MarketControl] Persisted ${streamNames.length} stream names for ${source} → ${targetWorkflowId}:`,
+              streamNames.slice(0, 3).join(", ") + (streamNames.length > 3 ? "..." : ""),
+            );
+          }
+          
+          // Also write to legacy :symbols key for backward compatibility
           const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
-          console.log(
-            `📝 [MarketControl] Writing workflow-scoped symbols to Redis key: ${workflowSubKey}`,
-          );
-          console.log(
-            `📝 [MarketControl] Symbols being written:`,
-            symbols.map((s) => s.toUpperCase()),
-          );
           await this.redisPub.sadd(
             workflowSubKey,
             ...symbols.map((s) => s.toUpperCase()),
           );
-          console.log(
-            `📊 [MarketControl] Persisted ${symbols.length} workflow-scoped subscriptions for ${source} → ${targetWorkflowId}`,
-          );
         } else {
           // Global subscription: all workflows can access
+          // Store stream names in new :streams key
+          const globalStreamsKey = REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+          
+          if (streamNames.length > 0) {
+            await this.redisPub.sadd(globalStreamsKey, ...streamNames);
+            console.log(
+              `📊 [MarketControl] Persisted ${streamNames.length} global stream names for ${source}:`,
+              streamNames.slice(0, 3).join(", ") + (streamNames.length > 3 ? "..." : ""),
+            );
+          }
+          
+          // Also write to legacy :symbols key for backward compatibility
           const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
           await this.redisPub.sadd(
             userSubKey,
             ...symbols.map((s) => s.toUpperCase()),
-          );
-          console.log(
-            `📊 [MarketControl] Persisted ${symbols.length} user-level (global) subscriptions for ${source}`,
           );
         }
       });
@@ -627,7 +648,7 @@ export class MarketControlHandler {
    * Handle unsubscribe control message
    */
   private async handleUnsubscribe(msg: ControlMessage): Promise<void> {
-    const { userId, source, workflowId, symbols } = msg;
+    const { userId, source, workflowId, symbols, eventTypes } = msg;
 
     try {
       const stateKey = this.getStateKey(userId, source);
@@ -642,41 +663,54 @@ export class MarketControlHandler {
       const scope = msg.scope;
       const targetWorkflowId = msg.targetWorkflowId;
 
+      // Build stream names if event types are provided
+      const streamNames = eventTypes && eventTypes.length > 0
+        ? buildStreamNames(source, symbols.map(s => s.toUpperCase()), eventTypes)
+        : [];
+
       // Use source as-is (e.g., "binance_market") to match how market-stream-service stores keys
       // Handle workflow-scoped unsubscription (specific symbols for specific workflow)
       if (scope === "workflow" && targetWorkflowId && symbols.length > 0) {
+        // Remove from new :streams key
+        if (streamNames.length > 0) {
+          const workflowStreamsKey = REDIS_CHANNELS.workflowSubscriptionStreams(userId, targetWorkflowId, source);
+          await this.redisPub.srem(workflowStreamsKey, ...streamNames);
+          console.log(
+            `📤 [MarketControl] Removed ${streamNames.length} stream(s) from workflow-scoped streams key`,
+          );
+        }
+        
+        // Also remove from legacy :symbols key
         const workflowSubKey = `md:user:${userId}:subscription:scope:workflow:${targetWorkflowId}:${source}:symbols`;
-        await this.redisPub.srem(workflowSubKey, ...symbols);
+        await this.redisPub.srem(workflowSubKey, ...symbols.map(s => s.toUpperCase()));
         console.log(
           `📤 [MarketControl] Removed ${symbols.join(
             ", ",
-          )} from workflow-scoped key: ${workflowSubKey}`,
+          )} from workflow-scoped symbols key`,
         );
       }
       // Handle global symbol unsubscription (user-level)
-      else if (scope === "global" && !targetWorkflowId && symbols.length > 0) {
-        if (workflowId) {
-          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
-          await this.redisPub.srem(userSubKey, ...symbols);
+      else if (symbols.length > 0) {
+        // Remove from new :streams key
+        if (streamNames.length > 0) {
+          const globalStreamsKey = REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+          await this.redisPub.srem(globalStreamsKey, ...streamNames);
           console.log(
-            `📤 [MarketControl] Removed ${symbols.join(
-              ", ",
-            )} from global key: ${userSubKey}`,
-          );
-        } else {
-          // Remove user subscribed symbol at user level from Market Data page.But below command will be expansive if lots of workflow so be sure to optimize, ok for now
-          const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
-          await this.redisPub.srem(
-            userSubKey,
-            ...symbols.map((s) => s.toUpperCase()),
-          );
-
-          console.log(
-            `📤 [MarketControl] Removed ${symbols.join(
-              ", ",
-            )} from global key: ${userSubKey}`,
+            `📤 [MarketControl] Removed ${streamNames.length} stream(s) from global streams key`,
           );
         }
+        
+        // Also remove from legacy :symbols key
+        const userSubKey = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+        await this.redisPub.srem(
+          userSubKey,
+          ...symbols.map((s) => s.toUpperCase()),
+        );
+        console.log(
+          `📤 [MarketControl] Removed ${symbols.join(
+            ", ",
+          )} from global symbols key`,
+        );
       }
 
       // Unregister workflow from MarketDataSubscriber

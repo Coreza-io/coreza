@@ -26,6 +26,7 @@ export interface StreamExecutionRequest {
   interval?: string;
   depth_levels?: string;
   scope: "workflow" | "global";
+  onlyClosedBars: boolean;
 }
 
 /**

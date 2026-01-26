@@ -334,6 +334,7 @@ router.post("/:source/register", async (req, res) => {
       interval,
       depth_levels,
       scope,
+      onlyClosedBars,
     } = req.body as StreamExecutionRequest;
 
     if (!workflow_id) {
@@ -444,6 +445,7 @@ router.post("/:source/register", async (req, res) => {
       nodeId: node_id,
       source: sourceId,
       scope,
+      onlyClosedBars,
     });
 
     console.log(`📡 [ExecuteStreamNode] Published register_workflow`);

@@ -182,14 +182,15 @@ const MarketSubscriptions = () => {
   );
 
   const handleUnsubscribeSymbol = useCallback(
-    async (symbol: string, source: string) => {
+    async (stream: string, source: string) => {
       if (!user) return;
 
-      setUnsubscribing(`symbol-${symbol}`);
+      setUnsubscribing(`symbol-${stream}`);
       try {
+        const [symbol, eventType, interval] = stream.split(/[@_]/);
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
-          { symbols: [symbol] },
+          { symbols: [symbol], stream_types: [eventType], interval },
           session?.access_token,
         );
 

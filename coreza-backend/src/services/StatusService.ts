@@ -65,7 +65,7 @@ export interface WorkflowScopedSubscription {
 export interface SubscriptionStatus {
   sources: GatewayState[];
   workflows: WorkflowRegistration[];
-  userSubscriptionStreams: Record<string, string[]>; // source -> stream names (new)
+  userSubscriptions: Record<string, string[]>; // source -> stream names (new)
   workflowScopedSubscriptions: WorkflowScopedSubscription[];
   stats: {
     totalSources: number;
@@ -322,11 +322,11 @@ export class StatusService {
         this.getWorkflowScopedSubscriptions(userId),
       ]);
 
-    const { streams: userSubscriptionStreams } = globalSubsResult;
+    const { streams: userSubscriptions } = globalSubsResult;
 
     // Count total streams
     let totalStreams = 0;
-    for (const streamList of Object.values(userSubscriptionStreams)) {
+    for (const streamList of Object.values(userSubscriptions)) {
       totalStreams += streamList.length;
     }
     for (const sub of workflowScopedSubscriptions) {
@@ -338,7 +338,7 @@ export class StatusService {
     return {
       sources,
       workflows,
-      userSubscriptionStreams,
+      userSubscriptions,
       workflowScopedSubscriptions,
       stats: {
         totalSources: sources.filter((s) => s.connected).length,

@@ -1004,7 +1004,7 @@ const MarketSubscriptions = () => {
               {filteredSymbols.length > 0 ? (
                 filteredSymbols.map((symbol) => {
                   const sources = data?.symbolSourceMap?.[symbol] || [];
-                  const primarySource = sources[0] || "alpaca";
+                  const primarySource = sources[0];
 
                   return (
                     <Badge

@@ -17,6 +17,7 @@
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { MarketSource } from "../types/marketEvent";
+import { buildStreamNames } from "../utils/streamName";
 
 export interface SubscriptionParams {
   source: MarketSource;
@@ -234,6 +235,24 @@ export class SubscriptionService {
           : REDIS_CHANNELS.controlUnsubscribe;
 
       await redis.publish(channel, JSON.stringify(controlMessage));
+
+      // Build and persist stream names (new format: btcusdt@kline_1m)
+      if (operation === "subscribe" && eventTypes.length > 0) {
+        const streamNames = buildStreamNames(source, symbolArray, eventTypes);
+        
+        // Persist to new :streams keys
+        const streamsKey = scope === "workflow" && resolvedTargetWorkflowId
+          ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, resolvedTargetWorkflowId, source)
+          : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+        
+        if (streamNames.length > 0) {
+          await redis.sadd(streamsKey, ...streamNames);
+          console.log(
+            `📊 [SubscriptionService] Persisted ${streamNames.length} stream names to ${streamsKey}:`,
+            streamNames.slice(0, 5).join(", ") + (streamNames.length > 5 ? "..." : ""),
+          );
+        }
+      }
 
       console.log(
         `📤 [SubscriptionService] Published ${operation} control message for ${source}:`,

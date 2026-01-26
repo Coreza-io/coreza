@@ -236,23 +236,29 @@ export class SubscriptionService {
 
       await redis.publish(channel, JSON.stringify(controlMessage));
 
-      // Build and persist stream names (new format: btcusdt@kline_1m)
-      if (operation === "subscribe" && eventTypes.length > 0) {
-        const streamNames = buildStreamNames(source, symbolArray, eventTypes);
-        
-        // Persist to new :streams keys
-        const streamsKey = scope === "workflow" && resolvedTargetWorkflowId
-          ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, resolvedTargetWorkflowId, source)
+      const streamNames = symbolArray.flatMap((s) =>
+        eventTypes.map((type) => `${s.toLowerCase()}@${type}`),
+      );
+
+      const streamsKey =
+        scope === "workflow" && resolvedTargetWorkflowId
+          ? REDIS_CHANNELS.workflowSubscriptionStreams(
+              userId,
+              resolvedTargetWorkflowId,
+              source,
+            )
           : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-        
-        if (streamNames.length > 0) {
-          await redis.sadd(streamsKey, ...streamNames);
-          console.log(
-            `📊 [SubscriptionService] Persisted ${streamNames.length} stream names to ${streamsKey}:`,
-            streamNames.slice(0, 5).join(", ") + (streamNames.length > 5 ? "..." : ""),
-          );
-        }
-      }
+
+      // Build and persist stream names (new format: btcusdt@kline_1m)
+      const redisOp = operation === "subscribe" ? "sadd" : "srem";
+
+      await redis[redisOp](streamsKey, ...streamNames);
+
+      console.log(
+        `📊 [SubscriptionService] ${operation}d ${streamNames.length} stream names in ${streamsKey}:`,
+        streamNames.slice(0, 5).join(", ") +
+          (streamNames.length > 5 ? "..." : ""),
+      );
 
       console.log(
         `📤 [SubscriptionService] Published ${operation} control message for ${source}:`,

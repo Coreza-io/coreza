@@ -61,7 +61,11 @@ export const REDIS_CHANNELS = {
   // Workflow-scoped subscription streams (isolated to specific workflow)
   // Stores native stream names: btcusdt@kline_1m, bars.AAPL
   // Used by: SubscriptionService, MarketControlHandler
-  workflowSubscriptionStreams: (userId: string, workflowId: string, source: string) =>
+  workflowSubscriptionStreams: (
+    userId: string,
+    workflowId: string,
+    source: string,
+  ) =>
     `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`,
 
   // LEGACY: Symbol-only keys (for backward compatibility during migration)
@@ -83,42 +87,25 @@ export const REDIS_CHANNELS = {
   gatewayUsers: (source: string) => `md:gateway:${source}:users`,
 
   // ============================================
-  // TEST LISTENER KEYS (Stream testing in UI)
+  // LISTENER KEYS (Stream testing in UI)
   // ============================================
 
   // Individual test listener data
   // Used by: stream.ts register/unregister endpoints
-  testListener: (userId: string, workflowId: string, nodeId: string) =>
+  Listener: (userId: string, workflowId: string, nodeId: string) =>
     `md:user:${userId}:stream:${workflowId}:${nodeId}`,
 
-  // Test listener result (stores captured market event)
-  testListenerResult: (userId: string, workflowId: string, nodeId: string) =>
+  // listener result (stores captured market event)
+  ListenerResult: (userId: string, workflowId: string, nodeId: string) =>
     `md:user:${userId}:stream:${workflowId}:${nodeId}:result`,
 
-  // User's active test listeners SET (for efficient per-user queries)
+  // User's active listeners SET (for efficient per-user queries)
   userActiveListeners: (userId: string) =>
     `md:user:${userId}:stream:active_listeners`,
 
-  // User's test listener count (for rate limiting)
+  // User's listener count (for rate limiting)
   userListenerCount: (userId: string) =>
     `md:user:${userId}:stream:listener_count`,
-
-  // ============================================
-  // LEGACY KEY PATTERNS (for migration/cleanup)
-  // ============================================
-
-  // Legacy subscription key pattern (before standardization)
-  // Pattern: md:user:{userId}:subscribed_symbols:{source}
-  legacySubscribedSymbols: (userId: string, source: string) =>
-    `md:user:${userId}:subscribed_symbols:${source}`,
-
-  // Legacy workflow-scoped subscription pattern
-  // Pattern: md:user:{userId}:workflow:{workflowId}:subscribed_symbols:{source}
-  legacyWorkflowSubscribedSymbols: (
-    userId: string,
-    workflowId: string,
-    source: string,
-  ) => `md:user:${userId}:workflow:${workflowId}:subscribed_symbols:${source}`,
 } as const;
 
 // ============================================
@@ -137,23 +124,11 @@ export const REDIS_KEY_PATTERNS = {
   userWorkflowSubscriptionStreams: (userId: string) =>
     `md:user:${userId}:subscription:scope:workflow:*:*:streams`,
 
-  // LEGACY: Symbol-only patterns (for backward compatibility)
-  userGlobalSubscriptions: (userId: string) =>
-    `md:user:${userId}:subscription:scope:global:*:symbols`,
-  userWorkflowSubscriptions: (userId: string) =>
-    `md:user:${userId}:subscription:scope:workflow:*:*:symbols`,
-
   // All gateway states for a user
   userGatewayStates: (userId: string) => `md:gateway:${userId}:*:state`,
 
   // All test listeners for a user
-  userTestListeners: (userId: string) => `md:user:${userId}:stream:*`,
-
-  // Legacy patterns (for cleanup)
-  legacyUserSubscriptions: (userId: string) =>
-    `md:user:${userId}:subscribed_symbols:*`,
-  legacyUserWorkflowSubscriptions: (userId: string) =>
-    `md:user:${userId}:workflow:*:subscribed_symbols:*`,
+  userListeners: (userId: string) => `md:user:${userId}:stream:*`,
 } as const;
 
 // Type exports

@@ -59,23 +59,20 @@ export interface WorkflowScopedSubscription {
   workflowName?: string;
   source: string;
   symbols: string[];
-  streams?: string[];  // Native stream names (e.g., btcusdt@kline_1m)
+  streams?: string[]; // Native stream names (e.g., btcusdt@kline_1m)
 }
 
 export interface SubscriptionStatus {
   sources: GatewayState[];
   workflows: WorkflowRegistration[];
-  userSubscriptions: Record<string, string[]>; // source -> symbols (legacy)
   userSubscriptionStreams: Record<string, string[]>; // source -> stream names (new)
   workflowScopedSubscriptions: WorkflowScopedSubscription[];
   stats: {
     totalSources: number;
-    totalSymbols: number;
     totalStreams: number;
     totalWorkflows: number;
     connectedSources: string[];
   };
-  symbolSourceMap: Record<string, string[]>; // symbol -> sources
 }
 
 // ============================================
@@ -105,7 +102,7 @@ export class StatusService {
           if (sourceMatch) {
             sources.push({
               source: sourceMatch[1],
-              connected: state.connected || false,
+              connected: true,
               symbols: state.symbols || [],
               eventTypes: state.eventTypes || [],
               connectedAt: state.connectedAt || null,
@@ -222,11 +219,10 @@ export class StatusService {
   /**
    * Get global (user-level) subscriptions - returns both symbols (legacy) and streams (new)
    */
-  static async getGlobalSubscriptions(
-    userId: string,
-  ): Promise<{ symbols: Record<string, string[]>; streams: Record<string, string[]> }> {
+  static async getGlobalSubscriptions(userId: string): Promise<{
+    streams: Record<string, string[]>;
+  }> {
     const redis = getRedisCache();
-    const symbols: Record<string, string[]> = {};
     const streams: Record<string, string[]> = {};
 
     // Try new :streams key pattern first
@@ -243,38 +239,11 @@ export class StatusService {
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
           streams[match[1]] = streamNames;
-          // Also extract symbols from stream names for backward compatibility
-          const extractedSymbols = new Set<string>();
-          for (const streamName of streamNames) {
-            const parsed = parseStreamName(match[1], streamName);
-            extractedSymbols.add(parsed.symbol);
-          }
-          if (!symbols[match[1]]) {
-            symbols[match[1]] = Array.from(extractedSymbols);
-          }
         }
       }
     }
 
-    // Also check legacy :symbols keys for backward compatibility
-    const symbolKeys = await redis.keys(
-      REDIS_KEY_PATTERNS.userGlobalSubscriptions(userId),
-    );
-
-    for (const key of symbolKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:global:{source}:symbols
-      const match = key.match(
-        /md:user:[^:]+:subscription:scope:global:([^:]+):symbols$/,
-      );
-      if (match) {
-        const legacySymbols = await redis.smembers(key);
-        if (legacySymbols.length > 0 && !symbols[match[1]]) {
-          symbols[match[1]] = legacySymbols;
-        }
-      }
-    }
-
-    return { symbols, streams };
+    return { streams };
   }
 
   /**
@@ -319,30 +288,6 @@ export class StatusService {
       }
     }
 
-    // Also check legacy :symbols keys for backward compatibility
-    const symbolKeys = await redis.keys(
-      REDIS_KEY_PATTERNS.userWorkflowSubscriptions(userId),
-    );
-
-    for (const key of symbolKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:symbols
-      const match = key.match(
-        /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):symbols$/,
-      );
-      if (match) {
-        const [, workflowId, source] = match;
-        const mapKey = `${workflowId}:${source}`;
-        // Only use legacy symbols if we don't have streams data
-        if (!subscriptionsMap.has(mapKey)) {
-          const symbols = await redis.smembers(key);
-          if (symbols.length > 0) {
-            subscriptionsMap.set(mapKey, { workflowId, source, symbols });
-            workflowIds.add(workflowId);
-          }
-        }
-      }
-    }
-
     const subscriptions = Array.from(subscriptionsMap.values());
 
     // Fetch workflow names from Supabase
@@ -364,42 +309,6 @@ export class StatusService {
   }
 
   /**
-   * Build symbol-source map from all data sources
-   */
-  static buildSymbolSourceMap(
-    sources: GatewayState[],
-    workflows: WorkflowRegistration[],
-    globalSubs: Record<string, string[]>,
-    workflowSubs: WorkflowScopedSubscription[],
-  ): { allSymbols: Set<string>; symbolSourceMap: Record<string, string[]> } {
-    const allSymbols = new Set<string>();
-    const symbolSourceMap: Record<string, string[]> = {};
-
-    const addSymbol = (symbol: string, source: string) => {
-      allSymbols.add(symbol);
-      if (!symbolSourceMap[symbol]) symbolSourceMap[symbol] = [];
-      if (!symbolSourceMap[symbol].includes(source)) {
-        symbolSourceMap[symbol].push(source);
-      }
-    };
-
-    sources.forEach((s) =>
-      s.symbols.forEach((sym) => addSymbol(sym, s.source)),
-    );
-    workflows.forEach((w) =>
-      w.symbols.forEach((sym) => addSymbol(sym, w.source)),
-    );
-    Object.entries(globalSubs).forEach(([source, symbols]) =>
-      symbols.forEach((sym) => addSymbol(sym, source)),
-    );
-    workflowSubs.forEach((sub) =>
-      sub.symbols.forEach((sym) => addSymbol(sym, sub.source)),
-    );
-
-    return { allSymbols, symbolSourceMap };
-  }
-
-  /**
    * Get complete subscription status for a user
    */
   static async getSubscriptionStatus(
@@ -413,14 +322,7 @@ export class StatusService {
         this.getWorkflowScopedSubscriptions(userId),
       ]);
 
-    const { symbols: userSubscriptions, streams: userSubscriptionStreams } = globalSubsResult;
-
-    const { allSymbols, symbolSourceMap } = this.buildSymbolSourceMap(
-      sources,
-      workflows,
-      userSubscriptions,
-      workflowScopedSubscriptions,
-    );
+    const { streams: userSubscriptionStreams } = globalSubsResult;
 
     // Count total streams
     let totalStreams = 0;
@@ -436,19 +338,16 @@ export class StatusService {
     return {
       sources,
       workflows,
-      userSubscriptions,
       userSubscriptionStreams,
       workflowScopedSubscriptions,
       stats: {
         totalSources: sources.filter((s) => s.connected).length,
-        totalSymbols: allSymbols.size,
         totalStreams,
         totalWorkflows: workflows.length,
         connectedSources: sources
           .filter((s) => s.connected)
           .map((s) => s.source),
       },
-      symbolSourceMap,
     };
   }
 }

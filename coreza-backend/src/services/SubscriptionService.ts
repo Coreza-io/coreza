@@ -17,7 +17,6 @@
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { MarketSource } from "../types/marketEvent";
-import { buildStreamNames } from "../utils/streamName";
 
 export interface SubscriptionParams {
   source: MarketSource;

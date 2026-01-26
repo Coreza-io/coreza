@@ -12,7 +12,6 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { buildStreamNames } from "../utils/streamName";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -25,8 +24,8 @@ interface ControlMessage {
   credentialId?: string;
   eventTypes?: string[];
   feed?: string;
-  environment?: string; // For Binance: testnet/live
-  assetType?: string; // For Binance: spot/futures
+  environment?: string;
+  assetType?: string;
   scope: string;
   targetWorkflowId?: string;
 }

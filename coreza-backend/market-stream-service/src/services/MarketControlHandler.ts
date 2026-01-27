@@ -12,7 +12,7 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { buildStreamNames } from "../utils/streamName";
+import { buildStreamNames, extractSymbol } from "../utils/streamName";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -39,9 +39,9 @@ interface SourceState {
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
-  symbols: Set<string>;
-  symbolTypes: Map<string, Set<string>>; // symbol → event types
-  workflowSymbols: Map<string, Set<string>>; // workflowId → symbols
+  // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
+  streams: Set<string>;
+  workflowSymbols: Map<string, Set<string>>; // workflowId → symbols (for reference counting)
 }
 
 export class MarketControlHandler {
@@ -494,12 +494,15 @@ export class MarketControlHandler {
       source,
       userId,
       workflowId,
-      nodeId,
       symbols,
       eventTypes,
       feed,
       environment,
       assetType,
+      interval,
+      depthLevels,
+      scope,
+      targetWorkflowId,
     } = msg;
 
     try {
@@ -531,61 +534,42 @@ export class MarketControlHandler {
           state.workflowSymbols.set(workflowId, currentSymbols);
         }
 
-        // NOTE: We do NOT register with MarketDataSubscriber here anymore
-        // Subscribe nodes only manage gateway connections
-        // StreamData trigger nodes register via md:control:register_workflow channel
-        // This ensures data flows to the correct StreamData nodes, not Subscribe nodes
+        // Build stream names FIRST (before any tracking)
+        const processedEventTypes = this.processEventTypesForStreamNames(
+          eventTypes || [],
+          source,
+          interval,
+          depthLevels,
+        );
 
-        // Check if any symbols need new event types subscribed
-        const subscriptionNeeded: string[] = [];
-        const requestedTypes = eventTypes || [];
+        const requestedStreamNames = buildStreamNames(
+          source,
+          symbols,
+          processedEventTypes,
+        );
 
-        for (const symbol of symbols) {
-          const upperSymbol = symbol.toUpperCase();
-          const existingTypes = state.symbolTypes.get(upperSymbol) || new Set();
+        // Check which stream names are NEW (not already in state.streams)
+        const newStreamNames = requestedStreamNames.filter(
+          (name) => !state.streams.has(name),
+        );
 
-          // Check if any requested type is new for this symbol
-          const hasNewTypes = requestedTypes.some((t) => !existingTypes.has(t));
-
-          if (!state.symbols.has(upperSymbol) || hasNewTypes) {
-            subscriptionNeeded.push(upperSymbol);
-            // Add all requested types to tracking
-            requestedTypes.forEach((t) => existingTypes.add(t));
-            state.symbolTypes.set(upperSymbol, existingTypes);
-            state.symbols.add(upperSymbol);
-          }
-        }
-
-        if (subscriptionNeeded.length > 0) {
+        if (newStreamNames.length > 0) {
           console.log(
-            `➕ [MarketControl] Subscribing to symbols with new types on ${source}:`,
-            subscriptionNeeded,
-            `(types: ${requestedTypes.join(", ")})`,
+            `➕ [MarketControl] Subscribing to new streams on ${source}:`,
+            newStreamNames.slice(0, 5).join(", ") +
+              (newStreamNames.length > 5 ? "..." : ""),
           );
-          state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
+
+          // Add to tracking
+          newStreamNames.forEach((name) => state.streams.add(name));
+
+          // Subscribe gateway with stream names directly
+          state.gateway.subscribeStreams(newStreamNames);
 
           // Persist to Redis
           await this.persistState(userId, source);
-          console.log(
-            `✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`,
-          );
 
-          // ===== Build and store stream names in Redis (centralized here) =====
-          const { interval, depthLevels, scope, targetWorkflowId } = msg;
-          const processedEventTypes = this.processEventTypesForStreamNames(
-            eventTypes || [],
-            source,
-            interval,
-            depthLevels,
-          );
-
-          const streamNames = buildStreamNames(
-            source,
-            subscriptionNeeded,
-            processedEventTypes,
-          );
-
-          // Determine Redis key based on scope
+          // Store stream names in Redis (:streams key)
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -595,27 +579,32 @@ export class MarketControlHandler {
                 )
               : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
 
-          // Store stream names in Redis
-          if (streamNames.length > 0) {
-            await this.redisPub.sadd(streamsKey, ...streamNames);
-            console.log(
-              `💾 [MarketControl] Stored ${streamNames.length} stream names in ${streamsKey}:`,
-              streamNames.slice(0, 5).join(", ") +
-                (streamNames.length > 5 ? "..." : ""),
-            );
-          }
-          // ===== END stream name storage =====
+          await this.redisPub.sadd(streamsKey, ...newStreamNames);
+          console.log(
+            `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
+          );
+
+          // Extract symbols from new stream names for workflow notification
+          const newSymbols = [
+            ...new Set(
+              newStreamNames.map((name) => extractSymbol(source, name)),
+            ),
+          ];
 
           // Notify active streaming workflows about new symbols (respecting scope)
           await this.updateActiveStreamingWorkflows(
             userId,
-            subscriptionNeeded,
+            newSymbols,
             scope,
             targetWorkflowId,
           );
+
+          console.log(
+            `✅ [MarketControl] Subscribed to ${newStreamNames.length} stream(s) on ${source}`,
+          );
         } else {
           console.log(
-            `ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`,
+            `ℹ️ [MarketControl] All streams already subscribed on ${source}`,
           );
         }
       });
@@ -667,18 +656,7 @@ export class MarketControlHandler {
       }
 
       if (symbols.length > 0) {
-        console.log(
-          `➖ [MarketControl] Unsubscribing from symbols on ${source}:`,
-          symbols,
-        );
-        symbols.forEach((s) => state.symbols.delete(s.toUpperCase()));
-        state.gateway.unsubscribeSymbols(symbols, eventTypes);
-        await this.persistState(userId, source);
-        console.log(
-          `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,
-        );
-
-        // ===== Remove stream names from Redis (centralized here) =====
+        // Build stream names to remove
         const processedEventTypes = this.processEventTypesForStreamNames(
           eventTypes || [],
           source,
@@ -686,8 +664,25 @@ export class MarketControlHandler {
           depthLevels,
         );
 
-        const streamNames = buildStreamNames(source, symbols, processedEventTypes);
+        const streamNamesToRemove = buildStreamNames(
+          source,
+          symbols,
+          processedEventTypes,
+        );
 
+        console.log(
+          `➖ [MarketControl] Unsubscribing from streams on ${source}:`,
+          streamNamesToRemove.slice(0, 5).join(", ") +
+            (streamNamesToRemove.length > 5 ? "..." : ""),
+        );
+
+        // Remove from tracking
+        streamNamesToRemove.forEach((name) => state.streams.delete(name));
+
+        // Unsubscribe gateway with stream names directly
+        state.gateway.unsubscribeStreams(streamNamesToRemove);
+
+        // Remove from Redis
         const streamsKey =
           scope === "workflow" && targetWorkflowId
             ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -697,19 +692,23 @@ export class MarketControlHandler {
               )
             : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
 
-        if (streamNames.length > 0) {
-          await this.redisPub.srem(streamsKey, ...streamNames);
+        if (streamNamesToRemove.length > 0) {
+          await this.redisPub.srem(streamsKey, ...streamNamesToRemove);
           console.log(
-            `🗑️ [MarketControl] Removed ${streamNames.length} stream names from ${streamsKey}`,
+            `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
           );
         }
-        // ===== END stream name removal =====
+
+        await this.persistState(userId, source);
+        console.log(
+          `✅ [MarketControl] Unsubscribed from ${streamNamesToRemove.length} stream(s) on ${source}`,
+        );
       }
 
-      // Disconnect if no more symbols
-      if (state.symbols.size === 0) {
+      // Disconnect if no more streams
+      if (state.streams.size === 0) {
         console.log(
-          `🔌 [MarketControl] No symbols left, disconnecting ${source} gateway`,
+          `🔌 [MarketControl] No streams left, disconnecting ${source} gateway`,
         );
         state.gateway.disconnect();
         this.sourceStates.delete(stateKey);
@@ -837,14 +836,13 @@ export class MarketControlHandler {
       // Connect gateway with credentials
       await gateway.connect(creds);
 
-      // Track state
+      // Track state with streams (single source of truth)
       this.sourceStates.set(this.getStateKey(userId, source), {
         source,
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
-        symbols: new Set(),
-        symbolTypes: new Map(),
+        streams: new Set(), // Native stream names as single source of truth
         workflowSymbols: new Map(),
       });
 
@@ -873,13 +871,8 @@ export class MarketControlHandler {
     const stateData = {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
-      symbols: Array.from(state.symbols),
-      symbolTypes: Array.from(state.symbolTypes.entries()).map(
-        ([symbol, types]) => ({
-          symbol,
-          types: Array.from(types),
-        }),
-      ),
+      // Store native stream names directly
+      streams: Array.from(state.streams),
       workflowSymbols: Array.from(state.workflowSymbols.entries()).map(
         ([wfId, symbols]) => ({
           workflowId: wfId,
@@ -927,7 +920,7 @@ export class MarketControlHandler {
             const stateData = JSON.parse(stateJson);
             console.log(`📦 [MarketControl] Found saved state for ${source}:`, {
               userId: stateData.userId,
-              symbolCount: stateData.symbols?.length || 0,
+              streamCount: stateData.streams?.length || 0,
               workflowCount: stateData.workflowSymbols?.length || 0,
             });
 
@@ -941,45 +934,45 @@ export class MarketControlHandler {
               this.getStateKey(userId, source as MarketSource),
             )!;
 
-            // Restore symbol types first
-            if (stateData.symbolTypes && Array.isArray(stateData.symbolTypes)) {
-              stateData.symbolTypes.forEach((entry: any) => {
-                const types = new Set<string>();
-                if (entry.types && Array.isArray(entry.types)) {
-                  entry.types.forEach((t: string) => types.add(t));
-                }
-                state.symbolTypes.set(entry.symbol.toUpperCase(), types);
-              });
+            // Restore streams directly - no conversion needed!
+            if (stateData.streams && Array.isArray(stateData.streams)) {
+              stateData.streams.forEach((s: string) => state.streams.add(s));
 
-              // Group symbols by their types for efficient subscription
-              const typeGroups = new Map<string, string[]>();
+              // Subscribe gateway with stored stream names
+              state.gateway.subscribeStreams(stateData.streams);
 
+              console.log(
+                `🔄 [MarketControl] Restored ${stateData.streams.length} streams on ${source}`,
+              );
+            }
+
+            // Backward compatibility: migrate old symbolTypes format
+            if (!stateData.streams && stateData.symbolTypes) {
+              console.log(
+                `🔄 [MarketControl] Migrating old symbolTypes format for ${source}`,
+              );
+              // Convert old format to stream names
+              const migratedStreams: string[] = [];
               stateData.symbolTypes.forEach((entry: any) => {
                 const types =
                   entry.types && Array.isArray(entry.types)
                     ? entry.types
                     : ["trades"];
-                const typeKey = types.sort().join(",");
-                if (!typeGroups.has(typeKey)) typeGroups.set(typeKey, []);
-                typeGroups.get(typeKey)!.push(entry.symbol.toUpperCase());
+                types.forEach((type: string) => {
+                  const streamNames = buildStreamNames(
+                    source,
+                    [entry.symbol],
+                    [type],
+                  );
+                  streamNames.forEach((name) => migratedStreams.push(name));
+                });
               });
 
-              // Subscribe each group with proper types
-              for (const [typeKey, symbols] of typeGroups) {
-                const types = typeKey.split(",");
-                state.gateway.subscribeSymbols(symbols, types);
-                console.log(
-                  `🔄 [MarketControl] Restored ${
-                    symbols.length
-                  } symbols on ${source} (types: ${types.join(", ")})`,
-                );
-              }
-            }
+              migratedStreams.forEach((s: string) => state.streams.add(s));
+              state.gateway.subscribeStreams(migratedStreams);
 
-            // Also restore symbols set (for backwards compatibility)
-            if (stateData.symbols && Array.isArray(stateData.symbols)) {
-              stateData.symbols.forEach((s: string) =>
-                state.symbols.add(s.toUpperCase()),
+              console.log(
+                `🔄 [MarketControl] Migrated ${migratedStreams.length} streams from old format`,
               );
             }
 
@@ -1001,7 +994,7 @@ export class MarketControlHandler {
 
             restoredCount++;
             console.log(
-              `✅ [MarketControl] Restored ${source} gateway with ${state.symbols.size} symbols`,
+              `✅ [MarketControl] Restored ${source} gateway with ${state.streams.size} streams`,
             );
           } catch (error) {
             console.error(
@@ -1032,8 +1025,8 @@ export class MarketControlHandler {
         authenticated: state.gateway.getStats().authenticated,
         source: state.source,
         userId: state.connectedUserId,
-        symbolCount: state.symbols.size,
-        symbols: Array.from(state.symbols),
+        streamCount: state.streams.size,
+        streams: Array.from(state.streams),
         workflowCount: state.workflowSymbols.size,
         workflows: Array.from(state.workflowSymbols.entries()).map(
           ([wfId, symbols]) => ({

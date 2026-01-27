@@ -39,38 +39,60 @@ export function isAlpacaAuthError(msg: any): boolean {
   return Array.isArray(msg) ? msg.some((m) => m.T === 'error') : msg.T === 'error';
 }
 
-// ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============
-export function buildAlpacaSubscribeMessage(
-  symbols: string[],
-  types: string[] = ['trade'],
-  source?: string
-) {
+// ============ STREAM NAME PARSING ============
+// Alpaca stream names: "bars.AAPL", "trades.MSFT", "news.AAPL"
+export function parseAlpacaStreamNames(streamNames: string[]): { symbols: string[]; types: string[] } {
+  const symbols = new Set<string>();
+  const types = new Set<string>();
+
+  for (const name of streamNames) {
+    const dotIndex = name.indexOf('.');
+    if (dotIndex > 0) {
+      const type = name.substring(0, dotIndex);
+      const symbol = name.substring(dotIndex + 1);
+      types.add(type);
+      symbols.add(symbol);
+    } else {
+      // Fallback: treat as symbol with default type
+      symbols.add(name);
+      types.add('trades');
+    }
+  }
+
+  return {
+    symbols: Array.from(symbols),
+    types: Array.from(types),
+  };
+}
+
+// ============ SUBSCRIBE/UNSUBSCRIBE (stream-name based) ============
+export function buildAlpacaSubscribeMessage(streamNames: string[], source?: string) {
   // NEWS source: subscribe to news stream
   if (source === 'alpaca_news') {
+    const { symbols } = parseAlpacaStreamNames(streamNames);
     return { action: 'subscribe', news: symbols };
   }
 
-  // STREAM source (default): subscribe to market data
+  // STREAM source (default): parse stream names and build message
+  const { symbols, types } = parseAlpacaStreamNames(streamNames);
   const msg: any = { action: 'subscribe' };
   types.forEach((t) => {
-    const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
+    const key = ALPACA_TYPE_TO_KEY[t] || t;
     msg[key] = symbols;
   });
   return msg;
 }
 
-export function buildAlpacaUnsubscribeMessage(
-  symbols: string[],
-  types: string[] = ['trade'],
-  source?: string
-) {
+export function buildAlpacaUnsubscribeMessage(streamNames: string[], source?: string) {
   if (source === 'alpaca_news') {
+    const { symbols } = parseAlpacaStreamNames(streamNames);
     return { action: 'unsubscribe', news: symbols };
   }
 
+  const { symbols, types } = parseAlpacaStreamNames(streamNames);
   const msg: any = { action: 'unsubscribe' };
   types.forEach((t) => {
-    const key = ALPACA_TYPE_TO_KEY[t] || `${t}s`;
+    const key = ALPACA_TYPE_TO_KEY[t] || t;
     msg[key] = symbols;
   });
   return msg;

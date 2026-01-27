@@ -1,7 +1,18 @@
 import { parseDhanBinaryPacket } from '../../utils/dhanBinaryParser';
 import type { CorezaMarketEvent } from '../../types/marketEvent';
 
-export function buildDhanSubscribeMessage(symbols: string[]) {
+// ============ STREAM NAME PARSING ============
+// Dhan stream names are just security IDs (e.g., "1234")
+function extractDhanSymbols(streamNames: string[]): string[] {
+  return streamNames.map((name) => {
+    // If stream name contains metadata separator, extract symbol
+    const atIndex = name.indexOf('@');
+    return atIndex > 0 ? name.substring(0, atIndex) : name;
+  });
+}
+
+export function buildDhanSubscribeMessage(streamNames: string[]) {
+  const symbols = extractDhanSymbols(streamNames);
   return {
     RequestCode: 15,
     InstrumentCount: symbols.length,
@@ -12,7 +23,8 @@ export function buildDhanSubscribeMessage(symbols: string[]) {
   };
 }
 
-export function buildDhanUnsubscribeMessage(symbols: string[]) {
+export function buildDhanUnsubscribeMessage(streamNames: string[]) {
+  const symbols = extractDhanSymbols(streamNames);
   return {
     RequestCode: 16,
     InstrumentCount: symbols.length,

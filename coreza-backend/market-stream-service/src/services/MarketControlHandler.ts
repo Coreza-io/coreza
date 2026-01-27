@@ -12,8 +12,7 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { extractSymbol } from "../utils/streamName";
-import { buildStreamNames } from "../utils/streamBuilder";
+import { buildStreamNames } from "../utils/streamName";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -26,12 +25,10 @@ interface ControlMessage {
   credentialId?: string;
   eventTypes?: string[];
   feed?: string;
-  environment?: string;
-  assetType?: string;
+  environment?: string; // For Binance: testnet/live
+  assetType?: string; // For Binance: spot/futures
   scope: string;
   targetWorkflowId?: string;
-  interval?: string;
-  depthLevels?: string;
 }
 
 interface SourceState {
@@ -68,21 +65,6 @@ export class MarketControlHandler {
 
   private getStateKey(userId: string, source: MarketSource): string {
     return `${userId}:${source}`;
-  }
-
-  private normalizeEventTypes(
-    source: MarketSource,
-    eventTypes?: string[],
-  ): string[] {
-    if (!eventTypes) return [];
-
-    if (source.startsWith("binance")) {
-      return eventTypes.map((type) =>
-        type === "depth_levels" ? "depth" : type,
-      );
-    }
-
-    return eventTypes;
   }
 
   /**
@@ -267,22 +249,16 @@ export class MarketControlHandler {
     try {
       // If source specified, only check that source
       if (source) {
-        const key = REDIS_CHANNELS.workflowSubscriptionStreams(
-          userId,
-          workflowId,
-          source,
-        );
+        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
         console.log(
-          `🔍 [MarketControl] Checking workflow-scoped streams at key: ${key}`,
+          `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
-        const streams = await this.redisPub.smembers(key);
+        const symbols = await this.redisPub.smembers(key);
         console.log(
-          `🔍 [MarketControl] Found ${streams.length} workflow-scoped streams:`,
-          streams,
+          `🔍 [MarketControl] Found ${symbols.length} workflow-scoped symbols:`,
+          symbols,
         );
-        streams.forEach((streamName) =>
-          allSymbols.add(extractSymbol(source, streamName)),
-        );
+        symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
       }
     } catch (err) {
       console.error(
@@ -296,7 +272,7 @@ export class MarketControlHandler {
 
   /**
    * Get all GLOBAL symbols currently subscribed for a user across all sources
-   * Reads native stream names from the streams key and extracts symbols.
+   * Uses pattern matching to find ALL subscription keys (handles _stream suffix variants)
    */
   private async getUserSubscribedSymbols(
     userId: string,
@@ -305,12 +281,12 @@ export class MarketControlHandler {
     const allSymbols = new Set<string>();
 
     try {
-      const key = REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-      const streams = await this.redisPub.smembers(key);
+      // Use pattern matching to find ALL subscription keys for this user
+      const key = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
 
-      streams.forEach((streamName) =>
-        allSymbols.add(extractSymbol(source, streamName)),
-      );
+      const symbols = await this.redisPub.smembers(key);
+
+      symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
@@ -521,13 +497,7 @@ export class MarketControlHandler {
       feed,
       environment,
       assetType,
-      scope,
-      targetWorkflowId,
-      interval,
-      depthLevels,
     } = msg;
-    const normalizedEventTypes = this.normalizeEventTypes(source, eventTypes);
-    const subscribeOptions = { klineInterval: interval, depthLevels };
 
     try {
       // Acquire mutex to prevent concurrent gateway connections
@@ -565,7 +535,7 @@ export class MarketControlHandler {
 
         // Check if any symbols need new event types subscribed
         const subscriptionNeeded: string[] = [];
-        const requestedTypes = normalizedEventTypes;
+        const requestedTypes = eventTypes || [];
 
         for (const symbol of symbols) {
           const upperSymbol = symbol.toUpperCase();
@@ -589,11 +559,7 @@ export class MarketControlHandler {
             subscriptionNeeded,
             `(types: ${requestedTypes.join(", ")})`,
           );
-          state.gateway.subscribeSymbols(
-            subscriptionNeeded,
-            normalizedEventTypes,
-            subscribeOptions,
-          );
+          state.gateway.subscribeSymbols(subscriptionNeeded, eventTypes);
 
           // Persist to Redis
           await this.persistState(userId, source);
@@ -602,6 +568,8 @@ export class MarketControlHandler {
           );
 
           // Notify active streaming workflows about new symbols (respecting scope)
+          const scope = msg.scope;
+          const targetWorkflowId = msg.targetWorkflowId;
           await this.updateActiveStreamingWorkflows(
             userId,
             subscriptionNeeded,
@@ -611,30 +579,6 @@ export class MarketControlHandler {
         } else {
           console.log(
             `ℹ️ [MarketControl] All symbols with requested types already subscribed on ${source}`,
-          );
-        }
-
-        const streamNames = buildStreamNames(
-          source,
-          symbols,
-          normalizedEventTypes,
-          { interval, depthLevels },
-        );
-        const streamsKey =
-          scope === "workflow" && targetWorkflowId
-            ? REDIS_CHANNELS.workflowSubscriptionStreams(
-                userId,
-                targetWorkflowId,
-                source,
-              )
-            : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-
-        if (streamNames.length > 0) {
-          await this.redisPub.sadd(streamsKey, ...streamNames);
-          console.log(
-            `💾 [MarketControl] Stored ${streamNames.length} stream names:`,
-            streamNames.slice(0, 3).join(", ") +
-              (streamNames.length > 3 ? "..." : ""),
           );
         }
       });
@@ -651,19 +595,7 @@ export class MarketControlHandler {
    * Handle unsubscribe control message
    */
   private async handleUnsubscribe(msg: ControlMessage): Promise<void> {
-    const {
-      userId,
-      source,
-      workflowId,
-      symbols,
-      eventTypes,
-      scope,
-      targetWorkflowId,
-      interval,
-      depthLevels,
-    } = msg;
-    const normalizedEventTypes = this.normalizeEventTypes(source, eventTypes);
-    const subscribeOptions = { klineInterval: interval, depthLevels };
+    const { userId, source, workflowId, symbols, eventTypes } = msg;
 
     try {
       const stateKey = this.getStateKey(userId, source);
@@ -693,39 +625,11 @@ export class MarketControlHandler {
           symbols,
         );
         symbols.forEach((s) => state.symbols.delete(s.toUpperCase()));
-        state.gateway.unsubscribeSymbols(
-          symbols,
-          normalizedEventTypes,
-          subscribeOptions,
-        );
+        state.gateway.unsubscribeSymbols(symbols, eventTypes);
         await this.persistState(userId, source);
         console.log(
           `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,
         );
-      }
-
-      if (symbols.length > 0) {
-        const streamNames = buildStreamNames(
-          source,
-          symbols,
-          normalizedEventTypes,
-          { interval, depthLevels },
-        );
-        const streamsKey =
-          scope === "workflow" && targetWorkflowId
-            ? REDIS_CHANNELS.workflowSubscriptionStreams(
-                userId,
-                targetWorkflowId,
-                source,
-              )
-            : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-
-        if (streamNames.length > 0) {
-          await this.redisPub.srem(streamsKey, ...streamNames);
-          console.log(
-            `🗑️ [MarketControl] Removed ${streamNames.length} stream names from Redis`,
-          );
-        }
       }
 
       // Disconnect if no more symbols

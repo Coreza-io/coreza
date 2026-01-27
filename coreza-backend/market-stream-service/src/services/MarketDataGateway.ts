@@ -109,12 +109,12 @@ export class MarketDataGateway {
         const reasonStr = reason.toString() || "No reason provided";
         this.logger.warn(
           { source: this.source, code, reason: reasonStr },
-          "Gateway disconnected",
+          "Gateway disconnected"
         );
         activeGatewayConnectionsGauge.set({ source: this.source }, 0);
         alertGatewayDisconnected(
           this.source,
-          `Connection closed: ${code} - ${reasonStr}`,
+          `Connection closed: ${code} - ${reasonStr}`
         );
         this.isAuthenticated = false;
         this.stopKeepalive();
@@ -130,7 +130,7 @@ export class MarketDataGateway {
 
   private async handleMessage(
     buffer: Buffer,
-    resolveConnect?: () => void,
+    resolveConnect?: () => void
   ): Promise<void> {
     try {
       const startTime = Date.now();
@@ -139,7 +139,7 @@ export class MarketDataGateway {
       // Debug log ALL incoming messages
       this.logger.debug(
         { source: this.source, rawMessages: messages },
-        "Raw messages received",
+        "Raw messages received"
       );
 
       for (const msg of messages) {
@@ -153,7 +153,7 @@ export class MarketDataGateway {
         ) {
           this.logger.info(
             { source: this.source },
-            "Authentication successful",
+            "Authentication successful"
           );
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -164,7 +164,7 @@ export class MarketDataGateway {
         if (this.config.isAuthError && this.config.isAuthError(msg)) {
           this.logger.error(
             { source: this.source, msg },
-            "Authentication failed",
+            "Authentication failed"
           );
           this.ws?.close();
           continue;
@@ -205,7 +205,7 @@ export class MarketDataGateway {
             type: event.type,
             price: event.p || event.c,
           },
-          "Market event published",
+          "Market event published"
         );
       }
     } catch (error) {
@@ -218,14 +218,14 @@ export class MarketDataGateway {
    */
   private async publishToRedis(
     channel: string,
-    message: string,
+    message: string
   ): Promise<void> {
     try {
       await redisPublishBreaker.fire(channel, message);
     } catch (error) {
       this.logger.warn(
         { source: this.source, channel },
-        "Redis unavailable, buffering message",
+        "Redis unavailable, buffering message"
       );
       RedisBuffer.getInstance().bufferMessage(channel, message);
     }
@@ -234,7 +234,7 @@ export class MarketDataGateway {
   subscribeSymbols(
     symbols: string[],
     types?: string[],
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): void {
     const requestedTypes = types || [];
     const subscriptionUpdates: string[] = [];
@@ -258,7 +258,7 @@ export class MarketDataGateway {
     if (subscriptionUpdates.length === 0) {
       this.logger.debug(
         { source: this.source },
-        "All symbols already subscribed with requested types",
+        "All symbols already subscribed with requested types"
       );
       return;
     }
@@ -269,7 +269,7 @@ export class MarketDataGateway {
         subscriptionUpdates,
         requestedTypes,
         options,
-        this.source,
+        this.source
       );
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
@@ -279,7 +279,7 @@ export class MarketDataGateway {
           symbols: subscriptionUpdates,
           types: requestedTypes,
         },
-        "Subscribed to symbols",
+        "Subscribed to symbols"
       );
     }
   }
@@ -287,10 +287,10 @@ export class MarketDataGateway {
   unsubscribeSymbols(
     symbols: string[],
     types?: string[],
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): void {
     const toRemove = symbols.filter((s) =>
-      this.subscribedSymbolTypes.has(s.toUpperCase()),
+      this.subscribedSymbolTypes.has(s.toUpperCase())
     );
     if (toRemove.length === 0) return;
 
@@ -302,13 +302,13 @@ export class MarketDataGateway {
         toRemove,
         types,
         options,
-        this.source,
+        this.source
       );
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
         { source: this.source, symbols: toRemove },
-        "Unsubscribed from symbols",
+        "Unsubscribed from symbols"
       );
     }
   }
@@ -331,13 +331,13 @@ export class MarketDataGateway {
           symbols,
           types,
           undefined,
-          this.source,
+          this.source
         );
         const payload = this.encodeMessage(msg);
         this.ws?.send(payload);
         this.logger.info(
           { source: this.source, symbols: symbols.length, types },
-          "Resubscribed to symbols",
+          "Resubscribed to symbols"
         );
       }
     }
@@ -353,12 +353,12 @@ export class MarketDataGateway {
       if (msg.RequestCode === 15) {
         return encodeDhanSubscribeMessage(
           msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
+          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ"
         );
       } else if (msg.RequestCode === 16) {
         return encodeDhanUnsubscribeMessage(
           msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
+          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ"
         );
       }
       return Buffer.from(JSON.stringify(msg));
@@ -381,7 +381,7 @@ export class MarketDataGateway {
     this.reconnectAttempts++;
 
     console.log(
-      `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`,
+      `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`
     );
 
     setTimeout(() => {
@@ -425,7 +425,7 @@ export class MarketDataGateway {
         ([symbol, types]) => ({
           symbol,
           types: Array.from(types),
-        }),
+        })
       ),
       reconnectAttempts: this.reconnectAttempts,
     };

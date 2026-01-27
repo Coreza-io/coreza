@@ -3,7 +3,7 @@ import type { SubscribeOptions } from "../types";
 
 export function buildBinanceSubscribeMessage(
   symbols: string[],
-  types: string[] = [],
+  types: string[],
   options?: SubscribeOptions,
 ) {
   const params = symbols.flatMap((s) =>
@@ -27,7 +27,7 @@ export function buildBinanceSubscribeMessage(
 
 export function buildBinanceUnsubscribeMessage(
   symbols: string[],
-  types: string[] = [],
+  types: string[] = ["trade"],
   options?: SubscribeOptions,
 ) {
   const params = symbols.flatMap((s) =>

@@ -29,6 +29,7 @@ import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS, REDIS_KEY_PATTERNS } from "../config/redisChannels";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
+import { parseStreamName } from "../utils/streamName";
 
 // ============================================
 // TYPES
@@ -57,6 +58,7 @@ export interface WorkflowScopedSubscription {
   workflowId: string;
   workflowName?: string;
   source: string;
+  symbols: string[];
   streams?: string[]; // Native stream names (e.g., btcusdt@kline_1m)
 }
 
@@ -269,9 +271,16 @@ export class StatusService {
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
           const mapKey = `${workflowId}:${source}`;
+          // Extract symbols from stream names
+          const extractedSymbols = new Set<string>();
+          for (const streamName of streamNames) {
+            const parsed = parseStreamName(source, streamName);
+            extractedSymbols.add(parsed.symbol);
+          }
           subscriptionsMap.set(mapKey, {
             workflowId,
             source,
+            symbols: Array.from(extractedSymbols),
             streams: streamNames,
           });
           workflowIds.add(workflowId);

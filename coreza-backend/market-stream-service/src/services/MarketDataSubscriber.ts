@@ -25,9 +25,8 @@ interface WorkflowRegistration {
   workflowId: string;
   nodeId: string;
   userId: string;
-  symbols: Set<string>;
-  source?: MarketSource;
-  eventTypes?: MarketEventType[];
+  streams: Set<string>;
+  source: MarketSource;
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
 }
 
@@ -80,14 +79,14 @@ export class MarketDataSubscriber {
     workflowId: string,
     nodeId: string,
     userId: string,
-    symbols: string[],
-    source?: MarketSource | string,
+    streams: string[],
+    source: MarketSource | string,
     onlyClosedBars?: boolean,
   ): Promise<void> {
     try {
       console.log(
-        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for symbols:`,
-        symbols,
+        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams:`,
+        streams,
       );
 
       // Create registration object
@@ -95,7 +94,7 @@ export class MarketDataSubscriber {
         workflowId,
         nodeId,
         userId,
-        symbols: new Set(symbols.map((s) => s.toUpperCase())),
+        streams: new Set(streams.map((s) => s)),
         source,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
       };
@@ -104,12 +103,12 @@ export class MarketDataSubscriber {
       this.registrations.set(workflowId, registration);
 
       // Update symbol→workflow mapping
-      for (const symbol of registration.symbols) {
-        if (!this.symbolWorkflows.has(symbol)) {
-          this.symbolWorkflows.set(symbol, new Set());
+      for (const stream of registration.streams) {
+        if (!this.symbolWorkflows.has(stream)) {
+          this.symbolWorkflows.set(stream, new Set());
 
           // Subscribe to Redis channel for this symbol
-          const channel = REDIS_CHANNELS.marketData(symbol);
+          const channel = REDIS_CHANNELS.marketData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.subscribe(channel);
           console.log(
@@ -120,7 +119,7 @@ export class MarketDataSubscriber {
             this.symbolWorkflows.keys(),
           );
         }
-        this.symbolWorkflows.get(symbol)!.add(workflowId);
+        this.symbolWorkflows.get(stream)!.add(workflowId);
       }
 
       // Persist to Redis
@@ -161,17 +160,17 @@ export class MarketDataSubscriber {
       }
 
       // Remove from symbol→workflow mapping
-      for (const symbol of registration.symbols) {
-        const workflows = this.symbolWorkflows.get(symbol);
+      for (const stream of registration.streams) {
+        const workflows = this.symbolWorkflows.get(stream);
         if (workflows) {
           workflows.delete(workflowId);
 
           // If no more workflows need this symbol, unsubscribe from Redis channel
           if (workflows.size === 0) {
-            const channel = REDIS_CHANNELS.marketData(symbol);
+            const channel = REDIS_CHANNELS.marketData(stream);
             const { sub } = this.ensureRedisConnections();
             await sub.unsubscribe(channel);
-            this.symbolWorkflows.delete(symbol);
+            this.symbolWorkflows.delete(stream);
             console.log(
               `📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`,
             );
@@ -219,8 +218,8 @@ export class MarketDataSubscriber {
             workflowId: string;
             nodeId: string;
             userId: string;
-            symbols: string[];
-            source?: MarketSource;
+            streams: string[];
+            source: MarketSource;
             onlyClosedBars?: boolean;
           };
 
@@ -242,7 +241,7 @@ export class MarketDataSubscriber {
             registration.workflowId,
             registration.nodeId,
             registration.userId,
-            registration.symbols,
+            registration.streams,
             registration.source,
             registration.onlyClosedBars,
           );
@@ -374,15 +373,6 @@ export class MarketDataSubscriber {
               { err: error, userId: registration.userId },
               "Failed to publish market data to user channel",
             );
-          }
-
-          // Skip workflow execution for test listeners (they only need WebSocket data)
-          if (workflowId.startsWith("stream:test:")) {
-            logger.debug(
-              { workflowId },
-              "Skipping workflow execution for test listener",
-            );
-            continue;
           }
 
           // Trigger backend workflow execution with same formatted payload
@@ -533,7 +523,7 @@ export class MarketDataSubscriber {
    */
   async addSymbolsToRegistration(
     workflowId: string,
-    newSymbols: string[],
+    newStreams: string[],
   ): Promise<void> {
     const registration = this.registrations.get(workflowId);
 
@@ -546,40 +536,38 @@ export class MarketDataSubscriber {
 
     console.log(
       `➕ [MarketDataSubscriber] Adding symbols to workflow ${workflowId}:`,
-      newSymbols,
+      newStreams,
     );
 
-    for (const symbol of newSymbols) {
-      const upperSymbol = symbol.toUpperCase();
-
+    for (const stream of newStreams) {
       // Skip if already registered
-      if (registration.symbols.has(upperSymbol)) {
+      if (registration.streams.has(stream)) {
         continue;
       }
 
       // Add to registration's symbol set
-      registration.symbols.add(upperSymbol);
+      registration.streams.add(stream);
 
       // Update symbol→workflow mapping
-      if (!this.symbolWorkflows.has(upperSymbol)) {
-        this.symbolWorkflows.set(upperSymbol, new Set());
+      if (!this.symbolWorkflows.has(stream)) {
+        this.symbolWorkflows.set(stream, new Set());
 
         // Subscribe to Redis channel for this symbol
-        const channel = REDIS_CHANNELS.marketData(upperSymbol);
+        const channel = REDIS_CHANNELS.marketData(stream);
         const { sub } = this.ensureRedisConnections();
         await sub.subscribe(channel);
         console.log(
           `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`,
         );
       }
-      this.symbolWorkflows.get(upperSymbol)!.add(workflowId);
+      this.symbolWorkflows.get(stream)!.add(workflowId);
     }
 
     // Persist updated registration to Redis
     await this.persistRegistration(registration);
 
     console.log(
-      `✅ [MarketDataSubscriber] Added ${newSymbols.length} symbols to workflow ${workflowId}`,
+      `✅ [MarketDataSubscriber] Added ${newStreams.length} symbols to workflow ${workflowId}`,
     );
   }
 
@@ -597,9 +585,8 @@ export class MarketDataSubscriber {
       workflowId: registration.workflowId,
       nodeId: registration.nodeId,
       userId: registration.userId,
-      symbols: Array.from(registration.symbols),
+      streams: Array.from(registration.streams),
       source: registration.source,
-      eventTypes: registration.eventTypes,
       onlyClosedBars: registration.onlyClosedBars,
     });
 
@@ -618,19 +605,19 @@ export class MarketDataSubscriber {
    */
   getStats(): {
     totalWorkflows: number;
-    totalSymbols: number;
+    totalStreams: number;
     registrations: Array<{
       workflowId: string;
-      symbols: string[];
-      source?: MarketSource;
+      streams: string[];
+      source: MarketSource;
     }>;
   } {
     return {
       totalWorkflows: this.registrations.size,
-      totalSymbols: this.symbolWorkflows.size,
+      totalStreams: this.symbolWorkflows.size,
       registrations: Array.from(this.registrations.values()).map((reg) => ({
         workflowId: reg.workflowId,
-        symbols: Array.from(reg.symbols),
+        streams: Array.from(reg.streams),
         source: reg.source,
       })),
     };

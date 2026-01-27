@@ -17,7 +17,7 @@ export const REDIS_CHANNELS = {
   // ============================================
 
   // Symbol-level market data (fanout) - published by MarketDataGateway
-  marketData: (symbol: string) => `md:symbol:${symbol.toUpperCase()}`,
+  marketData: (stream: string) => `md:symbol:${stream}`,
 
   // Control channels for SUBSCRIPTION management (broker connections)
   controlSubscribe: "md:control:subscribe",
@@ -71,9 +71,9 @@ export const REDIS_CHANNELS = {
   // LEGACY: Symbol-only keys (for backward compatibility during migration)
   // TODO: Remove after migration complete
   globalSubscription: (userId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:global:${source}:symbols`,
+    `md:user:${userId}:subscription:scope:global:${source}:streams`,
   workflowSubscription: (userId: string, workflowId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`,
+    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`,
 
   // ============================================
   // GATEWAY STATE KEYS (MarketDataGateway)

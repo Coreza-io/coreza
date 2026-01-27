@@ -2,11 +2,11 @@ import type { CorezaMarketEvent } from "../../types/marketEvent";
 import type { SubscribeOptions } from "../types";
 
 export function buildBinanceSubscribeMessage(stream: string[]) {
-  return { method: "SUBSCRIBE", stream, id: Date.now() };
+  return { method: "SUBSCRIBE", params: stream, id: Date.now() };
 }
 
 export function buildBinanceUnsubscribeMessage(stream: string[]) {
-  return { method: "UNSUBSCRIBE", stream, id: Date.now() };
+  return { method: "UNSUBSCRIBE", params: stream, id: Date.now() };
 }
 
 export function parseBinanceMessage(buffer: Buffer): any[] {

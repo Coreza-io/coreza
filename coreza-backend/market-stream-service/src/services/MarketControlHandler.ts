@@ -175,12 +175,12 @@ export class MarketControlHandler {
 
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-      const symbolsToRegister =
+      const streamToRegister =
         scope === "global"
           ? await this.getUserSubscribedSymbols(userId, source)
           : await this.getWorkflowScopedSymbols(userId, workflowId, source);
 
-      if (symbolsToRegister.length === 0) {
+      if (streamToRegister.length === 0) {
         console.log(
           `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
         );
@@ -191,15 +191,15 @@ export class MarketControlHandler {
         workflowId,
         nodeId,
         userId,
-        symbolsToRegister,
+        streamToRegister,
         source as MarketSource,
         onlyClosedBars,
       );
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
-          symbolsToRegister.length
-        } symbols: ${symbolsToRegister.join(", ")}`,
+          streamToRegister.length
+        } symbols: ${streamToRegister.join(", ")}`,
       );
     } catch (error) {
       console.error(
@@ -281,15 +281,15 @@ export class MarketControlHandler {
     userId: string,
     source: string,
   ): Promise<string[]> {
-    const allSymbols = new Set<string>();
+    const allStream = new Set<string>();
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const key = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+      const key = `md:user:${userId}:subscription:scope:global:${source}:streams`;
 
-      const symbols = await this.redisPub.smembers(key);
+      const streams = await this.redisPub.smembers(key);
 
-      symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
+      streams.forEach((s) => allStream.add(s));
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
@@ -297,7 +297,7 @@ export class MarketControlHandler {
       );
     }
 
-    return Array.from(allSymbols);
+    return Array.from(allStream);
   }
 
   /**

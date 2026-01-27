@@ -19,6 +19,7 @@ import {
   alertGatewayDisconnected,
   alertMaxReconnectAttempts,
 } from "../utils/alerting";
+import { parseStreamName, extractSymbol } from "../utils/streamName";
 
 export class MarketDataGateway {
   // Key: full source_id (e.g., 'alpaca_news', 'alpaca_stream') for unique instances
@@ -28,7 +29,8 @@ export class MarketDataGateway {
   private config: GatewayConfig;
   private source: string; // Full source_id for behavior routing (e.g., 'alpaca_news')
   private credentials: any = null;
-  private subscribedSymbolTypes = new Map<string, Set<string>>(); // symbol → event types
+  // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
+  private subscribedStreams = new Set<string>();
   private isAuthenticated = false;
   private reconnectAttempts = 0;
   private redis = getRedisQueue();
@@ -185,7 +187,6 @@ export class MarketDataGateway {
         // Publish to Redis symbol channel with circuit breaker
         const channel = REDIS_CHANNELS.marketData(event.symbol);
         await this.publishToRedis(channel, JSON.stringify(event));
-        // ADD THIS AFTER LINE 135:
         console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
         console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
 
@@ -231,115 +232,197 @@ export class MarketDataGateway {
     }
   }
 
+  /**
+   * Subscribe to streams using native stream names directly
+   * This is the primary subscription method
+   */
+  subscribeStreams(streamNames: string[]): void {
+    const newStreams = streamNames.filter(
+      (name) => !this.subscribedStreams.has(name)
+    );
+
+    if (newStreams.length === 0) {
+      this.logger.debug(
+        { source: this.source },
+        "All streams already subscribed"
+      );
+      return;
+    }
+
+    // Add to tracking
+    newStreams.forEach((name) => this.subscribedStreams.add(name));
+
+    if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
+      // Extract symbols and types from stream names for broker message
+      const symbols = this.extractSymbolsFromStreams(newStreams);
+      const types = this.extractTypesFromStreams(newStreams);
+
+      const msg = this.config.makeSubscribeMessage(
+        symbols,
+        types,
+        undefined,
+        this.source
+      );
+      const payload = this.encodeMessage(msg);
+      this.ws.send(payload);
+      this.logger.info(
+        { source: this.source, streams: newStreams },
+        "Subscribed to streams"
+      );
+    }
+  }
+
+  /**
+   * Unsubscribe from streams using native stream names
+   */
+  unsubscribeStreams(streamNames: string[]): void {
+    const existingStreams = streamNames.filter((name) =>
+      this.subscribedStreams.has(name)
+    );
+
+    if (existingStreams.length === 0) return;
+
+    existingStreams.forEach((name) => this.subscribedStreams.delete(name));
+
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      // Extract symbols and types from stream names for broker message
+      const symbols = this.extractSymbolsFromStreams(existingStreams);
+      const types = this.extractTypesFromStreams(existingStreams);
+
+      const msg = this.config.makeUnsubscribeMessage(
+        symbols,
+        types,
+        undefined,
+        this.source
+      );
+      const payload = this.encodeMessage(msg);
+      this.ws.send(payload);
+      this.logger.info(
+        { source: this.source, streams: existingStreams },
+        "Unsubscribed from streams"
+      );
+    }
+  }
+
+  /**
+   * Legacy method - subscribe using symbols and types
+   * Kept for backward compatibility
+   */
   subscribeSymbols(
     symbols: string[],
     types?: string[],
     options?: SubscribeOptions
   ): void {
+    // Build stream names from symbols and types, then delegate to subscribeStreams
+    const streamNames: string[] = [];
     const requestedTypes = types || [];
-    const subscriptionUpdates: string[] = [];
 
     for (const symbol of symbols) {
-      const upperSymbol = symbol.toUpperCase();
-      const existingTypes =
-        this.subscribedSymbolTypes.get(upperSymbol) || new Set();
-
-      // Check if any requested type is new for this symbol
-      const hasNewTypes = requestedTypes.some((t) => !existingTypes.has(t));
-
-      if (!this.subscribedSymbolTypes.has(upperSymbol) || hasNewTypes) {
-        subscriptionUpdates.push(upperSymbol);
-        // Add all requested types to tracking
-        requestedTypes.forEach((t) => existingTypes.add(t));
-        this.subscribedSymbolTypes.set(upperSymbol, existingTypes);
+      for (const type of requestedTypes.length > 0 ? requestedTypes : ["trade"]) {
+        // Build native stream name based on source
+        const streamName = this.buildStreamNameForSymbol(symbol, type);
+        streamNames.push(streamName);
       }
     }
 
-    if (subscriptionUpdates.length === 0) {
-      this.logger.debug(
-        { source: this.source },
-        "All symbols already subscribed with requested types"
-      );
-      return;
-    }
-
-    if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      // Pass source for behavior routing (e.g., alpaca_news subscribes differently)
-      const msg = this.config.makeSubscribeMessage(
-        subscriptionUpdates,
-        requestedTypes,
-        options,
-        this.source
-      );
-      const payload = this.encodeMessage(msg);
-      this.ws.send(payload);
-      this.logger.info(
-        {
-          source: this.source,
-          symbols: subscriptionUpdates,
-          types: requestedTypes,
-        },
-        "Subscribed to symbols"
-      );
-    }
+    this.subscribeStreams(streamNames);
   }
 
+  /**
+   * Legacy method - unsubscribe using symbols and types
+   * Kept for backward compatibility
+   */
   unsubscribeSymbols(
     symbols: string[],
     types?: string[],
     options?: SubscribeOptions
   ): void {
-    const toRemove = symbols.filter((s) =>
-      this.subscribedSymbolTypes.has(s.toUpperCase())
-    );
-    if (toRemove.length === 0) return;
+    // Build stream names from symbols and types, then delegate to unsubscribeStreams
+    const streamNames: string[] = [];
+    const requestedTypes = types || [];
 
-    toRemove.forEach((s) => this.subscribedSymbolTypes.delete(s.toUpperCase()));
-
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      // Pass source for behavior routing
-      const msg = this.config.makeUnsubscribeMessage(
-        toRemove,
-        types,
-        options,
-        this.source
-      );
-      const payload = this.encodeMessage(msg);
-      this.ws.send(payload);
-      this.logger.info(
-        { source: this.source, symbols: toRemove },
-        "Unsubscribed from symbols"
-      );
+    for (const symbol of symbols) {
+      for (const type of requestedTypes.length > 0 ? requestedTypes : ["trade"]) {
+        const streamName = this.buildStreamNameForSymbol(symbol, type);
+        streamNames.push(streamName);
+      }
     }
+
+    this.unsubscribeStreams(streamNames);
+  }
+
+  /**
+   * Build a stream name for a symbol and type based on source
+   */
+  private buildStreamNameForSymbol(symbol: string, type: string): string {
+    const sym = symbol.toLowerCase();
+
+    if (this.source.startsWith("binance")) {
+      // Handle types that may already include interval (kline_1m)
+      if (type.includes("_")) {
+        return `${sym}@${type}`;
+      }
+      return `${sym}@${type}`;
+    }
+
+    if (this.source === "alpaca" || this.source.startsWith("alpaca")) {
+      return `${type}.${symbol.toUpperCase()}`;
+    }
+
+    // Default format
+    return `${sym}@${type}`;
+  }
+
+  /**
+   * Helper to extract unique symbols from stream names
+   */
+  private extractSymbolsFromStreams(streams: string[]): string[] {
+    return [
+      ...new Set(streams.map((s) => extractSymbol(this.source, s))),
+    ];
+  }
+
+  /**
+   * Helper to extract unique event types from stream names
+   */
+  private extractTypesFromStreams(streams: string[]): string[] {
+    return [
+      ...new Set(
+        streams.map((s) => {
+          const parsed = parseStreamName(this.source, s);
+          // For Binance, include interval in type if present (kline_1m)
+          if (parsed.interval && parsed.eventType === "kline") {
+            return `${parsed.eventType}_${parsed.interval}`;
+          }
+          if (parsed.interval && parsed.eventType === "depth") {
+            return `depth${parsed.interval}`;
+          }
+          return parsed.eventType;
+        })
+      ),
+    ];
   }
 
   private resubscribeAll(): void {
-    if (this.subscribedSymbolTypes.size > 0) {
-      // Group symbols by their types for efficient subscription
-      const typeGroups = new Map<string, string[]>();
+    if (this.subscribedStreams.size > 0) {
+      const streams = Array.from(this.subscribedStreams);
 
-      for (const [symbol, types] of this.subscribedSymbolTypes) {
-        const typeKey = Array.from(types).sort().join(",");
-        if (!typeGroups.has(typeKey)) typeGroups.set(typeKey, []);
-        typeGroups.get(typeKey)!.push(symbol);
-      }
+      // Extract symbols and types for the subscription message
+      const symbols = this.extractSymbolsFromStreams(streams);
+      const types = this.extractTypesFromStreams(streams);
 
-      // Send subscription for each type group - pass source for behavior routing
-      for (const [typeKey, symbols] of typeGroups) {
-        const types = typeKey.split(",");
-        const msg = this.config.makeSubscribeMessage(
-          symbols,
-          types,
-          undefined,
-          this.source
-        );
-        const payload = this.encodeMessage(msg);
-        this.ws?.send(payload);
-        this.logger.info(
-          { source: this.source, symbols: symbols.length, types },
-          "Resubscribed to symbols"
-        );
-      }
+      const msg = this.config.makeSubscribeMessage(
+        symbols,
+        types,
+        undefined,
+        this.source
+      );
+      const payload = this.encodeMessage(msg);
+      this.ws?.send(payload);
+      this.logger.info(
+        { source: this.source, streamCount: streams.length, types },
+        "Resubscribed to all streams"
+      );
     }
   }
 
@@ -372,6 +455,7 @@ export class MarketDataGateway {
     const maxAttempts = this.config.maxReconnectAttempts ?? 5;
     if (this.reconnectAttempts >= maxAttempts) {
       console.error(`[${this.source}] Max reconnection attempts reached`);
+      alertMaxReconnectAttempts(this.source, maxAttempts);
       return;
     }
 
@@ -421,12 +505,7 @@ export class MarketDataGateway {
       source: this.source,
       connected: this.ws?.readyState === WebSocket.OPEN,
       authenticated: this.isAuthenticated,
-      subscribedSymbols: Array.from(this.subscribedSymbolTypes.entries()).map(
-        ([symbol, types]) => ({
-          symbol,
-          types: Array.from(types),
-        })
-      ),
+      subscribedStreams: Array.from(this.subscribedStreams),
       reconnectAttempts: this.reconnectAttempts,
     };
   }

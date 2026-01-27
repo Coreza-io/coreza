@@ -872,9 +872,9 @@ export class MarketControlHandler {
       // Store native stream names directly
       streams: Array.from(state.streams),
       workflowSymbols: Array.from(state.workflowSymbols.entries()).map(
-        ([wfId, symbols]) => ({
+        ([wfId, stream]) => ({
           workflowId: wfId,
-          symbols: Array.from(symbols),
+          streams: Array.from(stream),
         }),
       ),
       timestamp: new Date().toISOString(),

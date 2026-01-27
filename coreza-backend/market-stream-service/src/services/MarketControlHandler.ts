@@ -12,6 +12,7 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
+import { extractSymbol } from "../utils/streamName";
 import { buildStreamNames } from "../utils/streamBuilder";
 import type { MarketSource } from "../types/marketEvent";
 
@@ -266,16 +267,22 @@ export class MarketControlHandler {
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
-        console.log(
-          `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
+        const key = REDIS_CHANNELS.workflowSubscriptionStreams(
+          userId,
+          workflowId,
+          source,
         );
-        const symbols = await this.redisPub.smembers(key);
         console.log(
-          `🔍 [MarketControl] Found ${symbols.length} workflow-scoped symbols:`,
-          symbols,
+          `🔍 [MarketControl] Checking workflow-scoped streams at key: ${key}`,
         );
-        symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
+        const streams = await this.redisPub.smembers(key);
+        console.log(
+          `🔍 [MarketControl] Found ${streams.length} workflow-scoped streams:`,
+          streams,
+        );
+        streams.forEach((streamName) =>
+          allSymbols.add(extractSymbol(source, streamName)),
+        );
       }
     } catch (err) {
       console.error(
@@ -289,7 +296,7 @@ export class MarketControlHandler {
 
   /**
    * Get all GLOBAL symbols currently subscribed for a user across all sources
-   * Uses pattern matching to find ALL subscription keys (handles _stream suffix variants)
+   * Reads native stream names from the streams key and extracts symbols.
    */
   private async getUserSubscribedSymbols(
     userId: string,
@@ -298,12 +305,12 @@ export class MarketControlHandler {
     const allSymbols = new Set<string>();
 
     try {
-      // Use pattern matching to find ALL subscription keys for this user
-      const key = `md:user:${userId}:subscription:scope:global:${source}:symbols`;
+      const key = REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+      const streams = await this.redisPub.smembers(key);
 
-      const symbols = await this.redisPub.smembers(key);
-
-      symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
+      streams.forEach((streamName) =>
+        allSymbols.add(extractSymbol(source, streamName)),
+      );
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,

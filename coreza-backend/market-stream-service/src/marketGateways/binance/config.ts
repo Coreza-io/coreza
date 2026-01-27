@@ -21,8 +21,8 @@ export const binanceGatewayConfig: GatewayConfig = {
 
     return isTestnet ? 'wss://stream.testnet.binance.vision/ws' : 'wss://stream.binance.com:9443/ws';
   },
-  makeSubscribeMessage: (symbols, types, options, _source) => buildBinanceSubscribeMessage(symbols, types, options),
-  makeUnsubscribeMessage: (symbols, types, options, _source) => buildBinanceUnsubscribeMessage(symbols, types, options),
+  makeSubscribeMessage: (symbols, types, options, _source) => buildBinanceSubscribeMessage(symbols, types || [], options),
+  makeUnsubscribeMessage: (symbols, types, options, _source) => buildBinanceUnsubscribeMessage(symbols, types || [], options),
   parseMessage: (buffer) => parseBinanceMessage(buffer),
   identifyMessageType: (msg) => identifyBinanceMessageType(msg),
   shouldPublish: (msg, _source) => shouldPublishBinanceMessage(msg),

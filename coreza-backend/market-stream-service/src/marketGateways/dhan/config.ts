@@ -13,8 +13,8 @@ export const dhanGatewayConfig: GatewayConfig = {
   wsUrl: (creds, _source) =>
     `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
   makeAuthMessage: undefined,
-  makeSubscribeMessage: (symbols, _types, _options, _source) => buildDhanSubscribeMessage(symbols),
-  makeUnsubscribeMessage: (symbols, _types, _options, _source) => buildDhanUnsubscribeMessage(symbols),
+  makeSubscribeMessage: (streamNames, _source) => buildDhanSubscribeMessage(streamNames),
+  makeUnsubscribeMessage: (streamNames, _source) => buildDhanUnsubscribeMessage(streamNames),
   parseMessage: (buffer) => parseDhanMessage(buffer),
   identifyMessageType: (msg) => identifyDhanMessageType(msg),
   shouldPublish: (msg, _source) => shouldPublishDhanMessage(msg),

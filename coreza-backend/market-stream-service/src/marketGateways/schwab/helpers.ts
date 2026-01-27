@@ -13,7 +13,18 @@ export function buildSchwabAuthMessage(creds: any) {
   return buildSchwabLoginMessage(creds);
 }
 
-export function buildSchwabSubscribeMessage(symbols: string[]) {
+// ============ STREAM NAME PARSING ============
+// Schwab stream names are just symbols (e.g., "AAPL")
+function extractSchwabSymbols(streamNames: string[]): string[] {
+  return streamNames.map((name) => {
+    // If stream name contains metadata separator, extract symbol
+    const atIndex = name.indexOf('@');
+    return atIndex > 0 ? name.substring(0, atIndex) : name;
+  });
+}
+
+export function buildSchwabSubscribeMessage(streamNames: string[]) {
+  const symbols = extractSchwabSymbols(streamNames);
   return {
     requests: [
       {
@@ -29,7 +40,8 @@ export function buildSchwabSubscribeMessage(symbols: string[]) {
   };
 }
 
-export function buildSchwabUnsubscribeMessage(symbols: string[]) {
+export function buildSchwabUnsubscribeMessage(streamNames: string[]) {
+  const symbols = extractSchwabSymbols(streamNames);
   return {
     requests: [
       {

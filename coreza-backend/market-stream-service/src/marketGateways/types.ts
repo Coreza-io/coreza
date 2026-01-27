@@ -15,9 +15,9 @@ export interface GatewayConfig {
   isAuthSuccess?: (msg: any) => boolean;
   isAuthError?: (msg: any) => boolean;
 
-  // Subscription management - source param for routing behavior (e.g., 'alpaca_news' vs 'alpaca_stream')
-  makeSubscribeMessage: (symbols: string[], types?: string[], options?: SubscribeOptions, source?: string) => any;
-  makeUnsubscribeMessage: (symbols: string[], types?: string[], options?: SubscribeOptions, source?: string) => any;
+  // Subscription management - streamNames are native broker format (btcusdt@kline_1m, bars.AAPL)
+  makeSubscribeMessage: (streamNames: string[], source?: string) => any;
+  makeUnsubscribeMessage: (streamNames: string[], source?: string) => any;
 
   // Message processing - source param for routing behavior
   parseMessage: (buffer: Buffer) => any[];

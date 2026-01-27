@@ -1,51 +1,12 @@
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 import type { SubscribeOptions } from "../types";
 
-export function buildBinanceSubscribeMessage(
-  symbols: string[],
-  types: string[],
-  options?: SubscribeOptions,
-) {
-  const params = symbols.flatMap((s) =>
-    types.map((t) => {
-      const sym = s.toLowerCase();
-      if (t === "kline" && options?.klineInterval) {
-        return `${sym}@kline_${options.klineInterval}`;
-      }
-      if (t === "depth" && options?.depthLevels) {
-        return `${sym}@depth${options.depthLevels}`;
-      }
-      // ticker maps to 24hrTicker stream name in Binance
-      if (t === "ticker") {
-        return `${sym}@ticker`;
-      }
-      return `${sym}@${t}`;
-    }),
-  );
-  return { method: "SUBSCRIBE", params, id: Date.now() };
+export function buildBinanceSubscribeMessage(stream: string[]) {
+  return { method: "SUBSCRIBE", stream, id: Date.now() };
 }
 
-export function buildBinanceUnsubscribeMessage(
-  symbols: string[],
-  types: string[] = ["trade"],
-  options?: SubscribeOptions,
-) {
-  const params = symbols.flatMap((s) =>
-    types.map((t) => {
-      const sym = s.toLowerCase();
-      if (t === "kline" && options?.klineInterval) {
-        return `${sym}@kline_${options.klineInterval}`;
-      }
-      if (t === "depth" && options?.depthLevels) {
-        return `${sym}@depth${options.depthLevels}`;
-      }
-      if (t === "ticker") {
-        return `${sym}@ticker`;
-      }
-      return `${sym}@${t}`;
-    }),
-  );
-  return { method: "UNSUBSCRIBE", params, id: Date.now() };
+export function buildBinanceUnsubscribeMessage(stream: string[]) {
+  return { method: "UNSUBSCRIBE", stream, id: Date.now() };
 }
 
 export function parseBinanceMessage(buffer: Buffer): any[] {

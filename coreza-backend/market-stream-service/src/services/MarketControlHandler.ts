@@ -18,7 +18,7 @@ import type { MarketSource } from "../types/marketEvent";
 interface ControlMessage {
   action: "subscribe" | "unsubscribe";
   userId: string;
-  workflowId?: string;
+  workflowId: string;
   nodeId?: string;
   symbols: string[];
   source: MarketSource;
@@ -526,14 +526,6 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
-        // Track workflow symbols (for reference counting only, NOT for data routing)
-        if (workflowId) {
-          const currentSymbols =
-            state.workflowSymbols.get(workflowId) || new Set();
-          symbols.forEach((s) => currentSymbols.add(s.toUpperCase()));
-          state.workflowSymbols.set(workflowId, currentSymbols);
-        }
-
         // Build stream names FIRST (before any tracking)
         const processedEventTypes = this.processEventTypesForStreamNames(
           eventTypes || [],
@@ -562,6 +554,12 @@ export class MarketControlHandler {
 
           // Add to tracking
           newStreamNames.forEach((name) => state.streams.add(name));
+
+          // Track workflow symbols (for reference counting only, NOT for data routing)
+          const currentStream =
+            state.workflowSymbols.get(workflowId) || new Set();
+          newStreamNames.forEach((s) => currentStream.add(s));
+          state.workflowSymbols.set(workflowId, currentStream);
 
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);

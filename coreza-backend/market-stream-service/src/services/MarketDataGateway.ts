@@ -111,12 +111,12 @@ export class MarketDataGateway {
         const reasonStr = reason.toString() || "No reason provided";
         this.logger.warn(
           { source: this.source, code, reason: reasonStr },
-          "Gateway disconnected"
+          "Gateway disconnected",
         );
         activeGatewayConnectionsGauge.set({ source: this.source }, 0);
         alertGatewayDisconnected(
           this.source,
-          `Connection closed: ${code} - ${reasonStr}`
+          `Connection closed: ${code} - ${reasonStr}`,
         );
         this.isAuthenticated = false;
         this.stopKeepalive();
@@ -132,7 +132,7 @@ export class MarketDataGateway {
 
   private async handleMessage(
     buffer: Buffer,
-    resolveConnect?: () => void
+    resolveConnect?: () => void,
   ): Promise<void> {
     try {
       const startTime = Date.now();
@@ -141,7 +141,7 @@ export class MarketDataGateway {
       // Debug log ALL incoming messages
       this.logger.debug(
         { source: this.source, rawMessages: messages },
-        "Raw messages received"
+        "Raw messages received",
       );
 
       for (const msg of messages) {
@@ -155,7 +155,7 @@ export class MarketDataGateway {
         ) {
           this.logger.info(
             { source: this.source },
-            "Authentication successful"
+            "Authentication successful",
           );
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -166,7 +166,7 @@ export class MarketDataGateway {
         if (this.config.isAuthError && this.config.isAuthError(msg)) {
           this.logger.error(
             { source: this.source, msg },
-            "Authentication failed"
+            "Authentication failed",
           );
           this.ws?.close();
           continue;
@@ -206,7 +206,7 @@ export class MarketDataGateway {
             type: event.type,
             price: event.p || event.c,
           },
-          "Market event published"
+          "Market event published",
         );
       }
     } catch (error) {
@@ -219,14 +219,14 @@ export class MarketDataGateway {
    */
   private async publishToRedis(
     channel: string,
-    message: string
+    message: string,
   ): Promise<void> {
     try {
       await redisPublishBreaker.fire(channel, message);
     } catch (error) {
       this.logger.warn(
         { source: this.source, channel },
-        "Redis unavailable, buffering message"
+        "Redis unavailable, buffering message",
       );
       RedisBuffer.getInstance().bufferMessage(channel, message);
     }
@@ -238,13 +238,13 @@ export class MarketDataGateway {
    */
   subscribeStreams(streamNames: string[]): void {
     const newStreams = streamNames.filter(
-      (name) => !this.subscribedStreams.has(name)
+      (name) => !this.subscribedStreams.has(name),
     );
 
     if (newStreams.length === 0) {
       this.logger.debug(
         { source: this.source },
-        "All streams already subscribed"
+        "All streams already subscribed",
       );
       return;
     }
@@ -253,21 +253,12 @@ export class MarketDataGateway {
     newStreams.forEach((name) => this.subscribedStreams.add(name));
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      // Extract symbols and types from stream names for broker message
-      const symbols = this.extractSymbolsFromStreams(newStreams);
-      const types = this.extractTypesFromStreams(newStreams);
-
-      const msg = this.config.makeSubscribeMessage(
-        symbols,
-        types,
-        undefined,
-        this.source
-      );
+      const msg = this.config.makeSubscribeMessage(newStreams, this.source);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
         { source: this.source, streams: newStreams },
-        "Subscribed to streams"
+        "Subscribed to streams",
       );
     }
   }
@@ -277,7 +268,7 @@ export class MarketDataGateway {
    */
   unsubscribeStreams(streamNames: string[]): void {
     const existingStreams = streamNames.filter((name) =>
-      this.subscribedStreams.has(name)
+      this.subscribedStreams.has(name),
     );
 
     if (existingStreams.length === 0) return;
@@ -285,143 +276,26 @@ export class MarketDataGateway {
     existingStreams.forEach((name) => this.subscribedStreams.delete(name));
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      // Extract symbols and types from stream names for broker message
-      const symbols = this.extractSymbolsFromStreams(existingStreams);
-      const types = this.extractTypesFromStreams(existingStreams);
-
-      const msg = this.config.makeUnsubscribeMessage(
-        symbols,
-        types,
-        undefined,
-        this.source
-      );
+      const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
       const payload = this.encodeMessage(msg);
       this.ws.send(payload);
       this.logger.info(
         { source: this.source, streams: existingStreams },
-        "Unsubscribed from streams"
+        "Unsubscribed from streams",
       );
     }
-  }
-
-  /**
-   * Legacy method - subscribe using symbols and types
-   * Kept for backward compatibility
-   */
-  subscribeSymbols(
-    symbols: string[],
-    types?: string[],
-    options?: SubscribeOptions
-  ): void {
-    // Build stream names from symbols and types, then delegate to subscribeStreams
-    const streamNames: string[] = [];
-    const requestedTypes = types || [];
-
-    for (const symbol of symbols) {
-      for (const type of requestedTypes.length > 0 ? requestedTypes : ["trade"]) {
-        // Build native stream name based on source
-        const streamName = this.buildStreamNameForSymbol(symbol, type);
-        streamNames.push(streamName);
-      }
-    }
-
-    this.subscribeStreams(streamNames);
-  }
-
-  /**
-   * Legacy method - unsubscribe using symbols and types
-   * Kept for backward compatibility
-   */
-  unsubscribeSymbols(
-    symbols: string[],
-    types?: string[],
-    options?: SubscribeOptions
-  ): void {
-    // Build stream names from symbols and types, then delegate to unsubscribeStreams
-    const streamNames: string[] = [];
-    const requestedTypes = types || [];
-
-    for (const symbol of symbols) {
-      for (const type of requestedTypes.length > 0 ? requestedTypes : ["trade"]) {
-        const streamName = this.buildStreamNameForSymbol(symbol, type);
-        streamNames.push(streamName);
-      }
-    }
-
-    this.unsubscribeStreams(streamNames);
-  }
-
-  /**
-   * Build a stream name for a symbol and type based on source
-   */
-  private buildStreamNameForSymbol(symbol: string, type: string): string {
-    const sym = symbol.toLowerCase();
-
-    if (this.source.startsWith("binance")) {
-      // Handle types that may already include interval (kline_1m)
-      if (type.includes("_")) {
-        return `${sym}@${type}`;
-      }
-      return `${sym}@${type}`;
-    }
-
-    if (this.source === "alpaca" || this.source.startsWith("alpaca")) {
-      return `${type}.${symbol.toUpperCase()}`;
-    }
-
-    // Default format
-    return `${sym}@${type}`;
-  }
-
-  /**
-   * Helper to extract unique symbols from stream names
-   */
-  private extractSymbolsFromStreams(streams: string[]): string[] {
-    return [
-      ...new Set(streams.map((s) => extractSymbol(this.source, s))),
-    ];
-  }
-
-  /**
-   * Helper to extract unique event types from stream names
-   */
-  private extractTypesFromStreams(streams: string[]): string[] {
-    return [
-      ...new Set(
-        streams.map((s) => {
-          const parsed = parseStreamName(this.source, s);
-          // For Binance, include interval in type if present (kline_1m)
-          if (parsed.interval && parsed.eventType === "kline") {
-            return `${parsed.eventType}_${parsed.interval}`;
-          }
-          if (parsed.interval && parsed.eventType === "depth") {
-            return `depth${parsed.interval}`;
-          }
-          return parsed.eventType;
-        })
-      ),
-    ];
   }
 
   private resubscribeAll(): void {
     if (this.subscribedStreams.size > 0) {
       const streams = Array.from(this.subscribedStreams);
 
-      // Extract symbols and types for the subscription message
-      const symbols = this.extractSymbolsFromStreams(streams);
-      const types = this.extractTypesFromStreams(streams);
-
-      const msg = this.config.makeSubscribeMessage(
-        symbols,
-        types,
-        undefined,
-        this.source
-      );
+      const msg = this.config.makeSubscribeMessage(streams, this.source);
       const payload = this.encodeMessage(msg);
       this.ws?.send(payload);
       this.logger.info(
-        { source: this.source, streamCount: streams.length, types },
-        "Resubscribed to all streams"
+        { source: this.source, streams: streams },
+        "Resubscribed to all streams",
       );
     }
   }
@@ -436,12 +310,12 @@ export class MarketDataGateway {
       if (msg.RequestCode === 15) {
         return encodeDhanSubscribeMessage(
           msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ"
+          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
         );
       } else if (msg.RequestCode === 16) {
         return encodeDhanUnsubscribeMessage(
           msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ"
+          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
         );
       }
       return Buffer.from(JSON.stringify(msg));
@@ -465,7 +339,7 @@ export class MarketDataGateway {
     this.reconnectAttempts++;
 
     console.log(
-      `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`
+      `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`,
     );
 
     setTimeout(() => {

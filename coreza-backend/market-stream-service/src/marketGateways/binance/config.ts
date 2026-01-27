@@ -1,4 +1,4 @@
-import { GatewayConfig } from '../types';
+import { GatewayConfig } from "../types";
 import {
   buildBinanceSubscribeMessage,
   buildBinanceUnsubscribeMessage,
@@ -7,26 +7,33 @@ import {
   normalizeBinanceMessage,
   parseBinanceMessage,
   shouldPublishBinanceMessage,
-} from './helpers';
+} from "./helpers";
 
 export const binanceGatewayConfig: GatewayConfig = {
-  id: 'binance',
+  id: "binance",
   wsUrl: (creds, _source) => {
-    const isTestnet = creds.environment === 'testnet';
-    const assetType = creds.asset_type || 'spot';
+    const isTestnet = creds.environment === "testnet";
+    const assetType = creds.asset_type || "spot";
 
-    if (assetType === 'futures') {
-      return isTestnet ? 'wss://stream.testnet.binancefuture.com/ws' : 'wss://fstream.binance.com/ws';
+    if (assetType === "futures") {
+      return isTestnet
+        ? "wss://stream.testnet.binancefuture.com/ws"
+        : "wss://fstream.binance.com/ws";
     }
 
-    return isTestnet ? 'wss://stream.testnet.binance.vision/ws' : 'wss://stream.binance.com:9443/ws';
+    return isTestnet
+      ? "wss://stream.testnet.binance.vision/ws"
+      : "wss://stream.binance.com:9443/ws";
   },
-  makeSubscribeMessage: (symbols, types, options, _source) => buildBinanceSubscribeMessage(symbols, types || [], options),
-  makeUnsubscribeMessage: (symbols, types, options, _source) => buildBinanceUnsubscribeMessage(symbols, types || [], options),
+  makeSubscribeMessage: (stream, _source) =>
+    buildBinanceSubscribeMessage(stream),
+  makeUnsubscribeMessage: (stream, _source) =>
+    buildBinanceUnsubscribeMessage(stream),
   parseMessage: (buffer) => parseBinanceMessage(buffer),
   identifyMessageType: (msg) => identifyBinanceMessageType(msg),
   shouldPublish: (msg, _source) => shouldPublishBinanceMessage(msg),
-  handleControlMessage: (msg, logger, _source) => handleBinanceControlMessage(msg, logger),
+  handleControlMessage: (msg, logger, _source) =>
+    handleBinanceControlMessage(msg, logger),
   normalize: (msg, _source) => normalizeBinanceMessage(msg),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,

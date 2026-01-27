@@ -29,6 +29,9 @@ interface ControlMessage {
   assetType?: string; // For Binance: spot/futures
   scope: string;
   targetWorkflowId?: string;
+  // Raw interval/depth for stream name building (centralized in market-stream-service)
+  interval?: string;
+  depthLevels?: string;
 }
 
 interface SourceState {
@@ -567,9 +570,43 @@ export class MarketControlHandler {
             `✅ [MarketControl] Subscribed to ${subscriptionNeeded.length} symbol(s) on ${source}`,
           );
 
+          // ===== Build and store stream names in Redis (centralized here) =====
+          const { interval, depthLevels, scope, targetWorkflowId } = msg;
+          const processedEventTypes = this.processEventTypesForStreamNames(
+            eventTypes || [],
+            source,
+            interval,
+            depthLevels,
+          );
+
+          const streamNames = buildStreamNames(
+            source,
+            subscriptionNeeded,
+            processedEventTypes,
+          );
+
+          // Determine Redis key based on scope
+          const streamsKey =
+            scope === "workflow" && targetWorkflowId
+              ? REDIS_CHANNELS.workflowSubscriptionStreams(
+                  userId,
+                  targetWorkflowId,
+                  source,
+                )
+              : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+
+          // Store stream names in Redis
+          if (streamNames.length > 0) {
+            await this.redisPub.sadd(streamsKey, ...streamNames);
+            console.log(
+              `💾 [MarketControl] Stored ${streamNames.length} stream names in ${streamsKey}:`,
+              streamNames.slice(0, 5).join(", ") +
+                (streamNames.length > 5 ? "..." : ""),
+            );
+          }
+          // ===== END stream name storage =====
+
           // Notify active streaming workflows about new symbols (respecting scope)
-          const scope = msg.scope;
-          const targetWorkflowId = msg.targetWorkflowId;
           await this.updateActiveStreamingWorkflows(
             userId,
             subscriptionNeeded,
@@ -595,7 +632,17 @@ export class MarketControlHandler {
    * Handle unsubscribe control message
    */
   private async handleUnsubscribe(msg: ControlMessage): Promise<void> {
-    const { userId, source, workflowId, symbols, eventTypes } = msg;
+    const {
+      userId,
+      source,
+      workflowId,
+      symbols,
+      eventTypes,
+      interval,
+      depthLevels,
+      scope,
+      targetWorkflowId,
+    } = msg;
 
     try {
       const stateKey = this.getStateKey(userId, source);
@@ -630,6 +677,33 @@ export class MarketControlHandler {
         console.log(
           `✅ [MarketControl] Unsubscribed from ${symbols.length} symbols on ${source}`,
         );
+
+        // ===== Remove stream names from Redis (centralized here) =====
+        const processedEventTypes = this.processEventTypesForStreamNames(
+          eventTypes || [],
+          source,
+          interval,
+          depthLevels,
+        );
+
+        const streamNames = buildStreamNames(source, symbols, processedEventTypes);
+
+        const streamsKey =
+          scope === "workflow" && targetWorkflowId
+            ? REDIS_CHANNELS.workflowSubscriptionStreams(
+                userId,
+                targetWorkflowId,
+                source,
+              )
+            : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+
+        if (streamNames.length > 0) {
+          await this.redisPub.srem(streamsKey, ...streamNames);
+          console.log(
+            `🗑️ [MarketControl] Removed ${streamNames.length} stream names from ${streamsKey}`,
+          );
+        }
+        // ===== END stream name removal =====
       }
 
       // Disconnect if no more symbols
@@ -648,6 +722,33 @@ export class MarketControlHandler {
         error,
       );
     }
+  }
+
+  /**
+   * Process raw event types into format expected by buildStreamNames
+   * Handles kline intervals and depth levels for Binance
+   */
+  private processEventTypesForStreamNames(
+    eventTypes: string[],
+    source: string,
+    interval?: string,
+    depthLevels?: string,
+  ): string[] {
+    if (!source.startsWith("binance")) {
+      return eventTypes;
+    }
+
+    return eventTypes.map((type) => {
+      // Kline with interval: kline -> kline_1m
+      if (type === "kline" && interval) {
+        return `kline_${interval}`;
+      }
+      // Depth with levels: depth_levels -> depth20
+      if ((type === "depth" || type === "depth_levels") && depthLevels) {
+        return `depth${depthLevels}`;
+      }
+      return type;
+    });
   }
 
   /**

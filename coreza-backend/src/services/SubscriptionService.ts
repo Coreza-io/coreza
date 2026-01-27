@@ -17,7 +17,6 @@
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { MarketSource } from "../types/marketEvent";
-import { buildStreamNames } from "../utils/streamName";
 
 export interface SubscriptionParams {
   source: MarketSource;
@@ -100,30 +99,6 @@ export class SubscriptionService {
         : [];
   }
 
-  /**
-   * Process stream types with broker-specific transformations
-   */
-  private static processStreamTypes(
-    streamTypes: string[],
-    source: string,
-    Interval?: string,
-  ): string[] {
-    let types = streamTypes;
-
-    if (source === "binance_market" && Interval) {
-      types = types.map((t) => {
-        // Depth streams: depth20, depth10, etc.
-        if (t === "depth_levels") {
-          return `depth${Interval}`;
-        }
-
-        // Interval-based streams: kline_1m, kline_5m, etc.
-        return `${t}_${Interval}`;
-      });
-    }
-
-    return types;
-  }
 
   /**
    * Subscribe or unsubscribe from market data
@@ -192,17 +167,8 @@ export class SubscriptionService {
         };
       }
 
-      let eventTypes: string[] = [];
-      // Process stream types
-      if (streamTypes && streamTypes.length > 0) {
-        eventTypes = this.processStreamTypes(
-          streamTypes,
-          source,
-          interval ?? depth_levels,
-        );
-      }
-
-      // Build control message
+      // Build control message with RAW data
+      // Stream name building is handled by market-stream-service (single source of truth)
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
       // This allows proper cleanup when the workflow is deactivated
       // nodeId is NOT included - Subscribe nodes don't receive data routing (that's handled by StreamData nodes)
@@ -213,8 +179,11 @@ export class SubscriptionService {
         symbols: symbolArray,
         source,
         credentialId,
-        eventTypes,
+        eventTypes: streamTypes || [], // RAW event types (kline, trade, etc.)
         scope,
+        // Pass raw parameters for stream name building in market-stream-service
+        interval,
+        depthLevels: depth_levels,
       };
 
       // Add target workflow ID for workflow-scoped subscriptions
@@ -228,6 +197,7 @@ export class SubscriptionService {
       if (assetType) controlMessage.assetType = assetType;
 
       // Publish to appropriate control channel
+      // NOTE: Stream name building and Redis storage is handled by MarketControlHandler
       const redis = getRedisCache();
       const channel =
         operation === "subscribe"
@@ -235,30 +205,6 @@ export class SubscriptionService {
           : REDIS_CHANNELS.controlUnsubscribe;
 
       await redis.publish(channel, JSON.stringify(controlMessage));
-
-      const streamNames = symbolArray.flatMap((s) =>
-        eventTypes.map((type) => `${s.toLowerCase()}@${type}`),
-      );
-
-      const streamsKey =
-        scope === "workflow" && resolvedTargetWorkflowId
-          ? REDIS_CHANNELS.workflowSubscriptionStreams(
-              userId,
-              resolvedTargetWorkflowId,
-              source,
-            )
-          : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-
-      // Build and persist stream names (new format: btcusdt@kline_1m)
-      const redisOp = operation === "subscribe" ? "sadd" : "srem";
-
-      await redis[redisOp](streamsKey, ...streamNames);
-
-      console.log(
-        `📊 [SubscriptionService] ${operation}d ${streamNames.length} stream names in ${streamsKey}:`,
-        streamNames.slice(0, 5).join(", ") +
-          (streamNames.length > 5 ? "..." : ""),
-      );
 
       console.log(
         `📤 [SubscriptionService] Published ${operation} control message for ${source}:`,
@@ -271,7 +217,7 @@ export class SubscriptionService {
           status: operation === "subscribe" ? "subscribed" : "unsubscribed",
           source,
           symbols: symbolArray,
-          streamTypes: eventTypes,
+          streamTypes: streamTypes || [],
           message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },
       };

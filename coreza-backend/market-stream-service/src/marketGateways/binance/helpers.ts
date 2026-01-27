@@ -9,8 +9,9 @@ export function buildBinanceSubscribeMessage(
   const params = symbols.flatMap((s) =>
     types.map((t) => {
       const sym = s.toLowerCase();
-      if (t === "kline" && options?.klineInterval) {
-        return `${sym}@kline_${options.klineInterval}`;
+      const klineInterval = options?.klineInterval ?? options?.interval;
+      if (t === "kline" && klineInterval) {
+        return `${sym}@kline_${klineInterval}`;
       }
       if (t === "depth" && options?.depthLevels) {
         return `${sym}@depth${options.depthLevels}`;
@@ -33,8 +34,9 @@ export function buildBinanceUnsubscribeMessage(
   const params = symbols.flatMap((s) =>
     types.map((t) => {
       const sym = s.toLowerCase();
-      if (t === "kline" && options?.klineInterval) {
-        return `${sym}@kline_${options.klineInterval}`;
+      const klineInterval = options?.klineInterval ?? options?.interval;
+      if (t === "kline" && klineInterval) {
+        return `${sym}@kline_${klineInterval}`;
       }
       if (t === "depth" && options?.depthLevels) {
         return `${sym}@depth${options.depthLevels}`;

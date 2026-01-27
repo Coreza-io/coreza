@@ -2,6 +2,7 @@ import type { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
 
 export interface SubscribeOptions {
   klineInterval?: string;
+  interval?: string;
   depthLevels?: string;
 }
 

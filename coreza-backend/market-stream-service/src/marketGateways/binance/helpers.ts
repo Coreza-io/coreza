@@ -31,7 +31,8 @@ export function shouldPublishBinanceMessage(msg: any): boolean {
 
 export function handleBinanceControlMessage(msg: any, logger: any) {
   if (msg.e !== undefined) {
-    const msgId = msg.s && msg.E ? `${msg.s}:${msg.e}:${msg.E}` : undefined;
+    const msgId =
+      msg.s && msg.E ? `${msg.s}:${msg.e}:${msg.k.i}:${msg.E}` : undefined;
     logger.info({ source: "binance", id: msgId }, "Subscription confirmed");
   }
 }

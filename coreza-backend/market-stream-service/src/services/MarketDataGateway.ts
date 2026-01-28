@@ -204,7 +204,7 @@ export class MarketDataGateway {
             source: this.source,
             symbol: event.symbol,
             type: event.type,
-            price: event.p || event.c,
+            price: event.c,
           },
           "Market event published",
         );

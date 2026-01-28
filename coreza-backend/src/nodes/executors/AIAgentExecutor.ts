@@ -35,7 +35,12 @@ import {
   ToolDefinition,
 } from "../../services/toolDefinitions";
 import { loadNodeDefinition } from "../nodeDefinitions";
-import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+  NormalizeContext,
+} from "../../utils/normalizeOutput";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -43,7 +48,7 @@ export class AIAgentExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     const normalizeCtx: NormalizeContext = {
@@ -67,13 +72,16 @@ export class AIAgentExecutor implements INodeExecutor {
 
     try {
       console.log(
-        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (run: ${runId})`
+        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (run: ${runId})`,
       );
 
       // Get user_id from context
       const user_id = context?.user_id || context?.userId;
       if (!user_id) {
-        const errOutput = createErrorOutput("user_id is required for AI Agent execution", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "user_id is required for AI Agent execution",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
@@ -83,44 +91,59 @@ export class AIAgentExecutor implements INodeExecutor {
 
       // Find connected Chat Model node
       const chatModelEdge = edges.find(
-        (e: any) => e.target === node.id && e.targetHandle === "chatModel"
+        (e: any) => e.target === node.id && e.targetHandle === "chatModel",
       );
 
       if (!chatModelEdge) {
-        const errOutput = createErrorOutput("Chat Model node must be connected to the 'Chat Model' handle", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "Chat Model node must be connected to the 'Chat Model' handle",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
       const chatModelNode = allNodes.find(
-        (n: WorkflowNode) => n.id === chatModelEdge.source
+        (n: WorkflowNode) => n.id === chatModelEdge.source,
       );
       if (!chatModelNode) {
-        const errOutput = createErrorOutput("Connected Chat Model node not found", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "Connected Chat Model node not found",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
       // Get credentials from the connected Chat Model node
       const credential_id = chatModelNode.values?.credential_id;
       if (!credential_id) {
-        const errOutput = createErrorOutput("Chat Model node must have credentials configured", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "Chat Model node must have credentials configured",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
       const credentialResponse = await CredentialManager.getCredentials(
         user_id,
         "openaichatmodel",
-        credential_id
+        credential_id,
       );
 
       const client_json = credentialResponse.credentials?.client_json;
       if (!client_json) {
-        const errOutput = createErrorOutput("Unable to load chat model credentials", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "Unable to load chat model credentials",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
       const { apiKey } = client_json;
       if (!apiKey) {
-        const errOutput = createErrorOutput("Chat model credential is missing apiKey", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "Chat model credential is missing apiKey",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
@@ -148,14 +171,17 @@ export class AIAgentExecutor implements INodeExecutor {
         false;
 
       if (!userPrompt) {
-        const errOutput = createErrorOutput("userPrompt is required", normalizeCtx);
+        const errOutput = createErrorOutput(
+          "userPrompt is required",
+          normalizeCtx,
+        );
         return toNodeResult(errOutput);
       }
 
       // Initialize LLM
       const llm = new ChatOpenAI({
         modelName: model,
-        temperature: temperature,
+        temperature: Number(temperature),
         apiKey: apiKey,
       });
 
@@ -222,14 +248,17 @@ CRITICAL INSTRUCTIONS:
           stats.totalSizeBytes /
           1024 /
           1024
-        ).toFixed(2)}MB`
+        ).toFixed(2)}MB`,
       );
 
       const successOutput = createSuccessOutput(result.output, normalizeCtx);
       return toNodeResult(successOutput);
     } catch (error: any) {
       console.error("❌ [AIAgent] Agent execution error:", error);
-      const errOutput = createErrorOutput(error.message || "AI Agent execution failed", normalizeCtx);
+      const errOutput = createErrorOutput(
+        error.message || "AI Agent execution failed",
+        normalizeCtx,
+      );
       return toNodeResult(errOutput);
     } finally {
       // Cleanup DataContext after agent execution
@@ -244,13 +273,13 @@ CRITICAL INSTRUCTIONS:
     agentNode: WorkflowNode,
     edges: any[],
     allNodes: WorkflowNode[],
-    context?: any
+    context?: any,
   ): Promise<DynamicStructuredTool[]> {
     const tools: DynamicStructuredTool[] = [];
 
     // Find all edges connected to the "tool" handle
     const toolEdges = edges.filter(
-      (e: any) => e.target === agentNode.id && e.targetHandle === "tool"
+      (e: any) => e.target === agentNode.id && e.targetHandle === "tool",
     );
 
     if (toolEdges.length === 0) {
@@ -262,7 +291,7 @@ CRITICAL INSTRUCTIONS:
 
     for (const toolEdge of toolEdges) {
       const toolNode = allNodes.find(
-        (n: WorkflowNode) => n.id === toolEdge.source
+        (n: WorkflowNode) => n.id === toolEdge.source,
       );
       if (!toolNode) {
         console.warn(`⚠️  [AIAgent] Tool node ${toolEdge.source} not found`);
@@ -283,7 +312,7 @@ CRITICAL INSTRUCTIONS:
    */
   private createToolFromNode(
     node: WorkflowNode,
-    context?: any
+    context?: any,
   ): DynamicStructuredTool {
     const toolName = this.getToolName(node);
     const definition = this.getToolDefinition(node);
@@ -300,7 +329,7 @@ CRITICAL INSTRUCTIONS:
         try {
           console.log(
             `🔧 [AIAgent] Executing tool: ${toolName} with input:`,
-            input
+            input,
           );
 
           // Resolve any dataRef inputs to actual data
@@ -328,7 +357,7 @@ CRITICAL INSTRUCTIONS:
 
           if (!executor) {
             throw new Error(
-              `No executor found for node category: ${node.category}`
+              `No executor found for node category: ${node.category}`,
             );
           }
 
@@ -336,7 +365,7 @@ CRITICAL INSTRUCTIONS:
           const result = await executor.execute(
             normalizedNode,
             unwrappedInput,
-            context
+            context,
           );
 
           if (!result.success) {
@@ -351,7 +380,7 @@ CRITICAL INSTRUCTIONS:
             node.category || "",
             result.data,
             dataContext,
-            unwrappedInput // Pass tool input so symbol can be extracted
+            unwrappedInput, // Pass tool input so symbol can be extracted
           );
 
           // Return processed output (dataRef + summary, not raw data)
@@ -359,7 +388,7 @@ CRITICAL INSTRUCTIONS:
         } catch (error: any) {
           console.error(
             `❌ [AIAgent] Tool ${toolName} execution error:`,
-            error
+            error,
           );
           return `Error executing tool ${toolName}: ${error.message}`;
         }
@@ -381,7 +410,7 @@ CRITICAL INSTRUCTIONS:
    */
   private getToolDescription(
     node: WorkflowNode,
-    definition?: ToolDefinition
+    definition?: ToolDefinition,
   ): string {
     if (node.description) {
       return node.description;
@@ -485,7 +514,7 @@ CRITICAL INSTRUCTIONS:
    */
   private getToolSchema(
     node: WorkflowNode,
-    definition?: ToolDefinition
+    definition?: ToolDefinition,
   ): ZodTypeAny {
     let nodeFields = (node as any).fields;
 
@@ -507,7 +536,7 @@ CRITICAL INSTRUCTIONS:
       if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
         nodeFields = nodeDefinition.fields;
         console.log(
-          `📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`
+          `📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`,
         );
       }
     }
@@ -516,14 +545,14 @@ CRITICAL INSTRUCTIONS:
       // Create a temp node with fields for schema generation
       const nodeWithFields = { ...node, fields: nodeFields };
       const schema = this.generateSchemaFromNode(
-        nodeWithFields as WorkflowNode
+        nodeWithFields as WorkflowNode,
       );
 
       // Log schema keys for debugging
       if (schema && typeof schema === "object" && "shape" in schema) {
         console.log(
           `📋 [AIAgent] Tool ${node.name} schema keys:`,
-          Object.keys((schema as any).shape || {})
+          Object.keys((schema as any).shape || {}),
         );
       }
 
@@ -549,7 +578,7 @@ CRITICAL INSTRUCTIONS:
 
   private getExecutorCategory(
     node: WorkflowNode,
-    definition?: ToolDefinition
+    definition?: ToolDefinition,
   ): string {
     const nodeName = node.name || node.category || "node";
     const normalizedName = nodeName.endsWith("Tool")

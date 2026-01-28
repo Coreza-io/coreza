@@ -66,8 +66,7 @@ import { apiClient } from "@/lib/apiClient";
 interface SourceStatus {
   source: string;
   connected: boolean;
-  symbols: string[];
-  eventTypes: string[];
+  streams: string[];
   connectedAt: string | null;
   lastMessageAt: string | null;
 }
@@ -76,15 +75,14 @@ interface WorkflowSubscription {
   workflowId: string;
   workflowName: string;
   nodeId: string;
-  symbols: string[];
-  eventTypes: string[];
+  streams: string[];
   source: string;
   isActive: boolean;
 }
 
 interface SubscriptionStats {
   totalSources: number;
-  totalSymbols: number;
+  totalstreams: number;
   totalWorkflows: number;
   connectedSources: string[];
 }
@@ -93,16 +91,16 @@ interface WorkflowScopedSubscription {
   workflowId: string;
   workflowName?: string;
   source: string;
-  symbols: string[];
+  streams: string[];
 }
 
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
-  userSubscriptions: Record<string, string[]>; // source → symbols (global scope)
+  userSubscriptions: Record<string, string[]>; // source → streams (global scope)
   workflowScopedSubscriptions: WorkflowScopedSubscription[]; // workflow-scoped subscriptions
   stats: SubscriptionStats;
-  symbolSourceMap: Record<string, string[]>;
+  streamSourceMap: Record<string, string[]>;
 }
 
 const sourceColors: Record<string, string> = {
@@ -125,17 +123,17 @@ const MarketSubscriptions = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<SubscriptionStatus | null>(null);
-  const [symbolFilter, setSymbolFilter] = useState("");
+  const [streamFilter, setstreamFilter] = useState("");
   const [unsubscribing, setUnsubscribing] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    type: "symbol" | "workflow" | "source";
+    type: "stream" | "workflow" | "source";
     title: string;
     description: string;
     onConfirm: () => void;
   }>({
     open: false,
-    type: "symbol",
+    type: "stream",
     title: "",
     description: "",
     onConfirm: () => {},
@@ -181,16 +179,16 @@ const MarketSubscriptions = () => {
     [user, toast],
   );
 
-  const handleUnsubscribeSymbol = useCallback(
+  const handleUnsubscribestream = useCallback(
     async (stream: string, source: string) => {
       if (!user) return;
 
-      setUnsubscribing(`symbol-${stream}`);
+      setUnsubscribing(`stream-${stream}`);
       try {
-        const [symbol, eventType, interval] = stream.split(/[@_]/);
+        const [stream, eventType, interval] = stream.split(/[@_]/);
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
-          { symbols: [symbol], stream_types: [eventType], interval },
+          { streams: [stream], stream_types: [eventType], interval },
           session?.access_token,
         );
 
@@ -198,13 +196,13 @@ const MarketSubscriptions = () => {
 
         toast({
           title: "Unsubscribed",
-          description: `Removed ${symbol} from ${source}`,
+          description: `Removed ${stream} from ${source}`,
         });
         fetchStatus(false);
       } catch (error) {
         toast({
           title: "Error",
-          description: "Failed to unsubscribe symbol",
+          description: "Failed to unsubscribe stream",
           variant: "destructive",
         });
       } finally {
@@ -214,18 +212,18 @@ const MarketSubscriptions = () => {
     [user, toast, fetchStatus],
   );
 
-  // Handler for workflow-scoped symbol unsubscription (needs workflowId to target correct Redis key)
-  const handleUnsubscribeWorkflowScopedSymbol = useCallback(
-    async (symbol: string, source: string, workflowId: string) => {
+  // Handler for workflow-scoped stream unsubscription (needs workflowId to target correct Redis key)
+  const handleUnsubscribeWorkflowScopedstream = useCallback(
+    async (stream: string, source: string, workflowId: string) => {
       if (!user) return;
 
-      setUnsubscribing(`symbol-${workflowId}-${symbol}`);
+      setUnsubscribing(`stream-${workflowId}-${stream}`);
       try {
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
           {
             workflow_id: workflowId, // Include workflowId for workflow-scoped removal
-            symbols: [symbol],
+            streams: [stream],
             subscription_scope: "workflow", // Tell backend this is workflow-scoped
           },
           session?.access_token,
@@ -235,13 +233,13 @@ const MarketSubscriptions = () => {
 
         toast({
           title: "Unsubscribed",
-          description: `Removed ${symbol} from workflow`,
+          description: `Removed ${stream} from workflow`,
         });
         fetchStatus(false);
       } catch (error) {
         toast({
           title: "Error",
-          description: "Failed to unsubscribe symbol",
+          description: "Failed to unsubscribe stream",
           variant: "destructive",
         });
       } finally {
@@ -270,7 +268,7 @@ const MarketSubscriptions = () => {
             {
               workflow_id: wf.workflowId,
               node_id: wf.nodeId,
-              symbols: wf.symbols,
+              streams: wf.streams,
             },
             session?.access_token,
           );
@@ -297,14 +295,14 @@ const MarketSubscriptions = () => {
   );
 
   const handleClearSource = useCallback(
-    async (source: string, symbols: string[]) => {
-      if (!user || symbols.length === 0) return;
+    async (source: string, streams: string[]) => {
+      if (!user || streams.length === 0) return;
 
       setUnsubscribing(`source-${source}`);
       try {
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
-          { symbols },
+          { streams },
           session?.access_token,
         );
 
@@ -328,22 +326,22 @@ const MarketSubscriptions = () => {
     [user, toast, fetchStatus],
   );
 
-  const confirmUnsubscribeSymbol = (
-    symbol: string,
+  const confirmUnsubscribestream = (
+    stream: string,
     source: string,
     workflowId?: string,
   ) => {
     setConfirmDialog({
       open: true,
-      type: "symbol",
-      title: `Unsubscribe ${symbol}?`,
+      type: "stream",
+      title: `Unsubscribe ${stream}?`,
       description: workflowId
-        ? `This will stop streaming ${symbol} data for this specific workflow.`
-        : `This will stop streaming ${symbol} data from ${source}. Any workflows using this symbol will no longer receive updates.`,
+        ? `This will stop streaming ${stream} data for this specific workflow.`
+        : `This will stop streaming ${stream} data from ${source}. Any workflows using this stream will no longer receive updates.`,
       onConfirm: () =>
         workflowId
-          ? handleUnsubscribeWorkflowScopedSymbol(symbol, source, workflowId)
-          : handleUnsubscribeSymbol(symbol, source),
+          ? handleUnsubscribeWorkflowScopedstream(stream, source, workflowId)
+          : handleUnsubscribestream(stream, source),
     });
   };
 
@@ -352,18 +350,18 @@ const MarketSubscriptions = () => {
       open: true,
       type: "workflow",
       title: `Unsubscribe ${wf.workflowName}?`,
-      description: `This will stop ${wf.workflowName} from receiving market data for ${wf.symbols.length} symbol(s).`,
+      description: `This will stop ${wf.workflowName} from receiving market data for ${wf.streams.length} stream(s).`,
       onConfirm: () => handleUnsubscribeWorkflow(wf),
     });
   };
 
-  const confirmClearSource = (source: string, symbols: string[]) => {
+  const confirmClearSource = (source: string, streams: string[]) => {
     setConfirmDialog({
       open: true,
       type: "source",
       title: `Clear all ${source} subscriptions?`,
-      description: `This will unsubscribe all ${symbols.length} symbol(s) from ${source}. All workflows using these symbols will stop receiving data.`,
-      onConfirm: () => handleClearSource(source, symbols),
+      description: `This will unsubscribe all ${streams.length} stream(s) from ${source}. All workflows using these streams will stop receiving data.`,
+      onConfirm: () => handleClearSource(source, streams),
     });
   };
 
@@ -378,23 +376,21 @@ const MarketSubscriptions = () => {
   const filteredWorkflows =
     data?.workflows.filter(
       (wf) =>
-        symbolFilter === "" ||
-        wf.symbols.some((s) =>
-          s.toLowerCase().includes(symbolFilter.toLowerCase()),
+        streamFilter === "" ||
+        wf.streams.some((s) =>
+          s.toLowerCase().includes(streamFilter.toLowerCase()),
         ) ||
-        wf.workflowName.toLowerCase().includes(symbolFilter.toLowerCase()),
+        wf.workflowName.toLowerCase().includes(streamFilter.toLowerCase()),
     ) || [];
 
-  const allSymbols = new Set<string>();
-  data?.sources.forEach((s) => s.symbols.forEach((sym) => allSymbols.add(sym)));
+  const allstreams = new Set<string>();
+  data?.sources.forEach((s) => s.streams.forEach((sym) => allstreams.add(sym)));
   data?.workflows.forEach((w) =>
-    w.symbols.forEach((sym) => allSymbols.add(sym)),
+    w.streams.forEach((sym) => allstreams.add(sym)),
   );
 
-  const filteredSymbols = Array.from(allSymbols).filter(
-    (sym) =>
-      symbolFilter === "" ||
-      sym.toLowerCase().includes(symbolFilter.toLowerCase()),
+  const filteredstreams = Array.from(allstreams).filter(
+    (sym) => streamFilter === "" || sym.includes(streamFilter),
   );
 
   if (loading) {
@@ -486,13 +482,13 @@ const MarketSubscriptions = () => {
         <Card className="bg-gradient-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Subscribed Symbols
+              Subscribed streams
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {data?.stats.totalSymbols || 0}
+              {data?.stats.totalstreams || 0}
             </div>
             <p className="text-xs text-muted-foreground">Across all sources</p>
           </CardContent>
@@ -595,45 +591,19 @@ const MarketSubscriptions = () => {
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                              Symbols:
+                              streams:
                             </span>
                             <span className="font-medium">
-                              {sourceData.symbols.length}
+                              {sourceData.streams.length}
                             </span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              Events:
-                            </span>
-                            <span className="font-medium">
-                              {sourceData.eventTypes.length}
-                            </span>
-                          </div>
-                          {sourceData.eventTypes.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {sourceData.eventTypes.slice(0, 3).map((type) => (
-                                <Badge
-                                  key={type}
-                                  variant="secondary"
-                                  className="text-xs"
-                                >
-                                  {type}
-                                </Badge>
-                              ))}
-                              {sourceData.eventTypes.length > 3 && (
-                                <Badge variant="secondary" className="text-xs">
-                                  +{sourceData.eventTypes.length - 3}
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                          {sourceData.symbols.length > 0 && (
+                          {sourceData.streams.length > 0 && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="w-full mt-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() =>
-                                confirmClearSource(source, sourceData.symbols)
+                                confirmClearSource(source, sourceData.streams)
                               }
                               disabled={unsubscribing === `source-${source}`}
                             >
@@ -660,9 +630,9 @@ const MarketSubscriptions = () => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Filter by symbol or workflow name..."
-          value={symbolFilter}
-          onChange={(e) => setSymbolFilter(e.target.value)}
+          placeholder="Filter by stream or workflow name..."
+          value={streamFilter}
+          onChange={(e) => setstreamFilter(e.target.value)}
           className="pl-10"
         />
       </div>
@@ -690,7 +660,7 @@ const MarketSubscriptions = () => {
                   <TableRow>
                     <TableHead>Workflow</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>Symbols</TableHead>
+                    <TableHead>streams</TableHead>
                     <TableHead>Event Types</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -713,7 +683,7 @@ const MarketSubscriptions = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {wf.symbols.slice(0, 3).map((sym) => (
+                            {wf.streams.slice(0, 3).map((sym) => (
                               <Badge
                                 key={sym}
                                 variant="secondary"
@@ -722,24 +692,11 @@ const MarketSubscriptions = () => {
                                 {sym}
                               </Badge>
                             ))}
-                            {wf.symbols.length > 3 && (
+                            {wf.streams.length > 3 && (
                               <Badge variant="secondary" className="text-xs">
-                                +{wf.symbols.length - 3}
+                                +{wf.streams.length - 3}
                               </Badge>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {wf.eventTypes.map((type) => (
-                              <Badge
-                                key={type}
-                                variant="outline"
-                                className="text-xs"
-                              >
-                                {type}
-                              </Badge>
-                            ))}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -786,7 +743,7 @@ const MarketSubscriptions = () => {
                         colSpan={6}
                         className="text-center text-muted-foreground py-8"
                       >
-                        {symbolFilter
+                        {streamFilter
                           ? "No matching workflows found"
                           : "No active market data subscriptions"}
                       </TableCell>
@@ -799,7 +756,7 @@ const MarketSubscriptions = () => {
         </Card>
       </motion.div>
 
-      {/* User Symbol Subscriptions - Global (from Subscribe nodes) */}
+      {/* User stream Subscriptions - Global (from Subscribe nodes) */}
       {data?.userSubscriptions &&
         Object.keys(data.userSubscriptions).length > 0 && (
           <motion.div
@@ -811,17 +768,17 @@ const MarketSubscriptions = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Radio className="h-5 w-5 text-primary" />
-                  Global Symbol Subscriptions
+                  Global stream Subscriptions
                 </CardTitle>
                 <CardDescription>
-                  Symbols available to all workflows (subscribed via Subscribe
+                  streams available to all workflows (subscribed via Subscribe
                   nodes with Global scope)
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {Object.entries(data.userSubscriptions).map(
-                    ([source, symbols]) => (
+                    ([source, streams]) => (
                       <div key={source} className="space-y-2">
                         <div className="flex items-center gap-2">
                           <Badge
@@ -831,36 +788,34 @@ const MarketSubscriptions = () => {
                             {sourceIcons[source] || "📡"} {source}
                           </Badge>
                           <span className="text-sm text-muted-foreground">
-                            {symbols.length} symbol
-                            {symbols.length !== 1 ? "s" : ""}
+                            {streams.length} stream
+                            {streams.length !== 1 ? "s" : ""}
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-2 pl-2">
-                          {symbols
+                          {streams
                             .filter(
                               (sym) =>
-                                symbolFilter === "" ||
-                                sym
-                                  .toLowerCase()
-                                  .includes(symbolFilter.toLowerCase()),
+                                streamFilter === "" ||
+                                sym.includes(streamFilter),
                             )
-                            .map((symbol) => (
+                            .map((stream) => (
                               <Badge
-                                key={`${source}-${symbol}`}
+                                key={`${source}-${stream}`}
                                 variant="outline"
                                 className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
                               >
-                                {symbol}
+                                {stream}
                                 <button
                                   onClick={() =>
-                                    confirmUnsubscribeSymbol(symbol, source)
+                                    confirmUnsubscribestream(stream, source)
                                   }
                                   disabled={
-                                    unsubscribing === `symbol-${symbol}`
+                                    unsubscribing === `stream-${stream}`
                                   }
                                   className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                                 >
-                                  {unsubscribing === `symbol-${symbol}` ? (
+                                  {unsubscribing === `stream-${stream}` ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
                                     <X className="h-3 w-3" />
@@ -893,7 +848,7 @@ const MarketSubscriptions = () => {
                   Workflow-Scoped Subscriptions
                 </CardTitle>
                 <CardDescription>
-                  Symbols only accessible by specific workflows (subscribed via
+                  streams only accessible by specific workflows (subscribed via
                   Subscribe nodes with Workflow scope)
                 </CardDescription>
               </CardHeader>
@@ -902,13 +857,9 @@ const MarketSubscriptions = () => {
                   {data.workflowScopedSubscriptions
                     .filter(
                       (sub) =>
-                        symbolFilter === "" ||
-                        sub.symbols.some((s) =>
-                          s.toLowerCase().includes(symbolFilter.toLowerCase()),
-                        ) ||
-                        sub.workflowName
-                          ?.toLowerCase()
-                          .includes(symbolFilter.toLowerCase()),
+                        streamFilter === "" ||
+                        sub.streams.some((s) => s.includes(streamFilter)) ||
+                        sub.workflowName?.toLowerCase().includes(streamFilter),
                     )
                     .map((sub, idx) => (
                       <div
@@ -932,42 +883,40 @@ const MarketSubscriptions = () => {
                             </Link>
                           </div>
                           <span className="text-sm text-muted-foreground">
-                            {sub.symbols.length} symbol
-                            {sub.symbols.length !== 1 ? "s" : ""}
+                            {sub.streams.length} stream
+                            {sub.streams.length !== 1 ? "s" : ""}
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-2 pl-2">
-                          {sub.symbols
+                          {sub.streams
                             .filter(
                               (sym) =>
-                                symbolFilter === "" ||
-                                sym
-                                  .toLowerCase()
-                                  .includes(symbolFilter.toLowerCase()),
+                                streamFilter === "" ||
+                                sym.includes(streamFilter),
                             )
-                            .map((symbol) => (
+                            .map((stream) => (
                               <Badge
-                                key={`${sub.workflowId}-${sub.source}-${symbol}`}
+                                key={`${sub.workflowId}-${sub.source}-${stream}`}
                                 variant="outline"
                                 className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
                               >
-                                {symbol}
+                                {stream}
                                 <button
                                   onClick={() =>
-                                    confirmUnsubscribeSymbol(
-                                      symbol,
+                                    confirmUnsubscribestream(
+                                      stream,
                                       sub.source,
                                       sub.workflowId,
                                     )
                                   }
                                   disabled={
                                     unsubscribing ===
-                                    `symbol-${sub.workflowId}-${symbol}`
+                                    `stream-${sub.workflowId}-${stream}`
                                   }
                                   className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                                 >
                                   {unsubscribing ===
-                                  `symbol-${sub.workflowId}-${symbol}` ? (
+                                  `stream-${sub.workflowId}-${stream}` ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
                                     <X className="h-3 w-3" />
@@ -984,7 +933,7 @@ const MarketSubscriptions = () => {
           </motion.div>
         )}
 
-      {/* All Subscribed Symbols */}
+      {/* All Subscribed streams */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -994,34 +943,34 @@ const MarketSubscriptions = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
-              All Subscribed Symbols
+              All Subscribed streams
             </CardTitle>
             <CardDescription>
-              All symbols currently being streamed across all sources
+              All streams currently being streamed across all sources
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {filteredSymbols.length > 0 ? (
-                filteredSymbols.map((symbol) => {
-                  const sources = data?.symbolSourceMap?.[symbol] || [];
+              {filteredstreams.length > 0 ? (
+                filteredstreams.map((stream) => {
+                  const sources = data?.streamSourceMap?.[stream] || [];
                   const primarySource = sources[0];
 
                   return (
                     <Badge
-                      key={symbol}
+                      key={stream}
                       variant="outline"
                       className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
                     >
-                      {symbol}
+                      {stream}
                       <button
                         onClick={() =>
-                          confirmUnsubscribeSymbol(symbol, primarySource)
+                          confirmUnsubscribestream(stream, primarySource)
                         }
-                        disabled={unsubscribing === `symbol-${symbol}`}
+                        disabled={unsubscribing === `stream-${stream}`}
                         className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
                       >
-                        {unsubscribing === `symbol-${symbol}` ? (
+                        {unsubscribing === `stream-${stream}` ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <X className="h-3 w-3" />
@@ -1032,9 +981,9 @@ const MarketSubscriptions = () => {
                 })
               ) : (
                 <p className="text-muted-foreground">
-                  {symbolFilter
-                    ? "No matching symbols found"
-                    : "No symbols subscribed"}
+                  {streamFilter
+                    ? "No matching streams found"
+                    : "No streams subscribed"}
                 </p>
               )}
             </div>

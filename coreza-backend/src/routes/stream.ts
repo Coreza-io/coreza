@@ -323,7 +323,7 @@ router.post("/:source/register", async (req, res) => {
       workflow_id,
       node_id,
       node_type,
-      mode = "listen",
+      mode = "subscribe",
       symbols,
       data_type,
       stream_types,
@@ -333,7 +333,7 @@ router.post("/:source/register", async (req, res) => {
       feed,
       interval,
       depth_levels,
-      scope,
+      scope = "workflow",
       onlyClosedBars,
     } = req.body as StreamExecutionRequest;
 

@@ -247,21 +247,21 @@ export class MarketControlHandler {
     workflowId: string,
     source?: string,
   ): Promise<string[]> {
-    const allSymbols = new Set<string>();
+    const allStreams = new Set<string>();
 
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`;
+        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`;
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
-        const symbols = await this.redisPub.smembers(key);
+        const streams = await this.redisPub.smembers(key);
         console.log(
-          `🔍 [MarketControl] Found ${symbols.length} workflow-scoped symbols:`,
-          symbols,
+          `🔍 [MarketControl] Found ${streams.length} workflow-scoped symbols:`,
+          streams,
         );
-        symbols.forEach((s) => allSymbols.add(s.toUpperCase()));
+        streams.forEach((s) => allStreams.add(s));
       }
     } catch (err) {
       console.error(
@@ -270,7 +270,7 @@ export class MarketControlHandler {
       );
     }
 
-    return Array.from(allSymbols);
+    return Array.from(allStreams);
   }
 
   /**

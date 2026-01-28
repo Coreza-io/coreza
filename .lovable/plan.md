@@ -1,164 +1,85 @@
 
 
-## Plan: Simplify GatewayConfig to 2-Parameter Stream-Based Signature
+## Plan: Add OpenAI Web Search Models to Existing Dropdown
 
-### Current State
+### Overview
 
-The `GatewayConfig` interface defines:
-```typescript
-makeSubscribeMessage: (symbols: string[], types?: string[], options?: SubscribeOptions, source?: string) => any;
-makeUnsubscribeMessage: (symbols: string[], types?: string[], options?: SubscribeOptions, source?: string) => any;
-```
-
-But the Binance config is already using a simplified version:
-```typescript
-makeSubscribeMessage: (stream, _source) => buildBinanceSubscribeMessage(stream)
-```
-
-### Proposed Change
-
-Update the `GatewayConfig` interface to use the new stream-based signature:
-
-```typescript
-// NEW: Stream-based signature (native stream names)
-makeSubscribeMessage: (streamNames: string[], source?: string) => any;
-makeUnsubscribeMessage: (streamNames: string[], source?: string) => any;
-```
+Add OpenAI's web search models to the existing `OpenAIChatModel.json` dropdown. These specialized models have web search capability built-in and work with the existing Chat Completions API - **no code changes needed in the executor!**
 
 ---
 
-## Files to Update
+### Available Search Models
 
-### 1. `market-stream-service/src/marketGateways/types.ts`
-
-Update the interface signature:
-
-```typescript
-// Subscription management - streamNames are native broker format (btcusdt@kline_1m, bars.AAPL)
-makeSubscribeMessage: (streamNames: string[], source?: string) => any;
-makeUnsubscribeMessage: (streamNames: string[], source?: string) => any;
-```
+According to OpenAI docs, these models support web search via Chat Completions API:
+- `gpt-4o-search-preview` - GPT-4o with web search (preview)
+- `gpt-4o-mini-search-preview` - GPT-4o Mini with web search (preview)  
+- `gpt-5-search-api` - GPT-5 with web search
 
 ---
 
-### 2. `market-stream-service/src/marketGateways/binance/config.ts`
+### Implementation
 
-Already correct - uses `(stream, _source)`:
-```typescript
-makeSubscribeMessage: (stream, _source) => buildBinanceSubscribeMessage(stream),
-makeUnsubscribeMessage: (stream, _source) => buildBinanceUnsubscribeMessage(stream),
-```
+**File:** `src/nodes/OpenAIChatModel.json`
 
----
+Update the model options array:
 
-### 3. `market-stream-service/src/marketGateways/alpaca/config.ts`
-
-Update to parse stream names internally:
-
-```typescript
-makeSubscribeMessage: (streamNames, source) => {
-  // Parse stream names to extract symbols and types
-  // e.g., "bars.AAPL" → symbol: "AAPL", type: "bars"
-  const { symbols, types } = parseAlpacaStreamNames(streamNames);
-  return buildAlpacaSubscribeMessage(symbols, types, source);
-},
-makeUnsubscribeMessage: (streamNames, source) => {
-  const { symbols, types } = parseAlpacaStreamNames(streamNames);
-  return buildAlpacaUnsubscribeMessage(symbols, types, source);
-},
-```
-
-Or update `buildAlpacaSubscribeMessage` to accept stream names directly.
-
----
-
-### 4. `market-stream-service/src/marketGateways/dhan/config.ts`
-
-Update signature (Dhan already only uses symbols):
-
-```typescript
-makeSubscribeMessage: (streamNames, _source) => {
-  // Dhan stream names are just symbols, extract them
-  const symbols = streamNames.map(s => extractDhanSymbol(s));
-  return buildDhanSubscribeMessage(symbols);
-},
-makeUnsubscribeMessage: (streamNames, _source) => {
-  const symbols = streamNames.map(s => extractDhanSymbol(s));
-  return buildDhanUnsubscribeMessage(symbols);
-},
-```
-
----
-
-### 5. `market-stream-service/src/services/MarketDataGateway.ts`
-
-Update the calls to use simplified signature:
-
-```typescript
-// Line 256 (subscribeStreams)
-const msg = this.config.makeSubscribeMessage(newStreams, this.source);
-
-// Line 279 (unsubscribeStreams)  
-const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
-
-// Line 293 (resubscribeAll)
-const msg = this.config.makeSubscribeMessage(streams, this.source);
-```
-
----
-
-## Technical Details
-
-### Alpaca Stream Name Parsing
-
-For Alpaca, stream names are formatted as `{type}.{SYMBOL}`:
-- `bars.AAPL` → type: `bars`, symbol: `AAPL`
-- `trades.MSFT` → type: `trades`, symbol: `MSFT`
-- `news.AAPL` → type: `news`, symbol: `AAPL`
-
-Helper function needed:
-```typescript
-function parseAlpacaStreamNames(streamNames: string[]): { symbols: string[], types: string[] } {
-  const symbols = new Set<string>();
-  const types = new Set<string>();
-  
-  for (const name of streamNames) {
-    const [type, symbol] = name.split('.');
-    if (type && symbol) {
-      types.add(type);
-      symbols.add(symbol);
-    }
-  }
-  
-  return { 
-    symbols: Array.from(symbols), 
-    types: Array.from(types) 
-  };
+```json
+{
+  "key": "model",
+  "label": "Model",
+  "type": "select",
+  "default": "gpt-4o-mini",
+  "options": [
+    { "label": "GPT-4o", "value": "gpt-4o" },
+    { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
+    { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" },
+    { "label": "GPT-3.5 Turbo", "value": "gpt-3.5-turbo" },
+    { "label": "--- Web Search Models ---", "value": "", "disabled": true },
+    { "label": "GPT-4o Search", "value": "gpt-4o-search-preview" },
+    { "label": "GPT-4o Mini Search", "value": "gpt-4o-mini-search-preview" }
+  ],
+  "required": true
 }
 ```
 
-### Dhan Stream Name Parsing
+---
 
-For Dhan, stream names might just be the symbol/instrument ID. The helper extracts the symbol from whatever format is used.
+### Technical Consideration
+
+**How search models differ:**
+- Standard models (`gpt-4o`): No web search, uses only training data
+- Search models (`gpt-4o-search-preview`): **Automatically** searches the web for current information and includes citations
+
+**No backend changes needed** because:
+1. LangChain's `ChatOpenAI` passes the model name directly to OpenAI
+2. The Chat Completions API handles search models transparently
+3. Responses include inline citations automatically
 
 ---
 
-## Summary of Changes
+### Alternative: Responses API (Future Enhancement)
+
+If you want **optional** web search (where the agent can choose to search or not), that requires:
+1. Switch from `ChatOpenAI` (Chat Completions) to OpenAI Responses API
+2. Pass `tools: [{type: "web_search"}]` in the request
+3. More complex response parsing for citations
+
+This is more work but gives the AI agent control over when to search. The dropdown approach gives **always-on** search for selected models.
+
+---
+
+### Summary
+
+| Approach | Effort | Search Behavior | Backend Changes |
+|----------|--------|-----------------|-----------------|
+| **Dropdown models** | Minimal | Always-on for search models | None |
+| Responses API | Major | Agent-controlled (optional) | New API integration |
+
+---
+
+### Files to Modify
 
 | File | Change |
 |------|--------|
-| `types.ts` | Update interface to `(streamNames: string[], source?: string)` |
-| `binance/config.ts` | Already correct |
-| `alpaca/config.ts` | Add stream name parsing before calling helper |
-| `dhan/config.ts` | Add stream name parsing before calling helper |
-| `MarketDataGateway.ts` | Use simplified 2-param calls |
-
----
-
-## Benefits
-
-1. **Clean interface** - Only pass what's needed: stream names and source
-2. **Stream names as first-class citizens** - Matches the new architecture
-3. **Gateway-specific parsing** - Each gateway handles its own format internally
-4. **Removes unused parameters** - No more `types`, `options` passed through
+| `src/nodes/OpenAIChatModel.json` | Add search model options to dropdown |
 

@@ -185,10 +185,15 @@ const MarketSubscriptions = () => {
 
       setUnsubscribing(`stream-${stream}`);
       try {
-        const [stream, eventType, interval] = stream.split(/[@_]/);
+        const [symbol, eventType, interval] = stream.split(/[@_]/);
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
-          { streams: [stream], stream_types: [eventType], interval },
+          {
+            symbols: [symbol],
+            stream_types: [eventType],
+            interval,
+            scope: "global",
+          },
           session?.access_token,
         );
 
@@ -219,12 +224,15 @@ const MarketSubscriptions = () => {
 
       setUnsubscribing(`stream-${workflowId}-${stream}`);
       try {
+        const [symbol, eventType, interval] = stream.split(/[@_]/);
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
           {
             workflow_id: workflowId, // Include workflowId for workflow-scoped removal
-            streams: [stream],
-            subscription_scope: "workflow", // Tell backend this is workflow-scoped
+            symbols: [symbol],
+            stream_types: [eventType],
+            interval,
+            scope: "workflow", // Tell backend this is workflow-scoped
           },
           session?.access_token,
         );
@@ -384,9 +392,11 @@ const MarketSubscriptions = () => {
     ) || [];
 
   const allstreams = new Set<string>();
-  data?.sources.forEach((s) => s.streams.forEach((sym) => allstreams.add(sym)));
-  data?.workflows.forEach((w) =>
-    w.streams.forEach((sym) => allstreams.add(sym)),
+  data?.sources?.forEach((s) =>
+    s.streams?.forEach((sym) => allstreams.add(sym)),
+  );
+  data?.workflows?.forEach((w) =>
+    w.streams?.forEach((sym) => allstreams.add(sym)),
   );
 
   const filteredstreams = Array.from(allstreams).filter(

@@ -2,7 +2,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator, SelectLabel } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { FieldWrapper } from "./FieldWrapper";
 import GroupedSelect from "./GroupedSelect";
@@ -261,21 +261,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                 <SelectValue placeholder={field.placeholder || "Select option"} />
               </SelectTrigger>
               <SelectContent>
-                {optionList.map((opt: any) => {
-                  if (opt.disabled && (opt.value === "" || opt.value === "__separator__" || opt.value?.startsWith("__separator"))) {
-                    return (
-                      <React.Fragment key={opt.label}>
-                        <SelectSeparator />
-                        <SelectLabel className="text-xs text-muted-foreground">{opt.label}</SelectLabel>
-                      </React.Fragment>
-                    );
-                  }
-                  return (
-                    <SelectItem key={opt.value ?? opt.label} value={opt.value} disabled={opt.disabled}>
-                      {opt.label ?? opt.value}
-                    </SelectItem>
-                  );
-                })}
+                {optionList.map((opt: any) => (
+                  <SelectItem key={opt.value ?? opt.label} value={opt.value}>
+                    {opt.label ?? opt.value}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           );
@@ -482,21 +472,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               <SelectValue placeholder={field.placeholder || "Select option"} />
             </SelectTrigger>
             <SelectContent>
-              {displayOptions.map((opt: any) => {
-                if (opt.disabled && (opt.value === "" || opt.value === "__separator__" || opt.value?.startsWith("__separator"))) {
-                  return (
-                    <React.Fragment key={opt.label}>
-                      <SelectSeparator />
-                      <SelectLabel className="text-xs text-muted-foreground">{opt.label}</SelectLabel>
-                    </React.Fragment>
-                  );
-                }
-                return (
-                  <SelectItem key={opt.id || opt.value} value={opt.id || opt.value} disabled={opt.disabled}>
-                    {opt.name || opt.label || opt.id || opt.value}
-                  </SelectItem>
-                );
-              })}
+              {displayOptions.map((opt: any) => (
+                <SelectItem key={opt.id || opt.value} value={opt.id || opt.value}>
+                  {opt.name || opt.label || opt.id || opt.value}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         );

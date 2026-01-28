@@ -1,93 +1,79 @@
 
 
-## Plan: Fix Empty String Value Error in Select Dropdown
+## Plan: Add OpenAI Web Search Models to Existing Dropdown
 
-### Problem
+### Overview
 
-The separator item in `OpenAIChatModel.json` causes a crash:
-
-```json
-{ "label": "--- Web Search Models ---", "value": "", "disabled": true }
-```
-
-Radix UI's `SelectItem` doesn't allow empty string values because empty string is used to clear the selection.
-
-### Solution
-
-Two-part fix:
-
-1. **Update JSON**: Give the separator a marker value that indicates it's a separator
-2. **Update NodeFieldRenderer**: Detect separator items and render them using `SelectLabel` (for the text) instead of `SelectItem`
+Add OpenAI's web search models to the existing `OpenAIChatModel.json` dropdown. These specialized models have web search capability built-in and work with the existing Chat Completions API - **no code changes needed in the executor!**
 
 ---
 
-### Part 1: Update OpenAIChatModel.json
+### Available Search Models
 
-Change the separator value to a recognizable marker:
+According to OpenAI docs, these models support web search via Chat Completions API:
+- `gpt-4o-search-preview` - GPT-4o with web search (preview)
+- `gpt-4o-mini-search-preview` - GPT-4o Mini with web search (preview)  
+- `gpt-5-search-api` - GPT-5 with web search
+
+---
+
+### Implementation
+
+**File:** `src/nodes/OpenAIChatModel.json`
+
+Update the model options array:
 
 ```json
-{ 
-  "label": "--- Web Search Models ---", 
-  "value": "__separator__", 
-  "disabled": true 
+{
+  "key": "model",
+  "label": "Model",
+  "type": "select",
+  "default": "gpt-4o-mini",
+  "options": [
+    { "label": "GPT-4o", "value": "gpt-4o" },
+    { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
+    { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" },
+    { "label": "GPT-3.5 Turbo", "value": "gpt-3.5-turbo" },
+    { "label": "--- Web Search Models ---", "value": "", "disabled": true },
+    { "label": "GPT-4o Search", "value": "gpt-4o-search-preview" },
+    { "label": "GPT-4o Mini Search", "value": "gpt-4o-mini-search-preview" }
+  ],
+  "required": true
 }
 ```
 
 ---
 
-### Part 2: Update NodeFieldRenderer.tsx
+### Technical Consideration
 
-In the section that renders select options (around line 264-268), add logic to handle separator items:
+**How search models differ:**
+- Standard models (`gpt-4o`): No web search, uses only training data
+- Search models (`gpt-4o-search-preview`): **Automatically** searches the web for current information and includes citations
 
-```typescript
-{optionList.map((opt: any) => {
-  // Handle separators/section headers
-  if (opt.disabled && (opt.value === "" || opt.value === "__separator__" || opt.value?.startsWith("__separator"))) {
-    return (
-      <React.Fragment key={opt.label}>
-        <SelectSeparator />
-        <SelectLabel className="text-xs text-muted-foreground">{opt.label}</SelectLabel>
-      </React.Fragment>
-    );
-  }
-  
-  return (
-    <SelectItem key={opt.value ?? opt.label} value={opt.value} disabled={opt.disabled}>
-      {opt.label ?? opt.value}
-    </SelectItem>
-  );
-})}
-```
-
-This approach:
-- Renders separators as a visual divider line (`SelectSeparator`) + label text (`SelectLabel`)
-- Keeps them non-selectable (labels are naturally non-selectable)
-- Works for any future separator items in other node definitions
+**No backend changes needed** because:
+1. LangChain's `ChatOpenAI` passes the model name directly to OpenAI
+2. The Chat Completions API handles search models transparently
+3. Responses include inline citations automatically
 
 ---
 
-### Additional Fix: Main Select Case (lines 474-480)
+### Alternative: Responses API (Future Enhancement)
 
-The same fix needs to be applied to the main select case around line 475:
+If you want **optional** web search (where the agent can choose to search or not), that requires:
+1. Switch from `ChatOpenAI` (Chat Completions) to OpenAI Responses API
+2. Pass `tools: [{type: "web_search"}]` in the request
+3. More complex response parsing for citations
 
-```typescript
-{displayOptions.map((opt: any) => {
-  if (opt.disabled && (opt.value === "" || opt.value === "__separator__" || opt.value?.startsWith("__separator"))) {
-    return (
-      <React.Fragment key={opt.label}>
-        <SelectSeparator />
-        <SelectLabel className="text-xs text-muted-foreground">{opt.label}</SelectLabel>
-      </React.Fragment>
-    );
-  }
-  
-  return (
-    <SelectItem key={opt.id || opt.value} value={opt.id || opt.value} disabled={opt.disabled}>
-      {opt.name || opt.label || opt.id || opt.value}
-    </SelectItem>
-  );
-})}
-```
+This is more work but gives the AI agent control over when to search. The dropdown approach gives **always-on** search for selected models.
+
+---
+
+### Summary
+
+| Approach | Effort | Search Behavior | Backend Changes |
+|----------|--------|-----------------|-----------------|
+| **Dropdown models** | Minimal | Always-on for search models | None |
+| Responses API | Major | Agent-controlled (optional) | New API integration |
 
 ---
 
@@ -95,25 +81,5 @@ The same fix needs to be applied to the main select case around line 475:
 
 | File | Change |
 |------|--------|
-| `src/nodes/OpenAIChatModel.json` | Change separator `value` from `""` to `"__separator__"` |
-| `src/components/nodes/layout/components/NodeFieldRenderer.tsx` | Add separator detection logic in two places (lines ~264 and ~475) |
-
----
-
-### Import Update
-
-Add `SelectSeparator` and `SelectLabel` to the imports at the top of `NodeFieldRenderer.tsx`:
-
-```typescript
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator, SelectLabel } from "@/components/ui/select";
-```
-
----
-
-### Benefits
-
-1. **Fixes the crash** - No more empty string value error
-2. **Better UX** - Visual separator line + styled label looks cleaner than a disabled option
-3. **Reusable pattern** - Any node definition can now use separators in dropdowns
-4. **Backward compatible** - Existing nodes without separators work unchanged
+| `src/nodes/OpenAIChatModel.json` | Add search model options to dropdown |
 

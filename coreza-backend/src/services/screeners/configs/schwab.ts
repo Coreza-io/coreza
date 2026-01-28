@@ -50,11 +50,9 @@ export const schwabScreenerConfig: ScreenerConfig = {
         change: input.change || "percent",
       }),
       transformResult: (raw: any, input: ScreenerInput) => ({
-        movers: raw.screener || [],
-        count: raw.screener?.length || 0,
-        index: input.index || "$DJI",
-        direction: input.direction || "up",
-        source: "schwab_movers",
+        movers: raw || [],
+        index: input.index,
+        direction: input.direction,
       }),
     },
     get_fundamentals: {
@@ -106,7 +104,7 @@ export const schwabScreenerConfig: ScreenerConfig = {
               assetMainType: reference.assetMainType,
               cusip: reference.cusip,
             };
-          }
+          },
         );
 
         return {

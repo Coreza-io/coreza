@@ -274,8 +274,6 @@ export class MarketDataSubscriber {
     // Create new handler
     this.messageHandler = async (channel: string, message: string) => {
       try {
-        console.log(`🟣 [DEBUG-3] MESSAGE RECEIVED on channel: ${channel}`);
-        console.log(`🟣 [DEBUG-3] Raw message:`, message.substring(0, 200));
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
 
@@ -359,6 +357,9 @@ export class MarketDataSubscriber {
             });
 
             await redisPublishBreaker.fire(userChannel, payload);
+
+            console.log(`🟣 [DEBUG-3] MESSAGE RECEIVED on channel: ${channel}`);
+            console.log(`🟣 [DEBUG-3] Raw message:`, message.substring(0, 200));
 
             logger.debug(
               {

@@ -185,7 +185,8 @@ export class MarketDataGateway {
         if (!event || !event.symbol) continue;
 
         // Publish to Redis symbol channel with circuit breaker
-        const channel = REDIS_CHANNELS.marketData(event.symbol);
+        const stream = `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`;
+        const channel = REDIS_CHANNELS.marketData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
         console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
         console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
@@ -193,8 +194,7 @@ export class MarketDataGateway {
         // Metrics
         marketMessagesCounter.inc({
           source: this.source,
-          symbol: event.symbol,
-          type: event.type,
+          stream: stream,
         });
         const latency = (Date.now() - startTime) / 1000;
         marketMessageLatencyHistogram.observe({ source: this.source }, latency);
@@ -202,8 +202,7 @@ export class MarketDataGateway {
         this.logger.debug(
           {
             source: this.source,
-            symbol: event.symbol,
-            type: event.type,
+            stream: stream,
             price: event.c,
           },
           "Market event published",

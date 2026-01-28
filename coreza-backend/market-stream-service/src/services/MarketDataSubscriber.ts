@@ -289,9 +289,10 @@ export class MarketDataSubscriber {
           // Not a valid CorezaMarketEvent, skip (could be subscription confirmation)
           return;
         }
+        const stream = `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`;
 
         // Find workflows registered for this symbol
-        const workflows = this.symbolWorkflows.get(event.symbol.toUpperCase());
+        const workflows = this.symbolWorkflows.get(stream);
         if (!workflows || workflows.size === 0) return;
 
         // Handle wildcard registrations (*)
@@ -303,8 +304,7 @@ export class MarketDataSubscriber {
 
         logger.debug(
           {
-            symbol: event.symbol,
-            type: event.type,
+            stream: stream,
             workflowCount: allWorkflows.size,
           },
           "Received market event",
@@ -328,7 +328,7 @@ export class MarketDataSubscriber {
           if (
             registration.onlyClosedBars !== false && // Default is true
             event.source === "binance" &&
-            event.type === "bar" &&
+            event.type === "kline" &&
             event.isClosed !== true
           ) {
             logger.debug(

@@ -48,7 +48,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         t,
         p: parseFloat(msg.p),
         q: parseFloat(msg.q),
-        type: "trade" as const,
+        type: msg.e,
         source: "binance" as const,
       };
 
@@ -58,7 +58,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         t,
         p: parseFloat(msg.p),
         q: parseFloat(msg.q),
-        type: "aggTrade" as const,
+        type: msg.e,
         source: "binance" as const,
         aggregateTradeId: msg.a,
         firstTradeId: msg.f,
@@ -78,7 +78,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         v: parseFloat(k.v),
         timeframe: k.i,
         isClosed: k.x,
-        type: "bar" as const,
+        type: msg.e,
         source: "binance" as const,
       };
     }
@@ -91,7 +91,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         B: parseFloat(msg.B),
         a: parseFloat(msg.a),
         A: parseFloat(msg.A),
-        type: "quote" as const,
+        type: msg.e,
         source: "binance" as const,
       };
 
@@ -103,7 +103,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         pc: parseFloat(msg.p),
         pcp: parseFloat(msg.P),
         v: parseFloat(msg.v),
-        type: "ticker" as const,
+        type: msg.e,
         source: "binance" as const,
       };
 
@@ -116,7 +116,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
         h: parseFloat(msg.h),
         l: parseFloat(msg.l),
         v: parseFloat(msg.v),
-        type: "miniTicker" as const,
+        type: msg.e,
         source: "binance" as const,
       };
 
@@ -132,7 +132,7 @@ export function normalizeBinanceMessage(msg: any): CorezaMarketEvent | null {
           p: parseFloat(price),
           q: parseFloat(qty),
         })),
-        type: "depth" as const,
+        type: msg.e,
         source: "binance" as const,
       };
 

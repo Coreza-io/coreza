@@ -4,18 +4,20 @@
 // "ticker" covers summary-style updates (e.g., Binance 24h ticker) that provide
 // snapshot statistics instead of tick-level trades or quotes.
 export type MarketEventType =
-  | 'trade'
-  | 'aggTrade'
-  | 'quote'
-  | 'bar'
-  | 'daily_bar'
-  | 'news'
-  | 'ticker'
-  | 'miniTicker'
-  | 'depth';
+  | "trade"
+  | "aggTrade"
+  | "quote"
+  | "bar"
+  | "kline"
+  | "daily_bar"
+  | "news"
+  | "ticker"
+  | "miniTicker"
+  | "depth";
 
-export type MarketSource = keyof typeof import('../marketGateways').GATEWAY_CONFIGS;
-export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
+export type MarketSource =
+  keyof typeof import("../marketGateways").GATEWAY_CONFIGS;
+export type Timeframe = "tick" | "1m" | "5m" | "15m" | "1h" | "1d";
 
 export interface CorezaMarketEvent {
   // Identification
@@ -65,10 +67,10 @@ export interface CorezaMarketEvent {
 }
 
 export interface ControlMessage {
-  action: 'subscribe' | 'unsubscribe';
+  action: "subscribe" | "unsubscribe";
   userId: string;
   sessionId?: string;
-  symbols: string[];
-  source?: MarketSource;
+  stream: string[];
+  source: MarketSource;
   timeframe?: Timeframe;
 }

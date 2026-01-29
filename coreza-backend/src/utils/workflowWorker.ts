@@ -41,7 +41,7 @@ async function collectOrderedResults(
   redis: Redis,
   parentRunId: string,
   loopId: string,
-  totalItems: number
+  totalItems: number,
 ): Promise<{
   results: LoopItemResult[];
   hasErrors: boolean;
@@ -67,7 +67,7 @@ async function collectOrderedResults(
             {
               nodeName: `loop-item-${i}`,
               category: "loop",
-            }
+            },
           );
           results[i] = { ...errorOutput, itemIndex: i };
         } else {
@@ -107,7 +107,7 @@ async function collectOrderedResults(
 async function cleanupLoopKeys(
   redis: Redis,
   parentRunId: string,
-  loopId: string
+  loopId: string,
 ): Promise<void> {
   const keysToDelete = [
     `loop:${parentRunId}:${loopId}:results`,
@@ -128,7 +128,7 @@ export function createWorkflowWorker({
     async (
       job: Job<WorkflowJobData>,
       token?: string,
-      signal?: AbortSignal
+      signal?: AbortSignal,
     ): Promise<WorkflowJobResult> => {
       // Ensure node executors are registered (handles circular dependency race condition)
       const registeredCategories = getAllRegisteredCategories();
@@ -158,12 +158,12 @@ export function createWorkflowWorker({
         console.log(
           `🔄 Processing loop item ${
             (itemIndex ?? 0) + 1
-          }/${totalItems} for loop ${loopId}`
+          }/${totalItems} for loop ${loopId}`,
         );
 
         const startNodeId = (job.data as any).startNodeId;
         console.log(
-          `🎯 Loop item starting from node: ${startNodeId || "auto-detect"}`
+          `🎯 Loop item starting from node: ${startNodeId || "auto-detect"}`,
         );
 
         try {
@@ -177,7 +177,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-            }
+            },
           );
 
           // Store successful result in Redis by itemIndex
@@ -186,7 +186,7 @@ export function createWorkflowWorker({
           await redis.expire(key, 3600); // 1 hour TTL
 
           console.log(
-            `✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`
+            `✅ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} completed`,
           );
           const successOutput = createSuccessOutput(result, {
             nodeName: `loop-item-${itemIndex}`,
@@ -200,7 +200,7 @@ export function createWorkflowWorker({
           });
           console.error(
             `❌ Loop item ${(itemIndex ?? 0) + 1}/${totalItems} failed:`,
-            errorOutput.error
+            errorOutput.error,
           );
 
           // Store error in Redis for aggregation (allows continueOnError)
@@ -221,7 +221,7 @@ export function createWorkflowWorker({
       // Handle aggregator (parent job that waits for all children)
       if (isLoopAggregator) {
         console.log(
-          `📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`
+          `📊 Aggregating ${totalItems} parallel loop results for loop ${loopId}`,
         );
 
         // Extract continuation metadata
@@ -231,12 +231,13 @@ export function createWorkflowWorker({
 
         try {
           // Collect ordered results from Redis hash (more reliable than getChildrenValues)
-          const { results, hasErrors, errorCount } = await collectOrderedResults(
-            redis,
-            parentRunId!,
-            loopId!,
-            totalItems ?? 0
-          );
+          const { results, hasErrors, errorCount } =
+            await collectOrderedResults(
+              redis,
+              parentRunId!,
+              loopId!,
+              totalItems ?? 0,
+            );
 
           // Keep full StandardNodeOutput for each item, preserving structure
           const aggregatedOutput = results.map((r) => ({
@@ -261,18 +262,18 @@ export function createWorkflowWorker({
                 hasErrors,
                 completedAt: new Date().toISOString(),
               },
-            })
+            }),
           );
           await redis.expire(aggregatedKey, 3600);
 
           console.log(
-            `✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`
+            `✅ Aggregated ${results.length} loop results (${errorCount} errors) for loop ${loopId}`,
           );
 
           // Queue continuation jobs for done edges (parent workflow continuation)
           if (doneEdges.length > 0 && parentNodes.length > 0) {
             console.log(
-              `🔗 Queuing ${doneEdges.length} continuation jobs from loop ${loopId}`
+              `🔗 Queuing ${doneEdges.length} continuation jobs from loop ${loopId}`,
             );
 
             for (const edge of doneEdges) {
@@ -305,7 +306,7 @@ export function createWorkflowWorker({
                 {
                   removeOnComplete: 50,
                   removeOnFail: 100,
-                }
+                },
               );
 
               console.log(`📤 Queued continuation to node ${edge.target}`);
@@ -313,7 +314,7 @@ export function createWorkflowWorker({
           } else {
             // No done edges - Loop is a terminal node, complete the parent workflow run with aggregated result
             console.log(
-              `📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`
+              `📋 No done edges for loop ${loopId} - completing parent run ${parentRunId}`,
             );
 
             const finalResult = createSuccessOutput(
@@ -328,7 +329,7 @@ export function createWorkflowWorker({
                   completedAt: new Date().toISOString(),
                 },
               },
-              { nodeName: loopId, category: "loop" }
+              { nodeName: loopId, category: "loop" },
             );
 
             if (useRedisStorage) {
@@ -339,7 +340,7 @@ export function createWorkflowWorker({
                 completed_at: new Date().toISOString(),
               });
               console.log(
-                `✅ Parent run ${parentRunId} completed in Redis with loop result`
+                `✅ Parent run ${parentRunId} completed in Redis with loop result`,
               );
             } else {
               // Update Supabase directly
@@ -352,7 +353,7 @@ export function createWorkflowWorker({
                 })
                 .eq("id", parentRunId);
               console.log(
-                `✅ Parent run ${parentRunId} completed in Supabase with loop result`
+                `✅ Parent run ${parentRunId} completed in Supabase with loop result`,
               );
             }
           }
@@ -370,7 +371,7 @@ export function createWorkflowWorker({
               errorCount,
               hasErrors,
               continuationQueued: doneEdges.length > 0,
-            })
+            }),
           );
 
           // Cleanup Redis keys after successful aggregation
@@ -384,7 +385,7 @@ export function createWorkflowWorker({
               errorCount,
               continuationQueued: doneEdges.length > 0,
             },
-            { nodeName: loopId, category: "loop" }
+            { nodeName: loopId, category: "loop" },
           );
         } catch (error) {
           const errorOutput = createErrorOutput(error, {
@@ -393,7 +394,7 @@ export function createWorkflowWorker({
           });
           console.error(
             `❌ Loop aggregation failed for ${loopId}:`,
-            errorOutput.error
+            errorOutput.error,
           );
 
           // Publish failure event
@@ -403,7 +404,7 @@ export function createWorkflowWorker({
               parentRunId,
               loopId,
               error: errorOutput.error,
-            })
+            }),
           );
 
           throw new Error(errorOutput.error);
@@ -414,7 +415,7 @@ export function createWorkflowWorker({
       if (trigger === "loop_continuation") {
         const startNodeId = (job.data as any).startNodeId;
         console.log(
-          `🔗 Continuing workflow from node ${startNodeId} after parallel loop ${loopId}`
+          `🔗 Continuing workflow from node ${startNodeId} after parallel loop ${loopId}`,
         );
 
         try {
@@ -429,11 +430,11 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-            }
+            },
           );
 
           console.log(
-            `✅ Workflow continuation completed from node ${startNodeId}`
+            `✅ Workflow continuation completed from node ${startNodeId}`,
           );
           return createSuccessOutput(result, {
             nodeName: startNodeId,
@@ -446,7 +447,7 @@ export function createWorkflowWorker({
           });
           console.error(
             `❌ Workflow continuation failed from node ${startNodeId}:`,
-            errorOutput.error
+            errorOutput.error,
           );
           throw new Error(errorOutput.error);
         }
@@ -454,34 +455,8 @@ export function createWorkflowWorker({
 
       // Normal workflow execution
       console.log(
-        `🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`
+        `🚀 Processing workflow job ${job.id} for run ${runId} (Redis storage: ${useRedisStorage})`,
       );
-
-      // Check if workflow was cancelled while job was queued
-      const isCancelled = await redis.get(`workflow:${workflowId}:cancelled`);
-      if (isCancelled) {
-        console.log(
-          `🛑 Workflow ${workflowId} was cancelled, skipping execution for run ${runId}`
-        );
-
-        // Mark run as cancelled
-        if (useRedisStorage) {
-          await updateRunStatusInRedis(runId, "cancelled", {
-            errorMessage: "Workflow deactivated by user",
-          });
-        } else {
-          await supabase
-            .from("workflow_runs")
-            .update({
-              status: "cancelled",
-              error_message: "Workflow deactivated by user",
-              completed_at: new Date().toISOString(),
-            })
-            .eq("id", runId);
-        }
-
-        return { cancelled: true, reason: "workflow_deactivated" } as const;
-      }
 
       // Check abort signal before starting (in case job was cancelled immediately)
       if (signal?.aborted) {
@@ -519,7 +494,7 @@ export function createWorkflowWorker({
           {
             initialInput: renamed,
             abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-          }
+          },
         );
         executionResult = result;
 
@@ -566,7 +541,7 @@ export function createWorkflowWorker({
 
         console.log(
           `${isCancellation ? "🛑" : "❌"} Workflow run ${runId} ${status}:`,
-          errorMessage
+          errorMessage,
         );
 
         // Save error with appropriate status
@@ -603,6 +578,6 @@ export function createWorkflowWorker({
       lockDuration: 300000, // 5 minutes (default is 30s) - for long-running loops
       stalledInterval: 60000, // Check for stalled jobs every 60 seconds
       maxStalledCount: 3, // Allow 3 stall checks before marking as stalled
-    }
+    },
   );
 }

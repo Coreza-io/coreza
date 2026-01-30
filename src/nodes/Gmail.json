@@ -2,7 +2,7 @@
   "name": "Gmail",
   "def": "Send Email",
   "node_type": "main",
-  "category": "Email",
+  "category": "Communication",
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -12,7 +12,7 @@
 
   "icon": "/assets/icons/gmail.svg",
   "size": { "width": 340, "height": 340 },
-  "action": { "url": "/gmail/send", "method": "POST" },
+  "action": { "url": "/communication/gmail/send", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

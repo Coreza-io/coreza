@@ -525,10 +525,177 @@ class WhatsAppService extends BaseCommunicationService {
   }
 }
 
+// Telegram service
+class TelegramService extends BaseCommunicationService {
+  protected serviceName = "telegram";
+
+  private normalizeIds(input: CommunicationInput): {
+    userId?: string;
+    credentialId?: string;
+  } {
+    return {
+      userId: input.user_id ?? input.userId,
+      credentialId: input.credential_id ?? input.credentialId,
+    };
+  }
+
+  async execute(
+    operation: string,
+    input: CommunicationInput
+  ): Promise<StandardNodeOutput> {
+    const context = { nodeName: 'Telegram', category: 'communication' };
+    try {
+      const { userId, credentialId } = this.normalizeIds(input);
+
+      if (!userId || !credentialId) {
+        throw createError("user_id and credential_id are required", 400);
+      }
+
+      // Get bot_token from credentials
+      const result = await CredentialManager.getCredentials(
+        userId,
+        "telegram",
+        credentialId
+      );
+
+      if (!result.credentials) {
+        throw createError("Telegram credentials not found", 404);
+      }
+
+      const credentials = result.credentials;
+
+      let operationResult;
+      switch (operation) {
+        case "send":
+        case "send_message":
+          operationResult = await this.sendMessage(credentials, input);
+          break;
+        case "send_photo":
+          operationResult = await this.sendPhoto(credentials, input);
+          break;
+        case "send_document":
+          operationResult = await this.sendDocument(credentials, input);
+          break;
+        default:
+          throw createError(`Unsupported Telegram operation: ${operation}`, 400);
+      }
+
+      return createSuccessOutput(operationResult, context);
+    } catch (error: any) {
+      return createErrorOutput(error, context);
+    }
+  }
+
+  private async sendMessage(
+    credentials: any,
+    input: CommunicationInput
+  ): Promise<any> {
+    const { chat_id, message, parse_mode = "HTML" } = input;
+
+    if (!chat_id || !message) {
+      throw createError("chat_id and message are required", 400);
+    }
+
+    const response = await axios.post(
+      `https://api.telegram.org/bot${credentials.bot_token}/sendMessage`,
+      {
+        chat_id,
+        text: message,
+        parse_mode,
+      }
+    );
+
+    if (!response.data.ok) {
+      throw createError(
+        response.data.description || "Failed to send Telegram message",
+        400
+      );
+    }
+
+    return {
+      success: true,
+      message_id: response.data.result.message_id,
+      chat_id: response.data.result.chat.id,
+      message: "Telegram message sent successfully",
+    };
+  }
+
+  private async sendPhoto(
+    credentials: any,
+    input: CommunicationInput
+  ): Promise<any> {
+    const { chat_id, photo_url, caption = "", parse_mode = "HTML" } = input;
+
+    if (!chat_id || !photo_url) {
+      throw createError("chat_id and photo_url are required", 400);
+    }
+
+    const response = await axios.post(
+      `https://api.telegram.org/bot${credentials.bot_token}/sendPhoto`,
+      {
+        chat_id,
+        photo: photo_url,
+        caption,
+        parse_mode,
+      }
+    );
+
+    if (!response.data.ok) {
+      throw createError(
+        response.data.description || "Failed to send Telegram photo",
+        400
+      );
+    }
+
+    return {
+      success: true,
+      message_id: response.data.result.message_id,
+      chat_id: response.data.result.chat.id,
+      message: "Telegram photo sent successfully",
+    };
+  }
+
+  private async sendDocument(
+    credentials: any,
+    input: CommunicationInput
+  ): Promise<any> {
+    const { chat_id, document_url, caption = "", parse_mode = "HTML" } = input;
+
+    if (!chat_id || !document_url) {
+      throw createError("chat_id and document_url are required", 400);
+    }
+
+    const response = await axios.post(
+      `https://api.telegram.org/bot${credentials.bot_token}/sendDocument`,
+      {
+        chat_id,
+        document: document_url,
+        caption,
+        parse_mode,
+      }
+    );
+
+    if (!response.data.ok) {
+      throw createError(
+        response.data.description || "Failed to send Telegram document",
+        400
+      );
+    }
+
+    return {
+      success: true,
+      message_id: response.data.result.message_id,
+      chat_id: response.data.result.chat.id,
+      message: "Telegram document sent successfully",
+    };
+  }
+}
+
 // Main communication service
 export class CommunicationService {
   private static gmailService = new GmailService();
   private static whatsappService = new WhatsAppService();
+  private static telegramService = new TelegramService();
 
   static async execute(
     service: string,
@@ -541,6 +708,8 @@ export class CommunicationService {
         return this.gmailService.execute(operation, input);
       case "whatsapp":
         return this.whatsappService.execute(operation, input);
+      case "telegram":
+        return this.telegramService.execute(operation, input);
       default:
         return createErrorOutput(`Unsupported communication service: ${service}`, context);
     }

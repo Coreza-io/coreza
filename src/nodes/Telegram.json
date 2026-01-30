@@ -1,0 +1,77 @@
+{
+  "name": "Telegram",
+  "def": "Send Telegram Message",
+  "node_type": "main",
+  "category": "Communication",
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Telegram Bot"
+    },
+    {
+      "key": "bot_token",
+      "label": "Bot Token",
+      "type": "password",
+      "placeholder": "Your Telegram bot token from @BotFather",
+      "required": true
+    }
+  ],
+  "authAction": { "url": "/communication/telegram/auth", "method": "POST" },
+  "icon": "/assets/icons/telegram.svg",
+  "size": { "width": 340, "height": 420 },
+  "action": { "url": "/communication/telegram/send_message", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "default": "send_message",
+      "options": [
+        { "label": "Send Message", "value": "send_message" },
+        { "label": "Send Photo", "value": "send_photo" },
+        { "label": "Send Document", "value": "send_document" }
+      ],
+      "required": true
+    },
+    {
+      "key": "chat_id",
+      "label": "Chat ID",
+      "type": "text",
+      "placeholder": "Chat ID or @channel_username",
+      "required": true
+    },
+    {
+      "key": "message",
+      "label": "Message",
+      "type": "textarea",
+      "placeholder": "Message content...",
+      "required": true
+    },
+    {
+      "key": "parse_mode",
+      "label": "Parse Mode",
+      "type": "select",
+      "default": "HTML",
+      "options": [
+        { "label": "HTML", "value": "HTML" },
+        { "label": "Markdown", "value": "Markdown" },
+        { "label": "MarkdownV2", "value": "MarkdownV2" }
+      ]
+    }
+  ]
+}

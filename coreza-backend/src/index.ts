@@ -59,6 +59,7 @@ import { initializeNodeExecutors } from "./nodes";
 import { initializeScreenerServices } from "./services/screeners";
 import { initializeDataSourceServices } from "./services/datasources";
 import { initializeStorageServices } from "./services/storage";
+import { initializeCommunicationServices } from "./services/communication";
 import WorkflowCache from "./services/WorkflowCache";
 import {
   redisPublishBreaker,
@@ -176,10 +177,11 @@ async function startServer() {
       logger.info("Supabase connected successfully");
     }
 
-    // Initialize node executors, screener services, data source services, and storage services
+    // Initialize all services
     initializeStorageServices();
     initializeDataSourceServices();
     initializeScreenerServices();
+    initializeCommunicationServices();
     initializeNodeExecutors();
 
     // Initialize Binance time sync

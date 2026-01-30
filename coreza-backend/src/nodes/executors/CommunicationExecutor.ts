@@ -15,11 +15,12 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { CommunicationService } from "../../services/communications";
-import axios from "axios";
-import { resolveReferences } from "../../utils/resolveReferences";
-import CredentialManager from "../../utils/credentialManager";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import { getCommunicationService } from "../../services/communication";
+import {
+  normalizeOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class CommunicationExecutor implements INodeExecutor {
   readonly category = "Communication";
@@ -30,66 +31,51 @@ export class CommunicationExecutor implements INodeExecutor {
     context?: any
   ): Promise<NodeResult> {
     const startTime = Date.now();
+    const nodeName = node.name;
+    const ctx = {
+      nodeId: node.id,
+      nodeName,
+      category: this.category,
+      startTime,
+    };
+
     try {
-      const nodeName = node.name;
       const operation = node.values?.operation || "send";
       const credential_id = node.values?.credential_id;
       const user_id = context.user_id;
+
+      // Get service from registry (node.name is Gmail, WhatsApp, Telegram)
+      const serviceKey = nodeName.toLowerCase();
+      const service = getCommunicationService(serviceKey);
+
+      if (!service) {
+        const errOutput = createErrorOutput(
+          `Unknown communication service: ${nodeName}`,
+          ctx
+        );
+        return toNodeResult(errOutput);
+      }
 
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      const combinedInput = {
-        ...input,
-        ...resolvedParams,
+      // Execute via registry service
+      const result = await service.execute({
+        operation,
         user_id,
         credential_id,
-      };
-
-      let result;
-      switch (nodeName) {
-        case "Gmail":
-          result = await CommunicationService.execute(
-            "gmail",
-            operation,
-            combinedInput
-          );
-          break;
-        case "WhatsApp":
-          result = await CommunicationService.execute(
-            "whatsapp",
-            operation,
-            combinedInput
-          );
-          break;
-        case "Telegram":
-          result = await CommunicationService.execute(
-            "telegram",
-            operation,
-            combinedInput
-          );
-          break;
-        default:
-          const errOutput = createErrorOutput(
-            `Unsupported communication node type: ${nodeName}`,
-            { nodeId: node.id, nodeName, category: this.category, startTime }
-          );
-          return toNodeResult(errOutput);
-      }
-
-      const normalized = normalizeOutput(result, {
-        nodeId: node.id,
-        nodeName,
-        category: this.category,
-        startTime,
+        ...input,
+        ...resolvedParams,
       });
+
+      const normalized = normalizeOutput(result, ctx);
       return toNodeResult(normalized);
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        ctx
       );
       return toNodeResult(errOutput);
     }

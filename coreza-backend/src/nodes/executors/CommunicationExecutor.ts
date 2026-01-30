@@ -64,6 +64,13 @@ export class CommunicationExecutor implements INodeExecutor {
             combinedInput
           );
           break;
+        case "Telegram":
+          result = await CommunicationService.execute(
+            "telegram",
+            operation,
+            combinedInput
+          );
+          break;
         default:
           const errOutput = createErrorOutput(
             `Unsupported communication node type: ${nodeName}`,

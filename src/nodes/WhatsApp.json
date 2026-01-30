@@ -28,10 +28,10 @@
       "placeholder": "Your WhatsApp Business phone number ID"
     }
   ],
-  "authAction": { "url": "/whatsapp/credentials", "method": "POST" },
+  "authAction": { "url": "/communication/whatsapp/auth", "method": "POST" },
   "icon": "/assets/icons/whatsapp.svg",
   "size": { "width": 340, "height": 340 },
-  "action": { "url": "/whatsapp/send", "method": "POST" },
+  "action": { "url": "/communication/whatsapp/send_message", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

@@ -18,7 +18,10 @@ import { google, gmail_v1 } from "googleapis";
 import axios from "axios";
 import { createError } from "../middleware/errorHandler";
 import CredentialManager from "../utils/credentialManager";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../utils/normalizeOutput";
 import type { StandardNodeOutput } from "../types/nodeOutput";
 
 export interface CommunicationInput {
@@ -41,7 +44,7 @@ abstract class BaseCommunicationService {
 
   abstract execute(
     operation: string,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<StandardNodeOutput>;
 }
 
@@ -63,7 +66,7 @@ class GmailService extends BaseCommunicationService {
     const auth = new google.auth.OAuth2(
       credentials.client_id,
       credentials.client_secret,
-      credentials.redirect_uri
+      credentials.redirect_uri,
     );
 
     if (credentials.refresh_token) {
@@ -78,9 +81,9 @@ class GmailService extends BaseCommunicationService {
 
   async execute(
     operation: string,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Gmail', category: 'communication' };
+    const context = { nodeName: "Gmail", category: "communication" };
     try {
       const { userId, credentialId } = this.normalizeIds(input);
 
@@ -100,7 +103,7 @@ class GmailService extends BaseCommunicationService {
       const result = await CredentialManager.getCredentials(
         userId,
         "gmail",
-        credentialId
+        credentialId,
       );
 
       if (!result.credentials) {
@@ -136,7 +139,10 @@ class GmailService extends BaseCommunicationService {
       return createSuccessOutput(operationResult, context);
     } catch (error: any) {
       if (error.response?.status === 401) {
-        return createErrorOutput("Gmail authentication expired. Please re-authorize.", context);
+        return createErrorOutput(
+          "Gmail authentication expired. Please re-authorize.",
+          context,
+        );
       }
       return createErrorOutput(error, context);
     }
@@ -178,7 +184,7 @@ class GmailService extends BaseCommunicationService {
 
   private async getMessages(
     gmail: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { query, max_results = 10 } = input;
 
@@ -228,7 +234,7 @@ class GmailService extends BaseCommunicationService {
 
   private async getMessage(
     gmail: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { messageId } = input;
 
@@ -300,9 +306,9 @@ class WhatsAppService extends BaseCommunicationService {
 
   async execute(
     operation: string,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'WhatsApp', category: 'communication' };
+    const context = { nodeName: "WhatsApp", category: "communication" };
     try {
       const { userId, credentialId } = this.normalizeIds(input);
       let credentials: any = null;
@@ -323,7 +329,7 @@ class WhatsAppService extends BaseCommunicationService {
         const result = await CredentialManager.getCredentials(
           userId,
           "whatsapp",
-          credentialId
+          credentialId,
         );
 
         if (!result.credentials) {
@@ -358,7 +364,7 @@ class WhatsAppService extends BaseCommunicationService {
         default:
           throw createError(
             `Unsupported WhatsApp operation: ${operation}`,
-            400
+            400,
           );
       }
 
@@ -370,7 +376,7 @@ class WhatsAppService extends BaseCommunicationService {
 
   private async sendMessage(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { to, message, type = "text" } = input;
 
@@ -395,7 +401,7 @@ class WhatsAppService extends BaseCommunicationService {
           Authorization: `Bearer ${credentials.access_token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return {
@@ -407,7 +413,7 @@ class WhatsAppService extends BaseCommunicationService {
 
   private async sendTemplate(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const {
       to,
@@ -452,7 +458,7 @@ class WhatsAppService extends BaseCommunicationService {
           Authorization: `Bearer ${credentials.access_token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return {
@@ -464,7 +470,7 @@ class WhatsAppService extends BaseCommunicationService {
 
   private async sendMedia(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { to, media_type, media_url, caption = "" } = input;
 
@@ -490,7 +496,7 @@ class WhatsAppService extends BaseCommunicationService {
           Authorization: `Bearer ${credentials.access_token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     return {
@@ -519,7 +525,7 @@ class WhatsAppService extends BaseCommunicationService {
         headers: {
           Authorization: `Bearer ${credentials.access_token}`,
         },
-      }
+      },
     );
     return response.data;
   }
@@ -541,9 +547,9 @@ class TelegramService extends BaseCommunicationService {
 
   async execute(
     operation: string,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<StandardNodeOutput> {
-    const context = { nodeName: 'Telegram', category: 'communication' };
+    const context = { nodeName: "Telegram", category: "communication" };
     try {
       const { userId, credentialId } = this.normalizeIds(input);
 
@@ -555,7 +561,7 @@ class TelegramService extends BaseCommunicationService {
       const result = await CredentialManager.getCredentials(
         userId,
         "telegram",
-        credentialId
+        credentialId,
       );
 
       if (!result.credentials) {
@@ -566,7 +572,6 @@ class TelegramService extends BaseCommunicationService {
 
       let operationResult;
       switch (operation) {
-        case "send":
         case "send_message":
           operationResult = await this.sendMessage(credentials, input);
           break;
@@ -577,7 +582,10 @@ class TelegramService extends BaseCommunicationService {
           operationResult = await this.sendDocument(credentials, input);
           break;
         default:
-          throw createError(`Unsupported Telegram operation: ${operation}`, 400);
+          throw createError(
+            `Unsupported Telegram operation: ${operation}`,
+            400,
+          );
       }
 
       return createSuccessOutput(operationResult, context);
@@ -588,7 +596,7 @@ class TelegramService extends BaseCommunicationService {
 
   private async sendMessage(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { chat_id, message, parse_mode = "HTML" } = input;
 
@@ -597,18 +605,18 @@ class TelegramService extends BaseCommunicationService {
     }
 
     const response = await axios.post(
-      `https://api.telegram.org/bot${credentials.bot_token}/sendMessage`,
+      `https://api.telegram.org/bot${credentials.client_json.bot_token}/sendMessage`,
       {
         chat_id,
         text: message,
         parse_mode,
-      }
+      },
     );
 
     if (!response.data.ok) {
       throw createError(
         response.data.description || "Failed to send Telegram message",
-        400
+        400,
       );
     }
 
@@ -622,7 +630,7 @@ class TelegramService extends BaseCommunicationService {
 
   private async sendPhoto(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { chat_id, photo_url, caption = "", parse_mode = "HTML" } = input;
 
@@ -637,13 +645,13 @@ class TelegramService extends BaseCommunicationService {
         photo: photo_url,
         caption,
         parse_mode,
-      }
+      },
     );
 
     if (!response.data.ok) {
       throw createError(
         response.data.description || "Failed to send Telegram photo",
-        400
+        400,
       );
     }
 
@@ -657,7 +665,7 @@ class TelegramService extends BaseCommunicationService {
 
   private async sendDocument(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const { chat_id, document_url, caption = "", parse_mode = "HTML" } = input;
 
@@ -672,13 +680,13 @@ class TelegramService extends BaseCommunicationService {
         document: document_url,
         caption,
         parse_mode,
-      }
+      },
     );
 
     if (!response.data.ok) {
       throw createError(
         response.data.description || "Failed to send Telegram document",
-        400
+        400,
       );
     }
 
@@ -700,9 +708,9 @@ export class CommunicationService {
   static async execute(
     service: string,
     operation: string,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<StandardNodeOutput> {
-    const context = { nodeName: service, category: 'communication' };
+    const context = { nodeName: service, category: "communication" };
     switch (service.toLowerCase()) {
       case "gmail":
         return this.gmailService.execute(operation, input);
@@ -711,7 +719,10 @@ export class CommunicationService {
       case "telegram":
         return this.telegramService.execute(operation, input);
       default:
-        return createErrorOutput(`Unsupported communication service: ${service}`, context);
+        return createErrorOutput(
+          `Unsupported communication service: ${service}`,
+          context,
+        );
     }
   }
 }

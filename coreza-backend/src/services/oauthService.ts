@@ -60,7 +60,7 @@ class OAuthService {
   private static buildSession(
     provider: string,
     config: OAuthProviderConfig,
-    body: any
+    body: any,
   ): TempSession {
     const clientId = body[config.clientIdField];
     const clientSecret = body[config.clientSecretField];
@@ -70,7 +70,7 @@ class OAuthService {
 
     if (!clientId || !clientSecret) {
       throw new Error(
-        `${config.clientIdField} and ${config.clientSecretField} are required`
+        `${config.clientIdField} and ${config.clientSecretField} are required`,
       );
     }
 
@@ -117,21 +117,18 @@ class OAuthService {
     if (Date.now() > session.expires) {
       this.tempSessions.delete(temp_id);
       throw new Error(
-        "Session expired. Please start the connection process again."
+        "Session expired. Please start the connection process again.",
       );
     }
 
     const tokenData: OAuthTokenResult = await config.exchangeCode({
       code: body.code,
-      redirectUrl: body.redirect_url || body.redirectUri,
       session,
-      body,
     });
 
     const payload = {
       ...(tokenData.client || {}),
       ...(tokenData.token || {}),
-      ...(tokenData.meta || {}),
     };
 
     const credentialId = await CredentialManager.saveCredentials(
@@ -139,7 +136,7 @@ class OAuthService {
       this.normalizeProvider(provider),
       credential_name,
       payload,
-      tokenData.scopes?.join(" ")
+      tokenData.scopes?.join(" "),
     );
 
     this.tempSessions.delete(temp_id);
@@ -153,7 +150,7 @@ class OAuthService {
   static async refreshToken(
     provider: string,
     userId: string,
-    credentialid: any
+    credentialid: any,
   ) {
     const config = this.getProviderConfig(provider);
 
@@ -171,7 +168,7 @@ class OAuthService {
     const result = await CredentialManager.getCredentials(
       user_id,
       this.normalizeProvider(provider),
-      credential_id
+      credential_id,
     );
 
     if (!result.credentials) {
@@ -195,7 +192,7 @@ class OAuthService {
       this.normalizeProvider(provider),
       credential_id,
       payload,
-      refreshed.scopes?.join(" ")
+      refreshed.scopes?.join(" "),
     );
 
     return {

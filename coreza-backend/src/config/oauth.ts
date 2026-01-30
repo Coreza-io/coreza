@@ -41,17 +41,13 @@ export interface OAuthProviderConfig {
   defaultScopes?: string[];
   generateAuthUrl: (
     session: OAuthSessionData,
-    body: any
+    body: any,
   ) => Promise<string> | string;
   exchangeCode: (params: {
     code?: string;
-    redirectUrl?: string;
     session: OAuthSessionData;
-    body: any;
   }) => Promise<OAuthTokenResult>;
-  refreshToken?: (params: {
-    credentials: any;
-  }) => Promise<OAuthTokenResult>;
+  refreshToken?: (params: { credentials: any }) => Promise<OAuthTokenResult>;
 }
 
 const SCHWAB_REDIRECT_URI = "https://127.0.0.1";
@@ -63,17 +59,17 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
     defaultRedirectUri: SCHWAB_REDIRECT_URI,
     generateAuthUrl: async (session) =>
       `https://api.schwabapi.com/v1/oauth/authorize?client_id=${encodeURIComponent(
-        session.clientId
+        session.clientId,
       )}&redirect_uri=${encodeURIComponent(
-        session.redirectUri || SCHWAB_REDIRECT_URI
+        session.redirectUri || SCHWAB_REDIRECT_URI,
       )}`,
-    exchangeCode: async ({ code, redirectUrl, session }) => {
-      const codeFromUrl = redirectUrl?.match(/code=([^&]+)/)?.[1];
+    exchangeCode: async ({ code, session }) => {
+      const codeFromUrl = session.redirectUri?.match(/code=([^&]+)/)?.[1];
       const authCode = decodeURIComponent(code || codeFromUrl || "").trim();
 
       if (!authCode) {
         throw new Error(
-          "Authorization code is required. Please provide code or redirect_url containing the code."
+          "Authorization code is required. Please provide code or redirect_url containing the code.",
         );
       }
 
@@ -92,7 +88,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
             Authorization: `Basic ${encodedCredentials}`,
             "Content-Type": "application/x-www-form-urlencoded",
           },
-        }
+        },
       );
 
       const { access_token, refresh_token, expires_in } = tokenResponse.data;
@@ -112,7 +108,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
     },
     refreshToken: async ({ credentials }) => {
       const encodedCredentials = Buffer.from(
-        `${credentials.app_key}:${credentials.app_secret}`
+        `${credentials.app_key}:${credentials.app_secret}`,
       ).toString("base64");
 
       const tokenResponse = await axios.post(
@@ -126,7 +122,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
             Authorization: `Basic ${encodedCredentials}`,
             "Content-Type": "application/x-www-form-urlencoded",
           },
-        }
+        },
       );
 
       const { access_token, expires_in } = tokenResponse.data;
@@ -157,10 +153,10 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       const oauth2Client = new google.auth.OAuth2(
         session.clientId,
         session.clientSecret,
-        session.redirectUri
+        session.redirectUri,
       );
 
-      const scopes = body.scope || session.scope || this.defaultScopes;
+      const scopes = session.scope;
 
       return oauth2Client.generateAuthUrl({
         access_type: "offline",
@@ -177,7 +173,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       const oauth2Client = new google.auth.OAuth2(
         session.clientId,
         session.clientSecret,
-        session.redirectUri
+        session.redirectUri,
       );
 
       try {
@@ -201,11 +197,11 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
           scopes: tokens.scope ? tokens.scope.split(" ") : session.scope,
         };
       } catch (error: any) {
-        if (error.message?.includes('invalid_grant')) {
+        if (error.message?.includes("invalid_grant")) {
           throw new Error(
-            'Invalid authorization code. The code may have expired (valid for 5-10 minutes), ' +
-            'already been used, or the redirect URI may not match what is configured in Google Cloud Console. ' +
-            'Please restart the authorization process.'
+            "Invalid authorization code. The code may have expired (valid for 5-10 minutes), " +
+              "already been used, or the redirect URI may not match what is configured in Google Cloud Console. " +
+              "Please restart the authorization process.",
           );
         }
         throw error;
@@ -215,11 +211,12 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       const oauth2Client = new google.auth.OAuth2(
         credentials.client_id,
         credentials.client_secret,
-        credentials.redirect_uri
+        credentials.redirect_uri,
       );
 
       oauth2Client.setCredentials({ refresh_token: credentials.refresh_token });
-      const { credentials: refreshed } = await oauth2Client.refreshAccessToken();
+      const { credentials: refreshed } =
+        await oauth2Client.refreshAccessToken();
 
       const token_expires_at = refreshed.expiry_date
         ? Math.floor(refreshed.expiry_date / 1000)
@@ -241,4 +238,3 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
     },
   },
 };
-

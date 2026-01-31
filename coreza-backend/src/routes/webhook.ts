@@ -17,6 +17,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/jwtAuth';
 import { webhookService } from '../services/WebhookService';
+import { getProviderConfig } from '../config/webhookProviders';
 import { createLogger } from '../utils/logger';
 
 const router = express.Router();
@@ -80,6 +81,36 @@ router.post('/register', requireAuth, async (req, res) => {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * Provider webhook verification (GET) - For providers requiring challenge verification (e.g., WhatsApp)
+ * NO AUTH - External services call this endpoint
+ * GET /webhooks/:provider/verify
+ */
+router.get('/:provider/verify', async (req, res) => {
+  const { provider } = req.params;
+
+  try {
+    const providerConfig = getProviderConfig(provider);
+
+    if (!providerConfig?.verifyChallenge) {
+      return res.status(404).json({ error: 'Provider does not support verification' });
+    }
+
+    const result = providerConfig.verifyChallenge(req.query as Record<string, any>);
+
+    if (result.valid && result.challenge) {
+      logger.info({ provider }, 'Webhook verification successful');
+      res.status(200).send(result.challenge);
+    } else {
+      logger.warn({ provider }, 'Webhook verification failed');
+      res.sendStatus(403);
+    }
+  } catch (error) {
+    logger.error({ err: error, provider }, 'Error in webhook verification');
+    res.sendStatus(500);
   }
 });
 

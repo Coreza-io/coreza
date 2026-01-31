@@ -27,6 +27,9 @@ export interface WebhookProviderConfig {
     method: "none" | "direct" | "hmac-sha256" | "hmac-sha1";
   };
 
+  // For providers that require verification challenge (WhatsApp hub.challenge)
+  verifyChallenge?: (query: Record<string, any>) => { valid: boolean; challenge?: string };
+
   externalApi?: {
     setWebhook?: (params: {
       creds: object;
@@ -181,6 +184,45 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
         from,
         text,
         raw: update,
+      };
+    },
+  },
+
+  whatsapp: {
+    id: "whatsapp",
+    name: "WhatsApp Cloud API",
+    incomingPath: "whatsapp",
+    verification: {
+      method: "hmac-sha256",
+      headerName: "x-hub-signature-256",
+    },
+    verifyChallenge: (query: Record<string, any>) => {
+      const mode = query["hub.mode"];
+      const token = query["hub.verify_token"];
+      const challenge = query["hub.challenge"];
+      const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
+
+      if (mode === "subscribe" && token === expectedToken) {
+        return { valid: true, challenge };
+      }
+      return { valid: false };
+    },
+    normalizePayload: ({ body }) => {
+      const entry = body.entry?.[0];
+      const changes = entry?.changes?.[0];
+      const value = changes?.value;
+      const message = value?.messages?.[0];
+
+      return {
+        timestamp: new Date().toISOString(),
+        messageType: message?.type || "unknown",
+        from: message?.from,
+        text: message?.text?.body,
+        message,
+        statuses: value?.statuses,
+        metadata: value?.metadata,
+        contacts: value?.contacts,
+        raw: body,
       };
     },
   },

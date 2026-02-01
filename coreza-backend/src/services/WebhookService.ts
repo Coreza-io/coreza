@@ -53,7 +53,7 @@ export class WebhookService {
     userId: string,
     workflowId: string,
     nodeId: string,
-    provider: string = "generic"
+    provider: string = "generic",
   ): string {
     const baseUrl = process.env.NGROK_URL;
     return `${baseUrl}/webhooks/${provider}/incoming/${userId}/${workflowId}/${nodeId}`;
@@ -92,7 +92,7 @@ export class WebhookService {
       const { credentials } = await CredentialManager.getCredentials(
         userId,
         provider,
-        credentialId
+        credentialId,
       );
       if (!credentials) {
         return { success: false, message: "Credentials not found" };
@@ -125,7 +125,7 @@ export class WebhookService {
     } catch (error) {
       logger.error(
         { err: error, provider },
-        "Error registering webhook with provider"
+        "Error registering webhook with provider",
       );
       return {
         success: false,
@@ -156,7 +156,7 @@ export class WebhookService {
       const credentials = await CredentialManager.getCredentials(
         userId,
         provider,
-        credentialId
+        credentialId,
       );
       if (!credentials) {
         return { success: false, message: "Credentials not found" };
@@ -181,7 +181,7 @@ export class WebhookService {
     } catch (error) {
       logger.error(
         { err: error, provider },
-        "Error unregistering webhook from provider"
+        "Error unregistering webhook from provider",
       );
       return {
         success: false,
@@ -216,7 +216,7 @@ export class WebhookService {
 
     logger.info(
       { workflowId, nodeId, method, provider },
-      "Incoming webhook request"
+      "Incoming webhook request",
     );
 
     try {
@@ -243,13 +243,13 @@ export class WebhookService {
       }
 
       // Extract node configuration
-      const nodeConfig = node.data?.values || node.values || {};
+      const nodeConfig = node.values || {};
 
       // Apply filters (provider-aware)
       if (!this.applyFilters(nodeConfig, method, headers, body, provider)) {
         logger.info(
           { workflowId, nodeId, provider },
-          "Webhook filtered out by node configuration"
+          "Webhook filtered out by node configuration",
         );
         return;
       }
@@ -260,14 +260,14 @@ export class WebhookService {
         headers,
         body,
         query,
-        provider
+        provider,
       );
 
       if (workflow.is_active) {
         // MODE 2: Backend execution via BullMQ (Activated workflow)
         logger.info(
           { workflowId, nodeId, mode: "backend" },
-          "Webhook triggering backend execution for active workflow"
+          "Webhook triggering backend execution for active workflow",
         );
 
         // Create workflow run with snapshot of current workflow state
@@ -279,8 +279,12 @@ export class WebhookService {
             initiated_by: userId,
             nodes: workflow.nodes,
             edges: workflow.edges,
-            node_count: Array.isArray(workflow.nodes) ? workflow.nodes.length : 0,
-            edge_count: Array.isArray(workflow.edges) ? workflow.edges.length : 0,
+            node_count: Array.isArray(workflow.nodes)
+              ? workflow.nodes.length
+              : 0,
+            edge_count: Array.isArray(workflow.edges)
+              ? workflow.edges.length
+              : 0,
           })
           .select()
           .single();
@@ -305,13 +309,13 @@ export class WebhookService {
 
         logger.info(
           { workflowId, nodeId, runId: run.id },
-          "Workflow queued for backend execution"
+          "Workflow queued for backend execution",
         );
       } else {
         // MODE 1: Push to frontend via WebSocket (Manual run)
         logger.info(
           { workflowId, nodeId, mode: "frontend" },
-          "Webhook pushing to frontend for manual run"
+          "Webhook pushing to frontend for manual run",
         );
 
         const { getRedisQueue } = await import("../config/redis");
@@ -325,12 +329,12 @@ export class WebhookService {
             nodeId,
             payload: normalizedPayload,
             timestamp: new Date().toISOString(),
-          })
+          }),
         );
 
         logger.info(
           { workflowId, nodeId, userId },
-          "Webhook data pushed to frontend via WebSocket"
+          "Webhook data pushed to frontend via WebSocket",
         );
       }
     } catch (error) {
@@ -347,7 +351,7 @@ export class WebhookService {
     method: string,
     headers: Record<string, any>,
     body: any,
-    provider: string = "generic"
+    provider: string = "generic",
   ): boolean {
     const providerConfig = getProviderConfig(provider);
 
@@ -358,7 +362,7 @@ export class WebhookService {
         providerConfig,
         secret,
         headers,
-        body
+        body,
       );
       if (!isValid) {
         logger.warn({ provider }, "Invalid signature/token");
@@ -372,7 +376,7 @@ export class WebhookService {
       if (allowedMethod !== "ALL" && method.toUpperCase() !== allowedMethod) {
         logger.info(
           { method, allowed: allowedMethod },
-          "HTTP method not allowed"
+          "HTTP method not allowed",
         );
         return false;
       }
@@ -388,7 +392,7 @@ export class WebhookService {
       if (eventType && !nodeConfig.filterEvents.includes(eventType)) {
         logger.info(
           { eventType, allowed: nodeConfig.filterEvents },
-          "Event type not allowed"
+          "Event type not allowed",
         );
         return false;
       }
@@ -404,19 +408,19 @@ export class WebhookService {
         const updateType = body.message
           ? "message"
           : body.edited_message
-          ? "edited_message"
-          : body.channel_post
-          ? "channel_post"
-          : body.callback_query
-          ? "callback_query"
-          : body.inline_query
-          ? "inline_query"
-          : "unknown";
+            ? "edited_message"
+            : body.channel_post
+              ? "channel_post"
+              : body.callback_query
+                ? "callback_query"
+                : body.inline_query
+                  ? "inline_query"
+                  : "unknown";
 
         if (!nodeConfig.updateTypes.includes(updateType)) {
           logger.info(
             { updateType, allowed: nodeConfig.updateTypes },
-            "Update type not allowed"
+            "Update type not allowed",
           );
           return false;
         }
@@ -434,7 +438,7 @@ export class WebhookService {
     headers: Record<string, any>,
     body: any,
     query: Record<string, any>,
-    provider: string = "generic"
+    provider: string = "generic",
   ): any {
     const providerConfig = getProviderConfig(provider);
 
@@ -461,7 +465,7 @@ export class WebhookService {
    */
   async getStatus(
     workflowId: string,
-    nodeId: string
+    nodeId: string,
   ): Promise<{
     active: boolean;
     callbackUrl?: string;
@@ -488,7 +492,7 @@ export class WebhookService {
       const callbackUrl = this.generateCallbackUrl(
         workflow.user_id,
         workflowId,
-        nodeId
+        nodeId,
       );
 
       return {

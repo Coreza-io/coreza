@@ -184,7 +184,7 @@ const WorkflowEditorContent = () => {
   const projectId = searchParams.get("project"); // Get project ID from URL parameters
 
   const [workflowId, setWorkflowId] = useState<string | null>(
-    isNewWorkflow ? null : id || null
+    isNewWorkflow ? null : id || null,
   );
 
   // CRITICAL FIX: Sync workflowId with URL parameter changes
@@ -195,7 +195,7 @@ const WorkflowEditorContent = () => {
     }
   }, [id, isNewWorkflow, workflowId]);
   const [workflowName, setWorkflowName] = useState(
-    isNewWorkflow ? "My workflow 1" : "Loading..."
+    isNewWorkflow ? "My workflow 1" : "Loading...",
   );
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -205,17 +205,22 @@ const WorkflowEditorContent = () => {
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
-  const [statusFilter, setStatusFilter] = useState<ExecutionFilters["status"]>("all");
+  const [statusFilter, setStatusFilter] =
+    useState<ExecutionFilters["status"]>("all");
   const [dateFromInput, setDateFromInput] = useState<Date | null>(null);
   const [dateToInput, setDateToInput] = useState<Date | null>(null);
   const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
   const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
-  const [pendingSaveData, setPendingSaveData] = useState<{ currentCount: number; newCount: number } | null>(null);
-  
+  const [pendingSaveData, setPendingSaveData] = useState<{
+    currentCount: number;
+    newCount: number;
+  } | null>(null);
+
   // Workflow versioning hooks
-  const { createVersionBeforeSave, shouldBlockEmptySave } = useWorkflowVersioning();
+  const { createVersionBeforeSave, shouldBlockEmptySave } =
+    useWorkflowVersioning();
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
@@ -233,9 +238,9 @@ const WorkflowEditorContent = () => {
       dateFrom: dateFromFilter,
       dateTo: dateToFilter,
     }),
-    [statusFilter, dateFromFilter, dateToFilter]
+    [statusFilter, dateFromFilter, dateToFilter],
   );
-  
+
   // Execution history hook
   const {
     executions,
@@ -253,9 +258,9 @@ const WorkflowEditorContent = () => {
     error: executionsError,
   } = useExecutionHistory(workflowId, executionFilters);
 
-  const executionLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const executionLoadingTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const handleSelectExecution = useCallback(
     (execution: ExecutionRun) => {
@@ -270,10 +275,10 @@ const WorkflowEditorContent = () => {
 
       executionLoadingTimeoutRef.current = setTimeout(
         () => setLoadingExecution(false),
-        150
+        150,
       );
     },
-    [selectedExecution?.id, setSelectedExecution]
+    [selectedExecution?.id, setSelectedExecution],
   );
 
   useEffect(() => {
@@ -293,8 +298,12 @@ const WorkflowEditorContent = () => {
   }, []);
 
   // CRITICAL FIX: Initialize with empty state for existing workflows to prevent race condition
-  const [nodes, setNodes, applyNodeChanges] = useNodesState(isNewWorkflow ? initialNodes : []);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(isNewWorkflow ? initialEdges : []);
+  const [nodes, setNodes, applyNodeChanges] = useNodesState(
+    isNewWorkflow ? initialNodes : [],
+  );
+  const [edges, setEdges, onEdgesChange] = useEdgesState(
+    isNewWorkflow ? initialEdges : [],
+  );
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
@@ -332,7 +341,7 @@ const WorkflowEditorContent = () => {
           ...node.data,
           isExecuting: executingNode === node.id,
         },
-      }))
+      })),
     );
   }, [executingNode]);
 
@@ -340,7 +349,7 @@ const WorkflowEditorContent = () => {
     async (
       nodeId: string,
       fallbackSymbols: string[] = [],
-      updateNodeState: boolean = true
+      updateNodeState: boolean = true,
     ) => {
       if (!authUser) {
         return;
@@ -355,19 +364,19 @@ const WorkflowEditorContent = () => {
       if (symbols.length) {
         try {
           await apiClient.post(
-            '/alpaca-news/unsubscribe',
+            "/alpaca-news/unsubscribe",
             {
               user_id: authUser.id,
               symbols,
               node_id: nodeId,
             },
-            session?.access_token
+            session?.access_token,
           );
         } catch (error) {
           console.error(
             "Failed to unsubscribe Alpaca news for node",
             nodeId,
-            error
+            error,
           );
         }
       }
@@ -383,12 +392,12 @@ const WorkflowEditorContent = () => {
           prev.map((node) =>
             node.id === nodeId
               ? { ...node, data: { ...node.data, output: waitingOutput } }
-              : node
-          )
+              : node,
+          ),
         );
       }
     },
-    [authUser?.id, executionStore, setNodes]
+    [authUser?.id, executionStore, setNodes],
   );
 
   const onNodesChange = useCallback(
@@ -411,7 +420,7 @@ const WorkflowEditorContent = () => {
             cleanupAlpacaSubscription(
               id,
               parseSymbolsValue(candidateSymbols),
-              false
+              false,
             );
           }
         });
@@ -419,7 +428,7 @@ const WorkflowEditorContent = () => {
 
       applyNodeChanges(changes);
     },
-    [applyNodeChanges, cleanupAlpacaSubscription, executionStore, nodes]
+    [applyNodeChanges, cleanupAlpacaSubscription, executionStore, nodes],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -443,7 +452,7 @@ const WorkflowEditorContent = () => {
       const receivedAt =
         rawPayload.receivedAt || timestamp || new Date().toISOString();
       const symbols = parseSymbolsValue(
-        rawPayload.symbols ?? newsData.symbols ?? []
+        rawPayload.symbols ?? newsData.symbols ?? [],
       );
 
       const currentData = executionStore.getNodeData(nodeId) as any;
@@ -458,11 +467,11 @@ const WorkflowEditorContent = () => {
         prev.map((node) =>
           node.id === nodeId
             ? { ...node, data: { ...node.data, output: nextOutput } }
-            : node
-        )
+            : node,
+        ),
       );
     },
-    [executionStore, setNodes]
+    [executionStore, setNodes],
   );
 
   useEffect(() => {
@@ -472,7 +481,7 @@ const WorkflowEditorContent = () => {
 
   const removeEdge = useCallback(
     (edgeId: string) => setEdges((es) => es.filter((e) => e.id !== edgeId)),
-    [setEdges]
+    [setEdges],
   );
 
   // Handle "+" click on Loop node to add a new downstream node
@@ -498,16 +507,16 @@ const WorkflowEditorContent = () => {
       };
       setEdges((es) => [...es, newEdge]);
     },
-    [rf, setNodes, setEdges, removeEdge]
+    [rf, setNodes, setEdges, removeEdge],
   );
 
   const handleRemoveLoop = useCallback(
     (loopNodeId: string) => {
       setEdges((es) =>
-        es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId)
+        es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId),
       );
     },
-    [setEdges]
+    [setEdges],
   );
 
   useEffect(() => {
@@ -553,7 +562,7 @@ const WorkflowEditorContent = () => {
                   payload.data?.symbols,
                 receivedAt: message.timestamp,
               },
-              message.timestamp
+              message.timestamp,
             );
           }
         } catch (error) {
@@ -603,7 +612,7 @@ const WorkflowEditorContent = () => {
         />
       ),
     }),
-    [handleAddNode]
+    [handleAddNode],
   );
 
   const onConnect = useCallback(
@@ -618,7 +627,7 @@ const WorkflowEditorContent = () => {
         };
         return addEdge(newEdge, eds);
       }),
-    [removeEdge, setEdges]
+    [removeEdge, setEdges],
   );
 
   // Memoized WorkflowExecutor instance - only recreate when structure changes
@@ -667,7 +676,7 @@ const WorkflowEditorContent = () => {
       event.preventDefault();
       await workflowExecutor.executeNode(node.id, new Set());
     },
-    [workflowExecutor]
+    [workflowExecutor],
   );
 
   // Save workflow to Supabase with versioning and data loss protection
@@ -693,7 +702,8 @@ const WorkflowEditorContent = () => {
       if (shouldBlock) {
         toast({
           title: "Save Blocked",
-          description: "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
+          description:
+            "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
           variant: "destructive",
         });
         return;
@@ -702,15 +712,17 @@ const WorkflowEditorContent = () => {
       // Check for significant node reduction and confirm with user
       try {
         const { data: current } = await supabase
-          .from('workflows')
-          .select('nodes')
-          .eq('id', workflowId)
+          .from("workflows")
+          .select("nodes")
+          .eq("id", workflowId)
           .single();
 
         if (current) {
           const currentNodes = current.nodes as any[];
-          const currentCount = Array.isArray(currentNodes) ? currentNodes.length : 0;
-          
+          const currentCount = Array.isArray(currentNodes)
+            ? currentNodes.length
+            : 0;
+
           // Warn if reducing nodes by more than 50% from a substantial workflow
           if (currentCount > 5 && nodes.length < currentCount * 0.5) {
             setPendingSaveData({ currentCount, newCount: nodes.length });
@@ -719,13 +731,13 @@ const WorkflowEditorContent = () => {
           }
         }
       } catch (error) {
-        console.warn('Could not check current workflow state:', error);
+        console.warn("Could not check current workflow state:", error);
       }
 
       // Create version snapshot before overwriting existing workflow
       const versionCreated = await createVersionBeforeSave(workflowId);
       if (versionCreated) {
-        console.log('✅ Created version backup before save');
+        console.log("✅ Created version backup before save");
       }
     }
 
@@ -740,7 +752,7 @@ const WorkflowEditorContent = () => {
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,
       // ONLY keep the user's inputs + last output (or whatever you actually need)
-      values: n.data.values,
+      values: n.data.values ?? n.data.fieldState ?? {},
       executionMode: (n.data.definition as any)?.executionMode,
       streamingConfig: (n.data.definition as any)?.streamingConfig,
       // Save display name information for reference resolution
@@ -754,7 +766,7 @@ const WorkflowEditorContent = () => {
     const cleanEdges = edges
       .filter(
         (edge) =>
-          existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target)
+          existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target),
       )
       .map((edge) => {
         const cleanEdge: any = {
@@ -859,7 +871,7 @@ const WorkflowEditorContent = () => {
       const res = await apiClient.put(
         `/workflows/${workflowId}/schedule`,
         { is_active: newStatus },
-        session?.access_token
+        session?.access_token,
       );
 
       if (!res.ok) {
@@ -895,7 +907,7 @@ const WorkflowEditorContent = () => {
               nodeData?.fieldState?.symbols;
             cleanupAlpacaSubscription(
               node.id,
-              parseSymbolsValue(candidateSymbols)
+              parseSymbolsValue(candidateSymbols),
             );
           });
       }
@@ -936,7 +948,7 @@ const WorkflowEditorContent = () => {
 
       // Generate human-readable ID by counting existing nodes of same type
       const existingNodesOfType = nodes.filter(
-        (node) => node.type === nodeType
+        (node) => node.type === nodeType,
       );
       const nodeId =
         existingNodesOfType.length === 0
@@ -955,7 +967,7 @@ const WorkflowEditorContent = () => {
 
       setNodes((nds) => nds.concat(newNode));
     },
-    [setNodes, nodes]
+    [setNodes, nodes],
   );
 
   const onDrop = useCallback(
@@ -976,7 +988,7 @@ const WorkflowEditorContent = () => {
 
       createNode(type, position);
     },
-    [createNode]
+    [createNode],
   );
 
   // Handle node click from palette
@@ -1000,52 +1012,55 @@ const WorkflowEditorContent = () => {
       // Optionally hide palette after adding node
       setIsPaletteVisible(false);
     },
-    [createNode, rf]
+    [createNode, rf],
   );
 
   // Restore workflow from a version snapshot
-  const handleRestoreFromVersion = useCallback((restoredNodes: Node[], restoredEdges: Edge[]) => {
-    // Restore nodes with definitions from manifest
-    const nodesWithDefinitions = restoredNodes.map((node) => {
-      const nodeName = (node as any).name || node.type || node.id;
-      const definition =
-        node.data?.definition ||
-        nodeManifest[nodeName as keyof typeof nodeManifest];
+  const handleRestoreFromVersion = useCallback(
+    (restoredNodes: Node[], restoredEdges: Edge[]) => {
+      // Restore nodes with definitions from manifest
+      const nodesWithDefinitions = restoredNodes.map((node) => {
+        const nodeName = (node as any).name || node.type || node.id;
+        const definition =
+          node.data?.definition ||
+          nodeManifest[nodeName as keyof typeof nodeManifest];
 
-      return {
-        ...node,
-        type: nodeName,
+        return {
+          ...node,
+          type: nodeName,
+          data: {
+            ...node.data,
+            definition,
+            values: (node as any).values || node.data?.values || {},
+            displayName: node.data?.displayName || node.id,
+          },
+        };
+      });
+
+      // Restore edges
+      const edgesWithHandlers = restoredEdges.map((edge) => ({
+        ...edge,
+        type: edge.type || "removable",
         data: {
-          ...node.data,
-          definition,
-          values: (node as any).values || node.data?.values || {},
-          displayName: node.data?.displayName || node.id,
+          ...edge.data,
+          onRemoveEdge: () => removeEdge(edge.id),
         },
-      };
-    });
+      }));
 
-    // Restore edges
-    const edgesWithHandlers = restoredEdges.map((edge) => ({
-      ...edge,
-      type: edge.type || 'removable',
-      data: {
-        ...edge.data,
-        onRemoveEdge: () => removeEdge(edge.id),
-      },
-    }));
+      setNodes(nodesWithDefinitions);
+      setEdges(edgesWithHandlers);
 
-    setNodes(nodesWithDefinitions);
-    setEdges(edgesWithHandlers);
-
-    toast({
-      title: "Version Restored",
-      description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
-    });
-  }, [setNodes, setEdges, removeEdge, toast]);
+      toast({
+        title: "Version Restored",
+        description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
+      });
+    },
+    [setNodes, setEdges, removeEdge, toast],
+  );
 
   // Check for user authentication and load latest workflow
   const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(
-    null
+    null,
   );
 
   useEffect(() => {
@@ -1149,7 +1164,7 @@ const WorkflowEditorContent = () => {
                       displayName: node.id,
                     },
                   };
-                }
+                },
               );
               setNodes(restoredNodes);
 
@@ -1159,7 +1174,7 @@ const WorkflowEditorContent = () => {
                   (edge) => {
                     // Check if edge connects to a valid source handle
                     const sourceNode = restoredNodes.find(
-                      (n) => n.id === edge.source
+                      (n) => n.id === edge.source,
                     );
                     if (!sourceNode || !edge.sourceHandle) return true; // Keep non-handle edges
 
@@ -1176,7 +1191,7 @@ const WorkflowEditorContent = () => {
                           c.outputName ||
                           c.caseName ||
                           c.caseValue ||
-                          `case${cases.indexOf(c) + 1}`
+                          `case${cases.indexOf(c) + 1}`,
                       );
                       const enableFallbackToggle =
                         sourceNode.data?.values?.enableFallback ??
@@ -1184,26 +1199,26 @@ const WorkflowEditorContent = () => {
                       const fallbackEnabled =
                         typeof enableFallbackToggle === "boolean"
                           ? enableFallbackToggle
-                          : (sourceNode.data?.definition as any)?.fields?.find(
-                                (f: any) => f.key === "enableFallback"
-                              )?.default ?? true;
+                          : ((sourceNode.data?.definition as any)?.fields?.find(
+                              (f: any) => f.key === "enableFallback",
+                            )?.default ?? true);
 
                       if (fallbackEnabled) {
                         validHandles.push(
-                          sourceNode.data?.values?.defaultCase || "fallback"
+                          sourceNode.data?.values?.defaultCase || "fallback",
                         ); // Add default handle
                       }
 
                       if (!validHandles.includes(edge.sourceHandle)) {
                         console.log(
-                          `🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`
+                          `🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`,
                         );
                         return false; // Remove invalid edge
                       }
                     }
 
                     return true; // Keep valid edge
-                  }
+                  },
                 );
 
                 setEdges(
@@ -1214,7 +1229,7 @@ const WorkflowEditorContent = () => {
                       ...(e.data || {}),
                       onRemoveEdge: () => removeEdge(e.id),
                     },
-                  }))
+                  })),
                 );
               }
             } else if (data.edges && Array.isArray(data.edges)) {
@@ -1227,7 +1242,7 @@ const WorkflowEditorContent = () => {
                     ...(e.data || {}),
                     onRemoveEdge: () => removeEdge(e.id),
                   },
-                }))
+                })),
               );
             }
             setHasLoadedWorkflowId(workflowId);
@@ -1322,7 +1337,8 @@ const WorkflowEditorContent = () => {
         const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
         const selectedEdges = edges.filter(
           (edge) =>
-            selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+            selectedNodeIds.has(edge.source) &&
+            selectedNodeIds.has(edge.target),
         );
 
         const nodesCopy = selectedNodes.map((node) => ({
@@ -1351,7 +1367,8 @@ const WorkflowEditorContent = () => {
         const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
         const selectedEdges = edges.filter(
           (edge) =>
-            selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+            selectedNodeIds.has(edge.source) &&
+            selectedNodeIds.has(edge.target),
         );
 
         const nodesCopy = selectedNodes.map((node) => ({
@@ -1378,8 +1395,8 @@ const WorkflowEditorContent = () => {
             (edge) =>
               !edge.selected &&
               !selectedNodeIdArray.includes(edge.source) &&
-              !selectedNodeIdArray.includes(edge.target)
-          )
+              !selectedNodeIdArray.includes(edge.target),
+          ),
         );
 
         toast({ description: "Selection cut" });
@@ -1404,27 +1421,27 @@ const WorkflowEditorContent = () => {
         });
 
         const minX = Math.min(
-          ...copiedNodes.map((node) => node.position?.x ?? 0)
+          ...copiedNodes.map((node) => node.position?.x ?? 0),
         );
         const minY = Math.min(
-          ...copiedNodes.map((node) => node.position?.y ?? 0)
+          ...copiedNodes.map((node) => node.position?.y ?? 0),
         );
         const nodeIdMap: Record<string, string> = {};
         const timestamp = Date.now();
         const existingNodeIds = new Set(nodes.map((node) => node.id));
         const existingEdgeIds = new Set(edges.map((edge) => edge.id));
         const existingDisplayNames = new Set(
-          nodes.map((n) => n.data?.displayName || n.id)
+          nodes.map((n) => n.data?.displayName || n.id),
         );
 
         const newNodes = copiedNodes.map((node) => {
           const nodeType = node.type || "default";
 
           const existingOfType = nodes.filter(
-            (n) => n.type === nodeType
+            (n) => n.type === nodeType,
           ).length;
           const alreadyAddedOfType = Object.values(nodeIdMap).filter(
-            (id) => id === nodeType || id.startsWith(nodeType)
+            (id) => id === nodeType || id.startsWith(nodeType),
           ).length;
 
           let count = existingOfType + alreadyAddedOfType;
@@ -1541,8 +1558,8 @@ const WorkflowEditorContent = () => {
             (edge) =>
               !edge.selected &&
               !selectedNodeIds.includes(edge.source) &&
-              !selectedNodeIds.includes(edge.target)
-          )
+              !selectedNodeIds.includes(edge.target),
+          ),
         );
       }
       if (event.key === "Backspace") {
@@ -1607,11 +1624,16 @@ const WorkflowEditorContent = () => {
               placeholder="Workflow name"
             />
           </div>
-          
+
           {/* Editor/Executions/Restore Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "editor" | "executions")}>
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as "editor" | "executions")}
+          >
             <TabsList className="h-8">
-              <TabsTrigger value="editor" className="text-xs px-3 h-7">Editor</TabsTrigger>
+              <TabsTrigger value="editor" className="text-xs px-3 h-7">
+                Editor
+              </TabsTrigger>
               <TabsTrigger value="executions" className="text-xs px-3 h-7">
                 Executions
                 {executions.length > 0 && (
@@ -1694,7 +1716,7 @@ const WorkflowEditorContent = () => {
               fitView
               className={cn(
                 "workflow-canvas",
-                resolvedTheme === "dark" && "dark"
+                resolvedTheme === "dark" && "dark",
               )}
               style={{ backgroundColor: "hsl(var(--trading-grid))" }}
             >
@@ -1747,7 +1769,7 @@ const WorkflowEditorContent = () => {
             error={executionsError}
             onRetry={refreshExecutions}
           />
-          
+
           {selectedExecution ? (
             <ExecutionDetailView
               execution={selectedExecution}
@@ -1761,7 +1783,9 @@ const WorkflowEditorContent = () => {
             <div className="flex-1 flex items-center justify-center text-muted-foreground bg-trading-grid">
               <div className="text-center">
                 <p className="text-lg">Select an execution to view details</p>
-                <p className="text-sm mt-1">Click on any execution from the list on the left</p>
+                <p className="text-sm mt-1">
+                  Click on any execution from the list on the left
+                </p>
               </div>
             </div>
           )}
@@ -1785,14 +1809,18 @@ const WorkflowEditorContent = () => {
       )}
 
       {/* Restore Confirmation Dialog */}
-      <AlertDialog open={showRestoreConfirm} onOpenChange={setShowRestoreConfirm}>
+      <AlertDialog
+        open={showRestoreConfirm}
+        onOpenChange={setShowRestoreConfirm}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Restore workflow from snapshot?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will replace your current workflow with {(selectedExecution?.nodes as any[])?.length || 0} nodes 
-              and {(selectedExecution?.edges as any[])?.length || 0} edges from the execution snapshot. 
-              Your current unsaved changes will be lost.
+              This will replace your current workflow with{" "}
+              {(selectedExecution?.nodes as any[])?.length || 0} nodes and{" "}
+              {(selectedExecution?.edges as any[])?.length || 0} edges from the
+              execution snapshot. Your current unsaved changes will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1802,7 +1830,7 @@ const WorkflowEditorContent = () => {
                 if (selectedExecution?.nodes && selectedExecution?.edges) {
                   handleRestoreFromVersion(
                     selectedExecution.nodes as Node[],
-                    selectedExecution.edges as Edge[]
+                    selectedExecution.edges as Edge[],
                   );
                   toast({
                     title: "Workflow restored",
@@ -1819,19 +1847,24 @@ const WorkflowEditorContent = () => {
       </AlertDialog>
 
       {/* Save Confirmation Dialog for Significant Changes */}
-      <AlertDialog open={showSaveConfirmDialog} onOpenChange={setShowSaveConfirmDialog}>
+      <AlertDialog
+        open={showSaveConfirmDialog}
+        onOpenChange={setShowSaveConfirmDialog}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Significant Changes</AlertDialogTitle>
             <AlertDialogDescription>
-              This save will significantly reduce the number of nodes in your workflow 
-              from {pendingSaveData?.currentCount || 0} to {pendingSaveData?.newCount || 0} nodes.
-              A backup version will be created automatically.
-              Are you sure you want to continue?
+              This save will significantly reduce the number of nodes in your
+              workflow from {pendingSaveData?.currentCount || 0} to{" "}
+              {pendingSaveData?.newCount || 0} nodes. A backup version will be
+              created automatically. Are you sure you want to continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingSaveData(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setPendingSaveData(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 setPendingSaveData(null);

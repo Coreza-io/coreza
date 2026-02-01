@@ -7,14 +7,10 @@
   "color": "text-purple-500",
   "size": {
     "width": 360,
-    "height": 340
+    "height": 400
   },
   "handles": [
-    {
-      "type": "source",
-      "position": "right",
-      "id": "output"
-    }
+    { "type": "source", "position": "right", "id": "output" }
   ],
   "executionMode": "webhook_listening",
   "fields": [
@@ -29,7 +25,6 @@
       "label": "HTTP Method",
       "type": "select",
       "options": [
-        { "label": "All Methods", "value": "ALL" },
         { "label": "GET", "value": "GET" },
         { "label": "POST", "value": "POST" },
         { "label": "PUT", "value": "PUT" },
@@ -37,15 +32,71 @@
         { "label": "DELETE", "value": "DELETE" },
         { "label": "HEAD", "value": "HEAD" }
       ],
-      "default": "ALL",
+      "default": "POST",
       "required": false
     },
     {
-      "key": "secret",
-      "label": "Webhook Secret (Optional)",
-      "type": "password",
-      "placeholder": "For HMAC signature verification",
+      "key": "authentication",
+      "label": "Authentication",
+      "type": "select",
+      "options": [
+        { "label": "None", "value": "none" },
+        { "label": "Basic Auth", "value": "basicAuth" },
+        { "label": "Header Auth", "value": "headerAuth" },
+        { "label": "JWT Auth", "value": "jwtAuth" }
+      ],
+      "default": "none",
       "required": false
+    },
+    {
+      "key": "authUsername",
+      "label": "Username",
+      "type": "text",
+      "placeholder": "Enter username",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["basicAuth"] }
+      }
+    },
+    {
+      "key": "authPassword",
+      "label": "Password",
+      "type": "password",
+      "placeholder": "Enter password",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["basicAuth"] }
+      }
+    },
+    {
+      "key": "authHeaderName",
+      "label": "Header Name",
+      "type": "text",
+      "placeholder": "X-API-Key",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["headerAuth"] }
+      }
+    },
+    {
+      "key": "authHeaderValue",
+      "label": "Header Value",
+      "type": "password",
+      "placeholder": "Enter header value",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["headerAuth"] }
+      }
+    },
+    {
+      "key": "authJwtSecret",
+      "label": "JWT Secret",
+      "type": "password",
+      "placeholder": "Enter JWT secret for verification",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["jwtAuth"] }
+      }
     },
     {
       "key": "filterEvents",

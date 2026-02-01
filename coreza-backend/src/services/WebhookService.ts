@@ -382,22 +382,6 @@ export class WebhookService {
       }
     }
 
-    // Filter by event type header if configured
-    if (
-      nodeConfig.filterEvents &&
-      Array.isArray(nodeConfig.filterEvents) &&
-      nodeConfig.filterEvents.length > 0
-    ) {
-      const eventType = headers["x-event-type"] || headers["x-github-event"];
-      if (eventType && !nodeConfig.filterEvents.includes(eventType)) {
-        logger.info(
-          { eventType, allowed: nodeConfig.filterEvents },
-          "Event type not allowed",
-        );
-        return false;
-      }
-    }
-
     // Filter by Telegram update types if configured
     if (
       provider === "telegram" &&

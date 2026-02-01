@@ -97,14 +97,6 @@
       "displayOptions": {
         "show": { "authentication": ["jwtAuth"] }
       }
-    },
-    {
-      "key": "filterEvents",
-      "label": "Filter Event Types",
-      "type": "tags",
-      "placeholder": "e.g., push, pull_request",
-      "required": false,
-      "default": []
     }
   ],
   "output": {

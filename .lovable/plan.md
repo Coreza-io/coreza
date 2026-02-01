@@ -1,202 +1,233 @@
 
 
-# Plan: Consolidate WhatsApp Webhooks into Unified Webhook System
+# Plan: Update WebhookTrigger with Authentication Options
 
-## Current State Analysis
+## Overview
 
-### Two Separate Webhook Systems
-
-```text
-1. webhook.ts + WebhookService + webhookProviders.ts
-   └── Handles: generic, telegram
-   └── Purpose: Trigger workflows via webhooks
-   └── Config-driven via webhookProviders.ts
-
-2. whatsappWebhook.ts (standalone)
-   └── Handles: WhatsApp Cloud API
-   └── Purpose: Verification + message handling (auto-reply)
-   └── Uses deleted CommunicationService (broken!)
-```
-
-### Why Consolidate?
-
-- WhatsApp webhooks should trigger workflows just like Telegram
-- Avoids duplicate code for webhook handling
-- Single config-driven system for all providers
-- Fixes the broken import error
+Simplify the WebhookTrigger node update to focus only on adding authentication options, matching n8n's authentication modes.
 
 ---
 
-## Proposed Architecture
+## Fields to Keep/Add
 
-Add WhatsApp as a provider in `webhookProviders.ts` and remove the separate route file.
+| Field | Status | Description |
+|-------|--------|-------------|
+| webhookUrl | Keep | Display webhook URL |
+| httpMethod | Keep | HTTP method selector (change default to POST) |
+| filterEvents | Keep | Event type filtering |
+| authentication | **Add** | None / Basic Auth / Header Auth / JWT Auth |
+| authUsername | **Add** | Conditional for Basic Auth |
+| authPassword | **Add** | Conditional for Basic Auth |
+| authHeaderName | **Add** | Conditional for Header Auth |
+| authHeaderValue | **Add** | Conditional for Header Auth |
+| authJwtSecret | **Add** | Conditional for JWT Auth |
 
-```text
-After Consolidation:
+## Fields to Remove
 
-webhook.ts + WebhookService + webhookProviders.ts
-├── generic   (existing)
-├── telegram  (existing)  
-└── whatsapp  (NEW - add provider config)
-
-Routes:
-├── GET  /webhooks/whatsapp/verify (verification challenge)
-├── POST /webhooks/whatsapp/incoming/:userId/:workflowId/:nodeId (events)
-```
+- ~~path~~ (removed per request)
+- ~~respondMode~~ (removed per request)
+- ~~secret~~ (removed per request)
+- ~~responseHeaders~~ (removed per request)
 
 ---
 
-## Implementation Steps
+## Updated WebhookTrigger.json
 
-### Step 1: Add WhatsApp Provider to webhookProviders.ts
-
-**File:** `coreza-backend/src/config/webhookProviders.ts`
-
-```typescript
-whatsapp: {
-  id: "whatsapp",
-  name: "WhatsApp Cloud API",
-  incomingPath: "whatsapp",
-  
-  verification: {
-    method: "direct",
-    headerName: "x-hub-signature-256", // Optional HMAC verification
+```json
+{
+  "name": "WebhookTrigger",
+  "node_type": "trigger",
+  "category": "webhook",
+  "icon": "webhook",
+  "description": "Receive HTTP webhooks from external services",
+  "color": "text-purple-500",
+  "size": {
+    "width": 360,
+    "height": 400
   },
-  
-  // WhatsApp requires a separate verification endpoint (hub.challenge)
-  verifyChallenge: (query: Record<string, any>) => {
-    const mode = query["hub.mode"];
-    const token = query["hub.verify_token"];
-    const challenge = query["hub.challenge"];
-    const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN;
-    
-    if (mode === "subscribe" && token === expectedToken) {
-      return { valid: true, challenge };
+  "handles": [
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "executionMode": "webhook_listening",
+  "fields": [
+    {
+      "key": "webhookUrl",
+      "label": "Webhook URL",
+      "type": "webhookUrl",
+      "required": false
+    },
+    {
+      "key": "httpMethod",
+      "label": "HTTP Method",
+      "type": "select",
+      "options": [
+        { "label": "GET", "value": "GET" },
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" },
+        { "label": "HEAD", "value": "HEAD" }
+      ],
+      "default": "POST",
+      "required": false
+    },
+    {
+      "key": "authentication",
+      "label": "Authentication",
+      "type": "select",
+      "options": [
+        { "label": "None", "value": "none" },
+        { "label": "Basic Auth", "value": "basicAuth" },
+        { "label": "Header Auth", "value": "headerAuth" },
+        { "label": "JWT Auth", "value": "jwtAuth" }
+      ],
+      "default": "none",
+      "required": false
+    },
+    {
+      "key": "authUsername",
+      "label": "Username",
+      "type": "text",
+      "placeholder": "Enter username",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["basicAuth"] }
+      }
+    },
+    {
+      "key": "authPassword",
+      "label": "Password",
+      "type": "password",
+      "placeholder": "Enter password",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["basicAuth"] }
+      }
+    },
+    {
+      "key": "authHeaderName",
+      "label": "Header Name",
+      "type": "text",
+      "placeholder": "X-API-Key",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["headerAuth"] }
+      }
+    },
+    {
+      "key": "authHeaderValue",
+      "label": "Header Value",
+      "type": "password",
+      "placeholder": "Enter header value",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["headerAuth"] }
+      }
+    },
+    {
+      "key": "authJwtSecret",
+      "label": "JWT Secret",
+      "type": "password",
+      "placeholder": "Enter JWT secret for verification",
+      "required": true,
+      "displayOptions": {
+        "show": { "authentication": ["jwtAuth"] }
+      }
+    },
+    {
+      "key": "filterEvents",
+      "label": "Filter Event Types",
+      "type": "tags",
+      "placeholder": "e.g., push, pull_request",
+      "required": false,
+      "default": []
     }
-    return { valid: false };
-  },
-  
-  normalizePayload: ({ body }) => {
-    const entry = body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const message = value?.messages?.[0];
-    
-    return {
-      timestamp: new Date().toISOString(),
-      messageType: message?.type || "unknown",
-      from: message?.from,
-      text: message?.text?.body,
-      message,
-      status: value?.statuses?.[0],
-      metadata: value?.metadata,
-      raw: body,
-    };
-  },
+  ],
+  "output": {
+    "webhookPayload": {
+      "timestamp": "ISO 8601 timestamp",
+      "method": "HTTP method",
+      "headers": "Request headers (sensitive ones redacted)",
+      "body": "Request body",
+      "query": "Query parameters",
+      "raw": "Complete raw request data"
+    }
+  }
 }
 ```
 
-### Step 2: Add Verification Endpoint to webhook.ts
+---
+
+## Backend Authentication Handler
+
+Add authentication validation to webhook routes:
 
 **File:** `coreza-backend/src/routes/webhook.ts`
 
-Add a new route for WhatsApp verification (hub.challenge):
-
 ```typescript
-/**
- * WhatsApp webhook verification (GET)
- * GET /webhooks/whatsapp/verify
- * NO AUTH - WhatsApp calls this to verify endpoint
- */
-router.get("/:provider/verify", async (req, res) => {
-  const { provider } = req.params;
-  const providerConfig = getProviderConfig(provider);
-  
-  if (!providerConfig?.verifyChallenge) {
-    return res.status(404).json({ error: "Provider does not support verification" });
+function validateWebhookAuth(
+  authMode: string,
+  authConfig: Record<string, string>,
+  headers: Record<string, string>
+): { valid: boolean; error?: string } {
+  switch (authMode) {
+    case "none":
+      return { valid: true };
+      
+    case "basicAuth": {
+      const authHeader = headers["authorization"];
+      if (!authHeader?.startsWith("Basic ")) {
+        return { valid: false, error: "Missing Basic Auth header" };
+      }
+      const encoded = authHeader.slice(6);
+      const decoded = Buffer.from(encoded, "base64").toString();
+      const [username, password] = decoded.split(":");
+      if (username === authConfig.authUsername && 
+          password === authConfig.authPassword) {
+        return { valid: true };
+      }
+      return { valid: false, error: "Invalid credentials" };
+    }
+    
+    case "headerAuth": {
+      const headerValue = headers[authConfig.authHeaderName?.toLowerCase()];
+      if (headerValue === authConfig.authHeaderValue) {
+        return { valid: true };
+      }
+      return { valid: false, error: "Invalid header authentication" };
+    }
+    
+    case "jwtAuth": {
+      const authHeader = headers["authorization"];
+      if (!authHeader?.startsWith("Bearer ")) {
+        return { valid: false, error: "Missing Bearer token" };
+      }
+      // JWT verification logic using authConfig.authJwtSecret
+      return { valid: true };
+    }
+    
+    default:
+      return { valid: true };
   }
-  
-  const result = providerConfig.verifyChallenge(req.query);
-  
-  if (result.valid) {
-    res.status(200).send(result.challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
+}
 ```
 
-### Step 3: Delete whatsappWebhook.ts
+---
 
-Since all webhook functionality is now handled by the unified system:
+## Files to Modify
 
-- Delete `coreza-backend/src/routes/whatsappWebhook.ts`
-- Remove import from `index.ts`
-
-### Step 4: Update index.ts
-
-**File:** `coreza-backend/src/index.ts`
-
-Remove the separate WhatsApp webhook route:
-
-```typescript
-// Remove:
-import whatsappWebhookRoutes from "./routes/whatsappWebhook";
-app.use("/whatsapp", whatsappWebhookRoutes);
-
-// The unified /webhooks route handles everything
-```
+| File | Change |
+|------|--------|
+| `src/nodes/WebhookTrigger.json` | Update fields with authentication options |
+| `coreza-backend/src/routes/webhook.ts` | Add `validateWebhookAuth` helper function |
 
 ---
 
-## Files Summary
+## Summary
 
-| Action | File |
-|--------|------|
-| Modify | `coreza-backend/src/config/webhookProviders.ts` (add WhatsApp provider) |
-| Modify | `coreza-backend/src/routes/webhook.ts` (add verification endpoint) |
-| Modify | `coreza-backend/src/index.ts` (remove whatsappWebhook import) |
-| Delete | `coreza-backend/src/routes/whatsappWebhook.ts` |
-
----
-
-## URL Changes
-
-| Before | After |
-|--------|-------|
-| `GET /whatsapp/webhook` | `GET /webhooks/whatsapp/verify` |
-| `POST /whatsapp/webhook` | `POST /webhooks/whatsapp/incoming/:userId/:workflowId/:nodeId` |
-
-WhatsApp webhook URL in Meta Dashboard would need to be updated to the new format.
-
----
-
-## Benefits
-
-1. **Single webhook system** for all providers (generic, telegram, whatsapp)
-2. **Config-driven** - Add new providers by adding config only
-3. **Fixes broken import** - No more dependency on deleted CommunicationService
-4. **WhatsApp can trigger workflows** - Same as Telegram
-5. **Consistent patterns** - All webhooks use WebhookService
-
----
-
-## Technical Notes
-
-### WhatsApp Verification Flow
-
-WhatsApp requires a special verification endpoint that:
-1. Receives `hub.mode`, `hub.verify_token`, `hub.challenge` as query params
-2. Validates the token matches your configured token
-3. Returns the `challenge` value as plain text (not JSON)
-
-This is handled by the new `verifyChallenge` method in the provider config.
-
-### Message Auto-Reply
-
-The current auto-reply functionality in `whatsappWebhook.ts` will be removed. Auto-replies should be handled by:
-1. Creating a WhatsApp Trigger node in a workflow
-2. Connecting it to a Telegram/WhatsApp send node
-
-This is the proper workflow-based approach consistent with the architecture.
+- Adds 4 authentication modes: None, Basic Auth, Header Auth, JWT Auth
+- Conditional fields appear based on selected authentication type
+- Backend validates incoming webhook requests based on node configuration
+- Removes path, respondMode, secret, and responseHeaders (can add later if needed)
+- Changes default HTTP method from "ALL" to "POST"
 

@@ -332,7 +332,7 @@ export function useNodeExecution({
               workflow_id: workflowId,
               node_id: nodeId,
               credential_id: fieldState.credential_id,
-              update_types: fieldState.updateTypes || fieldState.filterEvents,
+              update_types: fieldState.updateTypes,
               secret_token: fieldState.secretToken || fieldState.secret,
             },
             session?.access_token

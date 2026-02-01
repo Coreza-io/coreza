@@ -14,32 +14,39 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import express from 'express';
-import { requireAuth } from '../middleware/jwtAuth';
-import { webhookService } from '../services/WebhookService';
-import { getProviderConfig } from '../config/webhookProviders';
-import { createLogger } from '../utils/logger';
+import express from "express";
+import { requireAuth } from "../middleware/jwtAuth";
+import { webhookService } from "../services/WebhookService";
+import { getProviderConfig } from "../config/webhookProviders";
+import { createLogger } from "../utils/logger";
 
 const router = express.Router();
-const logger = createLogger('webhook-routes');
+const logger = createLogger("webhook-routes");
 
 /**
  * Register webhook - generates callback URL and optionally registers with external provider
  * REQUIRES AUTH
  */
-router.post('/register', requireAuth, async (req, res) => {
+router.post("/register", requireAuth, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { provider = 'generic', workflow_id, node_id, credential_id, update_types, secret_token } = req.body;
+    const {
+      provider = "generic",
+      workflow_id,
+      node_id,
+      credential_id,
+      update_types,
+      secret_token,
+    } = req.body;
 
     if (!workflow_id || !node_id) {
       return res.status(400).json({
         success: false,
-        error: 'workflow_id and node_id are required',
+        error: "workflow_id and node_id are required",
       });
     }
 
@@ -47,12 +54,12 @@ router.post('/register', requireAuth, async (req, res) => {
       userId,
       workflow_id,
       node_id,
-      provider
+      provider,
     );
 
     // Register with external provider if applicable
     let providerRegistration = null;
-    if (provider !== 'generic' && credential_id) {
+    if (provider !== "generic" && credential_id) {
       providerRegistration = await webhookService.registerWithProvider({
         provider,
         userId,
@@ -65,21 +72,23 @@ router.post('/register', requireAuth, async (req, res) => {
 
     logger.info(
       { userId, workflowId: workflow_id, nodeId: node_id, provider },
-      'Webhook registered'
+      "Webhook registered",
     );
 
     res.json({
       success: true,
       callback_url: callbackUrl,
-      status: 'listening',
-      message: providerRegistration?.message || 'Webhook endpoint is ready to receive events',
+      status: "listening",
+      message:
+        providerRegistration?.message ||
+        "Webhook endpoint is ready to receive events",
       provider_registered: providerRegistration?.success,
     });
   } catch (error) {
-    logger.error({ err: error }, 'Error registering webhook');
+    logger.error({ err: error }, "Error registering webhook");
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
@@ -89,27 +98,31 @@ router.post('/register', requireAuth, async (req, res) => {
  * NO AUTH - External services call this endpoint
  * GET /webhooks/:provider/verify
  */
-router.get('/:provider/verify', async (req, res) => {
+router.get("/:provider/verify", async (req, res) => {
   const { provider } = req.params;
 
   try {
     const providerConfig = getProviderConfig(provider);
 
     if (!providerConfig?.verifyChallenge) {
-      return res.status(404).json({ error: 'Provider does not support verification' });
+      return res
+        .status(404)
+        .json({ error: "Provider does not support verification" });
     }
 
-    const result = providerConfig.verifyChallenge(req.query as Record<string, any>);
+    const result = providerConfig.verifyChallenge(
+      req.query as Record<string, any>,
+    );
 
     if (result.valid && result.challenge) {
-      logger.info({ provider }, 'Webhook verification successful');
+      logger.info({ provider }, "Webhook verification successful");
       res.status(200).send(result.challenge);
     } else {
-      logger.warn({ provider }, 'Webhook verification failed');
+      logger.warn({ provider }, "Webhook verification failed");
       res.sendStatus(403);
     }
   } catch (error) {
-    logger.error({ err: error, provider }, 'Error in webhook verification');
+    logger.error({ err: error, provider }, "Error in webhook verification");
     res.sendStatus(500);
   }
 });
@@ -118,11 +131,11 @@ router.get('/:provider/verify', async (req, res) => {
  * Unregister webhook from external provider
  * REQUIRES AUTH
  */
-router.post('/unregister', requireAuth, async (req, res) => {
+router.post("/unregister", requireAuth, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const { provider, credential_id } = req.body;
@@ -130,7 +143,7 @@ router.post('/unregister', requireAuth, async (req, res) => {
     if (!provider || !credential_id) {
       return res.status(400).json({
         success: false,
-        error: 'provider and credential_id are required',
+        error: "provider and credential_id are required",
       });
     }
 
@@ -140,17 +153,14 @@ router.post('/unregister', requireAuth, async (req, res) => {
       credentialId: credential_id,
     });
 
-    logger.info(
-      { userId, provider },
-      'Webhook unregistered'
-    );
+    logger.info({ userId, provider }, "Webhook unregistered");
 
     res.json(result);
   } catch (error) {
-    logger.error({ err: error }, 'Error unregistering webhook');
+    logger.error({ err: error }, "Error unregistering webhook");
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
@@ -159,63 +169,40 @@ router.post('/unregister', requireAuth, async (req, res) => {
  * Receive incoming webhook events - provider-specific route
  * NO AUTH - External services call this endpoint
  */
-router.all('/:provider/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
-  const { provider, userId, workflowId, nodeId } = req.params;
+router.all(
+  "/:provider/incoming/:userId/:workflowId/:nodeId",
+  async (req, res) => {
+    const { provider, userId, workflowId, nodeId } = req.params;
 
-  try {
-    // Process webhook asynchronously
-    // We return 200 immediately to prevent external service retries
-    webhookService.handleIncoming({
-      provider,
-      userId,
-      workflowId,
-      nodeId,
-      method: req.method,
-      headers: req.headers as Record<string, any>,
-      body: req.body,
-      query: req.query as Record<string, any>,
-    });
+    try {
+      // Process webhook asynchronously
+      // We return 200 immediately to prevent external service retries
+      webhookService.handleIncoming({
+        provider,
+        userId,
+        workflowId,
+        nodeId,
+        method: req.method,
+        headers: req.headers as Record<string, any>,
+        body: req.body,
+        query: req.query as Record<string, any>,
+      });
 
-    // Always return 200 OK to external services
-    res.status(200).json({ received: true });
-  } catch (error) {
-    logger.error({ err: error, provider }, 'Error in webhook endpoint');
-    // Still return 200 to prevent retries
-    res.status(200).json({ received: true });
-  }
-});
-
-/**
- * Receive incoming webhook events - generic route (backward compatibility)
- * NO AUTH - External services call this endpoint
- */
-router.all('/incoming/:userId/:workflowId/:nodeId', async (req, res) => {
-  const { userId, workflowId, nodeId } = req.params;
-
-  try {
-    webhookService.handleIncoming({
-      provider: 'generic',
-      userId,
-      workflowId,
-      nodeId,
-      method: req.method,
-      headers: req.headers as Record<string, any>,
-      body: req.body,
-      query: req.query as Record<string, any>,
-    });
-
-    res.status(200).json({ received: true });
-  } catch (error) {
-    logger.error({ err: error }, 'Error in webhook endpoint');
-    res.status(200).json({ received: true });
-  }
-});
+      // Always return 200 OK to external services
+      res.status(200).json({ received: true });
+    } catch (error) {
+      logger.error({ err: error, provider }, "Error in webhook endpoint");
+      // Still return 200 to prevent retries
+      res.status(200).json({ received: true });
+    }
+  },
+);
 
 /**
  * Get webhook status
  * REQUIRES AUTH
  */
-router.get('/status/:workflowId/:nodeId', requireAuth, async (req, res) => {
+router.get("/status/:workflowId/:nodeId", requireAuth, async (req, res) => {
   try {
     const { workflowId, nodeId } = req.params;
 
@@ -223,10 +210,10 @@ router.get('/status/:workflowId/:nodeId', requireAuth, async (req, res) => {
 
     res.json(status);
   } catch (error) {
-    logger.error({ err: error }, 'Error getting webhook status');
+    logger.error({ err: error }, "Error getting webhook status");
     res.status(500).json({
       active: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });

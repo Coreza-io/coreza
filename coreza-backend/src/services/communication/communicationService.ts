@@ -27,7 +27,7 @@ import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 export class CommunicationService implements ICommunicationService {
   constructor(
     public readonly serviceKey: string,
-    public readonly config: CommunicationConfig
+    public readonly config: CommunicationConfig,
   ) {}
 
   private normalizeIds(input: CommunicationInput): {
@@ -50,24 +50,30 @@ export class CommunicationService implements ICommunicationService {
       }
 
       if (!userId || !credentialId) {
-        return { success: false, error: "user_id and credential_id are required" };
+        return {
+          success: false,
+          error: "user_id and credential_id are required",
+        };
       }
 
       // Get credentials
       const result = await CredentialManager.getCredentials(
         userId,
         this.serviceKey,
-        credentialId
+        credentialId,
       );
 
       if (!result.credentials) {
-        return { success: false, error: `${this.serviceKey} credentials not found` };
+        return {
+          success: false,
+          error: `${this.serviceKey} credentials not found`,
+        };
       }
 
       // Resolve credentials (handle OAuth refresh if needed)
       const creds = await this.resolveCredentials(result.credentials, input);
 
-      // Check for custom execute handler (for complex services like Gmail)
+      // Check for custom execute handler (for complex services/SDK like Gmail)
       if (this.config.customExecute) {
         const data = await this.config.customExecute(operation, input, creds);
         return { success: true, data };
@@ -96,7 +102,8 @@ export class CommunicationService implements ICommunicationService {
           ? this.config.baseUrl(creds, input)
           : this.config.baseUrl;
 
-      const path = typeof op.path === "function" ? op.path(input, creds) : op.path;
+      const path =
+        typeof op.path === "function" ? op.path(input, creds) : op.path;
       const url = `${baseUrl}${path}`;
 
       const headers = await this.config.makeAuthHeaders(creds);
@@ -115,10 +122,13 @@ export class CommunicationService implements ICommunicationService {
         axiosConfig.data = body;
       }
 
-      console.log(`📨 [CommunicationService] ${this.serviceKey}.${operation}:`, {
-        url,
-        method: op.method,
-      });
+      console.log(
+        `📨 [CommunicationService] ${this.serviceKey}.${operation}:`,
+        {
+          url,
+          method: op.method,
+        },
+      );
 
       const response = await axios.request(axiosConfig);
       const data = op.transformResult
@@ -129,7 +139,7 @@ export class CommunicationService implements ICommunicationService {
     } catch (error: any) {
       console.error(
         `[CommunicationService] ${this.serviceKey} error:`,
-        error.message || error
+        error.message || error,
       );
 
       // Handle authentication errors
@@ -142,13 +152,16 @@ export class CommunicationService implements ICommunicationService {
 
       return {
         success: false,
-        error: error.response?.data?.error?.message || error.message || "Unknown error",
+        error:
+          error.response?.data?.error?.message ||
+          error.message ||
+          "Unknown error",
       };
     }
   }
 
   async validateCredentials(
-    credentials: any
+    credentials: any,
   ): Promise<{ valid: boolean; error?: string }> {
     if (this.config.validateCredentials) {
       try {
@@ -165,7 +178,7 @@ export class CommunicationService implements ICommunicationService {
 
   private async resolveCredentials(
     credentials: any,
-    input: CommunicationInput
+    input: CommunicationInput,
   ): Promise<any> {
     const clientCreds = credentials?.client_json;
     if (!clientCreds) {
@@ -189,7 +202,7 @@ export class CommunicationService implements ICommunicationService {
       this.serviceKey,
       mergedCreds,
       userId ?? "",
-      credentialId ?? ""
+      credentialId ?? "",
     );
   }
 }

@@ -211,9 +211,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     switch (field.type) {
       case "webhookUrl": {
         const baseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const provider =
+          definition?.name === "WebhookTrigger"
+            ? "generic"
+            : definition?.name
+              ? definition.name.replace("Trigger", "").toLowerCase()
+              : "generic";
         const webhookUrl =
           workflowId && nodeId && userId
-            ? `${baseUrl}/webhooks/incoming/${userId}/${workflowId}/${nodeId}`
+            ? `${baseUrl}/webhooks/${provider}/incoming/${userId}/${workflowId}/${nodeId}`
             : "Webhook URL will be available after saving the workflow";
 
         return (

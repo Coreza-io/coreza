@@ -17,6 +17,7 @@
 import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "./jobQueueManager";
 import { createLogger } from "../utils/logger";
+import { validateWebhookAuth } from "../utils/webhookAuth";
 import {
   getProviderConfig,
   verifyProviderSignature,
@@ -244,6 +245,15 @@ export class WebhookService {
 
       // Extract node configuration
       const nodeConfig = node.values || {};
+
+      const authResult = await validateWebhookAuth(nodeConfig, headers);
+      if (!authResult.valid) {
+        logger.warn(
+          { workflowId, nodeId, provider, error: authResult.error },
+          "Webhook authentication failed",
+        );
+        return;
+      }
 
       // Apply filters (provider-aware)
       if (!this.applyFilters(nodeConfig, method, headers, body, provider)) {

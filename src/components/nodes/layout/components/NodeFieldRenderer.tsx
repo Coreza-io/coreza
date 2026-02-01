@@ -250,7 +250,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
       case "string":
       case "number":
-      case "text": {
+      case "text":
+      case "password": {
         const optionList = Array.isArray(field.options) ? field.options : null;
 
         if (optionList?.length) {
@@ -286,7 +287,13 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           >
             <Input
               {...commonInputProps}
-              type={field.type === "number" ? "number" : undefined}
+              type={
+                field.type === "number"
+                  ? "number"
+                  : field.type === "password"
+                  ? "password"
+                  : undefined
+              }
             />
             {renderPreviewCard()}
           </div>

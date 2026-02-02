@@ -748,6 +748,7 @@ const WorkflowEditorContent = () => {
       node_type: (n.data.definition as any)?.node_type,
       category: (n.data.definition as any)?.category,
       subCategory: (n.data.definition as any)?.subCategory,
+      provider: (n.data.definition as any)?.provider,
       position: n.position,
       sourcePosition: n.sourcePosition,
       targetPosition: n.targetPosition,

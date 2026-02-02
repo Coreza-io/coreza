@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
 import {
@@ -120,7 +121,7 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Get provider from Chat Model node (supports OpenAI, Gemini, etc.)
-      const providerId = chatModelNode.values?.provider || "openai";
+      const providerId = chatModelNode.provider;
       const provider = getProvider(providerId);
 
       console.log(
@@ -152,7 +153,7 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Get model from Chat Model node
-      const model = chatModelNode.values?.model || provider.defaultModel;
+      const model = chatModelNode.values?.model;
 
       // Resolve parameters from AI Agent node
       const nodeValues = node.values ?? {};
@@ -162,13 +163,10 @@ export class AIAgentExecutor implements INodeExecutor {
 
       const systemPrompt =
         resolvedParams.systemPrompt ??
-        nodeValues.systemPrompt ??
         "You are a helpful AI assistant. Use the available tools to help answer the user's questions.";
-      const userPrompt = resolvedParams.userPrompt ?? nodeValues.userPrompt;
-      const maxIterations =
-        resolvedParams.maxIterations ?? nodeValues.maxIterations ?? 10;
-      const temperature =
-        resolvedParams.temperature ?? nodeValues.temperature ?? 0.7;
+      const userPrompt = resolvedParams.userPrompt;
+      const maxIterations = resolvedParams.maxIterations ?? 10;
+      const temperature = resolvedParams.temperature ?? 0.7;
 
       if (!userPrompt) {
         const errOutput = createErrorOutput(
@@ -188,7 +186,9 @@ export class AIAgentExecutor implements INodeExecutor {
           : undefined,
       });
 
-      console.log(`🤖 [AIAgent] Created ${provider.id} LLM with model: ${model}`);
+      console.log(
+        `🤖 [AIAgent] Created ${provider.id} LLM with model: ${model}`,
+      );
 
       // Create tools from connected tool nodes - pass dataContext
       const tools = await this.createToolsFromEdges(node, edges, allNodes, {
@@ -198,39 +198,20 @@ export class AIAgentExecutor implements INodeExecutor {
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
 
-      // Build tool list for enhanced system prompt
-      const toolList = tools
-        .map((t) => `- ${t.name}: ${t.description}`)
-        .join("\n");
-
-      // Enhance system prompt with tool listing and intelligent parameter guidance
-      const enhancedSystemPrompt = `${systemPrompt}
-
-AVAILABLE TOOLS (use ALL of them for comprehensive analysis):
-${toolList}
-
-CRITICAL INSTRUCTIONS:
-- For each tool, DO NOT just use default values blindly
-- ANALYZE the fetched data first (price range, volatility, data points count)
-- CALCULATE appropriate parameter values based on:
-  * The amount of data available (more data = can use longer lookbacks)
-  * The stock's volatility (check daily % moves in the data)
-  * The user's analysis timeframe (short-term vs long-term)
-  * The specific question being asked
-- EXPLAIN your parameter choices in your final response`;
-
       // Create agent using the new LangChain agent API
       const agent = createAgent({
-        llm,
+        model: llm,
         tools,
-        prompt: enhancedSystemPrompt,
       });
 
       // Execute agent
       console.log(`🚀 [AIAgent] Executing agent with prompt: ${userPrompt}`);
       const result = await agent.invoke(
         {
-          messages: [{ role: "user", content: userPrompt }],
+          messages: [
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ],
         },
         {
           recursionLimit: Number(maxIterations),

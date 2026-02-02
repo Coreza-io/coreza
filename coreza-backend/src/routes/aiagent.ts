@@ -70,7 +70,9 @@ router.post("/execute", async (req: Request, res: Response) => {
     }
 
     // Find the AIAgent node from the workflow nodes
-    const aiAgentNode = workflowNodes.find((n) => n.name === "AIAgent" || n.type === "AIAgent");
+    const aiAgentNode = workflowNodes.find(
+      (n) => n.name === "AIAgent" || n.type === "AIAgent",
+    );
     if (!aiAgentNode) {
       return res.status(400).json({
         success: false,
@@ -109,7 +111,7 @@ router.post("/execute", async (req: Request, res: Response) => {
 
     console.log(
       "🤖 [AI AGENT ROUTE] Execution completed:",
-      result.success ? "✅" : "❌"
+      result.success ? "✅" : "❌",
     );
 
     if (!result.success) {

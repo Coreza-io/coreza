@@ -22,6 +22,7 @@ import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
+import { Provider } from "@radix-ui/react-toast";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -38,7 +39,7 @@ const makeArraySignature = (arr: any[]): string => {
 
 const isFieldVisible = (
   field: any,
-  currentFieldState: Record<string, any>
+  currentFieldState: Record<string, any>,
 ): boolean => {
   if (!field.displayOptions?.show) return true;
 
@@ -48,7 +49,7 @@ const isFieldVisible = (
         ? rawAllowed
         : [rawAllowed];
       return allowedValues.includes(currentFieldState[depKey]);
-    }
+    },
   );
 };
 
@@ -112,13 +113,16 @@ export function useNodeExecution({
   const collectNodeData = useCallback(() => {
     const supportData = edges
       .filter((e) => e.target === nodeId)
-      .reduce((acc, edge) => {
-        const sourceNode = nodes.find((n) => n.id === edge.source);
-        if ((sourceNode?.data as any)?.definition?.node_type === "support") {
-          return { ...acc, ...((sourceNode.data as any)?.output || {}) };
-        }
-        return acc;
-      }, {} as Record<string, any>);
+      .reduce(
+        (acc, edge) => {
+          const sourceNode = nodes.find((n) => n.id === edge.source);
+          if ((sourceNode?.data as any)?.definition?.node_type === "support") {
+            return { ...acc, ...((sourceNode.data as any)?.output || {}) };
+          }
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
     return { supportData };
   }, [edges, nodeId, nodes]);
 
@@ -136,12 +140,12 @@ export function useNodeExecution({
           Object.entries(val).map(([k, v]) => [
             k,
             resolveDeep(v, selectedInputData, allNodeData),
-          ])
+          ]),
         );
       }
       return val;
     },
-    [nodes]
+    [nodes],
   );
 
   // Build payload for API request
@@ -149,7 +153,7 @@ export function useNodeExecution({
     (
       fieldState: Record<string, any>,
       supportData: Record<string, any>,
-      selectedInputData: Record<string, any>
+      selectedInputData: Record<string, any>,
     ): Record<string, any> => {
       // Create a map of all upstream node data by display name
       const allNodeData: Record<string, any> = {};
@@ -205,7 +209,8 @@ export function useNodeExecution({
           node_type: (n.data?.definition as any)?.node_type,
           category: (n.data?.definition as any)?.category,
           subCategory: (n.data?.definition as any)?.subCategory,
-          values: n.data?.fieldState || n.data?.values || {},
+          provider: (n.data?.definition as any)?.provider,
+          values: n.data?.values || {},
           position: n.position,
         }));
         payload.edges = edges.map((e) => ({
@@ -227,7 +232,7 @@ export function useNodeExecution({
         ...(Array.isArray(supportData) ? supportData[0] || {} : supportData),
       };
     },
-    [definition, previousNodes, executionStore, resolveDeep, nodes, edges]
+    [definition, previousNodes, executionStore, resolveDeep, nodes, edges],
   );
 
   // Main execution handler
@@ -238,7 +243,7 @@ export function useNodeExecution({
       // Log the start of execution
       console.log(
         "🎯 [NODE EXECUTION] Starting execution for node:",
-        definition?.name || "Unknown"
+        definition?.name || "Unknown",
       );
       console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
 
@@ -247,7 +252,7 @@ export function useNodeExecution({
         let shouldShow = true;
         if (f.displayOptions?.show) {
           for (const [depKey, rawAllowed] of Object.entries(
-            f.displayOptions.show
+            f.displayOptions.show,
           )) {
             const allowedValues = Array.isArray(rawAllowed)
               ? (rawAllowed as string[])
@@ -296,6 +301,7 @@ export function useNodeExecution({
         payload.workflow_id = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
+        payload.provider = definition.provider;
 
         // // Auto-include node_id and workflow_id for all streaming nodes
         // if (definition?.executionMode === "streaming" && nodeId) {
@@ -308,11 +314,11 @@ export function useNodeExecution({
         const parsedSymbols: string[] = Array.isArray(payload.symbols)
           ? payload.symbols
           : typeof payload.symbols === "string"
-          ? payload.symbols
-              .split(",")
-              .map((s: string) => s.trim())
-              .filter(Boolean)
-          : [];
+            ? payload.symbols
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean)
+            : [];
 
         let outputData: any;
 
@@ -335,7 +341,7 @@ export function useNodeExecution({
               update_types: fieldState.updateTypes,
               secret_token: fieldState.secretToken || fieldState.secret,
             },
-            session?.access_token
+            session?.access_token,
           );
 
           if (!registerResponse.ok) {
@@ -343,7 +349,7 @@ export function useNodeExecution({
               .json()
               .catch(() => ({ error: "Registration failed" }));
             throw new Error(
-              errorData.error || `Failed to register ${provider} webhook`
+              errorData.error || `Failed to register ${provider} webhook`,
             );
           }
 
@@ -351,13 +357,13 @@ export function useNodeExecution({
 
           if (!registerResult.success) {
             throw new Error(
-              registerResult.error || `Failed to register ${provider} webhook`
+              registerResult.error || `Failed to register ${provider} webhook`,
             );
           }
 
           console.log(
             `✅ Registered ${provider} webhook:`,
-            registerResult.callback_url
+            registerResult.callback_url,
           );
 
           const listeningOutput = {
@@ -383,8 +389,8 @@ export function useNodeExecution({
                       isListening: true,
                     },
                   }
-                : n
-            )
+                : n,
+            ),
           );
 
           // Wait for webhook event via WebSocket (handled by ExecutionStoreContext)
@@ -411,8 +417,8 @@ export function useNodeExecution({
                   clearInterval(checkInterval);
                   reject(
                     new Error(
-                      "Timeout waiting for webhook event after 5 minutes"
-                    )
+                      "Timeout waiting for webhook event after 5 minutes",
+                    ),
                   );
                 }
               }, 100);
@@ -423,8 +429,8 @@ export function useNodeExecution({
               nds.map((n) =>
                 n.id === nodeId
                   ? { ...n, data: { ...n.data, isListening: false } }
-                  : n
-              )
+                  : n,
+              ),
             );
           } catch (error: any) {
             console.error("Webhook listening error:", error);
@@ -438,8 +444,8 @@ export function useNodeExecution({
               nds.map((n) =>
                 n.id === nodeId
                   ? { ...n, data: { ...n.data, isListening: false } }
-                  : n
-              )
+                  : n,
+              ),
             );
           }
 
@@ -456,8 +462,8 @@ export function useNodeExecution({
             nds.map((n) =>
               n.id === nodeId
                 ? { ...n, data: { ...n.data, output: finalOutput } }
-                : n
-            )
+                : n,
+            ),
           );
           setIsSending(false);
           return;
@@ -482,7 +488,7 @@ export function useNodeExecution({
             loopItems = [payload.inputArray];
           else
             throw new Error(
-              "Loop input must be an array or JSON string representing an array"
+              "Loop input must be an array or JSON string representing an array",
             );
 
           // Init / resume state
@@ -542,7 +548,7 @@ export function useNodeExecution({
               current,
               loopIndex + 1,
               finished,
-              edgeArrivals
+              edgeArrivals,
             );
             const finalOut = next.aggregated ?? edgeArrivals ?? [];
             executionStore.setNodeData(nodeId!, {
@@ -560,8 +566,8 @@ export function useNodeExecution({
               nds.map((n) =>
                 n.id === nodeId
                   ? { ...n, data: { ...n.data, output: finalOut } }
-                  : n
-              )
+                  : n,
+              ),
             );
             return;
           }
@@ -572,15 +578,17 @@ export function useNodeExecution({
             current,
             loopIndex + 1,
             finished,
-            edgeArrivals
+            edgeArrivals,
           );
           const uiOut = { data: next.output };
           setLastOutput(uiOut);
           data.output = uiOut;
           setNodes((nds) =>
             nds.map((n) =>
-              n.id === nodeId ? { ...n, data: { ...n.data, output: uiOut } } : n
-            )
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: uiOut } }
+                : n,
+            ),
           );
 
           executionStore.setNodeData(nodeId!, {
@@ -594,13 +602,13 @@ export function useNodeExecution({
 
         // Regular backend processing for non-Loop nodes
         const operationField = (definition?.fields || []).find(
-          (f: any) => f.key === "operation"
+          (f: any) => f.key === "operation",
         );
         let operationMethod = "POST";
 
         if (operationField) {
           const opSelected = (operationField.options || []).find(
-            (opt: any) => opt.id === fieldState.operation
+            (opt: any) => opt.id === fieldState.operation,
           );
           if (opSelected && opSelected.method) {
             operationMethod = opSelected.method;
@@ -613,13 +621,13 @@ export function useNodeExecution({
         if (url.includes("{{") && url.includes("}}")) {
           url = url.replace(
             /\{\{(\w+)\}\}/g,
-            (_, key) => fieldState[key] || ""
+            (_, key) => fieldState[key] || "",
           );
         }
 
         if (method.includes("{{") && method.includes("}}")) {
           method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
-            key === "method" ? operationMethod : fieldState[key] || ""
+            key === "method" ? operationMethod : fieldState[key] || "",
           );
         }
 
@@ -653,7 +661,7 @@ export function useNodeExecution({
           console.log("🚀 [BACKEND REQUEST] Method:", method);
           console.log(
             "🚀 [BACKEND REQUEST] Payload:",
-            JSON.stringify(payload, null, 2)
+            JSON.stringify(payload, null, 2),
           );
           if (method === "GET" && params) {
             console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
@@ -716,8 +724,8 @@ export function useNodeExecution({
                         testListenNodeId: nodeId,
                       },
                     }
-                  : n
-              )
+                  : n,
+              ),
             );
 
             // Recovery polling (WebSocket push is primary path)
@@ -733,7 +741,7 @@ export function useNodeExecution({
               while (Date.now() - startTime < maxPollTime) {
                 if (abortController.signal.aborted) {
                   console.log(
-                    `[Streaming Trigger] Recovery polling aborted for node ${nodeId}`
+                    `[Streaming Trigger] Recovery polling aborted for node ${nodeId}`,
                   );
                   return;
                 }
@@ -744,7 +752,7 @@ export function useNodeExecution({
                   currentNodeData?.output?.status === "success"
                 ) {
                   console.log(
-                    `✅ [Streaming Trigger] Data received via WebSocket`
+                    `✅ [Streaming Trigger] Data received via WebSocket`,
                   );
                   setIsSending(false);
                   return;
@@ -762,7 +770,7 @@ export function useNodeExecution({
                 try {
                   const resultResponse = await apiClient.get(
                     `/market/stream-test-result/${workflowId}/${nodeId}`,
-                    session?.access_token
+                    session?.access_token,
                   );
 
                   if (resultResponse.ok) {
@@ -799,8 +807,8 @@ export function useNodeExecution({
                                   streamDataReceived: true,
                                 },
                               }
-                            : n
-                        )
+                            : n,
+                        ),
                       );
 
                       setTimeout(() => {
@@ -814,8 +822,8 @@ export function useNodeExecution({
                                     streamDataReceived: false,
                                   },
                                 }
-                              : n
-                          )
+                              : n,
+                          ),
                         );
                       }, 700);
 
@@ -842,8 +850,8 @@ export function useNodeExecution({
                                   isTestListening: false,
                                 },
                               }
-                            : n
-                        )
+                            : n,
+                        ),
                       );
                       setIsSending(false);
                       return;
@@ -852,7 +860,7 @@ export function useNodeExecution({
                 } catch (pollError) {
                   console.warn(
                     `[Streaming Trigger] Recovery poll error:`,
-                    pollError
+                    pollError,
                   );
                 }
 
@@ -864,7 +872,7 @@ export function useNodeExecution({
                       clearTimeout(timeoutId);
                       resolve(undefined);
                     },
-                    { once: true }
+                    { once: true },
                   );
                 });
               }
@@ -891,8 +899,8 @@ export function useNodeExecution({
                           isTestListening: false,
                         },
                       }
-                    : n
-                )
+                    : n,
+                ),
               );
               setIsSending(false);
             };
@@ -930,8 +938,8 @@ export function useNodeExecution({
                         isStreamingWaiting: true,
                       },
                     }
-                  : n
-              )
+                  : n,
+              ),
             );
 
             // Wait for first streaming data
@@ -968,8 +976,8 @@ export function useNodeExecution({
                     clearInterval(checkInterval);
                     reject(
                       new Error(
-                        `Timeout waiting for ${definition?.name} data after ${timeout}ms`
-                      )
+                        `Timeout waiting for ${definition?.name} data after ${timeout}ms`,
+                      ),
                     );
                   }
                 }, 100);
@@ -980,8 +988,8 @@ export function useNodeExecution({
                 nds.map((n) =>
                   n.id === nodeId
                     ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
-                    : n
-                )
+                    : n,
+                ),
               );
             } catch (error: any) {
               console.error("Streaming wait error:", error);
@@ -994,8 +1002,8 @@ export function useNodeExecution({
                 nds.map((n) =>
                   n.id === nodeId
                     ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
-                    : n
-                )
+                    : n,
+                ),
               );
             }
           } else {
@@ -1017,8 +1025,8 @@ export function useNodeExecution({
           nds.map((n) =>
             n.id === nodeId
               ? { ...n, data: { ...n.data, output: finalOutput } }
-              : n
-          )
+              : n,
+          ),
         );
       } catch (err: any) {
         let errOutput;
@@ -1049,8 +1057,8 @@ export function useNodeExecution({
             nds.map((n) =>
               n.id === nodeId
                 ? { ...n, data: { ...n.data, output: errOutput } }
-                : n
-            )
+                : n,
+            ),
           );
         }
       } finally {
@@ -1080,7 +1088,7 @@ export function useNodeExecution({
       setNodes,
       session?.access_token,
       edges,
-    ]
+    ],
   );
 
   return {

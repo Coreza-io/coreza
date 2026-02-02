@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2024 Coreza
  * LLM Provider Registry - Factory pattern for multi-provider support
- * 
+ *
  * To add a new provider:
  * 1. Import the LangChain model class
  * 2. Add config to LLM_PROVIDERS
@@ -93,11 +93,8 @@ export const LLM_PROVIDERS: Record<string, LLMProviderConfig> = {
 /**
  * Get provider config by ID, with fallback to openai
  */
-export function getProvider(providerId?: string): LLMProviderConfig {
-  if (!providerId) {
-    return LLM_PROVIDERS.openai;
-  }
-  return LLM_PROVIDERS[providerId] || LLM_PROVIDERS.openai;
+export function getProvider(providerId: string): LLMProviderConfig {
+  return LLM_PROVIDERS[providerId];
 }
 
 /**
@@ -105,7 +102,7 @@ export function getProvider(providerId?: string): LLMProviderConfig {
  */
 export function supportsTemperature(
   providerId: string,
-  model: string
+  model: string,
 ): boolean {
   const provider = getProvider(providerId);
   return !provider.noTemperatureModels?.includes(model);

@@ -3,6 +3,7 @@
   "def": "OpenAI Chat Model",
   "node_type": "sub",
   "category": "ChatModel",
+  "provider": "openai",
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 300, "height": 280 },
   "handles": [{ "type": "source", "position": "top", "id": "chatModel" }],

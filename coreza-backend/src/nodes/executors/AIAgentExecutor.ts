@@ -15,7 +15,6 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { ChatOpenAI } from "@langchain/openai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
@@ -41,7 +40,7 @@ import {
   toNodeResult,
   NormalizeContext,
 } from "../../utils/normalizeOutput";
-import { isSearchModel } from "../../utils/openaiModels";
+import { getProvider } from "../../config/llmProviders";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -124,9 +123,17 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
+      // Get provider from Chat Model node (supports OpenAI, Gemini, etc.)
+      const providerId = chatModelNode.values?.provider || "openai";
+      const provider = getProvider(providerId);
+
+      console.log(
+        `🔌 [AIAgent] Using LLM provider: ${provider.id} (service: ${provider.serviceType})`,
+      );
+
       const credentialResponse = await CredentialManager.getCredentials(
         user_id,
-        "openaichatmodel",
+        provider.serviceType,
         credential_id,
       );
 
@@ -139,17 +146,17 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      const { apiKey } = client_json;
+      const apiKey = client_json[provider.apiKeyField];
       if (!apiKey) {
         const errOutput = createErrorOutput(
-          "Chat model credential is missing apiKey",
+          `Chat model credential is missing ${provider.apiKeyField}`,
           normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
 
       // Get model from Chat Model node
-      const model = chatModelNode.values?.model || "gpt-4o-mini";
+      const model = chatModelNode.values?.model || provider.defaultModel;
 
       // Resolve parameters from AI Agent node
       const nodeValues = node.values ?? {};
@@ -179,28 +186,17 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      // Initialize LLM config
-      const llmConfig: {
-        modelName: string;
-        apiKey: string;
-        temperature?: number;
-        modelKwargs?: Record<string, unknown>;
-      } = {
-        modelName: model,
-        apiKey: apiKey,
-      };
+      // Create LLM using provider factory (handles OpenAI search models, Gemini, etc.)
+      const llm = provider.createModel({
+        apiKey,
+        model,
+        temperature: Number(temperature),
+        maxTokens: chatModelNode.values?.maxTokens
+          ? Number(chatModelNode.values.maxTokens)
+          : undefined,
+      });
 
-      // Apply settings based on model type
-      if (!isSearchModel(model)) {
-        llmConfig.temperature = Number(temperature);
-      } else {
-        llmConfig.modelKwargs = {
-          web_search_options: {},
-        };
-      }
-
-      // Initialize LLM
-      const llm = new ChatOpenAI(llmConfig);
+      console.log(`🤖 [AIAgent] Created ${provider.id} LLM with model: ${model}`);
 
       // Create tools from connected tool nodes - pass dataContext
       const tools = await this.createToolsFromEdges(node, edges, allNodes, {

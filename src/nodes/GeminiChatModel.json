@@ -1,0 +1,63 @@
+{
+  "name": "GeminiChatModel",
+  "def": "Google Gemini Chat Model",
+  "node_type": "sub",
+  "category": "ChatModel",
+  "provider": "gemini",
+  "icon": "/assets/icons/gemini.svg",
+  "size": { "width": 300, "height": 280 },
+  "handles": [{ "type": "source", "position": "top", "id": "chatModel" }],
+  "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "Gemini API"
+    },
+    {
+      "key": "apiKey",
+      "label": "Google AI API Key",
+      "type": "password",
+      "placeholder": "AI..."
+    }
+  ],
+  "authAction": { "url": "/gemini/auth", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "model",
+      "label": "Model",
+      "type": "select",
+      "default": "gemini-1.5-flash",
+      "options": [
+        { "label": "Gemini 2.0 Flash", "value": "gemini-2.0-flash" },
+        { "label": "Gemini 1.5 Pro", "value": "gemini-1.5-pro" },
+        { "label": "Gemini 1.5 Flash", "value": "gemini-1.5-flash" },
+        { "label": "Gemini 1.5 Flash 8B", "value": "gemini-1.5-flash-8b" }
+      ],
+      "required": true
+    },
+    {
+      "key": "temperature",
+      "label": "Temperature",
+      "type": "number",
+      "default": 0.7,
+      "required": false
+    },
+    {
+      "key": "maxTokens",
+      "label": "Max Output Tokens",
+      "type": "number",
+      "default": 1000,
+      "required": false
+    }
+  ]
+}

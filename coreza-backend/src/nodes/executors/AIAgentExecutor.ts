@@ -41,6 +41,7 @@ import {
   toNodeResult,
   NormalizeContext,
 } from "../../utils/normalizeOutput";
+import { isSearchModel } from "../../utils/openaiModels";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -179,11 +180,20 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Initialize LLM
-      const llm = new ChatOpenAI({
+      const llmConfig: {
+        modelName: string;
+        apiKey: string;
+        temperature?: number;
+      } = {
         modelName: model,
-        temperature: Number(temperature),
         apiKey: apiKey,
-      });
+      };
+
+      if (!isSearchModel(model)) {
+        llmConfig.temperature = Number(temperature);
+      }
+
+      const llm = new ChatOpenAI(llmConfig);
 
       // Create tools from connected tool nodes - pass dataContext
       const tools = await this.createToolsFromEdges(node, edges, allNodes, {

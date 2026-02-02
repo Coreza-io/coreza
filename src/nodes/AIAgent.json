@@ -35,20 +35,6 @@
       "type": "number",
       "default": 10,
       "required": false
-    },
-    {
-      "key": "temperature",
-      "label": "Temperature",
-      "type": "number",
-      "default": 0.7,
-      "required": false
-    },
-    {
-      "key": "returnIntermediateSteps",
-      "label": "Return Intermediate Steps",
-      "type": "checkbox",
-      "default": false,
-      "required": false
     }
   ]
 }

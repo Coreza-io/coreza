@@ -14,22 +14,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { registerNodeExecutor } from './registry';
-import { IOExecutor } from './executors/IOExecutor';
-import { IndicatorsExecutor } from './executors/IndicatorsExecutor';
-import { BrokerExecutor } from './executors/BrokerExecutor';
-import { MarketExecutor } from './executors/MarketExecutor';
-import { ControlFlowExecutor } from './executors/ControlFlowExecutor';
-import { UtilityExecutor } from './executors/UtilityExecutor';
-import { CommunicationExecutor } from './executors/CommunicationExecutor';
-import { DataSourceExecutor } from './executors/DataSourceExecutor';
-import { RiskExecutor } from './executors/RiskExecutor';
-import { LLMExecutor } from './executors/LLMExecutor';
-import { AIAgentExecutor } from './executors/AIAgentExecutor';
-import { ToolExecutor } from './executors/ToolExecutor';
-import { ScreenerExecutor } from './executors/ScreenerExecutor';
-import { TriggerExecutor } from './executors/TriggerExecutor';
-import { BacktestExecutor } from './executors/BacktestExecutor';
+import { registerNodeExecutor } from "./registry";
+import { IOExecutor } from "./executors/IOExecutor";
+import { IndicatorsExecutor } from "./executors/IndicatorsExecutor";
+import { BrokerExecutor } from "./executors/BrokerExecutor";
+import { MarketExecutor } from "./executors/MarketExecutor";
+import { ControlFlowExecutor } from "./executors/ControlFlowExecutor";
+import { UtilityExecutor } from "./executors/UtilityExecutor";
+import { CommunicationExecutor } from "./executors/CommunicationExecutor";
+import { DataSourceExecutor } from "./executors/DataSourceExecutor";
+import { RiskExecutor } from "./executors/RiskExecutor";
+import { AIAgentExecutor } from "./executors/AIAgentExecutor";
+import { ToolExecutor } from "./executors/ToolExecutor";
+import { ScreenerExecutor } from "./executors/ScreenerExecutor";
+import { TriggerExecutor } from "./executors/TriggerExecutor";
+import { BacktestExecutor } from "./executors/BacktestExecutor";
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -43,7 +42,6 @@ export function initializeNodeExecutors() {
     new CommunicationExecutor(),
     new DataSourceExecutor(),
     new RiskExecutor(),
-    new LLMExecutor(),
     new AIAgentExecutor(),
     new ToolExecutor(),
     new ScreenerExecutor(),
@@ -51,7 +49,7 @@ export function initializeNodeExecutors() {
     new BacktestExecutor(),
   ];
 
-  executors.forEach(executor => {
+  executors.forEach((executor) => {
     try {
       registerNodeExecutor(executor);
     } catch (error) {
@@ -59,9 +57,9 @@ export function initializeNodeExecutors() {
     }
   });
 
-  console.log('🚀 Node executors initialized successfully');
+  console.log("🚀 Node executors initialized successfully");
 }
 
 // Export types and registry functions for external use
-export * from './types';
-export * from './registry';
+export * from "./types";
+export * from "./registry";

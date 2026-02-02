@@ -25,9 +25,9 @@
   },
   "dependencies": {
     "@alpacahq/alpaca-trade-api": "^3.0.6",
-    "@langchain/community": "^0.3.49",
-    "@langchain/core": "^0.3.66",
-    "@langchain/openai": "^0.6.2",
+    "@langchain/community": "^1.1.10",
+    "@langchain/core": "^1.1.18",
+    "@langchain/openai": "^1.2.4",
     "@supabase/supabase-js": "^2.51.0",
     "async-mutex": "^0.5.0",
     "axios": "^1.7.2",

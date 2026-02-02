@@ -179,20 +179,27 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      // Initialize LLM
+      // Initialize LLM config
       const llmConfig: {
         modelName: string;
         apiKey: string;
         temperature?: number;
+        modelKwargs?: Record<string, unknown>;
       } = {
         modelName: model,
         apiKey: apiKey,
       };
 
+      // Apply settings based on model type
       if (!isSearchModel(model)) {
         llmConfig.temperature = Number(temperature);
+      } else {
+        llmConfig.modelKwargs = {
+          web_search_options: {},
+        };
       }
 
+      // Initialize LLM
       const llm = new ChatOpenAI(llmConfig);
 
       // Create tools from connected tool nodes - pass dataContext

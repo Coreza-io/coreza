@@ -51,6 +51,7 @@
       "label": "Temperature",
       "type": "number",
       "default": 0.7,
+      "description": "Not applicable for Search models (gpt-4o-search-preview, gpt-4o-mini-search-preview).",
       "required": false
     },
     {

@@ -17,11 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
-import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
-import {
-  ChatPromptTemplate,
-  MessagesPlaceholder,
-} from "@langchain/core/prompts";
+import { createAgent } from "langchain";
 import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
 import {
@@ -173,10 +169,6 @@ export class AIAgentExecutor implements INodeExecutor {
         resolvedParams.maxIterations ?? nodeValues.maxIterations ?? 10;
       const temperature =
         resolvedParams.temperature ?? nodeValues.temperature ?? 0.7;
-      const returnIntermediateSteps =
-        resolvedParams.returnIntermediateSteps ??
-        nodeValues.returnIntermediateSteps ??
-        false;
 
       if (!userPrompt) {
         const errOutput = createErrorOutput(
@@ -227,30 +219,23 @@ CRITICAL INSTRUCTIONS:
   * The specific question being asked
 - EXPLAIN your parameter choices in your final response`;
 
-      // Create agent prompt with enhanced system prompt
-      const prompt = ChatPromptTemplate.fromMessages([
-        ["system", enhancedSystemPrompt],
-        ["human", "{input}"],
-        new MessagesPlaceholder("agent_scratchpad"),
-      ]);
-
-      // Create agent
-      const agent = await createToolCallingAgent({ llm, tools, prompt });
-
-      // Create agent executor
-      const agentExecutor = await AgentExecutor.fromAgentAndTools({
-        agent,
+      // Create agent using the new LangChain agent API
+      const agent = createAgent({
+        llm,
         tools,
-        maxIterations,
-        returnIntermediateSteps,
-        verbose: true,
+        prompt: enhancedSystemPrompt,
       });
 
       // Execute agent
       console.log(`🚀 [AIAgent] Executing agent with prompt: ${userPrompt}`);
-      const result = await agentExecutor.invoke({
-        input: userPrompt,
-      });
+      const result = await agent.invoke(
+        {
+          messages: [{ role: "user", content: userPrompt }],
+        },
+        {
+          recursionLimit: Number(maxIterations),
+        },
+      );
 
       console.log(`✅ [AIAgent] Agent execution completed`);
 
@@ -264,7 +249,8 @@ CRITICAL INSTRUCTIONS:
         ).toFixed(2)}MB`,
       );
 
-      const successOutput = createSuccessOutput(result.output, normalizeCtx);
+      const agentOutput = this.getAgentOutput(result);
+      const successOutput = createSuccessOutput(agentOutput, normalizeCtx);
       return toNodeResult(successOutput);
     } catch (error: any) {
       console.error("❌ [AIAgent] Agent execution error:", error);
@@ -650,5 +636,43 @@ CRITICAL INSTRUCTIONS:
       node.category ||
       "Utility"
     );
+  }
+
+  private getAgentOutput(result: any): string {
+    const messages = result?.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      if (typeof result?.output === "string") {
+        return result.output;
+      }
+      return result ? JSON.stringify(result) : "";
+    }
+
+    const lastAssistantMessage = [...messages].reverse().find((message) => {
+      const role = (message as any)?.role ?? (message as any)?.type;
+      return role === "assistant" || role === "ai";
+    });
+
+    const message = lastAssistantMessage ?? messages[messages.length - 1];
+    const content = (message as any)?.content;
+
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map((block) => {
+          if (typeof block === "string") {
+            return block;
+          }
+          if (block?.type === "text" && typeof block.text === "string") {
+            return block.text;
+          }
+          return JSON.stringify(block);
+        })
+        .join("");
+    }
+
+    return content ? JSON.stringify(content) : "";
   }
 }

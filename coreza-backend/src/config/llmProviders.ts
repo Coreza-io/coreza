@@ -46,7 +46,7 @@ export const LLM_FACTORIES: Record<string, LLMFactory> = {
   // mistral: { ... },
 };
 
-export function createLLM(provider: string, config: LLMConfig): BaseChatModel {
+export function getLLM(provider: string, config: LLMConfig): BaseChatModel {
   const factory = LLM_FACTORIES[provider];
   if (!factory) {
     throw new Error(`Unknown LLM provider: ${provider}`);

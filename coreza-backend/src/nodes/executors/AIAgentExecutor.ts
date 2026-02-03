@@ -37,7 +37,7 @@ import {
   toNodeResult,
   NormalizeContext,
 } from "../../utils/normalizeOutput";
-import { createLLM } from "../../config/llmProviders";
+import { getLLM } from "../../config/llmProviders";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -121,8 +121,8 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Get provider from Chat Model node (supports OpenAI, Gemini, etc.)
-      const providerId = chatModelNode.provider || "openai";
-      const serviceType = chatModelNode.name?.toLowerCase?.() || providerId;
+      const providerId = chatModelNode.provider;
+      const serviceType = chatModelNode.name?.toLowerCase?.();
 
       console.log(
         `🔌 [AIAgent] Using LLM provider: ${providerId} (service: ${serviceType})`,
@@ -181,7 +181,7 @@ export class AIAgentExecutor implements INodeExecutor {
         ?.options?.find((option) => option.value === model);
 
       // Create LLM using provider factory (handles model-specific kwargs)
-      const llm = createLLM(providerId, {
+      const llm = getLLM(providerId, {
         apiKey,
         model,
         temperature: modelOption?.noTemperature

@@ -45,13 +45,11 @@
         {
           "label": "GPT-4o Search",
           "value": "gpt-4o-search-preview",
-          "noTemperature": true,
           "modelKwargs": { "web_search_options": {} }
         },
         {
           "label": "GPT-4o Mini Search",
           "value": "gpt-4o-mini-search-preview",
-          "noTemperature": true,
           "modelKwargs": { "web_search_options": {} }
         }
       ],
@@ -64,8 +62,8 @@
       "default": 0.7,
       "description": "Not applicable for Search models (gpt-4o-search-preview, gpt-4o-mini-search-preview).",
       "displayOptions": {
-        "hide": {
-          "model": ["gpt-4o-search-preview", "gpt-4o-mini-search-preview"]
+        "show": {
+          "model": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
         }
       },
       "required": false

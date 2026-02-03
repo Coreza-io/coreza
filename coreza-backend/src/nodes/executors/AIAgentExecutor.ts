@@ -37,7 +37,7 @@ import {
   toNodeResult,
   NormalizeContext,
 } from "../../utils/normalizeOutput";
-import { getProvider } from "../../config/llmProviders";
+import { createLLM } from "../../config/llmProviders";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -121,16 +121,16 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Get provider from Chat Model node (supports OpenAI, Gemini, etc.)
-      const providerId = chatModelNode.provider;
-      const provider = getProvider(providerId);
+      const providerId = chatModelNode.provider || "openai";
+      const serviceType = chatModelNode.name?.toLowerCase?.() || providerId;
 
       console.log(
-        `🔌 [AIAgent] Using LLM provider: ${provider.id} (service: ${provider.serviceType})`,
+        `🔌 [AIAgent] Using LLM provider: ${providerId} (service: ${serviceType})`,
       );
 
       const credentialResponse = await CredentialManager.getCredentials(
         user_id,
-        provider.serviceType,
+        serviceType,
         credential_id,
       );
 
@@ -143,10 +143,10 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      const apiKey = client_json[provider.apiKeyField];
+      const apiKey = client_json.apiKey;
       if (!apiKey) {
         const errOutput = createErrorOutput(
-          `Chat model credential is missing ${provider.apiKeyField}`,
+          "Chat model credential is missing apiKey",
           normalizeCtx,
         );
         return toNodeResult(errOutput);
@@ -176,18 +176,25 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      // Create LLM using provider factory (handles OpenAI search models, Gemini, etc.)
-      const llm = provider.createModel({
+      const modelOption = chatModelNode.fields
+        ?.find((field) => field.key === "model")
+        ?.options?.find((option) => option.value === model);
+
+      // Create LLM using provider factory (handles model-specific kwargs)
+      const llm = createLLM(providerId, {
         apiKey,
         model,
-        temperature: Number(temperature),
+        temperature: modelOption?.noTemperature
+          ? undefined
+          : Number(temperature),
         maxTokens: chatModelNode.values?.maxTokens
           ? Number(chatModelNode.values.maxTokens)
           : undefined,
+        modelKwargs: modelOption?.modelKwargs,
       });
 
       console.log(
-        `🤖 [AIAgent] Created ${provider.id} LLM with model: ${model}`,
+        `🤖 [AIAgent] Created ${providerId} LLM with model: ${model}`,
       );
 
       // Create tools from connected tool nodes - pass dataContext

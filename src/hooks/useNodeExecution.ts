@@ -202,18 +202,29 @@ export function useNodeExecution({
 
       // Special handling for AIAgent node to include nodes and edges for tool discovery
       if (definition?.name === "AIAgent") {
-        // Serialize nodes and edges for backend
-        payload.nodes = nodes.map((n) => ({
-          id: n.id,
-          name: (n.data?.definition as any)?.name,
-          node_type: (n.data?.definition as any)?.node_type,
-          category: (n.data?.definition as any)?.category,
-          subCategory: (n.data?.definition as any)?.subCategory,
-          provider: (n.data?.definition as any)?.provider,
-          values: n.data?.values || {},
-          position: n.position,
-        }));
-        payload.edges = edges.map((e) => ({
+        const attachedEdges = nodeId
+          ? edges.filter((e) => e.source === nodeId || e.target === nodeId)
+          : [];
+        const attachedNodeIds = new Set<string>(
+          nodeId
+            ? [nodeId, ...attachedEdges.flatMap((e) => [e.source, e.target])]
+            : [],
+        );
+
+        // Serialize only nodes and edges attached to this AIAgent
+        payload.nodes = nodes
+          .filter((n) => attachedNodeIds.has(n.id))
+          .map((n) => ({
+            id: n.id,
+            name: (n.data?.definition as any)?.name,
+            node_type: (n.data?.definition as any)?.node_type,
+            category: (n.data?.definition as any)?.category,
+            subCategory: (n.data?.definition as any)?.subCategory,
+            provider: (n.data?.definition as any)?.provider,
+            values: n.data?.values || {},
+            position: n.position,
+          }));
+        payload.edges = attachedEdges.map((e) => ({
           id: e.id,
           source: e.source,
           target: e.target,

@@ -210,10 +210,19 @@ export function useNodeExecution({
             ? [nodeId, ...attachedEdges.flatMap((e) => [e.source, e.target])]
             : [],
         );
+        const supportNodeIds = new Set<string>(
+          nodes
+            .filter(
+              (n) =>
+                attachedNodeIds.has(n.id) &&
+                (n.data?.definition as any)?.node_type === "sub",
+            )
+            .map((n) => n.id),
+        );
 
         // Serialize only nodes and edges attached to this AIAgent
         payload.nodes = nodes
-          .filter((n) => attachedNodeIds.has(n.id))
+          .filter((n) => supportNodeIds.has(n.id))
           .map((n) => ({
             id: n.id,
             name: (n.data?.definition as any)?.name,
@@ -224,13 +233,19 @@ export function useNodeExecution({
             values: n.data?.values || {},
             position: n.position,
           }));
-        payload.edges = attachedEdges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle,
-        }));
+        payload.edges = attachedEdges
+          .filter(
+            (e) =>
+              (e.source === nodeId && supportNodeIds.has(e.target)) ||
+              (e.target === nodeId && supportNodeIds.has(e.source)),
+          )
+          .map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          }));
 
         console.log("🤖 AIAgent special payload with nodes/edges:", {
           nodesCount: payload.nodes.length,

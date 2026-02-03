@@ -44,6 +44,30 @@ export function useNodeFieldState({
   const { setNodes } = useReactFlow();
   const hasInitialized = useRef(false);
 
+  // Helper to extract option metadata for select fields
+  const extractOptionMetadata = (fields: any[], currentValues: Record<string, any>): Record<string, any> => {
+    const metadata: Record<string, any> = {};
+    const optionMetadataKeys = ["isSearchModel", "modelKwargs", "noTemperature"];
+    
+    for (const field of fields) {
+      if (field.type === "select" && field.options) {
+        const currentValue = currentValues[field.key];
+        const selectedOption = field.options.find(
+          (opt: any) => opt.value === currentValue || opt.id === currentValue
+        );
+        
+        if (selectedOption) {
+          for (const metaKey of optionMetadataKeys) {
+            if (selectedOption[metaKey] !== undefined) {
+              metadata[metaKey] = selectedOption[metaKey];
+            }
+          }
+        }
+      }
+    }
+    return metadata;
+  };
+
   // Initialize fieldState from definition, saved data, or defaults
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
@@ -75,7 +99,10 @@ export function useNodeFieldState({
       Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
     );
 
-    return { ...definedFields, ...dynamicFields };
+    // Extract option metadata for any select fields with saved values
+    const optionMetadata = extractOptionMetadata(definition.fields, definedFields);
+
+    return { ...definedFields, ...dynamicFields, ...optionMetadata };
   });
 
   // Initialize fieldState when definition changes
@@ -112,7 +139,10 @@ export function useNodeFieldState({
       Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
     );
 
-    const newFieldState = { ...definedFields, ...dynamicFields };
+    // Extract option metadata for any select fields with saved values
+    const optionMetadata = extractOptionMetadata(definition.fields, definedFields);
+
+    const newFieldState = { ...definedFields, ...dynamicFields, ...optionMetadata };
 
     // Only set if we actually have fields to initialize
     if (Object.keys(newFieldState).length > 0) {

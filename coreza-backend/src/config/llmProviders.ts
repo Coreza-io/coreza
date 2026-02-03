@@ -13,6 +13,7 @@ export interface LLMConfig {
   temperature?: number;
   maxTokens?: number;
   modelKwargs?: Record<string, unknown>;
+  isSearchModel?: boolean;
 }
 
 type LLMFactory = (config: LLMConfig) => BaseChatModel;
@@ -22,13 +23,13 @@ type LLMFactory = (config: LLMConfig) => BaseChatModel;
  * All other config comes from frontend JSON
  */
 export const LLM_FACTORIES: Record<string, LLMFactory> = {
-  openai: ({ apiKey, model, temperature, maxTokens, modelKwargs }) => {
+  openai: ({ apiKey, model, temperature, maxTokens, modelKwargs, isSearchModel }) => {
     return new ChatOpenAI({
       modelName: model,
       apiKey,
-      temperature,
-      maxTokens,
-      modelKwargs,
+      temperature: isSearchModel ? undefined : temperature,
+      maxTokens: isSearchModel ? undefined : maxTokens,
+      modelKwargs: isSearchModel ? { web_search_options: {} } : modelKwargs,
     });
   },
 

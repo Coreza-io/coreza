@@ -176,21 +176,15 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      const modelOption = chatModelNode.fields
-        ?.find((field) => field.key === "model")
-        ?.options?.find((option) => option.value === model);
-
-      // Create LLM using provider factory (handles model-specific kwargs)
+      // Create LLM using provider factory (handles model-specific config)
       const llm = getLLM(providerId, {
         apiKey,
         model,
-        temperature: modelOption?.noTemperature
-          ? undefined
-          : Number(temperature),
+        temperature: Number(temperature),
         maxTokens: chatModelNode.values?.maxTokens
           ? Number(chatModelNode.values.maxTokens)
           : undefined,
-        modelKwargs: modelOption?.modelKwargs,
+        isSearchModel: chatModelNode.values?.isSearchModel,
       });
 
       console.log(

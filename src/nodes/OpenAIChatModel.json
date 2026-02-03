@@ -45,12 +45,12 @@
         {
           "label": "GPT-4o Search",
           "value": "gpt-4o-search-preview",
-          "modelKwargs": { "web_search_options": {} }
+          "isSearchModel": true
         },
         {
           "label": "GPT-4o Mini Search",
           "value": "gpt-4o-mini-search-preview",
-          "modelKwargs": { "web_search_options": {} }
+          "isSearchModel": true
         }
       ],
       "required": true

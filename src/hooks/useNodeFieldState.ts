@@ -44,30 +44,6 @@ export function useNodeFieldState({
   const { setNodes } = useReactFlow();
   const hasInitialized = useRef(false);
 
-  // Helper to extract option metadata for select fields
-  const extractOptionMetadata = (fields: any[], currentValues: Record<string, any>): Record<string, any> => {
-    const metadata: Record<string, any> = {};
-    const optionMetadataKeys = ["isSearchModel", "modelKwargs", "noTemperature"];
-    
-    for (const field of fields) {
-      if (field.type === "select" && field.options) {
-        const currentValue = currentValues[field.key];
-        const selectedOption = field.options.find(
-          (opt: any) => opt.value === currentValue || opt.id === currentValue
-        );
-        
-        if (selectedOption) {
-          for (const metaKey of optionMetadataKeys) {
-            if (selectedOption[metaKey] !== undefined) {
-              metadata[metaKey] = selectedOption[metaKey];
-            }
-          }
-        }
-      }
-    }
-    return metadata;
-  };
-
   // Initialize fieldState from definition, saved data, or defaults
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
     if (!definition?.fields) return {};
@@ -76,39 +52,39 @@ export function useNodeFieldState({
     const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => {
         const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
-        
+
         // For select fields, ensure we use default if saved value is empty/undefined
-        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+        if (
+          f.type === "select" &&
+          (savedValue === undefined || savedValue === null || savedValue === "")
+        ) {
           return [f.key, f.default || ""];
         }
-        
+
         // For repeater fields
         if (f.type === "repeater") {
           return [f.key, savedValue || f.default || []];
         }
-        
+
         // For all other fields
         return [f.key, savedValue ?? f.default ?? ""];
-      })
+      }),
     );
 
     // Preserve additional dynamic fields (like logicalOps) from saved data
     const existingValues = data.fieldState || data.values || {};
     const definedKeys = new Set(definition.fields.map((f: any) => f.key));
     const dynamicFields = Object.fromEntries(
-      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
+      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key)),
     );
 
-    // Extract option metadata for any select fields with saved values
-    const optionMetadata = extractOptionMetadata(definition.fields, definedFields);
-
-    return { ...definedFields, ...dynamicFields, ...optionMetadata };
+    return { ...definedFields, ...dynamicFields };
   });
 
   // Initialize fieldState when definition changes
   useEffect(() => {
     if (!definition?.fields) return;
-    
+
     // Only initialize once when component mounts or definition actually changes
     if (hasInitialized.current) return;
 
@@ -116,33 +92,33 @@ export function useNodeFieldState({
     const definedFields = Object.fromEntries(
       definition.fields.map((f: any) => {
         const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
-        
+
         // For select fields, ensure we use default if saved value is empty/undefined
-        if (f.type === "select" && (savedValue === undefined || savedValue === null || savedValue === "")) {
+        if (
+          f.type === "select" &&
+          (savedValue === undefined || savedValue === null || savedValue === "")
+        ) {
           return [f.key, f.default || ""];
         }
-        
+
         // For repeater fields
         if (f.type === "repeater") {
           return [f.key, savedValue || f.default || []];
         }
-        
+
         // For all other fields
         return [f.key, savedValue ?? f.default ?? ""];
-      })
+      }),
     );
 
     // Preserve additional dynamic fields (like logicalOps) from saved data
     const existingValues = data.fieldState || data.values || {};
     const definedKeys = new Set(definition.fields.map((f: any) => f.key));
     const dynamicFields = Object.fromEntries(
-      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key))
+      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key)),
     );
 
-    // Extract option metadata for any select fields with saved values
-    const optionMetadata = extractOptionMetadata(definition.fields, definedFields);
-
-    const newFieldState = { ...definedFields, ...dynamicFields, ...optionMetadata };
+    const newFieldState = { ...definedFields, ...dynamicFields };
 
     // Only set if we actually have fields to initialize
     if (Object.keys(newFieldState).length > 0) {
@@ -161,18 +137,24 @@ export function useNodeFieldState({
   // Skip in readOnly mode to prevent execution view from mutating nodes
   useEffect(() => {
     if (readOnly) return; // Don't sync in read-only/execution view mode
-    if (Object.keys(fieldState).length === 0 || !nodeId || !hasInitialized.current) return;
-    
+    if (
+      Object.keys(fieldState).length === 0 ||
+      !nodeId ||
+      !hasInitialized.current
+    )
+      return;
+
     setNodes((nds) =>
       nds.map((n) => {
         if (n.id !== nodeId) return n;
-        
+
         // Check if values actually changed to prevent redundant updates
         const currentValues = (n.data as any)?.values || {};
-        const valuesChanged = JSON.stringify(currentValues) !== JSON.stringify(fieldState);
-        
+        const valuesChanged =
+          JSON.stringify(currentValues) !== JSON.stringify(fieldState);
+
         if (!valuesChanged) return n;
-        
+
         return {
           ...n,
           data: {
@@ -180,7 +162,7 @@ export function useNodeFieldState({
             values: { ...fieldState },
           },
         };
-      })
+      }),
     );
   }, [fieldState, nodeId, setNodes, readOnly]);
 
@@ -189,45 +171,22 @@ export function useNodeFieldState({
     (key: string, value: any) => {
       // Don't allow changes in readOnly mode
       if (readOnly) return;
-      
-      let newFieldState = { ...fieldState, [key]: value };
-      
-      // For select fields, extract any metadata from the selected option
+
+      const newFieldState = { ...fieldState, [key]: value };
+
+      // Check if any field has dynamicOptions that depends on this key
       if (definition?.fields) {
-        const field = definition.fields.find((f: any) => f.key === key);
-        if (field?.type === "select" && field?.options) {
-          const selectedOption = field.options.find(
-            (opt: any) => opt.value === value || opt.id === value
-          );
-          
-          // Copy option metadata flags to fieldState (e.g., isSearchModel)
-          if (selectedOption) {
-            // List of known metadata keys to extract from options
-            const optionMetadataKeys = ["isSearchModel", "modelKwargs", "noTemperature"];
-            
-            for (const metaKey of optionMetadataKeys) {
-              if (selectedOption[metaKey] !== undefined) {
-                newFieldState[metaKey] = selectedOption[metaKey];
-              } else {
-                // Clear the flag if switching to an option without it
-                delete newFieldState[metaKey];
-              }
-            }
-          }
-        }
-        
-        // Check if any field has dynamicOptions that depends on this key
-        for (const f of definition.fields) {
-          if (f.dynamicOptions?.dependsOn === key) {
+        for (const field of definition.fields) {
+          if (field.dynamicOptions?.dependsOn === key) {
             // Reset the dependent field to first option of new dataType
-            const options = f.dynamicOptions.optionsByValue?.[value];
+            const options = field.dynamicOptions.optionsByValue?.[value];
             if (options && options.length > 0) {
-              newFieldState[f.key] = options[0].value;
+              newFieldState[field.key] = options[0].value;
             }
           }
         }
       }
-      
+
       setFieldState(newFieldState);
       setNodes((nds) =>
         nds.map((n) =>
@@ -240,11 +199,11 @@ export function useNodeFieldState({
                   fieldState: newFieldState,
                 },
               }
-            : n
-        )
+            : n,
+        ),
       );
     },
-    [fieldState, nodeId, setNodes, definition?.fields, readOnly]
+    [fieldState, nodeId, setNodes, definition?.fields, readOnly],
   );
 
   // Handle batch field updates
@@ -252,18 +211,18 @@ export function useNodeFieldState({
     (updates: Record<string, any>) => {
       // Don't allow changes in readOnly mode
       if (readOnly) return;
-      
+
       const newFS = { ...fieldState, ...updates };
       setFieldState(newFS);
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId
             ? { ...n, data: { ...n.data, values: newFS, fieldState: newFS } }
-            : n
-        )
+            : n,
+        ),
       );
     },
-    [fieldState, nodeId, setNodes, readOnly]
+    [fieldState, nodeId, setNodes, readOnly],
   );
 
   return {
@@ -272,4 +231,3 @@ export function useNodeFieldState({
     handleFieldStateBatch,
   };
 }
-

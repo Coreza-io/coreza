@@ -162,14 +162,37 @@ export function useNodeFieldState({
       
       let newFieldState = { ...fieldState, [key]: value };
       
-      // Check if any field has dynamicOptions that depends on this key
+      // For select fields, extract any metadata from the selected option
       if (definition?.fields) {
-        for (const field of definition.fields) {
-          if (field.dynamicOptions?.dependsOn === key) {
+        const field = definition.fields.find((f: any) => f.key === key);
+        if (field?.type === "select" && field?.options) {
+          const selectedOption = field.options.find(
+            (opt: any) => opt.value === value || opt.id === value
+          );
+          
+          // Copy option metadata flags to fieldState (e.g., isSearchModel)
+          if (selectedOption) {
+            // List of known metadata keys to extract from options
+            const optionMetadataKeys = ["isSearchModel", "modelKwargs", "noTemperature"];
+            
+            for (const metaKey of optionMetadataKeys) {
+              if (selectedOption[metaKey] !== undefined) {
+                newFieldState[metaKey] = selectedOption[metaKey];
+              } else {
+                // Clear the flag if switching to an option without it
+                delete newFieldState[metaKey];
+              }
+            }
+          }
+        }
+        
+        // Check if any field has dynamicOptions that depends on this key
+        for (const f of definition.fields) {
+          if (f.dynamicOptions?.dependsOn === key) {
             // Reset the dependent field to first option of new dataType
-            const options = field.dynamicOptions.optionsByValue?.[value];
+            const options = f.dynamicOptions.optionsByValue?.[value];
             if (options && options.length > 0) {
-              newFieldState[field.key] = options[0].value;
+              newFieldState[f.key] = options[0].value;
             }
           }
         }

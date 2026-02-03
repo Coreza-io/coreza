@@ -1,63 +1,121 @@
-# Plan: Make AI Agent Generic for Any LLM Provider
 
-## ✅ COMPLETED
 
-The AI Agent system has been refactored to support any LLM provider via a registry pattern.
+# Plan: Add Hidden `isSearchModel` Field for Search Models
 
----
+## Approach
 
-## What Was Implemented
-
-### 1. LLM Provider Registry
-**File:** `coreza-backend/src/config/llmProviders.ts`
-
-- Factory pattern for creating LangChain models
-- Provider configs for OpenAI and Gemini
-- Handles model-specific quirks (e.g., OpenAI search models don't support temperature)
-
-### 2. Generic AIAgentExecutor
-**File:** `coreza-backend/src/nodes/executors/AIAgentExecutor.ts`
-
-- Detects `provider` from connected ChatModel node
-- Uses registry for credential lookup and model creation
-- No longer hardcoded to OpenAI
-
-### 3. Updated JSON Nodes
-- `src/nodes/OpenAIChatModel.json` - Added `"provider": "openai"`
-- `src/nodes/GeminiChatModel.json` - New Gemini Chat Model node
-
-### 4. Cleanup
-- Deleted `coreza-backend/src/utils/openaiModels.ts` (moved to registry)
+Add a hidden field in the JSON that gets auto-set when a search model is selected. The frontend will pass this value, and the backend factory will use it to conditionally exclude temperature and add `web_search_options`.
 
 ---
 
-## Adding a New Provider
+## Files to Modify
 
-To add a new LLM (e.g., Anthropic):
+| File | Change |
+|------|--------|
+| `src/nodes/OpenAIChatModel.json` | Add hidden `isSearchModel` field with `displayOptions` to auto-set based on model |
+| `coreza-backend/src/config/llmProviders.ts` | Check `isSearchModel` flag instead of model name |
 
-1. **Create JSON node** (`src/nodes/AnthropicChatModel.json`):
+---
+
+## Implementation
+
+### 1. Update OpenAIChatModel.json
+
+Add a hidden field that is set when search models are selected:
+
 ```json
 {
-  "name": "AnthropicChatModel",
-  "provider": "anthropic",
-  "category": "ChatModel",
-  ...
+  "key": "isSearchModel",
+  "type": "hidden",
+  "default": false,
+  "displayOptions": {
+    "setTrue": {
+      "model": ["gpt-4o-search-preview", "gpt-4o-mini-search-preview"]
+    }
+  }
 }
 ```
 
-2. **Add to registry** (`coreza-backend/src/config/llmProviders.ts`):
+Or simpler - add `isSearchModel: true` directly to the model options:
+
+```json
+{
+  "label": "GPT-4o Search",
+  "value": "gpt-4o-search-preview",
+  "isSearchModel": true
+}
+```
+
+And the frontend serializes it into `values.isSearchModel` when that option is selected.
+
+### 2. Update llmProviders.ts
+
+Use the flag passed from frontend:
+
 ```typescript
-anthropic: {
-  id: "anthropic",
-  serviceType: "anthropicchatmodel",
-  apiKeyField: "apiKey",
-  defaultModel: "claude-3-opus",
-  createModel: ({ apiKey, model, temperature, maxTokens }) => {
-    return new ChatAnthropic({ ... });
-  },
+openai: ({ apiKey, model, temperature, maxTokens, modelKwargs, isSearchModel }) => {
+  return new ChatOpenAI({
+    modelName: model,
+    apiKey,
+    temperature: isSearchModel ? undefined : temperature,
+    maxTokens: isSearchModel ? undefined : maxTokens,
+    modelKwargs: isSearchModel ? { web_search_options: {} } : modelKwargs,
+  });
+},
+```
+
+### 3. Update LLMConfig Interface
+
+Add `isSearchModel` to the config:
+
+```typescript
+export interface LLMConfig {
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  modelKwargs?: Record<string, unknown>;
+  isSearchModel?: boolean;  // NEW
 }
 ```
 
-3. **Add dependency**: `@langchain/anthropic`
+### 4. Update AIAgentExecutor
 
-**No changes to AIAgentExecutor.ts required!**
+Pass `isSearchModel` from node values:
+
+```typescript
+const llm = getLLM(providerId, {
+  apiKey,
+  model,
+  temperature: Number(temperature),
+  maxTokens: chatModelNode.values?.maxTokens
+    ? Number(chatModelNode.values.maxTokens)
+    : undefined,
+  isSearchModel: chatModelNode.values?.isSearchModel,  // NEW - passed from frontend
+});
+```
+
+---
+
+## How It Works
+
+1. User selects "GPT-4o Search" in dropdown
+2. Frontend sees `isSearchModel: true` on that option and sets `values.isSearchModel = true`
+3. Frontend serializes and sends to backend with `isSearchModel: true`
+4. Backend factory receives `isSearchModel: true` and:
+   - Sets `temperature: undefined`
+   - Sets `modelKwargs: { web_search_options: {} }`
+
+---
+
+## Summary
+
+| Change | Location |
+|--------|----------|
+| Add `isSearchModel: true` to search model options | `OpenAIChatModel.json` |
+| Add `isSearchModel` to LLMConfig interface | `llmProviders.ts` |
+| Check `isSearchModel` flag in factory | `llmProviders.ts` |
+| Pass `isSearchModel` from node values | `AIAgentExecutor.ts` |
+
+This is a simple, explicit approach - the JSON declares which models are search models, and the value is passed through to the backend.
+

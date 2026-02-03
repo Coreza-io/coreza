@@ -42,8 +42,18 @@
         { "label": "GPT-4o Mini", "value": "gpt-4o-mini" },
         { "label": "GPT-4 Turbo", "value": "gpt-4-turbo" },
         { "label": "GPT-3.5 Turbo", "value": "gpt-3.5-turbo" },
-        { "label": "GPT-4o Search", "value": "gpt-4o-search-preview" },
-        { "label": "GPT-4o Mini Search", "value": "gpt-4o-mini-search-preview" }
+        {
+          "label": "GPT-4o Search",
+          "value": "gpt-4o-search-preview",
+          "noTemperature": true,
+          "modelKwargs": { "web_search_options": {} }
+        },
+        {
+          "label": "GPT-4o Mini Search",
+          "value": "gpt-4o-mini-search-preview",
+          "noTemperature": true,
+          "modelKwargs": { "web_search_options": {} }
+        }
       ],
       "required": true
     },
@@ -53,6 +63,11 @@
       "type": "number",
       "default": 0.7,
       "description": "Not applicable for Search models (gpt-4o-search-preview, gpt-4o-mini-search-preview).",
+      "displayOptions": {
+        "hide": {
+          "model": ["gpt-4o-search-preview", "gpt-4o-mini-search-preview"]
+        }
+      },
       "required": false
     },
     {

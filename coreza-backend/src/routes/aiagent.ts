@@ -33,14 +33,18 @@ router.post("/execute", async (req: Request, res: Response) => {
     }
 
     const {
+      node_id,
+      nodeName,
+      node_type,
+      category,
       systemPrompt,
       userPrompt,
       temperature,
       maxIterations,
       returnIntermediateSteps,
-      nodes: workflowNodes,
+      support_nodes: workflowNodes,
       edges: workflowEdges,
-      ...restFields
+      workflow_id,
     } = req.body;
 
     console.log("🤖 [AI AGENT ROUTE] Received execution request");
@@ -69,37 +73,27 @@ router.post("/execute", async (req: Request, res: Response) => {
       });
     }
 
-    // Find the AIAgent node from the workflow nodes
-    const aiAgentNode = workflowNodes.find(
-      (n) => n.name === "AIAgent" || n.type === "AIAgent",
-    );
-    if (!aiAgentNode) {
-      return res.status(400).json({
-        success: false,
-        error: "AIAgent node not found in workflow nodes",
-      });
-    }
-
     // Use the node from request and merge with execution values
     const node: WorkflowNode = {
-      ...aiAgentNode,
+      id: node_id,
+      name: nodeName,
+      node_type: node_type,
+      category: category,
       values: {
-        ...aiAgentNode.values,
         systemPrompt,
         userPrompt,
         temperature,
         maxIterations,
         returnIntermediateSteps,
-        ...restFields,
       },
     };
 
     // Create execution context with all necessary data
     const context = {
-      user_id: userId,
       userId,
       nodes: workflowNodes,
       edges: workflowEdges,
+      workflow_id,
       // Add a simple resolver function
       resolveNodeParameters: (node: WorkflowNode, input: any) => {
         return { ...node.values, ...input };

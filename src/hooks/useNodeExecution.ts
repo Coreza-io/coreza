@@ -221,7 +221,7 @@ export function useNodeExecution({
         );
 
         // Serialize only nodes and edges attached to this AIAgent
-        payload.nodes = nodes
+        payload.support_nodes = nodes
           .filter((n) => supportNodeIds.has(n.id))
           .map((n) => ({
             id: n.id,
@@ -248,7 +248,7 @@ export function useNodeExecution({
           }));
 
         console.log("🤖 AIAgent special payload with nodes/edges:", {
-          nodesCount: payload.nodes.length,
+          nodesCount: payload.support_nodes.length,
           edgesCount: payload.edges.length,
         });
       }
@@ -323,19 +323,12 @@ export function useNodeExecution({
 
         const payload = buildPayload(fieldState, supportData, effectiveInput);
         payload.node_id = nodeId;
+        payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
         payload.workflow_id = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;
-
-        // // Auto-include node_id and workflow_id for all streaming nodes
-        // if (definition?.executionMode === "streaming" && nodeId) {
-        //   payload.node_id = nodeId;
-        //   if (workflowId) {
-        //     payload.workflow_id = workflowId;
-        //   }
-        // }
 
         const parsedSymbols: string[] = Array.isArray(payload.symbols)
           ? payload.symbols

@@ -51,14 +51,14 @@ export class AIAgentExecutor implements INodeExecutor {
     const normalizeCtx: NormalizeContext = {
       nodeId: node.id,
       nodeName: node.name,
-      category: this.category,
+      category: node.category,
       startTime,
     };
 
     // Create DataContext for this agent execution
     const runId = context?.runId || `agent-${node.id}-${Date.now()}`;
-    const workflowId = context?.workflowId || "unknown";
-    const userId = context?.user_id || context?.userId || "unknown";
+    const workflowId = context?.workflow_id || "unknown";
+    const userId = context?.userId || "unknown";
 
     const dataContextManager = DataContextManager.getInstance();
     const dataContext = dataContextManager.getContext({
@@ -73,7 +73,7 @@ export class AIAgentExecutor implements INodeExecutor {
       );
 
       // Get user_id from context
-      const user_id = context?.user_id || context?.userId;
+      const user_id = context?.userId;
       if (!user_id) {
         const errOutput = createErrorOutput(
           "user_id is required for AI Agent execution",

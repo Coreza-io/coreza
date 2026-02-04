@@ -19,6 +19,16 @@
     }
   ],
   "executionMode": "webhook_listening",
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
+  "listeningConfig": {
+    "provider": "telegram",
+    "waitField": "webhookPayload",
+    "timeout": 300000,
+    "listeningFlag": "isListening"
+  },
   "auth": "GenericAuthModal",
   "authFields": [
     {

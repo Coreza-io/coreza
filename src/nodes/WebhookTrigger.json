@@ -12,6 +12,16 @@
   },
   "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "executionMode": "webhook_listening",
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
+  "listeningConfig": {
+    "provider": "generic",
+    "waitField": "webhookPayload",
+    "timeout": 300000,
+    "listeningFlag": "isListening"
+  },
   "fields": [
     {
       "key": "webhookUrl",

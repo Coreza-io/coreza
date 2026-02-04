@@ -1,125 +1,203 @@
 
-
-# Plan: Fix `isSearchModel` Not in Payload
+# Plan: Unify Webhook Registration with Generic Action Path
 
 ## Problem
 
-When a user selects "GPT-4o Search" model, the frontend stores only the value (`"gpt-4o-search-preview"`) in `values.model`, but does NOT extract the `isSearchModel: true` flag from the option object. The backend expects `values.isSearchModel` but it's never set.
+Webhook triggers use a **hardcoded API call** in `useNodeExecution.ts`:
+```typescript
+const registerResponse = await apiClient.post('/webhooks/register', {
+  provider,
+  workflow_id: workflowId,
+  node_id: nodeId,
+  credential_id: fieldState.credential_id,
+  ...
+}, session?.access_token);
+```
 
-**Current flow:**
-```
-User selects "GPT-4o Search" 
-  → handleChange("model", "gpt-4o-search-preview")
-  → values = { model: "gpt-4o-search-preview" }  // isSearchModel NOT included
+While streaming triggers define their endpoint in JSON and use the **generic action path**:
+```json
+{
+  "executionMode": "streaming",
+  "action": {
+    "url": "/stream/execute-stream-node",
+    "method": "POST"
+  }
+}
 ```
 
-**Expected flow:**
-```
-User selects "GPT-4o Search"
-  → handleChange("model", "gpt-4o-search-preview")
-  → Find option with value="gpt-4o-search-preview"
-  → Extract isSearchModel=true from option
-  → values = { model: "gpt-4o-search-preview", isSearchModel: true }
-```
+This inconsistency forces separate code paths for what is conceptually the same operation.
 
 ---
 
 ## Solution
 
-Modify `useNodeFieldState.ts` to extract metadata flags from selected options when a select field changes.
+Add `action` property to webhook trigger JSONs and remove the hardcoded webhook registration logic. Both webhook and streaming triggers will then use the same generic action execution path.
 
 ---
 
-## File to Modify
+## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/hooks/useNodeFieldState.ts` | In `handleChange`, extract option metadata for select fields |
+| `src/nodes/WebhookTrigger.json` | Add `action` property pointing to `/webhooks/register` |
+| `src/nodes/TelegramTrigger.json` | Add `action` property pointing to `/webhooks/register` |
+| `src/hooks/useNodeExecution.ts` | Remove hardcoded webhook registration block, use generic action path |
 
 ---
 
 ## Implementation
 
-Update the `handleChange` function to look up the selected option and copy any additional metadata (like `isSearchModel`) to the field state:
+### 1. Update WebhookTrigger.json
+
+Add action configuration:
+
+```json
+{
+  "name": "WebhookTrigger",
+  "node_type": "trigger",
+  "executionMode": "webhook_listening",
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
+  "listeningConfig": {
+    "provider": "generic",
+    "waitField": "webhookPayload",
+    "timeout": 300000
+  },
+  ...
+}
+```
+
+### 2. Update TelegramTrigger.json
+
+Add action configuration:
+
+```json
+{
+  "name": "TelegramTrigger",
+  "node_type": "trigger", 
+  "executionMode": "webhook_listening",
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
+  "listeningConfig": {
+    "provider": "telegram",
+    "waitField": "webhookPayload",
+    "timeout": 300000
+  },
+  ...
+}
+```
+
+### 3. Simplify useNodeExecution.ts
+
+Replace the 145-line hardcoded webhook block with generic action execution:
+
+**Before (hardcoded):**
+```typescript
+if (definition?.executionMode === "webhook_listening") {
+  const provider = definition.name === "WebhookTrigger" 
+    ? "generic" 
+    : definition.name.replace("Trigger", "").toLowerCase();
+  
+  const registerResponse = await apiClient.post('/webhooks/register', {
+    provider,
+    workflow_id: workflowId,
+    node_id: nodeId,
+    ...
+  }, session?.access_token);
+  // ... 145 lines of webhook-specific code
+}
+```
+
+**After (uses generic path):**
+```typescript
+// Webhook triggers now fall through to the generic action handler
+// because they have action.url defined in their JSON
+
+// In the generic action handler section (around line 653):
+if (definition?.action?.url && definition?.action?.method) {
+  const res = await apiClient.request(fullUrl, {...});
+  const responseData = await res.json();
+  
+  // Handle both streaming AND webhook listening modes
+  const isListeningMode = 
+    definition?.executionMode === "streaming" ||
+    definition?.executionMode === "webhook_listening";
+    
+  if (isListeningMode) {
+    const handler = createListeningHandler({
+      // Config from definition.listeningConfig or definition.streamingConfig
+      ...
+    }, deps);
+    await handler.start();
+    return;
+  }
+}
+```
+
+### 4. Backend Payload Mapping
+
+The backend `/webhooks/register` already expects `workflow_id`, `node_id`, etc. The generic payload builder needs to map these:
 
 ```typescript
-// In handleChange, around line 158
-const handleChange = useCallback(
-  (key: string, value: any) => {
-    if (readOnly) return;
-    
-    let newFieldState = { ...fieldState, [key]: value };
-    
-    // For select fields, extract any metadata from the selected option
-    if (definition?.fields) {
-      const field = definition.fields.find((f: any) => f.key === key);
-      if (field?.type === "select" && field?.options) {
-        const selectedOption = field.options.find(
-          (opt: any) => opt.value === value || opt.id === value
-        );
-        
-        // Copy option metadata flags to fieldState (e.g., isSearchModel)
-        if (selectedOption) {
-          // List of known metadata keys to extract from options
-          const optionMetadataKeys = ["isSearchModel", "modelKwargs", "noTemperature"];
-          
-          for (const metaKey of optionMetadataKeys) {
-            if (selectedOption[metaKey] !== undefined) {
-              newFieldState[metaKey] = selectedOption[metaKey];
-            } else {
-              // Clear the flag if switching to an option without it
-              delete newFieldState[metaKey];
-            }
-          }
-        }
-      }
-      
-      // Existing: Check if any field has dynamicOptions that depends on this key
-      for (const f of definition.fields) {
-        if (f.dynamicOptions?.dependsOn === key) {
-          const options = f.dynamicOptions.optionsByValue?.[value];
-          if (options && options.length > 0) {
-            newFieldState[f.key] = options[0].value;
-          }
-        }
-      }
-    }
-    
-    setFieldState(newFieldState);
-    // ... rest of function
-  },
-  [fieldState, nodeId, setNodes, definition?.fields, readOnly]
-);
+// Ensure the payload includes required webhook fields
+const payload = {
+  ...fieldState,
+  workflow_id: workflowId,
+  node_id: nodeId,
+  provider: definition?.listeningConfig?.provider || 
+            definition.name.replace("Trigger", "").toLowerCase(),
+};
 ```
 
 ---
 
-## How It Works
+## Unified Flow
 
-1. User selects "GPT-4o Search" from dropdown
-2. `handleChange("model", "gpt-4o-search-preview")` is called
-3. Function finds the field definition for "model"
-4. Function finds the option with `value: "gpt-4o-search-preview"`
-5. Function sees `isSearchModel: true` on that option
-6. Function sets `newFieldState.isSearchModel = true`
-7. `values` now contains `{ model: "gpt-4o-search-preview", isSearchModel: true }`
-8. When serialized to backend, `chatModelNode.values.isSearchModel` is `true`
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    Node JSON Definition                          │
+├─────────────────────────────────────────────────────────────────┤
+│  WebhookTrigger.json                AlpacaStreamData.json       │
+│  ├─ executionMode: webhook_listening   ├─ executionMode: streaming│
+│  ├─ action.url: /webhooks/register     ├─ action.url: /stream/... │
+│  └─ listeningConfig: {...}             └─ streamingConfig: {...}  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               useNodeExecution - Generic Action Path             │
+├─────────────────────────────────────────────────────────────────┤
+│  1. Build payload from fieldState + workflow/node IDs           │
+│  2. Call action.url with action.method                          │
+│  3. If executionMode is "streaming" OR "webhook_listening":     │
+│     └─► createListeningHandler(config from JSON, deps).start()  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Benefits
 
-- Generic solution that works for any option metadata
-- Metadata is available in `values` for all use cases
-- No backend changes needed
-- Future option flags automatically extracted (just add to `optionMetadataKeys` list)
+| Aspect | Before | After |
+|--------|--------|-------|
+| Webhook registration | Hardcoded 145 lines | Uses generic action path |
+| Adding new webhook providers | Modify useNodeExecution.ts | Just create JSON |
+| Code duplication | Webhook vs Streaming logic | Single unified handler |
+| Provider derivation | `definition.name.replace("Trigger", "")` | `listeningConfig.provider` in JSON |
+| Maintainability | Two code paths | One code path |
 
 ---
 
 ## Summary
 
-| Before | After |
-|--------|-------|
-| `values = { model: "gpt-4o-search-preview" }` | `values = { model: "gpt-4o-search-preview", isSearchModel: true }` |
-| Backend: `chatModelNode.values?.isSearchModel = undefined` | Backend: `chatModelNode.values?.isSearchModel = true` |
+| Change | Impact |
+|--------|--------|
+| Add `action` + `listeningConfig` to webhook JSONs | Enables generic execution |
+| Remove hardcoded webhook block from useNodeExecution | -145 lines |
+| Unify with streaming handler path | Single code path for all listening nodes |
 
+This makes webhook triggers truly config-driven like streaming triggers - no special-cased code needed.

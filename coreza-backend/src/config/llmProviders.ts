@@ -23,7 +23,14 @@ type LLMFactory = (config: LLMConfig) => BaseChatModel;
  * All other config comes from frontend JSON
  */
 export const LLM_FACTORIES: Record<string, LLMFactory> = {
-  openai: ({ apiKey, model, temperature, maxTokens, modelKwargs, isSearchModel }) => {
+  openai: ({
+    apiKey,
+    model,
+    temperature,
+    maxTokens,
+    modelKwargs,
+    isSearchModel,
+  }) => {
     return new ChatOpenAI({
       modelName: model,
       apiKey,
@@ -35,7 +42,7 @@ export const LLM_FACTORIES: Record<string, LLMFactory> = {
 
   gemini: ({ apiKey, model, temperature, maxTokens }) => {
     return new ChatGoogleGenerativeAI({
-      modelName: model,
+      model: model,
       apiKey,
       temperature,
       maxOutputTokens: maxTokens,

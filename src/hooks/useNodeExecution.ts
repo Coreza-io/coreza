@@ -109,23 +109,6 @@ export function useNodeExecution({
 
   const userId = user?.id;
 
-  // Collect support node data
-  const collectNodeData = useCallback(() => {
-    const supportData = edges
-      .filter((e) => e.target === nodeId)
-      .reduce(
-        (acc, edge) => {
-          const sourceNode = nodes.find((n) => n.id === edge.source);
-          if ((sourceNode?.data as any)?.definition?.node_type === "support") {
-            return { ...acc, ...((sourceNode.data as any)?.output || {}) };
-          }
-          return acc;
-        },
-        {} as Record<string, any>,
-      );
-    return { supportData };
-  }, [edges, nodeId, nodes]);
-
   // Resolve references recursively
   const resolveDeep = useCallback(
     (val: any, selectedInputData: any, allNodeData: any): any => {
@@ -152,7 +135,6 @@ export function useNodeExecution({
   const buildPayload = useCallback(
     (
       fieldState: Record<string, any>,
-      supportData: Record<string, any>,
       selectedInputData: Record<string, any>,
     ): Record<string, any> => {
       // Create a map of all upstream node data by display name
@@ -200,62 +182,54 @@ export function useNodeExecution({
         console.log("🔧 If node special payload:", payload);
       }
 
-      // Special handling for AIAgent node to include nodes and edges for tool discovery
-      if (definition?.name === "AIAgent") {
-        const attachedEdges = nodeId
-          ? edges.filter((e) => e.source === nodeId || e.target === nodeId)
-          : [];
-        const attachedNodeIds = new Set<string>(
-          nodeId
-            ? [nodeId, ...attachedEdges.flatMap((e) => [e.source, e.target])]
-            : [],
-        );
-        const supportNodeIds = new Set<string>(
-          nodes
-            .filter(
-              (n) =>
-                attachedNodeIds.has(n.id) &&
-                (n.data?.definition as any)?.node_type === "sub",
-            )
-            .map((n) => n.id),
-        );
-
-        // Serialize only nodes and edges attached to this AIAgent
-        payload.support_nodes = nodes
-          .filter((n) => supportNodeIds.has(n.id))
-          .map((n) => ({
-            id: n.id,
-            name: (n.data?.definition as any)?.name,
-            node_type: (n.data?.definition as any)?.node_type,
-            category: (n.data?.definition as any)?.category,
-            subCategory: (n.data?.definition as any)?.subCategory,
-            provider: (n.data?.definition as any)?.provider,
-            values: n.data?.values || {},
-            position: n.position,
-          }));
-        payload.edges = attachedEdges
+      // Special handling for support node to include nodes and edges
+      const attachedEdges = nodeId
+        ? edges.filter((e) => e.source === nodeId || e.target === nodeId)
+        : [];
+      const attachedNodeIds = new Set<string>(
+        nodeId
+          ? [nodeId, ...attachedEdges.flatMap((e) => [e.source, e.target])]
+          : [],
+      );
+      const supportNodeIds = new Set<string>(
+        nodes
           .filter(
-            (e) =>
-              (e.source === nodeId && supportNodeIds.has(e.target)) ||
-              (e.target === nodeId && supportNodeIds.has(e.source)),
+            (n) =>
+              attachedNodeIds.has(n.id) &&
+              (n.data?.definition as any)?.node_type === "sub",
           )
-          .map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle,
-          }));
+          .map((n) => n.id),
+      );
 
-        console.log("🤖 AIAgent special payload with nodes/edges:", {
-          nodesCount: payload.support_nodes.length,
-          edgesCount: payload.edges.length,
-        });
-      }
+      // Serialize only nodes and edges attached to this AIAgent
+      payload.support_nodes = nodes
+        .filter((n) => supportNodeIds.has(n.id))
+        .map((n) => ({
+          id: n.id,
+          name: (n.data?.definition as any)?.name,
+          node_type: (n.data?.definition as any)?.node_type,
+          category: (n.data?.definition as any)?.category,
+          subCategory: (n.data?.definition as any)?.subCategory,
+          provider: (n.data?.definition as any)?.provider,
+          values: n.data?.values || {},
+          position: n.position,
+        }));
+      payload.edges = attachedEdges
+        .filter(
+          (e) =>
+            (e.source === nodeId && supportNodeIds.has(e.target)) ||
+            (e.target === nodeId && supportNodeIds.has(e.source)),
+        )
+        .map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          sourceHandle: e.sourceHandle,
+          targetHandle: e.targetHandle,
+        }));
 
       return {
         ...payload,
-        ...(Array.isArray(supportData) ? supportData[0] || {} : supportData),
       };
     },
     [definition, previousNodes, executionStore, resolveDeep, nodes, edges],
@@ -297,15 +271,6 @@ export function useNodeExecution({
         }
       }
 
-      // Guard for GoogleWebSearch: require query field
-      if (
-        definition?.name === "GoogleWebSearch" &&
-        !fieldState.query?.toString().trim()
-      ) {
-        setError("Search Query is required");
-        return;
-      }
-
       setError("");
       setIsSending(true);
 
@@ -314,14 +279,13 @@ export function useNodeExecution({
           throw new Error("No authenticated user found");
         }
 
-        const { supportData } = collectNodeData();
         let effectiveInput = selectedInputData;
         if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
           // Root node with no prior input: default to fieldState
           effectiveInput = { ...fieldState };
         }
 
-        const payload = buildPayload(fieldState, supportData, effectiveInput);
+        const payload = buildPayload(fieldState, effectiveInput);
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
@@ -330,14 +294,16 @@ export function useNodeExecution({
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;
 
-        const parsedSymbols: string[] = Array.isArray(payload.symbols)
-          ? payload.symbols
-          : typeof payload.symbols === "string"
+        if (payload.symbols) {
+          const parsedSymbols: string[] = Array.isArray(payload.symbols)
             ? payload.symbols
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean)
-            : [];
+            : typeof payload.symbols === "string"
+              ? payload.symbols
+                  .split(",")
+                  .map((s: string) => s.trim())
+                  .filter(Boolean)
+              : [];
+        }
 
         let outputData: any;
 
@@ -1095,7 +1061,6 @@ export function useNodeExecution({
       definition?.streamingConfig?.sourceId,
       fieldState,
       userId,
-      collectNodeData,
       selectedInputData,
       buildPayload,
       nodeId,

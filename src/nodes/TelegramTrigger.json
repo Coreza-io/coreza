@@ -1,9 +1,9 @@
 {
   "name": "TelegramTrigger",
-  "type": "trigger",
   "node_type": "trigger",
   "category": "Trigger",
   "subCategory": "telegram",
+  "provider": "telegram",
   "icon": "telegram",
   "description": "Receive messages and updates from Telegram bots",
   "color": "text-blue-400",

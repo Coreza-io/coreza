@@ -2,6 +2,7 @@
   "name": "WebhookTrigger",
   "node_type": "trigger",
   "category": "webhook",
+  "provider": "generic",
   "icon": "webhook",
   "description": "Receive HTTP webhooks from external services",
   "color": "text-purple-500",
@@ -9,9 +10,7 @@
     "width": 360,
     "height": 400
   },
-  "handles": [
-    { "type": "source", "position": "right", "id": "output" }
-  ],
+  "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "executionMode": "webhook_listening",
   "fields": [
     {

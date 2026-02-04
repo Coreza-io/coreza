@@ -328,7 +328,19 @@ export function useNodeExecution({
         payload.workflow_id = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
-        payload.provider = definition.provider;
+        
+        // Set provider from listeningConfig (for webhook triggers) or definition
+        if (definition?.listeningConfig?.provider) {
+          payload.provider = definition.listeningConfig.provider;
+        } else {
+          payload.provider = definition.provider;
+        }
+        
+        // Map webhook-specific fields for backend compatibility
+        if (definition?.executionMode === "webhook_listening") {
+          payload.update_types = fieldState.updateTypes;
+          payload.secret_token = fieldState.secretToken || fieldState.secret;
+        }
 
         const parsedSymbols: string[] = Array.isArray(payload.symbols)
           ? payload.symbols
@@ -341,152 +353,8 @@ export function useNodeExecution({
 
         let outputData: any;
 
-        // Handle webhook triggers - register ALL through backend
-        if (definition?.executionMode === "webhook_listening") {
-          // Derive provider from node name (TelegramTrigger -> telegram, WebhookTrigger -> generic)
-          const provider =
-            definition.name === "WebhookTrigger"
-              ? "generic"
-              : definition.name.replace("Trigger", "").toLowerCase();
-
-          // Register webhook through backend (for ALL webhook types)
-          const registerResponse = await apiClient.post(
-            "/webhooks/register",
-            {
-              provider,
-              workflow_id: workflowId,
-              node_id: nodeId,
-              credential_id: fieldState.credential_id,
-              update_types: fieldState.updateTypes,
-              secret_token: fieldState.secretToken || fieldState.secret,
-            },
-            session?.access_token,
-          );
-
-          if (!registerResponse.ok) {
-            const errorData = await registerResponse
-              .json()
-              .catch(() => ({ error: "Registration failed" }));
-            throw new Error(
-              errorData.error || `Failed to register ${provider} webhook`,
-            );
-          }
-
-          const registerResult = await registerResponse.json();
-
-          if (!registerResult.success) {
-            throw new Error(
-              registerResult.error || `Failed to register ${provider} webhook`,
-            );
-          }
-
-          console.log(
-            `✅ Registered ${provider} webhook:`,
-            registerResult.callback_url,
-          );
-
-          const listeningOutput = {
-            status: "listening",
-            message: registerResult.message || "Waiting for webhook event...",
-            startedAt: new Date().toISOString(),
-            callbackUrl: registerResult.callback_url,
-            httpMethod: fieldState.httpMethod || "POST",
-            nodeId: nodeId,
-            provider,
-          };
-
-          setLastOutput(listeningOutput);
-          executionStore.setNodeData(nodeId!, { output: listeningOutput });
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? {
-                    ...n,
-                    data: {
-                      ...n.data,
-                      output: listeningOutput,
-                      isListening: true,
-                    },
-                  }
-                : n,
-            ),
-          );
-
-          // Wait for webhook event via WebSocket (handled by ExecutionStoreContext)
-          const timeout = 300000; // 5 minutes
-          const startTime = Date.now();
-
-          try {
-            await new Promise<void>((resolve, reject) => {
-              const checkInterval = setInterval(() => {
-                const nodeData = executionStore.getNodeData(nodeId!);
-                const output = nodeData?.output as any;
-
-                // Check if we received webhook data
-                if (output?.webhookPayload) {
-                  clearInterval(checkInterval);
-                  console.log("✅ Received webhook event:", output);
-                  outputData = output;
-                  resolve();
-                  return;
-                }
-
-                // Check timeout
-                if (Date.now() - startTime > timeout) {
-                  clearInterval(checkInterval);
-                  reject(
-                    new Error(
-                      "Timeout waiting for webhook event after 5 minutes",
-                    ),
-                  );
-                }
-              }, 100);
-            });
-
-            // Clear listening state
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, isListening: false } }
-                  : n,
-              ),
-            );
-          } catch (error: any) {
-            console.error("Webhook listening error:", error);
-            //setError(error.message || "Failed to receive webhook");
-            outputData = {
-              ...listeningOutput,
-              status: "error",
-              message: error.message,
-            };
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, isListening: false } }
-                  : n,
-              ),
-            );
-          }
-
-          // Continue with normal output handling
-          setLastOutput(outputData);
-          const finalOutput =
-            overrideOutput !== null ? overrideOutput : outputData;
-          data.output = finalOutput;
-          executionStore.setNodeData(nodeId!, {
-            input: effectiveInput,
-            output: finalOutput,
-          });
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, output: finalOutput } }
-                : n,
-            ),
-          );
-          setIsSending(false);
-          return;
-        }
+        // NOTE: Webhook triggers now use the generic action path below (definition.action.url)
+        // with listeningConfig from JSON - no special case needed here
 
         // Handle Loop nodes specially
         if (definition?.name === "Loop") {
@@ -694,7 +562,7 @@ export function useNodeExecution({
           if (!res.ok || responseData.status === "error")
             throw new Error(JSON.stringify(responseData) || "Action failed");
 
-          // Handle streaming nodes generically
+          // Handle listening modes (streaming and webhook)
           const isStreamingSubscribe =
             definition?.executionMode === "streaming" &&
             (fieldState.operation ?? fieldState.mode) === "subscribe";
@@ -703,7 +571,123 @@ export function useNodeExecution({
             definition?.executionMode === "streaming" &&
             definition?.node_type === "trigger";
 
-          if (isStreamingTrigger) {
+          const isWebhookListening =
+            definition?.executionMode === "webhook_listening";
+
+          // Handle webhook listening mode - unified with streaming pattern
+          if (isWebhookListening) {
+            console.log(`✅ [Webhook Listening] Response:`, responseData);
+
+            // Get config from JSON definition
+            const listeningConfig = definition?.listeningConfig || {};
+            const listeningFlag = listeningConfig.listeningFlag || "isListening";
+            const timeout = listeningConfig.timeout || 300000;
+            const waitField = listeningConfig.waitField || "webhookPayload";
+            const provider = listeningConfig.provider || definition.name.replace("Trigger", "").toLowerCase();
+
+            const listeningOutput = {
+              status: "listening",
+              message: responseData.message || "Waiting for webhook event...",
+              startedAt: new Date().toISOString(),
+              callbackUrl: responseData.callback_url,
+              httpMethod: fieldState.httpMethod || "POST",
+              nodeId,
+              provider,
+            };
+
+            setLastOutput(listeningOutput);
+            executionStore.setNodeData(nodeId!, { 
+              output: listeningOutput,
+              [listeningFlag]: true,
+            });
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        output: listeningOutput,
+                        [listeningFlag]: true,
+                      },
+                    }
+                  : n,
+              ),
+            );
+
+            // Wait for webhook event via WebSocket (handled by ExecutionStoreContext)
+            const startTime = Date.now();
+
+            try {
+              await new Promise<void>((resolve, reject) => {
+                const checkInterval = setInterval(() => {
+                  const nodeData = executionStore.getNodeData(nodeId!);
+                  const output = nodeData?.output as any;
+
+                  // Check if we received webhook data using waitField from config
+                  if (output?.[waitField]) {
+                    clearInterval(checkInterval);
+                    console.log("✅ Received webhook event:", output);
+                    outputData = output;
+                    resolve();
+                    return;
+                  }
+
+                  // Check timeout
+                  if (Date.now() - startTime > timeout) {
+                    clearInterval(checkInterval);
+                    reject(
+                      new Error(
+                        `Timeout waiting for webhook event after ${timeout / 60000} minutes`,
+                      ),
+                    );
+                  }
+                }, 100);
+              });
+
+              // Clear listening state
+              setNodes((nds) =>
+                nds.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, data: { ...n.data, [listeningFlag]: false } }
+                    : n,
+                ),
+              );
+            } catch (error: any) {
+              console.error("Webhook listening error:", error);
+              outputData = {
+                ...listeningOutput,
+                status: "error",
+                message: error.message,
+              };
+              setNodes((nds) =>
+                nds.map((n) =>
+                  n.id === nodeId
+                    ? { ...n, data: { ...n.data, [listeningFlag]: false } }
+                    : n,
+                ),
+              );
+            }
+
+            // Continue with normal output handling
+            setLastOutput(outputData);
+            const finalOutput =
+              overrideOutput !== null ? overrideOutput : outputData;
+            data.output = finalOutput;
+            executionStore.setNodeData(nodeId!, {
+              input: effectiveInput,
+              output: finalOutput,
+            });
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...n.data, output: finalOutput } }
+                  : n,
+              ),
+            );
+            setIsSending(false);
+            return;
+          } else if (isStreamingTrigger) {
             // Streaming trigger - handle listening state and recovery polling
             console.log(`✅ [Streaming Trigger] Response:`, responseData);
 

@@ -22,6 +22,7 @@ import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
+import { createListeningHandler } from "@/hooks/useListeningHandler";
 import { Provider } from "@radix-ui/react-toast";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -540,6 +541,16 @@ export function useNodeExecution({
           const isWebhookListening =
             definition?.executionMode === "webhook_listening";
 
+          const listeningDeps = {
+            nodeId: nodeId!,
+            executionStore,
+            setNodes,
+            setLastOutput,
+            apiClient,
+            accessToken: session?.access_token,
+            abortRef: pollingAbortRef,
+          };
+
           // Handle webhook listening mode - unified with streaming pattern
           if (isWebhookListening) {
             console.log(`✅ [Webhook Listening] Response:`, responseData);
@@ -549,432 +560,163 @@ export function useNodeExecution({
             const listeningFlag = listeningConfig.listeningFlag || "isListening";
             const timeout = listeningConfig.timeout || 300000;
             const waitField = listeningConfig.waitField || "webhookPayload";
-            const provider = listeningConfig.provider || definition.name.replace("Trigger", "").toLowerCase();
+            const provider =
+              listeningConfig.provider ||
+              definition.name.replace("Trigger", "").toLowerCase();
 
-            const listeningOutput = {
-              status: "listening",
-              message: responseData.message || "Waiting for webhook event...",
-              startedAt: new Date().toISOString(),
-              callbackUrl: responseData.callback_url,
-              httpMethod: fieldState.httpMethod || "POST",
-              nodeId,
-              provider,
-            };
-
-            setLastOutput(listeningOutput);
-            executionStore.setNodeData(nodeId!, { 
-              output: listeningOutput,
-              [listeningFlag]: true,
-            });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: listeningOutput,
-                        [listeningFlag]: true,
-                      },
-                    }
-                  : n,
-              ),
+            const handler = createListeningHandler(
+              {
+                buildListeningOutput: (res) => ({
+                  status: "listening",
+                  message: res.message || "Waiting for webhook event...",
+                  startedAt: new Date().toISOString(),
+                  callbackUrl: res.callback_url,
+                  httpMethod: fieldState.httpMethod || "POST",
+                  nodeId,
+                  provider,
+                }),
+                isDataReceived: (nodeData) =>
+                  Boolean(nodeData?.output?.[waitField]),
+                buildSuccessOutput: (nodeData) => nodeData.output,
+                buildTimeoutOutput: (listeningOutput) => ({
+                  ...(listeningOutput ?? {}),
+                  status: "error",
+                  message: `Timeout waiting for webhook event after ${
+                    timeout / 60000
+                  } minutes`,
+                }),
+                buildErrorOutput: (error, listeningOutput) => ({
+                  ...(listeningOutput ?? {}),
+                  status: "error",
+                  message: error.message,
+                }),
+                timeout,
+                listeningFlag,
+              },
+              listeningDeps,
             );
 
-            // Wait for webhook event via WebSocket (handled by ExecutionStoreContext)
-            const startTime = Date.now();
-
-            try {
-              await new Promise<void>((resolve, reject) => {
-                const checkInterval = setInterval(() => {
-                  const nodeData = executionStore.getNodeData(nodeId!);
-                  const output = nodeData?.output as any;
-
-                  // Check if we received webhook data using waitField from config
-                  if (output?.[waitField]) {
-                    clearInterval(checkInterval);
-                    console.log("✅ Received webhook event:", output);
-                    outputData = output;
-                    resolve();
-                    return;
-                  }
-
-                  // Check timeout
-                  if (Date.now() - startTime > timeout) {
-                    clearInterval(checkInterval);
-                    reject(
-                      new Error(
-                        `Timeout waiting for webhook event after ${timeout / 60000} minutes`,
-                      ),
-                    );
-                  }
-                }, 100);
-              });
-
-              // Clear listening state
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, data: { ...n.data, [listeningFlag]: false } }
-                    : n,
-                ),
-              );
-            } catch (error: any) {
-              console.error("Webhook listening error:", error);
-              outputData = {
-                ...listeningOutput,
-                status: "error",
-                message: error.message,
-              };
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, data: { ...n.data, [listeningFlag]: false } }
-                    : n,
-                ),
-              );
-            }
-
-            // Continue with normal output handling
-            setLastOutput(outputData);
-            const finalOutput =
-              overrideOutput !== null ? overrideOutput : outputData;
-            data.output = finalOutput;
-            executionStore.setNodeData(nodeId!, {
-              input: effectiveInput,
-              output: finalOutput,
-            });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, output: finalOutput } }
-                  : n,
-              ),
-            );
-            setIsSending(false);
-            return;
+            outputData = await handler.start(responseData);
           } else if (isStreamingTrigger) {
             // Streaming trigger - handle listening state and recovery polling
             console.log(`✅ [Streaming Trigger] Response:`, responseData);
 
-            const listeningOutput = {
-              status: "listening",
-              message: `Listening for ${
-                definition?.name || "streaming"
-              } data...`,
-              startedAt: new Date().toISOString(),
-              mode: fieldState.mode || "listen",
-              source: responseData.source,
-              nodeId,
-              filterSymbols: responseData.symbols || [],
-              filterTypes:
-                fieldState.filter_types || fieldState.stream_types || [],
-              subscriptionMode: fieldState.subscriptionMode || "workflow",
-            };
-
-            outputData = listeningOutput;
-            setLastOutput(outputData);
-            executionStore.setNodeData(nodeId!, {
-              output: outputData,
-              isTestListening: true,
-              testListenWorkflowId: workflowId,
-              testListenNodeId: nodeId,
-            });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: outputData,
-                        isTestListening: true,
-                        testListenWorkflowId: workflowId,
-                        testListenNodeId: nodeId,
-                      },
+            const handler = createListeningHandler(
+              {
+                buildListeningOutput: (res) => ({
+                  status: "listening",
+                  message: `Listening for ${
+                    definition?.name || "streaming"
+                  } data...`,
+                  startedAt: new Date().toISOString(),
+                  mode: fieldState.mode || "listen",
+                  source: res.source,
+                  nodeId,
+                  filterSymbols: res.symbols || [],
+                  filterTypes:
+                    fieldState.filter_types || fieldState.stream_types || [],
+                  subscriptionMode: fieldState.subscriptionMode || "workflow",
+                }),
+                buildListeningNodeData: () => ({
+                  testListenWorkflowId: workflowId,
+                  testListenNodeId: nodeId,
+                }),
+                isDataReceived: (nodeData) =>
+                  nodeData?.streamDataReceived ||
+                  nodeData?.output?.status === "success",
+                shouldStop: (nodeData) =>
+                  nodeData?.isTestListening === false &&
+                  !nodeData?.streamDataReceived,
+                buildSuccessOutput: (nodeData) => nodeData.output,
+                buildTimeoutOutput: () => ({
+                  status: "timeout",
+                  message: "No stream data received within timeout",
+                }),
+                timeout: 300000,
+                listeningFlag: "isTestListening",
+                receivedFlag: "streamDataReceived",
+                recoveryPolling: {
+                  endpoint: `/market/stream-test-result/${workflowId}/${nodeId}`,
+                  interval: 10000,
+                  processResult: (result) => {
+                    if (result.status === "data_received") {
+                      return {
+                        done: true,
+                        output: {
+                          status: "success",
+                          symbol: result.data.symbol,
+                          type: result.data.type,
+                          data: result.data.data,
+                          receivedAt: result.data.receivedAt,
+                          source: result.data.source,
+                          [result.data.type]:
+                            result.data.data?.[result.data.type] ||
+                            result.data.data,
+                        },
+                      };
                     }
-                  : n,
-              ),
+                    if (result.status === "expired") {
+                      return {
+                        done: true,
+                        output: {
+                          status: "expired",
+                          message: "Test listener expired",
+                        },
+                        expired: true,
+                      };
+                    }
+                    return { done: false };
+                  },
+                },
+              },
+              listeningDeps,
             );
 
-            // Recovery polling (WebSocket push is primary path)
-            const recoveryPollInterval = 10000;
-            const maxPollTime = 300000;
-            const startTime = Date.now();
-
-            pollingAbortRef.current?.abort();
-            const abortController = new AbortController();
-            pollingAbortRef.current = abortController;
-
-            const pollForResult = async (): Promise<void> => {
-              while (Date.now() - startTime < maxPollTime) {
-                if (abortController.signal.aborted) {
-                  console.log(
-                    `[Streaming Trigger] Recovery polling aborted for node ${nodeId}`,
-                  );
-                  return;
-                }
-
-                const currentNodeData = executionStore.getNodeData(nodeId!);
-                if (
-                  currentNodeData?.streamDataReceived ||
-                  currentNodeData?.output?.status === "success"
-                ) {
-                  console.log(
-                    `✅ [Streaming Trigger] Data received via WebSocket`,
-                  );
-                  setIsSending(false);
-                  return;
-                }
-
-                if (
-                  currentNodeData?.isTestListening === false &&
-                  !currentNodeData?.streamDataReceived
-                ) {
-                  console.log(`[Streaming Trigger] Test listening stopped`);
-                  setIsSending(false);
-                  return;
-                }
-
-                try {
-                  const resultResponse = await apiClient.get(
-                    `/market/stream-test-result/${workflowId}/${nodeId}`,
-                    session?.access_token,
-                  );
-
-                  if (resultResponse.ok) {
-                    const result = await resultResponse.json();
-
-                    if (result.status === "data_received") {
-                      const receivedOutput = {
-                        status: "success",
-                        symbol: result.data.symbol,
-                        type: result.data.type,
-                        data: result.data.data,
-                        receivedAt: result.data.receivedAt,
-                        source: result.data.source,
-                        [result.data.type]:
-                          result.data.data?.[result.data.type] ||
-                          result.data.data,
-                      };
-
-                      setLastOutput(receivedOutput);
-                      executionStore.setNodeData(nodeId!, {
-                        output: receivedOutput,
-                        isTestListening: false,
-                        streamDataReceived: true,
-                      });
-                      setNodes((nds) =>
-                        nds.map((n) =>
-                          n.id === nodeId
-                            ? {
-                                ...n,
-                                data: {
-                                  ...n.data,
-                                  output: receivedOutput,
-                                  isTestListening: false,
-                                  streamDataReceived: true,
-                                },
-                              }
-                            : n,
-                        ),
-                      );
-
-                      setTimeout(() => {
-                        setNodes((nds) =>
-                          nds.map((n) =>
-                            n.id === nodeId
-                              ? {
-                                  ...n,
-                                  data: {
-                                    ...n.data,
-                                    streamDataReceived: false,
-                                  },
-                                }
-                              : n,
-                          ),
-                        );
-                      }, 700);
-
-                      setIsSending(false);
-                      return;
-                    } else if (result.status === "expired") {
-                      const expiredOutput = {
-                        status: "expired",
-                        message: "Test listener expired",
-                      };
-                      setLastOutput(expiredOutput);
-                      executionStore.setNodeData(nodeId!, {
-                        output: expiredOutput,
-                        isTestListening: false,
-                      });
-                      setNodes((nds) =>
-                        nds.map((n) =>
-                          n.id === nodeId
-                            ? {
-                                ...n,
-                                data: {
-                                  ...n.data,
-                                  output: expiredOutput,
-                                  isTestListening: false,
-                                },
-                              }
-                            : n,
-                        ),
-                      );
-                      setIsSending(false);
-                      return;
-                    }
-                  }
-                } catch (pollError) {
-                  console.warn(
-                    `[Streaming Trigger] Recovery poll error:`,
-                    pollError,
-                  );
-                }
-
-                await new Promise((resolve) => {
-                  const timeoutId = setTimeout(resolve, recoveryPollInterval);
-                  abortController.signal.addEventListener(
-                    "abort",
-                    () => {
-                      clearTimeout(timeoutId);
-                      resolve(undefined);
-                    },
-                    { once: true },
-                  );
-                });
-              }
-
-              if (abortController.signal.aborted) return;
-
-              const timeoutOutput = {
-                status: "timeout",
-                message: "No stream data received within timeout",
-              };
-              setLastOutput(timeoutOutput);
-              executionStore.setNodeData(nodeId!, {
-                output: timeoutOutput,
-                isTestListening: false,
-              });
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? {
-                        ...n,
-                        data: {
-                          ...n.data,
-                          output: timeoutOutput,
-                          isTestListening: false,
-                        },
-                      }
-                    : n,
-                ),
-              );
-              setIsSending(false);
-            };
-
-            pollForResult();
+            await handler.start(responseData);
             return;
           } else if (isStreamingSubscribe) {
-            const waitingOutput = {
-              status: "waiting",
-              message: `Listening for ${definition?.name} data...`,
-              subscribedAt: new Date().toISOString(),
-              symbols: parsedSymbols,
-              streamTypes: fieldState.stream_types || [],
-              nodeId: nodeId ?? undefined,
-              news: {},
-            } as any;
-
-            outputData = {
-              ...waitingOutput,
-              subscriptions: responseData?.subscriptions,
-              lastActionMessage: responseData?.message,
-            };
-
-            // Set initial waiting output
-            setLastOutput(outputData);
-            executionStore.setNodeData(nodeId!, { output: outputData });
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        output: outputData,
-                        isStreamingWaiting: true,
-                      },
-                    }
-                  : n,
-              ),
+            const timeout = definition?.streamingConfig?.timeout || 30000;
+            const handler = createListeningHandler(
+              {
+                buildListeningOutput: (res) => ({
+                  status: "waiting",
+                  message: `Listening for ${definition?.name} data...`,
+                  subscribedAt: new Date().toISOString(),
+                  symbols: parsedSymbols,
+                  streamTypes: fieldState.stream_types || [],
+                  nodeId: nodeId ?? undefined,
+                  news: {},
+                  subscriptions: res?.subscriptions,
+                  lastActionMessage: res?.message,
+                }),
+                isDataReceived: (nodeData) => {
+                  const output = nodeData?.output;
+                  return Boolean(
+                    output?.status === "streaming" &&
+                      (output.news ||
+                        output.data ||
+                        output.trade ||
+                        output.quote ||
+                        output.bar ||
+                        output.dailyBar),
+                  );
+                },
+                buildSuccessOutput: (nodeData) => nodeData.output,
+                buildTimeoutOutput: () => ({
+                  status: "timeout",
+                  message: `Timeout waiting for ${definition?.name} data`,
+                }),
+                buildErrorOutput: (error) => ({
+                  status: "error",
+                  message: error.message,
+                }),
+                timeout,
+                listeningFlag: "isStreamingWaiting",
+              },
+              listeningDeps,
             );
 
-            // Wait for first streaming data
-            const timeout = definition?.streamingConfig?.timeout || 30000;
-            const startTime = Date.now();
-
-            try {
-              await new Promise<void>((resolve, reject) => {
-                const checkInterval = setInterval(() => {
-                  const nodeData = executionStore.getNodeData(nodeId!);
-                  const output = nodeData?.output as any;
-
-                  // Check if we received actual streaming data
-                  const hasStreamingData =
-                    output &&
-                    output.status === "streaming" &&
-                    (output.news ||
-                      output.data ||
-                      output.trade ||
-                      output.quote ||
-                      output.bar ||
-                      output.dailyBar);
-
-                  if (hasStreamingData) {
-                    clearInterval(checkInterval);
-                    console.log("✅ Received first streaming data:", output);
-                    outputData = output;
-                    resolve();
-                    return;
-                  }
-
-                  // Check timeout
-                  if (Date.now() - startTime > timeout) {
-                    clearInterval(checkInterval);
-                    reject(
-                      new Error(
-                        `Timeout waiting for ${definition?.name} data after ${timeout}ms`,
-                      ),
-                    );
-                  }
-                }, 100);
-              });
-
-              // Clear streaming waiting state
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
-                    : n,
-                ),
-              );
-            } catch (error: any) {
-              console.error("Streaming wait error:", error);
-              outputData = {
-                ...outputData,
-                status: "error",
-                message: error.message,
-              };
-              setNodes((nds) =>
-                nds.map((n) =>
-                  n.id === nodeId
-                    ? { ...n, data: { ...n.data, isStreamingWaiting: false } }
-                    : n,
-                ),
-              );
-            }
+            outputData = await handler.start(responseData);
           } else {
             outputData = responseData;
           }

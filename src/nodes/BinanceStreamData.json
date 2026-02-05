@@ -318,12 +318,6 @@
       "type": "checkbox",
       "default": true,
       "description": "Only emit bar/kline data when the candle is closed. Disable to receive all streaming updates.",
-      "displayOptions": {
-        "show": {
-          "mode": ["listen"],
-          "stream_types": ["kline"]
-        }
-      },
       "showDescription": true
     }
   ]

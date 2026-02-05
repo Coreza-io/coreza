@@ -229,6 +229,7 @@ const MarketSubscriptions = () => {
           `/stream/${source}/unsubscribe`,
           {
             workflow_id: workflowId, // Include workflowId for workflow-scoped removal
+            targetWorkflowId: workflowId,
             symbols: [symbol],
             stream_types: [eventType],
             interval,
@@ -385,7 +386,7 @@ const MarketSubscriptions = () => {
     data?.workflows.filter(
       (wf) =>
         streamFilter === "" ||
-        wf.streams.some((s) =>
+        wf.streams?.some((s) =>
           s.toLowerCase().includes(streamFilter.toLowerCase()),
         ) ||
         wf.workflowName.toLowerCase().includes(streamFilter.toLowerCase()),
@@ -693,7 +694,7 @@ const MarketSubscriptions = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {wf.streams.slice(0, 3).map((sym) => (
+                            {(wf.streams || []).slice(0, 3).map((sym) => (
                               <Badge
                                 key={sym}
                                 variant="secondary"
@@ -702,7 +703,7 @@ const MarketSubscriptions = () => {
                                 {sym}
                               </Badge>
                             ))}
-                            {wf.streams.length > 3 && (
+                            {(wf.streams || []).length > 3 && (
                               <Badge variant="secondary" className="text-xs">
                                 +{wf.streams.length - 3}
                               </Badge>

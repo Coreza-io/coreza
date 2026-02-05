@@ -300,7 +300,7 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": ["workflow"]
+          "scope": ["workflow"]
         }
       },
       "default": "__current__"

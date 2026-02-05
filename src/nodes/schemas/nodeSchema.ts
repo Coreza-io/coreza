@@ -128,6 +128,14 @@ export const OutputSchema = z.record(z.string(), z.any());
 export const StreamingConfigSchema = z.object({
   waitForFirstEvent: z.boolean().optional(),
   timeout: z.number().optional(),
+  listeningFlag: z.string().optional(),
+  subscribeListeningFlag: z.string().optional(),
+  recoveryPolling: z
+    .object({
+      endpoint: z.string().optional(),
+      interval: z.number().optional(),
+    })
+    .optional(),
 });
 
 export const NodeConfigSchema = z

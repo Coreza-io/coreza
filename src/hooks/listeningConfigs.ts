@@ -1,21 +1,14 @@
 import type { ListeningConfig } from "@/hooks/useListeningHandler";
+import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
-type NodeDefinition = {
-  name?: string;
-  provider?: string;
+type NodeDefinition = Pick<
+  NodeConfig,
+  "name" | "provider" | "streamingConfig"
+> & {
   listeningConfig?: {
     waitField?: string;
     timeout?: number;
     listeningFlag?: string;
-  };
-  streamingConfig?: {
-    timeout?: number;
-    listeningFlag?: string;
-    subscribeListeningFlag?: string;
-    recoveryPolling?: {
-      endpoint?: string;
-      interval?: number;
-    };
   };
 };
 

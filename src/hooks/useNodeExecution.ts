@@ -27,8 +27,7 @@ import {
   buildStreamingSubscribeListeningConfig,
   buildStreamingTriggerListeningConfig,
   buildWebhookListeningConfig,
-} from "@/hooks/listeningConfigs";
-import { Provider } from "@radix-ui/react-toast";
+} from "@/hooks/useListeningConfigs";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 

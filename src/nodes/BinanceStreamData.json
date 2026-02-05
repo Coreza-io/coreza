@@ -12,7 +12,13 @@
   },
   "streamingConfig": {
     "waitForFirstEvent": false,
-    "timeout": 300000
+    "timeout": 300000,
+    "listeningFlag": "isTestListening",
+    "subscribeListeningFlag": "isStreamingWaiting",
+    "recoveryPolling": {
+      "endpoint": "/market/stream-test-result/{{workflow_id}}/{{node_id}}",
+      "interval": 10000
+    }
   },
   "description": "Receives real-time market data from Binance. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",

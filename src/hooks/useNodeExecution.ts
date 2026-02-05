@@ -293,19 +293,7 @@ export function useNodeExecution({
         payload.workflow_id = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
-        
-        // Set provider from listeningConfig (for webhook triggers) or definition
-        if (definition?.listeningConfig?.provider) {
-          payload.provider = definition.listeningConfig.provider;
-        } else {
-          payload.provider = definition.provider;
-        }
-        
-        // Map webhook-specific fields for backend compatibility
-        if (definition?.executionMode === "webhook_listening") {
-          payload.update_types = fieldState.updateTypes;
-          payload.secret_token = fieldState.secretToken || fieldState.secret;
-        }
+        payload.provider = definition.provider;
 
         if (payload.symbols) {
           const parsedSymbols: string[] = Array.isArray(payload.symbols)
@@ -557,12 +545,11 @@ export function useNodeExecution({
 
             // Get config from JSON definition
             const listeningConfig = definition?.listeningConfig || {};
-            const listeningFlag = listeningConfig.listeningFlag || "isListening";
+            const listeningFlag =
+              listeningConfig.listeningFlag || "isListening";
             const timeout = listeningConfig.timeout || 300000;
             const waitField = listeningConfig.waitField || "webhookPayload";
-            const provider =
-              listeningConfig.provider ||
-              definition.name.replace("Trigger", "").toLowerCase();
+            const provider = definition.provider;
 
             const handler = createListeningHandler(
               {
@@ -693,12 +680,12 @@ export function useNodeExecution({
                   const output = nodeData?.output;
                   return Boolean(
                     output?.status === "streaming" &&
-                      (output.news ||
-                        output.data ||
-                        output.trade ||
-                        output.quote ||
-                        output.bar ||
-                        output.dailyBar),
+                    (output.news ||
+                      output.data ||
+                      output.trade ||
+                      output.quote ||
+                      output.bar ||
+                      output.dailyBar),
                   );
                 },
                 buildSuccessOutput: (nodeData) => nodeData.output,

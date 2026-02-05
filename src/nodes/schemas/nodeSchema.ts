@@ -138,6 +138,12 @@ export const StreamingConfigSchema = z.object({
     .optional(),
 });
 
+export const ListeningConfigSchema = z.object({
+  waitField: z.string().optional(),
+  timeout: z.number().optional(),
+  listeningFlag: z.string().optional(),
+});
+
 export const NodeConfigSchema = z
   .object({
     name: z.string().min(1),
@@ -156,7 +162,9 @@ export const NodeConfigSchema = z
     size: SizeSchema.optional(),
     parentNode: z.string().optional(),
     type: z.string().optional(),
+    provider: z.string().optional(),
     streamingConfig: StreamingConfigSchema.optional(),
+    listeningConfig: ListeningConfigSchema.optional(),
 
     action: ActionSchema.optional(),
 

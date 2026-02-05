@@ -24,7 +24,6 @@
     "method": "POST"
   },
   "listeningConfig": {
-    "provider": "telegram",
     "waitField": "webhookPayload",
     "timeout": 300000,
     "listeningFlag": "isListening"

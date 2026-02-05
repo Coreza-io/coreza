@@ -17,7 +17,6 @@
     "method": "POST"
   },
   "listeningConfig": {
-    "provider": "generic",
     "waitField": "webhookPayload",
     "timeout": 300000,
     "listeningFlag": "isListening"

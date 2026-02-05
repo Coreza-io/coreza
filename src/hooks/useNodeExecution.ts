@@ -587,7 +587,10 @@ export function useNodeExecution({
           } else if (isStreamingTrigger) {
             // Streaming trigger - handle listening state and recovery polling
             console.log(`✅ [Streaming Trigger] Response:`, responseData);
-
+            const streamingConfig = definition?.streamingConfig || {};
+            const listeningFlag =
+              streamingConfig.listeningFlag || "isListening";
+            const timeout = streamingConfig.timeout || 300000;
             const handler = createListeningHandler(
               {
                 buildListeningOutput: (res) => ({
@@ -619,7 +622,7 @@ export function useNodeExecution({
                   status: "timeout",
                   message: "No stream data received within timeout",
                 }),
-                timeout: 300000,
+                timeout,
                 listeningFlag: "isTestListening",
                 receivedFlag: "streamDataReceived",
                 recoveryPolling: {
@@ -669,7 +672,7 @@ export function useNodeExecution({
                   status: "waiting",
                   message: `Listening for ${definition?.name} data...`,
                   subscribedAt: new Date().toISOString(),
-                  symbols: parsedSymbols,
+                  symbols: payload.parsedSymbols,
                   streamTypes: fieldState.stream_types || [],
                   nodeId: nodeId ?? undefined,
                   news: {},

@@ -310,7 +310,7 @@ export class MarketControlHandler {
    */
   private async updateActiveStreamingWorkflows(
     userId: string,
-    newSymbols: string[],
+    newStreamNames: string[],
     scope: string,
     targetWorkflowId?: string,
   ): Promise<void> {
@@ -320,9 +320,12 @@ export class MarketControlHandler {
       // If workflow-scoped, only update the target workflow AND any test listeners for it
       if (scope === "workflow" && targetWorkflowId) {
         console.log(
-          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newSymbols.length} workflow-scoped symbols`,
+          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newStreamNames.length} workflow-scoped symbols`,
         );
-        await subscriber.addSymbolsToRegistration(targetWorkflowId, newSymbols);
+        await subscriber.addSymbolsToRegistration(
+          targetWorkflowId,
+          newStreamNames,
+        );
 
         // Also update any test listeners for this workflow (handles race condition)
         const ListenerPattern = `md:user:${userId}:stream:${targetWorkflowId}:*`;
@@ -332,10 +335,14 @@ export class MarketControlHandler {
             console.log(
               `🧪 [MarketControl] Found ${ListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
             );
-            for (const testKey of ListenerKeys) {
-              await subscriber.addSymbolsToRegistration(testKey, newSymbols);
+            for (const listener of ListenerKeys) {
+              const workflowId = listener.split(":")[4];
+              await subscriber.addSymbolsToRegistration(
+                workflowId,
+                newStreamNames,
+              );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${testKey} with ${newSymbols.length} symbols`,
+                `🧪 [MarketControl] Updated test listener ${listener} with ${newStreamNames.length} symbols`,
               );
             }
           }
@@ -347,7 +354,7 @@ export class MarketControlHandler {
         }
 
         console.log(
-          `✅ [MarketControl] Added ${newSymbols.length} symbols to target workflow ${targetWorkflowId} only`,
+          `✅ [MarketControl] Added ${newStreamNames.length} symbols to target workflow ${targetWorkflowId} only`,
         );
         return;
       }
@@ -366,7 +373,7 @@ export class MarketControlHandler {
 
       console.log(
         `📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL symbols:`,
-        newSymbols,
+        newStreamNames,
       );
 
       for (const workflowId of activeWorkflowIds) {
@@ -377,31 +384,13 @@ export class MarketControlHandler {
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
 
           // Apply symbol filter if specified
-          let symbolsToAdd = newSymbols;
-          if (
-            filterConfig.filter_symbols &&
-            filterConfig.filter_symbols.length > 0
-          ) {
-            const allowedSymbols = filterConfig.filter_symbols.map(
-              (s: string) => s.toUpperCase(),
-            );
-            symbolsToAdd = newSymbols.filter((s) =>
-              allowedSymbols.includes(s.toUpperCase()),
-            );
-
-            if (symbolsToAdd.length === 0) {
-              console.log(
-                `ℹ️ [MarketControl] Workflow ${workflowId} filters exclude new symbols, skipping`,
-              );
-              continue;
-            }
-          }
+          let streamsToAdd = newStreamNames;
 
           // Add new symbols to existing subscription
-          await subscriber.addSymbolsToRegistration(workflowId, symbolsToAdd);
+          await subscriber.addSymbolsToRegistration(workflowId, streamsToAdd);
 
           console.log(
-            `✅ [MarketControl] Added ${symbolsToAdd.length} symbols to workflow ${workflowId}`,
+            `✅ [MarketControl] Added ${streamsToAdd.length} symbols to workflow ${workflowId}`,
           );
         } catch (err) {
           console.error(
@@ -414,55 +403,57 @@ export class MarketControlHandler {
       // Also update test listeners for global scope
       // Use user-specific SET for O(1) lookup instead of pattern scanning
       // Key pattern: user:${userId}:stream:active_listeners
-      const userTestListenersKey = `user:${userId}:stream:active_listeners`;
+      const userListenersKey = `user:${userId}:stream:active_listeners`;
       try {
-        const testListenerKeys =
-          await this.redisPub.smembers(userTestListenersKey);
+        const listenerKeys = await this.redisPub.smembers(userListenersKey);
 
-        if (testListenerKeys.length > 0) {
+        if (listenerKeys.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${testListenerKeys.length} test listener(s) for user ${userId} to update with global symbols`,
+            `🔍 [MarketControl] Found ${listenerKeys.length} test listener(s) for user ${userId} to update with global symbols`,
           );
 
-          for (const testKey of testListenerKeys) {
+          for (const listenerKey of listenerKeys) {
             try {
-              const listenerJson = await this.redisPub.get(testKey);
+              const listenerJson = await this.redisPub.get(listenerKey);
               if (!listenerJson) {
                 // Listener expired, clean up stale SET entry
-                await this.redisPub.srem(userTestListenersKey, testKey);
+                await this.redisPub.srem(userListenersKey, listenerKey);
                 continue;
               }
 
               const listenerData = JSON.parse(listenerJson);
 
               // Apply filter_symbols if specified
-              let symbolsToAdd = newSymbols;
+              let streamsToAdd = newStreamNames;
               if (
                 listenerData.filterSymbols &&
                 listenerData.filterSymbols.length > 0
               ) {
-                const allowedSymbols = listenerData.filterSymbols.map(
-                  (s: string) => s.toUpperCase(),
+                const allowedStreams = listenerData.filterSymbols.map(
+                  (s: string) => s,
                 );
-                symbolsToAdd = newSymbols.filter((s) =>
-                  allowedSymbols.includes(s.toUpperCase()),
+                streamsToAdd = newStreamNames.filter((s) =>
+                  allowedStreams.includes(s),
                 );
 
-                if (symbolsToAdd.length === 0) {
+                if (streamsToAdd.length === 0) {
                   console.log(
-                    `ℹ️ [MarketControl] Test listener ${testKey} filters exclude new symbols, skipping`,
+                    `ℹ️ [MarketControl] Test listener ${listenerKey} filters exclude new symbols, skipping`,
                   );
                   continue;
                 }
               }
 
-              await subscriber.addSymbolsToRegistration(testKey, symbolsToAdd);
+              await subscriber.addSymbolsToRegistration(
+                listenerKey,
+                streamsToAdd,
+              );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${testKey} with ${symbolsToAdd.length} global symbols`,
+                `🧪 [MarketControl] Updated test listener ${listenerKey} with ${streamsToAdd.length} global symbols`,
               );
             } catch (err) {
               console.warn(
-                `⚠️ [MarketControl] Failed to update test listener ${testKey}:`,
+                `⚠️ [MarketControl] Failed to update test listener ${listenerKey}:`,
                 err,
               );
             }
@@ -583,16 +574,16 @@ export class MarketControlHandler {
           );
 
           // Extract symbols from new stream names for workflow notification
-          const newSymbols = [
-            ...new Set(
-              newStreamNames.map((name) => extractSymbol(source, name)),
-            ),
-          ];
+          // const newSymbols = [
+          //   ...new Set(
+          //     newStreamNames.map((name) => extractSymbol(source, name)),
+          //   ),
+          // ];
 
           // Notify active streaming workflows about new symbols (respecting scope)
           await this.updateActiveStreamingWorkflows(
             userId,
-            newSymbols,
+            newStreamNames,
             scope,
             targetWorkflowId,
           );

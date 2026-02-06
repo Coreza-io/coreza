@@ -866,58 +866,35 @@ const MarketSubscriptions = () => {
                     .map((sub, idx) => (
                       <div
                         key={`${sub.workflowId}-${sub.source}-${idx}`}
-                        className="space-y-2 p-3 rounded-lg border border-border bg-muted/20"
+                        className="flex flex-wrap gap-2 p-3 rounded-lg border border-border bg-muted/20"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={sourceColors[sub.source] || "bg-muted"}
-                            >
-                              {sourceIcons[sub.source] || "📡"} {sub.source}
-                            </Badge>
-                            <span className="text-sm font-medium">→</span>
-                            <Link
-                              to={`/dashboard/workflow/${sub.workflowId}`}
-                              className="text-sm text-primary hover:underline"
-                            >
-                              {sub.workflowName || sub.workflowId}
-                            </Link>
-                          </div>
-                          <span className="text-sm text-muted-foreground">
-                            {sub.streams.length} stream
-                            {sub.streams.length !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-2 pl-2">
-                          {sub.streams
-                            .filter(
-                              (sym) =>
-                                streamFilter === "" ||
-                                sym.includes(streamFilter),
-                            )
-                            .map((stream) => (
-                              <StreamBadgeWithTooltip
-                                key={`${sub.workflowId}-${sub.source}-${stream}`}
-                                stream={stream}
-                                source={sub.source}
-                                scope="workflow"
-                                workflowName={sub.workflowName}
-                                workflowId={sub.workflowId}
-                                onUnsubscribe={() =>
-                                  confirmUnsubscribestream(
-                                    stream,
-                                    sub.source,
-                                    sub.workflowId,
-                                  )
-                                }
-                                isUnsubscribing={
-                                  unsubscribing ===
-                                  `stream-${sub.workflowId}-${stream}`
-                                }
-                              />
-                            ))}
-                        </div>
+                        {sub.streams
+                          .filter(
+                            (sym) =>
+                              streamFilter === "" ||
+                              sym.includes(streamFilter),
+                          )
+                          .map((stream) => (
+                            <StreamBadgeWithTooltip
+                              key={`${sub.workflowId}-${sub.source}-${stream}`}
+                              stream={stream}
+                              source={sub.source}
+                              scope="workflow"
+                              workflowName={sub.workflowName}
+                              workflowId={sub.workflowId}
+                              onUnsubscribe={() =>
+                                confirmUnsubscribestream(
+                                  stream,
+                                  sub.source,
+                                  sub.workflowId,
+                                )
+                              }
+                              isUnsubscribing={
+                                unsubscribing ===
+                                `stream-${sub.workflowId}-${stream}`
+                              }
+                            />
+                          ))}
                       </div>
                     ))}
                 </div>

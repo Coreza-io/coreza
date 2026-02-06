@@ -16,6 +16,16 @@
 
 import type { Node, Edge } from '@xyflow/react';
 
+function getNodeById(nodes: Node[], id: string): Node | undefined {
+  for (let i = 0; i < nodes.length; i += 1) {
+    if (nodes[i]?.id === id) {
+      return nodes[i];
+    }
+  }
+
+  return undefined;
+}
+
 export function getAllUpstreamNodes(
   currentNodeId: string,
   edges: Edge[],
@@ -23,28 +33,43 @@ export function getAllUpstreamNodes(
   visited: Set<string> = new Set()
 ): Node[] {
   try {
-    if (visited.has(currentNodeId)) return [];
+    if (!currentNodeId || !Array.isArray(edges) || !Array.isArray(nodes)) {
+      return [];
+    }
+
+    if (visited.has(currentNodeId)) {
+      return [];
+    }
 
     visited.add(currentNodeId);
 
-    const incomingEdges = edges.filter(e => e.target === currentNodeId);
-    let result: Node[] = [];
+    const uniqueNodes = new Map<string, Node>();
 
-    for (const edge of incomingEdges) {
-      const upstreamNode = nodes.find(n => n.id === edge.source);
-      if (upstreamNode && !result.some(n => n.id === upstreamNode.id)) {
-        result.push(upstreamNode);
-        result = result.concat(
-          getAllUpstreamNodes(upstreamNode.id, edges, nodes, visited)
-        );
+    for (let i = 0; i < edges.length; i += 1) {
+      const edge = edges[i];
+      if (!edge || edge.target !== currentNodeId) {
+        continue;
+      }
+
+      const upstreamNode = getNodeById(nodes, edge.source);
+      if (!upstreamNode) {
+        continue;
+      }
+
+      uniqueNodes.set(upstreamNode.id, upstreamNode);
+
+      const nestedNodes = getAllUpstreamNodes(upstreamNode.id, edges, nodes, visited);
+      for (let j = 0; j < nestedNodes.length; j += 1) {
+        const nestedNode = nestedNodes[j];
+        if (nestedNode?.id) {
+          uniqueNodes.set(nestedNode.id, nestedNode);
+        }
       }
     }
 
-    return result.filter(
-      (n, i, arr) => arr.findIndex(m => m.id === n.id) === i
-    );
+    return Array.from(uniqueNodes.values());
   } catch (error) {
-    console.warn("getAllUpstreamNodes failed, returning empty list.", error);
+    console.warn('getAllUpstreamNodes failed, returning empty list.', error);
     return [];
   }
 }

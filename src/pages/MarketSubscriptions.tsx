@@ -792,18 +792,6 @@ const MarketSubscriptions = () => {
                   {Object.entries(data.userSubscriptions).map(
                     ([source, streams]) => (
                       <div key={source} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={sourceColors[source] || "bg-muted"}
-                          >
-                            {sourceIcons[source] || "📡"} {source}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {streams.length} stream
-                            {streams.length !== 1 ? "s" : ""}
-                          </span>
-                        </div>
                         <div className="flex flex-wrap gap-2 pl-2">
                           {streams
                             .filter(
@@ -871,8 +859,7 @@ const MarketSubscriptions = () => {
                         {sub.streams
                           .filter(
                             (sym) =>
-                              streamFilter === "" ||
-                              sym.includes(streamFilter),
+                              streamFilter === "" || sym.includes(streamFilter),
                           )
                           .map((stream) => (
                             <StreamBadgeWithTooltip

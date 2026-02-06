@@ -1,106 +1,157 @@
 
+Goal
+- In the Market Data Subscriptions page, show only the raw stream string in the UI (example: `btcusdt@kline_1m`).
+- When the user hovers the stream badge, show a small popup box with all related details (source, symbol, event type, interval, environment, scope, and workflow info).
+- Fix why hover is currently not working.
 
-# Plan: Fix TypeScript Error in listeningConfigs.ts
+What I found in your current implementation (from code review)
+1) HoverCard is implemented correctly and already uses a Portal
+- `src/components/ui/hover-card.tsx` correctly wraps `HoverCardContent` in `<HoverCardPrimitive.Portal>`, so clipping/overflow should not be the main issue anymore.
 
-## Problem
+2) The most likely reason hover does not open / position correctly: Badge does not forward refs
+- `StreamBadgeWithTooltip` uses:
+  - `<HoverCardTrigger asChild> ... <Badge> ... </Badge> </HoverCardTrigger>`
+- But `src/components/ui/badge.tsx` is a plain function component and does not forward `ref`.
+- Radix HoverCard relies on a trigger element ref for positioning; when the child can’t accept the ref, Radix often fails to compute the anchor and the hovercard won’t appear or will appear at a wrong position.
+- This is a classic Radix “asChild + non-forwardRef component” issue.
 
-The `listeningConfigs.ts` file has a TypeScript error:
+3) “Still showing all info here”
+- Your `StreamBadgeWithTooltip` itself only renders `{stream}` inside the badge (good).
+- The extra “binance_market → workflowName” row in the Workflow-Scoped section is coming from `MarketSubscriptions.tsx` (not from the badge).
+- If you truly want “only the stream string visible”, we must hide/minimize those extra labels and move them into the hover popup.
 
-```
-Type '"provider"' is not assignable to type 'optionalKeys<...>'
-```
+Plan to fix everything (hover + compact display)
 
-This occurs because:
-1. `listeningConfigs.ts` uses `Pick<NodeConfig, "name" | "provider" | "streamingConfig">`
-2. But `NodeConfigSchema` doesn't include a `provider` field
-3. Several node JSONs already use `provider` (WebhookTrigger, TelegramTrigger, OpenAIChatModel, GeminiChatModel)
+A) Fix HoverCard not working (core fix)
+Files:
+- src/components/ui/badge.tsx
 
-## Solution
+Changes:
+1) Convert `Badge` to `React.forwardRef` so Radix `asChild` can attach a ref to the trigger.
+2) Keep API the same so it doesn’t break existing usage.
 
-Add the `provider` field to `NodeConfigSchema` since it's already used in multiple node definitions.
+Implementation sketch:
+- Replace:
+  - `function Badge(...) { return <div ... /> }`
+- With:
+  - `const Badge = React.forwardRef<HTMLDivElement, BadgeProps>((props, ref) => <div ref={ref} ... />)`
+  - set `Badge.displayName = "Badge"`
 
----
+Why this should immediately fix hover:
+- `HoverCardTrigger` will finally be able to anchor the popover correctly and open on hover.
 
-## Files to Modify
+Optional hardening (recommended even after forwardRef):
+- src/components/market/StreamBadgeWithTooltip.tsx
+- Change trigger child from `<Badge>` to a native element:
+  - Use `<HoverCardTrigger asChild><div className={badgeVariants(...)} ... /></HoverCardTrigger>`
+- This guarantees Radix compatibility even if Badge changes again later.
+- We can do either (forwardRef Badge) or both (best reliability).
 
-| File | Change |
-|------|--------|
-| `src/nodes/schemas/nodeSchema.ts` | Add `provider` field to NodeConfigSchema |
+B) Ensure the UI shows only the stream string (move “source → workflow” into hover)
+Files:
+- src/pages/MarketSubscriptions.tsx
+- src/components/market/StreamBadgeWithTooltip.tsx
 
----
+Workflow-Scoped Subscriptions section (the screenshot you shared)
+Current:
+- Each workflow-scoped block shows:
+  - Source badge + arrow + workflow link
+  - Stream badge(s)
+Desired:
+- Only show stream badge(s).
+- On hover of each stream badge, show:
+  - Source
+  - Target workflow name (and optionally link)
+  - Environment, scope, eventType, interval, etc.
 
-## Implementation
+Changes:
+1) In the Workflow-Scoped section around lines ~871-891:
+- Remove (or visually minimize) the header row that currently renders source badge + arrow + workflow link + “1 stream”.
+- Replace it with either:
+  Option 1 (strict “only stream”):
+  - Don’t render that row at all; render only the stream badges.
+  Option 2 (still compact but keeps context):
+  - Render a tiny icon-only row (e.g., just “📡” and a “Workflow” icon), but no text; details are in hover.
 
-### Update NodeConfigSchema
+2) When rendering `<StreamBadgeWithTooltip />` in workflow-scoped:
+- Continue passing `source`, `workflowName`, `workflowId`, and `scope="workflow"`.
 
-Add `provider: z.string().optional()` to the schema alongside other optional metadata fields:
+C) Make the hover popup truly “everything related to the stream”
+Files:
+- src/components/market/StreamBadgeWithTooltip.tsx
+- src/pages/MarketSubscriptions.tsx
 
-```typescript
-export const NodeConfigSchema = z
-  .object({
-    name: z.string().min(1),
-    node_type: z.enum(["main", "sub", "trigger", "backtest", "schwab"]),
-    handles: z.array(HandleSchema).min(1),
-    fields: z.array(FieldSchema),
+Enhancement to tooltip content:
+1) Extend StreamBadgeWithTooltip props to accept optional “related workflows” and/or “sources”
+Example props:
+- relatedWorkflows?: Array<{ workflowId: string; workflowName: string }>
+- sources?: string[]  (for the “All streams” section where a stream may exist under multiple sources)
 
-    def: z.string().optional(),
-    label: z.string().optional(),
-    category: z.string().optional(),
-    subCategory: z.string().optional(),
-    subcategory: z.string().optional(),
-    description: z.string().optional(),
-    color: z.string().optional(),
-    icon: z.string().optional(),
-    size: SizeSchema.optional(),
-    parentNode: z.string().optional(),
-    type: z.string().optional(),
-    provider: z.string().optional(),        // <-- ADD THIS
-    streamingConfig: StreamingConfigSchema.optional(),
-    listeningConfig: ListeningConfigSchema.optional(),  // <-- ALSO ADD THIS
+2) Populate these props from MarketSubscriptions data:
+- For each stream in Global section:
+  - relatedWorkflows = data.workflows filtered where wf.streams includes this stream and wf.source matches the current source
+- For each stream in “All Subscribed streams”:
+  - sources = data.streamSourceMap[stream]
+  - relatedWorkflows = data.workflows filtered where wf.streams includes stream (any source, or match primary source depending on desired accuracy)
 
-    action: ActionSchema.optional(),
-    // ... rest unchanged
-  })
-```
+3) Update tooltip rendering to include:
+- Stream (header)
+- Symbol
+- Event Type (label)
+- Interval (if present)
+- Environment
+- Scope
+- Source (single) or Sources (chips/list if multiple)
+- Target Workflow (if workflow-scoped)
+- Related Workflows (list, show first N with “+X more”)
+- Optionally: make workflow names clickable links to `/dashboard/workflow/:id`
 
-### Add ListeningConfigSchema
+Important UX detail:
+- Keep hovercard small:
+  - Use a clean “2-column label/value” layout
+  - For workflow lists: show max 3-5 entries, then “+N more”
+  - Keep `HoverCardContent` width around 18rem–22rem (you currently use `w-72`, which is good)
 
-Since `listeningConfig` is also used in node JSONs but not in the schema, add it too:
+D) Make sure hover popup doesn’t render “always visible”
+Files:
+- src/components/ui/hover-card.tsx (optional)
+If you ever see the hover content “always displayed” instead of only on hover, add a defensive visibility class:
+- Add: `data-[state=closed]:hidden`
+This makes the popover disappear even if animation utility classes fail or are purged.
 
-```typescript
-export const ListeningConfigSchema = z.object({
-  provider: z.string().optional(),
-  waitField: z.string().optional(),
-  timeout: z.number().optional(),
-  listeningFlag: z.string().optional(),
-});
-```
+E) Update the Workflow Receivers table (optional, for consistency)
+File:
+- src/pages/MarketSubscriptions.tsx
 
----
+Currently, the table shows the first 3 streams as plain badges.
+If you want the same “hover shows details” everywhere:
+- Replace those badges with `StreamBadgeWithTooltip` as well, passing:
+  - stream={sym}
+  - source={wf.source}
+  - workflowName={wf.workflowName}
+  - scope="workflow" (or a new scope like "receiver" if you want a different label)
 
-## Why This Approach
+Verification checklist (what you should test after implementing)
+1) Hover behavior
+- Hover the stream badge: popup appears within ~200ms.
+- Move mouse from badge into the popup: it stays open (no flicker).
+- Hover over the small “X” unsubscribe button: popup behavior remains stable.
 
-| Alternative | Reason Not Chosen |
-|-------------|-------------------|
-| Define type inline in listeningConfigs.ts | Doesn't fix the schema - validation would miss `provider` in JSONs |
-| Remove provider from Pick | Still need provider in the function, would just hide the typing issue |
-| Use `any` type | Loses type safety |
+2) Console warnings
+- Check browser console for:
+  - “Function components cannot be given refs…”
+If Badge is forwardRef’d (or trigger uses native element), these should disappear.
 
-Adding to the schema is the correct fix because:
-1. `provider` is already used in 4+ node JSON files
-2. It aligns with the "single source of truth" architecture
-3. The validation script will now properly validate nodes with `provider`
-4. Type inference will work correctly throughout the codebase
+3) Visual expectations (matches your request)
+- In workflow-scoped cards: only `btcusdt@kline_1m` is visible in the body.
+- No extra “source → workflow” row unless you chose the optional compact icon-only header.
+- All details are discoverable in the hover popup.
 
----
-
-## Summary
-
-| Change | Impact |
-|--------|--------|
-| Add `provider: z.string().optional()` to NodeConfigSchema | Fixes TS2344 error |
-| Add `ListeningConfigSchema` | Enables validation of listeningConfig in node JSONs |
-| Add `listeningConfig` to NodeConfigSchema | Complete schema coverage |
-
-This is a minimal fix that brings the schema in sync with the actual node JSON structures being used.
-
+Files summary
+- Must change:
+  - src/components/ui/badge.tsx (forwardRef)
+  - src/pages/MarketSubscriptions.tsx (remove/minimize extra visible info; pass tooltip context)
+- Likely change:
+  - src/components/market/StreamBadgeWithTooltip.tsx (accept more context; possibly use native trigger element)
+- Optional:
+  - src/components/ui/hover-card.tsx (data-[state=closed]:hidden hardening)

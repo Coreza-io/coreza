@@ -62,6 +62,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
+import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
 
 interface SourceStatus {
   source: string;
@@ -811,28 +812,18 @@ const MarketSubscriptions = () => {
                                 sym.includes(streamFilter),
                             )
                             .map((stream) => (
-                              <Badge
+                              <StreamBadgeWithTooltip
                                 key={`${source}-${stream}`}
-                                variant="outline"
-                                className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
-                              >
-                                {stream}
-                                <button
-                                  onClick={() =>
-                                    confirmUnsubscribestream(stream, source)
-                                  }
-                                  disabled={
-                                    unsubscribing === `stream-${stream}`
-                                  }
-                                  className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                                >
-                                  {unsubscribing === `stream-${stream}` ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <X className="h-3 w-3" />
-                                  )}
-                                </button>
-                              </Badge>
+                                stream={stream}
+                                source={source}
+                                scope="global"
+                                onUnsubscribe={() =>
+                                  confirmUnsubscribestream(stream, source)
+                                }
+                                isUnsubscribing={
+                                  unsubscribing === `stream-${stream}`
+                                }
+                              />
                             ))}
                         </div>
                       </div>
@@ -906,34 +897,25 @@ const MarketSubscriptions = () => {
                                 sym.includes(streamFilter),
                             )
                             .map((stream) => (
-                              <Badge
+                              <StreamBadgeWithTooltip
                                 key={`${sub.workflowId}-${sub.source}-${stream}`}
-                                variant="outline"
-                                className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
-                              >
-                                {stream}
-                                <button
-                                  onClick={() =>
-                                    confirmUnsubscribestream(
-                                      stream,
-                                      sub.source,
-                                      sub.workflowId,
-                                    )
-                                  }
-                                  disabled={
-                                    unsubscribing ===
-                                    `stream-${sub.workflowId}-${stream}`
-                                  }
-                                  className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                                >
-                                  {unsubscribing ===
-                                  `stream-${sub.workflowId}-${stream}` ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <X className="h-3 w-3" />
-                                  )}
-                                </button>
-                              </Badge>
+                                stream={stream}
+                                source={sub.source}
+                                scope="workflow"
+                                workflowName={sub.workflowName}
+                                workflowId={sub.workflowId}
+                                onUnsubscribe={() =>
+                                  confirmUnsubscribestream(
+                                    stream,
+                                    sub.source,
+                                    sub.workflowId,
+                                  )
+                                }
+                                isUnsubscribing={
+                                  unsubscribing ===
+                                  `stream-${sub.workflowId}-${stream}`
+                                }
+                              />
                             ))}
                         </div>
                       </div>
@@ -968,26 +950,15 @@ const MarketSubscriptions = () => {
                   const primarySource = sources[0];
 
                   return (
-                    <Badge
+                    <StreamBadgeWithTooltip
                       key={stream}
-                      variant="outline"
-                      className="px-2 py-1 text-sm font-mono flex items-center gap-1 group"
-                    >
-                      {stream}
-                      <button
-                        onClick={() =>
-                          confirmUnsubscribestream(stream, primarySource)
-                        }
-                        disabled={unsubscribing === `stream-${stream}`}
-                        className="ml-1 opacity-50 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                      >
-                        {unsubscribing === `stream-${stream}` ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <X className="h-3 w-3" />
-                        )}
-                      </button>
-                    </Badge>
+                      stream={stream}
+                      source={primarySource || "unknown"}
+                      onUnsubscribe={() =>
+                        confirmUnsubscribestream(stream, primarySource)
+                      }
+                      isUnsubscribing={unsubscribing === `stream-${stream}`}
+                    />
                   );
                 })
               ) : (

@@ -1,157 +1,347 @@
 
-Goal
-- In the Market Data Subscriptions page, show only the raw stream string in the UI (example: `btcusdt@kline_1m`).
-- When the user hovers the stream badge, show a small popup box with all related details (source, symbol, event type, interval, environment, scope, and workflow info).
-- Fix why hover is currently not working.
+# Plan: Fix Critical Performance Issues in Workflow Editor
 
-What I found in your current implementation (from code review)
-1) HoverCard is implemented correctly and already uses a Portal
-- `src/components/ui/hover-card.tsx` correctly wraps `HoverCardContent` in `<HoverCardPrimitive.Portal>`, so clipping/overflow should not be the main issue anymore.
+## Problem Summary
 
-2) The most likely reason hover does not open / position correctly: Badge does not forward refs
-- `StreamBadgeWithTooltip` uses:
-  - `<HoverCardTrigger asChild> ... <Badge> ... </Badge> </HoverCardTrigger>`
-- But `src/components/ui/badge.tsx` is a plain function component and does not forward `ref`.
-- Radix HoverCard relies on a trigger element ref for positioning; when the child can’t accept the ref, Radix often fails to compute the anchor and the hovercard won’t appear or will appear at a wrong position.
-- This is a classic Radix “asChild + non-forwardRef component” issue.
+The workflow editor is extremely slow and producing errors because every node component re-renders on every position change. This creates a cascade of re-renders that overwhelms React.
 
-3) “Still showing all info here”
-- Your `StreamBadgeWithTooltip` itself only renders `{stream}` inside the badge (good).
-- The extra “binance_market → workflowName” row in the Workflow-Scoped section is coming from `MarketSubscriptions.tsx` (not from the badge).
-- If you truly want “only the stream string visible”, we must hide/minimize those extra labels and move them into the hover popup.
+**Error**: `"The provided callback is no longer runnable"` at `buildUpstreamIndex`
+**Symptom**: Editor is too slow to move nodes
 
-Plan to fix everything (hover + compact display)
+## Root Cause
 
-A) Fix HoverCard not working (core fix)
-Files:
-- src/components/ui/badge.tsx
+The `useNodes()` hook is called in 9+ places across the codebase. According to React Flow documentation:
 
-Changes:
-1) Convert `Badge` to `React.forwardRef` so Radix `asChild` can attach a ref to the trigger.
-2) Keep API the same so it doesn’t break existing usage.
+> "Components that use this hook will re-render whenever any node changes, including when a node is selected or moved."
 
-Implementation sketch:
-- Replace:
-  - `function Badge(...) { return <div ... /> }`
-- With:
-  - `const Badge = React.forwardRef<HTMLDivElement, BadgeProps>((props, ref) => <div ref={ref} ... />)`
-  - set `Badge.displayName = "Badge"`
+With 10 nodes, each using ~6 hooks with `useNodes()`, a single drag operation triggers 60+ re-renders per frame.
 
-Why this should immediately fix hover:
-- `HoverCardTrigger` will finally be able to anchor the popover correctly and open on hover.
+---
 
-Optional hardening (recommended even after forwardRef):
-- src/components/market/StreamBadgeWithTooltip.tsx
-- Change trigger child from `<Badge>` to a native element:
-  - Use `<HoverCardTrigger asChild><div className={badgeVariants(...)} ... /></HoverCardTrigger>`
-- This guarantees Radix compatibility even if Badge changes again later.
-- We can do either (forwardRef Badge) or both (best reliability).
+## Current Architecture (Problematic)
 
-B) Ensure the UI shows only the stream string (move “source → workflow” into hover)
-Files:
-- src/pages/MarketSubscriptions.tsx
-- src/components/market/StreamBadgeWithTooltip.tsx
+```text
+User drags node
+    │
+    ▼
+onNodesChange fires
+    │
+    ▼
+useNodes() returns new array reference
+    │
+    ├──► BaseNode re-renders (calls useNodes)
+    │       ├──► useNodeFieldState re-renders (calls useNodes)
+    │       ├──► useNodeRenaming re-renders (calls useNodes)
+    │       ├──► useNodeExecution re-renders (calls useNodes)
+    │       ├──► useNodeReferences re-renders (calls useNodes)
+    │       └──► useNodeAutoExecution re-renders (calls useNodes)
+    │
+    ├──► NodeRouter re-renders (calls useNodes)
+    │
+    ├──► LoopNode re-renders (calls useNodes)
+    │
+    └──► EdgeManager re-renders (calls useNodes)
+    
+    Result: N × 6 re-renders per drag tick = O(N²) performance
+```
 
-Workflow-Scoped Subscriptions section (the screenshot you shared)
-Current:
-- Each workflow-scoped block shows:
-  - Source badge + arrow + workflow link
-  - Stream badge(s)
-Desired:
-- Only show stream badge(s).
-- On hover of each stream badge, show:
-  - Source
-  - Target workflow name (and optionally link)
-  - Environment, scope, eventType, interval, etc.
+---
 
-Changes:
-1) In the Workflow-Scoped section around lines ~871-891:
-- Remove (or visually minimize) the header row that currently renders source badge + arrow + workflow link + “1 stream”.
-- Replace it with either:
-  Option 1 (strict “only stream”):
-  - Don’t render that row at all; render only the stream badges.
-  Option 2 (still compact but keeps context):
-  - Render a tiny icon-only row (e.g., just “📡” and a “Workflow” icon), but no text; details are in hover.
+## Solution Overview
 
-2) When rendering `<StreamBadgeWithTooltip />` in workflow-scoped:
-- Continue passing `source`, `workflowName`, `workflowId`, and `scope="workflow"`.
+Replace direct `useNodes()` calls with targeted selectors and pass data via props where possible.
 
-C) Make the hover popup truly “everything related to the stream”
-Files:
-- src/components/market/StreamBadgeWithTooltip.tsx
-- src/pages/MarketSubscriptions.tsx
+| Strategy | Impact | Files Affected |
+|----------|--------|----------------|
+| Use `useStore` with selectors | High | All node hooks |
+| Pass nodes/edges via props | Medium | BaseNode, hooks |
+| Memoize expensive computations | Medium | getAllUpstreamNodes |
+| Defer non-critical updates | Low | Field sync effects |
 
-Enhancement to tooltip content:
-1) Extend StreamBadgeWithTooltip props to accept optional “related workflows” and/or “sources”
-Example props:
-- relatedWorkflows?: Array<{ workflowId: string; workflowName: string }>
-- sources?: string[]  (for the “All streams” section where a stream may exist under multiple sources)
+---
 
-2) Populate these props from MarketSubscriptions data:
-- For each stream in Global section:
-  - relatedWorkflows = data.workflows filtered where wf.streams includes this stream and wf.source matches the current source
-- For each stream in “All Subscribed streams”:
-  - sources = data.streamSourceMap[stream]
-  - relatedWorkflows = data.workflows filtered where wf.streams includes stream (any source, or match primary source depending on desired accuracy)
+## Implementation Plan
 
-3) Update tooltip rendering to include:
-- Stream (header)
-- Symbol
-- Event Type (label)
-- Interval (if present)
-- Environment
-- Scope
-- Source (single) or Sources (chips/list if multiple)
-- Target Workflow (if workflow-scoped)
-- Related Workflows (list, show first N with “+X more”)
-- Optionally: make workflow names clickable links to `/dashboard/workflow/:id`
+### Phase 1: Remove useNodes from BaseNode and Child Hooks
 
-Important UX detail:
-- Keep hovercard small:
-  - Use a clean “2-column label/value” layout
-  - For workflow lists: show max 3-5 entries, then “+N more”
-  - Keep `HoverCardContent` width around 18rem–22rem (you currently use `w-72`, which is good)
+**Goal**: BaseNode already receives `nodes` and `edges` from parent - stop re-fetching them internally.
 
-D) Make sure hover popup doesn’t render “always visible”
-Files:
-- src/components/ui/hover-card.tsx (optional)
-If you ever see the hover content “always displayed” instead of only on hover, add a defensive visibility class:
-- Add: `data-[state=closed]:hidden`
-This makes the popover disappear even if animation utility classes fail or are purged.
+#### 1.1 Modify `BaseNode.tsx`
 
-E) Update the Workflow Receivers table (optional, for consistency)
-File:
-- src/pages/MarketSubscriptions.tsx
+- Remove direct `useNodes()` and `useEdges()` calls
+- Accept `nodes` and `edges` as props (already available from parent NodeRouter/LoopNode)
 
-Currently, the table shows the first 3 streams as plain badges.
-If you want the same “hover shows details” everywhere:
-- Replace those badges with `StreamBadgeWithTooltip` as well, passing:
-  - stream={sym}
-  - source={wf.source}
-  - workflowName={wf.workflowName}
-  - scope="workflow" (or a new scope like "receiver" if you want a different label)
+**Before** (line 100-102):
+```typescript
+const nodeId = useNodeId();
+const nodes = useNodes();
+const edges = useEdges();
+```
 
-Verification checklist (what you should test after implementing)
-1) Hover behavior
-- Hover the stream badge: popup appears within ~200ms.
-- Move mouse from badge into the popup: it stays open (no flicker).
-- Hover over the small “X” unsubscribe button: popup behavior remains stable.
+**After**:
+```typescript
+const nodeId = useNodeId();
+// nodes and edges received via props or context
+```
 
-2) Console warnings
-- Check browser console for:
-  - “Function components cannot be given refs…”
-If Badge is forwardRef’d (or trigger uses native element), these should disappear.
+#### 1.2 Create a Stable Node Context
 
-3) Visual expectations (matches your request)
-- In workflow-scoped cards: only `btcusdt@kline_1m` is visible in the body.
-- No extra “source → workflow” row unless you chose the optional compact icon-only header.
-- All details are discoverable in the hover popup.
+Create a context that provides nodes/edges without triggering re-renders on position changes:
 
-Files summary
-- Must change:
-  - src/components/ui/badge.tsx (forwardRef)
-  - src/pages/MarketSubscriptions.tsx (remove/minimize extra visible info; pass tooltip context)
-- Likely change:
-  - src/components/market/StreamBadgeWithTooltip.tsx (accept more context; possibly use native trigger element)
-- Optional:
-  - src/components/ui/hover-card.tsx (data-[state=closed]:hidden hardening)
+**New file**: `src/contexts/StableNodeContext.tsx`
+
+```typescript
+import { createContext, useContext, useRef, useMemo } from 'react';
+import { useStore } from '@xyflow/react';
+import type { Node, Edge } from '@xyflow/react';
+
+interface StableNodeContextValue {
+  getNodes: () => Node[];
+  getEdges: () => Edge[];
+  getNodeById: (id: string) => Node | undefined;
+}
+
+const StableNodeContext = createContext<StableNodeContextValue | null>(null);
+
+export function StableNodeProvider({ children }: { children: React.ReactNode }) {
+  // Use refs to hold current values without causing re-renders
+  const storeApi = useStore((state) => state);
+  
+  const value = useMemo(() => ({
+    getNodes: () => storeApi.getNodes(),
+    getEdges: () => storeApi.edges,
+    getNodeById: (id: string) => storeApi.getNodes().find(n => n.id === id),
+  }), [storeApi]);
+  
+  return (
+    <StableNodeContext.Provider value={value}>
+      {children}
+    </StableNodeContext.Provider>
+  );
+}
+
+export function useStableNodes() {
+  const ctx = useContext(StableNodeContext);
+  if (!ctx) throw new Error('useStableNodes must be used within StableNodeProvider');
+  return ctx;
+}
+```
+
+---
+
+### Phase 2: Fix Individual Hooks
+
+Each hook currently calls `useNodes()` independently, causing redundant subscriptions.
+
+#### 2.1 `useNodeFieldState.ts` (line 43)
+
+**Problem**: Uses `useNodes()` but only needs `setNodes` for updates.
+
+**Fix**: Remove `useNodes()`, keep only `useReactFlow().setNodes`.
+
+```typescript
+// REMOVE
+const nodes = useNodes();
+
+// KEEP - this is efficient, doesn't subscribe to changes
+const { setNodes } = useReactFlow();
+```
+
+#### 2.2 `useNodeRenaming.ts` (line 44-45)
+
+**Problem**: Uses `useNodes()` to check for duplicate names during rename.
+
+**Fix**: Only read nodes when actually renaming (inside the finishEditing callback), not on every render.
+
+```typescript
+// Before (subscribes to all changes)
+const nodes = useNodes();
+
+// After (only reads when needed)
+const { getNodes, setNodes, setEdges } = useReactFlow();
+
+const finishEditing = useCallback((save = true) => {
+  if (save && editingName.trim()) {
+    const nodes = getNodes(); // Read only when needed
+    // ... validation logic
+  }
+}, [getNodes, ...]);
+```
+
+#### 2.3 `useNodeAutoExecution.ts` (line 38)
+
+**Problem**: Uses `useNodes()` but likely only needs specific node data.
+
+**Fix**: Use `useNodesData` with specific node IDs if available, or defer to callback-time reads.
+
+#### 2.4 `useNodeExecution.ts` (line 93-94)
+
+**Problem**: Uses both `useNodes()` and `useEdges()`.
+
+**Fix**: 
+- For `buildPayload`: Read nodes/edges inside the callback using `getNodes()`/`getEdges()`
+- This prevents subscriptions while still having access to current data
+
+```typescript
+// Before
+const nodes = useNodes();
+const edges = useEdges();
+
+// After
+const { getNodes, getEdges, setNodes } = useReactFlow();
+
+const buildPayload = useCallback((fieldState, selectedInputData) => {
+  const nodes = getNodes(); // Read at execution time
+  const edges = getEdges();
+  // ... rest of logic
+}, [getNodes, getEdges, ...]);
+```
+
+#### 2.5 `useNodeReferences.ts` (line 55)
+
+**Problem**: Uses `useNodes()` for drag/drop reference resolution.
+
+**Fix**: Similar pattern - use `getNodes()` inside callbacks.
+
+---
+
+### Phase 3: Fix NodeRouter and LoopNode
+
+These components are wrapped in React.memo but still use `useNodes()` internally.
+
+#### 3.1 `NodeRouter.tsx` (line 34-35)
+
+**Current**:
+```typescript
+const nodes = useNodes();
+const edges = useEdges();
+```
+
+**Fix**: Pass nodes/edges as props from WorkflowCanvas, or use stable context.
+
+#### 3.2 `LoopNode.tsx` (line 32-33)
+
+**Same fix**: Accept nodes/edges via props instead of hooks.
+
+---
+
+### Phase 4: Fix EdgeManager
+
+#### 4.1 Lines 513 and 827
+
+**Problem**: Edge components use `useNodes()` to access node positions.
+
+**Fix**: Use `useInternalNode()` for single-node lookups (documented as more efficient).
+
+```typescript
+// Before
+const nodes = useNodes();
+const sourceNode = nodes.find(n => n.id === source);
+
+// After - single node lookup without subscribing to all changes
+import { useInternalNode } from '@xyflow/react';
+const sourceNode = useInternalNode(source);
+```
+
+---
+
+### Phase 5: Optimize getAllUpstreamNodes
+
+The current implementation rebuilds indexes on every call. Since this is called frequently during renders, cache the result.
+
+#### 5.1 Add Memoization Layer
+
+**File**: `src/utils/getAllUpstreamNodes.ts`
+
+```typescript
+// Add a simple cache based on edges array identity
+let cachedEdges: Edge[] | null = null;
+let cachedNodes: Node[] | null = null;
+let cachedIndex: UpstreamIndex | null = null;
+
+function getOrBuildIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
+  // Only rebuild if arrays changed (reference equality)
+  if (edges === cachedEdges && nodes === cachedNodes && cachedIndex) {
+    return cachedIndex;
+  }
+  
+  cachedEdges = edges;
+  cachedNodes = nodes;
+  cachedIndex = buildUpstreamIndex(edges, nodes);
+  return cachedIndex;
+}
+```
+
+---
+
+### Phase 6: Debounce Field State Sync
+
+#### 6.1 `useNodeFieldState.ts` Effect (lines 136-167)
+
+**Problem**: Syncs field state to node on every change, triggering more re-renders.
+
+**Fix**: Add debouncing to batch rapid updates.
+
+```typescript
+useEffect(() => {
+  if (readOnly || !nodeId || !hasInitialized.current) return;
+  
+  const timeoutId = setTimeout(() => {
+    setNodes((nds) => /* sync logic */);
+  }, 50); // 50ms debounce
+  
+  return () => clearTimeout(timeoutId);
+}, [fieldState, nodeId, setNodes, readOnly]);
+```
+
+---
+
+## Files to Modify
+
+| File | Priority | Changes |
+|------|----------|---------|
+| `src/contexts/StableNodeContext.tsx` | Create | New context for stable node access |
+| `src/components/nodes/BaseNode.tsx` | High | Remove useNodes/useEdges, use context |
+| `src/hooks/useNodeFieldState.ts` | High | Remove useNodes, add debounce |
+| `src/hooks/useNodeRenaming.ts` | High | Use getNodes() in callback only |
+| `src/hooks/useNodeExecution.ts` | High | Use getNodes/getEdges in callbacks |
+| `src/hooks/useNodeReferences.ts` | High | Use getNodes() in callbacks |
+| `src/hooks/useNodeAutoExecution.ts` | Medium | Optimize node access pattern |
+| `src/components/nodes/NodeRouter.tsx` | Medium | Use context or props for nodes |
+| `src/components/workflow/LoopNode.tsx` | Medium | Use context or props for nodes |
+| `src/components/workflow/EdgeManager.tsx` | Medium | Use useInternalNode instead |
+| `src/utils/getAllUpstreamNodes.ts` | Low | Add index caching |
+| `src/components/workflow/WorkflowCanvas.tsx` | Low | Wrap with StableNodeProvider |
+
+---
+
+## Expected Improvements
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Re-renders per drag tick | N × 6 = 60+ (for 10 nodes) | 1-2 |
+| getAllUpstreamNodes calls | 60+ per tick | 1 per tick (cached) |
+| Error rate | Frequent "callback not runnable" | None |
+| Drag smoothness | Slideshow | 60 FPS |
+
+---
+
+## Verification Steps
+
+After implementation:
+
+1. Open React DevTools Profiler
+2. Drag a node around the canvas
+3. Verify only the dragged node component re-renders
+4. Check console for no "callback not runnable" errors
+5. Test with 20+ nodes to ensure scalability
+
+---
+
+## Technical Notes
+
+**Why the error occurs**: When React batches too many state updates, components unmount/remount rapidly. The `useNodes()` subscription callback from a previous render becomes stale ("no longer runnable") when the component re-renders before the callback completes.
+
+**Why useStore with selectors works**: Zustand's selector mechanism only triggers re-renders when the selected slice of state changes. Selecting `state.getNodes` (a function reference) instead of `state.nodes` (the array) avoids position-change subscriptions.
+
+**React Flow best practice**: The official docs recommend using `useReactFlow().getNodes()` for imperative reads and `useStore` with selectors for reactive subscriptions that need specific data.

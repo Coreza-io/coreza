@@ -19,7 +19,7 @@ import type { Redis } from "ioredis";
 export function buildStoreKey(
   userId: string,
   workflowId: string,
-  variableName: string
+  variableName: string,
 ): string {
   return `store:${userId}:${workflowId}:${variableName}`;
 }
@@ -34,6 +34,18 @@ export function parseStoredValue(raw: string | null): unknown {
   }
 }
 
+export const parseStreamEntries = (entries: any[]) => {
+  return entries.map(([id, fields]: [string, string[]]) => {
+    const obj: any = { id };
+
+    for (let i = 0; i < fields.length; i += 2) {
+      obj[fields[i]] = parseStoredValue(fields[i + 1]);
+    }
+
+    return obj;
+  });
+};
+
 export function extractVariableNameFromKey(key: string): string {
   const parts = key.split(":");
   return parts[parts.length - 1];
@@ -43,7 +55,7 @@ export async function setStoreValue(
   redis: Redis,
   key: string,
   value: unknown,
-  ttl?: number
+  ttl?: number,
 ): Promise<void> {
   const serialized = JSON.stringify(value);
 
@@ -63,7 +75,7 @@ export function parseMembers(membersString: string): string[] {
 }
 
 export function parseScoreMembers(
-  scoreMembersString: string
+  scoreMembersString: string,
 ): (number | string)[] {
   if (!scoreMembersString) return [];
   const pairs = scoreMembersString
@@ -86,7 +98,7 @@ export function parseScoreMembers(
 
 export async function getStoreValue(
   redis: import("ioredis").Redis,
-  key: string
+  key: string,
 ): Promise<unknown> {
   const keyType = await redis.type(key);
 

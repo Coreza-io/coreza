@@ -43,6 +43,10 @@
         { "id": "hash", "name": "Hash (object/dictionary)" },
         { "id": "set", "name": "Set (unique values)" },
         { "id": "sortedSet", "name": "Sorted Set (ranked)" },
+        {
+          "id": "stream",
+          "name": "Stream (time-series log)"
+        },
         { "id": "utility", "name": "Utility (keys, ttl)" }
       ],
       "default": "string",
@@ -99,11 +103,18 @@
         ],
         "sortedSet": [
           { "id": "zadd", "name": "Add with Score" },
+          { "id": "zadd_bulk", "name": "Bulk Add (Array)" },
           { "id": "zrange", "name": "Get by Rank" },
           { "id": "zscore", "name": "Get Score" },
           { "id": "zcount", "name": "Count in Range" },
           { "id": "zincrby", "name": "Increment Score" },
           { "id": "zrem", "name": "Remove Members" },
+          { "id": "delete", "name": "Delete Key" }
+        ],
+        "stream": [
+          { "id": "xadd", "name": "Add Entry" },
+          { "id": "xadd_bulk", "name": "Bulk Add (Array)" },
+          { "id": "xrange", "name": "Get Range (History)" },
           { "id": "delete", "name": "Delete Key" }
         ],
         "utility": [
@@ -321,6 +332,10 @@
             "hset",
             "sadd",
             "zadd",
+            "zadd_bulk",
+            "xadd",
+            "xadd_bulk",
+            "xrange",
             "keys"
           ]
         }
@@ -333,7 +348,15 @@
       "placeholder": "Enter value or {{ $('Node').json.field }}",
       "displayOptions": {
         "show": {
-          "operation": ["set", "append", "lpush", "rpush", "lset", "hset"]
+          "operation": [
+            "set",
+            "append",
+            "lpush",
+            "rpush",
+            "lset",
+            "hset",
+            "xadd"
+          ]
         }
       }
     },
@@ -380,7 +403,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["zadd"]
+          "operation": ["zadd", "zadd_bulk"]
         }
       }
     },
@@ -405,6 +428,44 @@
       "displayOptions": {
         "show": {
           "operation": ["lrange", "ltrim", "zrange"]
+        }
+      }
+    },
+    {
+      "key": "startId",
+      "label": "Start Stream ID",
+      "type": "text",
+      "placeholder": "- (beginning)",
+      "default": "-",
+      "description": "Start stream ID (e.g. 0-0, -, 1700000000000-0)",
+      "displayOptions": {
+        "show": {
+          "operation": ["xrange"]
+        }
+      }
+    },
+    {
+      "key": "endId",
+      "label": "End Stream ID",
+      "type": "text",
+      "placeholder": "+ (latest)",
+      "default": "+",
+      "description": "End stream ID (e.g. +, 1700000000000-0)",
+      "displayOptions": {
+        "show": {
+          "operation": ["xrange"]
+        }
+      }
+    },
+    {
+      "key": "count",
+      "label": "Limit (Count)",
+      "type": "text",
+      "placeholder": "Optional, e.g. 500",
+      "description": "Maximum number of stream entries to return",
+      "displayOptions": {
+        "show": {
+          "operation": ["xrange"]
         }
       }
     },
@@ -496,6 +557,32 @@
       "displayOptions": {
         "show": {
           "operation": ["zrange"]
+        }
+      }
+    },
+    {
+      "key": "items",
+      "label": "Items (Array)",
+      "type": "textarea",
+      "placeholder": "{{ $('Alpaca').json.data.candles }}",
+      "required": true,
+      "description": "Array of objects to insert",
+      "displayOptions": {
+        "show": {
+          "operation": ["zadd_bulk", "xadd_bulk"]
+        }
+      }
+    },
+    {
+      "key": "chunkSize",
+      "label": "Chunk Size",
+      "type": "text",
+      "placeholder": "2000",
+      "default": 2000,
+      "description": "Batch size for Redis pipeline",
+      "displayOptions": {
+        "show": {
+          "operation": ["zadd_bulk", "xadd_bulk"]
         }
       }
     },

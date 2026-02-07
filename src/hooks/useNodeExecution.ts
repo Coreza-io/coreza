@@ -145,7 +145,7 @@ export function useNodeExecution({
       // Read nodes/edges imperatively when building payload - avoids subscription re-renders
       const nodes = getNodes();
       const edges = getEdges();
-      
+
       // Create a map of all upstream node data by display name
       const allNodeData: Record<string, any> = {};
 
@@ -186,7 +186,7 @@ export function useNodeExecution({
         }
 
         // Add inputData as the current available data
-        payload.inputData = allNodeData;
+        //payload.inputData = allNodeData;
 
         console.log("🔧 If node special payload:", payload);
       }
@@ -241,7 +241,15 @@ export function useNodeExecution({
         ...payload,
       };
     },
-    [definition, previousNodes, executionStore, resolveDeep, getNodes, getEdges, nodeId],
+    [
+      definition,
+      previousNodes,
+      executionStore,
+      resolveDeep,
+      getNodes,
+      getEdges,
+      nodeId,
+    ],
   );
 
   // Main execution handler
@@ -323,7 +331,7 @@ export function useNodeExecution({
         if (definition?.name === "Loop") {
           // Read edges imperatively for loop processing
           const edges = getEdges();
-          
+
           const batchSize = parseInt(fieldState.batchSize) || 1;
           const parallel = !!fieldState.parallel;
           const aggregateMode = !!fieldState.aggregate;

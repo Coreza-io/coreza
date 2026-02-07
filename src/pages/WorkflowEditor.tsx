@@ -84,6 +84,7 @@ import {
   ExecutionStoreProvider,
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
+import { StableNodeProvider } from "@/contexts/StableNodeContext";
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
@@ -1888,9 +1889,11 @@ const WorkflowEditorContent = () => {
 
 const WorkflowEditor = () => (
   <ReactFlowProvider>
-    <ExecutionStoreProvider>
-      <WorkflowEditorContent />
-    </ExecutionStoreProvider>
+    <StableNodeProvider>
+      <ExecutionStoreProvider>
+        <WorkflowEditorContent />
+      </ExecutionStoreProvider>
+    </StableNodeProvider>
   </ReactFlowProvider>
 );
 

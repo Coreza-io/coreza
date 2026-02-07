@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { useNodeId, useNodes } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 
 interface UseNodeAutoExecutionProps {
   nodeId: string | null;
@@ -35,7 +35,7 @@ export function useNodeAutoExecution({
   handleSubmit,
   executionStore,
 }: UseNodeAutoExecutionProps): void {
-  const nodes = useNodes();
+  const { getNodes } = useReactFlow();
   const isMounted = useRef(true);
 
   // Refs for stashing callbacks
@@ -102,40 +102,48 @@ export function useNodeAutoExecution({
   }, [nodeId, handleSubmit, executionStore]);
 
   // Watch for output changes and call success/error callback
+  // Use polling with getNodes() instead of subscribing to all node changes
   useEffect(() => {
-    const currentNode = nodes.find((n) => n.id === nodeId);
-    if (!currentNode) return;
-
-    // Need either success or error callback to proceed
+    // Only poll when we have pending callbacks
     if (!onSuccessRef.current && !onErrorRef.current) return;
 
-    const output = currentNode.data?.output as { status?: string; success?: boolean; error?: any } | undefined;
-    if (output === undefined) return;
+    const pollInterval = setInterval(() => {
+      const nodes = getNodes();
+      const currentNode = nodes.find((n) => n.id === nodeId);
+      if (!currentNode) return;
 
-    // CHECK FOR ERROR STATUS - call onError and stop execution chain
-    if (output?.status === "error" || output?.success === false) {
-      console.log(`❌ Node ${nodeId} execution failed:`, output);
-      onErrorRef.current?.(output?.error || output);
+      const output = currentNode.data?.output as { status?: string; success?: boolean; error?: any } | undefined;
+      if (output === undefined) return;
+
+      // CHECK FOR ERROR STATUS - call onError and stop execution chain
+      if (output?.status === "error" || output?.success === false) {
+        console.log(`❌ Node ${nodeId} execution failed:`, output);
+        onErrorRef.current?.(output?.error || output);
+        onSuccessRef.current = onErrorRef.current = null;
+        clearInterval(pollInterval);
+        return;
+      }
+
+      // Normalize result as needed
+      let resultToPass = output;
+
+      // Only normalize for Switch nodes that need special handling
+      if (
+        definition?.name === "Switch" &&
+        resultToPass &&
+        typeof resultToPass === "object" &&
+        "result" in resultToPass
+      ) {
+        resultToPass = resultToPass.result;
+      }
+
+      // Call the stashed success callback
+      onSuccessRef.current?.(resultToPass);
       onSuccessRef.current = onErrorRef.current = null;
-      return;
-    }
+      clearInterval(pollInterval);
+    }, 100); // Poll every 100ms
 
-    // Normalize result as needed
-    let resultToPass = output;
-
-    // Only normalize for Switch nodes that need special handling
-    if (
-      definition?.name === "Switch" &&
-      resultToPass &&
-      typeof resultToPass === "object" &&
-      "result" in resultToPass
-    ) {
-      resultToPass = resultToPass.result;
-    }
-
-    // Call the stashed success callback
-    onSuccessRef.current?.(resultToPass);
-    onSuccessRef.current = onErrorRef.current = null;
-  }, [nodes, nodeId, definition]);
+    return () => clearInterval(pollInterval);
+  }, [nodeId, definition, getNodes]);
 }
 

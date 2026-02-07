@@ -15,7 +15,7 @@
  */
 
 import React, { useMemo, createElement } from "react";
-import { NodeProps, useNodes, useEdges } from "@xyflow/react";
+import { NodeProps, useNodeId } from "@xyflow/react";
 import BaseNode from "@/components/nodes/BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "@/components/nodes/layout/BasicNodeLayout";
@@ -23,14 +23,14 @@ import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { Plus } from "lucide-react";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 
 export interface LoopNodeData extends Record<string, any> {
   onAddNode: (parentId: string) => void;
 }
 
 export function LoopNode({ id, data, selected }: NodeProps) {
-  const nodes = useNodes();
-  const edges = useEdges();
+  const { getNodes, getEdges } = useStableNodes();
   const { onAddNode } = data as any;
   const definition = (data as any).definition || (data as any).config || {};
   const executionStore = useExecutionStore();
@@ -64,7 +64,11 @@ export function LoopNode({ id, data, selected }: NodeProps) {
 
   return (
     <BaseNode data={data} selected={selected ?? false}>
-      {(renderProps) => (
+      {(renderProps) => {
+        // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
+        const nodes = getNodes();
+        const edges = getEdges();
+        return (
         <div className="relative">
           <NodeWrapper
             nodeId={id}
@@ -97,7 +101,8 @@ export function LoopNode({ id, data, selected }: NodeProps) {
             <BasicNodeLayout {...renderProps} />
           </NodeWrapper>
         </div>
-      )}
+        );
+      }}
     </BaseNode>
   );
 }

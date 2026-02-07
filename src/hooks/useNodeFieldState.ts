@@ -15,8 +15,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNodeId, useNodes, useReactFlow } from "@xyflow/react";
-import type { Node } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 
 interface UseNodeFieldStateProps {
   definition: any;
@@ -40,9 +39,9 @@ export function useNodeFieldState({
   readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
-  const nodes = useNodes();
   const { setNodes } = useReactFlow();
   const hasInitialized = useRef(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize fieldState from definition, saved data, or defaults
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
@@ -135,6 +134,7 @@ export function useNodeFieldState({
 
   // Sync fieldState changes to node data.values for proper persistence
   // Skip in readOnly mode to prevent execution view from mutating nodes
+  // Debounced to prevent rapid updates during typing
   useEffect(() => {
     if (readOnly) return; // Don't sync in read-only/execution view mode
     if (
@@ -144,26 +144,40 @@ export function useNodeFieldState({
     )
       return;
 
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.id !== nodeId) return n;
+    // Clear any pending sync
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
 
-        // Check if values actually changed to prevent redundant updates
-        const currentValues = (n.data as any)?.values || {};
-        const valuesChanged =
-          JSON.stringify(currentValues) !== JSON.stringify(fieldState);
+    // Debounce the sync to batch rapid updates
+    syncTimeoutRef.current = setTimeout(() => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
 
-        if (!valuesChanged) return n;
+          // Check if values actually changed to prevent redundant updates
+          const currentValues = (n.data as any)?.values || {};
+          const valuesChanged =
+            JSON.stringify(currentValues) !== JSON.stringify(fieldState);
 
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            values: { ...fieldState },
-          },
-        };
-      }),
-    );
+          if (!valuesChanged) return n;
+
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              values: { ...fieldState },
+            },
+          };
+        }),
+      );
+    }, 50); // 50ms debounce
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
   }, [fieldState, nodeId, setNodes, readOnly]);
 
   // Handle single field change with dynamic options support

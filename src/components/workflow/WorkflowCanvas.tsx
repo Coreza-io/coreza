@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Node,
   Edge,
   Connection,
@@ -36,6 +37,7 @@ import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
+import { StableNodeProvider } from "@/contexts/StableNodeContext";
 
 interface WorkflowCanvasProps {
   nodes: Node[];
@@ -165,8 +167,9 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
     <div className={`flex flex-1 overflow-hidden ${className || ''}`}>
       {/* ReactFlow Canvas */}
       <div className="flex-1 bg-trading-grid relative">
-        <ReactFlow
-          nodes={nodes}
+        <StableNodeProvider>
+          <ReactFlow
+            nodes={nodes}
           edges={edges}
           onNodesChange={(changes) => {
             // Convert React Flow changes to direct node updates
@@ -252,6 +255,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black"
           />
         </ReactFlow>
+        </StableNodeProvider>
 
         {/* Execution Status Overlay */}
         <AnimatePresence>

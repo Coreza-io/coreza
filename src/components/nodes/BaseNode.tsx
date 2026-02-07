@@ -14,11 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
@@ -98,28 +99,42 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   children,
 }) => {
   const nodeId = useNodeId();
-  const nodes = useNodes();
-  const edges = useEdges();
+  const { getNodes, getEdges } = useStableNodes();
+  const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: workflowId } = useParams();
+  
+  // Track upstream nodes with stable reference - only update when edges change significantly
+  const previousNodesRef = useRef<Node[]>([]);
+  const lastEdgeCountRef = useRef(0);
 
   const definition = data.definition;
+  
+  // Get display name - use stable access to avoid re-renders on drag
   const displayName = useMemo(() => {
-    // Use custom displayName if available, otherwise generate with deduplication
     if (data.displayName && data.displayName.trim()) {
       return data.displayName;
     }
+    const nodes = getNodes();
     return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, definition?.name, nodeId, data.displayName]);
+  }, [definition?.name, nodeId, data.displayName, getNodes]);
 
-  // Get upstream nodes
+  // Get upstream nodes - use stable access, only recalculate when needed
   const previousNodes = useMemo(() => {
-    if (!nodeId || !nodes || !edges) return [];
-    return getAllUpstreamNodes(nodeId, edges, nodes);
-  }, [nodeId, nodes, edges]);
+    if (!nodeId) return previousNodesRef.current;
+    const nodes = getNodes();
+    const edges = getEdges();
+    const edgeCount = edges.length;
+    
+    // Only recalculate if edge count changed (new connection/disconnection)
+    if (edgeCount !== lastEdgeCountRef.current || previousNodesRef.current.length === 0) {
+      lastEdgeCountRef.current = edgeCount;
+      previousNodesRef.current = getAllUpstreamNodes(nodeId, edges, nodes);
+    }
+    return previousNodesRef.current;
+  }, [nodeId, getNodes, getEdges, storeVersion]);
 
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);
@@ -197,7 +212,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   // Get auth context for API calls
   const { session } = useAuth();
-  const { setNodes } = useReactFlow();
 
   // Check if node is in test listening mode - ONLY trust execution store, not stale output status
   const isTestListening = useMemo(() => {

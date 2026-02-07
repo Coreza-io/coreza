@@ -15,7 +15,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { useNodes } from "@xyflow/react";
+import { useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
@@ -52,7 +52,7 @@ export function useNodeReferences({
   selectedPrevNode,
   handleChange,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
-  const nodes = useNodes();
+  const { getNodes } = useReactFlow();
   const executionStore = useExecutionStore();
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
@@ -105,6 +105,8 @@ export function useNodeReferences({
           displayValue = data;
         }
 
+        // Read nodes imperatively at drop time - avoids subscription re-renders
+        const nodes = getNodes();
         const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
         const sourceDisplayName =
           sourceNode?.data?.displayName || sourceNode?.id;
@@ -122,7 +124,7 @@ export function useNodeReferences({
 
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
-    [nodes, selectedPrevNodeId, handleChange]
+    [getNodes, selectedPrevNodeId, handleChange]
   );
 
   // Get preview of resolved reference expression
@@ -155,6 +157,8 @@ export function useNodeReferences({
       });
 
       try {
+        // Read nodes imperatively for reference resolution - avoids subscription re-renders
+        const nodes = getNodes();
         const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
 
         // For very large arrays, use quick summarized preview to avoid performance issues
@@ -175,7 +179,7 @@ export function useNodeReferences({
       previousNodes,
       selectedPrevNode,
       executionStore,
-      nodes,
+      getNodes,
     ]
   );
 

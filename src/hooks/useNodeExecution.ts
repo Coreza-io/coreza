@@ -15,7 +15,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -90,9 +90,7 @@ export function useNodeExecution({
   workflowId,
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
-  const nodes = useNodes();
-  const edges = useEdges();
-  const { setNodes } = useReactFlow();
+  const { getNodes, getEdges, setNodes } = useReactFlow();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
 
@@ -117,6 +115,8 @@ export function useNodeExecution({
   // Resolve references recursively
   const resolveDeep = useCallback(
     (val: any, selectedInputData: any, allNodeData: any): any => {
+      // Read nodes imperatively when needed - avoids subscription re-renders
+      const nodes = getNodes();
       if (typeof val === "string") {
         return resolveReferences(val, selectedInputData, allNodeData, nodes);
       }
@@ -133,7 +133,7 @@ export function useNodeExecution({
       }
       return val;
     },
-    [nodes],
+    [getNodes],
   );
 
   // Build payload for API request
@@ -142,6 +142,10 @@ export function useNodeExecution({
       fieldState: Record<string, any>,
       selectedInputData: Record<string, any>,
     ): Record<string, any> => {
+      // Read nodes/edges imperatively when building payload - avoids subscription re-renders
+      const nodes = getNodes();
+      const edges = getEdges();
+      
       // Create a map of all upstream node data by display name
       const allNodeData: Record<string, any> = {};
 
@@ -237,7 +241,7 @@ export function useNodeExecution({
         ...payload,
       };
     },
-    [definition, previousNodes, executionStore, resolveDeep, nodes, edges],
+    [definition, previousNodes, executionStore, resolveDeep, getNodes, getEdges, nodeId],
   );
 
   // Main execution handler
@@ -317,6 +321,9 @@ export function useNodeExecution({
 
         // Handle Loop nodes specially
         if (definition?.name === "Loop") {
+          // Read edges imperatively for loop processing
+          const edges = getEdges();
+          
           const batchSize = parseInt(fieldState.batchSize) || 1;
           const parallel = !!fieldState.parallel;
           const aggregateMode = !!fieldState.aggregate;
@@ -664,7 +671,7 @@ export function useNodeExecution({
       executionStore,
       setNodes,
       session?.access_token,
-      edges,
+      getEdges,
     ],
   );
 

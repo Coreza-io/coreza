@@ -15,7 +15,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNodeId, useNodes, useEdges, useReactFlow } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UseNodeRenamingProps {
@@ -41,8 +41,7 @@ export function useNodeRenaming({
   selected,
 }: UseNodeRenamingProps): UseNodeRenamingReturn {
   const nodeId = useNodeId();
-  const nodes = useNodes();
-  const { setNodes, setEdges } = useReactFlow();
+  const { getNodes, setNodes, setEdges } = useReactFlow();
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -82,6 +81,9 @@ export function useNodeRenaming({
           return;
         }
 
+        // Read nodes imperatively at rename time - avoids subscription re-renders
+        const nodes = getNodes();
+        
         // Check for name uniqueness across all nodes (both IDs and displayNames)
         const existingNames = nodes
           .filter((n) => n.id !== nodeId)
@@ -147,7 +149,7 @@ export function useNodeRenaming({
       setIsEditing(false);
       setEditingName("");
     },
-    [editingName, displayName, nodeId, nodes, setNodes, setEdges, toast]
+    [editingName, displayName, nodeId, getNodes, setNodes, setEdges, toast]
   );
 
   // F2 key handler - scoped to only this node when selected

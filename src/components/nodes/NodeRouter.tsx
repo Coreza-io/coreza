@@ -19,10 +19,11 @@ import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";
 import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
-import { useNodeId, useNodes, useEdges } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 
 interface NodeRouterProps {
   data: any;
@@ -31,8 +32,7 @@ interface NodeRouterProps {
 
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
-  const nodes = useNodes();
-  const edges = useEdges();
+  const { getNodes, getEdges } = useStableNodes();
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
@@ -265,7 +265,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   return (
     <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
-      {(renderProps) => (
+      {(renderProps) => {
+        // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
+        const nodes = getNodes();
+        const edges = getEdges();
+        return (
         <NodeWrapper
           nodeId={nodeId}
           nodes={nodes}
@@ -349,7 +353,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             <BasicNodeLayout {...renderProps} />
           )}
         </NodeWrapper>
-      )}
+        );
+      }}
     </BaseNode>
   );
 };

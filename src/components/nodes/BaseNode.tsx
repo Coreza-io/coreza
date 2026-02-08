@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId, useReactFlow, useStore } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
@@ -92,6 +92,9 @@ export interface BaseNodeRenderProps {
   referenceStyle: React.CSSProperties;
 }
 
+// Selector for edge count - only re-renders when number of edges changes
+const edgeCountSelector = (state: any) => state.edges?.length ?? 0;
+
 const BaseNode: React.FC<BaseNodeProps> = ({
   data,
   selected,
@@ -105,10 +108,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: workflowId } = useParams();
+  // Subscribe to edge count changes (not position changes)
+  const edgeCount = useStore(edgeCountSelector);
   
-  // Track upstream nodes with stable reference - only update when edges change significantly
+  // Track upstream nodes with stable reference
   const previousNodesRef = useRef<Node[]>([]);
-  const lastEdgeCountRef = useRef(0);
 
   const definition = data.definition;
   
@@ -121,20 +125,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
   }, [definition?.name, nodeId, data.displayName, getNodes]);
 
-  // Get upstream nodes - use stable access, only recalculate when needed
+  // Get upstream nodes - recalculate when edge count changes
   const previousNodes = useMemo(() => {
     if (!nodeId) return previousNodesRef.current;
     const nodes = getNodes();
     const edges = getEdges();
-    const edgeCount = edges.length;
-    
-    // Only recalculate if edge count changed (new connection/disconnection)
-    if (edgeCount !== lastEdgeCountRef.current || previousNodesRef.current.length === 0) {
-      lastEdgeCountRef.current = edgeCount;
-      previousNodesRef.current = getAllUpstreamNodes(nodeId, edges, nodes);
-    }
+
+    previousNodesRef.current = getAllUpstreamNodes(nodeId, edges, nodes);
     return previousNodesRef.current;
-  }, [nodeId, getNodes, getEdges, storeVersion]);
+  }, [nodeId, getNodes, getEdges, edgeCount, storeVersion]);
 
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);

@@ -21,7 +21,10 @@ import { ADX, Stochastic, IchimokuCloud } from "technicalindicators";
 import Big from "big.js";
 import { createError } from "../middleware/errorHandler";
 import { StandardNodeOutput } from "../types/nodeOutput";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../utils/normalizeOutput";
 
 export interface IndicatorInput {
   prices?: any;
@@ -114,7 +117,7 @@ export class IndicatorService {
       if (!Number.isFinite(period) || period <= 0) {
         throw createError(
           "period/window is required and must be a positive number",
-          400
+          400,
         );
       }
 
@@ -128,9 +131,15 @@ export class IndicatorService {
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "RSI" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "RSI",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "RSI" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "RSI",
+      });
     }
   }
 
@@ -157,9 +166,15 @@ export class IndicatorService {
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "EMA" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "EMA",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "EMA" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "EMA",
+      });
     }
   }
 
@@ -175,7 +190,7 @@ export class IndicatorService {
       if (!Number.isFinite(period) || period <= 0) {
         throw createError(
           "period is required and must be a positive number",
-          400
+          400,
         );
       }
 
@@ -189,9 +204,15 @@ export class IndicatorService {
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "SMA" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "SMA",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "SMA" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "SMA",
+      });
     }
   }
 
@@ -234,14 +255,20 @@ export class IndicatorService {
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "MACD" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "MACD",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "MACD" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "MACD",
+      });
     }
   }
 
   static async calculateBollinger(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const {
@@ -257,13 +284,13 @@ export class IndicatorService {
       if (!Number.isFinite(period) || period <= 0) {
         throw createError(
           "period is required and must be a positive number",
-          400
+          400,
         );
       }
       if (!Number.isFinite(stdDev) || stdDev <= 0) {
         throw createError(
           "stdDev/std_dev_multiplier is required and must be a positive number",
-          400
+          400,
         );
       }
 
@@ -292,9 +319,15 @@ export class IndicatorService {
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Bollinger Bands" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Bollinger Bands",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Bollinger Bands" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Bollinger Bands",
+      });
     }
   }
 
@@ -306,7 +339,7 @@ export class IndicatorService {
       if (!Number.isFinite(period) || period <= 0) {
         throw createError(
           "period is required and must be a positive number",
-          400
+          400,
         );
       }
 
@@ -318,14 +351,20 @@ export class IndicatorService {
       }
 
       const results = ADX.calculate({ high, low, close, period });
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "ADX" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "ADX",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "ADX" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "ADX",
+      });
     }
   }
 
   static async calculateStochastic(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const { candle_data: rawCandles, k_period: rawK, d_period: rawD } = input;
@@ -335,13 +374,13 @@ export class IndicatorService {
       if (!Number.isFinite(periodK) || periodK <= 0) {
         throw createError(
           "k_period is required and must be a positive number",
-          400
+          400,
         );
       }
       if (!Number.isFinite(periodD) || periodD <= 0) {
         throw createError(
           "d_period is required and must be a positive number",
-          400
+          400,
         );
       }
 
@@ -356,14 +395,20 @@ export class IndicatorService {
         period: periodK,
         signalPeriod: periodD,
       });
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Stochastic" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Stochastic",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Stochastic" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Stochastic",
+      });
     }
   }
 
   static async calculateIchimoku(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const {
@@ -381,7 +426,7 @@ export class IndicatorService {
       if ([conv, base, span, disp].some((v) => !Number.isFinite(v) || v <= 0)) {
         throw createError(
           "All Ichimoku periods are required and must be positive numbers",
-          400
+          400,
         );
       }
 
@@ -396,9 +441,15 @@ export class IndicatorService {
         spanPeriod: span,
         displacement: disp,
       });
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
+      return createSuccessOutput(results, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Ichimoku",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Ichimoku",
+      });
     }
   }
 
@@ -415,7 +466,7 @@ export class IndicatorService {
         if (!Number.isFinite(close) || !Number.isFinite(volume)) {
           throw createError(
             "Each candle must have numeric close and volume",
-            400
+            400,
           );
         }
 
@@ -427,9 +478,15 @@ export class IndicatorService {
         obvValues.push({ timestamp: c.t ?? c.timestamp, obv });
       });
 
-      return createSuccessOutput(obvValues, { ...INDICATOR_CONTEXT, nodeName: "OBV" });
+      return createSuccessOutput(obvValues, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "OBV",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "OBV" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "OBV",
+      });
     }
   }
 
@@ -458,7 +515,7 @@ export class IndicatorService {
         if (![high, low, close, volume].every(Number.isFinite)) {
           throw createError(
             "Each candle must have numeric high, low, close, and volume",
-            400
+            400,
           );
         }
 
@@ -493,97 +550,93 @@ export class IndicatorService {
         });
       });
 
-      return createSuccessOutput(vwapValues, { ...INDICATOR_CONTEXT, nodeName: "VWAP" });
+      return createSuccessOutput(vwapValues, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "VWAP",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "VWAP" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "VWAP",
+      });
     }
   }
 
   static async calculateVolumeOscillator(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const {
         candle_data: rawCandles,
-        short_period: rawShort,
-        long_period: rawLong,
+        short_period,
+        long_period,
         type,
       } = input;
 
       const candles = parseArray<any>(rawCandles, "candle_data");
-      const shortPeriod = Number(rawShort);
-      const longPeriod = Number(rawLong);
+      const shortP = Number(short_period);
+      const longP = Number(long_period);
 
-      if (!Number.isFinite(shortPeriod) || shortPeriod <= 0) {
-        throw createError(
-          "short_period is required and must be a positive number",
-          400
-        );
+      if (
+        !Number.isFinite(shortP) ||
+        !Number.isFinite(longP) ||
+        shortP <= 0 ||
+        longP <= 0
+      ) {
+        throw createError("Invalid periods", 400);
       }
-      if (!Number.isFinite(longPeriod) || longPeriod <= 0) {
-        throw createError(
-          "long_period is required and must be a positive number",
-          400
-        );
-      }
-      if (shortPeriod >= longPeriod) {
+      if (shortP >= longP) {
         throw createError("short_period must be less than long_period", 400);
       }
-      if (!type) {
-        throw createError("type (percentage or absolute) is required", 400);
-      }
 
-      // Extract volumes from candle data
       const volumes = candles.map((c) => Number(c.v ?? c.volume));
       if (volumes.some((v) => !Number.isFinite(v) || v < 0)) {
-        throw createError("Invalid volume values in candle data", 400);
+        throw createError("Invalid volume data", 400);
       }
 
-      // Calculate short and long EMAs for volume
-      const shortEMA = new EMA(shortPeriod);
-      const longEMA = new EMA(longPeriod);
-      const results: { value: number; shortEMA: number; longEMA: number }[] = [];
+      const alphaShort = 2 / (shortP + 1);
+      const alphaLong = 2 / (longP + 1);
 
-      for (const volume of volumes) {
-        shortEMA.update(volume, false);
-        longEMA.update(volume, false);
+      let shortEMA = volumes[0];
+      let longEMA = volumes[0];
 
-        if (shortEMA.isStable && longEMA.isStable) {
-          const shortValue = toNumber(shortEMA.getResult());
-          const longValue = toNumber(longEMA.getResult());
+      const out: number[] = [];
 
-          let oscillatorValue: number;
-          if (type === "percentage") {
-            // Percentage Volume Oscillator (PVO)
-            oscillatorValue = ((shortValue - longValue) / longValue) * 100;
-          } else {
-            // Absolute difference
-            oscillatorValue = shortValue - longValue;
-          }
+      for (let i = 1; i < volumes.length; i++) {
+        shortEMA = volumes[i] * alphaShort + shortEMA * (1 - alphaShort);
+        longEMA = volumes[i] * alphaLong + longEMA * (1 - alphaLong);
 
-          results.push({
-            value: oscillatorValue,
-            shortEMA: shortValue,
-            longEMA: longValue,
-          });
+        if (i + 1 >= longP) {
+          out.push(
+            type === "percentage"
+              ? ((shortEMA - longEMA) / longEMA) * 100
+              : shortEMA - longEMA,
+          );
         }
       }
 
-      return createSuccessOutput(results, { ...INDICATOR_CONTEXT, nodeName: "Volume Oscillator" });
+      return createSuccessOutput(out, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Volume Oscillator",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Volume Oscillator" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Volume Oscillator",
+      });
     }
   }
 
   static async calculateSupportResistancePivot(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const { candle_data: rawCandles, num_levels } = input;
       const candles = parseArray<any>(rawCandles, "candle_data");
 
       if (!num_levels) throw createError("num_levels is required", 400);
-      if (candles.length === 0) throw createError("No candle data provided", 400);
+      if (candles.length === 0)
+        throw createError("No candle data provided", 400);
 
       const lastCandle = candles[candles.length - 1];
       const high = Number(lastCandle.h ?? lastCandle.high);
@@ -621,14 +674,20 @@ export class IndicatorService {
         levels.support.push(low - 2 * (high - PP));
       }
 
-      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Pivot" });
+      return createSuccessOutput([levels], {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Pivot",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Pivot" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Pivot",
+      });
     }
   }
 
   static async calculateSupportResistanceSwing(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const {
@@ -640,7 +699,8 @@ export class IndicatorService {
 
       const candles = parseArray<any>(rawCandles, "candle_data");
 
-      if (!lookback_period) throw createError("lookback_period is required", 400);
+      if (!lookback_period)
+        throw createError("lookback_period is required", 400);
       if (!sensitivity) throw createError("sensitivity is required", 400);
       if (!num_levels) throw createError("num_levels is required", 400);
 
@@ -701,7 +761,8 @@ export class IndicatorService {
           .sort((a, b) => b.length - a.length)
           .slice(0, numLevels)
           .map(
-            (cluster) => cluster.reduce((sum, p) => sum + p, 0) / cluster.length
+            (cluster) =>
+              cluster.reduce((sum, p) => sum + p, 0) / cluster.length,
           )
           .sort((a, b) => b - a);
       };
@@ -716,20 +777,27 @@ export class IndicatorService {
         swing_lows_count: swingLows.length,
       };
 
-      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Swing" });
+      return createSuccessOutput([levels], {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Swing",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Swing" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Swing",
+      });
     }
   }
 
   static async calculateSupportResistanceHistorical(
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
       const { candle_data: rawCandles, lookback_period, num_levels } = input;
       const candles = parseArray<any>(rawCandles, "candle_data");
 
-      if (!lookback_period) throw createError("lookback_period is required", 400);
+      if (!lookback_period)
+        throw createError("lookback_period is required", 400);
       if (!num_levels) throw createError("num_levels is required", 400);
 
       const lookback = Number(lookback_period);
@@ -756,15 +824,21 @@ export class IndicatorService {
         lowest_low: Math.min(...lows),
       };
 
-      return createSuccessOutput([levels], { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Historical" });
+      return createSuccessOutput([levels], {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Historical",
+      });
     } catch (error) {
-      return createErrorOutput(error, { ...INDICATOR_CONTEXT, nodeName: "Support/Resistance Historical" });
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "Support/Resistance Historical",
+      });
     }
   }
 
   static async calculate(
     indicatorType: string,
-    input: IndicatorInput
+    input: IndicatorInput,
   ): Promise<IndicatorResult> {
     switch (indicatorType.toLowerCase()) {
       case "rsi":
@@ -796,8 +870,11 @@ export class IndicatorService {
         const method = input.method?.toLowerCase();
         if (!method) {
           return createErrorOutput(
-            createError("method is required (pivot, swing, or historical)", 400),
-            INDICATOR_CONTEXT
+            createError(
+              "method is required (pivot, swing, or historical)",
+              400,
+            ),
+            INDICATOR_CONTEXT,
           );
         }
         switch (method) {
@@ -810,13 +887,13 @@ export class IndicatorService {
           default:
             return createErrorOutput(
               createError(`Unsupported S&R method: ${method}`, 400),
-              INDICATOR_CONTEXT
+              INDICATOR_CONTEXT,
             );
         }
       default:
         return createErrorOutput(
           createError(`Unsupported indicator: ${indicatorType}`, 400),
-          INDICATOR_CONTEXT
+          INDICATOR_CONTEXT,
         );
     }
   }

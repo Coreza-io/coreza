@@ -465,6 +465,8 @@ export class WorkflowEngine {
         userId: this.userId,
         runId: this.runId,
         workflowId: this.workflowId,
+        trigger: (input as any)?.trigger,
+        initialInput: input,
         nodes: this.nodes,
         edges: this.edges,
         resolveNodeParameters: this.resolveNodeParameters.bind(this),

@@ -19,6 +19,7 @@ import { requireAuth } from "../middleware/jwtAuth";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
+import IndicatorStateManager from "../services/IndicatorStateManager";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import {
   StreamExecutionRequest,
@@ -295,6 +296,39 @@ router.post("/cleanup-streaming", async (req, res) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Failed to run cleanup",
+    });
+  }
+});
+
+
+/**
+ * Cleanup persisted indicator state for a workflow
+ * POST /stream/indicator-state/cleanup
+ */
+router.post("/indicator-state/cleanup", async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflow_id } = req.body;
+    if (!workflow_id) {
+      return res.status(400).json({ error: "workflow_id is required" });
+    }
+
+    const deleted = await IndicatorStateManager.cleanupByWorkflow(workflow_id);
+
+    return res.json({
+      success: true,
+      workflow_id,
+      deleted,
+    });
+  } catch (error) {
+    console.error("Error cleaning indicator state:", error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to cleanup indicator state",
     });
   }
 });

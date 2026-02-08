@@ -21,6 +21,7 @@ import { ADX, Stochastic, IchimokuCloud } from "technicalindicators";
 import Big from "big.js";
 import { createError } from "../middleware/errorHandler";
 import { StandardNodeOutput } from "../types/nodeOutput";
+import IndicatorStateManager from "./IndicatorStateManager";
 import {
   createSuccessOutput,
   createErrorOutput,
@@ -55,6 +56,21 @@ export interface IndicatorInput {
 }
 
 export type IndicatorResult = StandardNodeOutput<any[]>;
+
+export interface CandleData {
+  t?: string;
+  timestamp?: string;
+  o?: number;
+  open?: number;
+  h?: number;
+  high?: number;
+  l?: number;
+  low?: number;
+  c?: number;
+  close?: number;
+  v?: number;
+  volume?: number;
+}
 
 // Helper to parse JSON string arrays
 function parseArray<T>(raw: any, fieldName: string): T[] {
@@ -101,9 +117,143 @@ function toNumber(raw: any): number {
   return Number(raw);
 }
 
+function getBarTimestamp(candle: CandleData): string | undefined {
+  return candle.t ?? candle.timestamp;
+}
+
+function hashParams(input: IndicatorInput): string {
+  const normalized = Object.keys(input)
+    .filter((key) => key !== "prices" && key !== "candle_data")
+    .sort()
+    .reduce(
+      (acc, key) => {
+        acc[key] = input[key];
+        return acc;
+      },
+      {} as Record<string, any>,
+    );
+
+  return JSON.stringify(normalized);
+}
+
+function parseIntervalToMs(interval: string | undefined): number | null {
+  if (!interval) return null;
+  const match = interval.match(/^(\d+)([mhdw])$/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const base: Record<string, number> = {
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000,
+  };
+  return value * base[unit];
+}
+
 const INDICATOR_CONTEXT = { category: "indicators" };
 
 export class IndicatorService {
+  static async hasPersistedState(stateKey: string): Promise<boolean> {
+    return IndicatorStateManager.hasState(stateKey);
+  }
+
+  static async initializeAndSave(
+    indicatorType: string,
+    stateKey: string,
+    allBars: CandleData[],
+    params: IndicatorInput,
+  ): Promise<IndicatorResult> {
+    const fullInput: IndicatorInput = {
+      ...params,
+      candle_data: allBars,
+      prices: allBars.map((bar) => Number(bar.c ?? bar.close)).filter(Number.isFinite),
+    };
+
+    const result = await this.calculate(indicatorType, fullInput);
+    if (!result.success) {
+      return result;
+    }
+
+    const data = Array.isArray(result.data) ? result.data : [];
+    const lastBar = allBars[allBars.length - 1];
+
+    await IndicatorStateManager.saveState(stateKey, {
+      type: indicatorType,
+      paramsHash: hashParams(params),
+      params,
+      state: {
+        candles: allBars.slice(-500),
+      },
+      lastTimestamp: lastBar ? getBarTimestamp(lastBar) : undefined,
+      lastValue: data.length > 0 ? data[data.length - 1] : null,
+    });
+
+    return result;
+  }
+
+  static async updateIncremental(
+    indicatorType: string,
+    stateKey: string,
+    newBar: CandleData,
+    params: IndicatorInput,
+  ): Promise<IndicatorResult> {
+    const persisted = await IndicatorStateManager.getState(stateKey);
+    if (!persisted) {
+      return createErrorOutput(createError("Indicator state not found", 404), INDICATOR_CONTEXT);
+    }
+
+    const currentParamsHash = hashParams(params);
+    if (persisted.type !== indicatorType || persisted.paramsHash !== currentParamsHash) {
+      await IndicatorStateManager.deleteState(stateKey);
+      return createErrorOutput(createError("Indicator state invalidated by parameter/type change", 409), INDICATOR_CONTEXT);
+    }
+
+    const lastTimestamp = persisted.lastTimestamp;
+    const newTimestamp = getBarTimestamp(newBar);
+    const expectedMs = parseIntervalToMs(String(params.interval || ""));
+    if (lastTimestamp && newTimestamp && expectedMs) {
+      const gap = new Date(newTimestamp).getTime() - new Date(lastTimestamp).getTime();
+      if (gap > expectedMs * 2) {
+        await IndicatorStateManager.deleteState(stateKey);
+        return createErrorOutput(createError("Indicator state invalidated due to data gap", 409), INDICATOR_CONTEXT);
+      }
+    }
+
+    const candleBuffer = Array.isArray(persisted.state?.candles)
+      ? persisted.state.candles
+      : [];
+    const mergedCandles = [...candleBuffer, newBar].slice(-500);
+
+    const input: IndicatorInput = {
+      ...params,
+      candle_data: mergedCandles,
+      prices: mergedCandles.map((bar: CandleData) => Number(bar.c ?? bar.close)).filter(Number.isFinite),
+    };
+
+    const calculated = await this.calculate(indicatorType, input);
+    if (!calculated.success) {
+      return calculated;
+    }
+
+    const values = Array.isArray(calculated.data) ? calculated.data : [];
+    const lastValue = values.length > 0 ? values[values.length - 1] : null;
+
+    await IndicatorStateManager.saveState(stateKey, {
+      type: indicatorType,
+      paramsHash: currentParamsHash,
+      params,
+      state: { candles: mergedCandles },
+      lastTimestamp: newTimestamp,
+      lastValue,
+    });
+
+    return createSuccessOutput(lastValue !== null ? [lastValue] : [], {
+      ...INDICATOR_CONTEXT,
+      nodeName: indicatorType,
+    });
+  }
+
   static async calculateRSI(input: IndicatorInput): Promise<IndicatorResult> {
     try {
       const {

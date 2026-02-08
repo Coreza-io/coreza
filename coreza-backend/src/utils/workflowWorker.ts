@@ -483,7 +483,6 @@ export function createWorkflowWorker({
         const input = job.data.initialInput;
         const renamed = {
           data: input?.marketEvent ?? input?.data ?? input,
-          trigger: job.data.trigger,
         };
 
         const result = await executeWorkflow(

@@ -15,8 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { IndicatorService, CandleData } from "../../services/indicators";
-import IndicatorStateManager from "../../services/IndicatorStateManager";
+import { IndicatorService } from "../../services/indicators";
 import { resolveDataRef, extractPrices } from "../../services/toolOutputProcessor";
 import { DataContext } from "../../services/DataContext";
 import { normalizeOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
@@ -78,65 +77,10 @@ export class IndicatorsExecutor implements INodeExecutor {
         `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`
       );
 
-      const isStreamingMode = context?.trigger === "market_data" && !!context?.initialInput?.data?.bar;
-
-      let result;
-      if (isStreamingMode) {
-        const incomingBar = context.initialInput.data.bar as CandleData;
-        const incomingMeta = context.initialInput.data.bar as Record<string, any>;
-        const symbol = String(processedParams.symbol || incomingMeta?.symbol || "unknown");
-        const interval = String(processedParams.interval || incomingMeta?.interval || "unknown");
-        const stateKey = IndicatorStateManager.buildStateKey(
-          String(context.workflowId || "unknown"),
-          String(node.id || "unknown"),
-          symbol,
-          interval,
-        );
-
-        const hasState = await IndicatorService.hasPersistedState(stateKey);
-        if (hasState) {
-          const incremental = await IndicatorService.updateIncremental(
-            indicatorType,
-            stateKey,
-            incomingBar,
-            processedParams,
-          );
-
-          if (incremental.success) {
-            result = incremental;
-          } else {
-            await IndicatorStateManager.deleteState(stateKey);
-            const historicalBars = Array.isArray(processedParams.candle_data)
-              ? processedParams.candle_data
-              : incomingBar
-                ? [incomingBar]
-                : [];
-            result = await IndicatorService.initializeAndSave(
-              indicatorType,
-              stateKey,
-              historicalBars,
-              processedParams,
-            );
-          }
-        } else {
-          const historicalBars = Array.isArray(processedParams.candle_data)
-            ? processedParams.candle_data
-            : incomingBar
-              ? [incomingBar]
-              : [];
-          result = await IndicatorService.initializeAndSave(
-            indicatorType,
-            stateKey,
-            historicalBars,
-            processedParams,
-          );
-        }
-      } else {
-        result = await IndicatorService.calculate(
-          indicatorType,
-          processedParams
-        );
-      }
+      const result = await IndicatorService.calculate(
+        indicatorType,
+        processedParams
+      );
 
       const normalized = normalizeOutput(result, {
         nodeId: node.id,

@@ -30,6 +30,8 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
 import { useReactFlow } from "@xyflow/react";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
@@ -60,6 +62,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   readOnly,
 }) => {
   const { getNodes } = useReactFlow();
+  const executionStore = useExecutionStore();
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
@@ -317,24 +320,36 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   // =========== SHARED HELPERS ===========
-  function resolveDeep(val, selectedInputData, allNodeData) {
-    if (typeof val === "string") {
-      const allNodes = getNodes();
-      return resolveReferences(val, selectedInputData, allNodeData, allNodes);
-    }
-    if (Array.isArray(val)) {
-      return val.map((v) => resolveDeep(v, selectedInputData, allNodeData));
-    }
-    if (typeof val === "object" && val !== null) {
-      return Object.fromEntries(
-        Object.entries(val).map(([k, v]) => [
-          k,
-          resolveDeep(v, selectedInputData, allNodeData),
-        ])
-      );
-    }
-    return val;
-  }
+  const resolveDeep = useCallback(
+    (val: any, selectedInputData: any, allNodeData: Record<string, any>) => {
+      const resolveValue = (value: any): any => {
+        if (typeof value === "string") {
+          const allNodes = getNodes();
+          return resolveReferences(
+            value,
+            selectedInputData,
+            allNodeData,
+            allNodes
+          );
+        }
+        if (Array.isArray(value)) {
+          return value.map(resolveValue);
+        }
+        if (typeof value === "object" && value !== null) {
+          return Object.fromEntries(
+            Object.entries(value).map(([key, nested]) => [
+              key,
+              resolveValue(nested),
+            ])
+          );
+        }
+        return value;
+      };
+
+      return resolveValue(val);
+    },
+    [getNodes]
+  );
 
   const computeDropInsert = useCallback(
     (e: React.DragEvent) => {
@@ -430,49 +445,30 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
-      const allNodes = getNodes();
       const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
-      const srcNode = allNodes.find((n) => n.id === srcId);
-
-      if (!srcNode) {
-        return "";
-      }
-
-      const srcData = srcNode.data?.output || {};
-
-      const allNodeData = {} as Record<string, any>;
-      previousNodes.forEach((prevNode) => {
-        const displayName = prevNode.id;
-        const nodeData = prevNode.data?.output || prevNode.data || {};
-        allNodeData[displayName] = nodeData;
-      });
+      const { allNodeData, getSourceData } = buildPreviewData(
+        previousNodes,
+        executionStore,
+        getNodes
+      );
+      const srcData = getSourceData(srcId);
 
       try {
         const resolved = resolveDeep(expr, srcData, allNodeData);
-
-        // Extract timezone from source node
-        const nodeMatch =
-          typeof expr === "string"
-            ? expr.match(/\$\(['"]([^'"]+)['"]\)/)
-            : null;
-        let timezone: string | undefined;
-
-        if (nodeMatch) {
-          const sourceName = nodeMatch[1];
-          const sourceData = allNodeData[sourceName];
-          timezone =
-            sourceData?.schedule?.timezone ||
-            sourceData?.timezone ||
-            sourceData?.config?.timezone;
-        }
-
         return fullePreview(resolved);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";
       }
     },
-    [selectedPrevNodeId, sourceMap, getNodes, previousNodes]
+    [
+      selectedPrevNodeId,
+      sourceMap,
+      getNodes,
+      previousNodes,
+      executionStore,
+      resolveDeep,
+    ]
   );
 
   const getSwitchPreviewFor = useCallback(
@@ -480,52 +476,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
-      const allNodes = getNodes();
-      const srcNode = allNodes.find((n) => n.id === selectedPrevNodeId);
-
-      if (!srcNode) {
-        return "";
-      }
-
-      const srcData =
-        srcNode.data?.output ||
-        srcNode.data?.input ||
-        srcNode.data?.values ||
-        {};
-
-      const allNodeData = {} as Record<string, any>;
-      previousNodes.forEach((prevNode) => {
-        const displayName = prevNode.id;
-        const nodeData = prevNode.data?.output || prevNode.data || {};
-        allNodeData[displayName] = nodeData;
-      });
+      const { allNodeData, getSourceData } = buildPreviewData(
+        previousNodes,
+        executionStore,
+        getNodes
+      );
+      const srcData = getSourceData(selectedPrevNodeId);
 
       try {
         const resolved = resolveDeep(expr, srcData, allNodeData);
-
-        // Extract timezone from source node
-        const nodeMatch =
-          typeof expr === "string"
-            ? expr.match(/\$\(['"]([^'"]+)['"]\)/)
-            : null;
-        let timezone: string | undefined;
-
-        if (nodeMatch) {
-          const sourceName = nodeMatch[1];
-          const sourceData = allNodeData[sourceName];
-          timezone =
-            sourceData?.schedule?.timezone ||
-            sourceData?.timezone ||
-            sourceData?.config?.timezone;
-        }
-
         return fullePreview(resolved);
       } catch (error) {
         console.error("❌ Preview resolution error:", error);
         return "";
       }
     },
-    [selectedPrevNodeId, getNodes, previousNodes]
+    [
+      selectedPrevNodeId,
+      getNodes,
+      previousNodes,
+      executionStore,
+      resolveDeep,
+    ]
   );
 
   return (

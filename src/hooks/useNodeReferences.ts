@@ -20,6 +20,7 @@ import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { buildPreviewData } from "@/utils/previewDataResolver";
 
 interface UseNodeReferencesProps {
   fieldState: Record<string, any>;
@@ -137,24 +138,13 @@ export function useNodeReferences({
       const srcNode =
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
-      // Extract the actual data from the node structure
-      const srcData = srcNode?.data?.output || srcNode?.data || {};
+      const { allNodeData, getSourceData } = buildPreviewData(
+        previousNodes,
+        executionStore,
+        getNodes
+      );
 
-      // Build allNodeData for cross-node references
-      const allNodeData: Record<string, any> = {};
-      previousNodes.forEach((prevNode) => {
-        const displayName = prevNode.data?.displayName || prevNode.id;
-        // Prefer execution store
-        let nodeData = executionStore.getNodeData(prevNode.id).output;
-        if (nodeData === undefined) {
-          // fallback to static data if not yet executed
-          nodeData = prevNode.data?.output || prevNode.data || {};
-        }
-
-        if (typeof displayName === "string") {
-          allNodeData[displayName] = nodeData;
-        }
-      });
+      const srcData = srcNode ? getSourceData(srcId) : {};
 
       try {
         // Read nodes imperatively for reference resolution - avoids subscription re-renders

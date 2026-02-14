@@ -14,14 +14,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useMemo, createElement } from "react";
-import { NodeProps, useNodeId } from "@xyflow/react";
+import React, { useMemo } from "react";
+import { NodeProps } from "@xyflow/react";
 import BaseNode from "@/components/nodes/BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "@/components/nodes/layout/BasicNodeLayout";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
-import { Plus } from "lucide-react";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 
@@ -31,7 +30,6 @@ export interface LoopNodeData extends Record<string, any> {
 
 export function LoopNode({ id, data, selected }: NodeProps) {
   const { getNodes, getEdges } = useStableNodes();
-  const { onAddNode } = data as any;
   const definition = (data as any).definition || (data as any).config || {};
   const executionStore = useExecutionStore();
 
@@ -97,6 +95,13 @@ export function LoopNode({ id, data, selected }: NodeProps) {
             handles={definition.handles || []}
             nodeType={definition.node_type}
             category={definition.category}
+            isEditing={renderProps.isEditing}
+            editingName={renderProps.editingName}
+            editInputRef={renderProps.editInputRef}
+            startEditing={renderProps.startEditing}
+            finishEditing={renderProps.finishEditing}
+            setEditingName={renderProps.setEditingName}
+            isExecuting={(data as any).isExecuting}
           >
             <BasicNodeLayout {...renderProps} />
           </NodeWrapper>

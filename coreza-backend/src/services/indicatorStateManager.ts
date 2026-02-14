@@ -42,11 +42,12 @@ export function serializeParams(params: Record<string, any>): string {
 export function buildIndicatorKey(
   userId: string,
   workflowId: string,
+  runId: string,
   symbol: string,
   timeframe: string,
   indicator: string,
 ): string {
-  return `user:${userId}:workflow:${workflowId}:indicator:${symbol}:${timeframe}:${indicator}`;
+  return `user:${userId}:workflow:${workflowId}:runId:${runId}:indicator:${symbol}:${timeframe}:${indicator}`;
 }
 
 const STATE_VERSION = 1;

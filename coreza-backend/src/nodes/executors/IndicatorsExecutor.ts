@@ -91,10 +91,9 @@ export class IndicatorsExecutor implements INodeExecutor {
           const stateManager = context?.indicatorStateManager as
             | IndicatorStateManager
             | undefined;
-          const userId =
-            context?.userId || context?.user_id || dataContext.getUserId?.();
-          const workflowId =
-            context?.workflowId || dataContext.getWorkflowId?.();
+          const userId = context?.userId || context?.user_id;
+          const workflowId = context?.workflowId;
+          const runId = context?.runId || context?.user_id;
           let symbol = String(processedParams.symbol || "");
           let timeframe = String(processedParams.timeframe || "");
 
@@ -111,6 +110,7 @@ export class IndicatorsExecutor implements INodeExecutor {
             stateManager &&
             userId &&
             workflowId &&
+            runId &&
             symbol &&
             timeframe &&
             barsData.length > 0
@@ -118,8 +118,9 @@ export class IndicatorsExecutor implements INodeExecutor {
             // const indicatorParams =
             //   this.extractIndicatorParams(processedParams);
             const key = buildIndicatorKey(
-              String(userId),
-              String(workflowId),
+              userId,
+              workflowId,
+              runId,
               symbol,
               timeframe,
               indicatorType,

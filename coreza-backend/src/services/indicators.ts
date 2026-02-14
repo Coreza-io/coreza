@@ -1096,7 +1096,7 @@ export class IndicatorService {
 
     let shortEMA = volumes[0];
     let longEMA = volumes[0];
-    const out: number[] = [];
+    const result: number[] = [];
 
     for (let i = 1; i < volumes.length; i++) {
       shortEMA =
@@ -1104,7 +1104,7 @@ export class IndicatorService {
       longEMA = volumes[i] * longMultiplier + longEMA * (1 - longMultiplier);
 
       if (i + 1 >= longPeriod) {
-        out.push(
+        result.push(
           outputType === "percentage"
             ? ((shortEMA - longEMA) / longEMA) * 100
             : shortEMA - longEMA,
@@ -1112,7 +1112,7 @@ export class IndicatorService {
       }
     }
 
-    return out;
+    return result;
   }
 
   private static calculateBollingerValues(
@@ -1130,7 +1130,7 @@ export class IndicatorService {
 
     for (const price of prices) {
       bb.update(price, false);
-      if (!bb.isStable) continue;
+      //if (!bb.isStable) continue;
       const r = bb.getResult();
       if (!r) continue;
       const upper = toNumber(r.upper);

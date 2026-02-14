@@ -16,9 +16,10 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
-import { resolveDataRef, extractPrices } from "../../services/toolOutputProcessor";
+import { extractPrices } from "../../services/toolOutputProcessor";
 import { DataContext } from "../../services/DataContext";
 import { normalizeOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import { IndicatorStateManager, buildIndicatorKey } from "../../services/indicatorStateManager";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -70,6 +71,48 @@ export class IndicatorsExecutor implements INodeExecutor {
           processedParams.volume = barsData.map(bar => bar.volume || bar.v || bar.vol || 0);
           
           console.log(`📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`);
+
+          const stateManager = context?.indicatorStateManager as
+            | IndicatorStateManager
+            | undefined;
+          const userId = context?.userId || context?.user_id || dataContext.getUserId?.();
+          const workflowId = context?.workflowId || dataContext.getWorkflowId?.();
+          const symbol = String(processedParams.symbol || "");
+          const timeframe = String(processedParams.timeframe || "");
+
+          if (stateManager && userId && workflowId && symbol && timeframe && closePrices.length > 0) {
+            const indicatorParams = this.extractIndicatorParams(processedParams);
+            const key = buildIndicatorKey(
+              String(userId),
+              String(workflowId),
+              symbol,
+              timeframe,
+              indicatorType,
+              indicatorParams,
+            );
+
+            let state = await stateManager.getState(key);
+            if (!state) {
+              state = await stateManager.warmUp(key, indicatorType, indicatorParams, barsData);
+            } else {
+              const latestBar = barsData[barsData.length - 1];
+              const latestBarTime = String(latestBar?.t ?? latestBar?.timestamp ?? "");
+              if (latestBarTime && latestBarTime !== state.lastBarTime) {
+                state = await stateManager.update(key, latestBar);
+              }
+            }
+
+            const normalized = normalizeOutput(
+              { success: true, data: [{ value: state.value, samples: state.samples }] },
+              {
+                nodeId: node.id,
+                nodeName: node.name,
+                category: this.category,
+                startTime,
+              },
+            );
+            return toNodeResult(normalized);
+          }
         }
       }
 
@@ -96,5 +139,29 @@ export class IndicatorsExecutor implements INodeExecutor {
       );
       return toNodeResult(normalized);
     }
+  }
+
+  private extractIndicatorParams(params: Record<string, any>): Record<string, any> {
+    const allowedParams = [
+      "period",
+      "window",
+      "fastPeriod",
+      "slowPeriod",
+      "signalPeriod",
+      "stdDev",
+      "std_dev_multiplier",
+      "k_period",
+      "d_period",
+      "session_type",
+      "custom_start_time",
+      "method",
+    ];
+
+    return allowedParams.reduce((acc, key) => {
+      if (params[key] !== undefined && params[key] !== null) {
+        acc[key] = params[key];
+      }
+      return acc;
+    }, {} as Record<string, any>);
   }
 }

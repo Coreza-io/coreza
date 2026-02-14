@@ -29,6 +29,7 @@ import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
 import { normalizeOutput } from "../utils/normalizeOutput";
 import { DataContext, DataContextManager } from "./DataContext";
+import { IndicatorStateManager } from "./indicatorStateManager";
 
 interface ExecutionContext {
   nodeId: string;
@@ -76,6 +77,7 @@ export class WorkflowEngine {
 
   // DataContext for execution-scoped RAM storage (shared by all tools)
   private dataContext: DataContext;
+  private indicatorStateManager: IndicatorStateManager;
 
   constructor(
     private runId: string,
@@ -103,6 +105,12 @@ export class WorkflowEngine {
       workflowId,
       userId,
     });
+    const hasBacktestNode = this.nodes.some((node) =>
+      (node.name || node.node_type || "").toLowerCase().includes("backtest"),
+    );
+    this.indicatorStateManager = new IndicatorStateManager(
+      hasBacktestNode ? 86400 : undefined,
+    );
     console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
   }
 
@@ -475,6 +483,7 @@ export class WorkflowEngine {
         getAllNodeResults: () => this.store.getAllResults(),
         // DataContext for execution-scoped RAM storage (shared by all tools)
         dataContext: this.dataContext,
+        indicatorStateManager: this.indicatorStateManager,
         // Abort signal for cancellation detection
         abortSignal: this.abortSignal,
         // Function for executors to check cancellation

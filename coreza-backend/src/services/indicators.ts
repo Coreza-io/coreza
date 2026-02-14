@@ -56,6 +56,24 @@ export interface IndicatorInput {
 
 export type IndicatorResult = StandardNodeOutput<any[]>;
 
+export interface IncrementalWarmupResult {
+  internalState: Record<string, any>;
+  value: number | Record<string, any> | null;
+  samples: number;
+  lastBarTime: string;
+}
+
+export interface IncrementalUpdateResult {
+  value: number | Record<string, any> | null;
+  internalState: Record<string, any>;
+  samples: number;
+}
+
+export interface IncrementalUpdater {
+  warmUp: (bars: any[]) => IncrementalWarmupResult;
+  update: (state: Record<string, any>, bar: any) => IncrementalUpdateResult;
+}
+
 // Helper to parse JSON string arrays
 function parseArray<T>(raw: any, fieldName: string): T[] {
   if (raw == null) throw createError(`${fieldName} is required`, 400);
@@ -101,9 +119,639 @@ function toNumber(raw: any): number {
   return Number(raw);
 }
 
+function asClose(bar: any): number {
+  return Number(bar?.c ?? bar?.close ?? bar?.price ?? bar);
+}
+
+function asHigh(bar: any): number {
+  return Number(bar?.h ?? bar?.high);
+}
+
+function asLow(bar: any): number {
+  return Number(bar?.l ?? bar?.low);
+}
+
+function asVolume(bar: any): number {
+  return Number(bar?.v ?? bar?.volume ?? 0);
+}
+
+function asBarTime(bar: any): string {
+  return String(bar?.t ?? bar?.timestamp ?? "");
+}
+
+function clampWindow(window: number[], size: number): number[] {
+  if (window.length > size) window.shift();
+  return window;
+}
+
 const INDICATOR_CONTEXT = { category: "indicators" };
 
 export class IndicatorService {
+  static createIncrementalUpdater(
+    indicatorType: string,
+    params: Record<string, any>,
+  ): IncrementalUpdater {
+    const type = indicatorType.toLowerCase();
+    switch (type) {
+      case "ema": {
+        const period = Number(params.window ?? params.period);
+        if (!Number.isFinite(period) || period <= 0) {
+          throw createError("period/window must be a positive number", 400);
+        }
+        const multiplier = 2 / (period + 1);
+
+        return {
+          warmUp: (bars) => {
+            let prevEma: number | null = null;
+            for (const bar of bars) {
+              const close = asClose(bar);
+              if (!Number.isFinite(close)) continue;
+              prevEma = prevEma == null ? close : close * multiplier + prevEma * (1 - multiplier);
+            }
+            return {
+              internalState: { prevEma, multiplier, period, samples: bars.length },
+              value: prevEma,
+              samples: bars.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const close = asClose(bar);
+            const prevEma = Number.isFinite(state.prevEma) ? state.prevEma : close;
+            const ema = close * state.multiplier + prevEma * (1 - state.multiplier);
+            const samples = Number(state.samples || 0) + 1;
+            return {
+              value: ema,
+              samples,
+              internalState: { ...state, prevEma: ema, samples },
+            };
+          },
+        };
+      }
+      case "sma": {
+        const period = Number(params.period ?? params.window);
+        if (!Number.isFinite(period) || period <= 0) {
+          throw createError("period/window must be a positive number", 400);
+        }
+        return {
+          warmUp: (bars) => {
+            const closes = bars.map(asClose).filter(Number.isFinite);
+            const window = closes.slice(-period);
+            const value = window.length === period ? window.reduce((a, b) => a + b, 0) / period : null;
+            return {
+              internalState: { window, period, samples: closes.length },
+              value,
+              samples: closes.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const window = [...(state.window || []), asClose(bar)];
+            clampWindow(window, state.period);
+            const samples = Number(state.samples || 0) + 1;
+            const value = window.length === state.period ? window.reduce((a: number, b: number) => a + b, 0) / state.period : null;
+            return { value, samples, internalState: { ...state, window, samples } };
+          },
+        };
+      }
+      case "rsi": {
+        const period = Number(params.period ?? params.window);
+        if (!Number.isFinite(period) || period <= 0) {
+          throw createError("period/window must be a positive number", 400);
+        }
+        return {
+          warmUp: (bars) => {
+            const closes = bars.map(asClose).filter(Number.isFinite);
+            let avgGain = 0;
+            let avgLoss = 0;
+            for (let i = 1; i < closes.length; i++) {
+              const change = closes[i] - closes[i - 1];
+              const gain = Math.max(change, 0);
+              const loss = Math.max(-change, 0);
+              if (i <= period) {
+                avgGain += gain;
+                avgLoss += loss;
+              } else {
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+              }
+            }
+            if (closes.length > 1) {
+              avgGain = closes.length - 1 <= period ? avgGain / period : avgGain;
+              avgLoss = closes.length - 1 <= period ? avgLoss / period : avgLoss;
+            }
+            const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+            const value = closes.length > period ? 100 - 100 / (1 + rs) : null;
+            return {
+              internalState: {
+                period,
+                avgGain,
+                avgLoss,
+                prevClose: closes[closes.length - 1],
+                samples: closes.length,
+              },
+              value,
+              samples: closes.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const close = asClose(bar);
+            const prevClose = Number(state.prevClose);
+            const change = close - prevClose;
+            const gain = Math.max(change, 0);
+            const loss = Math.max(-change, 0);
+            const avgGain = (state.avgGain * (state.period - 1) + gain) / state.period;
+            const avgLoss = (state.avgLoss * (state.period - 1) + loss) / state.period;
+            const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+            const value = 100 - 100 / (1 + rs);
+            const samples = Number(state.samples || 0) + 1;
+            return {
+              value,
+              samples,
+              internalState: { ...state, prevClose: close, avgGain, avgLoss, samples },
+            };
+          },
+        };
+      }
+      case "macd": {
+        const shortPeriod = Number(params.fastPeriod);
+        const longPeriod = Number(params.slowPeriod);
+        const signalPeriod = Number(params.signalPeriod);
+        if (
+          [shortPeriod, longPeriod, signalPeriod].some(
+            (value) => !Number.isFinite(value) || value <= 0,
+          )
+        ) {
+          throw createError("fastPeriod/slowPeriod/signalPeriod must be positive", 400);
+        }
+        const shortMult = 2 / (shortPeriod + 1);
+        const longMult = 2 / (longPeriod + 1);
+        const signalMult = 2 / (signalPeriod + 1);
+        return {
+          warmUp: (bars) => {
+            let shortEma: number | null = null;
+            let longEma: number | null = null;
+            let signalEma: number | null = null;
+            let value: Record<string, number> | null = null;
+            for (const bar of bars) {
+              const close = asClose(bar);
+              shortEma = shortEma == null ? close : close * shortMult + shortEma * (1 - shortMult);
+              longEma = longEma == null ? close : close * longMult + longEma * (1 - longMult);
+              const macd = shortEma - longEma;
+              signalEma = signalEma == null ? macd : macd * signalMult + signalEma * (1 - signalMult);
+              value = { macd, signal: signalEma, histogram: macd - signalEma };
+            }
+            return {
+              internalState: { shortEma, longEma, signalEma, shortMult, longMult, signalMult, samples: bars.length },
+              value,
+              samples: bars.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const close = asClose(bar);
+            const shortEma = close * state.shortMult + state.shortEma * (1 - state.shortMult);
+            const longEma = close * state.longMult + state.longEma * (1 - state.longMult);
+            const macd = shortEma - longEma;
+            const signalEma = macd * state.signalMult + state.signalEma * (1 - state.signalMult);
+            const samples = Number(state.samples || 0) + 1;
+            return {
+              value: { macd, signal: signalEma, histogram: macd - signalEma },
+              samples,
+              internalState: { ...state, shortEma, longEma, signalEma, samples },
+            };
+          },
+        };
+      }
+      case "bollinger bands": {
+        const period = Number(params.period);
+        const stdDev = Number(params.stdDev ?? params.std_dev_multiplier);
+        if (!Number.isFinite(period) || period <= 0) {
+          throw createError("period must be a positive number", 400);
+        }
+        if (!Number.isFinite(stdDev) || stdDev <= 0) {
+          throw createError("stdDev/std_dev_multiplier must be a positive number", 400);
+        }
+        return {
+          warmUp: (bars) => {
+            const window = bars.map(asClose).filter(Number.isFinite).slice(-period);
+            const mid = window.length === period ? window.reduce((a, b) => a + b, 0) / period : null;
+            let value: Record<string, number> | null = null;
+            if (mid != null) {
+              const variance = window.reduce((sum, p) => sum + (p - mid) ** 2, 0) / period;
+              const sd = Math.sqrt(variance);
+              value = { upper: mid + sd * stdDev, middle: mid, lower: mid - sd * stdDev, bb_width: ((sd * 2 * stdDev) / mid) * 100 };
+            }
+            return {
+              internalState: { window, period, stdDev, samples: bars.length },
+              value,
+              samples: bars.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const window = [...(state.window || []), asClose(bar)];
+            clampWindow(window, state.period);
+            const samples = Number(state.samples || 0) + 1;
+            if (window.length < state.period) {
+              return { value: null, samples, internalState: { ...state, window, samples } };
+            }
+            const middle = window.reduce((a: number, b: number) => a + b, 0) / state.period;
+            const variance = window.reduce((sum: number, p: number) => sum + (p - middle) ** 2, 0) / state.period;
+            const sd = Math.sqrt(variance);
+            return {
+              value: { upper: middle + sd * state.stdDev, middle, lower: middle - sd * state.stdDev, bb_width: ((sd * 2 * state.stdDev) / middle) * 100 },
+              samples,
+              internalState: { ...state, window, samples },
+            };
+          },
+        };
+      }
+      case "obv": {
+        return {
+          warmUp: (bars) => {
+            let obv = 0;
+            let prevClose: number | null = null;
+            for (const bar of bars) {
+              const close = asClose(bar);
+              const volume = asVolume(bar);
+              if (prevClose == null) obv = volume;
+              else obv += close > prevClose ? volume : close < prevClose ? -volume : 0;
+              prevClose = close;
+            }
+            return {
+              internalState: { obv, prevClose, samples: bars.length },
+              value: obv,
+              samples: bars.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const close = asClose(bar);
+            const volume = asVolume(bar);
+            const obv = state.obv + (close > state.prevClose ? volume : close < state.prevClose ? -volume : 0);
+            const samples = Number(state.samples || 0) + 1;
+            return { value: obv, samples, internalState: { ...state, obv, prevClose: close, samples } };
+          },
+        };
+      }
+      case "vwap": {
+        const sessionType = params.session_type || "daily";
+        return {
+          warmUp: (bars) => {
+            let cumTPV = 0;
+            let cumVol = 0;
+            let prevDate: Date | null = null;
+            let value: number | null = null;
+            for (const bar of bars) {
+              const date = new Date(asBarTime(bar));
+              if (prevDate) {
+                const reset = sessionType === "daily"
+                  ? date.getUTCDate() !== prevDate.getUTCDate() || date.getUTCMonth() !== prevDate.getUTCMonth() || date.getUTCFullYear() !== prevDate.getUTCFullYear()
+                  : false;
+                if (reset) {
+                  cumTPV = 0;
+                  cumVol = 0;
+                }
+              }
+              const tp = (asHigh(bar) + asLow(bar) + asClose(bar)) / 3;
+              const vol = asVolume(bar);
+              cumTPV += tp * vol;
+              cumVol += vol;
+              value = cumVol > 0 ? cumTPV / cumVol : tp;
+              prevDate = date;
+            }
+            return {
+              internalState: { cumTPV, cumVol, prevTime: prevDate?.toISOString() || null, sessionType, samples: bars.length },
+              value,
+              samples: bars.length,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            let { cumTPV, cumVol } = state;
+            const date = new Date(asBarTime(bar));
+            const prevDate = state.prevTime ? new Date(state.prevTime) : null;
+            const reset = prevDate && state.sessionType === "daily"
+              ? date.getUTCDate() !== prevDate.getUTCDate() || date.getUTCMonth() !== prevDate.getUTCMonth() || date.getUTCFullYear() !== prevDate.getUTCFullYear()
+              : false;
+            if (reset) {
+              cumTPV = 0;
+              cumVol = 0;
+            }
+            const tp = (asHigh(bar) + asLow(bar) + asClose(bar)) / 3;
+            const vol = asVolume(bar);
+            cumTPV += tp * vol;
+            cumVol += vol;
+            const value = cumVol > 0 ? cumTPV / cumVol : tp;
+            const samples = Number(state.samples || 0) + 1;
+            return { value, samples, internalState: { ...state, cumTPV, cumVol, prevTime: date.toISOString(), samples } };
+          },
+        };
+      }
+      case "adx":
+      case "stochastic": {
+        if (type === "adx") {
+          const period = Number(params.period);
+          if (!Number.isFinite(period) || period <= 0) {
+            throw createError("period must be a positive number", 400);
+          }
+
+          const updateAdx = (state: Record<string, any>, bar: any) => {
+            const high = asHigh(bar);
+            const low = asLow(bar);
+            const close = asClose(bar);
+            const samples = Number(state.samples || 0) + 1;
+
+            if (
+              !Number.isFinite(high) ||
+              !Number.isFinite(low) ||
+              !Number.isFinite(close)
+            ) {
+              return {
+                value: state.lastValue ?? null,
+                samples,
+                internalState: { ...state, samples },
+              };
+            }
+
+            if (
+              !Number.isFinite(state.prevHigh) ||
+              !Number.isFinite(state.prevLow) ||
+              !Number.isFinite(state.prevClose)
+            ) {
+              return {
+                value: null,
+                samples,
+                internalState: {
+                  ...state,
+                  prevHigh: high,
+                  prevLow: low,
+                  prevClose: close,
+                  samples,
+                },
+              };
+            }
+
+            const upMove = high - state.prevHigh;
+            const downMove = state.prevLow - low;
+            const plusDM = upMove > downMove && upMove > 0 ? upMove : 0;
+            const minusDM = downMove > upMove && downMove > 0 ? downMove : 0;
+            const trueRange = Math.max(
+              high - low,
+              Math.abs(high - state.prevClose),
+              Math.abs(low - state.prevClose),
+            );
+
+            const next = {
+              ...state,
+              prevHigh: high,
+              prevLow: low,
+              prevClose: close,
+              samples,
+            };
+
+            if (!state.smoothedReady) {
+              const seedCount = Number(state.seedCount || 0) + 1;
+              const trSeed = Number(state.trSeed || 0) + trueRange;
+              const plusDmSeed = Number(state.plusDmSeed || 0) + plusDM;
+              const minusDmSeed = Number(state.minusDmSeed || 0) + minusDM;
+
+              if (seedCount < state.period) {
+                return {
+                  value: null,
+                  samples,
+                  internalState: {
+                    ...next,
+                    seedCount,
+                    trSeed,
+                    plusDmSeed,
+                    minusDmSeed,
+                  },
+                };
+              }
+
+              const plusDI = trSeed === 0 ? 0 : (plusDmSeed / trSeed) * 100;
+              const minusDI = trSeed === 0 ? 0 : (minusDmSeed / trSeed) * 100;
+              const dx = plusDI + minusDI === 0 ? 0 : (Math.abs(plusDI - minusDI) / (plusDI + minusDI)) * 100;
+
+              return {
+                value: null,
+                samples,
+                internalState: {
+                  ...next,
+                  seedCount,
+                  trSeed,
+                  plusDmSeed,
+                  minusDmSeed,
+                  tr14: trSeed,
+                  plusDm14: plusDmSeed,
+                  minusDm14: minusDmSeed,
+                  dxSeedSum: dx,
+                  dxSeedCount: 1,
+                  smoothedReady: true,
+                },
+              };
+            }
+
+            const tr14 = state.tr14 - state.tr14 / state.period + trueRange;
+            const plusDm14 = state.plusDm14 - state.plusDm14 / state.period + plusDM;
+            const minusDm14 = state.minusDm14 - state.minusDm14 / state.period + minusDM;
+            const plusDI = tr14 === 0 ? 0 : (plusDm14 / tr14) * 100;
+            const minusDI = tr14 === 0 ? 0 : (minusDm14 / tr14) * 100;
+            const dx = plusDI + minusDI === 0 ? 0 : (Math.abs(plusDI - minusDI) / (plusDI + minusDI)) * 100;
+
+            const dxSeedCount = Number(state.dxSeedCount || 0);
+            const dxSeedSum = Number(state.dxSeedSum || 0);
+
+            if (!Number.isFinite(state.adx)) {
+              const nextCount = dxSeedCount + 1;
+              const nextSum = dxSeedSum + dx;
+
+              if (nextCount < state.period) {
+                return {
+                  value: null,
+                  samples,
+                  internalState: {
+                    ...next,
+                    tr14,
+                    plusDm14,
+                    minusDm14,
+                    dxSeedCount: nextCount,
+                    dxSeedSum: nextSum,
+                  },
+                };
+              }
+
+              const adx = nextSum / state.period;
+              const out = { adx, pdi: plusDI, mdi: minusDI };
+
+              return {
+                value: out,
+                samples,
+                internalState: {
+                  ...next,
+                  tr14,
+                  plusDm14,
+                  minusDm14,
+                  dxSeedCount: nextCount,
+                  dxSeedSum: nextSum,
+                  adx,
+                  lastValue: out,
+                },
+              };
+            }
+
+            const adx = (state.adx * (state.period - 1) + dx) / state.period;
+            const out = { adx, pdi: plusDI, mdi: minusDI };
+            return {
+              value: out,
+              samples,
+              internalState: {
+                ...next,
+                tr14,
+                plusDm14,
+                minusDm14,
+                adx,
+                lastValue: out,
+              },
+            };
+          };
+
+          return {
+            warmUp: (bars) => {
+              const seedState: Record<string, any> = {
+                period,
+                samples: 0,
+                prevHigh: null,
+                prevLow: null,
+                prevClose: null,
+                seedCount: 0,
+                trSeed: 0,
+                plusDmSeed: 0,
+                minusDmSeed: 0,
+                tr14: 0,
+                plusDm14: 0,
+                minusDm14: 0,
+                dxSeedSum: 0,
+                dxSeedCount: 0,
+                smoothedReady: false,
+                adx: null,
+                lastValue: null,
+              };
+
+              let state = seedState;
+              let value: number | Record<string, any> | null = null;
+              for (const bar of bars) {
+                const result = updateAdx(state, bar);
+                value = result.value;
+                state = result.internalState;
+              }
+
+              return {
+                internalState: state,
+                value,
+                samples: Number(state.samples || bars.length),
+                lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+              };
+            },
+            update: (state, bar) => updateAdx(state, bar),
+          };
+        }
+
+        const period = Number(params.k_period);
+        const signalPeriod = Number(params.d_period);
+        if (!Number.isFinite(period) || period <= 0) {
+          throw createError("k_period must be a positive number", 400);
+        }
+        if (!Number.isFinite(signalPeriod) || signalPeriod <= 0) {
+          throw createError("d_period must be a positive number", 400);
+        }
+
+        const updateStochastic = (state: Record<string, any>, bar: any) => {
+          const high = asHigh(bar);
+          const low = asLow(bar);
+          const close = asClose(bar);
+          const highs = [...(state.highWindow || []), high];
+          const lows = [...(state.lowWindow || []), low];
+          clampWindow(highs, state.period);
+          clampWindow(lows, state.period);
+          const samples = Number(state.samples || 0) + 1;
+
+          if (
+            highs.length < state.period ||
+            highs.some((v: number) => !Number.isFinite(v)) ||
+            lows.some((v: number) => !Number.isFinite(v)) ||
+            !Number.isFinite(close)
+          ) {
+            return {
+              value: null,
+              samples,
+              internalState: { ...state, highWindow: highs, lowWindow: lows, samples },
+            };
+          }
+
+          const highestHigh = Math.max(...highs);
+          const lowestLow = Math.min(...lows);
+          const k =
+            highestHigh === lowestLow
+              ? 0
+              : ((close - lowestLow) / (highestHigh - lowestLow)) * 100;
+
+          const kValues = [...(state.kValues || []), k];
+          clampWindow(kValues, state.signalPeriod);
+          const d = kValues.reduce((sum: number, value: number) => sum + value, 0) / kValues.length;
+
+          const out = { k, d };
+          return {
+            value: out,
+            samples,
+            internalState: {
+              ...state,
+              highWindow: highs,
+              lowWindow: lows,
+              kValues,
+              samples,
+              lastValue: out,
+            },
+          };
+        };
+
+        return {
+          warmUp: (bars) => {
+            let state: Record<string, any> = {
+              period,
+              signalPeriod,
+              highWindow: [],
+              lowWindow: [],
+              kValues: [],
+              samples: 0,
+              lastValue: null,
+            };
+            let value: number | Record<string, any> | null = null;
+
+            for (const bar of bars) {
+              const result = updateStochastic(state, bar);
+              value = result.value;
+              state = result.internalState;
+            }
+
+            return {
+              internalState: state,
+              value,
+              samples: Number(state.samples || bars.length),
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => updateStochastic(state, bar),
+        };
+      }
+      default:
+        throw createError(`Unsupported incremental indicator: ${indicatorType}`, 400);
+    }
+  }
+
   static async calculateRSI(input: IndicatorInput): Promise<IndicatorResult> {
     try {
       const {

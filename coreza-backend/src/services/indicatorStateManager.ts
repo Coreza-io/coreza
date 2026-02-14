@@ -14,7 +14,6 @@ export interface IndicatorState {
   indicator: string;
   params: Record<string, any>;
   value: number | Record<string, any> | null;
-  samples: number;
   lastBarTime: string;
   warmupCompleted: boolean;
   internalState: Record<string, any>;
@@ -101,7 +100,6 @@ export class IndicatorStateManager {
       indicator,
       params,
       value: warmup.value,
-      samples: warmup.samples,
       lastBarTime: warmup.lastBarTime,
       warmupCompleted: true,
       internalState: warmup.internalState,
@@ -122,7 +120,7 @@ export class IndicatorStateManager {
       existing.params,
     );
 
-    const { value, internalState, samples } = updater.update(
+    const { value, internalState } = updater.update(
       existing.internalState,
       bar,
     );
@@ -130,7 +128,6 @@ export class IndicatorStateManager {
     const updatedState: IndicatorState = {
       ...existing,
       value,
-      samples,
       lastBarTime: String(bar?.t ?? bar?.timestamp ?? ""),
       internalState,
     };

@@ -59,14 +59,12 @@ export type IndicatorResult = StandardNodeOutput<any[]>;
 export interface IncrementalWarmupResult {
   internalState: Record<string, any>;
   value: number | Record<string, any> | null;
-  samples: number;
   lastBarTime: string;
 }
 
 export interface IncrementalUpdateResult {
   value: number | Record<string, any> | null;
   internalState: Record<string, any>;
-  samples: number;
 }
 
 export interface IncrementalUpdater {
@@ -176,10 +174,8 @@ export class IndicatorService {
                 prevEma,
                 multiplier,
                 period,
-                samples: bars.length,
               },
               value: prevEma,
-              samples: bars.length,
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -190,11 +186,9 @@ export class IndicatorService {
               : close;
             const ema =
               close * state.multiplier + prevEma * (1 - state.multiplier);
-            const samples = Number(state.samples || 0) + 1;
             return {
               value: ema,
-              samples,
-              internalState: { ...state, prevEma: ema, samples },
+              internalState: { ...state, prevEma: ema },
             };
           },
         };
@@ -213,16 +207,15 @@ export class IndicatorService {
                 ? window.reduce((a, b) => a + b, 0) / period
                 : null;
             return {
-              internalState: { window, period, samples: closes.length },
+              internalState: { window, period },
               value,
-              samples: closes.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
             const window = [...(state.window || []), asClose(bar)];
             clampWindow(window, state.period);
-            const samples = Number(state.samples || 0) + 1;
             const value =
               window.length === state.period
                 ? window.reduce((a: number, b: number) => a + b, 0) /
@@ -230,8 +223,7 @@ export class IndicatorService {
                 : null;
             return {
               value,
-              samples,
-              internalState: { ...state, window, samples },
+              internalState: { ...state, window },
             };
           },
         };
@@ -272,10 +264,9 @@ export class IndicatorService {
                 avgGain,
                 avgLoss,
                 prevClose: closes[closes.length - 1],
-                samples: closes.length,
               },
               value,
-              samples: closes.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -291,16 +282,15 @@ export class IndicatorService {
               (state.avgLoss * (state.period - 1) + loss) / state.period;
             const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
             const value = 100 - 100 / (1 + rs);
-            const samples = Number(state.samples || 0) + 1;
+
             return {
               value,
-              samples,
+
               internalState: {
                 ...state,
                 prevClose: close,
                 avgGain,
                 avgLoss,
-                samples,
               },
             };
           },
@@ -354,10 +344,9 @@ export class IndicatorService {
                 shortMult,
                 longMult,
                 signalMult,
-                samples: bars.length,
               },
               value,
-              samples: bars.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -371,16 +360,15 @@ export class IndicatorService {
             const signalEma =
               macd * state.signalMult +
               state.signalEma * (1 - state.signalMult);
-            const samples = Number(state.samples || 0) + 1;
+
             return {
               value: { macd, signal: signalEma, histogram: macd - signalEma },
-              samples,
+
               internalState: {
                 ...state,
                 shortEma,
                 longEma,
                 signalEma,
-                samples,
               },
             };
           },
@@ -408,20 +396,18 @@ export class IndicatorService {
               .filter(Number.isFinite)
               .slice(-period);
             const value =
-              this.calculateBollingerValues(window, period, stdDev).at(
-                -1,
-              ) ?? null;
+              this.calculateBollingerValues(window, period, stdDev).at(-1) ??
+              null;
             return {
-              internalState: { window, period, stdDev, samples: bars.length },
+              internalState: { window, period, stdDev },
               value,
-              samples: bars.length,
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
             const window = [...(state.window || []), asClose(bar)];
             clampWindow(window, state.period);
-            const samples = Number(state.samples || 0) + 1;
+
             const value =
               this.calculateBollingerValues(
                 window,
@@ -430,8 +416,8 @@ export class IndicatorService {
               ).at(-1) ?? null;
             return {
               value,
-              samples,
-              internalState: { ...state, window, samples },
+
+              internalState: { ...state, window },
             };
           },
         };
@@ -451,9 +437,9 @@ export class IndicatorService {
               prevClose = close;
             }
             return {
-              internalState: { obv, prevClose, samples: bars.length },
+              internalState: { obv, prevClose },
               value: obv,
-              samples: bars.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -467,11 +453,11 @@ export class IndicatorService {
                 : close < state.prevClose
                   ? -volume
                   : 0);
-            const samples = Number(state.samples || 0) + 1;
+
             return {
               value: obv,
-              samples,
-              internalState: { ...state, obv, prevClose: close, samples },
+
+              internalState: { ...state, obv, prevClose: close },
             };
           },
         };
@@ -511,10 +497,9 @@ export class IndicatorService {
                 cumVol,
                 prevTime: prevDate?.toISOString() || null,
                 sessionType,
-                samples: bars.length,
               },
               value,
-              samples: bars.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -537,16 +522,15 @@ export class IndicatorService {
             cumTPV += tp * vol;
             cumVol += vol;
             const value = cumVol > 0 ? cumTPV / cumVol : tp;
-            const samples = Number(state.samples || 0) + 1;
+
             return {
               value,
-              samples,
+
               internalState: {
                 ...state,
                 cumTPV,
                 cumVol,
                 prevTime: date.toISOString(),
-                samples,
               },
             };
           },
@@ -590,19 +574,19 @@ export class IndicatorService {
                 shortPeriod,
                 longPeriod,
                 outputType,
-                samples: volumes.length,
               },
               value,
-              samples: volumes.length,
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
             const volume = asVolume(bar);
-            const volumes = Number.isFinite(volume) && volume >= 0
-              ? [...(state.volumes || []), volume]
-              : [...(state.volumes || [])];
-            const samples = volumes.length;
+            const volumes =
+              Number.isFinite(volume) && volume >= 0
+                ? [...(state.volumes || []), volume]
+                : [...(state.volumes || [])];
+
             const value =
               this.calculateVolumeOscillatorValues(
                 volumes,
@@ -613,8 +597,8 @@ export class IndicatorService {
 
             return {
               value,
-              samples,
-              internalState: { ...state, volumes, samples },
+
+              internalState: { ...state, volumes },
             };
           },
         };
@@ -631,7 +615,6 @@ export class IndicatorService {
             const high = asHigh(bar);
             const low = asLow(bar);
             const close = asClose(bar);
-            const samples = Number(state.samples || 0) + 1;
 
             if (
               !Number.isFinite(high) ||
@@ -640,8 +623,8 @@ export class IndicatorService {
             ) {
               return {
                 value: state.lastValue ?? null,
-                samples,
-                internalState: { ...state, samples },
+
+                internalState: { ...state },
               };
             }
 
@@ -652,13 +635,12 @@ export class IndicatorService {
             ) {
               return {
                 value: null,
-                samples,
+
                 internalState: {
                   ...state,
                   prevHigh: high,
                   prevLow: low,
                   prevClose: close,
-                  samples,
                 },
               };
             }
@@ -678,7 +660,6 @@ export class IndicatorService {
               prevHigh: high,
               prevLow: low,
               prevClose: close,
-              samples,
             };
 
             if (!state.smoothedReady) {
@@ -690,7 +671,7 @@ export class IndicatorService {
               if (seedCount < state.period) {
                 return {
                   value: null,
-                  samples,
+
                   internalState: {
                     ...next,
                     seedCount,
@@ -710,7 +691,7 @@ export class IndicatorService {
 
               return {
                 value: null,
-                samples,
+
                 internalState: {
                   ...next,
                   seedCount,
@@ -749,7 +730,7 @@ export class IndicatorService {
               if (nextCount < state.period) {
                 return {
                   value: null,
-                  samples,
+
                   internalState: {
                     ...next,
                     tr14,
@@ -766,7 +747,7 @@ export class IndicatorService {
 
               return {
                 value: out,
-                samples,
+
                 internalState: {
                   ...next,
                   tr14,
@@ -784,7 +765,7 @@ export class IndicatorService {
             const out = { adx, pdi: plusDI, mdi: minusDI };
             return {
               value: out,
-              samples,
+
               internalState: {
                 ...next,
                 tr14,
@@ -800,7 +781,7 @@ export class IndicatorService {
             warmUp: (bars) => {
               const seedState: Record<string, any> = {
                 period,
-                samples: 0,
+
                 prevHigh: null,
                 prevLow: null,
                 prevClose: null,
@@ -829,7 +810,7 @@ export class IndicatorService {
               return {
                 internalState: state,
                 value,
-                samples: Number(state.samples || bars.length),
+
                 lastBarTime: bars.length
                   ? asBarTime(bars[bars.length - 1])
                   : "",
@@ -856,7 +837,6 @@ export class IndicatorService {
           const lows = [...(state.lowWindow || []), low];
           clampWindow(highs, state.period);
           clampWindow(lows, state.period);
-          const samples = Number(state.samples || 0) + 1;
 
           if (
             highs.length < state.period ||
@@ -866,12 +846,11 @@ export class IndicatorService {
           ) {
             return {
               value: null,
-              samples,
+
               internalState: {
                 ...state,
                 highWindow: highs,
                 lowWindow: lows,
-                samples,
               },
             };
           }
@@ -892,13 +871,13 @@ export class IndicatorService {
           const out = { k, d };
           return {
             value: out,
-            samples,
+
             internalState: {
               ...state,
               highWindow: highs,
               lowWindow: lows,
               kValues,
-              samples,
+
               lastValue: out,
             },
           };
@@ -912,7 +891,7 @@ export class IndicatorService {
               highWindow: [],
               lowWindow: [],
               kValues: [],
-              samples: 0,
+
               lastValue: null,
             };
             let value: number | Record<string, any> | null = null;
@@ -926,7 +905,7 @@ export class IndicatorService {
             return {
               internalState: state,
               value,
-              samples: Number(state.samples || bars.length),
+
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -1120,7 +1099,8 @@ export class IndicatorService {
     const out: number[] = [];
 
     for (let i = 1; i < volumes.length; i++) {
-      shortEMA = volumes[i] * shortMultiplier + shortEMA * (1 - shortMultiplier);
+      shortEMA =
+        volumes[i] * shortMultiplier + shortEMA * (1 - shortMultiplier);
       longEMA = volumes[i] * longMultiplier + longEMA * (1 - longMultiplier);
 
       if (i + 1 >= longPeriod) {
@@ -1194,11 +1174,7 @@ export class IndicatorService {
         );
       }
 
-      const results = this.calculateBollingerValues(
-        prices,
-        period,
-        stdDev,
-      );
+      const results = this.calculateBollingerValues(prices, period, stdDev);
 
       return createSuccessOutput(results, {
         ...INDICATOR_CONTEXT,

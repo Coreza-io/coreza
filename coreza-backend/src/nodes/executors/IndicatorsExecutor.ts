@@ -143,18 +143,10 @@ export class IndicatorsExecutor implements INodeExecutor {
               }
             }
 
-            const normalized = normalizeOutput(
-              {
-                success: true,
-                data: [{ value: state.value, samples: state.samples }],
-              },
-              {
-                nodeId: node.id,
-                nodeName: node.name,
-                category: this.category,
-                startTime,
-              },
-            );
+            const normalized = normalizeOutput({
+              success: true,
+              data: [state.value],
+            });
             return toNodeResult(normalized);
           }
         }

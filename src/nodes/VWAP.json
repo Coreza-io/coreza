@@ -6,10 +6,21 @@
   "category": "Indicators",
   "description": "VWAP indicator to identify average price levels weighted by volume over a time frame",
   "color": "text-indigo-500",
-  "size": { "width": 320, "height": 240 },
+  "size": {
+    "width": 320,
+    "height": 300
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/indicators/vwap",
@@ -23,13 +34,36 @@
       "required": true
     },
     {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
+      "required": true
+    },
+    {
       "key": "session_type",
       "label": "VWAP Session Type",
       "type": "select",
       "options": [
-        { "id": "daily", "name": "Daily Session VWAP" },
-        { "id": "weekly", "name": "Weekly VWAP" },
-        { "id": "custom", "name": "Custom Range VWAP" }
+        {
+          "id": "daily",
+          "name": "Daily Session VWAP"
+        },
+        {
+          "id": "weekly",
+          "name": "Weekly VWAP"
+        },
+        {
+          "id": "custom",
+          "name": "Custom Range VWAP"
+        }
       ],
       "default": "daily",
       "required": true
@@ -42,7 +76,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "session_type": ["custom"]
+          "session_type": [
+            "custom"
+          ]
         }
       }
     }

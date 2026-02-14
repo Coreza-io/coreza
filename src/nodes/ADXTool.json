@@ -8,7 +8,7 @@
   "color": "text-yellow-500",
   "size": {
     "width": 320,
-    "height": 240
+    "height": 300
   },
   "handles": [
     {
@@ -29,6 +29,24 @@
       "description": "The dataRef string returned from a market data tool (YahooFinanceTool, PolygonTool, etc). You MUST first call a market data tool, wait for its response containing dataRef, then use that exact dataRef value here. Do NOT guess or invent this value.",
       "showDescription": false,
       "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT). Use the same symbol that was passed to the market data tool.",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d). Must match the timeframe used when fetching the market data.",
+      "required": true,
+      "showDescription": false
     },
     {
       "key": "period",

@@ -6,10 +6,21 @@
   "category": "Indicators",
   "description": "Calculate support and resistance levels using multiple methods",
   "color": "text-purple-500",
-  "size": { "width": 360, "height": 320 },
+  "size": {
+    "width": 360,
+    "height": 380
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/indicators/support-resistance",
@@ -24,13 +35,36 @@
       "placeholder": "Connect from Market node"
     },
     {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
+      "required": true
+    },
+    {
       "key": "method",
       "label": "Calculation Method",
       "type": "select",
       "options": [
-        { "value": "pivot", "label": "Pivot Points (Classic)" },
-        { "value": "swing", "label": "Swing High/Low (Price Action)" },
-        { "value": "historical", "label": "Historical High/Low" }
+        {
+          "value": "pivot",
+          "label": "Pivot Points (Classic)"
+        },
+        {
+          "value": "swing",
+          "label": "Swing High/Low (Price Action)"
+        },
+        {
+          "value": "historical",
+          "label": "Historical High/Low"
+        }
       ],
       "default": "pivot",
       "required": true

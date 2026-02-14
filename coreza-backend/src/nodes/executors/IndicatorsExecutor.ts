@@ -40,7 +40,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       const dataContext = context?.dataContext as DataContext | undefined;
 
       // Resolve dataRef to actual data if present
-      let processedParams = { ...resolvedParams };
+      const processedParams = { ...resolvedParams };
       
       // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
       const dataRefValue = resolvedParams.dataRef || 
@@ -77,8 +77,17 @@ export class IndicatorsExecutor implements INodeExecutor {
             | undefined;
           const userId = context?.userId || context?.user_id || dataContext.getUserId?.();
           const workflowId = context?.workflowId || dataContext.getWorkflowId?.();
-          const symbol = String(processedParams.symbol || "");
-          const timeframe = String(processedParams.timeframe || "");
+          let symbol = String(processedParams.symbol || "");
+          let timeframe = String(processedParams.timeframe || "");
+
+          // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
+          if ((!symbol || !timeframe) && dataRefValue) {
+            const parts = dataRefValue.split(":");
+            if (parts.length >= 4) {
+              if (!symbol) symbol = parts[1];
+              if (!timeframe) timeframe = parts[2];
+            }
+          }
 
           if (stateManager && userId && workflowId && symbol && timeframe && closePrices.length > 0) {
             const indicatorParams = this.extractIndicatorParams(processedParams);

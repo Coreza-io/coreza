@@ -6,10 +6,21 @@
   "category": "Indicators",
   "description": "Relative Strength Index indicator",
   "color": "text-blue-500",
-  "size": { "width": 300, "height": 220 },
+  "size": {
+    "width": 300,
+    "height": 280
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/indicators/rsi",
@@ -20,6 +31,20 @@
       "key": "candle_data",
       "label": "Candle Data",
       "type": "text",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. AAPL",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
       "required": true
     },
     {

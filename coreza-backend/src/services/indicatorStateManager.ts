@@ -46,9 +46,8 @@ export function buildIndicatorKey(
   symbol: string,
   timeframe: string,
   indicator: string,
-  params: Record<string, any>,
 ): string {
-  return `user:${userId}:workflow:${workflowId}:indicator:${symbol}:${timeframe}:${indicator}:${serializeParams(params)}`;
+  return `user:${userId}:workflow:${workflowId}:indicator:${symbol}:${timeframe}:${indicator}`;
 }
 
 const STATE_VERSION = 1;
@@ -91,7 +90,10 @@ export class IndicatorStateManager {
     params: Record<string, any>,
     bars: any[],
   ): Promise<IndicatorState> {
-    const updater = IndicatorService.createIncrementalUpdater(indicator, params);
+    const updater = IndicatorService.createIncrementalUpdater(
+      indicator,
+      params,
+    );
     const warmup = updater.warmUp(bars);
 
     const state: IndicatorState = {
@@ -149,7 +151,13 @@ export class IndicatorStateManager {
     let removed = 0;
 
     do {
-      const [next, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      const [next, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        200,
+      );
       cursor = next;
 
       if (keys.length) {

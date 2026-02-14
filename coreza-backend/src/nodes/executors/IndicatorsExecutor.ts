@@ -18,8 +18,15 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
 import { extractPrices } from "../../services/toolOutputProcessor";
 import { DataContext } from "../../services/DataContext";
-import { normalizeOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
-import { IndicatorStateManager, buildIndicatorKey } from "../../services/indicatorStateManager";
+import {
+  normalizeOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
+import {
+  IndicatorStateManager,
+  buildIndicatorKey,
+} from "../../services/indicatorStateManager";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -27,7 +34,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
@@ -41,78 +48,106 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       // Resolve dataRef to actual data if present
       const processedParams = { ...resolvedParams };
-      
-      // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
-      const dataRefValue = resolvedParams.dataRef || 
-        (typeof resolvedParams.candle_data === 'string' && resolvedParams.candle_data.startsWith('bars:') 
-          ? resolvedParams.candle_data 
-          : null);
 
-      if (dataContext && dataRefValue) {
-        console.log(`🔗 [Indicators] Resolving dataRef: ${dataRefValue}`);
-        const barsData = dataContext.getDataByKey(dataRefValue);
-        
-      if (Array.isArray(barsData)) {
+      const candleData = Array.isArray(resolvedParams.candle_data)
+        ? resolvedParams.candle_data
+        : JSON.parse(resolvedParams.candle_data || "[]");
+
+      // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
+      // const dataRefValue = resolvedParams.dataRef ||
+      //   (typeof resolvedParams.candle_data === 'string' && resolvedParams.candle_data.startsWith('bars:')
+      //     ? resolvedParams.candle_data
+      //     : null);
+
+      if (dataContext && candleData) {
+        console.log(`🔗 [Indicators] Resolving dataRef: ${candleData}`);
+        //const barsData = dataContext.getDataByKey(candleData);
+        const barsData = candleData;
+
+        if (Array.isArray(barsData)) {
           // Extract close prices from bars for indicator calculation
-          const closePrices = extractPrices(barsData, 'close');
-          
+          // const closePrices = extractPrices(barsData, "close");
+
           // Set fields that IndicatorService expects
-          processedParams.candle_data = barsData;  // For ADX, Stoch, VWAP, OBV, Ichimoku
-          processedParams.prices = closePrices;     // For RSI, EMA, SMA, MACD, BB
-          
-          // Keep existing fields for compatibility
-          processedParams.data = closePrices;
-          processedParams.values = closePrices;
-          processedParams.bars = barsData;
-          processedParams.open = extractPrices(barsData, 'open');
-          processedParams.high = extractPrices(barsData, 'high');
-          processedParams.low = extractPrices(barsData, 'low');
-          processedParams.close = closePrices;
-          processedParams.volume = barsData.map(bar => bar.volume || bar.v || bar.vol || 0);
-          
-          console.log(`📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`);
+          processedParams.candle_data = barsData; // For ADX, Stoch, VWAP, OBV, Ichimoku
+          // processedParams.prices = closePrices; // For RSI, EMA, SMA, MACD, BB
+
+          // // Keep existing fields for compatibility
+          // processedParams.data = closePrices;
+          // processedParams.values = closePrices;
+          // processedParams.bars = barsData;
+          // processedParams.open = extractPrices(barsData, "open");
+          // processedParams.high = extractPrices(barsData, "high");
+          // processedParams.low = extractPrices(barsData, "low");
+          // processedParams.close = closePrices;
+          // processedParams.volume = barsData.map(
+          //   (bar) => bar.volume || bar.v || bar.vol || 0,
+          // );
+
+          // console.log(
+          //   `📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`,
+          // );
 
           const stateManager = context?.indicatorStateManager as
             | IndicatorStateManager
             | undefined;
-          const userId = context?.userId || context?.user_id || dataContext.getUserId?.();
-          const workflowId = context?.workflowId || dataContext.getWorkflowId?.();
+          const userId =
+            context?.userId || context?.user_id || dataContext.getUserId?.();
+          const workflowId =
+            context?.workflowId || dataContext.getWorkflowId?.();
           let symbol = String(processedParams.symbol || "");
           let timeframe = String(processedParams.timeframe || "");
 
           // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
-          if ((!symbol || !timeframe) && dataRefValue) {
-            const parts = dataRefValue.split(":");
-            if (parts.length >= 4) {
-              if (!symbol) symbol = parts[1];
-              if (!timeframe) timeframe = parts[2];
-            }
-          }
+          // if ((!symbol || !timeframe) && barsData) {
+          //   const parts = barsData.split(":");
+          //   if (parts.length >= 4) {
+          //     if (!symbol) symbol = parts[1];
+          //     if (!timeframe) timeframe = parts[2];
+          //   }
+          // }
 
-          if (stateManager && userId && workflowId && symbol && timeframe && closePrices.length > 0) {
-            const indicatorParams = this.extractIndicatorParams(processedParams);
+          if (
+            stateManager &&
+            userId &&
+            workflowId &&
+            symbol &&
+            timeframe &&
+            barsData.length > 0
+          ) {
+            // const indicatorParams =
+            //   this.extractIndicatorParams(processedParams);
             const key = buildIndicatorKey(
               String(userId),
               String(workflowId),
               symbol,
               timeframe,
               indicatorType,
-              indicatorParams,
             );
 
             let state = await stateManager.getState(key);
             if (!state) {
-              state = await stateManager.warmUp(key, indicatorType, indicatorParams, barsData);
+              state = await stateManager.warmUp(
+                key,
+                indicatorType,
+                processedParams,
+                barsData,
+              );
             } else {
               const latestBar = barsData[barsData.length - 1];
-              const latestBarTime = String(latestBar?.t ?? latestBar?.timestamp ?? "");
+              const latestBarTime = String(
+                latestBar?.t ?? latestBar?.timestamp ?? "",
+              );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
                 state = await stateManager.update(key, latestBar);
               }
             }
 
             const normalized = normalizeOutput(
-              { success: true, data: [{ value: state.value, samples: state.samples }] },
+              {
+                success: true,
+                data: [{ value: state.value, samples: state.samples }],
+              },
               {
                 nodeId: node.id,
                 nodeName: node.name,
@@ -126,12 +161,12 @@ export class IndicatorsExecutor implements INodeExecutor {
       }
 
       console.log(
-        `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`
+        `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`,
       );
 
       const result = await IndicatorService.calculate(
         indicatorType,
-        processedParams
+        processedParams,
       );
 
       const normalized = normalizeOutput(result, {
@@ -144,13 +179,20 @@ export class IndicatorsExecutor implements INodeExecutor {
     } catch (error) {
       const normalized = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        },
       );
       return toNodeResult(normalized);
     }
   }
 
-  private extractIndicatorParams(params: Record<string, any>): Record<string, any> {
+  private extractIndicatorParams(
+    params: Record<string, any>,
+  ): Record<string, any> {
     const allowedParams = [
       "period",
       "window",
@@ -166,11 +208,14 @@ export class IndicatorsExecutor implements INodeExecutor {
       "method",
     ];
 
-    return allowedParams.reduce((acc, key) => {
-      if (params[key] !== undefined && params[key] !== null) {
-        acc[key] = params[key];
-      }
-      return acc;
-    }, {} as Record<string, any>);
+    return allowedParams.reduce(
+      (acc, key) => {
+        if (params[key] !== undefined && params[key] !== null) {
+          acc[key] = params[key];
+        }
+        return acc;
+      },
+      {} as Record<string, any>,
+    );
   }
 }

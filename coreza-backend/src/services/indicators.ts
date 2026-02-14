@@ -575,6 +575,109 @@ export class IndicatorService {
           },
         };
       }
+      case "volume-oscillator":
+      case "volumeoscillator": {
+        const shortPeriod = Number(params.short_period);
+        const longPeriod = Number(params.long_period);
+        const outputType = params.type;
+
+        if (
+          !Number.isFinite(shortPeriod) ||
+          !Number.isFinite(longPeriod) ||
+          shortPeriod <= 0 ||
+          longPeriod <= 0
+        ) {
+          throw createError("Invalid periods", 400);
+        }
+        if (shortPeriod >= longPeriod) {
+          throw createError("short_period must be less than long_period", 400);
+        }
+
+        const shortMultiplier = 2 / (shortPeriod + 1);
+        const longMultiplier = 2 / (longPeriod + 1);
+
+        const computeValue = (shortEMA: number, longEMA: number): number =>
+          outputType === "percentage"
+            ? ((shortEMA - longEMA) / longEMA) * 100
+            : shortEMA - longEMA;
+
+        return {
+          warmUp: (bars) => {
+            let shortEMA: number | null = null;
+            let longEMA: number | null = null;
+            let samples = 0;
+            let value: number | null = null;
+
+            for (const bar of bars) {
+              const volume = asVolume(bar);
+              if (!Number.isFinite(volume) || volume < 0) {
+                continue;
+              }
+
+              samples += 1;
+              if (shortEMA == null || longEMA == null) {
+                shortEMA = volume;
+                longEMA = volume;
+              } else {
+                shortEMA =
+                  volume * shortMultiplier + shortEMA * (1 - shortMultiplier);
+                longEMA =
+                  volume * longMultiplier + longEMA * (1 - longMultiplier);
+              }
+
+              if (samples >= longPeriod) {
+                value = computeValue(shortEMA, longEMA);
+              }
+            }
+
+            return {
+              internalState: {
+                shortEMA,
+                longEMA,
+                shortMultiplier,
+                longMultiplier,
+                shortPeriod,
+                longPeriod,
+                outputType,
+                samples,
+              },
+              value,
+              samples,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            const volume = asVolume(bar);
+            const prevSamples = Number(state.samples || 0);
+            const samples = prevSamples + 1;
+
+            const prevShortEMA = Number.isFinite(state.shortEMA)
+              ? state.shortEMA
+              : volume;
+            const prevLongEMA = Number.isFinite(state.longEMA)
+              ? state.longEMA
+              : volume;
+
+            const shortEMA =
+              volume * state.shortMultiplier +
+              prevShortEMA * (1 - state.shortMultiplier);
+            const longEMA =
+              volume * state.longMultiplier +
+              prevLongEMA * (1 - state.longMultiplier);
+
+            const value =
+              samples >= state.longPeriod
+                ? computeValue(shortEMA, longEMA)
+                : null;
+
+            return {
+              value,
+              samples,
+              internalState: { ...state, shortEMA, longEMA, samples },
+            };
+          },
+        };
+      }
       case "adx":
       case "stochastic": {
         if (type === "adx") {

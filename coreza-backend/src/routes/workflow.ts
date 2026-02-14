@@ -226,9 +226,7 @@ router.delete("/:workflowId", async (req, res, next) => {
         REDIS_CHANNELS.activeStreamingWorkflows(userId),
         workflowId,
       );
-      await redis.del(
-        REDIS_CHANNELS.workflowStreamFilter(userId, workflowId),
-      );
+      await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
 
       // Unsubscribe from market data if has streaming nodes (AlpacaNews, AlpacaStreamData, BinanceStreamData, etc.)
       const streamingNodes = workflow.nodes?.filter(
@@ -473,14 +471,20 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
     const { is_active } = req.body ?? {};
 
     // Fetch workflow
-    const { data: workflow, error: fetchError } = await supabase
+    const { data: workflow, error } = await supabase
       .from("workflows")
       .select("id,user_id,nodes,edges,is_active,schedule_cron")
       .eq("id", workflowId)
       .eq("user_id", userId)
       .single();
 
-    if (fetchError || !workflow) throw createError("Workflow not found", 404);
+    if (error) {
+      if (error.code === "PGRST116") {
+        // No rows found
+        throw createError("Workflow not found", 404);
+      }
+      throw createError(error.message, 500);
+    }
 
     // Detect trigger nodes
     const triggerNodes = workflow.nodes.filter(

@@ -390,11 +390,14 @@ export class IndicatorService {
         const period = Number(params.period);
         const stdDev = Number(params.stdDev ?? params.std_dev_multiplier);
         if (!Number.isFinite(period) || period <= 0) {
-          throw createError("period must be a positive number", 400);
+          throw createError(
+            "period is required and must be a positive number",
+            400,
+          );
         }
         if (!Number.isFinite(stdDev) || stdDev <= 0) {
           throw createError(
-            "stdDev/std_dev_multiplier must be a positive number",
+            "stdDev/std_dev_multiplier is required and must be a positive number",
             400,
           );
         }
@@ -404,22 +407,10 @@ export class IndicatorService {
               .map(asClose)
               .filter(Number.isFinite)
               .slice(-period);
-            const mid =
-              window.length === period
-                ? window.reduce((a, b) => a + b, 0) / period
-                : null;
-            let value: Record<string, number> | null = null;
-            if (mid != null) {
-              const variance =
-                window.reduce((sum, p) => sum + (p - mid) ** 2, 0) / period;
-              const sd = Math.sqrt(variance);
-              value = {
-                upper: mid + sd * stdDev,
-                middle: mid,
-                lower: mid - sd * stdDev,
-                bb_width: ((sd * 2 * stdDev) / mid) * 100,
-              };
-            }
+            const value =
+              this.calculateBollingerValues(window, period, stdDev).at(
+                -1,
+              ) ?? null;
             return {
               internalState: { window, period, stdDev, samples: bars.length },
               value,
@@ -431,28 +422,14 @@ export class IndicatorService {
             const window = [...(state.window || []), asClose(bar)];
             clampWindow(window, state.period);
             const samples = Number(state.samples || 0) + 1;
-            if (window.length < state.period) {
-              return {
-                value: null,
-                samples,
-                internalState: { ...state, window, samples },
-              };
-            }
-            const middle =
-              window.reduce((a: number, b: number) => a + b, 0) / state.period;
-            const variance =
-              window.reduce(
-                (sum: number, p: number) => sum + (p - middle) ** 2,
-                0,
-              ) / state.period;
-            const sd = Math.sqrt(variance);
+            const value =
+              this.calculateBollingerValues(
+                window,
+                state.period,
+                state.stdDev,
+              ).at(-1) ?? null;
             return {
-              value: {
-                upper: middle + sd * state.stdDev,
-                middle,
-                lower: middle - sd * state.stdDev,
-                bb_width: ((sd * 2 * state.stdDev) / middle) * 100,
-              },
+              value,
               samples,
               internalState: { ...state, window, samples },
             };
@@ -589,91 +566,55 @@ export class IndicatorService {
         ) {
           throw createError("Invalid periods", 400);
         }
+
         if (shortPeriod >= longPeriod) {
           throw createError("short_period must be less than long_period", 400);
         }
 
-        const shortMultiplier = 2 / (shortPeriod + 1);
-        const longMultiplier = 2 / (longPeriod + 1);
-
-        const computeValue = (shortEMA: number, longEMA: number): number =>
-          outputType === "percentage"
-            ? ((shortEMA - longEMA) / longEMA) * 100
-            : shortEMA - longEMA;
-
         return {
           warmUp: (bars) => {
-            let shortEMA: number | null = null;
-            let longEMA: number | null = null;
-            let samples = 0;
-            let value: number | null = null;
-
-            for (const bar of bars) {
-              const volume = asVolume(bar);
-              if (!Number.isFinite(volume) || volume < 0) {
-                continue;
-              }
-
-              samples += 1;
-              if (shortEMA == null || longEMA == null) {
-                shortEMA = volume;
-                longEMA = volume;
-              } else {
-                shortEMA =
-                  volume * shortMultiplier + shortEMA * (1 - shortMultiplier);
-                longEMA =
-                  volume * longMultiplier + longEMA * (1 - longMultiplier);
-              }
-
-              if (samples >= longPeriod) {
-                value = computeValue(shortEMA, longEMA);
-              }
-            }
-
-            return {
-              internalState: {
-                shortEMA,
-                longEMA,
-                shortMultiplier,
-                longMultiplier,
+            const volumes = bars
+              .map(asVolume)
+              .filter((volume) => Number.isFinite(volume) && volume >= 0);
+            const value =
+              this.calculateVolumeOscillatorValues(
+                volumes,
                 shortPeriod,
                 longPeriod,
                 outputType,
-                samples,
+              ).at(-1) ?? null;
+
+            return {
+              internalState: {
+                volumes,
+                shortPeriod,
+                longPeriod,
+                outputType,
+                samples: volumes.length,
               },
               value,
-              samples,
+              samples: volumes.length,
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
             const volume = asVolume(bar);
-            const prevSamples = Number(state.samples || 0);
-            const samples = prevSamples + 1;
-
-            const prevShortEMA = Number.isFinite(state.shortEMA)
-              ? state.shortEMA
-              : volume;
-            const prevLongEMA = Number.isFinite(state.longEMA)
-              ? state.longEMA
-              : volume;
-
-            const shortEMA =
-              volume * state.shortMultiplier +
-              prevShortEMA * (1 - state.shortMultiplier);
-            const longEMA =
-              volume * state.longMultiplier +
-              prevLongEMA * (1 - state.longMultiplier);
-
+            const volumes = Number.isFinite(volume) && volume >= 0
+              ? [...(state.volumes || []), volume]
+              : [...(state.volumes || [])];
+            const samples = volumes.length;
             const value =
-              samples >= state.longPeriod
-                ? computeValue(shortEMA, longEMA)
-                : null;
+              this.calculateVolumeOscillatorValues(
+                volumes,
+                state.shortPeriod,
+                state.longPeriod,
+                state.outputType,
+              ).at(-1) ?? null;
 
             return {
               value,
               samples,
-              internalState: { ...state, shortEMA, longEMA, samples },
+              internalState: { ...state, volumes, samples },
             };
           },
         };
@@ -1163,6 +1104,69 @@ export class IndicatorService {
     }
   }
 
+  private static calculateVolumeOscillatorValues(
+    volumes: number[],
+    shortPeriod: number,
+    longPeriod: number,
+    outputType: string,
+  ): number[] {
+    if (!volumes.length) return [];
+
+    const shortMultiplier = 2 / (shortPeriod + 1);
+    const longMultiplier = 2 / (longPeriod + 1);
+
+    let shortEMA = volumes[0];
+    let longEMA = volumes[0];
+    const out: number[] = [];
+
+    for (let i = 1; i < volumes.length; i++) {
+      shortEMA = volumes[i] * shortMultiplier + shortEMA * (1 - shortMultiplier);
+      longEMA = volumes[i] * longMultiplier + longEMA * (1 - longMultiplier);
+
+      if (i + 1 >= longPeriod) {
+        out.push(
+          outputType === "percentage"
+            ? ((shortEMA - longEMA) / longEMA) * 100
+            : shortEMA - longEMA,
+        );
+      }
+    }
+
+    return out;
+  }
+
+  private static calculateBollingerValues(
+    prices: number[],
+    period: number,
+    stdDev: number,
+  ): { upper: number; middle: number; lower: number; bb_width: number }[] {
+    const bb = new BollingerBands(period, stdDev);
+    const results: {
+      upper: number;
+      middle: number;
+      lower: number;
+      bb_width: number;
+    }[] = [];
+
+    for (const price of prices) {
+      bb.update(price, false);
+      if (!bb.isStable) continue;
+      const r = bb.getResult();
+      if (!r) continue;
+      const upper = toNumber(r.upper);
+      const middle = toNumber(r.middle);
+      const lower = toNumber(r.lower);
+      results.push({
+        upper,
+        middle,
+        lower,
+        bb_width: ((upper - lower) / middle) * 100,
+      });
+    }
+
+    return results;
+  }
+
   static async calculateBollinger(
     input: IndicatorInput,
   ): Promise<IndicatorResult> {
@@ -1176,7 +1180,7 @@ export class IndicatorService {
       } = input;
       const prices = extractPrices(rawPrices, rawCandles);
       const period = Number(rawPeriod);
-      const stdDev = Number(rawStd || rawStdMult);
+      const stdDev = Number(rawStd ?? rawStdMult);
       if (!Number.isFinite(period) || period <= 0) {
         throw createError(
           "period is required and must be a positive number",
@@ -1190,30 +1194,11 @@ export class IndicatorService {
         );
       }
 
-      const bb = new BollingerBands(period, stdDev);
-      const results: {
-        upper: number;
-        middle: number;
-        lower: number;
-        bb_width: number;
-      }[] = [];
-      for (const price of prices) {
-        bb.update(price, false);
-        if (bb.isStable) {
-          const r = bb.getResult();
-          if (!r) {
-            continue;
-          }
-          results.push({
-            upper: toNumber(r.upper),
-            middle: toNumber(r.middle),
-            lower: toNumber(r.lower),
-            bb_width:
-              ((toNumber(r.upper) - toNumber(r.lower)) / toNumber(r.middle)) *
-              100,
-          });
-        }
-      }
+      const results = this.calculateBollingerValues(
+        prices,
+        period,
+        stdDev,
+      );
 
       return createSuccessOutput(results, {
         ...INDICATOR_CONTEXT,
@@ -1470,18 +1455,19 @@ export class IndicatorService {
       } = input;
 
       const candles = parseArray<any>(rawCandles, "candle_data");
-      const shortP = Number(short_period);
-      const longP = Number(long_period);
+      const shortPeriod = Number(short_period);
+      const longPeriod = Number(long_period);
 
       if (
-        !Number.isFinite(shortP) ||
-        !Number.isFinite(longP) ||
-        shortP <= 0 ||
-        longP <= 0
+        !Number.isFinite(shortPeriod) ||
+        !Number.isFinite(longPeriod) ||
+        shortPeriod <= 0 ||
+        longPeriod <= 0
       ) {
         throw createError("Invalid periods", 400);
       }
-      if (shortP >= longP) {
+
+      if (shortPeriod >= longPeriod) {
         throw createError("short_period must be less than long_period", 400);
       }
 
@@ -1490,26 +1476,12 @@ export class IndicatorService {
         throw createError("Invalid volume data", 400);
       }
 
-      const alphaShort = 2 / (shortP + 1);
-      const alphaLong = 2 / (longP + 1);
-
-      let shortEMA = volumes[0];
-      let longEMA = volumes[0];
-
-      const out: number[] = [];
-
-      for (let i = 1; i < volumes.length; i++) {
-        shortEMA = volumes[i] * alphaShort + shortEMA * (1 - alphaShort);
-        longEMA = volumes[i] * alphaLong + longEMA * (1 - alphaLong);
-
-        if (i + 1 >= longP) {
-          out.push(
-            type === "percentage"
-              ? ((shortEMA - longEMA) / longEMA) * 100
-              : shortEMA - longEMA,
-          );
-        }
-      }
+      const out = this.calculateVolumeOscillatorValues(
+        volumes,
+        shortPeriod,
+        longPeriod,
+        type,
+      );
 
       return createSuccessOutput(out, {
         ...INDICATOR_CONTEXT,

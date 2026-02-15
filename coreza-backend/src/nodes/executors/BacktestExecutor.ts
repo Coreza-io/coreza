@@ -26,6 +26,7 @@ import {
 
 // Key prefix for caching SimBroker instances by backtest id
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
+const SIM_BROKER_CACHE_KEY = "__simBrokerCache";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
@@ -69,6 +70,21 @@ export class BacktestExecutor implements INodeExecutor {
           ),
         );
     }
+  }
+
+  private getContextBrokerCache(context: any): Map<string, SimBroker> {
+    if (!context) {
+      return new Map<string, SimBroker>();
+    }
+
+    const existing = context[SIM_BROKER_CACHE_KEY];
+    if (existing instanceof Map) {
+      return existing as Map<string, SimBroker>;
+    }
+
+    const cache = new Map<string, SimBroker>();
+    context[SIM_BROKER_CACHE_KEY] = cache;
+    return cache;
   }
 
   /**

@@ -137,6 +137,10 @@ export class WorkflowEngine {
     return this.dataContext;
   }
 
+  private getExecutionOrderForResponse(): string[] | undefined {
+    return this.executionOrder.length > 0 ? this.executionOrder : undefined;
+  }
+
   // Deep resolve helper for resolving template expressions recursively
   private resolveDeep(
     val: any,

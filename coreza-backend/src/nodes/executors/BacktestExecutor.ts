@@ -39,52 +39,23 @@ export class BacktestExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     // const startTime = Date.now();
     const nodeName = node.name;
-    const normalizeCtx: NormalizeContext = {
-      nodeId: node.id,
-      nodeName,
-      category: this.category,
-      // startTime,
-    };
 
     switch (nodeName) {
       case "BacktestInit":
-        return this.executeBacktestInit(node, input, context, normalizeCtx);
+        return this.executeBacktestInit(node, input, context);
       case "BacktestTrade":
-        return this.executeBacktestTrade(node, input, context, normalizeCtx);
+        return this.executeBacktestTrade(node, input, context);
       case "BacktestSnapshot":
-        return this.executeBacktestSnapshot(node, input, context, normalizeCtx);
+        return this.executeBacktestSnapshot(node, input, context);
       case "BacktestResults":
-        return this.executeBacktestResults(node, input, context, normalizeCtx);
+        return this.executeBacktestResults(node, input, context);
       case "BacktestPortfolio":
-        return this.executeBacktestPortfolio(
-          node,
-          input,
-          context,
-          normalizeCtx,
-        );
+        return this.executeBacktestPortfolio(node, input, context);
       default:
         return toNodeResult(
-          createErrorOutput(
-            `Unknown backtest node type: ${nodeName}`,
-            normalizeCtx,
-          ),
+          createErrorOutput(`Unknown backtest node type: ${nodeName}`),
         );
     }
-  }
-
-  private getContextBrokerCache(context: any): Map<string, SimBroker> {
-    if (!context) {
-      return new Map<string, SimBroker>();
-    }
-
-    const existing = context[SIM_BROKER_CACHE_KEY];
-    if (existing instanceof Map) {
-      return existing as Map<string, SimBroker>;
-    }
-
-    const cache = new Map<string, SimBroker>();
-    context[SIM_BROKER_CACHE_KEY] = cache;
-    return cache;
   }
 
   /**
@@ -119,7 +90,6 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -131,10 +101,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (!userId || !workflowId) {
         return toNodeResult(
-          createErrorOutput(
-            "User ID and Workflow ID required for backtest",
-            normalizeCtx,
-          ),
+          createErrorOutput("User ID and Workflow ID required for backtest"),
         );
       }
 
@@ -179,7 +146,6 @@ export class BacktestExecutor implements INodeExecutor {
         return toNodeResult(
           createErrorOutput(
             `Failed to create backtest: ${insertError?.message}`,
-            normalizeCtx,
           ),
         );
       }
@@ -195,29 +161,26 @@ export class BacktestExecutor implements INodeExecutor {
       );
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            backtest_id: backtestId,
-            initial_capital: config.initialCapital,
-            start_date:
-              params.start_date || new Date().toISOString().split("T")[0],
-            end_date: params.end_date || new Date().toISOString().split("T")[0],
-            config: {
-              fill_model: config.fillModel,
-              slippage_model: config.slippageModel,
-              slippage_value: config.slippageValue,
-              commission_model: config.commissionModel,
-              commission_value: config.commissionValue,
-              allow_short: config.allowShort,
-            },
-            status: "running",
+        createSuccessOutput({
+          backtest_id: backtestId,
+          initial_capital: config.initialCapital,
+          start_date:
+            params.start_date || new Date().toISOString().split("T")[0],
+          end_date: params.end_date || new Date().toISOString().split("T")[0],
+          config: {
+            fill_model: config.fillModel,
+            slippage_model: config.slippageModel,
+            slippage_value: config.slippageValue,
+            commission_model: config.commissionModel,
+            commission_value: config.commissionValue,
+            allow_short: config.allowShort,
           },
-          normalizeCtx,
-        ),
+          status: "running",
+        }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -226,7 +189,6 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -235,9 +197,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(
-          createErrorOutput("backtest_id is required", normalizeCtx),
-        );
+        return toNodeResult(createErrorOutput("backtest_id is required"));
       }
 
       const symbol = params.symbol;
@@ -247,10 +207,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (!symbol || !side || !quantity) {
         return toNodeResult(
-          createErrorOutput(
-            "symbol, side, and quantity are required",
-            normalizeCtx,
-          ),
+          createErrorOutput("symbol, side, and quantity are required"),
         );
       }
 
@@ -281,7 +238,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (!orderResult.success) {
         return toNodeResult(
-          createErrorOutput(orderResult.error || "Order failed", normalizeCtx),
+          createErrorOutput(orderResult.error || "Order failed"),
         );
       }
 
@@ -298,24 +255,21 @@ export class BacktestExecutor implements INodeExecutor {
             const positions = simBroker.getPositions();
 
             return toNodeResult(
-              createSuccessOutput(
-                {
-                  order_id: orderResult.orderId,
-                  order_status: "filled",
-                  fill_price: fill.price,
-                  fill_quantity: fill.quantity,
-                  commission: fill.commission,
-                  slippage: fill.slippage,
-                  symbol,
-                  side,
-                  quantity,
-                  order_type: orderType,
-                  cash,
-                  positions,
-                  pending_orders: 0,
-                },
-                normalizeCtx,
-              ),
+              createSuccessOutput({
+                order_id: orderResult.orderId,
+                order_status: "filled",
+                fill_price: fill.price,
+                fill_quantity: fill.quantity,
+                commission: fill.commission,
+                slippage: fill.slippage,
+                symbol,
+                side,
+                quantity,
+                order_type: orderType,
+                cash,
+                positions,
+                pending_orders: 0,
+              }),
             );
           }
         }
@@ -327,24 +281,21 @@ export class BacktestExecutor implements INodeExecutor {
       const pendingOrders = simBroker.getPendingOrders();
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            order_id: orderResult.orderId,
-            order_status: orderResult.status,
-            symbol,
-            side,
-            quantity,
-            order_type: orderType,
-            cash,
-            positions,
-            pending_orders: pendingOrders.length,
-          },
-          normalizeCtx,
-        ),
+        createSuccessOutput({
+          order_id: orderResult.orderId,
+          order_status: orderResult.status,
+          symbol,
+          side,
+          quantity,
+          order_type: orderType,
+          cash,
+          positions,
+          pending_orders: pendingOrders.length,
+        }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -353,7 +304,6 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -362,9 +312,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(
-          createErrorOutput("backtest_id is required", normalizeCtx),
-        );
+        return toNodeResult(createErrorOutput("backtest_id is required"));
       }
 
       // Parse current bar or prices
@@ -393,20 +341,17 @@ export class BacktestExecutor implements INodeExecutor {
       const snapshot = simBroker.recordSnapshot(timestamp, prices);
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            timestamp: snapshot.timestamp,
-            cash: snapshot.cash,
-            positions_value: snapshot.positionsValue,
-            total_equity: snapshot.totalEquity,
-            drawdown_pct: snapshot.drawdownPct,
-          },
-          normalizeCtx,
-        ),
+        createSuccessOutput({
+          timestamp: snapshot.timestamp,
+          cash: snapshot.cash,
+          positions_value: snapshot.positionsValue,
+          total_equity: snapshot.totalEquity,
+          drawdown_pct: snapshot.drawdownPct,
+        }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestSnapshot failed:", error);
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -415,7 +360,6 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -424,9 +368,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(
-          createErrorOutput("backtest_id is required", normalizeCtx),
-        );
+        return toNodeResult(createErrorOutput("backtest_id is required"));
       }
 
       // Get SimBroker from executor cache - SYNCHRONOUS
@@ -522,49 +464,46 @@ export class BacktestExecutor implements INodeExecutor {
       );
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            backtest_id: backtestId,
-            metrics: {
-              total_return: metrics.totalReturn,
-              total_return_pct: metrics.totalReturnPct,
-              annualized_return: metrics.annualizedReturn,
-              max_drawdown: metrics.maxDrawdown,
-              max_drawdown_pct: metrics.maxDrawdownPct,
-              sharpe_ratio: metrics.sharpeRatio,
-              sortino_ratio: metrics.sortinoRatio,
-              calmar_ratio: metrics.calmarRatio,
-              total_trades: metrics.totalTrades,
-              winning_trades: metrics.winningTrades,
-              losing_trades: metrics.losingTrades,
-              win_rate: metrics.winRate,
-              profit_factor: metrics.profitFactor,
-              avg_win: metrics.avgWin,
-              avg_loss: metrics.avgLoss,
-              largest_win: metrics.largestWin,
-              largest_loss: metrics.largestLoss,
-              avg_trade_pnl: metrics.avgTradePnl,
-              total_commission: metrics.totalCommission,
-              total_slippage: metrics.totalSlippage,
-              start_date: metrics.startDate,
-              end_date: metrics.endDate,
-              total_bars: metrics.totalBars,
-            },
-            trades_count: trades.length,
-            equity_points: equityCurve.length,
-            final_equity:
-              portfolioState.cash +
-              Object.values(portfolioState.positions).reduce(
-                (sum, p) => sum + p.marketValue,
-                0,
-              ),
+        createSuccessOutput({
+          backtest_id: backtestId,
+          metrics: {
+            total_return: metrics.totalReturn,
+            total_return_pct: metrics.totalReturnPct,
+            annualized_return: metrics.annualizedReturn,
+            max_drawdown: metrics.maxDrawdown,
+            max_drawdown_pct: metrics.maxDrawdownPct,
+            sharpe_ratio: metrics.sharpeRatio,
+            sortino_ratio: metrics.sortinoRatio,
+            calmar_ratio: metrics.calmarRatio,
+            total_trades: metrics.totalTrades,
+            winning_trades: metrics.winningTrades,
+            losing_trades: metrics.losingTrades,
+            win_rate: metrics.winRate,
+            profit_factor: metrics.profitFactor,
+            avg_win: metrics.avgWin,
+            avg_loss: metrics.avgLoss,
+            largest_win: metrics.largestWin,
+            largest_loss: metrics.largestLoss,
+            avg_trade_pnl: metrics.avgTradePnl,
+            total_commission: metrics.totalCommission,
+            total_slippage: metrics.totalSlippage,
+            start_date: metrics.startDate,
+            end_date: metrics.endDate,
+            total_bars: metrics.totalBars,
           },
-          normalizeCtx,
-        ),
+          trades_count: trades.length,
+          equity_points: equityCurve.length,
+          final_equity:
+            portfolioState.cash +
+            Object.values(portfolioState.positions).reduce(
+              (sum, p) => sum + p.marketValue,
+              0,
+            ),
+        }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -573,7 +512,6 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -582,9 +520,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(
-          createErrorOutput("backtest_id is required", normalizeCtx),
-        );
+        return toNodeResult(createErrorOutput("backtest_id is required"));
       }
 
       // Get SimBroker from executor cache - SYNCHRONOUS
@@ -609,27 +545,24 @@ export class BacktestExecutor implements INodeExecutor {
       );
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            cash: portfolioState.cash,
-            initial_capital: simBroker.getConfig().initialCapital,
-            positions: positionsArray,
-            positions_count: positionsArray.length,
-            positions_value: positionsValue,
-            unrealized_pnl: unrealizedPnlTotal,
-            realized_pnl: realizedPnlTotal,
-            total_equity: portfolioState.cash + positionsValue,
-            pending_orders: portfolioState.pendingOrders,
-            pending_orders_count: portfolioState.pendingOrders.length,
-            trades: portfolioState.trades,
-            trades_count: portfolioState.trades.length,
-          },
-          normalizeCtx,
-        ),
+        createSuccessOutput({
+          cash: portfolioState.cash,
+          initial_capital: simBroker.getConfig().initialCapital,
+          positions: positionsArray,
+          positions_count: positionsArray.length,
+          positions_value: positionsValue,
+          unrealized_pnl: unrealizedPnlTotal,
+          realized_pnl: realizedPnlTotal,
+          total_equity: portfolioState.cash + positionsValue,
+          pending_orders: portfolioState.pendingOrders,
+          pending_orders_count: portfolioState.pendingOrders.length,
+          trades: portfolioState.trades,
+          trades_count: portfolioState.trades.length,
+        }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 

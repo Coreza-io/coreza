@@ -252,7 +252,9 @@ export class WorkflowEngine {
       }
 
       const allowed = new Set(chosen);
-      return outgoingEdges.filter((edge) => allowed.has(edge.sourceHandle ?? ""));
+      return outgoingEdges.filter((edge) =>
+        allowed.has(edge.sourceHandle ?? ""),
+      );
     }
 
     return outgoingEdges;
@@ -717,13 +719,6 @@ export class WorkflowEngine {
       category = "AIAgent"; // AIAgent
     }
 
-    // Pass nodes and edges to context for AIAgent to access tool nodes
-    const enhancedContext = {
-      ...context,
-      nodes: this.nodes,
-      edges: this.edges,
-    };
-
     // Use custom executor if registered, otherwise get from registry
     let executor = this.executors.get(category);
     if (!executor) {
@@ -737,7 +732,7 @@ export class WorkflowEngine {
     }
 
     // Execute node with enhanced context
-    const result = await executor.execute(node, input, enhancedContext);
+    const result = await executor.execute(node, input, context);
 
     if (result && typeof result === "object" && "success" in result) {
       if (!result.success) {

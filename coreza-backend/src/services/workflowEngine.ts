@@ -27,7 +27,6 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
-import { normalizeOutput } from "../utils/normalizeOutput";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 
@@ -43,17 +42,6 @@ interface ExecutionContext {
   resolveNodeParameters: (node: WorkflowNode, input: any) => any;
 }
 
-// Node execution log for tracking detailed execution data
-export interface NodeExecutionLog {
-  nodeId: string;
-  nodeName: string;
-  status: "success" | "failed" | "skipped";
-  input: any;
-  output: any;
-  itemCount: number;
-  error?: string;
-}
-
 export class WorkflowEngine {
   private router: NodeRouter;
   private queue: NodeQueueManager;
@@ -62,14 +50,14 @@ export class WorkflowEngine {
   private edgePayload = new Map<string, any>();
   private executed = new Set<string>();
   private failed = new Set<string>();
+  private failedNodeErrors = new Map<string, string>();
   private enqueuedKeys = new Set<string>();
   private retryCount = new Map<string, number>();
   private MAX_RETRIES = 0;
   private mode: "best-effort" | "fail-fast";
   private abortSignal?: AbortSignal;
 
-  // Execution tracking for detailed logs
-  private nodeExecutions: NodeExecutionLog[] = [];
+  // Execution tracking
   private executionOrder: string[] = [];
 
   // DataContext for execution-scoped RAM storage (shared by all tools)
@@ -147,6 +135,10 @@ export class WorkflowEngine {
    */
   getDataContext(): DataContext {
     return this.dataContext;
+  }
+
+  private getExecutionOrderForResponse(): string[] | undefined {
+    return this.executionOrder.length > 0 ? this.executionOrder : undefined;
   }
 
   // Deep resolve helper for resolving template expressions recursively
@@ -326,7 +318,6 @@ export class WorkflowEngine {
   ): Promise<{
     success: boolean;
     result?: any;
-    nodeExecutions?: NodeExecutionLog[];
     executionOrder?: string[];
     error?: string;
   }> {
@@ -368,11 +359,9 @@ export class WorkflowEngine {
       DataContextManager.getInstance().destroyContext(this.runId);
 
       if (hasFailedNodes) {
-        const failedExecution = this.nodeExecutions.find(
-          (ne) => ne.nodeId === failedNodeIds[0] && ne.status === "failed",
-        );
+        const firstFailedNodeId = failedNodeIds[0];
         const errorMessage =
-          failedExecution?.error ||
+          this.failedNodeErrors.get(firstFailedNodeId) ||
           `Workflow completed with failures in nodes: ${failedNodeIds.join(
             ", ",
           )}`;
@@ -381,16 +370,14 @@ export class WorkflowEngine {
           success: false,
           error: errorMessage,
           result: this.store.getAllResults(),
-          nodeExecutions: this.nodeExecutions,
-          executionOrder: this.executionOrder,
+          executionOrder: this.getExecutionOrderForResponse(),
         };
       }
 
       return {
         success: true,
         result: this.store.getAllResults(),
-        nodeExecutions: this.nodeExecutions,
-        executionOrder: this.executionOrder,
+        executionOrder: this.getExecutionOrderForResponse(),
       };
     } catch (error) {
       console.error("❌ Workflow execution failed:", error);
@@ -402,8 +389,7 @@ export class WorkflowEngine {
       return {
         success: false,
         error: message,
-        nodeExecutions: this.nodeExecutions,
-        executionOrder: this.executionOrder,
+        executionOrder: this.getExecutionOrderForResponse(),
       };
     }
   }
@@ -569,28 +555,9 @@ export class WorkflowEngine {
         console.log(`✅ Node ${nodeId} result:`, result);
       }
 
-      const normalizedOutput = normalizeOutput(result, {
-        nodeId,
-        nodeName: node.name,
-        category: node.category,
-      });
-
-      // const itemCount = Array.isArray(normalizedOutput.data)
-      //   ? normalizedOutput.data.length
-      //   : normalizedOutput.data !== null && normalizedOutput.data !== undefined
-      //   ? 1
-      //   : 0;
-
-      this.nodeExecutions.push({
-        nodeId,
-        nodeName: node.name,
-        status: normalizedOutput.success ? "success" : "failed",
-        input,
-        output: normalizedOutput,
-        //itemCount,
-        error: normalizedOutput.error,
-      });
-      this.executionOrder.push(nodeId);
+      if (!this.silent) {
+        this.executionOrder.push(nodeId);
+      }
 
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
@@ -678,34 +645,12 @@ export class WorkflowEngine {
       // const completedAt = new Date().toISOString();
       // const durationMs = Date.now() - startTime;
 
-      const normalizedError = normalizeOutput(
-        {
-          success: false,
-          error: errorMessage,
-        },
-        {
-          nodeId,
-          nodeName: node.name,
-          // startTime: startTime,
-          category: node.category,
-        },
-      );
-
-      this.nodeExecutions.push({
-        nodeId,
-        nodeName: node.name,
-        // startedAt,
-        // completedAt,
-        // durationMs,
-        status: "failed",
-        input,
-        output: normalizedError,
-        itemCount: 0,
-        error: errorMessage,
-      });
-      this.executionOrder.push(nodeId);
+      if (!this.silent) {
+        this.executionOrder.push(nodeId);
+      }
 
       this.failed.add(nodeId);
+      this.failedNodeErrors.set(nodeId, errorMessage);
       this.store.setNodeError(nodeId, error);
 
       // ALWAYS rethrow cancellation errors - they should never be swallowed

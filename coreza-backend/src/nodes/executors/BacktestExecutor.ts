@@ -24,8 +24,9 @@ import {
   NormalizeContext,
 } from "../../utils/normalizeOutput";
 
-// Key prefix for storing SimBroker instances in dataContext
+// Key prefix for storing SimBroker instances in per-run executor context
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
+const SIM_BROKER_CACHE_KEY = "__simBrokerCache";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
@@ -70,9 +71,25 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
+  private getContextBrokerCache(context: any): Map<string, SimBroker> {
+    if (!context) {
+      return new Map<string, SimBroker>();
+    }
+
+    const existing = context[SIM_BROKER_CACHE_KEY];
+    if (existing instanceof Map) {
+      return existing as Map<string, SimBroker>;
+    }
+
+    const cache = new Map<string, SimBroker>();
+    context[SIM_BROKER_CACHE_KEY] = cache;
+    return cache;
+  }
+
   /**
-   * Get or create SimBroker instance from dataContext
-   * Uses dataContext for in-memory sharing across nodes in the same execution
+   * Get or create SimBroker instance from the workflow context.
+   * We keep one broker per backtest ID for the duration of a run so state
+   * (cash/positions/orders) is shared across Backtest nodes.
    */
   private getSimBroker(
     backtestId: string,
@@ -80,37 +97,25 @@ export class BacktestExecutor implements INodeExecutor {
     config?: Partial<SimBrokerConfig>,
   ): SimBroker {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
+    const cache = this.getContextBrokerCache(context);
 
-    // Check if instance exists in dataContext
-    const dataContext = context?.dataContext;
-    if (dataContext?.getDataByKey) {
-      const existing = dataContext.getDataByKey(key);
-      if (existing instanceof SimBroker) {
-        return existing;
-      }
+    const existing = cache.get(key);
+    if (existing) {
+      return existing;
     }
 
-    // Create new instance
     const simBroker = new SimBroker(backtestId, config);
-
-    // Store in dataContext for reuse
-    if (dataContext?.setData) {
-      dataContext.setData(key, simBroker, { type: "simBroker" });
-    }
+    cache.set(key, simBroker);
 
     return simBroker;
   }
 
-  /**
-   * Remove SimBroker instance from dataContext after backtest completion
-   */
+  /** Remove SimBroker instance from context after backtest completion. */
   private cleanupSimBroker(backtestId: string, context: any): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    const dataContext = context?.dataContext;
-    if (dataContext?.deleteData) {
-      dataContext.deleteData(key);
-    } else if (dataContext?.getStore) {
-      dataContext.getStore().delete(key);
+    const cache = context?.[SIM_BROKER_CACHE_KEY];
+    if (cache instanceof Map) {
+      cache.delete(key);
     }
   }
 
@@ -186,7 +191,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = backtest.id;
 
-      // Initialize SimBroker - SYNCHRONOUS, stored in dataContext
+      // Initialize SimBroker - SYNCHRONOUS, cached in context
       const simBroker = this.getSimBroker(backtestId, context, config);
       simBroker.initializePortfolio();
 
@@ -254,7 +259,7 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      // Get SimBroker instance from dataContext - SYNCHRONOUS
+      // Get SimBroker instance from context cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId, context);
 
       // Parse current bar from input (passed from loop iteration)
@@ -381,7 +386,7 @@ export class BacktestExecutor implements INodeExecutor {
         Object.assign(prices, params.prices);
       }
 
-      // Get SimBroker from dataContext - SYNCHRONOUS
+      // Get SimBroker from context cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId, context);
 
       // Process pending orders with current bar - SYNCHRONOUS
@@ -429,7 +434,7 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      // Get SimBroker from dataContext - SYNCHRONOUS
+      // Get SimBroker from context cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId, context);
 
       // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
@@ -512,7 +517,7 @@ export class BacktestExecutor implements INodeExecutor {
           .insert(snapshotRows);
       }
 
-      // Cleanup: remove SimBroker from dataContext (free memory)
+      // Cleanup: remove SimBroker from context cache (free memory)
       this.cleanupSimBroker(backtestId, context);
 
       console.log(
@@ -587,7 +592,7 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      // Get SimBroker from dataContext - SYNCHRONOUS
+      // Get SimBroker from context cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId, context);
       const portfolioState = simBroker.getPortfolioState();
 

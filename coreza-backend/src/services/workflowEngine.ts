@@ -370,14 +370,14 @@ export class WorkflowEngine {
           success: false,
           error: errorMessage,
           result: this.store.getAllResults(),
-          executionOrder: this.getExecutionOrderForResponse(),
+          executionOrder: this.executionOrder,
         };
       }
 
       return {
         success: true,
         result: this.store.getAllResults(),
-        executionOrder: this.getExecutionOrderForResponse(),
+        executionOrder: this.executionOrder,
       };
     } catch (error) {
       console.error("❌ Workflow execution failed:", error);
@@ -389,7 +389,7 @@ export class WorkflowEngine {
       return {
         success: false,
         error: message,
-        executionOrder: this.getExecutionOrderForResponse(),
+        executionOrder: this.executionOrder,
       };
     }
   }
@@ -555,9 +555,7 @@ export class WorkflowEngine {
         console.log(`✅ Node ${nodeId} result:`, result);
       }
 
-      if (!this.silent) {
-        this.executionOrder.push(nodeId);
-      }
+      this.executionOrder.push(nodeId);
 
       this.store.setNodeResult(nodeId, result);
       this.executed.add(nodeId);
@@ -645,9 +643,7 @@ export class WorkflowEngine {
       // const completedAt = new Date().toISOString();
       // const durationMs = Date.now() - startTime;
 
-      if (!this.silent) {
-        this.executionOrder.push(nodeId);
-      }
+      this.executionOrder.push(nodeId);
 
       this.failed.add(nodeId);
       this.failedNodeErrors.set(nodeId, errorMessage);

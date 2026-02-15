@@ -35,6 +35,7 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
  * - Multi-path execution
  */
 export class NodeRouter {
+  public silent = false;
   /**
    * Creates a new NodeRouter instance
    * @param edges - Array of all workflow edges
@@ -55,15 +56,19 @@ export class NodeRouter {
     // Boolean result: true/false branch
     if (typeof result === "boolean") {
       const handles = [result ? "true" : "false"];
-      console.log(
-        `[NodeRouter] Boolean result: ${result} -> handles: ${handles}`
-      );
+      if (!this.silent) {
+        console.log(
+          `[NodeRouter] Boolean result: ${result} -> handles: ${handles}`
+        );
+      }
       return handles;
     }
 
     // String result: direct handle name
     if (typeof result === "string") {
-      console.log(`[NodeRouter] String result: ${result}`);
+      if (!this.silent) {
+        console.log(`[NodeRouter] String result: ${result}`);
+      }
       return [result];
     }
 
@@ -79,12 +84,16 @@ export class NodeRouter {
         .filter(([, v]) => !!v)
         .map(([k]) => k);
 
-      console.log(`[NodeRouter] Object result -> truthy handles: ${handles}`);
+      if (!this.silent) {
+        console.log(`[NodeRouter] Object result -> truthy handles: ${handles}`);
+      }
       return handles;
     }
 
     // Default path for unhandled results
-    console.log("[NodeRouter] Using default handle");
+    if (!this.silent) {
+      console.log("[NodeRouter] Using default handle");
+    }
     return ["default", ""];
   }
 
@@ -98,9 +107,11 @@ export class NodeRouter {
    */
   select(node: WorkflowNode, result: any) {
     const outgoingEdges = this.edges.filter((e) => e.source === node.id);
-    console.log(
-      `[NodeRouter] Selecting edges from ${node.name}, found ${outgoingEdges.length} outgoing edges`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeRouter] Selecting edges from ${node.name}, found ${outgoingEdges.length} outgoing edges`
+      );
+    }
 
     // Special handling for conditional nodes
     if (node.name === "If" || node.name === "Switch") {
@@ -112,16 +123,20 @@ export class NodeRouter {
         return allow.has(h);
       });
 
-      console.log(
-        `[NodeRouter] Conditional node ${node.name} -> selected ${selectedEdges.length} edges`
-      );
+      if (!this.silent) {
+        console.log(
+          `[NodeRouter] Conditional node ${node.name} -> selected ${selectedEdges.length} edges`
+        );
+      }
       return selectedEdges;
     }
 
     // For data nodes (Alpaca, indicators, etc.), return ALL outgoing edges
-    console.log(
-      `[NodeRouter] Data node ${node.name} -> returning all ${outgoingEdges.length} edges`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeRouter] Data node ${node.name} -> returning all ${outgoingEdges.length} edges`
+      );
+    }
     return outgoingEdges;
   }
 
@@ -137,7 +152,9 @@ export class NodeRouter {
       (e) =>
         e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
     );
-    console.log(`[NodeRouter] Loop ${loopId} body edges: ${bodyEdges.length}`);
+    if (!this.silent) {
+      console.log(`[NodeRouter] Loop ${loopId} body edges: ${bodyEdges.length}`);
+    }
     return bodyEdges;
   }
 
@@ -152,9 +169,11 @@ export class NodeRouter {
     const completionEdges = this.edges.filter(
       (e) => e.source === loopId && e.sourceHandle === "done"
     );
-    console.log(
-      `[NodeRouter] Loop ${loopId} done edges: ${completionEdges.length}`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeRouter] Loop ${loopId} done edges: ${completionEdges.length}`
+      );
+    }
     return completionEdges;
   }
 
@@ -166,9 +185,11 @@ export class NodeRouter {
    */
   getOutgoingEdges(nodeId: string) {
     const edges = this.edges.filter((e) => e.source === nodeId);
-    console.log(
-      `[NodeRouter] Node ${nodeId} has ${edges.length} outgoing edges`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeRouter] Node ${nodeId} has ${edges.length} outgoing edges`
+      );
+    }
     return edges;
   }
 }

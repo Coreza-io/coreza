@@ -78,6 +78,7 @@ export class WorkflowEngine {
   // DataContext for execution-scoped RAM storage (shared by all tools)
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
+  private silent = false;
 
   constructor(
     private runId: string,
@@ -108,6 +109,11 @@ export class WorkflowEngine {
     const hasBacktestNode = this.nodes.some((node) =>
       (node.name || node.node_type || "").toLowerCase().includes("backtest"),
     );
+    this.silent = hasBacktestNode;
+    if (this.silent) {
+      this.queue.silent = true;
+      this.router.silent = true;
+    }
     this.indicatorStateManager = new IndicatorStateManager(
       hasBacktestNode ? 86400 : undefined,
     );
@@ -282,6 +288,10 @@ export class WorkflowEngine {
         );
       } else {
         console.log(`✅ Workflow execution completed successfully`);
+      }
+
+      if (this.silent && this.indicatorStateManager) {
+        await this.indicatorStateManager.flushToRedis();
       }
 
       // Log DataContext stats before cleanup
@@ -488,10 +498,13 @@ export class WorkflowEngine {
         abortSignal: this.abortSignal,
         // Function for executors to check cancellation
         checkCancellation: this.checkCancellation.bind(this),
+        silent: this.silent,
       };
 
       const result = await this.executeNode(node, input, executionContext);
-      console.log(`✅ Node ${nodeId} result:`, result);
+      if (!this.silent) {
+        console.log(`✅ Node ${nodeId} result:`, result);
+      }
 
       // Record successful execution
       const completedAt = new Date().toISOString();
@@ -564,7 +577,9 @@ export class WorkflowEngine {
       const edges = this.router.select(node, result);
       const targetSummary =
         edges.length > 0 ? edges.map((edge) => edge.target).join(",") : "none";
-      console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+      if (!this.silent) {
+        console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+      }
 
       if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
@@ -670,7 +685,9 @@ export class WorkflowEngine {
     input: NodeInput,
     context?: any
   ): Promise<NodeResult> {
-    console.log(`🔧 Executing node ${node.id} (${node.name})`);
+    if (!this.silent) {
+      console.log(`🔧 Executing node ${node.id} (${node.name})`);
+    }
 
     const nodeName = node.name ?? "";
 

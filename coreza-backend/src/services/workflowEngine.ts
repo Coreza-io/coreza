@@ -76,6 +76,9 @@ export class WorkflowEngine {
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
+  private nodeById = new Map<string, WorkflowNode>();
+  private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
+  private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
 
   constructor(
     private runId: string,
@@ -89,7 +92,7 @@ export class WorkflowEngine {
     this.router = new NodeRouter(edges);
     // Add node type lookup to router
     (this.router as any).getSourceNodeType = (nodeId: string) => {
-      const node = this.nodes.find((n) => n.id === nodeId);
+      const node = this.nodeById.get(nodeId);
       return node?.type;
     };
     this.queue = new NodeQueueManager();
@@ -114,6 +117,27 @@ export class WorkflowEngine {
     this.indicatorStateManager = new IndicatorStateManager(
       hasBacktestNode ? 86400 : undefined,
     );
+
+    for (const node of this.nodes) {
+      this.nodeById.set(node.id, node);
+    }
+
+    for (const edge of this.edges) {
+      const incoming = this.incomingEdgesByTarget.get(edge.target);
+      if (incoming) {
+        incoming.push(edge);
+      } else {
+        this.incomingEdgesByTarget.set(edge.target, [edge]);
+      }
+
+      const outgoing = this.outgoingEdgesBySource.get(edge.source);
+      if (outgoing) {
+        outgoing.push(edge);
+      } else {
+        this.outgoingEdgesBySource.set(edge.source, [edge]);
+      }
+    }
+
     console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
   }
 
@@ -200,21 +224,63 @@ export class WorkflowEngine {
   }
 
   private getIncomingEdges = (targetId: string) =>
-    this.edges.filter((e) => e.target === targetId);
+    this.incomingEdgesByTarget.get(targetId) ?? [];
+
+  private getOutgoingEdges = (sourceId: string) =>
+    this.outgoingEdgesBySource.get(sourceId) ?? [];
 
   private isLoopNode = (nodeId: string) => {
-    const n = this.nodes.find((x) => x.id === nodeId);
+    const n = this.nodeById.get(nodeId);
     return n?.name === "Loop";
   };
 
   private isSubNode = (nodeId: string) => {
-    const n = this.nodes.find((x) => x.id === nodeId);
+    const n = this.nodeById.get(nodeId);
     return (n as any)?.node_type === "sub";
   };
 
+  private selectEdges(node: WorkflowNode, result: any): WorkflowEdge[] {
+    const outgoingEdges = this.getOutgoingEdges(node.id);
+    if (node.name === "If" || node.name === "Switch") {
+      const resultData = result?.data;
+      let chosen: string[] = ["default", ""];
+
+      if (typeof resultData === "boolean") {
+        chosen = [resultData ? "true" : "false"];
+      } else if (typeof resultData === "string") {
+        chosen = [resultData];
+      } else if (
+        resultData &&
+        typeof resultData === "object" &&
+        ("true" in resultData || "false" in resultData)
+      ) {
+        chosen = Object.entries(resultData)
+          .filter(([, value]) => !!value)
+          .map(([key]) => key);
+      }
+
+      const allowed = new Set(chosen);
+      return outgoingEdges.filter((edge) => allowed.has(edge.sourceHandle ?? ""));
+    }
+
+    return outgoingEdges;
+  }
+
+  private loopBodyEdges(loopId: string): WorkflowEdge[] {
+    return this.getOutgoingEdges(loopId).filter(
+      (edge) => !edge.sourceHandle || edge.sourceHandle === "loop",
+    );
+  }
+
+  private doneEdges(loopId: string): WorkflowEdge[] {
+    return this.getOutgoingEdges(loopId).filter(
+      (edge) => edge.sourceHandle === "done",
+    );
+  }
+
   private areDependenciesSatisfied(nodeId: string): boolean {
     if (this.isLoopNode(nodeId)) {
-      const loopNode = this.nodes.find((n) => n.id === nodeId);
+      const loopNode = this.nodeById.get(nodeId);
       const loopWaits = Boolean((loopNode as any)?.values?.loopWaits);
       if (!loopWaits) return true;
     }
@@ -365,7 +431,7 @@ export class WorkflowEngine {
 
     // If startNodeId is provided (loop continuation or parallel loop item), start from that specific node
     if (startNodeId) {
-      const startNode = this.nodes.find((n) => n.id === startNodeId);
+      const startNode = this.nodeById.get(startNodeId);
       if (startNode) {
         console.log(
           `🔗 Starting execution from specific node: ${startNodeId} (${
@@ -397,7 +463,7 @@ export class WorkflowEngine {
       const entryNodes = this.nodes.filter(
         (n) =>
           (n.node_type === "trigger" || n.node_type === "backtest") &&
-          !this.edges.some((e) => e.target === n.id),
+          (this.incomingEdgesByTarget.get(n.id)?.length ?? 0) === 0,
       );
 
       for (const node of entryNodes) {
@@ -405,7 +471,7 @@ export class WorkflowEngine {
           console.log(
             `🟡 Skipping re-run for ${node.name || node.node_type} node`,
           );
-          const edges = this.router.select(node, initialInput);
+          const edges = this.selectEdges(node, initialInput);
           for (const edge of edges) {
             this.store.setNodeResult(node.id, initialInput);
             this.executed.add(node.id);
@@ -441,7 +507,7 @@ export class WorkflowEngine {
 
   private async executeOnce(item: QueueItem): Promise<void> {
     const { nodeId, input, meta } = item;
-    const node = this.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     if (!node) return;
 
     // FE-style retry guard when dependencies are missing
@@ -544,13 +610,13 @@ export class WorkflowEngine {
 
         if (result.control?.loopCompleted) {
           // Sequential mode - loop completed, route to done edges
-          const doneEdges = this.router.doneEdges(nodeId);
+          const doneEdges = this.doneEdges(nodeId);
           for (const edge of doneEdges) {
             await this.routeEdge(edge, result, meta);
           }
         } else if (result.control?.loopIteration) {
           // Sequential mode - loop iteration, route to loop body edges
-          const loopEdges = this.router.loopBodyEdges(nodeId);
+          const loopEdges = this.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
             const iterMeta: IterMeta = {
               ...(meta || {}),
@@ -563,7 +629,7 @@ export class WorkflowEngine {
         return; // don't clear loop node payloads
       }
 
-      const edges = this.router.select(node, result);
+      const edges = this.selectEdges(node, result);
       if (!this.silent) {
         const targetSummary =
           edges.length > 0
@@ -575,7 +641,7 @@ export class WorkflowEngine {
 
       if (meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
-        const loopNode = this.nodes.find((n) => n.id === loopNodeId);
+        const loopNode = this.nodeById.get(loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
         if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
           const currentResults =
@@ -649,7 +715,7 @@ export class WorkflowEngine {
 
       if (meta?.originLoopId) {
         const originLoopId = meta.originLoopId;
-        const loopNode = this.nodes.find((n) => n.id === originLoopId);
+        const loopNode = this.nodeById.get(originLoopId);
         const config = loopNode?.values || {};
         if (config.continueOnError) {
           const currentResults =

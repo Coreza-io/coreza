@@ -47,9 +47,6 @@ interface ExecutionContext {
 export interface NodeExecutionLog {
   nodeId: string;
   nodeName: string;
-  startedAt: string;
-  completedAt: string;
-  durationMs: number;
   status: "success" | "failed" | "skipped";
   input: any;
   output: any;
@@ -87,7 +84,7 @@ export class WorkflowEngine {
     private nodes: WorkflowNode[],
     private edges: WorkflowEdge[],
     mode: "best-effort" | "fail-fast" = "best-effort",
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
   ) {
     this.router = new NodeRouter(edges);
     // Add node type lookup to router
@@ -132,7 +129,7 @@ export class WorkflowEngine {
   private resolveDeep(
     val: any,
     input: any,
-    allNodeData: Record<string, any>
+    allNodeData: Record<string, any>,
   ): any {
     if (typeof val === "string" && val.includes("{{")) {
       const resolved = resolveReferences(val, input, allNodeData, this.nodes);
@@ -147,7 +144,7 @@ export class WorkflowEngine {
         Object.entries(val).map(([k, v]) => [
           k,
           this.resolveDeep(v, input, allNodeData),
-        ])
+        ]),
       );
     }
     return val; // number, boolean, null, undefined
@@ -242,7 +239,7 @@ export class WorkflowEngine {
   private async routeEdge(
     edge: WorkflowEdge,
     payload: any,
-    meta?: IterMeta
+    meta?: IterMeta,
   ): Promise<void> {
     // Sub nodes don't produce workflow output, they just provide config
     if (this.isSubNode(edge.source)) {
@@ -253,13 +250,13 @@ export class WorkflowEngine {
     this.markEdgePayload(edge.id, payload);
     if (!this.areDependenciesSatisfied(edge.target)) return;
 
-    const target = this.nodes.find((n) => n.id === edge.target);
+    //const target = this.nodes.find((n) => n.id === edge.target);
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
   async execute(
     initialInput?: any,
-    startNodeId?: string
+    startNodeId?: string,
   ): Promise<{
     success: boolean;
     result?: any;
@@ -271,7 +268,7 @@ export class WorkflowEngine {
       console.log(
         `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
           startNodeId ? ` from node ${startNodeId}` : ""
-        }`
+        }`,
       );
       this.MAX_RETRIES = this.nodes.length * 2;
 
@@ -284,7 +281,7 @@ export class WorkflowEngine {
         console.log(
           `⚠️ Workflow completed with ${
             failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")}`
+          } failed node(s): ${failedNodeIds.join(", ")}`,
         );
       } else {
         console.log(`✅ Workflow execution completed successfully`);
@@ -298,7 +295,7 @@ export class WorkflowEngine {
       const ctxStats = this.dataContext.getStats();
       console.log(
         `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
-          `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`
+          `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
       );
 
       // Cleanup DataContext on successful completion
@@ -306,12 +303,12 @@ export class WorkflowEngine {
 
       if (hasFailedNodes) {
         const failedExecution = this.nodeExecutions.find(
-          (ne) => ne.nodeId === failedNodeIds[0] && ne.status === "failed"
+          (ne) => ne.nodeId === failedNodeIds[0] && ne.status === "failed",
         );
         const errorMessage =
           failedExecution?.error ||
           `Workflow completed with failures in nodes: ${failedNodeIds.join(
-            ", "
+            ", ",
           )}`;
 
         return {
@@ -358,7 +355,7 @@ export class WorkflowEngine {
       const nodeCount = Object.keys(parentStore).length;
       if (nodeCount > 0) {
         console.log(
-          `📥 Pre-populating store with ${nodeCount} parent node outputs`
+          `📥 Pre-populating store with ${nodeCount} parent node outputs`,
         );
         for (const [nodeId, result] of Object.entries(parentStore)) {
           this.store.setNodeResult(nodeId, result);
@@ -373,7 +370,7 @@ export class WorkflowEngine {
         console.log(
           `🔗 Starting execution from specific node: ${startNodeId} (${
             startNode.name || startNode.node_type
-          })`
+          })`,
         );
 
         // Pre-mark all incoming edge payloads so dependency check passes
@@ -381,7 +378,7 @@ export class WorkflowEngine {
         const incomingEdges = this.getIncomingEdges(startNodeId);
         for (const edge of incomingEdges) {
           console.log(
-            `📌 Pre-marking edge payload: ${edge.source} → ${edge.target}`
+            `📌 Pre-marking edge payload: ${edge.source} → ${edge.target}`,
           );
           this.markEdgePayload(edge.id, initialInput);
         }
@@ -390,7 +387,7 @@ export class WorkflowEngine {
         startedFromSpecificNode = true;
       } else {
         console.warn(
-          `⚠️ Start node ${startNodeId} not found in nodes list, falling back to entry nodes`
+          `⚠️ Start node ${startNodeId} not found in nodes list, falling back to entry nodes`,
         );
       }
     }
@@ -400,13 +397,13 @@ export class WorkflowEngine {
       const entryNodes = this.nodes.filter(
         (n) =>
           (n.node_type === "trigger" || n.node_type === "backtest") &&
-          !this.edges.some((e) => e.target === n.id)
+          !this.edges.some((e) => e.target === n.id),
       );
 
       for (const node of entryNodes) {
         if (node.node_type === "trigger") {
           console.log(
-            `🟡 Skipping re-run for ${node.name || node.node_type} node`
+            `🟡 Skipping re-run for ${node.name || node.node_type} node`,
           );
           const edges = this.router.select(node, initialInput);
           for (const edge of edges) {
@@ -456,8 +453,8 @@ export class WorkflowEngine {
         this.store.setNodeError(
           nodeId,
           new Error(
-            `Dependency not satisfied after ${this.MAX_RETRIES} retries`
-          )
+            `Dependency not satisfied after ${this.MAX_RETRIES} retries`,
+          ),
         );
         return;
       }
@@ -466,9 +463,9 @@ export class WorkflowEngine {
       return;
     }
 
-    // Track execution timing
-    const startedAt = new Date().toISOString();
-    const startTime = Date.now();
+    // // Track execution timing
+    // const startedAt = new Date().toISOString();
+    // const startTime = Date.now();
 
     try {
       // Check if workflow was cancelled before executing this node
@@ -506,33 +503,25 @@ export class WorkflowEngine {
         console.log(`✅ Node ${nodeId} result:`, result);
       }
 
-      // Record successful execution
-      const completedAt = new Date().toISOString();
-      const durationMs = Date.now() - startTime;
-
       const normalizedOutput = normalizeOutput(result, {
         nodeId,
-        nodeName: node.name || nodeId,
-        startTime: startTime,
+        nodeName: node.name,
         category: node.category,
       });
 
-      const itemCount = Array.isArray(normalizedOutput.data)
-        ? normalizedOutput.data.length
-        : normalizedOutput.data !== null && normalizedOutput.data !== undefined
-        ? 1
-        : 0;
+      // const itemCount = Array.isArray(normalizedOutput.data)
+      //   ? normalizedOutput.data.length
+      //   : normalizedOutput.data !== null && normalizedOutput.data !== undefined
+      //   ? 1
+      //   : 0;
 
       this.nodeExecutions.push({
         nodeId,
-        nodeName: node.name || nodeId,
-        startedAt,
-        completedAt,
-        durationMs,
+        nodeName: node.name,
         status: normalizedOutput.success ? "success" : "failed",
         input,
         output: normalizedOutput,
-        itemCount,
+        //itemCount,
         error: normalizedOutput.error,
       });
       this.executionOrder.push(nodeId);
@@ -545,10 +534,10 @@ export class WorkflowEngine {
         if (result.control?.parallelDistributed) {
           // Parallel mode - aggregator will handle continuation
           console.log(
-            `🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`
+            `🔄 Loop ${nodeId}: Parallel execution distributed to BullMQ workers`,
           );
           console.log(
-            `   Items: ${result.control.itemCount}, MaxConcurrency: ${result.control.maxConcurrency}`
+            `   Items: ${result.control.itemCount}, MaxConcurrency: ${result.control.maxConcurrency}`,
           );
           return;
         }
@@ -575,9 +564,12 @@ export class WorkflowEngine {
       }
 
       const edges = this.router.select(node, result);
-      const targetSummary =
-        edges.length > 0 ? edges.map((edge) => edge.target).join(",") : "none";
       if (!this.silent) {
+        const targetSummary =
+          edges.length > 0
+            ? edges.map((edge) => edge.target).join(",")
+            : "none";
+
         console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
       }
 
@@ -592,7 +584,7 @@ export class WorkflowEngine {
           this.store.setNodeState(
             loopNodeId,
             "aggregatedResults",
-            currentResults
+            currentResults,
           );
         }
       }
@@ -613,12 +605,12 @@ export class WorkflowEngine {
         `${isCancellation ? "🛑" : "❌"} Node ${nodeId} ${
           isCancellation ? "cancelled" : "failed"
         }:`,
-        error
+        error,
       );
 
       // Record failed execution
-      const completedAt = new Date().toISOString();
-      const durationMs = Date.now() - startTime;
+      // const completedAt = new Date().toISOString();
+      // const durationMs = Date.now() - startTime;
 
       const normalizedError = normalizeOutput(
         {
@@ -627,18 +619,18 @@ export class WorkflowEngine {
         },
         {
           nodeId,
-          nodeName: node.name || nodeId,
-          startTime: startTime,
+          nodeName: node.name,
+          // startTime: startTime,
           category: node.category,
-        }
+        },
       );
 
       this.nodeExecutions.push({
         nodeId,
-        nodeName: node.name || nodeId,
-        startedAt,
-        completedAt,
-        durationMs,
+        nodeName: node.name,
+        // startedAt,
+        // completedAt,
+        // durationMs,
         status: "failed",
         input,
         output: normalizedError,
@@ -666,7 +658,7 @@ export class WorkflowEngine {
           this.store.setNodeState(
             originLoopId,
             "aggregatedResults",
-            currentResults
+            currentResults,
           );
           this.enqueue({ nodeId: originLoopId, input: {}, meta: {} });
           return;
@@ -683,7 +675,7 @@ export class WorkflowEngine {
   async executeNode(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     if (!this.silent) {
       console.log(`🔧 Executing node ${node.id} (${node.name})`);
@@ -693,6 +685,7 @@ export class WorkflowEngine {
 
     // Map node categories for compatibility - include AIAgent
     let category = node.category;
+
     if (
       nodeName === "If" ||
       nodeName === "Switch" ||
@@ -703,7 +696,7 @@ export class WorkflowEngine {
       category = "ControlFlow";
     } else if (
       ["Scheduler", "trigger", "Visualize", "webhook", "httprequest"].includes(
-        nodeName
+        nodeName,
       )
     ) {
       category = "Utility";
@@ -732,7 +725,7 @@ export class WorkflowEngine {
 
     if (!executor) {
       throw new Error(
-        `Unsupported node category: ${category} for node type: ${node.name}`
+        `Unsupported node category: ${category} for node type: ${node.name}`,
       );
     }
 
@@ -773,7 +766,7 @@ export async function executeWorkflow(
   userId: string,
   nodes: any[],
   edges: any[],
-  opts?: ExecutionOptions
+  opts?: ExecutionOptions,
 ): Promise<{ success: boolean; result?: any; error?: string }> {
   const workflowEngine = new WorkflowEngine(
     runId,
@@ -782,7 +775,7 @@ export async function executeWorkflow(
     nodes,
     edges,
     opts?.mode,
-    opts?.abortSignal
+    opts?.abortSignal,
   );
   return await workflowEngine.execute(opts?.initialInput, opts?.startNodeId);
 }

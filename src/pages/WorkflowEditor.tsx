@@ -847,25 +847,25 @@ const WorkflowEditorContent = () => {
     try {
       const API_URL = API_BASE_URL;
 
-      // Check backend health first for both activation and deactivation
-      try {
-        const healthCheck = await fetch(`${API_URL}/health`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
+      // // Check backend health first for both activation and deactivation
+      // try {
+      //   const healthCheck = await fetch(`${API_URL}/health`, {
+      //     method: "GET",
+      //     headers: { "Content-Type": "application/json" },
+      //   });
 
-        if (!healthCheck.ok) {
-          throw new Error("Backend server is not responding");
-        }
-      } catch (healthError: any) {
-        console.error("Backend health check failed:", healthError);
-        toast({
-          title: "Error",
-          description: `Backend server is not available. Please ensure your backend is running on ${API_BASE_URL}`,
-          variant: "destructive",
-        });
-        return;
-      }
+      //   if (!healthCheck.ok) {
+      //     throw new Error("Backend server is not responding");
+      //   }
+      // } catch (healthError: any) {
+      //   console.error("Backend health check failed:", healthError);
+      //   toast({
+      //     title: "Error",
+      //     description: `Backend server is not available. Please ensure your backend is running on ${API_BASE_URL}`,
+      //     variant: "destructive",
+      //   });
+      //   return;
+      // }
 
       const newStatus = !isActive;
 

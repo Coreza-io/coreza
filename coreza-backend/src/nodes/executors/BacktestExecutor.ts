@@ -17,10 +17,15 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, SimBrokerConfig, Bar } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
-import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+  NormalizeContext,
+} from "../../utils/normalizeOutput";
 
 // Key prefix for storing SimBroker instances in dataContext
-const SIM_BROKER_KEY_PREFIX = 'simBroker:';
+const SIM_BROKER_KEY_PREFIX = "simBroker:";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
@@ -28,15 +33,15 @@ export class BacktestExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
-    const startTime = Date.now();
+    // const startTime = Date.now();
     const nodeName = node.name;
     const normalizeCtx: NormalizeContext = {
       nodeId: node.id,
       nodeName,
       category: this.category,
-      startTime,
+      // startTime,
     };
 
     switch (nodeName) {
@@ -49,12 +54,19 @@ export class BacktestExecutor implements INodeExecutor {
       case "BacktestResults":
         return this.executeBacktestResults(node, input, context, normalizeCtx);
       case "BacktestPortfolio":
-        return this.executeBacktestPortfolio(node, input, context, normalizeCtx);
+        return this.executeBacktestPortfolio(
+          node,
+          input,
+          context,
+          normalizeCtx,
+        );
       default:
-        return toNodeResult(createErrorOutput(
-          `Unknown backtest node type: ${nodeName}`,
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput(
+            `Unknown backtest node type: ${nodeName}`,
+            normalizeCtx,
+          ),
+        );
     }
   }
 
@@ -62,9 +74,13 @@ export class BacktestExecutor implements INodeExecutor {
    * Get or create SimBroker instance from dataContext
    * Uses dataContext for in-memory sharing across nodes in the same execution
    */
-  private getSimBroker(backtestId: string, context: any, config?: Partial<SimBrokerConfig>): SimBroker {
+  private getSimBroker(
+    backtestId: string,
+    context: any,
+    config?: Partial<SimBrokerConfig>,
+  ): SimBroker {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    
+
     // Check if instance exists in dataContext
     const dataContext = context?.dataContext;
     if (dataContext?.getDataByKey) {
@@ -73,15 +89,15 @@ export class BacktestExecutor implements INodeExecutor {
         return existing;
       }
     }
-    
+
     // Create new instance
     const simBroker = new SimBroker(backtestId, config);
-    
+
     // Store in dataContext for reuse
     if (dataContext?.setData) {
-      dataContext.setData(key, simBroker, { type: 'simBroker' });
+      dataContext.setData(key, simBroker, { type: "simBroker" });
     }
-    
+
     return simBroker;
   }
 
@@ -103,7 +119,7 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
+    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -114,10 +130,12 @@ export class BacktestExecutor implements INodeExecutor {
       const workflowId = context?.workflowId;
 
       if (!userId || !workflowId) {
-        return toNodeResult(createErrorOutput(
-          "User ID and Workflow ID required for backtest",
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput(
+            "User ID and Workflow ID required for backtest",
+            normalizeCtx,
+          ),
+        );
       }
 
       // Parse configuration
@@ -156,12 +174,14 @@ export class BacktestExecutor implements INodeExecutor {
       if (insertError || !backtest) {
         console.error(
           "[BacktestExecutor] Failed to create backtest session:",
-          insertError
+          insertError,
         );
-        return toNodeResult(createErrorOutput(
-          `Failed to create backtest: ${insertError?.message}`,
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput(
+            `Failed to create backtest: ${insertError?.message}`,
+            normalizeCtx,
+          ),
+        );
       }
 
       const backtestId = backtest.id;
@@ -171,25 +191,30 @@ export class BacktestExecutor implements INodeExecutor {
       simBroker.initializePortfolio();
 
       console.log(
-        `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital} (in-memory mode)`
+        `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital} (in-memory mode)`,
       );
 
-      return toNodeResult(createSuccessOutput({
-        backtest_id: backtestId,
-        initial_capital: config.initialCapital,
-        start_date:
-          params.start_date || new Date().toISOString().split("T")[0],
-        end_date: params.end_date || new Date().toISOString().split("T")[0],
-        config: {
-          fill_model: config.fillModel,
-          slippage_model: config.slippageModel,
-          slippage_value: config.slippageValue,
-          commission_model: config.commissionModel,
-          commission_value: config.commissionValue,
-          allow_short: config.allowShort,
-        },
-        status: "running",
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            backtest_id: backtestId,
+            initial_capital: config.initialCapital,
+            start_date:
+              params.start_date || new Date().toISOString().split("T")[0],
+            end_date: params.end_date || new Date().toISOString().split("T")[0],
+            config: {
+              fill_model: config.fillModel,
+              slippage_model: config.slippageModel,
+              slippage_value: config.slippageValue,
+              commission_model: config.commissionModel,
+              commission_value: config.commissionValue,
+              allow_short: config.allowShort,
+            },
+            status: "running",
+          },
+          normalizeCtx,
+        ),
+      );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
       return toNodeResult(createErrorOutput(error, normalizeCtx));
@@ -201,7 +226,7 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
+    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -210,7 +235,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
+        return toNodeResult(
+          createErrorOutput("backtest_id is required", normalizeCtx),
+        );
       }
 
       const symbol = params.symbol;
@@ -219,10 +246,12 @@ export class BacktestExecutor implements INodeExecutor {
       const orderType = params.order_type || "market";
 
       if (!symbol || !side || !quantity) {
-        return toNodeResult(createErrorOutput(
-          "symbol, side, and quantity are required",
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput(
+            "symbol, side, and quantity are required",
+            normalizeCtx,
+          ),
+        );
       }
 
       // Get SimBroker instance from dataContext - SYNCHRONOUS
@@ -251,7 +280,9 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       if (!orderResult.success) {
-        return toNodeResult(createErrorOutput(orderResult.error || "Order failed", normalizeCtx));
+        return toNodeResult(
+          createErrorOutput(orderResult.error || "Order failed", normalizeCtx),
+        );
       }
 
       // For immediate fills, process the newly placed order right away
@@ -266,21 +297,26 @@ export class BacktestExecutor implements INodeExecutor {
             const cash = simBroker.getCash();
             const positions = simBroker.getPositions();
 
-            return toNodeResult(createSuccessOutput({
-              order_id: orderResult.orderId,
-              order_status: "filled",
-              fill_price: fill.price,
-              fill_quantity: fill.quantity,
-              commission: fill.commission,
-              slippage: fill.slippage,
-              symbol,
-              side,
-              quantity,
-              order_type: orderType,
-              cash,
-              positions,
-              pending_orders: 0,
-            }, normalizeCtx));
+            return toNodeResult(
+              createSuccessOutput(
+                {
+                  order_id: orderResult.orderId,
+                  order_status: "filled",
+                  fill_price: fill.price,
+                  fill_quantity: fill.quantity,
+                  commission: fill.commission,
+                  slippage: fill.slippage,
+                  symbol,
+                  side,
+                  quantity,
+                  order_type: orderType,
+                  cash,
+                  positions,
+                  pending_orders: 0,
+                },
+                normalizeCtx,
+              ),
+            );
           }
         }
       }
@@ -290,17 +326,22 @@ export class BacktestExecutor implements INodeExecutor {
       const positions = simBroker.getPositions();
       const pendingOrders = simBroker.getPendingOrders();
 
-      return toNodeResult(createSuccessOutput({
-        order_id: orderResult.orderId,
-        order_status: orderResult.status,
-        symbol,
-        side,
-        quantity,
-        order_type: orderType,
-        cash,
-        positions,
-        pending_orders: pendingOrders.length,
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            order_id: orderResult.orderId,
+            order_status: orderResult.status,
+            symbol,
+            side,
+            quantity,
+            order_type: orderType,
+            cash,
+            positions,
+            pending_orders: pendingOrders.length,
+          },
+          normalizeCtx,
+        ),
+      );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
       return toNodeResult(createErrorOutput(error, normalizeCtx));
@@ -312,7 +353,7 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
+    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -321,7 +362,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
+        return toNodeResult(
+          createErrorOutput("backtest_id is required", normalizeCtx),
+        );
       }
 
       // Parse current bar or prices
@@ -349,13 +392,18 @@ export class BacktestExecutor implements INodeExecutor {
       // Record equity snapshot - SYNCHRONOUS
       const snapshot = simBroker.recordSnapshot(timestamp, prices);
 
-      return toNodeResult(createSuccessOutput({
-        timestamp: snapshot.timestamp,
-        cash: snapshot.cash,
-        positions_value: snapshot.positionsValue,
-        total_equity: snapshot.totalEquity,
-        drawdown_pct: snapshot.drawdownPct,
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            timestamp: snapshot.timestamp,
+            cash: snapshot.cash,
+            positions_value: snapshot.positionsValue,
+            total_equity: snapshot.totalEquity,
+            drawdown_pct: snapshot.drawdownPct,
+          },
+          normalizeCtx,
+        ),
+      );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestSnapshot failed:", error);
       return toNodeResult(createErrorOutput(error, normalizeCtx));
@@ -367,7 +415,7 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
+    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -376,7 +424,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
+        return toNodeResult(
+          createErrorOutput("backtest_id is required", normalizeCtx),
+        );
       }
 
       // Get SimBroker from dataContext - SYNCHRONOUS
@@ -417,7 +467,7 @@ export class BacktestExecutor implements INodeExecutor {
           portfolioState.cash +
           Object.values(portfolioState.positions).reduce(
             (sum, p) => sum + p.marketValue,
-            0
+            0,
           ),
       });
 
@@ -445,7 +495,7 @@ export class BacktestExecutor implements INodeExecutor {
         const maxPoints = 500;
         const step = Math.max(1, Math.floor(equityCurve.length / maxPoints));
         const sampledCurve = equityCurve.filter(
-          (_, i) => i % step === 0 || i === equityCurve.length - 1
+          (_, i) => i % step === 0 || i === equityCurve.length - 1,
         );
 
         const snapshotRows = sampledCurve.map((p) => ({
@@ -467,46 +517,51 @@ export class BacktestExecutor implements INodeExecutor {
 
       console.log(
         `[BacktestExecutor] Backtest completed: ${backtestId}, Total Return: ${metrics.totalReturnPct.toFixed(
-          2
-        )}%, Bars: ${metrics.totalBars} (in-memory mode)`
+          2,
+        )}%, Bars: ${metrics.totalBars} (in-memory mode)`,
       );
 
-      return toNodeResult(createSuccessOutput({
-        backtest_id: backtestId,
-        metrics: {
-          total_return: metrics.totalReturn,
-          total_return_pct: metrics.totalReturnPct,
-          annualized_return: metrics.annualizedReturn,
-          max_drawdown: metrics.maxDrawdown,
-          max_drawdown_pct: metrics.maxDrawdownPct,
-          sharpe_ratio: metrics.sharpeRatio,
-          sortino_ratio: metrics.sortinoRatio,
-          calmar_ratio: metrics.calmarRatio,
-          total_trades: metrics.totalTrades,
-          winning_trades: metrics.winningTrades,
-          losing_trades: metrics.losingTrades,
-          win_rate: metrics.winRate,
-          profit_factor: metrics.profitFactor,
-          avg_win: metrics.avgWin,
-          avg_loss: metrics.avgLoss,
-          largest_win: metrics.largestWin,
-          largest_loss: metrics.largestLoss,
-          avg_trade_pnl: metrics.avgTradePnl,
-          total_commission: metrics.totalCommission,
-          total_slippage: metrics.totalSlippage,
-          start_date: metrics.startDate,
-          end_date: metrics.endDate,
-          total_bars: metrics.totalBars,
-        },
-        trades_count: trades.length,
-        equity_points: equityCurve.length,
-        final_equity:
-          portfolioState.cash +
-          Object.values(portfolioState.positions).reduce(
-            (sum, p) => sum + p.marketValue,
-            0
-          ),
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            backtest_id: backtestId,
+            metrics: {
+              total_return: metrics.totalReturn,
+              total_return_pct: metrics.totalReturnPct,
+              annualized_return: metrics.annualizedReturn,
+              max_drawdown: metrics.maxDrawdown,
+              max_drawdown_pct: metrics.maxDrawdownPct,
+              sharpe_ratio: metrics.sharpeRatio,
+              sortino_ratio: metrics.sortinoRatio,
+              calmar_ratio: metrics.calmarRatio,
+              total_trades: metrics.totalTrades,
+              winning_trades: metrics.winningTrades,
+              losing_trades: metrics.losingTrades,
+              win_rate: metrics.winRate,
+              profit_factor: metrics.profitFactor,
+              avg_win: metrics.avgWin,
+              avg_loss: metrics.avgLoss,
+              largest_win: metrics.largestWin,
+              largest_loss: metrics.largestLoss,
+              avg_trade_pnl: metrics.avgTradePnl,
+              total_commission: metrics.totalCommission,
+              total_slippage: metrics.totalSlippage,
+              start_date: metrics.startDate,
+              end_date: metrics.endDate,
+              total_bars: metrics.totalBars,
+            },
+            trades_count: trades.length,
+            equity_points: equityCurve.length,
+            final_equity:
+              portfolioState.cash +
+              Object.values(portfolioState.positions).reduce(
+                (sum, p) => sum + p.marketValue,
+                0,
+              ),
+          },
+          normalizeCtx,
+        ),
+      );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
       return toNodeResult(createErrorOutput(error, normalizeCtx));
@@ -518,7 +573,7 @@ export class BacktestExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
+    normalizeCtx: NormalizeContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -527,7 +582,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required", normalizeCtx));
+        return toNodeResult(
+          createErrorOutput("backtest_id is required", normalizeCtx),
+        );
       }
 
       // Get SimBroker from dataContext - SYNCHRONOUS
@@ -540,31 +597,36 @@ export class BacktestExecutor implements INodeExecutor {
       // Calculate positions value and P&L totals from stored values
       const positionsValue = positionsArray.reduce(
         (sum, pos) => sum + pos.marketValue,
-        0
+        0,
       );
       const unrealizedPnlTotal = positionsArray.reduce(
         (sum, pos) => sum + pos.unrealizedPnl,
-        0
+        0,
       );
       const realizedPnlTotal = positionsArray.reduce(
         (sum, pos) => sum + pos.realizedPnl,
-        0
+        0,
       );
 
-      return toNodeResult(createSuccessOutput({
-        cash: portfolioState.cash,
-        initial_capital: simBroker.getConfig().initialCapital,
-        positions: positionsArray,
-        positions_count: positionsArray.length,
-        positions_value: positionsValue,
-        unrealized_pnl: unrealizedPnlTotal,
-        realized_pnl: realizedPnlTotal,
-        total_equity: portfolioState.cash + positionsValue,
-        pending_orders: portfolioState.pendingOrders,
-        pending_orders_count: portfolioState.pendingOrders.length,
-        trades: portfolioState.trades,
-        trades_count: portfolioState.trades.length,
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput(
+          {
+            cash: portfolioState.cash,
+            initial_capital: simBroker.getConfig().initialCapital,
+            positions: positionsArray,
+            positions_count: positionsArray.length,
+            positions_value: positionsValue,
+            unrealized_pnl: unrealizedPnlTotal,
+            realized_pnl: realizedPnlTotal,
+            total_equity: portfolioState.cash + positionsValue,
+            pending_orders: portfolioState.pendingOrders,
+            pending_orders_count: portfolioState.pendingOrders.length,
+            trades: portfolioState.trades,
+            trades_count: portfolioState.trades.length,
+          },
+          normalizeCtx,
+        ),
+      );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
       return toNodeResult(createErrorOutput(error, normalizeCtx));

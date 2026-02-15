@@ -447,6 +447,60 @@ export class ControlFlowExecutor implements INodeExecutor {
       );
     }
 
+    // Fast-path optimization for compatible backtest loop bodies.
+    if (!parallel && context?.nodes && context?.edges) {
+      const isBacktestWorkflow = context.nodes.some(
+        (workflowNode: WorkflowNode) =>
+          workflowNode.name === "BacktestInit" ||
+          workflowNode.name === "BacktestTrade"
+      );
+
+      if (isBacktestWorkflow) {
+        const { extractLoopBodySubgraph } = await import(
+          "../../services/loopSubgraphExtractor"
+        );
+        const { canUseFastPath, compileFastPath, executeFastPath } = await import(
+          "../../services/backtestFastPath"
+        );
+
+        const subgraph = extractLoopBodySubgraph(
+          node.id,
+          context.nodes,
+          context.edges
+        );
+
+        if (canUseFastPath(subgraph.nodes)) {
+          if (!context?.silent) {
+            console.log(
+              `[LOOP] Fast path available: ${items.length} bars, ${subgraph.nodes.length} body nodes`
+            );
+          }
+
+          const compiled = compileFastPath(subgraph.nodes, subgraph.edges, context);
+          if (compiled) {
+            const result = executeFastPath(items, compiled);
+            context?.dataContext?.setData?.("fastPathResult", result, {
+              type: "fastPathResult",
+            });
+
+            return {
+              success: true,
+              data: result,
+              control: {
+                loopCompleted: true,
+                sourceHandle: "done",
+              },
+              meta: normalizeCtx,
+            };
+          }
+        }
+
+        if (!context?.silent) {
+          console.log("[LOOP] Fast path not available, falling back to sequential execution");
+        }
+      }
+    }
+
     // Get current loop state from context
     const currentIndex = context?.getState("currentIndex") || 0;
     const aggregatedResults = context?.getState("aggregatedResults") || [];

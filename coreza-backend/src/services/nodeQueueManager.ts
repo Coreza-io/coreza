@@ -37,6 +37,7 @@ import { QueueItem } from '../nodes/types';
 export class NodeQueueManager {
   /** Main FIFO queue for workflow items */
   private q: QueueItem[] = [];
+  public silent = false;
 
   /** 
    * Loop iteration tracking: loopId -> iterIndex -> { pending, drainCallback }
@@ -49,7 +50,9 @@ export class NodeQueueManager {
    * @param item - Workflow item to enqueue
    */
   enqueue(item: QueueItem) {
-    console.log(`[NodeQueueManager] Enqueuing item: ${item.nodeId}`);
+    if (!this.silent) {
+      console.log(`[NodeQueueManager] Enqueuing item: ${item.nodeId}`);
+    }
     this.q.push(item);
   }
 
@@ -59,7 +62,7 @@ export class NodeQueueManager {
    */
   dequeue(): QueueItem | undefined {
     const item = this.q.shift();
-    if (item) {
+    if (item && !this.silent) {
       console.log(`[NodeQueueManager] Dequeuing item: ${item.nodeId}`);
     }
     return item;
@@ -86,9 +89,11 @@ export class NodeQueueManager {
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
     st.pending += 1;
 
-    console.log(
-      `[NodeQueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeQueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
+      );
+    }
     
     m.set(iterIndex, st);
     this.loopIters.set(loopId, m);
@@ -112,12 +117,18 @@ export class NodeQueueManager {
     if (!st) return;
 
     st.pending -= 1;
-    console.log(
-      `[NodeQueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeQueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
+      );
+    }
 
     if (st.pending === 0) {
-      console.log(`[NodeQueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`);
+      if (!this.silent) {
+        console.log(
+          `[NodeQueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`
+        );
+      }
       st.onDrain();
     }
   }
@@ -131,9 +142,11 @@ export class NodeQueueManager {
    * @param cb - Callback function to invoke on drain
    */
   onIterationDrain(loopId: string, iterIndex: number, cb: () => void) {
-    console.log(
-      `[NodeQueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`
-    );
+    if (!this.silent) {
+      console.log(
+        `[NodeQueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`
+      );
+    }
     
     const m = this.loopIters.get(loopId) ?? new Map();
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
@@ -147,7 +160,9 @@ export class NodeQueueManager {
    * Used for cleanup and reset operations
    */
   clear() {
-    console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
+    if (!this.silent) {
+      console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
+    }
     this.q.length = 0;
     this.loopIters.clear();
   }

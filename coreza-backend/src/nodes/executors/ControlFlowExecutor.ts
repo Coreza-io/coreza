@@ -357,7 +357,10 @@ export class ControlFlowExecutor implements INodeExecutor {
     const batchSize = Number(resolvedParams.batchSize) || 1;
     const parallel = !!resolvedParams.parallel;
     const continueOnError = !!resolvedParams.continueOnError;
-    const throttleMs = Number(resolvedParams.throttleMs) || 200;
+    const isBacktest = !!context?.silent;
+    const throttleMs = isBacktest
+      ? 0
+      : Number(resolvedParams.throttleMs) || 200;
     const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
 
     // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution
@@ -449,13 +452,15 @@ export class ControlFlowExecutor implements INodeExecutor {
     const aggregatedResults = context?.getState("aggregatedResults") || [];
     const isCompleted = context?.getState("isCompleted") || false;
 
-    console.log(`🔄 [LOOP] Node ${node.id} processing:`, {
+    if (!context?.silent) {
+      console.log(`🔄 [LOOP] Node ${node.id} processing:`, {
       currentIndex,
       totalItems: items.length,
       batchSize,
       isCompleted,
       aggregatedCount: aggregatedResults.length,
-    });
+      });
+    }
 
     // If loop is completed, return final aggregated results
     if (isCompleted) {
@@ -483,12 +488,14 @@ export class ControlFlowExecutor implements INodeExecutor {
     const nextIndex = currentIndex + currentBatch.length;
     const isLastBatch = nextIndex >= items.length;
 
-    console.log(`🔄 [LOOP] Node ${node.id} processing batch:`, {
+    if (!context?.silent) {
+      console.log(`🔄 [LOOP] Node ${node.id} processing batch:`, {
       batchStart: currentIndex,
       batchEnd: nextIndex - 1,
       batchSize: currentBatch.length,
       isLastBatch,
-    });
+      });
+    }
 
     // Update loop state for next iteration
     context?.setState("currentIndex", nextIndex);

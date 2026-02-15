@@ -60,7 +60,11 @@ export class IndicatorsExecutor implements INodeExecutor {
       //     : null);
 
       if (dataContext && candleData) {
-        console.log(`🔗 [Indicators] Resolving dataRef: ${candleData}`);
+        if (!context?.silent) {
+          console.log(
+            `[Indicators] Resolving dataRef: ${Array.isArray(candleData) ? `${candleData.length} bars` : typeof candleData}`
+          );
+        }
         //const barsData = dataContext.getDataByKey(candleData);
         const barsData = candleData;
 
@@ -126,6 +130,8 @@ export class IndicatorsExecutor implements INodeExecutor {
               indicatorType,
             );
 
+            const isBacktest = !!context?.silent;
+
             let state = await stateManager.getState(key);
             if (!state) {
               state = await stateManager.warmUp(
@@ -133,6 +139,7 @@ export class IndicatorsExecutor implements INodeExecutor {
                 indicatorType,
                 processedParams,
                 barsData,
+                isBacktest,
               );
             } else {
               const latestBar = barsData[barsData.length - 1];
@@ -140,7 +147,11 @@ export class IndicatorsExecutor implements INodeExecutor {
                 latestBar?.t ?? latestBar?.timestamp ?? "",
               );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = await stateManager.update(key, latestBar);
+                state = await stateManager.update(
+                  key,
+                  latestBar,
+                  isBacktest,
+                );
               }
             }
 

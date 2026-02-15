@@ -54,6 +54,7 @@ const STATE_VERSION = 1;
 
 export class IndicatorStateManager {
   private readonly l1Cache = new Map<string, IndicatorState>();
+  private readonly dirtyKeys = new Set<string>();
 
   constructor(private readonly ttlSeconds?: number) {}
 
@@ -84,11 +85,39 @@ export class IndicatorStateManager {
     await redis.set(key, JSON.stringify(state));
   }
 
+  setStateSync(key: string, state: IndicatorState): void {
+    this.l1Cache.set(key, state);
+    this.dirtyKeys.add(key);
+  }
+
+  async flushToRedis(): Promise<void> {
+    if (this.dirtyKeys.size === 0) return;
+
+    const redis = getRedisCache();
+    const pipeline = redis.pipeline();
+
+    for (const key of this.dirtyKeys) {
+      const state = this.l1Cache.get(key);
+      if (!state) continue;
+
+      const json = JSON.stringify(state);
+      if (this.ttlSeconds && this.ttlSeconds > 0) {
+        pipeline.set(key, json, "EX", this.ttlSeconds);
+      } else {
+        pipeline.set(key, json);
+      }
+    }
+
+    await pipeline.exec();
+    this.dirtyKeys.clear();
+  }
+
   async warmUp(
     key: string,
     indicator: string,
     params: Record<string, any>,
     bars: any[],
+    sync = false,
   ): Promise<IndicatorState> {
     const updater = IndicatorService.createIncrementalUpdater(
       indicator,
@@ -106,11 +135,15 @@ export class IndicatorStateManager {
       internalState: warmup.internalState,
     };
 
-    await this.setState(key, state);
+    if (sync) {
+      this.setStateSync(key, state);
+    } else {
+      await this.setState(key, state);
+    }
     return state;
   }
 
-  async update(key: string, bar: any): Promise<IndicatorState> {
+  async update(key: string, bar: any, sync = false): Promise<IndicatorState> {
     const existing = await this.getState(key);
     if (!existing) {
       throw new Error(`Indicator state not found for key ${key}`);
@@ -133,12 +166,17 @@ export class IndicatorStateManager {
       internalState,
     };
 
-    await this.setState(key, updatedState);
+    if (sync) {
+      this.setStateSync(key, updatedState);
+    } else {
+      await this.setState(key, updatedState);
+    }
     return updatedState;
   }
 
   async invalidate(key: string): Promise<void> {
     this.l1Cache.delete(key);
+    this.dirtyKeys.delete(key);
     await getRedisCache().del(key);
   }
 
@@ -162,6 +200,7 @@ export class IndicatorStateManager {
         removed += keys.length;
         for (const key of keys) {
           this.l1Cache.delete(key);
+          this.dirtyKeys.delete(key);
         }
         await redis.del(...keys);
       }

@@ -23,7 +23,6 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
-  NormalizeContext,
 } from "../../utils/normalizeOutput";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -32,39 +31,30 @@ export class ControlFlowExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
-    const startTime = Date.now();
-    const normalizeCtx: NormalizeContext = {
-      nodeId: node.id,
-      nodeName: node.name,
-      category: this.category,
-      startTime,
-    };
-
     try {
       const nodeName = node.name;
       switch (nodeName) {
         case "If":
-          return this.executeIfNode(node, input, context, normalizeCtx);
+          return this.executeIfNode(node, input, context);
         case "Switch":
-          return this.executeSwitchNode(node, input, context, normalizeCtx);
+          return this.executeSwitchNode(node, input, context);
         case "Edit Fields":
-          return this.executeFieldNode(node, input, context, normalizeCtx);
+          return this.executeFieldNode(node, input, context);
         case "Compute":
-          return this.executeComputeNode(node, input, context, normalizeCtx);
+          return this.executeComputeNode(node, input, context);
         case "Loop":
-          return this.executeLoopNode(node, input, context, normalizeCtx);
+          return this.executeLoopNode(node, input, context);
         default:
           return toNodeResult(
             createErrorOutput(
               `Unsupported control flow node type: ${nodeName}`,
-              normalizeCtx
-            )
+            ),
           );
       }
     } catch (error) {
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -72,7 +62,6 @@ export class ControlFlowExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     // Resolve parameters (with deep reference resolution if provided)
     const resolvedParams = context?.resolveNodeParameters
@@ -105,13 +94,10 @@ export class ControlFlowExecutor implements INodeExecutor {
         logicalOp === "OR" ? evals.some((e) => e) : evals.every((e) => e);
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            true: result,
-            false: !result,
-          },
-          normalizeCtx
-        )
+        createSuccessOutput({
+          true: result,
+          false: !result,
+        }),
       );
     }
 
@@ -144,13 +130,10 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     return toNodeResult(
-      createSuccessOutput(
-        {
-          true: result,
-          false: !result,
-        },
-        normalizeCtx
-      )
+      createSuccessOutput({
+        true: result,
+        false: !result,
+      }),
     );
   }
 
@@ -158,7 +141,6 @@ export class ControlFlowExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -178,7 +160,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     const switchCases = cases
       .filter(
-        (c: any) => c && (c.left !== undefined || baseInput !== undefined)
+        (c: any) => c && (c.left !== undefined || baseInput !== undefined),
       )
       .map((c: any, idx: number) => ({
         condition: {
@@ -192,7 +174,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     const result = await ComparatorService.executeSwitch(
       switchCases,
-      defaultCase
+      defaultCase,
     );
 
     console.log("🔀 Switch node result:", {
@@ -203,21 +185,17 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     if (!result.success) {
       return toNodeResult(
-        createErrorOutput(
-          result.error || "Switch evaluation failed",
-          normalizeCtx
-        )
+        createErrorOutput(result.error || "Switch evaluation failed"),
       );
     }
 
-    return toNodeResult(createSuccessOutput(result.result, normalizeCtx));
+    return toNodeResult(createSuccessOutput(result.result));
   }
 
   private async executeFieldNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -279,7 +257,7 @@ export class ControlFlowExecutor implements INodeExecutor {
               await context.setPersistentValue(fieldName, result[value]);
               console.log(
                 `💾 Persistent field ${fieldName} copied value:`,
-                result[value]
+                result[value],
               );
             }
             result[fieldName] = result[value];
@@ -300,14 +278,13 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
     }
 
-    return toNodeResult(createSuccessOutput(result, normalizeCtx));
+    return toNodeResult(createSuccessOutput(result));
   }
 
   private async executeComputeNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -346,7 +323,6 @@ export class ControlFlowExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -373,7 +349,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       context?.edges
     ) {
       console.log(
-        `🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`
+        `🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`,
       );
 
       const loopExecutorV2 = new LoopExecutorV2();
@@ -408,7 +384,7 @@ export class ControlFlowExecutor implements INodeExecutor {
           maxConcurrency,
         },
         itemsAsInput,
-        context
+        context,
       );
 
       // Convert v2 output format to NodeResult format with standardized output
@@ -433,7 +409,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     } catch (e) {
       console.warn(
         `⚠️ [BACKEND] Failed to parse loop items, using as-is:`,
-        items
+        items,
       );
       items = Array.isArray(items) ? items : [items];
     }
@@ -442,8 +418,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       return toNodeResult(
         createErrorOutput(
           `No array found for field: ${inputArray} or array is empty`,
-          normalizeCtx
-        )
+        ),
       );
     }
 
@@ -454,18 +429,18 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     if (!context?.silent) {
       console.log(`🔄 [LOOP] Node ${node.id} processing:`, {
-      currentIndex,
-      totalItems: items.length,
-      batchSize,
-      isCompleted,
-      aggregatedCount: aggregatedResults.length,
+        currentIndex,
+        totalItems: items.length,
+        batchSize,
+        isCompleted,
+        aggregatedCount: aggregatedResults.length,
       });
     }
 
     // If loop is completed, return final aggregated results
     if (isCompleted) {
       console.log(
-        `✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`
+        `✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`,
       );
       // Clear loop state
       context?.setState("currentIndex", undefined);
@@ -479,7 +454,6 @@ export class ControlFlowExecutor implements INodeExecutor {
           loopCompleted: true,
           sourceHandle: "done",
         },
-        meta: normalizeCtx,
       };
     }
 
@@ -490,10 +464,10 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     if (!context?.silent) {
       console.log(`🔄 [LOOP] Node ${node.id} processing batch:`, {
-      batchStart: currentIndex,
-      batchEnd: nextIndex - 1,
-      batchSize: currentBatch.length,
-      isLastBatch,
+        batchStart: currentIndex,
+        batchEnd: nextIndex - 1,
+        batchSize: currentBatch.length,
+        isLastBatch,
       });
     }
 
@@ -515,7 +489,6 @@ export class ControlFlowExecutor implements INodeExecutor {
         currentIndex,
         isLastBatch,
       },
-      meta: normalizeCtx,
     };
   }
 }

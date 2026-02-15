@@ -48,7 +48,6 @@ export class WorkflowEngine {
   private store: NodeStoreV2;
   private executors: Map<string, any> = new Map();
   private edgePayload = new Map<string, any>();
-  private executed = new Set<string>();
   private failed = new Set<string>();
   private failedNodeErrors = new Map<string, string>();
   private enqueuedKeys = new Set<string>();
@@ -462,7 +461,6 @@ export class WorkflowEngine {
           const edges = this.selectEdges(node, initialInput);
           for (const edge of edges) {
             this.store.setNodeResult(node.id, initialInput);
-            this.executed.add(node.id);
             await this.routeEdge(edge, initialInput);
           }
         } else {
@@ -560,7 +558,6 @@ export class WorkflowEngine {
       this.executionOrder.push(nodeId);
 
       this.store.setNodeResult(nodeId, result);
-      this.executed.add(nodeId);
 
       if (node.name === "Loop" && result && typeof result === "object") {
         // Unified control-based loop handling

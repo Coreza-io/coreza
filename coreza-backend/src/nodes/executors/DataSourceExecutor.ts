@@ -15,10 +15,17 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { getAllRegisteredDataSources, getDataSourceService } from "../../services/datasources";
+import {
+  getAllRegisteredDataSources,
+  getDataSourceService,
+} from "../../services/datasources";
 import { getStorageService } from "../../services/storage";
 import type { StorageInput } from "../../services/storage/types";
-import { normalizeOutput, createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+} from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
 
 export class DataSourceExecutor implements INodeExecutor {
@@ -27,18 +34,21 @@ export class DataSourceExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
       const nodeName = node.subCategory ?? node.name;
       if (!nodeName) {
-        const errOutput = createErrorOutput("Data source node name is missing", {
-          nodeId: node.id,
-          nodeName: node.name,
-          category: this.category,
-          startTime,
-        });
+        const errOutput = createErrorOutput(
+          "Data source node name is missing",
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            category: this.category,
+            startTime,
+          },
+        );
         return toNodeResult(errOutput);
       }
       // Resolve and merge node parameters with input data
@@ -52,10 +62,10 @@ export class DataSourceExecutor implements INodeExecutor {
         ...resolvedParams,
       };
 
-      console.log(
-        `🔍 [DataSource] Executing ${nodeName} with params:`,
-        combinedInput
-      );
+      // console.log(
+      //   `🔍 [DataSource] Executing ${nodeName} with params:`,
+      //   combinedInput
+      // );
 
       const userId = context?.userId || resolvedParams.user_id || input.user_id;
       const credentialId = resolvedParams.credential_id || input.credential_id;
@@ -67,7 +77,7 @@ export class DataSourceExecutor implements INodeExecutor {
         if (!redisUserId || !redisCredentialId) {
           const errOutput = createErrorOutput(
             "userId and credential_id are required for Redis operations",
-            { nodeId: node.id, nodeName, category: this.category, startTime }
+            { nodeId: node.id, nodeName, category: this.category, startTime },
           );
           return toNodeResult(errOutput);
         }
@@ -103,7 +113,7 @@ export class DataSourceExecutor implements INodeExecutor {
       if (!credentialId && !this.isCredentialOptional(nodeName)) {
         const errOutput = createErrorOutput(
           `${nodeName} credential_id is required`,
-          { nodeId: node.id, nodeName, category: this.category, startTime }
+          { nodeId: node.id, nodeName, category: this.category, startTime },
         );
         return toNodeResult(errOutput);
       }
@@ -112,7 +122,7 @@ export class DataSourceExecutor implements INodeExecutor {
       if (!serviceKey) {
         const errOutput = createErrorOutput(
           `Unsupported data source: ${nodeName}`,
-          { nodeId: node.id, nodeName, category: this.category, startTime }
+          { nodeId: node.id, nodeName, category: this.category, startTime },
         );
         return toNodeResult(errOutput);
       }
@@ -120,21 +130,21 @@ export class DataSourceExecutor implements INodeExecutor {
       const resolvedOperation = this.resolveOperation(
         serviceKey,
         operation,
-        resolvedParams
+        resolvedParams,
       );
 
       const dataSourceService = getDataSourceService(serviceKey);
       if (!dataSourceService) {
         const errOutput = createErrorOutput(
           `Unsupported data source: ${serviceKey}`,
-          { nodeId: node.id, nodeName, category: this.category, startTime }
+          { nodeId: node.id, nodeName, category: this.category, startTime },
         );
         return toNodeResult(errOutput);
       }
 
-      console.log(
-        `📊 [DataSource] Executing ${serviceKey} with operation: ${resolvedOperation}`
-      );
+      // console.log(
+      //   `📊 [DataSource] Executing ${serviceKey} with operation: ${resolvedOperation}`
+      // );
 
       const result = await dataSourceService.execute({
         user_id: userId || "system",
@@ -146,7 +156,7 @@ export class DataSourceExecutor implements INodeExecutor {
       if (!result.success) {
         const errOutput = createErrorOutput(
           result.error || `${nodeName} ${resolvedOperation} operation failed`,
-          { nodeId: node.id, nodeName, category: this.category, startTime }
+          { nodeId: node.id, nodeName, category: this.category, startTime },
         );
         return toNodeResult(errOutput);
       }
@@ -161,7 +171,12 @@ export class DataSourceExecutor implements INodeExecutor {
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        },
       );
       return toNodeResult(errOutput);
     }
@@ -169,7 +184,7 @@ export class DataSourceExecutor implements INodeExecutor {
 
   async executeStoreNode(
     params: StorageInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     return this.executeStorageNode("store", params, context);
   }
@@ -177,7 +192,7 @@ export class DataSourceExecutor implements INodeExecutor {
   private async executeStorageNode(
     serviceKey: string,
     params: StorageInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const storageService = getStorageService(serviceKey);
     if (!storageService) {
@@ -199,28 +214,29 @@ export class DataSourceExecutor implements INodeExecutor {
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {
-    const directMatch = getDataSourceService(dataSource) ? dataSource : undefined;
+    const directMatch = getDataSourceService(dataSource)
+      ? dataSource
+      : undefined;
     if (directMatch) {
       return directMatch;
     }
 
     const normalized = dataSource.toLowerCase();
     return getAllRegisteredDataSources().find(
-      (key) => key.toLowerCase() === normalized
+      (key) => key.toLowerCase() === normalized,
     );
   }
 
   private resolveOperation(
     serviceKey: string,
     operation: string | undefined,
-    params: Record<string, any>
+    params: Record<string, any>,
   ): string {
-    if (
-      params?.historical ||
-      params?.start_date ||
-      params?.end_date
-    ) {
-      return operation || (serviceKey === "yahoofinance" ? "get_history" : "get_quote");
+    if (params?.historical || params?.start_date || params?.end_date) {
+      return (
+        operation ||
+        (serviceKey === "yahoofinance" ? "get_history" : "get_quote")
+      );
     }
 
     if (operation) {

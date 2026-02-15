@@ -391,10 +391,8 @@ export class IndicatorService {
         }
         return {
           warmUp: (bars) => {
-            const window = bars
-              .map(asClose)
-              .filter(Number.isFinite)
-              .slice(-period);
+            const window = bars.map(asClose).filter(Number.isFinite);
+            // .slice(-period);
             const value =
               this.calculateBollingerValues(window, period, stdDev).at(-1) ??
               null;
@@ -1130,7 +1128,7 @@ export class IndicatorService {
 
     for (const price of prices) {
       bb.update(price, false);
-      //if (!bb.isStable) continue;
+      if (!bb.isStable) continue;
       const r = bb.getResult();
       if (!r) continue;
       const upper = toNumber(r.upper);

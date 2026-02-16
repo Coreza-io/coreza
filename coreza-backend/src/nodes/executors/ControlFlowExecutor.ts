@@ -217,7 +217,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? resolvedParams.fields
       : [];
     const persistent = !!resolvedParams.persistent;
-    let result: Record<string, any> = {};
+    const result: Record<string, any> = {};
 
     if (!context?.silent) {
       console.log("📝 Field node processing:", {
@@ -521,6 +521,9 @@ export class ControlFlowExecutor implements INodeExecutor {
             canUseFastPath,
             compileFastPath,
             executeFastPath,
+            canUseAsyncFastPath,
+            compileAsyncFastPath,
+            executeAsyncFastPath,
           } = await import("../../services/backtestFastPath");
 
           const subgraph = extractLoopBodySubgraph(
@@ -537,7 +540,37 @@ export class ControlFlowExecutor implements INodeExecutor {
               context,
             );
             if (compiled) {
+              if (!context?.silent) {
+                console.log(
+                  `🚀 [FastPath] Node ${node.id}: using synchronous fast path for ${items.length} items`,
+                );
+              }
               const results = executeFastPath(items, compiled);
+              return {
+                success: true,
+                data: results,
+                control: {
+                  loopCompleted: true,
+                  sourceHandle: "done",
+                },
+              };
+            }
+          }
+
+          if (canUseAsyncFastPath(subgraph.nodes)) {
+            const compiledAsync = compileAsyncFastPath(
+              subgraph.nodes,
+              subgraph.edges,
+              node,
+              context,
+            );
+            if (compiledAsync) {
+              if (!context?.silent) {
+                console.log(
+                  `🚀 [FastPath] Node ${node.id}: using async fast path (Redis pipeline) for ${items.length} items`,
+                );
+              }
+              const results = await executeAsyncFastPath(items, compiledAsync);
               return {
                 success: true,
                 data: results,

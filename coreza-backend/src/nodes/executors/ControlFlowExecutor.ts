@@ -509,6 +509,56 @@ export class ControlFlowExecutor implements INodeExecutor {
       );
     }
 
+    // Fast path: bypass queue-based execution for fully synchronous loop bodies
+    if (context?.nodes && context?.edges) {
+      const currentIndexFastPath = context?.getState("currentIndex") || 0;
+      if (currentIndexFastPath === 0) {
+        try {
+          const { extractLoopBodySubgraph } = await import(
+            "../../services/loopSubgraphExtractor"
+          );
+          const {
+            canUseFastPath,
+            compileFastPath,
+            executeFastPath,
+          } = await import("../../services/backtestFastPath");
+
+          const subgraph = extractLoopBodySubgraph(
+            node.id,
+            context.nodes,
+            context.edges,
+          );
+
+          if (canUseFastPath(subgraph.nodes)) {
+            const compiled = compileFastPath(
+              subgraph.nodes,
+              subgraph.edges,
+              node,
+              context,
+            );
+            if (compiled) {
+              const results = executeFastPath(items, compiled);
+              return {
+                success: true,
+                data: results,
+                control: {
+                  loopCompleted: true,
+                  sourceHandle: "done",
+                },
+              };
+            }
+          }
+        } catch (error) {
+          if (!context?.silent) {
+            console.warn(
+              "⚠️ [FastPath] Falling back to sequential loop execution:",
+              error,
+            );
+          }
+        }
+      }
+    }
+
     // Cache parsed loop items/config for re-entry fast path
     context?.setState("_loopItems", items);
     context?.setState("_loopConfig", {

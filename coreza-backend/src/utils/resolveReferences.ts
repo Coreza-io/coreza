@@ -14,14 +14,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-type SliceObject = { type: "slice"; start: number | null; end: number | null };
-type PathKey = string | number | SliceObject;
+export type SliceObject = { type: "slice"; start: number | null; end: number | null };
+export type PathKey = string | number | SliceObject;
 
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
  * Now supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
  */
-function parsePath(path: string): PathKey[] {
+export function parsePath(path: string): PathKey[] {
   const parts: PathKey[] = [];
   // Match slice patterns [start:end] before single indices
   const regex = /([^[.\]]+)|\[(-?\d+)?:(-?\d+)?\]|\[(-?\d+|["'][^"']+["'])\]/g;
@@ -50,6 +50,71 @@ function parsePath(path: string): PathKey[] {
   }
 
   return parts;
+}
+
+export function getValueByPath(targetData: any, cleanPath: string) {
+  if (!cleanPath) return targetData;
+  const keys = parsePath(cleanPath);
+  let result: any = targetData;
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+
+    if (result == null) return undefined;
+
+    // Handle slice object
+    if (typeof key === "object" && key.type === "slice") {
+      if (!Array.isArray(result)) {
+        console.warn("Cannot slice non-array:", result);
+        return undefined;
+      }
+
+      const len = result.length;
+      const start =
+        key.start === null ? 0 : key.start < 0 ? len + key.start : key.start;
+      const end =
+        key.end === null ? len : key.end < 0 ? len + key.end : key.end;
+
+      result = result.slice(start, end);
+
+      // If there are more keys after the slice, map over sliced array
+      const remainingKeys = keys.slice(i + 1);
+      if (remainingKeys.length > 0) {
+        result = result.map((item: any) => {
+          let temp = item;
+          for (const rKey of remainingKeys) {
+            if (temp == null) return undefined;
+            if (typeof rKey === "number") {
+              temp = Array.isArray(temp)
+                ? temp[rKey >= 0 ? rKey : temp.length + rKey]
+                : temp[rKey];
+            } else if (typeof rKey === "string") {
+              temp = temp[rKey];
+            }
+          }
+          return temp;
+        });
+        return result;
+      }
+    }
+    // Handle regular index/key
+    else if (Array.isArray(result)) {
+      if (
+        typeof key === "number" ||
+        (typeof key === "string" && /^-?\d+$/.test(key))
+      ) {
+        const n = typeof key === "number" ? key : parseInt(key, 10);
+        const idx = n >= 0 ? n : result.length + n;
+        result = result[idx];
+      } else {
+        result = (result as any)[key as any];
+      }
+    } else {
+      result = (result as any)[key as any];
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -109,70 +174,7 @@ export function resolveReferences(
     return undefined;
   }
 
-  function getValueByPath(targetData: any, cleanPath: string) {
-    if (!cleanPath) return targetData;
-    const keys = parsePath(cleanPath);
-    let result: any = targetData;
 
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-
-      if (result == null) return undefined;
-
-      // Handle slice object
-      if (typeof key === "object" && key.type === "slice") {
-        if (!Array.isArray(result)) {
-          console.warn("Cannot slice non-array:", result);
-          return undefined;
-        }
-
-        const len = result.length;
-        const start =
-          key.start === null ? 0 : key.start < 0 ? len + key.start : key.start;
-        const end =
-          key.end === null ? len : key.end < 0 ? len + key.end : key.end;
-
-        result = result.slice(start, end);
-
-        // If there are more keys after the slice, map over sliced array
-        const remainingKeys = keys.slice(i + 1);
-        if (remainingKeys.length > 0) {
-          result = result.map((item: any) => {
-            let temp = item;
-            for (const rKey of remainingKeys) {
-              if (temp == null) return undefined;
-              if (typeof rKey === "number") {
-                temp = Array.isArray(temp)
-                  ? temp[rKey >= 0 ? rKey : temp.length + rKey]
-                  : temp[rKey];
-              } else if (typeof rKey === "string") {
-                temp = temp[rKey];
-              }
-            }
-            return temp;
-          });
-          return result;
-        }
-      }
-      // Handle regular index/key
-      else if (Array.isArray(result)) {
-        if (
-          typeof key === "number" ||
-          (typeof key === "string" && /^-?\d+$/.test(key))
-        ) {
-          const n = typeof key === "number" ? key : parseInt(key, 10);
-          const idx = n >= 0 ? n : result.length + n;
-          result = result[idx];
-        } else {
-          result = (result as any)[key as any];
-        }
-      } else {
-        result = (result as any)[key as any];
-      }
-    }
-
-    return result;
-  }
 
   return expr.replace(templateRegex, (full, g1, g2, g3, rawPath) => {
     let targetData = inputData;

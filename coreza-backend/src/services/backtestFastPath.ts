@@ -36,7 +36,16 @@ type CompiledStep = {
 };
 
 type StoreReadResultMapper = (value: any) => any;
-type StorePipelineOp = "xadd" | "set" | "lpush" | "rpush" | "hset" | "sadd" | "zadd" | "get";
+type StorePipelineOp =
+  | "xadd"
+  | "xrange"
+  | "set"
+  | "lpush"
+  | "rpush"
+  | "hset"
+  | "sadd"
+  | "zadd"
+  | "get";
 
 export type CompiledAsyncLoop = {
   steps: CompiledStep[];
@@ -72,8 +81,12 @@ const FAST_PATH_NODE_WHITELIST = new Set([
 ]);
 
 export function canUseFastPath(bodyNodes: WorkflowNode[]): boolean {
-  return bodyNodes.length > 0
-    && bodyNodes.every((n) => FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)));
+  return (
+    bodyNodes.length > 0 &&
+    bodyNodes.every((n) =>
+      FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)),
+    )
+  );
 }
 
 const ASYNC_FAST_PATH_NODE_WHITELIST = new Set([
@@ -82,6 +95,7 @@ const ASYNC_FAST_PATH_NODE_WHITELIST = new Set([
 ]);
 
 const STORE_PIPELINED_OPERATIONS = new Set([
+  "xrange",
   "xadd",
   "set",
   "lpush",
@@ -93,8 +107,12 @@ const STORE_PIPELINED_OPERATIONS = new Set([
 ]);
 
 export function canUseAsyncFastPath(bodyNodes: WorkflowNode[]): boolean {
-  return bodyNodes.length > 0
-    && bodyNodes.every((n) => ASYNC_FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)));
+  return (
+    bodyNodes.length > 0 &&
+    bodyNodes.every((n) =>
+      ASYNC_FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)),
+    )
+  );
 }
 
 function pickJsonSource(d: any): any {
@@ -132,7 +150,8 @@ function resolveNodeKey(
       n.data?.label === nodeName ||
       (n.data as any)?.displayName === nodeName,
   );
-  if (candidate && allNodeData?.[candidate.id] !== undefined) return candidate.id;
+  if (candidate && allNodeData?.[candidate.id] !== undefined)
+    return candidate.id;
   return candidate?.id;
 }
 
@@ -165,8 +184,12 @@ function compileTemplateExpression(
     };
   }
 
-  const jqueryRefMatch = trimmed.match(/^\$\(\s*'([^']+)'\s*\)\.json(?:\.(.*))?$/);
-  const nodeRefMatch = trimmed.match(/^\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\.json(?:\.(.*))?$/);
+  const jqueryRefMatch = trimmed.match(
+    /^\$\(\s*'([^']+)'\s*\)\.json(?:\.(.*))?$/,
+  );
+  const nodeRefMatch = trimmed.match(
+    /^\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\.json(?:\.(.*))?$/,
+  );
 
   if (!jqueryRefMatch && !nodeRefMatch) return null;
 
@@ -176,7 +199,8 @@ function compileTemplateExpression(
   const path = jqueryRefMatch
     ? (jqueryRefMatch[2] || "").trim()
     : (nodeRefMatch?.[3] || "").trim();
-  const resolvedId = resolveNodeKey(nodeName, allResults, allNodes as any) || nodeName;
+  const resolvedId =
+    resolveNodeKey(nodeName, allResults, allNodes as any) || nodeName;
 
   if (bodyNodeIds.has(resolvedId)) {
     return (_item: any, outputs: NodeOutputs) => {
@@ -197,21 +221,36 @@ export function compileParamValue(
   allNodes: WorkflowNode[],
   allResults: Record<string, any>,
 ): ParamAccessor | null {
-  if (rawValue == null || typeof rawValue === "number" || typeof rawValue === "boolean") {
+  if (
+    rawValue == null ||
+    typeof rawValue === "number" ||
+    typeof rawValue === "boolean"
+  ) {
     return createStaticAccessor(rawValue);
   }
 
   if (Array.isArray(rawValue)) {
-    const compiledItems = rawValue.map((v) => compileParamValue(v, bodyNodeIds, allNodes, allResults));
+    const compiledItems = rawValue.map((v) =>
+      compileParamValue(v, bodyNodeIds, allNodes, allResults),
+    );
     if (compiledItems.some((v) => v == null)) return null;
-    return (item: any, outputs: NodeOutputs) => compiledItems.map((acc) => (acc as ParamAccessor)(item, outputs));
+    return (item: any, outputs: NodeOutputs) =>
+      compiledItems.map((acc) => (acc as ParamAccessor)(item, outputs));
   }
 
   if (typeof rawValue === "object") {
-    const compiledEntries = Object.entries(rawValue).map(([k, v]) => [k, compileParamValue(v, bodyNodeIds, allNodes, allResults)] as const);
+    const compiledEntries = Object.entries(rawValue).map(
+      ([k, v]) =>
+        [k, compileParamValue(v, bodyNodeIds, allNodes, allResults)] as const,
+    );
     if (compiledEntries.some(([, v]) => v == null)) return null;
     return (item: any, outputs: NodeOutputs) =>
-      Object.fromEntries(compiledEntries.map(([k, acc]) => [k, (acc as ParamAccessor)(item, outputs)]));
+      Object.fromEntries(
+        compiledEntries.map(([k, acc]) => [
+          k,
+          (acc as ParamAccessor)(item, outputs),
+        ]),
+      );
   }
 
   if (typeof rawValue !== "string") {
@@ -227,7 +266,12 @@ export function compileParamValue(
   if (matches.length === 0) return createStaticAccessor(rawValue);
 
   if (matches.length === 1 && matches[0][0].trim() === rawValue.trim()) {
-    return compileTemplateExpression(matches[0][1], bodyNodeIds, allNodes, allResults);
+    return compileTemplateExpression(
+      matches[0][1],
+      bodyNodeIds,
+      allNodes,
+      allResults,
+    );
   }
 
   const segments: Array<string | ParamAccessor> = [];
@@ -236,7 +280,12 @@ export function compileParamValue(
     const start = match.index ?? 0;
     const end = start + match[0].length;
     if (start > cursor) segments.push(rawValue.slice(cursor, start));
-    const compiled = compileTemplateExpression(match[1], bodyNodeIds, allNodes, allResults);
+    const compiled = compileTemplateExpression(
+      match[1],
+      bodyNodeIds,
+      allNodes,
+      allResults,
+    );
     if (!compiled) return null;
     segments.push(compiled);
     cursor = end;
@@ -249,7 +298,10 @@ export function compileParamValue(
       .join("");
 }
 
-function topologicalSort(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] | null {
+function topologicalSort(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+): WorkflowNode[] | null {
   const ids = new Set(nodes.map((n) => n.id));
   const indegree = new Map<string, number>(nodes.map((n) => [n.id, 0]));
   const outgoing = new Map<string, string[]>();
@@ -304,10 +356,10 @@ function compileFieldStep(params: any): any {
         delete result[fieldName];
         break;
       case "increment":
-        result[fieldName] = (Number(result[fieldName] || 0) + Number(value || 1));
+        result[fieldName] = Number(result[fieldName] || 0) + Number(value || 1);
         break;
       case "decrement":
-        result[fieldName] = (Number(result[fieldName] || 0) - Number(value || 1));
+        result[fieldName] = Number(result[fieldName] || 0) - Number(value || 1);
         break;
       default:
         return null;
@@ -362,7 +414,9 @@ export function compileFastPath(
   if (!ordered) return null;
 
   const allNodes = Array.isArray(context?.nodes) ? context.nodes : bodyNodes;
-  const allResults = context?.getAllNodeResults ? context.getAllNodeResults() : {};
+  const allResults = context?.getAllNodeResults
+    ? context.getAllNodeResults()
+    : {};
   const bodyNodeIds = new Set(bodyNodes.map((n) => n.id));
   const bodyNodeById = new Map(bodyNodes.map((n) => [n.id, n] as const));
   const incomingByNode = new Map<string, WorkflowEdge[]>();
@@ -377,7 +431,13 @@ export function compileFastPath(
     outgoingByNode.set(edge.source, outList);
   }
 
-  const indicatorStates = new Map<string, { updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>; state: Record<string, any> | null }>();
+  const indicatorStates = new Map<
+    string,
+    {
+      updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>;
+      state: Record<string, any> | null;
+    }
+  >();
   const brokers = new Map<string, SimBroker>();
   const steps: CompiledStep[] = [];
 
@@ -393,37 +453,65 @@ export function compileFastPath(
     }
 
     const resolveParams: ParamAccessor = (item, outputs) =>
-      Object.fromEntries(compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]));
+      Object.fromEntries(
+        compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]),
+      );
 
     const nodeName = String(node.name || node.node_type);
     let execute: (params: any) => any;
 
     if (nodeName === "Compute") {
-      execute = (params) => ComputeService.compute(params, { skipTimestamp: true }).data;
+      execute = (params) =>
+        ComputeService.compute(params, { skipTimestamp: true }).data;
     } else if (nodeName === "If") {
-      const condition = compileIfConditions(node, (raw): RuntimeAccessor | null =>
-        compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+      const condition = compileIfConditions(
+        node,
+        (raw): RuntimeAccessor | null =>
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
       );
       if (!condition) return null;
-      execute = (params) => ({ true: condition(params.item, params.outputs), false: !condition(params.item, params.outputs) });
+      execute = (params) => ({
+        true: condition(params.item, params.outputs),
+        false: !condition(params.item, params.outputs),
+      });
     } else if (nodeName === "Switch") {
-      const selector = compileSwitchConditions(node, (raw): RuntimeAccessor | null =>
-        compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+      const selector = compileSwitchConditions(
+        node,
+        (raw): RuntimeAccessor | null =>
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
       );
       if (!selector) return null;
       execute = (params) => ({ result: selector(params.item, params.outputs) });
     } else if (nodeName === "Edit Fields") {
       execute = (params) => compileFieldStep(params);
-    } else if (FAST_PATH_NODE_WHITELIST.has(nodeName) && !["Compute", "If", "Switch", "Edit Fields", "BacktestTrade", "BacktestSnapshot"].includes(nodeName)) {
+    } else if (
+      FAST_PATH_NODE_WHITELIST.has(nodeName) &&
+      ![
+        "Compute",
+        "If",
+        "Switch",
+        "Edit Fields",
+        "BacktestTrade",
+        "BacktestSnapshot",
+      ].includes(nodeName)
+    ) {
       execute = (params) => {
         const key = node.id;
         let entry = indicatorStates.get(key);
         if (!entry) {
-          const updater = IndicatorService.createIncrementalUpdater(nodeName, params);
+          const updater = IndicatorService.createIncrementalUpdater(
+            nodeName,
+            params,
+          );
           entry = { updater, state: null };
           indicatorStates.set(key, entry);
         }
-        const bar = params.current_bar || params.bar || params.candle || params.input || params;
+        const bar =
+          params.current_bar ||
+          params.bar ||
+          params.candle ||
+          params.input ||
+          params;
         if (!entry.state) {
           const warm = entry.updater.warmUp([]);
           entry.state = warm.internalState;
@@ -450,10 +538,16 @@ export function compileFastPath(
         const orderResult = broker.placeOrder({
           symbol,
           side: params.side as "buy" | "sell",
-          type: (params.order_type || "market") as "market" | "limit" | "stop" | "stop_limit",
+          type: (params.order_type || "market") as
+            | "market"
+            | "limit"
+            | "stop"
+            | "stop_limit",
           quantity: Number(params.quantity),
-          limitPrice: params.limit_price != null ? Number(params.limit_price) : undefined,
-          stopPrice: params.stop_price != null ? Number(params.stop_price) : undefined,
+          limitPrice:
+            params.limit_price != null ? Number(params.limit_price) : undefined,
+          stopPrice:
+            params.stop_price != null ? Number(params.stop_price) : undefined,
         });
 
         return {
@@ -478,11 +572,17 @@ export function compileFastPath(
         if (currentBar && params.symbol) {
           broker.onBar(String(params.symbol), currentBar);
         }
-        const prices = typeof params.prices === "object" && params.prices ? { ...params.prices } : {};
+        const prices =
+          typeof params.prices === "object" && params.prices
+            ? { ...params.prices }
+            : {};
         if (currentBar) {
           prices[String(params.symbol || "UNKNOWN")] = currentBar.close;
         }
-        return broker.recordSnapshot(String(params.timestamp || new Date().toISOString()), prices);
+        return broker.recordSnapshot(
+          String(params.timestamp || new Date().toISOString()),
+          prices,
+        );
       };
     } else {
       return null;
@@ -494,11 +594,15 @@ export function compileFastPath(
           incoming.every((edge) => {
             if (!bodyNodeIds.has(edge.source)) return true;
             const sourceNode = bodyNodeById.get(edge.source);
-            const sourceName = String(sourceNode?.name || sourceNode?.node_type || "");
+            const sourceName = String(
+              sourceNode?.name || sourceNode?.node_type || "",
+            );
             const sourceOutput = outputs.get(edge.source);
             if (sourceName === "If") {
-              if (edge.sourceHandle === "true") return Boolean(sourceOutput?.true);
-              if (edge.sourceHandle === "false") return Boolean(sourceOutput?.false);
+              if (edge.sourceHandle === "true")
+                return Boolean(sourceOutput?.true);
+              if (edge.sourceHandle === "false")
+                return Boolean(sourceOutput?.false);
             }
             if (sourceName === "Switch" && edge.sourceHandle) {
               return String(sourceOutput?.result) === String(edge.sourceHandle);
@@ -522,10 +626,11 @@ export function compileFastPath(
     });
   }
 
-  const lastNode = [...ordered].reverse().find((n) => {
-    const outgoing = outgoingByNode.get(n.id) || [];
-    return outgoing.every((e) => !bodyNodeIds.has(e.target));
-  }) || ordered[ordered.length - 1];
+  const lastNode =
+    [...ordered].reverse().find((n) => {
+      const outgoing = outgoingByNode.get(n.id) || [];
+      return outgoing.every((e) => !bodyNodeIds.has(e.target));
+    }) || ordered[ordered.length - 1];
 
   return {
     steps,
@@ -564,49 +669,61 @@ function compileStoreStep(
     staticResolvedParams = null;
   }
 
-  const staticOperation = String(staticResolvedParams?.operation || node.values?.operation || "xadd").toLowerCase();
+  const staticOperation = String(
+    staticResolvedParams?.operation || node.values?.operation || "xadd",
+  ).toLowerCase();
   if (!STORE_PIPELINED_OPERATIONS.has(staticOperation)) {
     return null;
   }
 
   const staticWorkflowId = String(
-    staticResolvedParams?.workflow_id
-    || staticResolvedParams?.workflowId
-    || defaultWorkflowId,
+    staticResolvedParams?.workflow_id ||
+      staticResolvedParams?.workflowId ||
+      defaultWorkflowId,
   );
   const staticVariableName = String(
-    staticResolvedParams?.variableNameManual
-    || staticResolvedParams?.variableNameSelect
-    || staticResolvedParams?.variableName
-    || "",
+    staticResolvedParams?.variableNameManual ||
+      staticResolvedParams?.variableNameSelect ||
+      staticResolvedParams?.variableName ||
+      "",
   );
-  const staticStoreKey = staticWorkflowId && staticVariableName
-    ? buildStoreKey(userId, staticWorkflowId, staticVariableName)
-    : null;
+  const staticStoreKey =
+    staticWorkflowId && staticVariableName
+      ? buildStoreKey(userId, staticWorkflowId, staticVariableName)
+      : null;
 
   return {
     nodeId: node.id,
     nodeName: String(node.name || node.node_type),
     resolveParams,
     execute: (params) => {
-      const operation = String(params.operation || staticOperation || "xadd").toLowerCase();
+      const operation = String(
+        params.operation || staticOperation || "xadd",
+      ).toLowerCase();
       if (!STORE_PIPELINED_OPERATIONS.has(operation)) {
-        throw new Error(`Store operation '${operation}' is not supported by async fast path`);
+        throw new Error(
+          `Store operation '${operation}' is not supported by async fast path`,
+        );
       }
 
-      const workflowId = String(params.workflow_id || params.workflowId || defaultWorkflowId);
+      const workflowId = String(
+        params.workflow_id || params.workflowId || defaultWorkflowId,
+      );
       const variableName = String(
-        params.variableNameManual
-        || params.variableNameSelect
-        || params.variableName
-        || "",
+        params.variableNameManual ||
+          params.variableNameSelect ||
+          params.variableName ||
+          "",
       );
 
       if (!workflowId || !variableName) {
-        throw new Error("Store fast path requires workflow_id/workflowId and variableName");
+        throw new Error(
+          "Store fast path requires workflow_id/workflowId and variableName",
+        );
       }
 
-      const key = staticStoreKey || buildStoreKey(userId, workflowId, variableName);
+      const key =
+        staticStoreKey || buildStoreKey(userId, workflowId, variableName);
       const ttl = Number(params.ttl || 0);
       const baseOutput = {
         operation,
@@ -639,7 +756,10 @@ function compileStoreStep(
       }
 
       if (operation === "lpush" || operation === "rpush") {
-        const value = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
+        const value =
+          typeof params.value === "string"
+            ? params.value
+            : JSON.stringify(params.value);
         return {
           redis,
           kind: "store_pipeline",
@@ -647,7 +767,10 @@ function compileStoreStep(
           key,
           ttl,
           args: [value],
-          output: { ...baseOutput, message: `Value pushed ${operation === "lpush" ? "left" : "right"}` },
+          output: {
+            ...baseOutput,
+            message: `Value pushed ${operation === "lpush" ? "left" : "right"}`,
+          },
         } as const;
       }
 
@@ -738,7 +861,9 @@ export function compileAsyncFastPath(
   if (!ordered) return null;
 
   const allNodes = Array.isArray(context?.nodes) ? context.nodes : bodyNodes;
-  const allResults = context?.getAllNodeResults ? context.getAllNodeResults() : {};
+  const allResults = context?.getAllNodeResults
+    ? context.getAllNodeResults()
+    : {};
   const bodyNodeIds = new Set(bodyNodes.map((n) => n.id));
   const incomingByNode = new Map<string, WorkflowEdge[]>();
   const outgoingByNode = new Map<string, WorkflowEdge[]>();
@@ -753,7 +878,13 @@ export function compileAsyncFastPath(
     outgoingByNode.set(edge.source, outList);
   }
 
-  const indicatorStates = new Map<string, { updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>; state: Record<string, any> | null }>();
+  const indicatorStates = new Map<
+    string,
+    {
+      updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>;
+      state: Record<string, any> | null;
+    }
+  >();
   const brokers = new Map<string, SimBroker>();
   const steps: CompiledStep[] = [];
 
@@ -762,13 +893,20 @@ export function compileAsyncFastPath(
     const compiledEntries: Array<[string, ParamAccessor]> = [];
     for (const [k, v] of Object.entries(values)) {
       if (k === "credential_id") continue;
-      const compiledValue = compileParamValue(v, bodyNodeIds, allNodes, allResults);
+      const compiledValue = compileParamValue(
+        v,
+        bodyNodeIds,
+        allNodes,
+        allResults,
+      );
       if (!compiledValue) return null;
       compiledEntries.push([k, compiledValue]);
     }
 
     const resolveParams: ParamAccessor = (item, outputs) =>
-      Object.fromEntries(compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]));
+      Object.fromEntries(
+        compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]),
+      );
 
     const nodeName = String(node.name || node.node_type);
     let step: CompiledStep | null = null;
@@ -779,31 +917,59 @@ export function compileAsyncFastPath(
       let execute: (params: any) => any;
 
       if (nodeName === "Compute") {
-        execute = (params) => ComputeService.compute(params, { skipTimestamp: true }).data;
+        execute = (params) =>
+          ComputeService.compute(params, { skipTimestamp: true }).data;
       } else if (nodeName === "If") {
-        const condition = compileIfConditions(node, (raw): RuntimeAccessor | null =>
-          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+        const condition = compileIfConditions(
+          node,
+          (raw): RuntimeAccessor | null =>
+            compileParamValue(raw, bodyNodeIds, allNodes, allResults),
         );
         if (!condition) return null;
-        execute = (params) => ({ true: condition(params.item, params.outputs), false: !condition(params.item, params.outputs) });
+        execute = (params) => ({
+          true: condition(params.item, params.outputs),
+          false: !condition(params.item, params.outputs),
+        });
       } else if (nodeName === "Switch") {
-        const selector = compileSwitchConditions(node, (raw): RuntimeAccessor | null =>
-          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+        const selector = compileSwitchConditions(
+          node,
+          (raw): RuntimeAccessor | null =>
+            compileParamValue(raw, bodyNodeIds, allNodes, allResults),
         );
         if (!selector) return null;
-        execute = (params) => ({ result: selector(params.item, params.outputs) });
+        execute = (params) => ({
+          result: selector(params.item, params.outputs),
+        });
       } else if (nodeName === "Edit Fields") {
         execute = (params) => compileFieldStep(params);
-      } else if (FAST_PATH_NODE_WHITELIST.has(nodeName) && !["Compute", "If", "Switch", "Edit Fields", "BacktestTrade", "BacktestSnapshot"].includes(nodeName)) {
+      } else if (
+        FAST_PATH_NODE_WHITELIST.has(nodeName) &&
+        ![
+          "Compute",
+          "If",
+          "Switch",
+          "Edit Fields",
+          "BacktestTrade",
+          "BacktestSnapshot",
+        ].includes(nodeName)
+      ) {
         execute = (params) => {
           const key = node.id;
           let entry = indicatorStates.get(key);
           if (!entry) {
-            const updater = IndicatorService.createIncrementalUpdater(nodeName, params);
+            const updater = IndicatorService.createIncrementalUpdater(
+              nodeName,
+              params,
+            );
             entry = { updater, state: null };
             indicatorStates.set(key, entry);
           }
-          const bar = params.current_bar || params.bar || params.candle || params.input || params;
+          const bar =
+            params.current_bar ||
+            params.bar ||
+            params.candle ||
+            params.input ||
+            params;
           if (!entry.state) {
             const warm = entry.updater.warmUp([]);
             entry.state = warm.internalState;
@@ -830,10 +996,18 @@ export function compileAsyncFastPath(
           const orderResult = broker.placeOrder({
             symbol,
             side: params.side as "buy" | "sell",
-            type: (params.order_type || "market") as "market" | "limit" | "stop" | "stop_limit",
+            type: (params.order_type || "market") as
+              | "market"
+              | "limit"
+              | "stop"
+              | "stop_limit",
             quantity: Number(params.quantity),
-            limitPrice: params.limit_price != null ? Number(params.limit_price) : undefined,
-            stopPrice: params.stop_price != null ? Number(params.stop_price) : undefined,
+            limitPrice:
+              params.limit_price != null
+                ? Number(params.limit_price)
+                : undefined,
+            stopPrice:
+              params.stop_price != null ? Number(params.stop_price) : undefined,
           });
 
           return {
@@ -858,11 +1032,17 @@ export function compileAsyncFastPath(
           if (currentBar && params.symbol) {
             broker.onBar(String(params.symbol), currentBar);
           }
-          const prices = typeof params.prices === "object" && params.prices ? { ...params.prices } : {};
+          const prices =
+            typeof params.prices === "object" && params.prices
+              ? { ...params.prices }
+              : {};
           if (currentBar) {
             prices[String(params.symbol || "UNKNOWN")] = currentBar.close;
           }
-          return broker.recordSnapshot(String(params.timestamp || new Date().toISOString()), prices);
+          return broker.recordSnapshot(
+            String(params.timestamp || new Date().toISOString()),
+            prices,
+          );
         };
       } else {
         return null;
@@ -890,11 +1070,15 @@ export function compileAsyncFastPath(
           incoming.every((edge) => {
             if (!bodyNodeIds.has(edge.source)) return true;
             const sourceNode = bodyNodeById.get(edge.source);
-            const sourceName = String(sourceNode?.name || sourceNode?.node_type || "");
+            const sourceName = String(
+              sourceNode?.name || sourceNode?.node_type || "",
+            );
             const sourceOutput = outputs.get(edge.source);
             if (sourceName === "If") {
-              if (edge.sourceHandle === "true") return Boolean(sourceOutput?.true);
-              if (edge.sourceHandle === "false") return Boolean(sourceOutput?.false);
+              if (edge.sourceHandle === "true")
+                return Boolean(sourceOutput?.true);
+              if (edge.sourceHandle === "false")
+                return Boolean(sourceOutput?.false);
             }
             if (sourceName === "Switch" && edge.sourceHandle) {
               return String(sourceOutput?.result) === String(edge.sourceHandle);
@@ -909,10 +1093,11 @@ export function compileAsyncFastPath(
     });
   }
 
-  const lastNode = [...ordered].reverse().find((n) => {
-    const outgoing = outgoingByNode.get(n.id) || [];
-    return outgoing.every((e) => !bodyNodeIds.has(e.target));
-  }) || ordered[ordered.length - 1];
+  const lastNode =
+    [...ordered].reverse().find((n) => {
+      const outgoing = outgoingByNode.get(n.id) || [];
+      return outgoing.every((e) => !bodyNodeIds.has(e.target));
+    }) || ordered[ordered.length - 1];
 
   return {
     steps,
@@ -941,7 +1126,9 @@ export function executeFastPath(items: any[], compiled: CompiledLoop): any[] {
 
   const elapsed = Date.now() - start;
   const rate = elapsed > 0 ? (items.length / elapsed) * 1000 : 0;
-  console.log(`[FastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`);
+  console.log(
+    `[FastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`,
+  );
 
   return results;
 }
@@ -958,7 +1145,12 @@ export async function executeAsyncFastPath(
   for (let chunkStart = 0; chunkStart < items.length; chunkStart += chunkSize) {
     const chunk = items.slice(chunkStart, chunkStart + chunkSize);
     const pipeline = compiled.redis.pipeline();
-    const readOps: Array<{ nodeId: string; itemIndex: number; commandIndex: number; mapResult?: StoreReadResultMapper }> = [];
+    const readOps: Array<{
+      nodeId: string;
+      itemIndex: number;
+      commandIndex: number;
+      mapResult?: StoreReadResultMapper;
+    }> = [];
     const chunkNodeOutputs: NodeOutputs[] = [];
     const ttlByKey = new Map<string, number>();
     let queuedCommandCount = 0;
@@ -974,14 +1166,28 @@ export async function executeAsyncFastPath(
           const op = output.op as StorePipelineOp;
           const key = String(output.key || "");
           const args = Array.isArray(output.args) ? output.args : [];
-          if (op === "xadd") { pipeline.xadd(key, ...(args as [string, string, string])); queuedCommandCount += 1; }
-          else if (op === "set") { pipeline.set(key, ...(args as [string])); queuedCommandCount += 1; }
-          else if (op === "lpush") { pipeline.lpush(key, ...(args as string[])); queuedCommandCount += 1; }
-          else if (op === "rpush") { pipeline.rpush(key, ...(args as string[])); queuedCommandCount += 1; }
-          else if (op === "hset") { pipeline.hset(key, ...(args as [string, string])); queuedCommandCount += 1; }
-          else if (op === "sadd") { pipeline.sadd(key, ...(args as string[])); queuedCommandCount += 1; }
-          else if (op === "zadd") { pipeline.zadd(key, ...(args as (string | number)[])); queuedCommandCount += 1; }
-          else if (op === "get") {
+          if (op === "xadd") {
+            pipeline.xadd(key, ...(args as [string, string, string]));
+            queuedCommandCount += 1;
+          } else if (op === "set") {
+            pipeline.set(key, ...(args as [string]));
+            queuedCommandCount += 1;
+          } else if (op === "lpush") {
+            pipeline.lpush(key, ...(args as string[]));
+            queuedCommandCount += 1;
+          } else if (op === "rpush") {
+            pipeline.rpush(key, ...(args as string[]));
+            queuedCommandCount += 1;
+          } else if (op === "hset") {
+            pipeline.hset(key, ...(args as [string, string]));
+            queuedCommandCount += 1;
+          } else if (op === "sadd") {
+            pipeline.sadd(key, ...(args as string[]));
+            queuedCommandCount += 1;
+          } else if (op === "zadd") {
+            pipeline.zadd(key, ...(args as (string | number)[]));
+            queuedCommandCount += 1;
+          } else if (op === "get") {
             pipeline.get(key);
             const commandIndex = queuedCommandCount;
             queuedCommandCount += 1;
@@ -994,7 +1200,10 @@ export async function executeAsyncFastPath(
           }
 
           if (output.ttl && output.ttl > 0) {
-            ttlByKey.set(key, Math.max(ttlByKey.get(key) || 0, Number(output.ttl)));
+            ttlByKey.set(
+              key,
+              Math.max(ttlByKey.get(key) || 0, Number(output.ttl)),
+            );
           }
 
           nodeOutputs.set(step.nodeId, output.output);
@@ -1012,7 +1221,9 @@ export async function executeAsyncFastPath(
       throw new Error("Redis pipeline execution failed");
     }
 
-    const readByCommandIndex = new Map(readOps.map((readRef) => [readRef.commandIndex, readRef]));
+    const readByCommandIndex = new Map(
+      readOps.map((readRef) => [readRef.commandIndex, readRef]),
+    );
     for (const [idx, [error, value]] of pipelineResult.entries()) {
       if (error) {
         throw error;
@@ -1034,14 +1245,18 @@ export async function executeAsyncFastPath(
     const isLastChunk = chunkStart + chunkSize >= items.length;
     if (isLastChunk && ttlByKey.size > 0) {
       await Promise.all(
-        [...ttlByKey.entries()].map(([key, ttl]) => compiled.redis.expire(key, ttl)),
+        [...ttlByKey.entries()].map(([key, ttl]) =>
+          compiled.redis.expire(key, ttl),
+        ),
       );
     }
   }
 
   const elapsed = Date.now() - start;
   const rate = elapsed > 0 ? (items.length / elapsed) * 1000 : 0;
-  console.log(`[AsyncFastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`);
+  console.log(
+    `[AsyncFastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`,
+  );
 
   return results;
 }

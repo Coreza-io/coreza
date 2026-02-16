@@ -98,10 +98,13 @@ export class ControlFlowExecutor implements INodeExecutor {
         logicalOp === "OR" ? evals.some((e) => e) : evals.every((e) => e);
 
       return toNodeResult(
-        createSuccessOutput({
-          true: result,
-          false: !result,
-        }, this.getSuccessContext(context)),
+        createSuccessOutput(
+          {
+            true: result,
+            false: !result,
+          },
+          this.getSuccessContext(context),
+        ),
       );
     }
 
@@ -136,10 +139,13 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     return toNodeResult(
-      createSuccessOutput({
-        true: result,
-        false: !result,
-      }, this.getSuccessContext(context)),
+      createSuccessOutput(
+        {
+          true: result,
+          false: !result,
+        },
+        this.getSuccessContext(context),
+      ),
     );
   }
 
@@ -388,7 +394,10 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
 
       const batchSize = Number(cachedConfig.batchSize) || 1;
-      const currentBatch = cachedItems.slice(currentIndex, currentIndex + batchSize);
+      const currentBatch = cachedItems.slice(
+        currentIndex,
+        currentIndex + batchSize,
+      );
       const nextIndex = currentIndex + currentBatch.length;
       const isLastBatch = nextIndex >= cachedItems.length;
 
@@ -514,9 +523,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       const currentIndexFastPath = context?.getState("currentIndex") || 0;
       if (currentIndexFastPath === 0) {
         try {
-          const { extractLoopBodySubgraph } = await import(
-            "../../services/loopSubgraphExtractor"
-          );
+          const { extractLoopBodySubgraph } =
+            await import("../../services/loopSubgraphExtractor");
           const {
             canUseFastPath,
             compileFastPath,

@@ -10,6 +10,13 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { ComputeService } from "./compute";
 import { IndicatorService } from "./indicators";
 import { SimBroker, type Bar } from "./simBroker";
+import { getRedisCache } from "../config/redis";
+import {
+  buildStoreKey,
+  parseMembers,
+  parseScoreMembers,
+  parseStoredValue,
+} from "../utils/store";
 import { getValueByPath } from "../utils/resolveReferences";
 import {
   compileIfConditions,
@@ -26,6 +33,16 @@ type CompiledStep = {
   resolveParams: ParamAccessor;
   execute: (params: any) => any;
   condition?: (outputs: NodeOutputs) => boolean;
+};
+
+type StoreReadResultMapper = (value: any) => any;
+type StorePipelineOp = "xadd" | "set" | "lpush" | "rpush" | "hset" | "sadd" | "zadd" | "get";
+
+export type CompiledAsyncLoop = {
+  steps: CompiledStep[];
+  lastNodeId: string;
+  redis: ReturnType<typeof getRedisCache>;
+  pipelineChunkSize: number;
 };
 
 export type CompiledLoop = {
@@ -57,6 +74,27 @@ const FAST_PATH_NODE_WHITELIST = new Set([
 export function canUseFastPath(bodyNodes: WorkflowNode[]): boolean {
   return bodyNodes.length > 0
     && bodyNodes.every((n) => FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)));
+}
+
+const ASYNC_FAST_PATH_NODE_WHITELIST = new Set([
+  ...FAST_PATH_NODE_WHITELIST,
+  "Store",
+]);
+
+const STORE_PIPELINED_OPERATIONS = new Set([
+  "xadd",
+  "set",
+  "lpush",
+  "rpush",
+  "hset",
+  "sadd",
+  "zadd",
+  "get",
+]);
+
+export function canUseAsyncFastPath(bodyNodes: WorkflowNode[]): boolean {
+  return bodyNodes.length > 0
+    && bodyNodes.every((n) => ASYNC_FAST_PATH_NODE_WHITELIST.has(String(n.name || n.node_type)));
 }
 
 function pickJsonSource(d: any): any {
@@ -341,7 +379,6 @@ export function compileFastPath(
 
   const indicatorStates = new Map<string, { updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>; state: Record<string, any> | null }>();
   const brokers = new Map<string, SimBroker>();
-
   const steps: CompiledStep[] = [];
 
   for (const node of ordered) {
@@ -496,6 +533,395 @@ export function compileFastPath(
   };
 }
 
+function normalizeStoreValue(value: any): any {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function compileStoreStep(
+  node: WorkflowNode,
+  resolveParams: ParamAccessor,
+  context: any,
+): CompiledStep | null {
+  const redis = getRedisCache();
+  const userId = String(context?.userId || "system");
+  const defaultWorkflowId = String(context?.workflowId || "");
+  const staticOutputs = new Map<string, any>();
+
+  let staticResolvedParams: Record<string, any> | null = null;
+  try {
+    const maybeStatic = resolveParams(undefined, staticOutputs);
+    if (maybeStatic && typeof maybeStatic === "object") {
+      staticResolvedParams = maybeStatic;
+    }
+  } catch {
+    staticResolvedParams = null;
+  }
+
+  const staticOperation = String(staticResolvedParams?.operation || node.values?.operation || "xadd").toLowerCase();
+  if (!STORE_PIPELINED_OPERATIONS.has(staticOperation)) {
+    return null;
+  }
+
+  const staticWorkflowId = String(
+    staticResolvedParams?.workflow_id
+    || staticResolvedParams?.workflowId
+    || defaultWorkflowId,
+  );
+  const staticVariableName = String(
+    staticResolvedParams?.variableNameManual
+    || staticResolvedParams?.variableNameSelect
+    || staticResolvedParams?.variableName
+    || "",
+  );
+  const staticStoreKey = staticWorkflowId && staticVariableName
+    ? buildStoreKey(userId, staticWorkflowId, staticVariableName)
+    : null;
+
+  return {
+    nodeId: node.id,
+    nodeName: String(node.name || node.node_type),
+    resolveParams,
+    execute: (params) => {
+      const operation = String(params.operation || staticOperation || "xadd").toLowerCase();
+      if (!STORE_PIPELINED_OPERATIONS.has(operation)) {
+        throw new Error(`Store operation '${operation}' is not supported by async fast path`);
+      }
+
+      const workflowId = String(params.workflow_id || params.workflowId || defaultWorkflowId);
+      const variableName = String(
+        params.variableNameManual
+        || params.variableNameSelect
+        || params.variableName
+        || "",
+      );
+
+      if (!workflowId || !variableName) {
+        throw new Error("Store fast path requires workflow_id/workflowId and variableName");
+      }
+
+      const key = staticStoreKey || buildStoreKey(userId, workflowId, variableName);
+      const ttl = Number(params.ttl || 0);
+      const baseOutput = {
+        operation,
+        variableName,
+      };
+
+      if (operation === "xadd") {
+        const resolved = normalizeStoreValue(params.value);
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: ["*", "data", JSON.stringify(resolved)],
+          output: { ...baseOutput, message: "Stream entry added" },
+        } as const;
+      }
+
+      if (operation === "set") {
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: [JSON.stringify(params.value)],
+          output: { ...baseOutput, message: "Value saved" },
+        } as const;
+      }
+
+      if (operation === "lpush" || operation === "rpush") {
+        const value = typeof params.value === "string" ? params.value : JSON.stringify(params.value);
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: [value],
+          output: { ...baseOutput, message: `Value pushed ${operation === "lpush" ? "left" : "right"}` },
+        } as const;
+      }
+
+      if (operation === "hset") {
+        const field = params.field;
+        if (!field) {
+          throw new Error("Store hset requires field");
+        }
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: [String(field), JSON.stringify(params.value)],
+          output: { ...baseOutput, message: "Hash field set", field },
+        } as const;
+      }
+
+      if (operation === "sadd") {
+        const members = Array.isArray(params.members)
+          ? params.members
+          : parseMembers(String(params.members || ""));
+        if (!members.length) {
+          throw new Error("Store sadd requires members");
+        }
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: members,
+          output: { ...baseOutput, message: "Members added" },
+        } as const;
+      }
+
+      if (operation === "zadd") {
+        const scoreMembers = Array.isArray(params.scoreMembers)
+          ? params.scoreMembers
+          : parseScoreMembers(String(params.scoreMembers || ""));
+        if (!scoreMembers.length) {
+          throw new Error("Store zadd requires scoreMembers");
+        }
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl,
+          args: scoreMembers,
+          output: { ...baseOutput, message: "Sorted set members added" },
+        } as const;
+      }
+
+      return {
+        redis,
+        kind: "store_pipeline",
+        op: "get",
+        key,
+        ttl: 0,
+        args: [],
+        output: baseOutput,
+        mapResult: parseStoredValue,
+      } as const;
+    },
+  };
+}
+
+export function compileAsyncFastPath(
+  bodyNodes: WorkflowNode[],
+  bodyEdges: WorkflowEdge[],
+  loopNode: WorkflowNode,
+  context: any,
+): CompiledAsyncLoop | null {
+  if (!canUseAsyncFastPath(bodyNodes)) return null;
+
+  const compiled = compileFastPath(bodyNodes, bodyEdges, loopNode, context);
+  if (compiled) {
+    return {
+      ...compiled,
+      redis: getRedisCache(),
+      pipelineChunkSize: 500,
+    };
+  }
+
+  const ordered = topologicalSort(bodyNodes, bodyEdges);
+  if (!ordered) return null;
+
+  const allNodes = Array.isArray(context?.nodes) ? context.nodes : bodyNodes;
+  const allResults = context?.getAllNodeResults ? context.getAllNodeResults() : {};
+  const bodyNodeIds = new Set(bodyNodes.map((n) => n.id));
+  const incomingByNode = new Map<string, WorkflowEdge[]>();
+  const outgoingByNode = new Map<string, WorkflowEdge[]>();
+  const bodyNodeById = new Map(bodyNodes.map((n) => [n.id, n] as const));
+
+  for (const edge of bodyEdges) {
+    const inList = incomingByNode.get(edge.target) || [];
+    inList.push(edge);
+    incomingByNode.set(edge.target, inList);
+    const outList = outgoingByNode.get(edge.source) || [];
+    outList.push(edge);
+    outgoingByNode.set(edge.source, outList);
+  }
+
+  const indicatorStates = new Map<string, { updater: ReturnType<typeof IndicatorService.createIncrementalUpdater>; state: Record<string, any> | null }>();
+  const brokers = new Map<string, SimBroker>();
+  const steps: CompiledStep[] = [];
+
+  for (const node of ordered) {
+    const values = node.values || {};
+    const compiledEntries: Array<[string, ParamAccessor]> = [];
+    for (const [k, v] of Object.entries(values)) {
+      if (k === "credential_id") continue;
+      const compiledValue = compileParamValue(v, bodyNodeIds, allNodes, allResults);
+      if (!compiledValue) return null;
+      compiledEntries.push([k, compiledValue]);
+    }
+
+    const resolveParams: ParamAccessor = (item, outputs) =>
+      Object.fromEntries(compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]));
+
+    const nodeName = String(node.name || node.node_type);
+    let step: CompiledStep | null = null;
+
+    if (nodeName === "Store") {
+      step = compileStoreStep(node, resolveParams, context);
+    } else {
+      let execute: (params: any) => any;
+
+      if (nodeName === "Compute") {
+        execute = (params) => ComputeService.compute(params, { skipTimestamp: true }).data;
+      } else if (nodeName === "If") {
+        const condition = compileIfConditions(node, (raw): RuntimeAccessor | null =>
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+        );
+        if (!condition) return null;
+        execute = (params) => ({ true: condition(params.item, params.outputs), false: !condition(params.item, params.outputs) });
+      } else if (nodeName === "Switch") {
+        const selector = compileSwitchConditions(node, (raw): RuntimeAccessor | null =>
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+        );
+        if (!selector) return null;
+        execute = (params) => ({ result: selector(params.item, params.outputs) });
+      } else if (nodeName === "Edit Fields") {
+        execute = (params) => compileFieldStep(params);
+      } else if (FAST_PATH_NODE_WHITELIST.has(nodeName) && !["Compute", "If", "Switch", "Edit Fields", "BacktestTrade", "BacktestSnapshot"].includes(nodeName)) {
+        execute = (params) => {
+          const key = node.id;
+          let entry = indicatorStates.get(key);
+          if (!entry) {
+            const updater = IndicatorService.createIncrementalUpdater(nodeName, params);
+            entry = { updater, state: null };
+            indicatorStates.set(key, entry);
+          }
+          const bar = params.current_bar || params.bar || params.candle || params.input || params;
+          if (!entry.state) {
+            const warm = entry.updater.warmUp([]);
+            entry.state = warm.internalState;
+          }
+          const updated = entry.updater.update(entry.state, bar);
+          entry.state = updated.internalState;
+          return updated.value;
+        };
+      } else if (nodeName === "BacktestTrade") {
+        execute = (params) => {
+          const backtestId = String(params.backtest_id || "");
+          if (!backtestId) return null;
+          let broker = brokers.get(backtestId);
+          if (!broker) {
+            broker = new SimBroker(backtestId);
+            broker.initializePortfolio();
+            brokers.set(backtestId, broker);
+          }
+
+          const currentBar = parseBar(params.current_bar || params);
+          const symbol = String(params.symbol || "");
+          if (currentBar && symbol) broker.onBar(symbol, currentBar);
+
+          const orderResult = broker.placeOrder({
+            symbol,
+            side: params.side as "buy" | "sell",
+            type: (params.order_type || "market") as "market" | "limit" | "stop" | "stop_limit",
+            quantity: Number(params.quantity),
+            limitPrice: params.limit_price != null ? Number(params.limit_price) : undefined,
+            stopPrice: params.stop_price != null ? Number(params.stop_price) : undefined,
+          });
+
+          return {
+            order_id: orderResult.orderId,
+            order_status: orderResult.status,
+            cash: broker.getCash(),
+            positions: broker.getPositions(),
+            pending_orders: broker.getPendingOrders().length,
+          };
+        };
+      } else if (nodeName === "BacktestSnapshot") {
+        execute = (params) => {
+          const backtestId = String(params.backtest_id || "");
+          if (!backtestId) return null;
+          let broker = brokers.get(backtestId);
+          if (!broker) {
+            broker = new SimBroker(backtestId);
+            broker.initializePortfolio();
+            brokers.set(backtestId, broker);
+          }
+          const currentBar = parseBar(params.current_bar || params);
+          if (currentBar && params.symbol) {
+            broker.onBar(String(params.symbol), currentBar);
+          }
+          const prices = typeof params.prices === "object" && params.prices ? { ...params.prices } : {};
+          if (currentBar) {
+            prices[String(params.symbol || "UNKNOWN")] = currentBar.close;
+          }
+          return broker.recordSnapshot(String(params.timestamp || new Date().toISOString()), prices);
+        };
+      } else {
+        return null;
+      }
+
+      step = {
+        nodeId: node.id,
+        nodeName,
+        resolveParams: (item, outputs) => {
+          const params = resolveParams(item, outputs);
+          if (nodeName === "If" || nodeName === "Switch") {
+            return { ...params, item, outputs };
+          }
+          return params;
+        },
+        execute,
+      };
+    }
+
+    if (!step) return null;
+
+    const incoming = incomingByNode.get(node.id) || [];
+    const condition = incoming.length
+      ? (outputs: NodeOutputs) =>
+          incoming.every((edge) => {
+            if (!bodyNodeIds.has(edge.source)) return true;
+            const sourceNode = bodyNodeById.get(edge.source);
+            const sourceName = String(sourceNode?.name || sourceNode?.node_type || "");
+            const sourceOutput = outputs.get(edge.source);
+            if (sourceName === "If") {
+              if (edge.sourceHandle === "true") return Boolean(sourceOutput?.true);
+              if (edge.sourceHandle === "false") return Boolean(sourceOutput?.false);
+            }
+            if (sourceName === "Switch" && edge.sourceHandle) {
+              return String(sourceOutput?.result) === String(edge.sourceHandle);
+            }
+            return sourceOutput !== undefined;
+          })
+      : undefined;
+
+    steps.push({
+      ...step,
+      condition,
+    });
+  }
+
+  const lastNode = [...ordered].reverse().find((n) => {
+    const outgoing = outgoingByNode.get(n.id) || [];
+    return outgoing.every((e) => !bodyNodeIds.has(e.target));
+  }) || ordered[ordered.length - 1];
+
+  return {
+    steps,
+    lastNodeId: lastNode.id,
+    redis: getRedisCache(),
+    pipelineChunkSize: 500,
+  };
+}
+
 export function executeFastPath(items: any[], compiled: CompiledLoop): any[] {
   const start = Date.now();
   const results: any[] = [];
@@ -516,6 +942,106 @@ export function executeFastPath(items: any[], compiled: CompiledLoop): any[] {
   const elapsed = Date.now() - start;
   const rate = elapsed > 0 ? (items.length / elapsed) * 1000 : 0;
   console.log(`[FastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`);
+
+  return results;
+}
+
+export async function executeAsyncFastPath(
+  items: any[],
+  compiled: CompiledAsyncLoop,
+): Promise<any[]> {
+  const start = Date.now();
+  const results: any[] = [];
+  const nodeOutputs = new Map<string, any>();
+  const chunkSize = Math.max(1, Number(compiled.pipelineChunkSize) || 500);
+
+  for (let chunkStart = 0; chunkStart < items.length; chunkStart += chunkSize) {
+    const chunk = items.slice(chunkStart, chunkStart + chunkSize);
+    const pipeline = compiled.redis.pipeline();
+    const readOps: Array<{ nodeId: string; itemIndex: number; commandIndex: number; mapResult?: StoreReadResultMapper }> = [];
+    const chunkNodeOutputs: NodeOutputs[] = [];
+    const ttlByKey = new Map<string, number>();
+    let queuedCommandCount = 0;
+
+    for (const item of chunk) {
+      nodeOutputs.clear();
+      for (const step of compiled.steps) {
+        if (step.condition && !step.condition(nodeOutputs)) continue;
+        const params = step.resolveParams(item, nodeOutputs);
+        const output = step.execute(params);
+
+        if (output?.kind === "store_pipeline") {
+          const op = output.op as StorePipelineOp;
+          const key = String(output.key || "");
+          const args = Array.isArray(output.args) ? output.args : [];
+          if (op === "xadd") { pipeline.xadd(key, ...(args as [string, string, string])); queuedCommandCount += 1; }
+          else if (op === "set") { pipeline.set(key, ...(args as [string])); queuedCommandCount += 1; }
+          else if (op === "lpush") { pipeline.lpush(key, ...(args as string[])); queuedCommandCount += 1; }
+          else if (op === "rpush") { pipeline.rpush(key, ...(args as string[])); queuedCommandCount += 1; }
+          else if (op === "hset") { pipeline.hset(key, ...(args as [string, string])); queuedCommandCount += 1; }
+          else if (op === "sadd") { pipeline.sadd(key, ...(args as string[])); queuedCommandCount += 1; }
+          else if (op === "zadd") { pipeline.zadd(key, ...(args as (string | number)[])); queuedCommandCount += 1; }
+          else if (op === "get") {
+            pipeline.get(key);
+            const commandIndex = queuedCommandCount;
+            queuedCommandCount += 1;
+            readOps.push({
+              mapResult: output.mapResult,
+              nodeId: step.nodeId,
+              itemIndex: chunkNodeOutputs.length,
+              commandIndex,
+            });
+          }
+
+          if (output.ttl && output.ttl > 0) {
+            ttlByKey.set(key, Math.max(ttlByKey.get(key) || 0, Number(output.ttl)));
+          }
+
+          nodeOutputs.set(step.nodeId, output.output);
+        } else {
+          nodeOutputs.set(step.nodeId, output);
+        }
+      }
+
+      chunkNodeOutputs.push(new Map(nodeOutputs));
+      results.push(nodeOutputs.get(compiled.lastNodeId));
+    }
+
+    const pipelineResult = await pipeline.exec();
+    if (!pipelineResult) {
+      throw new Error("Redis pipeline execution failed");
+    }
+
+    const readByCommandIndex = new Map(readOps.map((readRef) => [readRef.commandIndex, readRef]));
+    for (const [idx, [error, value]] of pipelineResult.entries()) {
+      if (error) {
+        throw error;
+      }
+
+      const readRef = readByCommandIndex.get(idx);
+      if (!readRef) continue;
+
+      const mappedValue = readRef.mapResult ? readRef.mapResult(value) : value;
+      const targetOutputs = chunkNodeOutputs[readRef.itemIndex];
+      targetOutputs?.set(readRef.nodeId, {
+        operation: "get",
+        value: mappedValue,
+      });
+      const resultIndex = chunkStart + readRef.itemIndex;
+      results[resultIndex] = targetOutputs?.get(compiled.lastNodeId);
+    }
+
+    const isLastChunk = chunkStart + chunkSize >= items.length;
+    if (isLastChunk && ttlByKey.size > 0) {
+      await Promise.all(
+        [...ttlByKey.entries()].map(([key, ttl]) => compiled.redis.expire(key, ttl)),
+      );
+    }
+  }
+
+  const elapsed = Date.now() - start;
+  const rate = elapsed > 0 ? (items.length / elapsed) * 1000 : 0;
+  console.log(`[AsyncFastPath] ${items.length} items in ${elapsed.toFixed(1)}ms (${rate.toFixed(0)} items/sec)`);
 
   return results;
 }

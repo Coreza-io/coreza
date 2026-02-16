@@ -15,6 +15,7 @@ import {
   buildStoreKey,
   parseMembers,
   parseScoreMembers,
+  parseStreamEntries,
   parseStoredValue,
 } from "../utils/store";
 import { getValueByPath } from "../utils/resolveReferences";
@@ -105,6 +106,56 @@ const STORE_PIPELINED_OPERATIONS = new Set([
   "zadd",
   "get",
 ]);
+
+const STORE_OPERATION_BASE_FIELDS = new Set(["scope", "dataType", "operation"]);
+
+const STORE_ACTIVE_FIELDS: Record<string, Set<string>> = {
+  xadd: new Set([...STORE_OPERATION_BASE_FIELDS, "variableName", "value"]),
+  set: new Set([...STORE_OPERATION_BASE_FIELDS, "variableName", "value", "ttl"]),
+  lpush: new Set([...STORE_OPERATION_BASE_FIELDS, "variableName", "value", "ttl"]),
+  rpush: new Set([...STORE_OPERATION_BASE_FIELDS, "variableName", "value", "ttl"]),
+  hset: new Set([
+    ...STORE_OPERATION_BASE_FIELDS,
+    "variableName",
+    "hashField",
+    "value",
+    "ttl",
+  ]),
+  sadd: new Set([...STORE_OPERATION_BASE_FIELDS, "variableName", "members", "ttl"]),
+  zadd: new Set([
+    ...STORE_OPERATION_BASE_FIELDS,
+    "variableName",
+    "member",
+    "score",
+    "scoreMembers",
+    "ttl",
+  ]),
+  xrange: new Set([
+    ...STORE_OPERATION_BASE_FIELDS,
+    "variableName",
+    "startId",
+    "endId",
+    "count",
+    "startIndex",
+  ]),
+  get: new Set([
+    ...STORE_OPERATION_BASE_FIELDS,
+    "variableSource",
+    "sourceWorkflowId",
+    "variableNameManual",
+    "variableNameSelect",
+    "variableName",
+  ]),
+};
+
+function getActiveStoreFields(operation: string): Set<string> | null {
+  return STORE_ACTIVE_FIELDS[operation] || null;
+}
+
+function parseXrangeResult(value: any): any {
+  if (!Array.isArray(value)) return [];
+  return parseStreamEntries(value);
+}
 
 export function canUseAsyncFastPath(bodyNodes: WorkflowNode[]): boolean {
   return (
@@ -475,10 +526,16 @@ export function compileFastPath(
 
   for (const node of ordered) {
     const values = node.values || {};
+    const nodeName = String(node.name || node.node_type);
     const compiledEntries: Array<[string, ParamAccessor]> = [];
+    const activeStoreFields =
+      nodeName === "Store"
+        ? getActiveStoreFields(String(values.operation || "").toLowerCase())
+        : null;
 
     for (const [k, v] of Object.entries(values)) {
       if (k === "credential_id") continue;
+      if (activeStoreFields && !activeStoreFields.has(k)) continue;
       const compiled = compileParamValue(
         v,
         bodyNodeIds,
@@ -495,7 +552,6 @@ export function compileFastPath(
         compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]),
       );
 
-    const nodeName = String(node.name || node.node_type);
     let execute: (params: any) => any;
 
     if (nodeName === "Compute") {
@@ -813,9 +869,9 @@ function compileStoreStep(
       }
 
       if (operation === "hset") {
-        const field = params.field;
+        const field = params.hashField ?? params.field;
         if (!field) {
-          throw new Error("Store hset requires field");
+          throw new Error("Store hset requires hashField");
         }
         return {
           redis,
@@ -847,20 +903,52 @@ function compileStoreStep(
       }
 
       if (operation === "zadd") {
-        const scoreMembers = Array.isArray(params.scoreMembers)
-          ? params.scoreMembers
-          : parseScoreMembers(String(params.scoreMembers || ""));
-        if (!scoreMembers.length) {
-          throw new Error("Store zadd requires scoreMembers");
+        let zaddArgs: Array<string | number> = [];
+
+        if (params.score !== undefined && params.member !== undefined) {
+          const score = Number(params.score);
+          if (!Number.isFinite(score)) {
+            throw new Error("Store zadd requires a numeric score");
+          }
+          const memberValue =
+            typeof params.member === "string"
+              ? params.member
+              : JSON.stringify(params.member);
+          zaddArgs = [score, memberValue];
+        } else {
+          zaddArgs = Array.isArray(params.scoreMembers)
+            ? params.scoreMembers
+            : parseScoreMembers(String(params.scoreMembers || ""));
         }
+
+        if (!zaddArgs.length) {
+          throw new Error("Store zadd requires score/member or scoreMembers");
+        }
+
         return {
           redis,
           kind: "store_pipeline",
           op: operation,
           key,
           ttl,
-          args: scoreMembers,
+          args: zaddArgs,
           output: { ...baseOutput, message: "Sorted set members added" },
+        } as const;
+      }
+
+      if (operation === "xrange") {
+        const startId = String(params.startId || params.startIndex || "-");
+        const endId = String(params.endId || "+");
+        const countArgs = params.count ? ["COUNT", String(params.count)] : [];
+        return {
+          redis,
+          kind: "store_pipeline",
+          op: operation,
+          key,
+          ttl: 0,
+          args: [startId, endId, ...countArgs],
+          output: { ...baseOutput, message: "Stream range retrieved" },
+          mapResult: parseXrangeResult,
         } as const;
       }
 
@@ -928,9 +1016,15 @@ export function compileAsyncFastPath(
 
   for (const node of ordered) {
     const values = node.values || {};
+    const nodeName = String(node.name || node.node_type);
     const compiledEntries: Array<[string, ParamAccessor]> = [];
+    const activeStoreFields =
+      nodeName === "Store"
+        ? getActiveStoreFields(String(values.operation || "").toLowerCase())
+        : null;
     for (const [k, v] of Object.entries(values)) {
       if (k === "credential_id") continue;
+      if (activeStoreFields && !activeStoreFields.has(k)) continue;
       const compiledValue = compileParamValue(
         v,
         bodyNodeIds,
@@ -947,7 +1041,6 @@ export function compileAsyncFastPath(
         compiledEntries.map(([k, acc]) => [k, acc(item, outputs)]),
       );
 
-    const nodeName = String(node.name || node.node_type);
     let step: CompiledStep | null = null;
 
     if (nodeName === "Store") {
@@ -1189,6 +1282,7 @@ export async function executeAsyncFastPath(
       itemIndex: number;
       commandIndex: number;
       mapResult?: StoreReadResultMapper;
+      output: any;
     }> = [];
     const chunkNodeOutputs: NodeOutputs[] = [];
     const ttlByKey = new Map<string, number>();
@@ -1226,6 +1320,17 @@ export async function executeAsyncFastPath(
           } else if (op === "zadd") {
             pipeline.zadd(key, ...(args as (string | number)[]));
             queuedCommandCount += 1;
+          } else if (op === "xrange") {
+            pipeline.xrange(key, ...(args as [string, string, ...string[]]));
+            const commandIndex = queuedCommandCount;
+            queuedCommandCount += 1;
+            readOps.push({
+              mapResult: output.mapResult,
+              nodeId: step.nodeId,
+              itemIndex: chunkNodeOutputs.length,
+              commandIndex,
+              output: output.output,
+            });
           } else if (op === "get") {
             pipeline.get(key);
             const commandIndex = queuedCommandCount;
@@ -1235,6 +1340,7 @@ export async function executeAsyncFastPath(
               nodeId: step.nodeId,
               itemIndex: chunkNodeOutputs.length,
               commandIndex,
+              output: output.output,
             });
           }
 
@@ -1274,7 +1380,7 @@ export async function executeAsyncFastPath(
       const mappedValue = readRef.mapResult ? readRef.mapResult(value) : value;
       const targetOutputs = chunkNodeOutputs[readRef.itemIndex];
       targetOutputs?.set(readRef.nodeId, {
-        operation: "get",
+        ...readRef.output,
         value: mappedValue,
       });
       const resultIndex = chunkStart + readRef.itemIndex;

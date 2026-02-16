@@ -38,17 +38,6 @@ export class DataSourceExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       const nodeName = node.subCategory ?? node.name;
-      if (!nodeName) {
-        const errOutput = createErrorOutput(
-          "Data source node name is missing",
-          {
-            nodeId: node.id,
-            nodeName: node.name,
-            category: this.category,
-          },
-        );
-        return toNodeResult(errOutput);
-      }
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
@@ -56,11 +45,6 @@ export class DataSourceExecutor implements INodeExecutor {
 
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
-        if (result.meta) {
-          result.meta.nodeId = node.id;
-          result.meta.nodeName = nodeName;
-          result.meta.category = this.category;
-        }
         return result;
       }
 

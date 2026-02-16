@@ -33,15 +33,25 @@ export class StorageService implements IStorageService {
   readonly serviceKey: string;
   readonly requiresCredentials: boolean;
   private readonly config: StorageConfig;
+  private readonly contextMeta: {
+    nodeName: string;
+    category: string;
+    skipTimestamp: boolean;
+  };
 
   constructor(serviceKey: string, config: StorageConfig) {
     this.serviceKey = serviceKey;
     this.config = config;
     this.requiresCredentials = config.requiresCredentials;
+    this.contextMeta = {
+      nodeName: serviceKey,
+      category: "storage",
+      skipTimestamp: true,
+    };
   }
 
   private getContext() {
-    return { nodeName: this.serviceKey, category: "storage" };
+    return this.contextMeta;
   }
 
   async execute(input: StorageInput): Promise<StandardNodeOutput> {
@@ -61,10 +71,9 @@ export class StorageService implements IStorageService {
         );
       }
 
-      // Build context
       const context: StorageContext = {
-        userId: user_id,
-        workflowId: workflow_id,
+        userId: user_id || "",
+        workflowId: workflow_id || "",
       };
 
       // Get Redis client based on service type
@@ -87,7 +96,6 @@ export class StorageService implements IStorageService {
           context.credentials
         );
       } else {
-        // Internal Redis (Store node)
         context.redis = getRedisCache();
       }
 

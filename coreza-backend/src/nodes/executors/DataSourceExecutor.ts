@@ -53,6 +53,17 @@ export class DataSourceExecutor implements INodeExecutor {
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
+
+      if (nodeName === "Store") {
+        const result = await this.executeStoreNode(resolvedParams, context);
+        if (result.meta) {
+          result.meta.nodeId = node.id;
+          result.meta.nodeName = nodeName;
+          result.meta.category = this.category;
+        }
+        return result;
+      }
+
       const operation = resolvedParams.operation ?? node.values?.operation;
 
       const combinedInput = {
@@ -88,16 +99,6 @@ export class DataSourceExecutor implements INodeExecutor {
           subCategory: "redis",
         });
 
-        const normalized = normalizeOutput(result, {
-          nodeId: node.id,
-          nodeName,
-          category: this.category,
-        });
-        return toNodeResult(normalized);
-      }
-
-      if (nodeName === "Store") {
-        const result = await this.executeStoreNode(resolvedParams, context);
         const normalized = normalizeOutput(result, {
           nodeId: node.id,
           nodeName,
@@ -196,15 +197,12 @@ export class DataSourceExecutor implements INodeExecutor {
       };
     }
 
-    const userId =
+    params.user_id =
       params.user_id || context?.userId || (params as any).userId || "system";
+    params.workflow_id =
+      params.workflow_id || params.workflowId || context?.workflowId;
 
-    return storageService.execute({
-      ...params,
-      user_id: userId,
-      workflow_id:
-        params.workflow_id || params.workflowId || context?.workflowId,
-    });
+    return storageService.execute(params);
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {

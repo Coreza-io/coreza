@@ -30,7 +30,7 @@ export type NodeExecutionStatus =
  * Metadata attached to every node output
  */
 export interface NodeOutputMeta {
-  timestamp: string;
+  timestamp?: string;
   executionTime?: number;
   nodeId?: string;
   nodeName?: string;
@@ -71,6 +71,7 @@ export interface NormalizeContext {
   nodeName?: string;
   category?: string;
   startTime?: number;
+  skipTimestamp?: boolean;
 }
 
 /**

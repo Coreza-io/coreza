@@ -37,6 +37,7 @@ export class NodeStoreV2 {
   private nodeResults = new Map<string, any>();
   private nodeStates = new Map<string, Map<string, any>>();
   private workflowNodes: any[];
+  private _cachedResults: Record<string, any> | null = null;
 
   constructor(runId: string, nodes: any[]) {
     this.runId = runId;
@@ -158,6 +159,9 @@ export class NodeStoreV2 {
   // Node result management
   setNodeResult(nodeId: string, result: any) {
     this.nodeResults.set(nodeId, result);
+    if (this._cachedResults) {
+      this._cachedResults[nodeId] = result;
+    }
   }
 
   getNodeResult(nodeId: string) {
@@ -165,11 +169,17 @@ export class NodeStoreV2 {
   }
 
   getAllResults() {
+    if (this._cachedResults) {
+      return this._cachedResults;
+    }
+
     const results: any = {};
     for (const [nodeId, result] of this.nodeResults.entries()) {
       results[nodeId] = result;
     }
-    return results;
+
+    this._cachedResults = results;
+    return this._cachedResults;
   }
 
   // Node state management (for execution context)

@@ -66,6 +66,8 @@ export class WorkflowEngine {
   private nodeById = new Map<string, WorkflowNode>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
+  private _execCtx: any = null;
+  private _nodeHasTemplatesCache = new Map<string, boolean>();
 
   constructor(
     private runId: string,
@@ -169,6 +171,15 @@ export class WorkflowEngine {
     const nodeParams = node.values || {};
     const resolvedParams: any = {};
 
+    // Fast path: skip deep resolution for static node parameters
+    if (!this.nodeHasTemplates(node.id, nodeParams)) {
+      for (const [key, value] of Object.entries(nodeParams)) {
+        if (key === "credential_id") continue;
+        resolvedParams[key] = value;
+      }
+      return resolvedParams;
+    }
+
     // Get all node data for cross-references
     const allNodeData = this.store.getAllResults();
 
@@ -181,6 +192,54 @@ export class WorkflowEngine {
     }
 
     return resolvedParams;
+  }
+
+  private nodeHasTemplates(nodeId: string, params: any): boolean {
+    if (this._nodeHasTemplatesCache.has(nodeId)) {
+      return this._nodeHasTemplatesCache.get(nodeId)!;
+    }
+
+    const hasTemplates = this.containsTemplates(params);
+    this._nodeHasTemplatesCache.set(nodeId, hasTemplates);
+    return hasTemplates;
+  }
+
+  private containsTemplates(value: any): boolean {
+    if (typeof value === "string") return value.includes("{{");
+    if (Array.isArray(value)) return value.some((v) => this.containsTemplates(v));
+    if (value && typeof value === "object") {
+      return Object.values(value).some((v) => this.containsTemplates(v));
+    }
+    return false;
+  }
+
+  private getExecutionContext(nodeId: string): any {
+    if (!this._execCtx) {
+      const ctx: any = {
+        user_id: this.userId,
+        userId: this.userId,
+        runId: this.runId,
+        workflowId: this.workflowId,
+        nodes: this.nodes,
+        edges: this.edges,
+        resolveNodeParameters: this.resolveNodeParameters.bind(this),
+        getAllNodeResults: () => this.store.getAllResults(),
+        dataContext: this.dataContext,
+        indicatorStateManager: this.indicatorStateManager,
+        abortSignal: this.abortSignal,
+        checkCancellation: this.checkCancellation.bind(this),
+        silent: this.silent,
+        nodeId,
+      };
+
+      ctx.getState = (key: string) => this.store.getNodeState(ctx.nodeId, key);
+      ctx.setState = (key: string, value: any) =>
+        this.store.setNodeState(ctx.nodeId, key, value);
+      this._execCtx = ctx;
+    }
+
+    this._execCtx.nodeId = nodeId;
+    return this._execCtx;
   }
 
   registerExecutor(category: string, executor: any) {
@@ -526,29 +585,7 @@ export class WorkflowEngine {
         throw new Error("Workflow cancelled by user");
       }
 
-      // Create execution context with all necessary information
-      const executionContext = {
-        user_id: this.userId,
-        userId: this.userId,
-        runId: this.runId,
-        workflowId: this.workflowId,
-        nodes: this.nodes,
-        edges: this.edges,
-        resolveNodeParameters: this.resolveNodeParameters.bind(this),
-        getState: (key: string) => this.store.getNodeState(nodeId, key),
-        setState: (key: string, value: any) =>
-          this.store.setNodeState(nodeId, key, value),
-        // Allow parallel loop to capture and share parent workflow context with child jobs
-        getAllNodeResults: () => this.store.getAllResults(),
-        // DataContext for execution-scoped RAM storage (shared by all tools)
-        dataContext: this.dataContext,
-        indicatorStateManager: this.indicatorStateManager,
-        // Abort signal for cancellation detection
-        abortSignal: this.abortSignal,
-        // Function for executors to check cancellation
-        checkCancellation: this.checkCancellation.bind(this),
-        silent: this.silent,
-      };
+      const executionContext = this.getExecutionContext(nodeId);
 
       const result = await this.executeNode(node, input, executionContext);
       if (!this.silent) {

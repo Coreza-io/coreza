@@ -168,11 +168,30 @@ function createStaticAccessor(value: any): ParamAccessor {
   return () => value;
 }
 
+function isLoopNodeReference(
+  resolvedId: string,
+  nodeName: string,
+  loopNode: WorkflowNode,
+): boolean {
+  if (resolvedId === loopNode.id) return true;
+  const loopData = (loopNode as any).data;
+  return (
+    nodeName === loopNode.id ||
+    nodeName === (loopNode as any).name ||
+    nodeName === (loopNode as any).label ||
+    nodeName === loopData?.title ||
+    nodeName === loopData?.name ||
+    nodeName === loopData?.label ||
+    nodeName === loopData?.displayName
+  );
+}
+
 function compileTemplateExpression(
   expression: string,
   bodyNodeIds: Set<string>,
   allNodes: WorkflowNode[],
   allResults: Record<string, any>,
+  loopNode: WorkflowNode,
 ): ParamAccessor | null {
   const trimmed = expression.trim();
   const jsonMatch = trimmed.match(/^\$json(?:\.(.*))?$/);
@@ -202,6 +221,13 @@ function compileTemplateExpression(
   const resolvedId =
     resolveNodeKey(nodeName, allResults, allNodes as any) || nodeName;
 
+  if (isLoopNodeReference(resolvedId, nodeName, loopNode)) {
+    return (item: any) => {
+      const target = pickJsonSource(item);
+      return path ? getValueByPath(target, path) : target;
+    };
+  }
+
   if (bodyNodeIds.has(resolvedId)) {
     return (_item: any, outputs: NodeOutputs) => {
       const target = pickJsonSource(outputs.get(resolvedId));
@@ -220,6 +246,7 @@ export function compileParamValue(
   bodyNodeIds: Set<string>,
   allNodes: WorkflowNode[],
   allResults: Record<string, any>,
+  loopNode: WorkflowNode,
 ): ParamAccessor | null {
   if (
     rawValue == null ||
@@ -231,7 +258,7 @@ export function compileParamValue(
 
   if (Array.isArray(rawValue)) {
     const compiledItems = rawValue.map((v) =>
-      compileParamValue(v, bodyNodeIds, allNodes, allResults),
+      compileParamValue(v, bodyNodeIds, allNodes, allResults, loopNode),
     );
     if (compiledItems.some((v) => v == null)) return null;
     return (item: any, outputs: NodeOutputs) =>
@@ -241,7 +268,10 @@ export function compileParamValue(
   if (typeof rawValue === "object") {
     const compiledEntries = Object.entries(rawValue).map(
       ([k, v]) =>
-        [k, compileParamValue(v, bodyNodeIds, allNodes, allResults)] as const,
+        [
+          k,
+          compileParamValue(v, bodyNodeIds, allNodes, allResults, loopNode),
+        ] as const,
     );
     if (compiledEntries.some(([, v]) => v == null)) return null;
     return (item: any, outputs: NodeOutputs) =>
@@ -271,6 +301,7 @@ export function compileParamValue(
       bodyNodeIds,
       allNodes,
       allResults,
+      loopNode,
     );
   }
 
@@ -285,6 +316,7 @@ export function compileParamValue(
       bodyNodeIds,
       allNodes,
       allResults,
+      loopNode,
     );
     if (!compiled) return null;
     segments.push(compiled);
@@ -407,7 +439,7 @@ function parseBar(raw: any): Bar | null {
 export function compileFastPath(
   bodyNodes: WorkflowNode[],
   bodyEdges: WorkflowEdge[],
-  _loopNode: WorkflowNode,
+  loopNode: WorkflowNode,
   context: any,
 ): CompiledLoop | null {
   const ordered = topologicalSort(bodyNodes, bodyEdges);
@@ -447,7 +479,13 @@ export function compileFastPath(
 
     for (const [k, v] of Object.entries(values)) {
       if (k === "credential_id") continue;
-      const compiled = compileParamValue(v, bodyNodeIds, allNodes, allResults);
+      const compiled = compileParamValue(
+        v,
+        bodyNodeIds,
+        allNodes,
+        allResults,
+        loopNode,
+      );
       if (!compiled) return null;
       compiledEntries.push([k, compiled]);
     }
@@ -467,7 +505,7 @@ export function compileFastPath(
       const condition = compileIfConditions(
         node,
         (raw): RuntimeAccessor | null =>
-          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults, loopNode),
       );
       if (!condition) return null;
       execute = (params) => ({
@@ -478,7 +516,7 @@ export function compileFastPath(
       const selector = compileSwitchConditions(
         node,
         (raw): RuntimeAccessor | null =>
-          compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+          compileParamValue(raw, bodyNodeIds, allNodes, allResults, loopNode),
       );
       if (!selector) return null;
       execute = (params) => ({ result: selector(params.item, params.outputs) });
@@ -898,6 +936,7 @@ export function compileAsyncFastPath(
         bodyNodeIds,
         allNodes,
         allResults,
+        loopNode,
       );
       if (!compiledValue) return null;
       compiledEntries.push([k, compiledValue]);
@@ -923,7 +962,7 @@ export function compileAsyncFastPath(
         const condition = compileIfConditions(
           node,
           (raw): RuntimeAccessor | null =>
-            compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+            compileParamValue(raw, bodyNodeIds, allNodes, allResults, loopNode),
         );
         if (!condition) return null;
         execute = (params) => ({
@@ -934,7 +973,7 @@ export function compileAsyncFastPath(
         const selector = compileSwitchConditions(
           node,
           (raw): RuntimeAccessor | null =>
-            compileParamValue(raw, bodyNodeIds, allNodes, allResults),
+            compileParamValue(raw, bodyNodeIds, allNodes, allResults, loopNode),
         );
         if (!selector) return null;
         execute = (params) => ({

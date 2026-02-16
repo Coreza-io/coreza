@@ -540,6 +540,11 @@ export class ControlFlowExecutor implements INodeExecutor {
               context,
             );
             if (compiled) {
+              if (!context?.silent) {
+                console.log(
+                  `🚀 [FastPath] Node ${node.id}: using synchronous fast path for ${items.length} items`,
+                );
+              }
               const results = executeFastPath(items, compiled);
               return {
                 success: true,
@@ -560,6 +565,11 @@ export class ControlFlowExecutor implements INodeExecutor {
               context,
             );
             if (compiledAsync) {
+              if (!context?.silent) {
+                console.log(
+                  `🚀 [FastPath] Node ${node.id}: using async fast path (Redis pipeline) for ${items.length} items`,
+                );
+              }
               const results = await executeAsyncFastPath(items, compiledAsync);
               return {
                 success: true,

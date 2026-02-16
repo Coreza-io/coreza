@@ -872,7 +872,9 @@ export const storeConfig: StorageConfig = {
 
         await ctx.redis!.xadd(key, "*", "data", JSON.stringify(item));
 
-        await applyTTL(ctx.redis!, key, input.ttl);
+        if (input.ttl && input.ttl > 0) {
+          await ctx.redis!.expire(key, input.ttl);
+        }
 
         return {
           operation: "xadd",

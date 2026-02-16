@@ -30,6 +30,27 @@ import { resolveReferences } from "../utils/resolveReferences";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 
+
+const CATEGORY_MAP: Record<string, string> = {
+  If: "ControlFlow",
+  Switch: "ControlFlow",
+  "Edit Fields": "ControlFlow",
+  Compute: "ControlFlow",
+  Loop: "ControlFlow",
+  Scheduler: "Utility",
+  trigger: "Utility",
+  Visualize: "Utility",
+  webhook: "Utility",
+  httprequest: "Utility",
+  Gmail: "Communication",
+  WhatsApp: "Communication",
+  FinnHub: "DataSource",
+  YahooFinance: "DataSource",
+  Store: "DataSource",
+  LLM: "LLM",
+  AIAgent: "AIAgent",
+};
+
 interface ExecutionContext {
   nodeId: string;
   runId: string;
@@ -726,32 +747,8 @@ export class WorkflowEngine {
 
     const nodeName = node.name ?? "";
 
-    // Map node categories for compatibility - include AIAgent
-    let category = node.category;
-
-    if (
-      nodeName === "If" ||
-      nodeName === "Switch" ||
-      nodeName === "Edit Fields" ||
-      nodeName === "Compute" ||
-      nodeName === "Loop"
-    ) {
-      category = "ControlFlow";
-    } else if (
-      ["Scheduler", "trigger", "Visualize", "webhook", "httprequest"].includes(
-        nodeName,
-      )
-    ) {
-      category = "Utility";
-    } else if (["Gmail", "WhatsApp"].includes(nodeName)) {
-      category = "Communication";
-    } else if (["FinnHub", "YahooFinance", "Store"].includes(nodeName)) {
-      category = "DataSource";
-    } else if (nodeName === "LLM") {
-      category = "LLM";
-    } else if (nodeName === "AIAgent") {
-      category = "AIAgent"; // AIAgent
-    }
+    // Map node categories for compatibility
+    const category = CATEGORY_MAP[nodeName] ?? node.category;
 
     // Use custom executor if registered, otherwise get from registry
     let executor = this.executors.get(category);
@@ -772,11 +769,7 @@ export class WorkflowEngine {
       if (!result.success) {
         throw new Error(result.error || `Node execution failed: ${category}`);
       }
-      // Remove fields only useful for error
-      const { success, error, ...rest } = result;
-
-      // Return everything else exactly as provided
-      return { success, error, ...rest };
+      return result;
     }
 
     // For simple results, wrap in structure to maintain consistency

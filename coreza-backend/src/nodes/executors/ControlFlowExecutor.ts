@@ -98,13 +98,10 @@ export class ControlFlowExecutor implements INodeExecutor {
         logicalOp === "OR" ? evals.some((e) => e) : evals.every((e) => e);
 
       return toNodeResult(
-        createSuccessOutput(
-          {
-            true: result,
-            false: !result,
-          },
-          this.getSuccessContext(context),
-        ),
+        createSuccessOutput({
+          true: result,
+          false: !result,
+        }, this.getSuccessContext(context)),
       );
     }
 
@@ -139,13 +136,10 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     return toNodeResult(
-      createSuccessOutput(
-        {
-          true: result,
-          false: !result,
-        },
-        this.getSuccessContext(context),
-      ),
+      createSuccessOutput({
+        true: result,
+        false: !result,
+      }, this.getSuccessContext(context)),
     );
   }
 
@@ -223,7 +217,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? resolvedParams.fields
       : [];
     const persistent = !!resolvedParams.persistent;
-    const result: Record<string, any> = {};
+    let result: Record<string, any> = {};
 
     if (!context?.silent) {
       console.log("📝 Field node processing:", {
@@ -394,10 +388,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
 
       const batchSize = Number(cachedConfig.batchSize) || 1;
-      const currentBatch = cachedItems.slice(
-        currentIndex,
-        currentIndex + batchSize,
-      );
+      const currentBatch = cachedItems.slice(currentIndex, currentIndex + batchSize);
       const nextIndex = currentIndex + currentBatch.length;
       const isLastBatch = nextIndex >= cachedItems.length;
 
@@ -516,88 +507,6 @@ export class ControlFlowExecutor implements INodeExecutor {
           `No array found for field: ${inputArray} or array is empty`,
         ),
       );
-    }
-
-    // Fast path: bypass queue-based execution for fully synchronous loop bodies
-    if (context?.nodes && context?.edges) {
-      const currentIndexFastPath = context?.getState("currentIndex") || 0;
-      if (currentIndexFastPath === 0) {
-        try {
-          const { extractLoopBodySubgraph } =
-            await import("../../services/loopSubgraphExtractor");
-          const {
-            canUseFastPath,
-            compileFastPath,
-            executeFastPath,
-            canUseAsyncFastPath,
-            compileAsyncFastPath,
-            executeAsyncFastPath,
-          } = await import("../../services/backtestFastPath");
-
-          const subgraph = extractLoopBodySubgraph(
-            node.id,
-            context.nodes,
-            context.edges,
-          );
-
-          if (canUseFastPath(subgraph.nodes)) {
-            const compiled = compileFastPath(
-              subgraph.nodes,
-              subgraph.edges,
-              node,
-              context,
-            );
-            if (compiled) {
-              if (!context?.silent) {
-                console.log(
-                  `🚀 [FastPath] Node ${node.id}: using synchronous fast path for ${items.length} items`,
-                );
-              }
-              const results = executeFastPath(items, compiled);
-              return {
-                success: true,
-                data: results,
-                control: {
-                  loopCompleted: true,
-                  sourceHandle: "done",
-                },
-              };
-            }
-          }
-
-          if (canUseAsyncFastPath(subgraph.nodes)) {
-            const compiledAsync = compileAsyncFastPath(
-              subgraph.nodes,
-              subgraph.edges,
-              node,
-              context,
-            );
-            if (compiledAsync) {
-              if (!context?.silent) {
-                console.log(
-                  `🚀 [FastPath] Node ${node.id}: using async fast path (Redis pipeline) for ${items.length} items`,
-                );
-              }
-              const results = await executeAsyncFastPath(items, compiledAsync);
-              return {
-                success: true,
-                data: results,
-                control: {
-                  loopCompleted: true,
-                  sourceHandle: "done",
-                },
-              };
-            }
-          }
-        } catch (error) {
-          if (!context?.silent) {
-            console.warn(
-              "⚠️ [FastPath] Falling back to sequential loop execution:",
-              error,
-            );
-          }
-        }
-      }
     }
 
     // Cache parsed loop items/config for re-entry fast path

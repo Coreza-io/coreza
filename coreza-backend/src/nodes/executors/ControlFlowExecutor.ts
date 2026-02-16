@@ -28,6 +28,10 @@ import {
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
 
+  private getSuccessContext(context: any) {
+    return context?.silent ? { skipTimestamp: true } : {};
+  }
+
   async execute(
     node: WorkflowNode,
     input: NodeInput,
@@ -97,7 +101,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         createSuccessOutput({
           true: result,
           false: !result,
-        }),
+        }, this.getSuccessContext(context)),
       );
     }
 
@@ -108,13 +112,15 @@ export class ControlFlowExecutor implements INodeExecutor {
     const operation = resolvedParams.operation || "===";
     const dataType = resolvedParams.dataType;
 
-    console.log("🔀 If node condition check:", {
-      condition,
-      value1,
-      value2,
-      operation,
-      dataType,
-    });
+    if (!context?.silent) {
+      console.log("🔀 If node condition check:", {
+        condition,
+        value1,
+        value2,
+        operation,
+        dataType,
+      });
+    }
 
     if (condition !== undefined) {
       result = Boolean(condition);
@@ -133,7 +139,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       createSuccessOutput({
         true: result,
         false: !result,
-      }),
+      }, this.getSuccessContext(context)),
     );
   }
 
@@ -151,10 +157,12 @@ export class ControlFlowExecutor implements INodeExecutor {
       : [];
     const defaultCase = resolvedParams.defaultCase || "fallback";
 
-    console.log("🔀 Switch node evaluation:", {
-      cases,
-      defaultCase,
-    });
+    if (!context?.silent) {
+      console.log("🔀 Switch node evaluation:", {
+        cases,
+        defaultCase,
+      });
+    }
 
     const baseInput = resolvedParams.inputValue ?? resolvedParams.value;
 
@@ -177,11 +185,13 @@ export class ControlFlowExecutor implements INodeExecutor {
       defaultCase,
     );
 
-    console.log("🔀 Switch node result:", {
-      matchedCase: result.matchedCase,
-      selectedBranch: result.result,
-      isDefault: result.matchedCase === undefined,
-    });
+    if (!context?.silent) {
+      console.log("🔀 Switch node result:", {
+        matchedCase: result.matchedCase,
+        selectedBranch: result.result,
+        isDefault: result.matchedCase === undefined,
+      });
+    }
 
     if (!result.success) {
       return toNodeResult(
@@ -189,7 +199,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       );
     }
 
-    return toNodeResult(createSuccessOutput(result.result));
+    return toNodeResult(
+      createSuccessOutput(result.result, this.getSuccessContext(context)),
+    );
   }
 
   private async executeFieldNode(
@@ -207,11 +219,13 @@ export class ControlFlowExecutor implements INodeExecutor {
     const persistent = !!resolvedParams.persistent;
     let result: Record<string, any> = {};
 
-    console.log("📝 Field node processing:", {
-      fields,
-      inputData: input,
-      hasPersistentContext: !!context?.getPersistentValue,
-    });
+    if (!context?.silent) {
+      console.log("📝 Field node processing:", {
+        fields,
+        inputData: input,
+        hasPersistentContext: !!context?.getPersistentValue,
+      });
+    }
 
     // Process each field operation
     for (const field of fields) {
@@ -243,7 +257,12 @@ export class ControlFlowExecutor implements INodeExecutor {
             // Also set in result for immediate use in current execution
             result[fieldName] = finalValue;
 
-            console.log(`💾 Persistent field ${fieldName} set to:`, finalValue);
+            if (!context?.silent) {
+              console.log(
+                `💾 Persistent field ${fieldName} set to:`,
+                finalValue,
+              );
+            }
           } else {
             // Regular non-persistent field
             result[fieldName] = value;
@@ -255,10 +274,12 @@ export class ControlFlowExecutor implements INodeExecutor {
           if (value && result[value] !== undefined) {
             if (persistent && context?.setPersistentValue) {
               await context.setPersistentValue(fieldName, result[value]);
-              console.log(
-                `💾 Persistent field ${fieldName} copied value:`,
-                result[value],
-              );
+              if (!context?.silent) {
+                console.log(
+                  `💾 Persistent field ${fieldName} copied value:`,
+                  result[value],
+                );
+              }
             }
             result[fieldName] = result[value];
           }
@@ -268,7 +289,9 @@ export class ControlFlowExecutor implements INodeExecutor {
           // Remove the field
           if (persistent && context?.setPersistentValue) {
             await context.setPersistentValue(fieldName, undefined);
-            console.log(`💾 Persistent field ${fieldName} removed`);
+            if (!context?.silent) {
+              console.log(`💾 Persistent field ${fieldName} removed`);
+            }
           }
           delete result[fieldName];
           break;
@@ -278,7 +301,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
     }
 
-    return toNodeResult(createSuccessOutput(result));
+    return toNodeResult(
+      createSuccessOutput(result, this.getSuccessContext(context)),
+    );
   }
 
   private async executeComputeNode(
@@ -302,18 +327,21 @@ export class ControlFlowExecutor implements INodeExecutor {
       inputFormat,
       targetDay,
     } = resolvedParams;
-    const result = ComputeService.compute({
-      value,
-      operator,
-      arg1,
-      arg2,
-      filterOperator,
-      unit,
-      date2,
-      timezone,
-      inputFormat,
-      targetDay,
-    });
+    const result = ComputeService.compute(
+      {
+        value,
+        operator,
+        arg1,
+        arg2,
+        filterOperator,
+        unit,
+        date2,
+        timezone,
+        inputFormat,
+        targetDay,
+      },
+      this.getSuccessContext(context),
+    );
 
     // ComputeService already returns StandardNodeOutput, just convert to NodeResult
     return toNodeResult(result);
@@ -324,6 +352,63 @@ export class ControlFlowExecutor implements INodeExecutor {
     input: NodeInput,
     context: any,
   ): Promise<NodeResult> {
+    const currentIndex = context?.getState("currentIndex") || 0;
+    const cachedItems = context?.getState("_loopItems");
+    const cachedConfig = context?.getState("_loopConfig");
+
+    if (
+      currentIndex > 0 &&
+      Array.isArray(cachedItems) &&
+      cachedConfig &&
+      typeof cachedConfig === "object"
+    ) {
+      const aggregatedResults = context?.getState("aggregatedResults") || [];
+      const isCompleted = context?.getState("isCompleted") || false;
+
+      if (isCompleted) {
+        if (!context?.silent) {
+          console.log(
+            `✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`,
+          );
+        }
+        context?.setState("currentIndex", undefined);
+        context?.setState("aggregatedResults", undefined);
+        context?.setState("isCompleted", undefined);
+        context?.setState("_loopItems", undefined);
+        context?.setState("_loopConfig", undefined);
+
+        return {
+          success: true,
+          data: aggregatedResults,
+          control: {
+            loopCompleted: true,
+            sourceHandle: "done",
+          },
+        };
+      }
+
+      const batchSize = Number(cachedConfig.batchSize) || 1;
+      const currentBatch = cachedItems.slice(currentIndex, currentIndex + batchSize);
+      const nextIndex = currentIndex + currentBatch.length;
+      const isLastBatch = nextIndex >= cachedItems.length;
+
+      context?.setState("currentIndex", nextIndex);
+      if (isLastBatch) {
+        context?.setState("isCompleted", true);
+      }
+
+      return {
+        success: true,
+        data: currentBatch.length === 1 ? currentBatch[0] : currentBatch,
+        control: {
+          loopIteration: true,
+          sourceHandle: "loop",
+          currentIndex,
+          isLastBatch,
+        },
+      };
+    }
+
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
@@ -348,9 +433,11 @@ export class ControlFlowExecutor implements INodeExecutor {
       context?.nodes &&
       context?.edges
     ) {
-      console.log(
-        `🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`,
-      );
+      if (!context?.silent) {
+        console.log(
+          `🚀 [LOOP] Node ${node.id}: Delegating to LoopExecutorV2 for parallel BullMQ execution`,
+        );
+      }
 
       const loopExecutorV2 = new LoopExecutorV2();
 
@@ -422,14 +509,23 @@ export class ControlFlowExecutor implements INodeExecutor {
       );
     }
 
+    // Cache parsed loop items/config for re-entry fast path
+    context?.setState("_loopItems", items);
+    context?.setState("_loopConfig", {
+      batchSize,
+      parallel,
+      continueOnError,
+      throttleMs,
+    });
+
     // Get current loop state from context
-    const currentIndex = context?.getState("currentIndex") || 0;
+    const currentIndexFromState = context?.getState("currentIndex") || 0;
     const aggregatedResults = context?.getState("aggregatedResults") || [];
     const isCompleted = context?.getState("isCompleted") || false;
 
     if (!context?.silent) {
       console.log(`🔄 [LOOP] Node ${node.id} processing:`, {
-        currentIndex,
+        currentIndex: currentIndexFromState,
         totalItems: items.length,
         batchSize,
         isCompleted,
@@ -439,13 +535,17 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     // If loop is completed, return final aggregated results
     if (isCompleted) {
-      console.log(
-        `✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`,
-      );
+      if (!context?.silent) {
+        console.log(
+          `✅ [LOOP] Node ${node.id} completed with ${aggregatedResults.length} results`,
+        );
+      }
       // Clear loop state
       context?.setState("currentIndex", undefined);
       context?.setState("aggregatedResults", undefined);
       context?.setState("isCompleted", undefined);
+      context?.setState("_loopItems", undefined);
+      context?.setState("_loopConfig", undefined);
 
       return {
         success: true,
@@ -458,13 +558,16 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     // Get current batch
-    const currentBatch = items.slice(currentIndex, currentIndex + batchSize);
-    const nextIndex = currentIndex + currentBatch.length;
+    const currentBatch = items.slice(
+      currentIndexFromState,
+      currentIndexFromState + batchSize,
+    );
+    const nextIndex = currentIndexFromState + currentBatch.length;
     const isLastBatch = nextIndex >= items.length;
 
     if (!context?.silent) {
       console.log(`🔄 [LOOP] Node ${node.id} processing batch:`, {
-        batchStart: currentIndex,
+        batchStart: currentIndexFromState,
         batchEnd: nextIndex - 1,
         batchSize: currentBatch.length,
         isLastBatch,
@@ -486,7 +589,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       control: {
         loopIteration: true,
         sourceHandle: "loop",
-        currentIndex,
+        currentIndex: currentIndexFromState,
         isLastBatch,
       },
     };

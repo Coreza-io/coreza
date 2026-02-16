@@ -131,19 +131,27 @@ export function createSuccessOutput<T = any>(
   data: T,
   context: NormalizeContext = {}
 ): StandardNodeOutput<T> {
+  const meta = context.skipTimestamp
+    ? {
+        nodeId: context.nodeId,
+        nodeName: context.nodeName,
+        category: context.category,
+      }
+    : {
+        timestamp: new Date().toISOString(),
+        executionTime: context.startTime
+          ? Date.now() - context.startTime
+          : undefined,
+        nodeId: context.nodeId,
+        nodeName: context.nodeName,
+        category: context.category,
+      };
+
   return {
     success: true,
     status: "success",
     data,
-    meta: {
-      timestamp: new Date().toISOString(),
-      executionTime: context.startTime
-        ? Date.now() - context.startTime
-        : undefined,
-      nodeId: context.nodeId,
-      nodeName: context.nodeName,
-      category: context.category,
-    },
+    meta,
   };
 }
 

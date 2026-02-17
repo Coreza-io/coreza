@@ -99,6 +99,7 @@ const INDICATOR_NODES = [
   'Ichimoku',
   'VolumeOscillator',
   'SupportResistance',
+  'InitializeIndicators',
 ];
 
 const SCREENER_NODES = [

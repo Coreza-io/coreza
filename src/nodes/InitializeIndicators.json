@@ -1,0 +1,58 @@
+{
+  "name": "InitializeIndicators",
+  "def": "Initialize Indicators",
+  "node_type": "main",
+  "icon": "/assets/icons/indicators.svg",
+  "category": "Indicators",
+  "description": "Warm up all indicators in the workflow with historical data before the loop begins. Similar to QuantConnect's SetWarmUp.",
+  "color": "text-purple-500",
+  "size": { "width": 340, "height": 420 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/indicators/initialize", "method": "POST" },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "description": "Historical OHLCV bar data to warm up indicators",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. BTCUSDT",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
+      "required": true
+    },
+    {
+      "key": "warmup_period",
+      "label": "Warm-Up Period (bars)",
+      "type": "text",
+      "placeholder": "200",
+      "default": "200",
+      "description": "Number of bars to use for warming up indicators. Should be >= the longest indicator period in your workflow.",
+      "required": true
+    },
+    {
+      "key": "auto_detect",
+      "label": "Auto-Detect Indicators",
+      "type": "select",
+      "options": [
+        { "id": "true", "name": "Yes - Scan workflow for all indicators" },
+        { "id": "false", "name": "No - Manual configuration" }
+      ],
+      "default": "true",
+      "required": true
+    }
+  ]
+}

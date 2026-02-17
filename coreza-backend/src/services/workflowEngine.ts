@@ -49,6 +49,7 @@ const CATEGORY_MAP: Record<string, string> = {
   Store: "DataSource",
   LLM: "LLM",
   AIAgent: "AIAgent",
+  InitializeIndicators: "Indicators",
 };
 
 interface ExecutionContext {

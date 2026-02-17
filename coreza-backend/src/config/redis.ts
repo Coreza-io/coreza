@@ -34,7 +34,7 @@ interface SentinelConfig {
 
 function parseSentinelConfig(masterEnvVar: string): SentinelConfig {
   const sentinelHosts = process.env.REDIS_SENTINEL_HOSTS;
-  
+
   if (!sentinelHosts) {
     return { enabled: false, sentinels: [], masterName: "" };
   }
@@ -44,8 +44,11 @@ function parseSentinelConfig(masterEnvVar: string): SentinelConfig {
     return { host: hostname, port: parseInt(port, 10) || 26379 };
   });
 
-  const masterName = process.env[masterEnvVar] || 
-    (masterEnvVar === "REDIS_SENTINEL_MASTER_QUEUE" ? "mymaster-queue" : "mymaster-cache");
+  const masterName =
+    process.env[masterEnvVar] ||
+    (masterEnvVar === "REDIS_SENTINEL_MASTER_QUEUE"
+      ? "mymaster-queue"
+      : "mymaster-cache");
 
   return {
     enabled: true,
@@ -63,7 +66,9 @@ const baseOptions: RedisOptions = {
   keepAlive: 30000, // Keep connections alive
   retryStrategy: (times: number) => {
     if (times > 10) {
-      console.error(`[Redis] Connection failed after ${times} attempts, giving up`);
+      console.error(
+        `[Redis] Connection failed after ${times} attempts, giving up`,
+      );
       return null;
     }
 
@@ -87,6 +92,8 @@ const queueOptions: RedisOptions = {
 const cacheOptions: RedisOptions = {
   ...baseOptions,
   maxRetriesPerRequest: 3, // Fail fast to avoid unbounded command buffering
+  enableOfflineQueue: false, // Don't queue commands while disconnected
+  autoResendUnfulfilledCommands: false, // Avoid requeueing pending commands after reconnect
   enableReadyCheck: true, // Verify connection before use
   connectTimeout: 15000, // 15s connect timeout (more tolerance)
 };
@@ -123,7 +130,9 @@ const getRedisOrThrow = (
   usage: string,
 ): { redisUrl: string; hasTlsFlag: boolean } => {
   if (!resolveResult.url) {
-    throw new Error(`Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`);
+    throw new Error(
+      `Redis URL is required for ${usage}. Set REDIS_URL or the dedicated environment variable.`,
+    );
   }
 
   return { redisUrl: resolveResult.url, hasTlsFlag: resolveResult.hasTlsFlag };
@@ -204,7 +213,9 @@ const buildSentinelOptions = (
     // Sentinel-specific options
     sentinelRetryStrategy: (times: number) => {
       const delay = Math.min(times * 100, 10000);
-      console.log(`[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`);
+      console.log(
+        `[Redis Sentinel] Retry attempt ${times}, next retry in ${delay}ms`,
+      );
       return delay;
     },
     failoverDetector: true, // Automatically detect failover
@@ -225,24 +236,28 @@ function createRedisInstance(
   usage: "queue" | "cache",
   logContext: string,
 ): Redis {
-  const sentinelMasterEnv = usage === "queue" 
-    ? "REDIS_SENTINEL_MASTER_QUEUE" 
-    : "REDIS_SENTINEL_MASTER_CACHE";
-  
+  const sentinelMasterEnv =
+    usage === "queue"
+      ? "REDIS_SENTINEL_MASTER_QUEUE"
+      : "REDIS_SENTINEL_MASTER_CACHE";
+
   const sentinelConfig = parseSentinelConfig(sentinelMasterEnv);
 
   if (sentinelConfig.enabled) {
     const baseOpts = usage === "queue" ? queueOptions : cacheOptions;
     const options = buildSentinelOptions(sentinelConfig, baseOpts);
-    
+
     const redis = new Redis(options);
-    
+
     // Add Sentinel event handlers
     redis.on("connect", () => {
       console.log(`[Redis Sentinel] ${logContext} connected to master`);
     });
     redis.on("+switch-master", (data) => {
-      console.log(`[Redis Sentinel] ${logContext} failover detected, switching to new master:`, data);
+      console.log(
+        `[Redis Sentinel] ${logContext} failover detected, switching to new master:`,
+        data,
+      );
     });
     redis.on("error", (err) => {
       console.error(`[Redis Sentinel] ${logContext} error:`, err.message);
@@ -250,21 +265,25 @@ function createRedisInstance(
     redis.on("reconnecting", () => {
       console.log(`[Redis Sentinel] ${logContext} reconnecting...`);
     });
-    
-    console.log(`[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`);
+
+    console.log(
+      `[Redis Sentinel] ${logContext} initialized with ${sentinelConfig.sentinels.length} sentinels, master: ${sentinelConfig.masterName}`,
+    );
     return redis;
   }
 
   // Fallback to standalone Redis
-  const primaryEnvVar = usage === "queue" ? "REDIS_QUEUE_URL" : "REDIS_CACHE_URL";
+  const primaryEnvVar =
+    usage === "queue" ? "REDIS_QUEUE_URL" : "REDIS_CACHE_URL";
   const resolved = resolveRedisConfig(primaryEnvVar);
   const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolved, logContext);
-  const options = usage === "queue" 
-    ? buildQueueOptions(redisUrl, hasTlsFlag)
-    : buildCacheOptions(redisUrl, hasTlsFlag);
+  const options =
+    usage === "queue"
+      ? buildQueueOptions(redisUrl, hasTlsFlag)
+      : buildCacheOptions(redisUrl, hasTlsFlag);
 
   const redis = new Redis(redisUrl, options);
-  
+
   // Add connection event handlers
   redis.on("connect", () => {
     console.log(`[Redis] ${logContext} connected`);
@@ -275,8 +294,10 @@ function createRedisInstance(
   redis.on("reconnecting", () => {
     console.log(`[Redis] ${logContext} reconnecting...`);
   });
-  
-  console.log(`[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`);
+
+  console.log(
+    `[Redis] ${logContext} connection established (source: ${resolved.sourceEnv})`,
+  );
   return redis;
 }
 
@@ -348,21 +369,21 @@ export function getRedisConfigInfo(): {
   cache: { source: string; masterName?: string };
 } {
   const sentinelEnabled = isSentinelEnabled();
-  
+
   if (sentinelEnabled) {
     const queueConfig = parseSentinelConfig("REDIS_SENTINEL_MASTER_QUEUE");
     const cacheConfig = parseSentinelConfig("REDIS_SENTINEL_MASTER_CACHE");
-    
+
     return {
       mode: "sentinel",
       queue: { source: "sentinel", masterName: queueConfig.masterName },
       cache: { source: "sentinel", masterName: cacheConfig.masterName },
     };
   }
-  
+
   const queueResolved = resolveRedisConfig("REDIS_QUEUE_URL");
   const cacheResolved = resolveRedisConfig("REDIS_CACHE_URL");
-  
+
   return {
     mode: "standalone",
     queue: { source: queueResolved.sourceEnv },
@@ -372,13 +393,13 @@ export function getRedisConfigInfo(): {
 
 export async function closeRedis(): Promise<void> {
   const closePromises: Promise<void>[] = [];
-  
+
   if (redisQueueInstance) {
     closePromises.push(
       redisQueueInstance.quit().then(() => {
         redisQueueInstance = null;
         console.log("[Redis] Queue connection closed");
-      })
+      }),
     );
   }
   if (redisQueuePubInstance) {
@@ -386,7 +407,7 @@ export async function closeRedis(): Promise<void> {
       redisQueuePubInstance.quit().then(() => {
         redisQueuePubInstance = null;
         console.log("[Redis] Queue Pub connection closed");
-      })
+      }),
     );
   }
   if (redisQueueSubInstance) {
@@ -394,7 +415,7 @@ export async function closeRedis(): Promise<void> {
       redisQueueSubInstance.quit().then(() => {
         redisQueueSubInstance = null;
         console.log("[Redis] Queue Sub connection closed");
-      })
+      }),
     );
   }
   if (redisCacheInstance) {
@@ -402,9 +423,9 @@ export async function closeRedis(): Promise<void> {
       redisCacheInstance.quit().then(() => {
         redisCacheInstance = null;
         console.log("[Redis] Cache connection closed");
-      })
+      }),
     );
   }
-  
+
   await Promise.all(closePromises);
 }

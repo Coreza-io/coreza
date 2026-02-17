@@ -587,6 +587,19 @@
       }
     },
     {
+      "key": "maxLen",
+      "label": "Max Stream Length",
+      "type": "text",
+      "placeholder": "50000",
+      "default": "50000",
+      "description": "Maximum entries in the stream. Older entries are automatically trimmed. Use 0 for unlimited (not recommended).",
+      "displayOptions": {
+        "show": {
+          "operation": ["xadd", "xadd_bulk"]
+        }
+      }
+    },
+    {
       "key": "ttl",
       "label": "TTL (seconds)",
       "type": "text",

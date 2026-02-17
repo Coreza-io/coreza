@@ -74,7 +74,9 @@ const baseOptions: RedisOptions = {
 
     // Exponential backoff with max 30 seconds
     const delay = Math.min(times * 100, 30000);
-    console.log(`[Redis] Retry attempt ${times}, next retry in ${delay}ms`);
+    if (times > 1) {
+      console.log(`[Redis] Retry attempt ${times}, next retry in ${delay}ms`);
+    }
     return delay;
   },
 };

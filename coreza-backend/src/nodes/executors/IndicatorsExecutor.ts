@@ -27,9 +27,11 @@ import {
   IndicatorStateManager,
   buildIndicatorKey,
 } from "../../services/indicatorStateManager";
+import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
+  private readonly initExecutor = new InitializeIndicatorsExecutor();
 
   async execute(
     node: WorkflowNode,
@@ -39,6 +41,12 @@ export class IndicatorsExecutor implements INodeExecutor {
     const startTime = Date.now();
     try {
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
+
+      // Delegate to InitializeIndicatorsExecutor
+      if (indicatorType === "initializeindicators") {
+        return this.initExecutor.execute(node, input, context);
+      }
+
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };

@@ -104,7 +104,7 @@ export class WorkflowExecutor {
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
       const n = this.context.nodes.find((x) => x.id === nodeId);
-      const loopWaits: boolean = Boolean(n?.data?.loopWaits) ?? false;
+      const loopWaits: boolean = Boolean(n?.data?.loopWaits);
       if (!loopWaits) return true;
     }
 
@@ -619,10 +619,9 @@ export class WorkflowExecutor {
     this.highlightEdges(nodeId);
     //this.highlightNode(nodeId);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
     // Default (non-Loop) node execution
-    const result: any = await new Promise((resolve, reject) => {
+    const result: any = await Promise.race([
+      new Promise((resolve, reject) => {
       const execEvent = new CustomEvent("auto-execute-node", {
         detail: {
           nodeId,
@@ -630,18 +629,23 @@ export class WorkflowExecutor {
           allNodes: this.context.nodes,
           allEdges: this.context.edges,
           explicitlyTriggered,
-          onSuccess: async (res?: any) => {
-            await new Promise((r) => setTimeout(r, 300));
+          onSuccess: (res?: any) => {
             resolve(res);
           },
-          onError: async (err: any) => {
-            await new Promise((r) => setTimeout(r, 300));
+          onError: (err: any) => {
             reject(err);
           },
         } as NodeExecutionDetail,
       });
       window.dispatchEvent(execEvent);
-    });
+      }),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Node ${nodeId} execution timed out after 30s`)),
+          30000
+        )
+      ),
+    ]);
 
     this.nodeStore.setNodeData(nodeId, { output: result });
 
@@ -768,7 +772,7 @@ export class WorkflowExecutor {
           );
 
           // Add delay between node executions to make highlighting visible
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 50));
 
           let out = this.context.edges.filter((e) => e.source === id);
           if (node.type === "Loop") {

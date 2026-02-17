@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNodeId, useReactFlow } from "@xyflow/react";
 
 interface UseNodeAutoExecutionProps {
@@ -41,6 +41,7 @@ export function useNodeAutoExecution({
   // Refs for stashing callbacks
   const onSuccessRef = useRef<null | ((result: any) => void)>(null);
   const onErrorRef = useRef<null | ((error: any) => void)>(null);
+  const [pendingExec, setPendingExec] = useState(0);
 
   // Listen for auto-execution events
   useEffect(() => {
@@ -74,6 +75,7 @@ export function useNodeAutoExecution({
         // === Stash callbacks for use in [nodes] effect ===
         onSuccessRef.current = event.detail.onSuccess ?? null;
         onErrorRef.current = event.detail.onError ?? null;
+        setPendingExec((count) => count + 1);
 
         try {
           const inputData = nodeId
@@ -141,9 +143,8 @@ export function useNodeAutoExecution({
       onSuccessRef.current?.(resultToPass);
       onSuccessRef.current = onErrorRef.current = null;
       clearInterval(pollInterval);
-    }, 100); // Poll every 100ms
+    }, 50); // Poll every 50ms
 
     return () => clearInterval(pollInterval);
-  }, [nodeId, definition, getNodes]);
+  }, [nodeId, definition, getNodes, pendingExec]);
 }
-

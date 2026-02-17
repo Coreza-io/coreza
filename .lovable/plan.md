@@ -1,347 +1,300 @@
 
-# Plan: Fix Critical Performance Issues in Workflow Editor
 
-## Problem Summary
+# InitializeIndicators Node -- QuantConnect-Style SetWarmUp for Coreza
 
-The workflow editor is extremely slow and producing errors because every node component re-renders on every position change. This creates a cascade of re-renders that overwhelms React.
+## How QuantConnect's SetWarmUp Works
 
-**Error**: `"The provided callback is no longer runnable"` at `buildUpstreamIndex`
-**Symptom**: Editor is too slow to move nodes
+In QuantConnect, before the algorithm starts live trading, you call `SetWarmUp(N)` in `Initialize()`. This tells the engine:
 
-## Root Cause
+1. Fetch the last N bars of historical data
+2. Feed those bars through ALL registered indicators (EMA, RSI, MACD, etc.) so their internal state is fully populated
+3. Set `IsWarmingUp = true` during this phase -- no orders are placed
+4. Once warm-up completes, `IsWarmingUp = false`, all indicators have `IsReady = true`, and the algorithm begins trading on new bars
 
-The `useNodes()` hook is called in 9+ places across the codebase. According to React Flow documentation:
+The key insight: warm-up happens ONCE before the loop, not per-bar. Each indicator then only needs 1 new bar per iteration to produce an updated value.
 
-> "Components that use this hook will re-render whenever any node changes, including when a node is selected or moved."
+## How This Maps to Coreza
 
-With 10 nodes, each using ~6 hooks with `useNodes()`, a single drag operation triggers 60+ re-renders per frame.
+Currently in Coreza, when an Indicator node (RSI, EMA, etc.) runs inside a loop for the first time, it receives ALL bars and calls `stateManager.warmUp()`. On subsequent iterations it calls `stateManager.update()` with just the latest bar. The problem: each indicator node independently warms up when first encountered, and requires `symbol`, `timeframe`, and `candle_data` to be passed through the loop.
 
----
+The **InitializeIndicators** node will:
 
-## Current Architecture (Problematic)
+1. Sit BEFORE the Loop node (like BacktestInit)
+2. Accept candle data + warmup period as input
+3. **Auto-discover all indicator nodes in the workflow** by scanning downstream nodes
+4. Warm up ALL indicators in one shot using the first N bars
+5. Pass the remaining bars (post-warmup) to the Loop node
+6. When indicator nodes run inside the loop, they find pre-warmed state in `IndicatorStateManager` and only call `update()` with the single new bar
 
 ```text
-User drags node
-    │
-    ▼
-onNodesChange fires
-    │
-    ▼
-useNodes() returns new array reference
-    │
-    ├──► BaseNode re-renders (calls useNodes)
-    │       ├──► useNodeFieldState re-renders (calls useNodes)
-    │       ├──► useNodeRenaming re-renders (calls useNodes)
-    │       ├──► useNodeExecution re-renders (calls useNodes)
-    │       ├──► useNodeReferences re-renders (calls useNodes)
-    │       └──► useNodeAutoExecution re-renders (calls useNodes)
-    │
-    ├──► NodeRouter re-renders (calls useNodes)
-    │
-    ├──► LoopNode re-renders (calls useNodes)
-    │
-    └──► EdgeManager re-renders (calls useNodes)
-    
-    Result: N × 6 re-renders per drag tick = O(N²) performance
+[Data Source] --> [InitializeIndicators] --> [Loop] --> [RSI] --> [If] --> [Trade]
+                                                   --> [EMA] --^
+                  Warms up RSI + EMA with              Each iteration: just 1 bar update
+                  first N bars from data source         (state already ready)
 ```
-
----
-
-## Solution Overview
-
-Replace direct `useNodes()` calls with targeted selectors and pass data via props where possible.
-
-| Strategy | Impact | Files Affected |
-|----------|--------|----------------|
-| Use `useStore` with selectors | High | All node hooks |
-| Pass nodes/edges via props | Medium | BaseNode, hooks |
-| Memoize expensive computations | Medium | getAllUpstreamNodes |
-| Defer non-critical updates | Low | Field sync effects |
-
----
 
 ## Implementation Plan
 
-### Phase 1: Remove useNodes from BaseNode and Child Hooks
+### File 1: `src/nodes/InitializeIndicators.json` (New -- Frontend Node Definition)
 
-**Goal**: BaseNode already receives `nodes` and `edges` from parent - stop re-fetching them internally.
-
-#### 1.1 Modify `BaseNode.tsx`
-
-- Remove direct `useNodes()` and `useEdges()` calls
-- Accept `nodes` and `edges` as props (already available from parent NodeRouter/LoopNode)
-
-**Before** (line 100-102):
-```typescript
-const nodeId = useNodeId();
-const nodes = useNodes();
-const edges = useEdges();
-```
-
-**After**:
-```typescript
-const nodeId = useNodeId();
-// nodes and edges received via props or context
-```
-
-#### 1.2 Create a Stable Node Context
-
-Create a context that provides nodes/edges without triggering re-renders on position changes:
-
-**New file**: `src/contexts/StableNodeContext.tsx`
-
-```typescript
-import { createContext, useContext, useRef, useMemo } from 'react';
-import { useStore } from '@xyflow/react';
-import type { Node, Edge } from '@xyflow/react';
-
-interface StableNodeContextValue {
-  getNodes: () => Node[];
-  getEdges: () => Edge[];
-  getNodeById: (id: string) => Node | undefined;
-}
-
-const StableNodeContext = createContext<StableNodeContextValue | null>(null);
-
-export function StableNodeProvider({ children }: { children: React.ReactNode }) {
-  // Use refs to hold current values without causing re-renders
-  const storeApi = useStore((state) => state);
-  
-  const value = useMemo(() => ({
-    getNodes: () => storeApi.getNodes(),
-    getEdges: () => storeApi.edges,
-    getNodeById: (id: string) => storeApi.getNodes().find(n => n.id === id),
-  }), [storeApi]);
-  
-  return (
-    <StableNodeContext.Provider value={value}>
-      {children}
-    </StableNodeContext.Provider>
-  );
-}
-
-export function useStableNodes() {
-  const ctx = useContext(StableNodeContext);
-  if (!ctx) throw new Error('useStableNodes must be used within StableNodeProvider');
-  return ctx;
+```json
+{
+  "name": "InitializeIndicators",
+  "def": "Initialize and warm up all workflow indicators",
+  "node_type": "main",
+  "icon": "/assets/icons/indicators.svg",
+  "category": "Indicators",
+  "description": "Warm up all indicators in the workflow with historical data before the loop begins. Similar to QuantConnect's SetWarmUp.",
+  "color": "text-purple-500",
+  "size": { "width": 340, "height": 380 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/indicators/initialize", "method": "POST" },
+  "fields": [
+    {
+      "key": "candle_data",
+      "label": "Candle Data",
+      "type": "text",
+      "description": "Historical OHLCV bar data to warm up indicators",
+      "required": true
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. BTCUSDT",
+      "required": true
+    },
+    {
+      "key": "timeframe",
+      "label": "Timeframe",
+      "type": "text",
+      "placeholder": "e.g. 1d",
+      "required": true
+    },
+    {
+      "key": "warmup_period",
+      "label": "Warm-Up Period (bars)",
+      "type": "text",
+      "placeholder": "200",
+      "default": "200",
+      "description": "Number of bars to use for warming up indicators. Should be >= the longest indicator period in your workflow.",
+      "required": true
+    },
+    {
+      "key": "auto_detect",
+      "label": "Auto-Detect Indicators",
+      "type": "select",
+      "options": [
+        { "id": "true", "name": "Yes - Scan workflow for all indicators" },
+        { "id": "false", "name": "No - Manual configuration" }
+      ],
+      "default": "true",
+      "required": true
+    }
+  ]
 }
 ```
 
----
+### File 2: `coreza-backend/src/nodes/executors/InitializeIndicatorsExecutor.ts` (New -- Backend Executor)
 
-### Phase 2: Fix Individual Hooks
+This is the core logic. It will be added to the `IndicatorsExecutor` as a new case (since the category is "Indicators"), or registered as a handler within it.
 
-Each hook currently calls `useNodes()` independently, causing redundant subscriptions.
+**Approach:** Add handling for `InitializeIndicators` in `IndicatorsExecutor.execute()`.
 
-#### 2.1 `useNodeFieldState.ts` (line 43)
-
-**Problem**: Uses `useNodes()` but only needs `setNodes` for updates.
-
-**Fix**: Remove `useNodes()`, keep only `useReactFlow().setNodes`.
+Logic:
 
 ```typescript
-// REMOVE
-const nodes = useNodes();
+// Inside IndicatorsExecutor.execute(), add case for InitializeIndicators:
 
-// KEEP - this is efficient, doesn't subscribe to changes
-const { setNodes } = useReactFlow();
+if (indicatorType === 'initializeindicators') {
+  return this.executeInitializeIndicators(node, input, context);
+}
 ```
 
-#### 2.2 `useNodeRenaming.ts` (line 44-45)
+**`executeInitializeIndicators` method:**
 
-**Problem**: Uses `useNodes()` to check for duplicate names during rename.
+1. **Parse inputs**: `candle_data`, `symbol`, `timeframe`, `warmup_period`, `auto_detect`
 
-**Fix**: Only read nodes when actually renaming (inside the finishEditing callback), not on every render.
+2. **Auto-detect indicators from workflow**:
+   - Access `context.nodes` and `context.edges` (already available in executionContext)
+   - Find all downstream indicator nodes by walking edges from this node
+   - For each indicator node found, extract its type (RSI, EMA, MACD, etc.) and parameters (period, window, etc.) from `node.values`
 
-```typescript
-// Before (subscribes to all changes)
-const nodes = useNodes();
+   ```typescript
+   function discoverIndicators(
+     startNodeId: string,
+     allNodes: WorkflowNode[],
+     allEdges: WorkflowEdge[]
+   ): Array<{ nodeId: string; type: string; params: Record<string, any> }> {
+     const indicators: Array<...> = [];
+     const visited = new Set<string>();
+     const queue = allEdges
+       .filter(e => e.source === startNodeId)
+       .map(e => e.target);
+     
+     while (queue.length > 0) {
+       const nodeId = queue.shift()!;
+       if (visited.has(nodeId)) continue;
+       visited.add(nodeId);
+       
+       const node = allNodes.find(n => n.id === nodeId);
+       if (!node) continue;
+       
+       // Check if this is an indicator node
+       const name = (node.name || '').toUpperCase();
+       if (INDICATOR_NAMES.has(name)) {
+         indicators.push({
+           nodeId: node.id,
+           type: (node.name || '').toLowerCase(),
+           params: node.values || {},
+         });
+       }
+       
+       // Continue BFS through all downstream nodes
+       allEdges
+         .filter(e => e.source === nodeId)
+         .forEach(e => { if (!visited.has(e.target)) queue.push(e.target); });
+     }
+     return indicators;
+   }
+   ```
 
-// After (only reads when needed)
-const { getNodes, setNodes, setEdges } = useReactFlow();
+   Where `INDICATOR_NAMES` is:
+   ```typescript
+   const INDICATOR_NAMES = new Set([
+     'RSI', 'EMA', 'SMA', 'MACD', 'BB', 'BOLLINGER BANDS',
+     'ADX', 'STOCH', 'VWAP', 'OBV', 'ICHIMOKU',
+     'VOLUMEOSCILLATOR', 'SUPPORTRESISTANCE'
+   ]);
+   ```
 
-const finishEditing = useCallback((save = true) => {
-  if (save && editingName.trim()) {
-    const nodes = getNodes(); // Read only when needed
-    // ... validation logic
+3. **Slice bars into warmup vs remaining**:
+   ```typescript
+   const warmupPeriod = Math.min(parseInt(params.warmup_period) || 200, bars.length);
+   const warmupBars = bars.slice(0, warmupPeriod);
+   const remainingBars = bars.slice(warmupPeriod);
+   ```
+
+4. **Warm up each discovered indicator**:
+   ```typescript
+   const stateManager = context.indicatorStateManager;
+   const results: Record<string, any> = {};
+   
+   for (const ind of discoveredIndicators) {
+     // Merge the indicator's own params (period, window, etc.) with symbol/timeframe
+     const indParams = {
+       ...ind.params,
+       symbol,
+       timeframe,
+       candle_data: warmupBars,
+     };
+     
+     const key = buildIndicatorKey(
+       userId, workflowId, runId,
+       symbol, timeframe, ind.type
+     );
+     
+     const state = await stateManager.warmUp(
+       key, ind.type, indParams, warmupBars, false
+     );
+     
+     results[ind.type] = {
+       nodeId: ind.nodeId,
+       indicator: ind.type,
+       warmupBars: warmupBars.length,
+       isReady: state.warmupCompleted,
+       currentValue: state.value,
+     };
+   }
+   ```
+
+5. **Return output** with remaining bars for the Loop node:
+   ```typescript
+   return toNodeResult(createSuccessOutput({
+     warmup_completed: true,
+     warmup_bars_used: warmupPeriod,
+     remaining_bars: remainingBars,    // <-- Loop node uses these
+     remaining_bars_count: remainingBars.length,
+     indicators_initialized: Object.keys(results).length,
+     indicators: results,
+     symbol,
+     timeframe,
+   }));
+   ```
+
+### File 3: `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` (Modify)
+
+Add the `InitializeIndicators` case and the new method:
+
+- At line 41, after `const indicatorType = ...`, add:
+  ```typescript
+  if (indicatorType === 'initializeindicators') {
+    return this.executeInitializeIndicators(node, input, context);
   }
-}, [getNodes, ...]);
-```
+  ```
 
-#### 2.3 `useNodeAutoExecution.ts` (line 38)
+- Add the `executeInitializeIndicators` private method (~80 lines) as described above
 
-**Problem**: Uses `useNodes()` but likely only needs specific node data.
+- Add `discoverIndicators` helper function
 
-**Fix**: Use `useNodesData` with specific node IDs if available, or defer to callback-time reads.
+### File 4: `coreza-backend/src/services/workflowEngine.ts` (Modify)
 
-#### 2.4 `useNodeExecution.ts` (line 93-94)
-
-**Problem**: Uses both `useNodes()` and `useEdges()`.
-
-**Fix**: 
-- For `buildPayload`: Read nodes/edges inside the callback using `getNodes()`/`getEdges()`
-- This prevents subscriptions while still having access to current data
+Add `InitializeIndicators` to the `CATEGORY_MAP` so the engine routes it to the Indicators executor:
 
 ```typescript
-// Before
-const nodes = useNodes();
-const edges = useEdges();
-
-// After
-const { getNodes, getEdges, setNodes } = useReactFlow();
-
-const buildPayload = useCallback((fieldState, selectedInputData) => {
-  const nodes = getNodes(); // Read at execution time
-  const edges = getEdges();
-  // ... rest of logic
-}, [getNodes, getEdges, ...]);
+const CATEGORY_MAP: Record<string, string> = {
+  // ... existing entries ...
+  InitializeIndicators: "Indicators",   // <-- add this
+};
 ```
 
-#### 2.5 `useNodeReferences.ts` (line 55)
+### File 5: `coreza-backend/src/services/toolOutputProcessor.ts` (Modify)
 
-**Problem**: Uses `useNodes()` for drag/drop reference resolution.
+Add `InitializeIndicators` to the `INDICATOR_NODES` array so the tool output processor handles it correctly.
 
-**Fix**: Similar pattern - use `getNodes()` inside callbacks.
+## How It Works End-to-End
 
----
+### Workflow Layout
 
-### Phase 3: Fix NodeRouter and LoopNode
-
-These components are wrapped in React.memo but still use `useNodes()` internally.
-
-#### 3.1 `NodeRouter.tsx` (line 34-35)
-
-**Current**:
-```typescript
-const nodes = useNodes();
-const edges = useEdges();
+```text
+[Binance Data] ---> [InitializeIndicators] ---> [Loop] ---> [RSI] ---> [If] ---> [BacktestTrade]
+                     warmup_period: 200                       ^
+                     auto_detect: true                        |
+                                                         [EMA] ----+
 ```
 
-**Fix**: Pass nodes/edges as props from WorkflowCanvas, or use stable context.
+### Execution Timeline
 
-#### 3.2 `LoopNode.tsx` (line 32-33)
+1. **Binance Data** fetches 1000 bars of BTCUSDT 1d data
+2. **InitializeIndicators** receives 1000 bars:
+   - Scans workflow, finds RSI (period=14) and EMA (period=20)
+   - Uses first 200 bars to warm up both indicators via `IndicatorStateManager`
+   - Outputs `remaining_bars` (bars 201-1000 = 800 bars) + warmup summary
+3. **Loop** iterates over the 800 remaining bars (1 bar per iteration)
+4. **RSI** node runs: `stateManager.getState(key)` finds pre-warmed state, calls `update()` with just the 1 new bar -- O(1) per iteration
+5. **EMA** node runs: same -- already warmed, just `update()` with 1 bar
+6. **If** checks RSI value, routes to Trade if conditions met
 
-**Same fix**: Accept nodes/edges via props instead of hooks.
+### Key Behavioral Match with QuantConnect
 
----
+| QuantConnect | Coreza InitializeIndicators |
+|---|---|
+| `SetWarmUp(TimeSpan.FromDays(200))` | `warmup_period: 200` field |
+| Auto-warms all registered indicators | `auto_detect: true` scans workflow for indicator nodes |
+| `IsWarmingUp` flag prevents orders | Warmup bars are consumed by the node; Loop only gets post-warmup bars |
+| `indicator.IsReady` after warmup | `state.warmupCompleted = true` in IndicatorStateManager |
+| Called once in `Initialize()` | Runs once before the Loop node |
+| N days of historical data fed through | First N bars sliced and fed through `warmUp()` |
 
-### Phase 4: Fix EdgeManager
+## Files Summary
 
-#### 4.1 Lines 513 and 827
+| File | Action | Description |
+|---|---|---|
+| `src/nodes/InitializeIndicators.json` | Create | Frontend node definition with fields |
+| `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` | Modify | Add `executeInitializeIndicators` method + `discoverIndicators` helper |
+| `coreza-backend/src/services/workflowEngine.ts` | Modify | Add to CATEGORY_MAP |
+| `coreza-backend/src/services/toolOutputProcessor.ts` | Modify | Add to INDICATOR_NODES list |
 
-**Problem**: Edge components use `useNodes()` to access node positions.
-
-**Fix**: Use `useInternalNode()` for single-node lookups (documented as more efficient).
-
-```typescript
-// Before
-const nodes = useNodes();
-const sourceNode = nodes.find(n => n.id === source);
-
-// After - single node lookup without subscribing to all changes
-import { useInternalNode } from '@xyflow/react';
-const sourceNode = useInternalNode(source);
-```
-
----
-
-### Phase 5: Optimize getAllUpstreamNodes
-
-The current implementation rebuilds indexes on every call. Since this is called frequently during renders, cache the result.
-
-#### 5.1 Add Memoization Layer
-
-**File**: `src/utils/getAllUpstreamNodes.ts`
-
-```typescript
-// Add a simple cache based on edges array identity
-let cachedEdges: Edge[] | null = null;
-let cachedNodes: Node[] | null = null;
-let cachedIndex: UpstreamIndex | null = null;
-
-function getOrBuildIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
-  // Only rebuild if arrays changed (reference equality)
-  if (edges === cachedEdges && nodes === cachedNodes && cachedIndex) {
-    return cachedIndex;
-  }
-  
-  cachedEdges = edges;
-  cachedNodes = nodes;
-  cachedIndex = buildUpstreamIndex(edges, nodes);
-  return cachedIndex;
-}
-```
-
----
-
-### Phase 6: Debounce Field State Sync
-
-#### 6.1 `useNodeFieldState.ts` Effect (lines 136-167)
-
-**Problem**: Syncs field state to node on every change, triggering more re-renders.
-
-**Fix**: Add debouncing to batch rapid updates.
-
-```typescript
-useEffect(() => {
-  if (readOnly || !nodeId || !hasInitialized.current) return;
-  
-  const timeoutId = setTimeout(() => {
-    setNodes((nds) => /* sync logic */);
-  }, 50); // 50ms debounce
-  
-  return () => clearTimeout(timeoutId);
-}, [fieldState, nodeId, setNodes, readOnly]);
-```
-
----
-
-## Files to Modify
-
-| File | Priority | Changes |
-|------|----------|---------|
-| `src/contexts/StableNodeContext.tsx` | Create | New context for stable node access |
-| `src/components/nodes/BaseNode.tsx` | High | Remove useNodes/useEdges, use context |
-| `src/hooks/useNodeFieldState.ts` | High | Remove useNodes, add debounce |
-| `src/hooks/useNodeRenaming.ts` | High | Use getNodes() in callback only |
-| `src/hooks/useNodeExecution.ts` | High | Use getNodes/getEdges in callbacks |
-| `src/hooks/useNodeReferences.ts` | High | Use getNodes() in callbacks |
-| `src/hooks/useNodeAutoExecution.ts` | Medium | Optimize node access pattern |
-| `src/components/nodes/NodeRouter.tsx` | Medium | Use context or props for nodes |
-| `src/components/workflow/LoopNode.tsx` | Medium | Use context or props for nodes |
-| `src/components/workflow/EdgeManager.tsx` | Medium | Use useInternalNode instead |
-| `src/utils/getAllUpstreamNodes.ts` | Low | Add index caching |
-| `src/components/workflow/WorkflowCanvas.tsx` | Low | Wrap with StableNodeProvider |
-
----
-
-## Expected Improvements
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Re-renders per drag tick | N × 6 = 60+ (for 10 nodes) | 1-2 |
-| getAllUpstreamNodes calls | 60+ per tick | 1 per tick (cached) |
-| Error rate | Frequent "callback not runnable" | None |
-| Drag smoothness | Slideshow | 60 FPS |
-
----
-
-## Verification Steps
-
-After implementation:
-
-1. Open React DevTools Profiler
-2. Drag a node around the canvas
-3. Verify only the dragged node component re-renders
-4. Check console for no "callback not runnable" errors
-5. Test with 20+ nodes to ensure scalability
-
----
-
-## Technical Notes
-
-**Why the error occurs**: When React batches too many state updates, components unmount/remount rapidly. The `useNodes()` subscription callback from a previous render becomes stale ("no longer runnable") when the component re-renders before the callback completes.
-
-**Why useStore with selectors works**: Zustand's selector mechanism only triggers re-renders when the selected slice of state changes. Selecting `state.getNodes` (a function reference) instead of `state.nodes` (the array) avoids position-change subscriptions.
-
-**React Flow best practice**: The official docs recommend using `useReactFlow().getNodes()` for imperative reads and `useStore` with selectors for reactive subscriptions that need specific data.

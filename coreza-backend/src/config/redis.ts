@@ -58,10 +58,15 @@ function parseSentinelConfig(masterEnvVar: string): SentinelConfig {
 
 // ========== PRODUCTION REDIS OPTIONS ==========
 const baseOptions: RedisOptions = {
-  maxRetriesPerRequest: null,
+  maxRetriesPerRequest: 3,
   family: 4, // Force IPv4 to prevent localhost resolution issues
   keepAlive: 30000, // Keep connections alive
   retryStrategy: (times: number) => {
+    if (times > 10) {
+      console.error(`[Redis] Connection failed after ${times} attempts, giving up`);
+      return null;
+    }
+
     // Exponential backoff with max 30 seconds
     const delay = Math.min(times * 100, 30000);
     console.log(`[Redis] Retry attempt ${times}, next retry in ${delay}ms`);
@@ -72,6 +77,7 @@ const baseOptions: RedisOptions = {
 // Queue Redis: Optimized for latency-critical BullMQ operations
 const queueOptions: RedisOptions = {
   ...baseOptions,
+  maxRetriesPerRequest: null, // BullMQ requirement (queue connections)
   enableReadyCheck: false, // BullMQ requirement
   connectTimeout: 10000, // 10s connect timeout
   lazyConnect: false, // Connect immediately
@@ -80,6 +86,9 @@ const queueOptions: RedisOptions = {
 // Cache Redis: Optimized for medium-latency caching operations
 const cacheOptions: RedisOptions = {
   ...baseOptions,
+  maxRetriesPerRequest: 3, // Fail fast to avoid unbounded command buffering
+  enableOfflineQueue: false, // Don't queue commands while disconnected
+  autoResendUnfulfilledCommands: false, // Avoid requeueing pending commands after reconnect
   enableReadyCheck: true, // Verify connection before use
   connectTimeout: 15000, // 15s connect timeout (more tolerance)
 };
@@ -132,7 +141,7 @@ let redisCacheInstance: Redis | null = null;
 
 // Legacy export for backward compatibility
 export const connectionOptions: RedisOptions = {
-  ...baseOptions,
+  ...queueOptions,
 };
 
 // Build options for Queue Redis (latency-critical)

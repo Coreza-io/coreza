@@ -870,7 +870,21 @@ export const storeConfig: StorageConfig = {
             ? JSON.parse(input.value)
             : input.value;
 
-        await ctx.redis!.xadd(key, "*", "data", JSON.stringify(item));
+        const maxLen = Number(input.maxLen) || 50000;
+
+        if (maxLen > 0) {
+          await ctx.redis!.xadd(
+            key,
+            "MAXLEN",
+            "~",
+            maxLen,
+            "*",
+            "data",
+            JSON.stringify(item),
+          );
+        } else {
+          await ctx.redis!.xadd(key, "*", "data", JSON.stringify(item));
+        }
 
         if (input.ttl && input.ttl > 0) {
           await ctx.redis!.expire(key, input.ttl);
@@ -913,13 +927,26 @@ export const storeConfig: StorageConfig = {
         }
 
         const CHUNK_SIZE = input.chunkSize || 2000;
+        const maxLen = Number(input.maxLen) || 50000;
 
         for (let i = 0; i < items.length; i += CHUNK_SIZE) {
           const pipeline = ctx.redis!.pipeline();
           const chunk = items.slice(i, i + CHUNK_SIZE);
 
           for (const item of chunk) {
-            pipeline.xadd(key, "*", "data", JSON.stringify(item));
+            if (maxLen > 0) {
+              pipeline.xadd(
+                key,
+                "MAXLEN",
+                "~",
+                maxLen,
+                "*",
+                "data",
+                JSON.stringify(item),
+              );
+            } else {
+              pipeline.xadd(key, "*", "data", JSON.stringify(item));
+            }
           }
 
           await pipeline.exec();

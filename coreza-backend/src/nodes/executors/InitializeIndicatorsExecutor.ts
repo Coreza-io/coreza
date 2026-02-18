@@ -6,7 +6,13 @@
  * (at your option) any later version.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode, WorkflowEdge } from "../types";
+import {
+  INodeExecutor,
+  NodeInput,
+  NodeResult,
+  WorkflowNode,
+  WorkflowEdge,
+} from "../types";
 import {
   IndicatorStateManager,
   buildIndicatorKey,
@@ -18,9 +24,20 @@ import {
 } from "../../utils/normalizeOutput";
 
 const INDICATOR_NAMES = new Set([
-  "RSI", "EMA", "SMA", "MACD", "BB", "BOLLINGERBANDS",
-  "ADX", "STOCH", "VWAP", "OBV", "ICHIMOKU",
-  "VOLUMEOSCILLATOR", "SUPPORTRESISTANCE", "ATR",
+  "RSI",
+  "EMA",
+  "SMA",
+  "MACD",
+  "BB",
+  "BOLLINGERBANDS",
+  "ADX",
+  "STOCH",
+  "VWAP",
+  "OBV",
+  "ICHIMOKU",
+  "VOLUMEOSCILLATOR",
+  "SUPPORTRESISTANCE",
+  "ATR",
 ]);
 
 interface DiscoveredIndicator {
@@ -90,7 +107,8 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       const symbol = String(resolvedParams.symbol || "");
       const timeframe = String(resolvedParams.timeframe || "");
       const warmupPeriodRaw = parseInt(resolvedParams.warmup_period) || 200;
-      const autoDetect = String(resolvedParams.auto_detect ?? "true") === "true";
+      const autoDetect =
+        String(resolvedParams.auto_detect ?? "true") === "true";
 
       const candleData = Array.isArray(resolvedParams.candle_data)
         ? resolvedParams.candle_data
@@ -98,8 +116,15 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
 
       if (!Array.isArray(candleData) || candleData.length === 0) {
         const normalized = createErrorOutput(
-          new Error("candle_data is required and must be a non-empty array of OHLCV bars"),
-          { nodeId: node.id, nodeName: node.name, category: this.category, startTime },
+          new Error(
+            "candle_data is required and must be a non-empty array of OHLCV bars",
+          ),
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            category: this.category,
+            startTime,
+          },
         );
         return toNodeResult(normalized);
       }
@@ -107,13 +132,20 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       if (!symbol || !timeframe) {
         const normalized = createErrorOutput(
           new Error("symbol and timeframe are required fields"),
-          { nodeId: node.id, nodeName: node.name, category: this.category, startTime },
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            category: this.category,
+            startTime,
+          },
         );
         return toNodeResult(normalized);
       }
 
       // --- Retrieve execution context ---
-      const stateManager = context?.indicatorStateManager as IndicatorStateManager | undefined;
+      const stateManager = context?.indicatorStateManager as
+        | IndicatorStateManager
+        | undefined;
       const userId = context?.userId || context?.user_id;
       const workflowId = context?.workflowId;
       const runId = context?.runId || context?.user_id;
@@ -121,7 +153,12 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       if (!stateManager) {
         const normalized = createErrorOutput(
           new Error("IndicatorStateManager not available in execution context"),
-          { nodeId: node.id, nodeName: node.name, category: this.category, startTime },
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            category: this.category,
+            startTime,
+          },
         );
         return toNodeResult(normalized);
       }
@@ -134,18 +171,26 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         const allEdges: WorkflowEdge[] = context?.edges || [];
 
         if (allNodes.length === 0) {
-          console.warn("[InitializeIndicators] No workflow nodes found in context, cannot auto-detect indicators");
+          console.warn(
+            "[InitializeIndicators] No workflow nodes found in context, cannot auto-detect indicators",
+          );
         } else {
-          discoveredIndicators = discoverIndicators(node.id, allNodes, allEdges);
+          discoveredIndicators = discoverIndicators(
+            node.id,
+            allNodes,
+            allEdges,
+          );
         }
       }
 
       if (discoveredIndicators.length === 0) {
-        console.warn("[InitializeIndicators] No indicator nodes discovered in workflow");
+        console.warn(
+          "[InitializeIndicators] No indicator nodes discovered in workflow",
+        );
         const normalized = normalizeOutput({
           success: true,
           data: {
-            warmup_completed: true,
+            warmup_completed: false,
             warmup_bars_used: 0,
             remaining_bars: candleData,
             remaining_bars_count: candleData.length,
@@ -153,7 +198,8 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             indicators: {},
             symbol,
             timeframe,
-            message: "No indicator nodes found downstream. Passing all bars through.",
+            message:
+              "No indicator nodes found downstream. Passing all bars through.",
           },
         });
         return toNodeResult(normalized);
@@ -221,7 +267,9 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         }
       }
 
-      const readyCount = Object.values(results).filter((r: any) => r.isReady).length;
+      const readyCount = Object.values(results).filter(
+        (r: any) => r.isReady,
+      ).length;
 
       const normalized = normalizeOutput({
         success: true,
@@ -241,7 +289,12 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
     } catch (error) {
       const normalized = createErrorOutput(
         error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime },
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        },
       );
       return toNodeResult(normalized);
     }

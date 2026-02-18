@@ -16,7 +16,11 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
-import { getBrokerConfig, BrokerOperation, PaginationConfig } from "../../brokers";
+import {
+  getBrokerConfig,
+  BrokerOperation,
+  PaginationConfig,
+} from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import {
@@ -40,7 +44,7 @@ export class BrokerExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
@@ -82,13 +86,13 @@ export class BrokerExecutor implements INodeExecutor {
 
       // Resolve and merge node parameters with input data
       console.log(
-        `🔧 [BROKER] Starting parameter resolution for node ${node.id}`
+        `🔧 [BROKER] Starting parameter resolution for node ${node.id}`,
       );
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
       console.log(
-        `🔧 [BROKER] Parameter resolution completed for node ${node.id}`
+        `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
 
       isPlaceOrder = operation === "place_order";
@@ -115,7 +119,7 @@ export class BrokerExecutor implements INodeExecutor {
         if (cached) {
           if (cached.status === "success") {
             console.log(
-              `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`
+              `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
             );
             return {
               success: true,
@@ -141,7 +145,7 @@ export class BrokerExecutor implements INodeExecutor {
       const { credentials } = await CredentialManager.getCredentials(
         context?.userId,
         broker,
-        credential_id
+        credential_id,
       );
 
       if (!credentials) {
@@ -160,7 +164,7 @@ export class BrokerExecutor implements INodeExecutor {
           broker,
           creds,
           context?.userId,
-          credential_id
+          credential_id,
         );
       }
 
@@ -203,7 +207,7 @@ export class BrokerExecutor implements INodeExecutor {
           pagination,
           maxPages,
           broker,
-          operation
+          operation,
         );
       } else {
         // Single request (no pagination or disabled)
@@ -223,6 +227,11 @@ export class BrokerExecutor implements INodeExecutor {
           : response.data;
       }
 
+      data = {
+        ...data,
+        interval: resolvedParams.interval,
+      };
+
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       if (isPlaceOrder && idempotencyKey) {
@@ -230,7 +239,7 @@ export class BrokerExecutor implements INodeExecutor {
           idempotencyKey,
           "success",
           data,
-          data?.orderId || data?.order_id
+          data?.orderId || data?.order_id,
         );
       }
 
@@ -257,7 +266,7 @@ export class BrokerExecutor implements INodeExecutor {
           nodeName: node.name,
           category: this.category,
           startTime,
-        }
+        },
       );
       return toNodeResult(normalized);
     }
@@ -273,7 +282,7 @@ export class BrokerExecutor implements INodeExecutor {
     pagination: PaginationConfig,
     maxPages: number,
     broker: string,
-    operation: string
+    operation: string,
   ): Promise<any> {
     let allData: any[] = [];
     let pageToken: string | null = null;
@@ -324,7 +333,7 @@ export class BrokerExecutor implements INodeExecutor {
       requestCount++;
 
       console.log(
-        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${allData.length} total items`
+        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${allData.length} total items`,
       );
     } while (pageToken && requestCount < maxPages);
 

@@ -394,6 +394,20 @@ export class WorkflowEngine {
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
+  private formatExecutionDuration(durationMs: number): string {
+    const totalCentiseconds = Math.floor(durationMs / 10);
+    const centiseconds = totalCentiseconds % 100;
+    const totalSeconds = Math.floor(totalCentiseconds / 100);
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const minutes = totalMinutes % 60;
+    const hours = Math.floor(totalMinutes / 60);
+
+    return [hours, minutes, seconds, centiseconds]
+      .map((value) => value.toString().padStart(2, "0"))
+      .join(":");
+  }
+
   async execute(
     initialInput?: any,
     startNodeId?: string,
@@ -419,15 +433,21 @@ export class WorkflowEngine {
 
       if (hasFailedNodes) {
         const executionTimeMs = Date.now() - workflowStartTime;
+        const formattedExecutionTime = this.formatExecutionDuration(
+          executionTimeMs,
+        );
         console.log(
           `⚠️ Workflow completed with ${
             failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${executionTimeMs}ms)`,
+          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
         );
       } else {
         const executionTimeMs = Date.now() - workflowStartTime;
+        const formattedExecutionTime = this.formatExecutionDuration(
+          executionTimeMs,
+        );
         console.log(
-          `✅ Workflow execution completed successfully (Execution time: ${executionTimeMs}ms)`,
+          `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
         );
       }
 
@@ -468,8 +488,11 @@ export class WorkflowEngine {
       };
     } catch (error) {
       const executionTimeMs = Date.now() - workflowStartTime;
+      const formattedExecutionTime = this.formatExecutionDuration(
+        executionTimeMs,
+      );
       console.error(
-        `❌ Workflow execution failed after ${executionTimeMs}ms:`,
+        `❌ Workflow execution failed after ${formattedExecutionTime}:`,
         error,
       );
       const message = (error as Error).message;

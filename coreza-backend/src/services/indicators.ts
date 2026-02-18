@@ -202,28 +202,36 @@ export class IndicatorService {
           warmUp: (bars) => {
             const closes = bars.map(asClose).filter(Number.isFinite);
             const window = closes.slice(-period);
+            const runningSum = window.reduce((a, b) => a + b, 0);
             const value =
-              window.length === period
-                ? window.reduce((a, b) => a + b, 0) / period
-                : null;
+              window.length === period ? runningSum / period : null;
             return {
-              internalState: { window, period },
+              internalState: { window, period, runningSum },
               value,
 
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
-            const window = [...(state.window || []), asClose(bar)];
-            clampWindow(window, state.period);
+            const close = asClose(bar);
+            const window = [...(state.window || []), close];
+            let runningSum = Number.isFinite(state.runningSum)
+              ? state.runningSum
+              : (state.window || []).reduce(
+                  (sum: number, value: number) => sum + value,
+                  0,
+                );
+
+            runningSum += close;
+            if (window.length > state.period) {
+              runningSum -= window.shift() as number;
+            }
+
             const value =
-              window.length === state.period
-                ? window.reduce((a: number, b: number) => a + b, 0) /
-                  state.period
-                : null;
+              window.length === state.period ? runningSum / state.period : null;
             return {
               value,
-              internalState: { ...state, window },
+              internalState: { ...state, window, runningSum },
             };
           },
         };
@@ -391,31 +399,90 @@ export class IndicatorService {
         }
         return {
           warmUp: (bars) => {
-            const window = bars.map(asClose).filter(Number.isFinite);
-            // .slice(-period);
-            const value =
-              this.calculateBollingerValues(window, period, stdDev).at(-1) ??
-              null;
+            const closes = bars.map(asClose).filter(Number.isFinite);
+            const window = closes.slice(-period);
+            const runningSum = window.reduce((sum, close) => sum + close, 0);
+            const runningSumSquares = window.reduce(
+              (sum, close) => sum + close * close,
+              0,
+            );
+
+            let value: Record<string, number> | null = null;
+            if (window.length === period) {
+              const middle = runningSum / period;
+              const variance = Math.max(
+                runningSumSquares / period - middle * middle,
+                0,
+              );
+              const stdev = Math.sqrt(variance);
+              value = {
+                upper: middle + stdev * stdDev,
+                middle,
+                lower: middle - stdev * stdDev,
+              };
+            }
+
             return {
-              internalState: { window, period, stdDev },
+              internalState: {
+                window,
+                period,
+                stdDev,
+                runningSum,
+                runningSumSquares,
+              },
               value,
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
           update: (state, bar) => {
-            const window = [...(state.window || []), asClose(bar)];
-            clampWindow(window, state.period);
+            const close = asClose(bar);
+            const window = [...(state.window || []), close];
 
-            const value =
-              this.calculateBollingerValues(
-                window,
-                state.period,
-                state.stdDev,
-              ).at(-1) ?? null;
+            let runningSum = Number.isFinite(state.runningSum)
+              ? state.runningSum
+              : (state.window || []).reduce(
+                  (sum: number, value: number) => sum + value,
+                  0,
+                );
+            let runningSumSquares = Number.isFinite(state.runningSumSquares)
+              ? state.runningSumSquares
+              : (state.window || []).reduce(
+                  (sum: number, value: number) => sum + value * value,
+                  0,
+                );
+
+            runningSum += close;
+            runningSumSquares += close * close;
+            if (window.length > state.period) {
+              const removed = window.shift() as number;
+              runningSum -= removed;
+              runningSumSquares -= removed * removed;
+            }
+
+            let value: Record<string, number> | null = null;
+            if (window.length === state.period) {
+              const middle = runningSum / state.period;
+              const variance = Math.max(
+                runningSumSquares / state.period - middle * middle,
+                0,
+              );
+              const stdev = Math.sqrt(variance);
+              value = {
+                upper: middle + stdev * state.stdDev,
+                middle,
+                lower: middle - stdev * state.stdDev,
+              };
+            }
+
             return {
               value,
 
-              internalState: { ...state, window },
+              internalState: {
+                ...state,
+                window,
+                runningSum,
+                runningSumSquares,
+              },
             };
           },
         };
@@ -555,23 +622,45 @@ export class IndicatorService {
 
         return {
           warmUp: (bars) => {
-            const volumes = bars
-              .map(asVolume)
-              .filter((volume) => Number.isFinite(volume) && volume >= 0);
+            const shortMult = 2 / (shortPeriod + 1);
+            const longMult = 2 / (longPeriod + 1);
+            let shortEma = 0;
+            let longEma = 0;
+            let count = 0;
+
+            for (const bar of bars) {
+              const volume = asVolume(bar);
+              if (!Number.isFinite(volume) || volume < 0) continue;
+
+              if (count === 0) {
+                shortEma = volume;
+                longEma = volume;
+              } else {
+                shortEma = volume * shortMult + shortEma * (1 - shortMult);
+                longEma = volume * longMult + longEma * (1 - longMult);
+              }
+              count += 1;
+            }
+
             const value =
-              this.calculateVolumeOscillatorValues(
-                volumes,
-                shortPeriod,
-                longPeriod,
-                outputType,
-              ).at(-1) ?? null;
+              count >= longPeriod
+                ? outputType === "percentage"
+                  ? longEma === 0
+                    ? 0
+                    : ((shortEma - longEma) / longEma) * 100
+                  : shortEma - longEma
+                : null;
 
             return {
               internalState: {
-                volumes,
+                shortEma,
+                longEma,
+                shortMult,
+                longMult,
                 shortPeriod,
                 longPeriod,
                 outputType,
+                count,
               },
               value,
 
@@ -580,23 +669,46 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             const volume = asVolume(bar);
-            const volumes =
-              Number.isFinite(volume) && volume >= 0
-                ? [...(state.volumes || []), volume]
-                : [...(state.volumes || [])];
+            if (!Number.isFinite(volume) || volume < 0) {
+              return {
+                value: null,
+                internalState: { ...state },
+              };
+            }
 
+            if (!Number.isFinite(state.shortMult) || !Number.isFinite(state.longMult)) {
+              const shortMult = 2 / (state.shortPeriod + 1);
+              const longMult = 2 / (state.longPeriod + 1);
+              state = {
+                ...state,
+                shortMult,
+                longMult,
+                shortEma: Number.isFinite(state.shortEma)
+                  ? state.shortEma
+                  : volume,
+                longEma: Number.isFinite(state.longEma) ? state.longEma : volume,
+                count: Number.isFinite(state.count) ? state.count : 0,
+              };
+            }
+
+            const shortEma =
+              volume * state.shortMult + state.shortEma * (1 - state.shortMult);
+            const longEma =
+              volume * state.longMult + state.longEma * (1 - state.longMult);
+            const count = Number(state.count || 0) + 1;
             const value =
-              this.calculateVolumeOscillatorValues(
-                volumes,
-                state.shortPeriod,
-                state.longPeriod,
-                state.outputType,
-              ).at(-1) ?? null;
+              count >= state.longPeriod
+                ? state.outputType === "percentage"
+                  ? longEma === 0
+                    ? 0
+                    : ((shortEma - longEma) / longEma) * 100
+                  : shortEma - longEma
+                : null;
 
             return {
               value,
 
-              internalState: { ...state, volumes },
+              internalState: { ...state, shortEma, longEma, count },
             };
           },
         };
@@ -861,10 +973,18 @@ export class IndicatorService {
               : ((close - lowestLow) / (highestHigh - lowestLow)) * 100;
 
           const kValues = [...(state.kValues || []), k];
-          clampWindow(kValues, state.signalPeriod);
-          const d =
-            kValues.reduce((sum: number, value: number) => sum + value, 0) /
-            kValues.length;
+          let kRunningSum = Number.isFinite(state.kRunningSum)
+            ? state.kRunningSum
+            : (state.kValues || []).reduce(
+                (sum: number, value: number) => sum + value,
+                0,
+              );
+          kRunningSum += k;
+          if (kValues.length > state.signalPeriod) {
+            kRunningSum -= kValues.shift() as number;
+          }
+
+          const d = kRunningSum / kValues.length;
 
           const out = { k, d };
           return {
@@ -875,6 +995,7 @@ export class IndicatorService {
               highWindow: highs,
               lowWindow: lows,
               kValues,
+              kRunningSum,
 
               lastValue: out,
             },
@@ -889,6 +1010,7 @@ export class IndicatorService {
               highWindow: [],
               lowWindow: [],
               kValues: [],
+              kRunningSum: 0,
 
               lastValue: null,
             };

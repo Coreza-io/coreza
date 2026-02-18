@@ -394,6 +394,20 @@ export class WorkflowEngine {
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
+  private formatExecutionDuration(durationMs: number): string {
+    const totalCentiseconds = Math.floor(durationMs / 10);
+    const centiseconds = totalCentiseconds % 100;
+    const totalSeconds = Math.floor(totalCentiseconds / 100);
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const minutes = totalMinutes % 60;
+    const hours = Math.floor(totalMinutes / 60);
+
+    return [hours, minutes, seconds, centiseconds]
+      .map((value) => value.toString().padStart(2, "0"))
+      .join(":");
+  }
+
   async execute(
     initialInput?: any,
     startNodeId?: string,
@@ -403,6 +417,7 @@ export class WorkflowEngine {
     executionOrder?: string[];
     error?: string;
   }> {
+    const workflowStartTime = Date.now();
     try {
       console.log(
         `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
@@ -417,13 +432,23 @@ export class WorkflowEngine {
       const failedNodeIds = Array.from(this.failed);
 
       if (hasFailedNodes) {
+        const executionTimeMs = Date.now() - workflowStartTime;
+        const formattedExecutionTime = this.formatExecutionDuration(
+          executionTimeMs,
+        );
         console.log(
           `⚠️ Workflow completed with ${
             failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")}`,
+          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
         );
       } else {
-        console.log(`✅ Workflow execution completed successfully`);
+        const executionTimeMs = Date.now() - workflowStartTime;
+        const formattedExecutionTime = this.formatExecutionDuration(
+          executionTimeMs,
+        );
+        console.log(
+          `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
+        );
       }
 
       if (this.silent && this.indicatorStateManager) {
@@ -462,7 +487,14 @@ export class WorkflowEngine {
         executionOrder: this.executionOrder,
       };
     } catch (error) {
-      console.error("❌ Workflow execution failed:", error);
+      const executionTimeMs = Date.now() - workflowStartTime;
+      const formattedExecutionTime = this.formatExecutionDuration(
+        executionTimeMs,
+      );
+      console.error(
+        `❌ Workflow execution failed after ${formattedExecutionTime}:`,
+        error,
+      );
       const message = (error as Error).message;
 
       // Cleanup DataContext on failure too

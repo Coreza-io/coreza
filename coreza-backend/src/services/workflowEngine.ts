@@ -403,6 +403,7 @@ export class WorkflowEngine {
     executionOrder?: string[];
     error?: string;
   }> {
+    const workflowStartTime = Date.now();
     try {
       console.log(
         `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
@@ -417,13 +418,17 @@ export class WorkflowEngine {
       const failedNodeIds = Array.from(this.failed);
 
       if (hasFailedNodes) {
+        const executionTimeMs = Date.now() - workflowStartTime;
         console.log(
           `⚠️ Workflow completed with ${
             failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")}`,
+          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${executionTimeMs}ms)`,
         );
       } else {
-        console.log(`✅ Workflow execution completed successfully`);
+        const executionTimeMs = Date.now() - workflowStartTime;
+        console.log(
+          `✅ Workflow execution completed successfully (Execution time: ${executionTimeMs}ms)`,
+        );
       }
 
       if (this.silent && this.indicatorStateManager) {
@@ -462,7 +467,11 @@ export class WorkflowEngine {
         executionOrder: this.executionOrder,
       };
     } catch (error) {
-      console.error("❌ Workflow execution failed:", error);
+      const executionTimeMs = Date.now() - workflowStartTime;
+      console.error(
+        `❌ Workflow execution failed after ${executionTimeMs}ms:`,
+        error,
+      );
       const message = (error as Error).message;
 
       // Cleanup DataContext on failure too

@@ -72,7 +72,9 @@ async function executeIndicatorWithState(
 
       if (candles.length > 0) {
         const latestBar = candles[candles.length - 1];
-        const latestBarTime = String(latestBar?.t ?? latestBar?.timestamp ?? "");
+        const latestBarTime = String(
+          latestBar?.t ?? latestBar?.timestamp ?? "",
+        );
 
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
           const updated = await indicatorStateManager.update(key, latestBar);
@@ -104,10 +106,10 @@ router.use(requireAuth);
 router.post("/initialize", async (req, res, next) => {
   try {
     const node: WorkflowNode = {
-      id: req.body.nodeId || "manual-init",
-      name: "InitializeIndicators",
-      node_type: "main",
-      category: "Indicators",
+      id: req.body.node_id,
+      name: req.body.nodeName,
+      node_type: req.body.node_type,
+      category: req.body.category,
       values: req.body,
       data: { values: req.body },
     };
@@ -190,10 +192,8 @@ router.post("/macd", async (req, res, next) => {
 // Bollinger Bands endpoint
 router.post("/bollinger", async (req, res, next) => {
   try {
-    const result = await executeIndicatorWithState(
-      "bollinger",
-      req,
-      (input) => IndicatorService.calculateBollinger(input),
+    const result = await executeIndicatorWithState("bollinger", req, (input) =>
+      IndicatorService.calculateBollinger(input),
     );
     res.json(result);
   } catch (error) {
@@ -216,10 +216,8 @@ router.post("/adx", async (req, res, next) => {
 // Stochastic Oscillator endpoint
 router.post("/stochastic", async (req, res, next) => {
   try {
-    const result = await executeIndicatorWithState(
-      "stochastic",
-      req,
-      (input) => IndicatorService.calculateStochastic(input),
+    const result = await executeIndicatorWithState("stochastic", req, (input) =>
+      IndicatorService.calculateStochastic(input),
     );
     res.json(result);
   } catch (error) {

@@ -276,8 +276,8 @@ export function useNodeExecution({
           currentWorkflowId ||
           userId;
 
-        payload.workflow_id = payload.workflow_id || currentWorkflowId;
-        payload.run_id = payload.run_id || currentRunId;
+        payload.workflow_id = currentWorkflowId;
+        payload.run_id = currentRunId;
       }
 
       return {

@@ -237,6 +237,34 @@ export function useNodeExecution({
           targetHandle: e.targetHandle,
         }));
 
+      // For InitializeIndicators: send the full graph so backend BFS can
+      // traverse through control nodes and discover downstream indicators.
+      if (definition?.name === "InitializeIndicators") {
+        payload.nodes = nodes.map((n) => {
+          const nodeDefinition = n.data?.definition as any;
+          const serializedNode: Record<string, any> = {
+            id: n.id,
+            name: nodeDefinition?.name,
+            node_type: nodeDefinition?.node_type,
+            category: nodeDefinition?.category,
+          };
+
+          if (nodeDefinition?.category === "Indicators") {
+            serializedNode.values = n.data?.values || {};
+          }
+
+          return serializedNode;
+        });
+
+        payload.edges = edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          sourceHandle: e.sourceHandle,
+          targetHandle: e.targetHandle,
+        }));
+      }
+
       return {
         ...payload,
       };

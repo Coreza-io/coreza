@@ -18,12 +18,84 @@ import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { InitializeIndicatorsExecutor } from "../nodes/executors/InitializeIndicatorsExecutor";
 import { WorkflowNode } from "../nodes/types";
-import { IndicatorStateManager } from "../services/indicatorStateManager";
-import { IndicatorService } from "../services/indicators";
+import {
+  buildIndicatorKey,
+  IndicatorStateManager,
+} from "../services/indicatorStateManager";
+import { IndicatorResult, IndicatorService } from "../services/indicators";
 
 const router = express.Router();
 const initializeIndicatorsExecutor = new InitializeIndicatorsExecutor();
 const indicatorStateManager = new IndicatorStateManager();
+
+const parseCandles = (rawCandleData: any): any[] => {
+  if (Array.isArray(rawCandleData)) {
+    return rawCandleData;
+  }
+
+  if (typeof rawCandleData === "string") {
+    try {
+      const parsed = JSON.parse(rawCandleData);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+async function executeIndicatorWithState(
+  indicatorType: string,
+  req: express.Request,
+  batchCalculate: (input: any) => Promise<IndicatorResult>,
+): Promise<IndicatorResult> {
+  const userId = req.user?.id || req.body.user_id;
+  const workflowId = req.body.workflow_id;
+  const runId = req.body.run_id || userId;
+  const symbol = req.body.symbol;
+  const timeframe = req.body.timeframe;
+
+  if (userId && workflowId && runId && symbol && timeframe) {
+    const key = buildIndicatorKey(
+      userId,
+      workflowId,
+      runId,
+      symbol,
+      timeframe,
+      indicatorType,
+    );
+
+    const state = await indicatorStateManager.getState(key);
+    if (state && state.warmupCompleted) {
+      const candles = parseCandles(req.body.candle_data);
+
+      if (candles.length > 0) {
+        const latestBar = candles[candles.length - 1];
+        const latestBarTime = String(latestBar?.t ?? latestBar?.timestamp ?? "");
+
+        if (latestBarTime && latestBarTime !== state.lastBarTime) {
+          const updated = await indicatorStateManager.update(key, latestBar);
+          return {
+            success: true,
+            status: "success",
+            data: [updated.value],
+            meta: { category: "indicators" },
+          };
+        }
+
+        return {
+          success: true,
+          status: "success",
+          data: [state.value],
+          meta: { category: "indicators" },
+        };
+      }
+    }
+  }
+
+  return batchCalculate(req.body);
+}
 
 // Apply JWT authentication to all routes
 router.use(requireAuth);
@@ -70,7 +142,9 @@ router.post("/initialize", async (req, res, next) => {
 // RSI endpoint
 router.post("/rsi", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateRSI(req.body);
+    const result = await executeIndicatorWithState("rsi", req, (input) =>
+      IndicatorService.calculateRSI(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -80,7 +154,9 @@ router.post("/rsi", async (req, res, next) => {
 // EMA endpoint
 router.post("/ema", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateEMA(req.body);
+    const result = await executeIndicatorWithState("ema", req, (input) =>
+      IndicatorService.calculateEMA(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -90,7 +166,9 @@ router.post("/ema", async (req, res, next) => {
 // SMA endpoint
 router.post("/sma", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateSMA(req.body);
+    const result = await executeIndicatorWithState("sma", req, (input) =>
+      IndicatorService.calculateSMA(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -100,7 +178,9 @@ router.post("/sma", async (req, res, next) => {
 // MACD endpoint
 router.post("/macd", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateMACD(req.body);
+    const result = await executeIndicatorWithState("macd", req, (input) =>
+      IndicatorService.calculateMACD(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -110,7 +190,11 @@ router.post("/macd", async (req, res, next) => {
 // Bollinger Bands endpoint
 router.post("/bollinger", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateBollinger(req.body);
+    const result = await executeIndicatorWithState(
+      "bollinger",
+      req,
+      (input) => IndicatorService.calculateBollinger(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -120,7 +204,9 @@ router.post("/bollinger", async (req, res, next) => {
 // ADX endpoint
 router.post("/adx", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateADX(req.body);
+    const result = await executeIndicatorWithState("adx", req, (input) =>
+      IndicatorService.calculateADX(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -130,7 +216,11 @@ router.post("/adx", async (req, res, next) => {
 // Stochastic Oscillator endpoint
 router.post("/stochastic", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateStochastic(req.body);
+    const result = await executeIndicatorWithState(
+      "stochastic",
+      req,
+      (input) => IndicatorService.calculateStochastic(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -140,7 +230,9 @@ router.post("/stochastic", async (req, res, next) => {
 // Ichimoku Cloud endpoint
 router.post("/ichimoku", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateIchimoku(req.body);
+    const result = await executeIndicatorWithState("ichimoku", req, (input) =>
+      IndicatorService.calculateIchimoku(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -150,7 +242,9 @@ router.post("/ichimoku", async (req, res, next) => {
 // OBV endpoint
 router.post("/obv", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateOBV(req.body);
+    const result = await executeIndicatorWithState("obv", req, (input) =>
+      IndicatorService.calculateOBV(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -160,7 +254,9 @@ router.post("/obv", async (req, res, next) => {
 // VWAP endpoint
 router.post("/vwap", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateVWAP(req.body);
+    const result = await executeIndicatorWithState("vwap", req, (input) =>
+      IndicatorService.calculateVWAP(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -170,7 +266,11 @@ router.post("/vwap", async (req, res, next) => {
 // Volume Oscillator endpoint
 router.post("/volume-oscillator", async (req, res, next) => {
   try {
-    const result = await IndicatorService.calculateVolumeOscillator(req.body);
+    const result = await executeIndicatorWithState(
+      "volumeoscillator",
+      req,
+      (input) => IndicatorService.calculateVolumeOscillator(input),
+    );
     res.json(result);
   } catch (error) {
     next(error);

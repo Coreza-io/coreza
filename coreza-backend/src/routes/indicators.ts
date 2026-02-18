@@ -55,6 +55,7 @@ async function executeIndicatorWithState(
   const runId = req.body.run_id || userId;
   const symbol = req.body.symbol;
   const timeframe = req.body.timeframe;
+  const node_id = req.body.node_id;
 
   if (userId && workflowId && runId && symbol && timeframe) {
     const key = buildIndicatorKey(
@@ -63,7 +64,7 @@ async function executeIndicatorWithState(
       runId,
       symbol,
       timeframe,
-      indicatorType,
+      node_id,
     );
 
     const state = await indicatorStateManager.getState(key);

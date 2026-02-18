@@ -231,7 +231,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
           runId,
           symbol,
           timeframe,
-          ind.type,
+          ind.nodeId,
         );
 
         try {

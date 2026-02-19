@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { SimBroker, SimBrokerConfig, Bar } from "../../services/simBroker";
+import { SimBroker, SimBrokerConfig, Bar, Position } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
@@ -574,17 +574,25 @@ export class BacktestExecutor implements INodeExecutor {
   private portfolioGetAll(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
     const positions = Object.values(state.positions);
+    const formattedPositions = positions.map((position) =>
+      this.formatPositionWithPnlPercent(position),
+    );
     const positionsValue = positions.reduce((sum, pos) => sum + pos.marketValue, 0);
+    const initialCapital = simBroker.getConfig().initialCapital;
+    const unrealizedPnlValue = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+    const realizedPnlValue = positions.reduce((sum, pos) => sum + pos.realizedPnl, 0);
 
     return toNodeResult(
       createSuccessOutput({
         cash: state.cash,
-        initial_capital: simBroker.getConfig().initialCapital,
-        positions,
+        initial_capital: initialCapital,
+        positions: formattedPositions,
         positions_count: positions.length,
         positions_value: positionsValue,
-        unrealized_pnl: positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0),
-        realized_pnl: positions.reduce((sum, pos) => sum + pos.realizedPnl, 0),
+        unrealized_pnl: this.toPercent(unrealizedPnlValue, initialCapital),
+        unrealized_pnl_value: unrealizedPnlValue,
+        realized_pnl: this.toPercent(realizedPnlValue, initialCapital),
+        realized_pnl_value: realizedPnlValue,
         total_equity: state.cash + positionsValue,
         pending_orders: state.pendingOrders,
         pending_orders_count: state.pendingOrders.length,
@@ -602,21 +610,54 @@ export class BacktestExecutor implements INodeExecutor {
     }
 
     const position = simBroker.getPosition(symbol);
+    const formattedPosition = position
+      ? this.formatPositionWithPnlPercent(position)
+      : null;
+    const positionCostBasis = position
+      ? Math.abs(position.avgEntryPrice * position.quantity)
+      : 0;
+    const unrealizedPnlValue = position?.unrealizedPnl || 0;
+    const realizedPnlValue = position?.realizedPnl || 0;
 
     return toNodeResult(
       createSuccessOutput({
         has_position: !!position,
-        position: position || null,
+        position: formattedPosition,
         symbol,
         quantity: position?.quantity || 0,
         side: position?.side || null,
         avg_entry_price: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
-        unrealized_pnl: position?.unrealizedPnl || 0,
-        realized_pnl: position?.realizedPnl || 0,
+        unrealized_pnl: this.toPercent(unrealizedPnlValue, positionCostBasis),
+        unrealized_pnl_value: unrealizedPnlValue,
+        realized_pnl: this.toPercent(realizedPnlValue, positionCostBasis),
+        realized_pnl_value: realizedPnlValue,
         market_value: position?.marketValue || 0,
       }),
     );
+  }
+
+  private formatPositionWithPnlPercent(position: Position): Position & {
+    unrealizedPnlValue: number;
+    realizedPnlValue: number;
+  } {
+    const costBasis = Math.abs(position.avgEntryPrice * position.quantity);
+
+    return {
+      ...position,
+      unrealizedPnlValue: position.unrealizedPnl,
+      realizedPnlValue: position.realizedPnl,
+      unrealizedPnl: this.toPercent(position.unrealizedPnl, costBasis),
+      realizedPnl: this.toPercent(position.realizedPnl, costBasis),
+    };
+  }
+
+  private toPercent(value: number, base: number): number {
+    if (!Number.isFinite(value) || !Number.isFinite(base) || base === 0) {
+      return 0;
+    }
+
+    return (value / base) * 100;
   }
 
   private portfolioUpdateMTM(

@@ -56,15 +56,17 @@ const BacktestResults = () => {
   };
 
   const metricCards = [
-    { label: 'Total Return', value: metrics?.total_return, format: 'percent' },
-    { label: 'Sharpe Ratio', value: metrics?.sharpe_ratio },
-    { label: 'Max Drawdown', value: metrics?.max_drawdown, format: 'percent' },
-    { label: 'Win Rate', value: metrics?.win_rate, format: 'percent' },
+    { label: 'Net Profit', value: metrics?.net_profit, format: 'currency' as const, colored: true },
+    { label: 'Total Return', value: metrics?.total_return, format: 'percent' as const, colored: true },
+    { label: 'Sharpe Ratio', value: metrics?.sharpe_ratio, format: 'number' as const },
+    { label: 'Win Rate', value: metrics?.win_rate, format: 'percent' as const },
   ];
 
-  const formatMetric = (value?: number, format: 'percent' | 'number' = 'number') => {
+  const formatMetric = (value?: number | null, format: 'percent' | 'number' | 'currency' = 'number') => {
     if (value === undefined || value === null) return '—';
-    return format === 'percent' ? `${value.toFixed(2)}%` : value.toFixed(2);
+    if (format === 'percent') return `${value.toFixed(2)}%`;
+    if (format === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    return value.toFixed(2);
   };
 
   return (
@@ -86,14 +88,22 @@ const BacktestResults = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {metricCards.map((metric) => (
-          <Card key={metric.label}>
-            <CardHeader className="pb-2">
-              <CardDescription>{metric.label}</CardDescription>
-              <CardTitle className="text-2xl">{formatMetric(metric.value, metric.format as any)}</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
+        {metricCards.map((metric) => {
+          const val = metric.value;
+          const colorClass = metric.colored && val != null
+            ? val >= 0 ? 'text-emerald-600' : 'text-red-600'
+            : '';
+          return (
+            <Card key={metric.label}>
+              <CardHeader className="pb-2">
+                <CardDescription>{metric.label}</CardDescription>
+                <CardTitle className={`text-2xl ${colorClass}`}>
+                  {formatMetric(val, metric.format)}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          );
+        })}
       </div>
 
       <EquityCurveChart snapshots={snapshots} />

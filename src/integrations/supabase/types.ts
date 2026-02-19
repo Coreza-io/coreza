@@ -59,48 +59,81 @@ export type Database = {
         Row: {
           annualized_return: number | null
           average_trade_return: number | null
+          avg_holding_period: number | null
+          avg_loss: number | null
+          avg_win: number | null
           backtest_id: string
+          calmar_ratio: number | null
           created_at: string
+          expectancy: number | null
           final_portfolio_value: number | null
           id: string
           largest_loss: number | null
           largest_win: number | null
+          losing_trades: number | null
           max_drawdown: number | null
+          net_profit: number | null
+          profit_factor: number | null
           profitable_trades: number | null
           sharpe_ratio: number | null
+          sortino_ratio: number | null
+          total_commission: number | null
           total_return: number | null
+          total_slippage: number | null
           total_trades: number | null
           win_rate: number | null
         }
         Insert: {
           annualized_return?: number | null
           average_trade_return?: number | null
+          avg_holding_period?: number | null
+          avg_loss?: number | null
+          avg_win?: number | null
           backtest_id: string
+          calmar_ratio?: number | null
           created_at?: string
+          expectancy?: number | null
           final_portfolio_value?: number | null
           id?: string
           largest_loss?: number | null
           largest_win?: number | null
+          losing_trades?: number | null
           max_drawdown?: number | null
+          net_profit?: number | null
+          profit_factor?: number | null
           profitable_trades?: number | null
           sharpe_ratio?: number | null
+          sortino_ratio?: number | null
+          total_commission?: number | null
           total_return?: number | null
+          total_slippage?: number | null
           total_trades?: number | null
           win_rate?: number | null
         }
         Update: {
           annualized_return?: number | null
           average_trade_return?: number | null
+          avg_holding_period?: number | null
+          avg_loss?: number | null
+          avg_win?: number | null
           backtest_id?: string
+          calmar_ratio?: number | null
           created_at?: string
+          expectancy?: number | null
           final_portfolio_value?: number | null
           id?: string
           largest_loss?: number | null
           largest_win?: number | null
+          losing_trades?: number | null
           max_drawdown?: number | null
+          net_profit?: number | null
+          profit_factor?: number | null
           profitable_trades?: number | null
           sharpe_ratio?: number | null
+          sortino_ratio?: number | null
+          total_commission?: number | null
           total_return?: number | null
+          total_slippage?: number | null
           total_trades?: number | null
           win_rate?: number | null
         }
@@ -120,11 +153,16 @@ export type Database = {
           backtest_id: string
           commission: number | null
           created_at: string
+          entry_price: number | null
+          exit_reason: string | null
+          holding_period_bars: number | null
           id: string
+          net_pnl: number | null
           portfolio_value_after: number | null
           portfolio_value_before: number | null
           price: number
           quantity: number
+          return_pct: number | null
           slippage: number | null
           symbol: string
           timestamp: string
@@ -134,11 +172,16 @@ export type Database = {
           backtest_id: string
           commission?: number | null
           created_at?: string
+          entry_price?: number | null
+          exit_reason?: string | null
+          holding_period_bars?: number | null
           id?: string
+          net_pnl?: number | null
           portfolio_value_after?: number | null
           portfolio_value_before?: number | null
           price: number
           quantity: number
+          return_pct?: number | null
           slippage?: number | null
           symbol: string
           timestamp: string
@@ -148,11 +191,16 @@ export type Database = {
           backtest_id?: string
           commission?: number | null
           created_at?: string
+          entry_price?: number | null
+          exit_reason?: string | null
+          holding_period_bars?: number | null
           id?: string
+          net_pnl?: number | null
           portfolio_value_after?: number | null
           portfolio_value_before?: number | null
           price?: number
           quantity?: number
+          return_pct?: number | null
           slippage?: number | null
           symbol?: string
           timestamp?: string

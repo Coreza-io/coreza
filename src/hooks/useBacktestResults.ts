@@ -15,6 +15,17 @@ export interface BacktestResultMetrics {
   largest_win?: number;
   largest_loss?: number;
   final_portfolio_value?: number;
+  sortino_ratio?: number;
+  calmar_ratio?: number;
+  profit_factor?: number;
+  avg_win?: number;
+  avg_loss?: number;
+  total_commission?: number;
+  total_slippage?: number;
+  net_profit?: number;
+  losing_trades?: number;
+  expectancy?: number;
+  avg_holding_period?: number;
 }
 
 // Matches backtest_trades table schema
@@ -30,6 +41,11 @@ export interface BacktestTrade {
   slippage?: number;
   portfolio_value_before?: number;
   portfolio_value_after?: number;
+  entry_price?: number;
+  exit_reason?: string;
+  return_pct?: number;
+  net_pnl?: number;
+  holding_period_bars?: number;
 }
 
 // Matches backtest_portfolio_snapshots table schema

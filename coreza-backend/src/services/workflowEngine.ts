@@ -47,6 +47,7 @@ const CATEGORY_MAP: Record<string, string> = {
   FinnHub: "DataSource",
   YahooFinance: "DataSource",
   Store: "DataSource",
+  RollingWindow: "DataSource",
   LLM: "LLM",
   AIAgent: "AIAgent",
   InitializeIndicators: "Indicators",

@@ -27,6 +27,7 @@ import {
   createErrorOutput,
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
+import { buildExecutionScopedKey } from "../../utils/executionKey";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -46,6 +47,10 @@ export class DataSourceExecutor implements INodeExecutor {
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
         return result;
+      }
+
+      if (nodeName === "RollingWindow") {
+        return this.executeRollingWindowNode(node, resolvedParams, context);
       }
 
       const operation = resolvedParams.operation ?? node.values?.operation;
@@ -187,6 +192,91 @@ export class DataSourceExecutor implements INodeExecutor {
       params.workflow_id || params.workflowId || context?.workflowId;
 
     return storageService.execute(params);
+  }
+
+
+  private executeRollingWindowNode(
+    node: WorkflowNode,
+    params: Record<string, any>,
+    context?: any,
+  ): NodeResult {
+    const { RollingWindow } = require("../../services/RollingWindow");
+
+    const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
+    const symbol = params.symbol || "_";
+    const timeframe = params.timeframe || "_";
+
+    const userId = context?.userId || params.user_id || "system";
+    const workflowId = context?.workflowId || params.workflow_id || "manual";
+    const runId = context?.runId || params.run_id || "manual";
+
+    const storeKey = buildExecutionScopedKey({
+      userId,
+      workflowId,
+      runId,
+      nodeId: node.id,
+      scope: "rolling_window",
+      parts: [symbol, timeframe],
+    });
+    const dataContext = context?.dataContext;
+
+    let window: any;
+    if (dataContext) {
+      window = dataContext.getDataByKey(storeKey);
+      if (!window || window.size !== size) {
+        window = new RollingWindow(size);
+        dataContext.setData(storeKey, window);
+      }
+    } else {
+      window = new RollingWindow(size);
+    }
+
+    let bars: any[] = [];
+    const rawCandle = params.candle_data;
+    if (Array.isArray(rawCandle)) {
+      bars = rawCandle;
+    } else if (typeof rawCandle === "string") {
+      try {
+        const parsed = JSON.parse(rawCandle);
+        bars = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        bars = [];
+      }
+    } else if (rawCandle && typeof rawCandle === "object") {
+      bars = [rawCandle];
+    }
+
+    if (bars.length === 0) {
+      return toNodeResult(
+        createErrorOutput("No bars provided in candle_data", {
+          nodeId: node.id,
+          nodeName: "RollingWindow",
+          category: this.category,
+        }),
+      );
+    }
+
+    for (const bar of bars) {
+      window.add(bar);
+    }
+
+    return toNodeResult(
+      createSuccessOutput(
+        {
+          window: [...window.values()],
+          count: window.count,
+          size: window.size,
+          isReady: window.isReady,
+          remaining: window.size - window.count,
+          latest: window.count > 0 ? window.at(0) : null,
+        },
+        {
+          nodeId: node.id,
+          nodeName: "RollingWindow",
+          category: this.category,
+        },
+      ),
+    );
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {

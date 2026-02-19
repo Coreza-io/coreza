@@ -7,6 +7,8 @@
  */
 
 import { getRedisCache } from "../config/redis";
+import { buildIndicatorKey } from "../utils/executionKey";
+export { buildIndicatorKey } from "../utils/executionKey";
 import { IndicatorService } from "./indicators";
 
 export interface IndicatorState {
@@ -39,16 +41,6 @@ export function serializeParams(params: Record<string, any>): string {
     .join(":");
 }
 
-export function buildIndicatorKey(
-  userId: string,
-  workflowId: string,
-  runId: string,
-  symbol: string,
-  timeframe: string,
-  indicator: string,
-): string {
-  return `user:${userId}:workflow:${workflowId}:runId:${runId}:indicator:${symbol}:${timeframe}:${indicator}`;
-}
 
 const STATE_VERSION = 1;
 

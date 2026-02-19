@@ -24,11 +24,95 @@ import { supabase } from "../config/supabase";
 import { getRedisCache } from "../config/redis";
 import { buildStoreKey, extractVariableNameFromKey } from "../utils/store";
 import logger from "../utils/logger";
+import { buildExecutionScopedKey } from "../utils/executionKey";
+import { RollingWindow } from "../services/RollingWindow";
 
 const router = Router();
+const rollingWindows = new Map<string, RollingWindow<any>>();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
+
+// POST /storage/rolling-window
+router.post("/rolling-window", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const { size, candle_data, symbol, timeframe, workflow_id, run_id } = req.body;
+
+    const windowSize = Math.min(Math.max(parseInt(size) || 20, 1), 500);
+    const storeKey = buildExecutionScopedKey({
+      userId,
+      workflowId: workflow_id || "manual",
+      runId: run_id || "manual",
+      scope: "rolling_window",
+      parts: [symbol || "_", timeframe || "_"],
+    });
+
+    let window = rollingWindows.get(storeKey);
+    if (!window || window.size !== windowSize) {
+      window = new RollingWindow<any>(windowSize);
+      rollingWindows.set(storeKey, window);
+    }
+
+    let bars: any[] = [];
+    if (Array.isArray(candle_data)) {
+      bars = candle_data;
+    } else if (typeof candle_data === "string") {
+      if (candle_data.includes("{{")) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Candle data contains unresolved template references. Execute the upstream node first.",
+        });
+      }
+
+      try {
+        const parsed = JSON.parse(candle_data);
+        bars = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid candle_data format" });
+      }
+    } else if (candle_data && typeof candle_data === "object") {
+      bars = [candle_data];
+    }
+
+    if (bars.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "No bars provided in candle_data" });
+    }
+
+    for (const bar of bars) {
+      window.add(bar);
+    }
+
+    res.json({
+      success: true,
+      status: "success",
+      data: {
+        window: [...window.values()],
+        count: window.count,
+        size: window.size,
+        isReady: window.isReady,
+        remaining: window.size - window.count,
+        latest: window.count > 0 ? window.at(0) : null,
+      },
+      meta: {
+        key: storeKey,
+        barsAdded: bars.length,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Generic storage operation
 // POST /storage/:service/:operation

@@ -398,12 +398,34 @@ export class BacktestExecutor implements INodeExecutor {
         annualized_return: metrics.annualizedReturn,
         max_drawdown: metrics.maxDrawdownPct,
         sharpe_ratio: metrics.sharpeRatio,
+        sortino_ratio: metrics.sortinoRatio,
+        calmar_ratio: metrics.calmarRatio,
+        profit_factor:
+          metrics.profitFactor === Infinity
+            ? 999999
+            : (metrics.profitFactor || 0),
         total_trades: metrics.totalTrades,
         win_rate: metrics.winRate,
         profitable_trades: metrics.winningTrades,
+        losing_trades: metrics.losingTrades,
         average_trade_return: metrics.avgTradePnl,
+        avg_win: metrics.avgWin,
+        avg_loss: metrics.avgLoss,
         largest_win: metrics.largestWin,
         largest_loss: metrics.largestLoss,
+        total_commission: metrics.totalCommission,
+        total_slippage: metrics.totalSlippage,
+        net_profit: metrics.totalReturn,
+        expectancy:
+          metrics.totalTrades > 0
+            ? (metrics.winRate / 100) * metrics.avgWin -
+              (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
+            : 0,
+        avg_holding_period:
+          trades.length > 0
+            ? trades.reduce((sum, t) => sum + t.holdingPeriodBars, 0) /
+              trades.length
+            : 0,
         final_portfolio_value:
           portfolioState.cash +
           Object.values(portfolioState.positions).reduce(

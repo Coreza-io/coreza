@@ -235,6 +235,29 @@ export class SimBroker {
     // Update position mark-to-market
     this.updatePositionMTM(symbol, bar.close);
 
+    // Auto-record equity snapshot on every bar
+    const positionsValue = Object.values(this.state.positions).reduce(
+      (sum, p) => sum + p.marketValue,
+      0,
+    );
+    const totalEquity = this.state.cash + positionsValue;
+
+    if (totalEquity > this.state.peakEquity) {
+      this.state.peakEquity = totalEquity;
+    }
+    const drawdownPct =
+      this.state.peakEquity > 0
+        ? ((this.state.peakEquity - totalEquity) / this.state.peakEquity) * 100
+        : 0;
+
+    this.state.equityCurve.push({
+      timestamp: bar.timestamp,
+      cash: this.state.cash,
+      positionsValue,
+      totalEquity,
+      drawdownPct,
+    });
+
     // Remember this bar for next iteration
     this.previousBar = bar;
 
@@ -446,54 +469,68 @@ export class SimBroker {
   getMetrics(): BacktestMetrics {
     const trades = this.state.trades;
     const curve = this.state.equityCurve;
-
-    // Basic returns
     const initialCapital = this.config.initialCapital;
-    const finalEquity = curve.length > 0 ? curve[curve.length - 1].totalEquity : initialCapital;
+
+    // Equity -- always from curve (guaranteed populated by onBar)
+    const finalEquity = curve[curve.length - 1]?.totalEquity ?? initialCapital;
     const totalReturn = finalEquity - initialCapital;
     const totalReturnPct = (totalReturn / initialCapital) * 100;
 
-    // Drawdown
-    const maxDrawdownPct = Math.max(...curve.map(p => p.drawdownPct), 0);
+    // Drawdown -- always from curve
+    const maxDrawdownPct =
+      curve.length > 0 ? Math.max(...curve.map((p) => p.drawdownPct), 0) : 0;
     const maxDrawdown = (maxDrawdownPct / 100) * this.state.peakEquity;
 
-    // Trade statistics
+    // Trade statistics (unchanged)
     const totalTrades = trades.length;
-    const winningTrades = trades.filter(t => t.netPnl > 0).length;
-    const losingTrades = trades.filter(t => t.netPnl < 0).length;
+    const winningTrades = trades.filter((t) => t.netPnl > 0).length;
+    const losingTrades = trades.filter((t) => t.netPnl < 0).length;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
-    // P&L stats
-    const winPnls = trades.filter(t => t.netPnl > 0).map(t => t.netPnl);
-    const lossPnls = trades.filter(t => t.netPnl < 0).map(t => t.netPnl);
-    
-    const avgWin = winPnls.length > 0 ? winPnls.reduce((a, b) => a + b, 0) / winPnls.length : 0;
-    const avgLoss = lossPnls.length > 0 ? lossPnls.reduce((a, b) => a + b, 0) / lossPnls.length : 0;
+    // P&L stats (unchanged)
+    const winPnls = trades.filter((t) => t.netPnl > 0).map((t) => t.netPnl);
+    const lossPnls = trades.filter((t) => t.netPnl < 0).map((t) => t.netPnl);
+    const avgWin =
+      winPnls.length > 0
+        ? winPnls.reduce((a, b) => a + b, 0) / winPnls.length
+        : 0;
+    const avgLoss =
+      lossPnls.length > 0
+        ? lossPnls.reduce((a, b) => a + b, 0) / lossPnls.length
+        : 0;
     const largestWin = winPnls.length > 0 ? Math.max(...winPnls) : 0;
     const largestLoss = lossPnls.length > 0 ? Math.min(...lossPnls) : 0;
-    const avgTradePnl = totalTrades > 0 ? trades.reduce((sum, t) => sum + t.netPnl, 0) / totalTrades : 0;
+    const avgTradePnl =
+      totalTrades > 0
+        ? trades.reduce((sum, t) => sum + t.netPnl, 0) / totalTrades
+        : 0;
 
-    // Profit factor
+    // Profit factor (unchanged)
     const totalWins = winPnls.reduce((a, b) => a + b, 0);
     const totalLosses = Math.abs(lossPnls.reduce((a, b) => a + b, 0));
-    const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0;
+    const profitFactor =
+      totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0;
 
-    // Commission & Slippage
+    // Commission & Slippage (unchanged)
     const totalCommission = trades.reduce((sum, t) => sum + t.commission, 0);
     const totalSlippage = trades.reduce((sum, t) => sum + t.slippage, 0);
 
-    // Calculate returns for Sharpe/Sortino
+    // Risk metrics -- always from curve returns
     const returns = this.calculateReturns(curve);
     const sharpeRatio = this.calculateSharpeRatio(returns);
     const sortinoRatio = this.calculateSortinoRatio(returns);
-    const calmarRatio = maxDrawdownPct > 0 ? totalReturnPct / maxDrawdownPct : 0;
 
-    // Annualized return (assuming daily bars)
+    // Annualized return -- always from curve length
     const totalBars = curve.length;
-    const yearsElapsed = totalBars / 252; // Trading days per year
-    const annualizedReturn = yearsElapsed > 0 
-      ? (Math.pow(finalEquity / initialCapital, 1 / yearsElapsed) - 1) * 100 
-      : totalReturnPct;
+    const yearsElapsed = totalBars / 252;
+    const annualizedReturn =
+      yearsElapsed > 0
+        ? (Math.pow(finalEquity / initialCapital, 1 / yearsElapsed) - 1) * 100
+        : totalReturnPct;
+
+    // Calmar = annualized return / max drawdown (fixed formula)
+    const calmarRatio =
+      maxDrawdownPct > 0 ? annualizedReturn / maxDrawdownPct : 0;
 
     return {
       totalReturn,

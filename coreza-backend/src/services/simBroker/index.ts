@@ -323,13 +323,31 @@ export class SimBroker {
     }
   }
 
-  private updatePositionMTM(symbol: string, currentPrice: number): void {
+  updatePositionMTM(symbol: string, currentPrice: number): void {
     const position = this.state.positions[symbol];
     if (position) {
       position.currentPrice = currentPrice;
       position.marketValue = position.quantity * currentPrice;
       position.unrealizedPnl = (currentPrice - position.avgEntryPrice) * position.quantity;
     }
+  }
+
+
+  /**
+   * Bulk mark-to-market update for all held positions.
+   * Called by engine before strategy code runs each bar (QuantConnect-style).
+   */
+  updateAllPositionsMTM(prices: Record<string, number>): void {
+    for (const [symbol, price] of Object.entries(prices)) {
+      this.updatePositionMTM(symbol, price);
+    }
+  }
+
+  /**
+   * Get a single position by symbol, or null if not held.
+   */
+  getPosition(symbol: string): Position | null {
+    return this.state.positions[symbol] || null;
   }
 
   // ============== SNAPSHOT & EQUITY ==============

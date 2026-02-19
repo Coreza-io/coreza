@@ -515,14 +515,15 @@ export class SimBroker {
     const totalCommission = trades.reduce((sum, t) => sum + t.commission, 0);
     const totalSlippage = trades.reduce((sum, t) => sum + t.slippage, 0);
 
-    // Risk metrics -- always from curve returns
-    const returns = this.calculateReturns(curve);
+    // Risk metrics use daily resampled equity curve (industry standard)
+    const dailyCurve = this.resampleToDaily(curve);
+    const returns = this.calculateReturns(dailyCurve);
     const sharpeRatio = this.calculateSharpeRatio(returns);
     const sortinoRatio = this.calculateSortinoRatio(returns);
 
-    // Annualized return -- always from curve length
-    const totalBars = curve.length;
-    const yearsElapsed = totalBars / 252;
+    // Annualized return from daily resampled curve
+    const tradingDays = dailyCurve.length;
+    const yearsElapsed = tradingDays / 252;
     const annualizedReturn =
       yearsElapsed > 0
         ? (Math.pow(finalEquity / initialCapital, 1 / yearsElapsed) - 1) * 100
@@ -555,7 +556,7 @@ export class SimBroker {
       totalSlippage,
       startDate: curve.length > 0 ? curve[0].timestamp : '',
       endDate: curve.length > 0 ? curve[curve.length - 1].timestamp : '',
-      totalBars,
+      totalBars: curve.length,
     };
   }
 
@@ -571,6 +572,23 @@ export class SimBroker {
       }
     }
     return returns;
+  }
+
+  private resampleToDaily(curve: EquityPoint[]): EquityPoint[] {
+    if (curve.length === 0) return [];
+
+    const dailyMap = new Map<string, EquityPoint>();
+    for (const point of curve) {
+      // Extract YYYY-MM-DD from ISO timestamp
+      const dateKey = point.timestamp.substring(0, 10);
+      // Last point seen for the day is treated as end-of-day equity
+      dailyMap.set(dateKey, point);
+    }
+
+    // Ensure deterministic chronological ordering
+    return Array.from(dailyMap.values()).sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    );
   }
 
   private calculateSharpeRatio(returns: number[], riskFreeRate: number = 0.02): number {

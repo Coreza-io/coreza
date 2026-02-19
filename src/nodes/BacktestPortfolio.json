@@ -57,7 +57,7 @@
       "description": "Current OHLCV bar for mark-to-market pricing",
       "displayOptions": {
         "show": {
-          "operation": ["update_mtm", "get_portfolio", "get_position", "get_equity"]
+          "operation": ["update_mtm"]
         }
       }
     }

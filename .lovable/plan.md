@@ -1,300 +1,291 @@
 
 
-# InitializeIndicators Node -- QuantConnect-Style SetWarmUp for Coreza
+# Enhanced Trade Log and QuantConnect-Style Backtest Results
 
-## How QuantConnect's SetWarmUp Works
+## Problems Found
 
-In QuantConnect, before the algorithm starts live trading, you call `SetWarmUp(N)` in `Initialize()`. This tells the engine:
+### 1. Trade Log Only Records Sell-Side Exits
+The current `executeBacktestResults` (line 415-431) only persists entries from `simBroker.getTrades()`, which are **closed trade records** (sell fills only). BUY entries are never saved to the `backtest_trades` table. The user's desired log format shows both BUY and SELL entries chronologically:
 
-1. Fetch the last N bars of historical data
-2. Feed those bars through ALL registered indicators (EMA, RSI, MACD, etc.) so their internal state is fully populated
-3. Set `IsWarmingUp = true` during this phase -- no orders are placed
-4. Once warm-up completes, `IsWarmingUp = false`, all indicators have `IsReady = true`, and the algorithm begins trading on new bars
-
-The key insight: warm-up happens ONCE before the loop, not per-bar. Each indicator then only needs 1 new bar per iteration to produce an updated value.
-
-## How This Maps to Coreza
-
-Currently in Coreza, when an Indicator node (RSI, EMA, etc.) runs inside a loop for the first time, it receives ALL bars and calls `stateManager.warmUp()`. On subsequent iterations it calls `stateManager.update()` with just the latest bar. The problem: each indicator node independently warms up when first encountered, and requires `symbol`, `timeframe`, and `candle_data` to be passed through the loop.
-
-The **InitializeIndicators** node will:
-
-1. Sit BEFORE the Loop node (like BacktestInit)
-2. Accept candle data + warmup period as input
-3. **Auto-discover all indicator nodes in the workflow** by scanning downstream nodes
-4. Warm up ALL indicators in one shot using the first N bars
-5. Pass the remaining bars (post-warmup) to the Loop node
-6. When indicator nodes run inside the loop, they find pre-warmed state in `IndicatorStateManager` and only call `update()` with the single new bar
-
-```text
-[Data Source] --> [InitializeIndicators] --> [Loop] --> [RSI] --> [If] --> [Trade]
-                                                   --> [EMA] --^
-                  Warms up RSI + EMA with              Each iteration: just 1 bar update
-                  first N bars from data source         (state already ready)
 ```
+2025-07-17 14:31:00 SELL (TAKE PROFIT) 4.10%
+2025-07-21 09:38:00 BUY @ 24.12
+```
+
+### 2. Missing Trade Data Fields
+The current `backtest_trades` DB schema and Trade interface are missing key fields needed for the desired log format:
+- **Exit reason** (TAKE PROFIT, STOP LOSS, SIGNAL, etc.)
+- **Return percentage** per trade
+- **Entry price** on sell rows (needed to calculate return %)
+- **Portfolio value before/after** (always null currently)
+
+### 3. BacktestResults Node Output Missing QC-Style Metrics
+The current results output is missing several QuantConnect standard metrics:
+- Sortino Ratio, Calmar Ratio (calculated but not persisted to DB)
+- Profit Factor
+- Average Win / Average Loss
+- Total Commission / Total Slippage
+- Expectancy (avg win * win rate - avg loss * loss rate)
+- Compounding Annual Return (CAR)
+- Net Profit (absolute $)
+- Average Holding Period
+
+---
 
 ## Implementation Plan
 
-### File 1: `src/nodes/InitializeIndicators.json` (New -- Frontend Node Definition)
+### File 1: DB Schema -- Add columns to `backtest_trades` and `backtest_results`
 
-```json
-{
-  "name": "InitializeIndicators",
-  "def": "Initialize and warm up all workflow indicators",
-  "node_type": "main",
-  "icon": "/assets/icons/indicators.svg",
-  "category": "Indicators",
-  "description": "Warm up all indicators in the workflow with historical data before the loop begins. Similar to QuantConnect's SetWarmUp.",
-  "color": "text-purple-500",
-  "size": { "width": 340, "height": 380 },
-  "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
-  ],
-  "action": { "url": "/indicators/initialize", "method": "POST" },
-  "fields": [
-    {
-      "key": "candle_data",
-      "label": "Candle Data",
-      "type": "text",
-      "description": "Historical OHLCV bar data to warm up indicators",
-      "required": true
-    },
-    {
-      "key": "symbol",
-      "label": "Symbol",
-      "type": "text",
-      "placeholder": "e.g. BTCUSDT",
-      "required": true
-    },
-    {
-      "key": "timeframe",
-      "label": "Timeframe",
-      "type": "text",
-      "placeholder": "e.g. 1d",
-      "required": true
-    },
-    {
-      "key": "warmup_period",
-      "label": "Warm-Up Period (bars)",
-      "type": "text",
-      "placeholder": "200",
-      "default": "200",
-      "description": "Number of bars to use for warming up indicators. Should be >= the longest indicator period in your workflow.",
-      "required": true
-    },
-    {
-      "key": "auto_detect",
-      "label": "Auto-Detect Indicators",
-      "type": "select",
-      "options": [
-        { "id": "true", "name": "Yes - Scan workflow for all indicators" },
-        { "id": "false", "name": "No - Manual configuration" }
-      ],
-      "default": "true",
-      "required": true
-    }
-  ]
+**`backtest_trades` -- add columns:**
+- `entry_price` (numeric) -- the avg entry price when this was a sell
+- `exit_reason` (text) -- "TAKE_PROFIT", "STOP_LOSS", "SIGNAL", "MANUAL"
+- `return_pct` (numeric) -- percentage return on this trade
+- `side` (text) -- "buy" or "sell" (currently stored in `action` but rename for clarity)
+- `net_pnl` (numeric) -- net P&L for sell trades
+- `holding_period_bars` (integer) -- bars held
+
+**`backtest_results` -- add columns:**
+- `sortino_ratio` (numeric)
+- `calmar_ratio` (numeric)
+- `profit_factor` (numeric)
+- `avg_win` (numeric)
+- `avg_loss` (numeric)
+- `total_commission` (numeric)
+- `total_slippage` (numeric)
+- `net_profit` (numeric)
+- `losing_trades` (integer)
+- `expectancy` (numeric)
+- `avg_holding_period` (numeric)
+
+Run via SQL migration on Supabase.
+
+### File 2: `coreza-backend/src/services/simBroker/index.ts` -- Track ALL order fills
+
+**Add a new array to PortfolioState** to record every fill (buy AND sell) chronologically:
+
+```typescript
+// Add to PortfolioState interface in interfaces.ts:
+interface OrderLogEntry {
+  timestamp: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  price: number;         // fill price
+  entryPrice?: number;   // avg entry price (for sells)
+  exitReason?: string;   // TAKE_PROFIT, STOP_LOSS, SIGNAL
+  returnPct?: number;    // % return (for sells)
+  netPnl?: number;       // net P&L (for sells)
+  commission: number;
+  slippage: number;
+  portfolioValueBefore: number;
+  portfolioValueAfter: number;
+  holdingPeriodBars?: number;
+  orderId: string;
 }
 ```
 
-### File 2: `coreza-backend/src/nodes/executors/InitializeIndicatorsExecutor.ts` (New -- Backend Executor)
+**Modify `applyFill()` in SimBroker** to push an `OrderLogEntry` for EVERY fill:
 
-This is the core logic. It will be added to the `IndicatorsExecutor` as a new case (since the category is "Indicators"), or registered as a handler within it.
+- **BUY fill:** Log with `side: 'buy'`, `price` (fill price), `portfolioValueBefore` (equity before), `portfolioValueAfter` (equity after)
+- **SELL fill:** Log with `side: 'sell'`, `price` (exit price), `entryPrice` (avg entry), `returnPct` ((exitPrice - entryPrice) / entryPrice * 100), `netPnl`, `exitReason` from a new parameter or inferred
 
-**Approach:** Add handling for `InitializeIndicators` in `IndicatorsExecutor.execute()`.
+**Add `exit_reason` inference:** When a sell trade is executed, determine the reason:
+- Check if a stop order triggered -> "STOP_LOSS"
+- Check if limit order triggered -> "TAKE_PROFIT"
+- Market order sell -> "SIGNAL"
+- This can be inferred from `order.type`: limit sells = TAKE_PROFIT, stop sells = STOP_LOSS, market sells = SIGNAL
 
-Logic:
+### File 3: `coreza-backend/src/services/simBroker/interfaces.ts` -- Add types
+
+Add the `OrderLogEntry` interface and the `orderLog: OrderLogEntry[]` field to `PortfolioState`.
+
+### File 4: `coreza-backend/src/nodes/executors/BacktestExecutor.ts` -- Persist full trade log
+
+**Modify `executeBacktestResults`** (line 415-431):
+
+Replace the current trade persistence that only saves closed trades with a full order log:
 
 ```typescript
-// Inside IndicatorsExecutor.execute(), add case for InitializeIndicators:
+// Instead of just trades (sell-side only):
+const orderLog = simBroker.getOrderLog();
 
-if (indicatorType === 'initializeindicators') {
-  return this.executeInitializeIndicators(node, input, context);
+if (orderLog.length > 0) {
+  const tradeRows = orderLog.map((entry) => ({
+    backtest_id: backtestId,
+    symbol: entry.symbol,
+    action: entry.side,
+    quantity: entry.quantity,
+    price: entry.price,
+    timestamp: entry.timestamp,
+    commission: entry.commission,
+    slippage: entry.slippage,
+    portfolio_value_before: entry.portfolioValueBefore,
+    portfolio_value_after: entry.portfolioValueAfter,
+    entry_price: entry.entryPrice || null,
+    exit_reason: entry.exitReason || null,
+    return_pct: entry.returnPct || null,
+    net_pnl: entry.netPnl || null,
+    holding_period_bars: entry.holdingPeriodBars || null,
+  }));
+
+  await supabaseClient.from("backtest_trades").insert(tradeRows);
 }
 ```
 
-**`executeInitializeIndicators` method:**
-
-1. **Parse inputs**: `candle_data`, `symbol`, `timeframe`, `warmup_period`, `auto_detect`
-
-2. **Auto-detect indicators from workflow**:
-   - Access `context.nodes` and `context.edges` (already available in executionContext)
-   - Find all downstream indicator nodes by walking edges from this node
-   - For each indicator node found, extract its type (RSI, EMA, MACD, etc.) and parameters (period, window, etc.) from `node.values`
-
-   ```typescript
-   function discoverIndicators(
-     startNodeId: string,
-     allNodes: WorkflowNode[],
-     allEdges: WorkflowEdge[]
-   ): Array<{ nodeId: string; type: string; params: Record<string, any> }> {
-     const indicators: Array<...> = [];
-     const visited = new Set<string>();
-     const queue = allEdges
-       .filter(e => e.source === startNodeId)
-       .map(e => e.target);
-     
-     while (queue.length > 0) {
-       const nodeId = queue.shift()!;
-       if (visited.has(nodeId)) continue;
-       visited.add(nodeId);
-       
-       const node = allNodes.find(n => n.id === nodeId);
-       if (!node) continue;
-       
-       // Check if this is an indicator node
-       const name = (node.name || '').toUpperCase();
-       if (INDICATOR_NAMES.has(name)) {
-         indicators.push({
-           nodeId: node.id,
-           type: (node.name || '').toLowerCase(),
-           params: node.values || {},
-         });
-       }
-       
-       // Continue BFS through all downstream nodes
-       allEdges
-         .filter(e => e.source === nodeId)
-         .forEach(e => { if (!visited.has(e.target)) queue.push(e.target); });
-     }
-     return indicators;
-   }
-   ```
-
-   Where `INDICATOR_NAMES` is:
-   ```typescript
-   const INDICATOR_NAMES = new Set([
-     'RSI', 'EMA', 'SMA', 'MACD', 'BB', 'BOLLINGER BANDS',
-     'ADX', 'STOCH', 'VWAP', 'OBV', 'ICHIMOKU',
-     'VOLUMEOSCILLATOR', 'SUPPORTRESISTANCE'
-   ]);
-   ```
-
-3. **Slice bars into warmup vs remaining**:
-   ```typescript
-   const warmupPeriod = Math.min(parseInt(params.warmup_period) || 200, bars.length);
-   const warmupBars = bars.slice(0, warmupPeriod);
-   const remainingBars = bars.slice(warmupPeriod);
-   ```
-
-4. **Warm up each discovered indicator**:
-   ```typescript
-   const stateManager = context.indicatorStateManager;
-   const results: Record<string, any> = {};
-   
-   for (const ind of discoveredIndicators) {
-     // Merge the indicator's own params (period, window, etc.) with symbol/timeframe
-     const indParams = {
-       ...ind.params,
-       symbol,
-       timeframe,
-       candle_data: warmupBars,
-     };
-     
-     const key = buildIndicatorKey(
-       userId, workflowId, runId,
-       symbol, timeframe, ind.type
-     );
-     
-     const state = await stateManager.warmUp(
-       key, ind.type, indParams, warmupBars, false
-     );
-     
-     results[ind.type] = {
-       nodeId: ind.nodeId,
-       indicator: ind.type,
-       warmupBars: warmupBars.length,
-       isReady: state.warmupCompleted,
-       currentValue: state.value,
-     };
-   }
-   ```
-
-5. **Return output** with remaining bars for the Loop node:
-   ```typescript
-   return toNodeResult(createSuccessOutput({
-     warmup_completed: true,
-     warmup_bars_used: warmupPeriod,
-     remaining_bars: remainingBars,    // <-- Loop node uses these
-     remaining_bars_count: remainingBars.length,
-     indicators_initialized: Object.keys(results).length,
-     indicators: results,
-     symbol,
-     timeframe,
-   }));
-   ```
-
-### File 3: `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` (Modify)
-
-Add the `InitializeIndicators` case and the new method:
-
-- At line 41, after `const indicatorType = ...`, add:
-  ```typescript
-  if (indicatorType === 'initializeindicators') {
-    return this.executeInitializeIndicators(node, input, context);
-  }
-  ```
-
-- Add the `executeInitializeIndicators` private method (~80 lines) as described above
-
-- Add `discoverIndicators` helper function
-
-### File 4: `coreza-backend/src/services/workflowEngine.ts` (Modify)
-
-Add `InitializeIndicators` to the `CATEGORY_MAP` so the engine routes it to the Indicators executor:
+**Also persist additional QC-style metrics to `backtest_results`:**
 
 ```typescript
-const CATEGORY_MAP: Record<string, string> = {
-  // ... existing entries ...
-  InitializeIndicators: "Indicators",   // <-- add this
-};
+await supabaseClient.from("backtest_results").insert({
+  backtest_id: backtestId,
+  // Existing fields...
+  total_return: metrics.totalReturnPct,
+  annualized_return: metrics.annualizedReturn,
+  // NEW fields:
+  sortino_ratio: metrics.sortinoRatio,
+  calmar_ratio: metrics.calmarRatio,
+  profit_factor: metrics.profitFactor,
+  avg_win: metrics.avgWin,
+  avg_loss: metrics.avgLoss,
+  total_commission: metrics.totalCommission,
+  total_slippage: metrics.totalSlippage,
+  net_profit: metrics.totalReturn,
+  losing_trades: metrics.losingTrades,
+  expectancy: calculateExpectancy(metrics),
+  avg_holding_period: calculateAvgHoldingPeriod(trades),
+});
 ```
 
-### File 5: `coreza-backend/src/services/toolOutputProcessor.ts` (Modify)
+**Update the node output** to include QC-formatted summary:
 
-Add `InitializeIndicators` to the `INDICATOR_NODES` array so the tool output processor handles it correctly.
-
-## How It Works End-to-End
-
-### Workflow Layout
-
-```text
-[Binance Data] ---> [InitializeIndicators] ---> [Loop] ---> [RSI] ---> [If] ---> [BacktestTrade]
-                     warmup_period: 200                       ^
-                     auto_detect: true                        |
-                                                         [EMA] ----+
+```typescript
+return toNodeResult(createSuccessOutput({
+  backtest_id: backtestId,
+  // QC-style summary section
+  statistics: {
+    total_return: `${metrics.totalReturnPct.toFixed(2)}%`,
+    net_profit: `$${metrics.totalReturn.toFixed(2)}`,
+    annualized_return: `${metrics.annualizedReturn.toFixed(2)}%`,
+    sharpe_ratio: metrics.sharpeRatio.toFixed(3),
+    sortino_ratio: metrics.sortinoRatio.toFixed(3),
+    calmar_ratio: metrics.calmarRatio.toFixed(3),
+    max_drawdown: `${metrics.maxDrawdownPct.toFixed(2)}%`,
+    profit_factor: metrics.profitFactor.toFixed(2),
+    win_rate: `${metrics.winRate.toFixed(1)}%`,
+    total_trades: metrics.totalTrades,
+    winning_trades: metrics.winningTrades,
+    losing_trades: metrics.losingTrades,
+    avg_win: `$${metrics.avgWin.toFixed(2)}`,
+    avg_loss: `$${metrics.avgLoss.toFixed(2)}`,
+    largest_win: `$${metrics.largestWin.toFixed(2)}`,
+    largest_loss: `$${metrics.largestLoss.toFixed(2)}`,
+    expectancy: `$${expectancy.toFixed(2)}`,
+    total_commission: `$${metrics.totalCommission.toFixed(2)}`,
+    total_slippage: `$${metrics.totalSlippage.toFixed(2)}`,
+    initial_capital: `$${initialCapital.toFixed(2)}`,
+    final_equity: `$${finalEquity.toFixed(2)}`,
+    start_date: metrics.startDate,
+    end_date: metrics.endDate,
+    total_bars: metrics.totalBars,
+  },
+  // Trade log for output panel
+  trade_log: orderLog.map(e => ({
+    time: e.timestamp,
+    action: e.side.toUpperCase(),
+    symbol: e.symbol,
+    price: e.price,
+    quantity: e.quantity,
+    reason: e.exitReason || null,
+    return_pct: e.returnPct ? `${e.returnPct.toFixed(2)}%` : null,
+    net_pnl: e.netPnl ? `$${e.netPnl.toFixed(2)}` : null,
+  })),
+  trades_count: orderLog.length,
+  equity_points: equityCurve.length,
+}));
 ```
 
-### Execution Timeline
+### File 5: Frontend -- `src/hooks/useBacktestResults.ts` -- Update types
 
-1. **Binance Data** fetches 1000 bars of BTCUSDT 1d data
-2. **InitializeIndicators** receives 1000 bars:
-   - Scans workflow, finds RSI (period=14) and EMA (period=20)
-   - Uses first 200 bars to warm up both indicators via `IndicatorStateManager`
-   - Outputs `remaining_bars` (bars 201-1000 = 800 bars) + warmup summary
-3. **Loop** iterates over the 800 remaining bars (1 bar per iteration)
-4. **RSI** node runs: `stateManager.getState(key)` finds pre-warmed state, calls `update()` with just the 1 new bar -- O(1) per iteration
-5. **EMA** node runs: same -- already warmed, just `update()` with 1 bar
-6. **If** checks RSI value, routes to Trade if conditions met
+Add new fields to `BacktestResultMetrics`:
 
-### Key Behavioral Match with QuantConnect
+```typescript
+export interface BacktestResultMetrics {
+  // existing...
+  sortino_ratio?: number;
+  calmar_ratio?: number;
+  profit_factor?: number;
+  avg_win?: number;
+  avg_loss?: number;
+  total_commission?: number;
+  total_slippage?: number;
+  net_profit?: number;
+  losing_trades?: number;
+  expectancy?: number;
+  avg_holding_period?: number;
+}
 
-| QuantConnect | Coreza InitializeIndicators |
-|---|---|
-| `SetWarmUp(TimeSpan.FromDays(200))` | `warmup_period: 200` field |
-| Auto-warms all registered indicators | `auto_detect: true` scans workflow for indicator nodes |
-| `IsWarmingUp` flag prevents orders | Warmup bars are consumed by the node; Loop only gets post-warmup bars |
-| `indicator.IsReady` after warmup | `state.warmupCompleted = true` in IndicatorStateManager |
-| Called once in `Initialize()` | Runs once before the Loop node |
-| N days of historical data fed through | First N bars sliced and fed through `warmUp()` |
+export interface BacktestTrade {
+  // existing...
+  entry_price?: number;
+  exit_reason?: string;
+  return_pct?: number;
+  net_pnl?: number;
+  holding_period_bars?: number;
+}
+```
+
+### File 6: Frontend -- `src/components/backtest/TradesTable.tsx` -- QC-Style Trade Log
+
+Redesign the table to show trades like the user's desired format:
+
+- Show BUY rows: `2025-07-21 09:38:00 BUY @ 24.12`
+- Show SELL rows: `2025-07-17 14:31:00 SELL (TAKE PROFIT) 4.10%`
+- Color code: green for BUY, red for SELL
+- Show return % badge on sell rows (green if positive, red if negative)
+- Add exit reason badge (TAKE PROFIT / STOP LOSS / SIGNAL)
+- Add portfolio value before/after columns
+- Add net P&L column for sell rows
+
+New columns: `Time | Action | Symbol | Price | Qty | Reason | Return % | Net P&L | Portfolio Value`
+
+### File 7: Frontend -- `src/components/backtest/PerformanceMetricsCard.tsx` -- QC-Style Layout
+
+Reorganize into sections matching QuantConnect's results page:
+
+**Section 1: Key Performance**
+- Net Profit, Total Return %, Annualized Return %, Final Equity
+
+**Section 2: Risk Metrics**
+- Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown %
+
+**Section 3: Trade Statistics**
+- Total Trades, Winning/Losing, Win Rate %, Profit Factor
+
+**Section 4: P&L Analysis**
+- Avg Win, Avg Loss, Largest Win, Largest Loss, Expectancy
+
+**Section 5: Costs**
+- Total Commission, Total Slippage
+
+### File 8: Frontend -- `src/pages/BacktestResults.tsx` -- Update top metric cards
+
+Update the 4 summary cards at top to show:
+1. Net Profit ($) with green/red color
+2. Total Return (%) with green/red color
+3. Sharpe Ratio
+4. Win Rate (%)
+
+---
 
 ## Files Summary
 
 | File | Action | Description |
 |---|---|---|
-| `src/nodes/InitializeIndicators.json` | Create | Frontend node definition with fields |
-| `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` | Modify | Add `executeInitializeIndicators` method + `discoverIndicators` helper |
-| `coreza-backend/src/services/workflowEngine.ts` | Modify | Add to CATEGORY_MAP |
-| `coreza-backend/src/services/toolOutputProcessor.ts` | Modify | Add to INDICATOR_NODES list |
+| SQL Migration | **Run** | Add columns to `backtest_trades` and `backtest_results` |
+| `coreza-backend/src/services/simBroker/interfaces.ts` | **Modify** | Add `OrderLogEntry` interface, add `orderLog` to `PortfolioState` |
+| `coreza-backend/src/services/simBroker/index.ts` | **Modify** | Log every fill (buy + sell) with portfolio values, exit reason, return % |
+| `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | **Modify** | Persist full order log + additional QC metrics |
+| `src/hooks/useBacktestResults.ts` | **Modify** | Add new metric and trade fields to types |
+| `src/components/backtest/TradesTable.tsx` | **Modify** | Redesign as chronological trade log with BUY/SELL, reason, return % |
+| `src/components/backtest/PerformanceMetricsCard.tsx` | **Modify** | QC-style sectioned metrics layout |
+| `src/pages/BacktestResults.tsx` | **Modify** | Update top summary cards |
 

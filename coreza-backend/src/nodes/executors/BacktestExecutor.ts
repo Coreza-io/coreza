@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { SimBroker, SimBrokerConfig, Bar, Position } from "../../services/simBroker";
+import { SimBroker, SimBrokerConfig, Bar, Position, OrderFill } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
@@ -242,43 +242,40 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      // For immediate fills, process the newly placed order right away
-      // This allows market orders to fill at current bar's close price
-      if (currentBar && orderResult.status === "pending") {
-        const fills = simBroker.onBar(symbol, currentBar);
-
-        // If order was filled, return fill details
-        if (fills.length > 0) {
-          const fill = fills.find((f) => f.orderId === orderResult.orderId);
-          if (fill) {
-            const cash = simBroker.getCash();
-            const positions = simBroker.getPositions();
-
-            return toNodeResult(
-              createSuccessOutput({
-                order_id: orderResult.orderId,
-                order_status: "filled",
-                fill_price: fill.price,
-                fill_quantity: fill.quantity,
-                commission: fill.commission,
-                slippage: fill.slippage,
-                symbol,
-                side,
-                quantity,
-                order_type: orderType,
-                cash,
-                positions,
-                pending_orders: 0,
-              }),
-            );
-          }
-        }
+      // For immediate fill model only, attempt same-bar fill of just this order.
+      // For next_bar_open, order remains pending until next bar's onBar call.
+      let fill: OrderFill | null = null;
+      if (currentBar && orderResult.orderId) {
+        fill = simBroker.tryFillImmediateOrder(orderResult.orderId, currentBar);
       }
 
       // Get updated state (for pending orders that weren't filled) - SYNCHRONOUS
       const cash = simBroker.getCash();
       const positions = simBroker.getPositions();
       const pendingOrders = simBroker.getPendingOrders();
+      const totalEquity = simBroker.getTotalEquity();
+
+      if (fill) {
+        return toNodeResult(
+          createSuccessOutput({
+            order_id: orderResult.orderId,
+            order_status: "filled",
+            fill_price: fill.price,
+            fill_quantity: fill.quantity,
+            commission: fill.commission,
+            slippage: fill.slippage,
+            symbol,
+            side,
+            quantity,
+            order_type: orderType,
+            cash,
+            positions,
+            total_equity: totalEquity,
+            pending_orders: pendingOrders.length,
+            pending_orders_count: pendingOrders.length,
+          }),
+        );
+      }
 
       return toNodeResult(
         createSuccessOutput({
@@ -290,7 +287,9 @@ export class BacktestExecutor implements INodeExecutor {
           order_type: orderType,
           cash,
           positions,
+          total_equity: totalEquity,
           pending_orders: pendingOrders.length,
+          pending_orders_count: pendingOrders.length,
         }),
       );
     } catch (error) {

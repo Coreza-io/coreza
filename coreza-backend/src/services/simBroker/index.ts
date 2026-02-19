@@ -522,16 +522,16 @@ export class SimBroker {
     const sortinoRatio = this.calculateSortinoRatio(returns);
 
     // Annualized return from daily resampled curve
-    const tradingDays = dailyCurve.length;
-    const yearsElapsed = tradingDays / 252;
+    const dailyPoints = dailyCurve.length;
+    const yearsElapsed = dailyPoints > 1 ? (dailyPoints - 1) / 252 : 0;
     const annualizedReturn =
       yearsElapsed > 0
         ? (Math.pow(finalEquity / initialCapital, 1 / yearsElapsed) - 1) * 100
         : totalReturnPct;
 
-    // Calmar = annualized return / max drawdown (fixed formula)
+    // Calmar uses decimal return units divided by decimal max drawdown
     const calmarRatio =
-      maxDrawdownPct > 0 ? annualizedReturn / maxDrawdownPct : 0;
+      maxDrawdownPct > 0 ? (annualizedReturn / 100) / maxDrawdownPct : 0;
 
     return {
       totalReturn,
@@ -577,24 +577,26 @@ export class SimBroker {
   private resampleToDaily(curve: EquityPoint[]): EquityPoint[] {
     if (curve.length === 0) return [];
 
+    // Ensure chronological processing so each day keeps the true last bar
+    const sortedCurve = [...curve].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    );
+
     const dailyMap = new Map<string, EquityPoint>();
-    for (const point of curve) {
+    for (const point of sortedCurve) {
       // Extract YYYY-MM-DD from ISO timestamp
       const dateKey = point.timestamp.substring(0, 10);
       // Last point seen for the day is treated as end-of-day equity
       dailyMap.set(dateKey, point);
     }
 
-    // Ensure deterministic chronological ordering
-    return Array.from(dailyMap.values()).sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp)
-    );
+    return Array.from(dailyMap.values());
   }
 
   private calculateSharpeRatio(returns: number[], riskFreeRate: number = 0.02): number {
-    if (returns.length < 2) return 0;
+    if (returns.length < 30) return 0;
 
-    const dailyRf = riskFreeRate / 252;
+    const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
     const excessReturns = returns.map(r => r - dailyRf);
     const avgExcessReturn = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
     const stdDev = this.standardDeviation(excessReturns);
@@ -606,9 +608,9 @@ export class SimBroker {
   }
 
   private calculateSortinoRatio(returns: number[], riskFreeRate: number = 0.02): number {
-    if (returns.length < 2) return 0;
+    if (returns.length < 30) return 0;
 
-    const dailyRf = riskFreeRate / 252;
+    const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
     const excessReturns = returns.map(r => r - dailyRf);
     const avgExcessReturn = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
     

@@ -4,9 +4,9 @@
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
-  "description": "Query current portfolio state (cash, positions, equity)",
+  "description": "Query and update portfolio state -- positions, cash, equity, orders, trades",
   "color": "text-orange-500",
-  "size": { "width": 340, "height": 160 },
+  "size": { "width": 340, "height": 320 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
@@ -19,6 +19,47 @@
       "type": "text",
       "placeholder": "{{ $('BacktestInit').json.backtest_id }}",
       "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "required": true,
+      "default": "get_portfolio",
+      "options": [
+        { "id": "get_portfolio", "name": "Get Portfolio" },
+        { "id": "get_position", "name": "Get Position" },
+        { "id": "update_mtm", "name": "Update Portfolio (MTM)" },
+        { "id": "get_cash", "name": "Get Cash" },
+        { "id": "get_equity", "name": "Get Equity" },
+        { "id": "get_pending_orders", "name": "Get Pending Orders" },
+        { "id": "get_trades", "name": "Get Trades" }
+      ]
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. BTCUSDT",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_position", "update_mtm"]
+        }
+      }
+    },
+    {
+      "key": "current_bar",
+      "label": "Current Bar",
+      "type": "textarea",
+      "placeholder": "{{ $('Loop').json.item }}",
+      "required": false,
+      "description": "Current OHLCV bar for mark-to-market pricing",
+      "displayOptions": {
+        "show": {
+          "operation": ["update_mtm", "get_portfolio", "get_position", "get_equity"]
+        }
+      }
     }
   ]
 }

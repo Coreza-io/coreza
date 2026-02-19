@@ -221,7 +221,7 @@ router.post("/portfolio", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { backtest_id, prices } = req.body;
+    const { backtest_id, operation, symbol, current_bar, prices } = req.body;
 
     if (!backtest_id) {
       return res.status(400).json({ error: "backtest_id is required" });
@@ -232,7 +232,7 @@ router.post("/portfolio", async (req: Request, res: Response) => {
         id: "api-portfolio",
         name: "BacktestPortfolio",
         node_type: "BacktestPortfolio",
-        values: { backtest_id, prices },
+        values: { backtest_id, operation, symbol, current_bar, prices },
       } as any,
       {},
       { userId }

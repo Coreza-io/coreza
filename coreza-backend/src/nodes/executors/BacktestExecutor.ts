@@ -523,47 +523,211 @@ export class BacktestExecutor implements INodeExecutor {
         return toNodeResult(createErrorOutput("backtest_id is required"));
       }
 
-      // Get SimBroker from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
-      const portfolioState = simBroker.getPortfolioState();
+      const operation = params.operation || "get_portfolio";
+      const currentBar = this.parseBar(params.current_bar);
+      const symbol = params.symbol;
+      const prices = this.parsePrices(params.prices);
 
-      // Convert positions object to array format
-      const positionsArray = Object.values(portfolioState.positions);
+      // If pricing data is provided, mark-to-market BEFORE reading portfolio data
+      if (["get_portfolio", "get_position", "update_mtm", "get_equity"].includes(operation)) {
+        if (prices && Object.keys(prices).length > 0) {
+          simBroker.updateAllPositionsMTM(prices);
+        } else if (currentBar && symbol) {
+          simBroker.onBar(symbol, currentBar);
+        }
+      }
 
-      // Calculate positions value and P&L totals from stored values
-      const positionsValue = positionsArray.reduce(
-        (sum, pos) => sum + pos.marketValue,
-        0,
-      );
-      const unrealizedPnlTotal = positionsArray.reduce(
-        (sum, pos) => sum + pos.unrealizedPnl,
-        0,
-      );
-      const realizedPnlTotal = positionsArray.reduce(
-        (sum, pos) => sum + pos.realizedPnl,
-        0,
-      );
+      switch (operation) {
+        case "get_portfolio":
+          return this.portfolioGetAll(simBroker);
 
-      return toNodeResult(
-        createSuccessOutput({
-          cash: portfolioState.cash,
-          initial_capital: simBroker.getConfig().initialCapital,
-          positions: positionsArray,
-          positions_count: positionsArray.length,
-          positions_value: positionsValue,
-          unrealized_pnl: unrealizedPnlTotal,
-          realized_pnl: realizedPnlTotal,
-          total_equity: portfolioState.cash + positionsValue,
-          pending_orders: portfolioState.pendingOrders,
-          pending_orders_count: portfolioState.pendingOrders.length,
-          trades: portfolioState.trades,
-          trades_count: portfolioState.trades.length,
-        }),
-      );
+        case "get_position":
+          return this.portfolioGetPosition(simBroker, symbol);
+
+        case "update_mtm":
+          return this.portfolioUpdateMTM(simBroker, symbol, currentBar, prices);
+
+        case "get_cash":
+          return this.portfolioGetCash(simBroker);
+
+        case "get_equity":
+          return this.portfolioGetEquity(simBroker);
+
+        case "get_pending_orders":
+          return this.portfolioGetPendingOrders(simBroker);
+
+        case "get_trades":
+          return this.portfolioGetTrades(simBroker);
+
+        default:
+          return toNodeResult(
+            createErrorOutput(`Unknown portfolio operation: ${operation}`),
+          );
+      }
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
       return toNodeResult(createErrorOutput(error));
     }
+  }
+
+  private portfolioGetAll(simBroker: SimBroker): NodeResult {
+    const state = simBroker.getPortfolioState();
+    const positions = Object.values(state.positions);
+    const positionsValue = positions.reduce((sum, pos) => sum + pos.marketValue, 0);
+
+    return toNodeResult(
+      createSuccessOutput({
+        cash: state.cash,
+        initial_capital: simBroker.getConfig().initialCapital,
+        positions,
+        positions_count: positions.length,
+        positions_value: positionsValue,
+        unrealized_pnl: positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0),
+        realized_pnl: positions.reduce((sum, pos) => sum + pos.realizedPnl, 0),
+        total_equity: state.cash + positionsValue,
+        pending_orders: state.pendingOrders,
+        pending_orders_count: state.pendingOrders.length,
+        trades: state.trades,
+        trades_count: state.trades.length,
+      }),
+    );
+  }
+
+  private portfolioGetPosition(simBroker: SimBroker, symbol?: string): NodeResult {
+    if (!symbol) {
+      return toNodeResult(
+        createErrorOutput("'symbol' is required for get_position"),
+      );
+    }
+
+    const position = simBroker.getPosition(symbol);
+
+    return toNodeResult(
+      createSuccessOutput({
+        has_position: !!position,
+        position: position || null,
+        symbol,
+        quantity: position?.quantity || 0,
+        side: position?.side || null,
+        avg_entry_price: position?.avgEntryPrice || 0,
+        current_price: position?.currentPrice || 0,
+        unrealized_pnl: position?.unrealizedPnl || 0,
+        realized_pnl: position?.realizedPnl || 0,
+        market_value: position?.marketValue || 0,
+      }),
+    );
+  }
+
+  private portfolioUpdateMTM(
+    simBroker: SimBroker,
+    symbol?: string,
+    bar?: Bar | null,
+    prices?: Record<string, number> | null,
+  ): NodeResult {
+    if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
+      return toNodeResult(
+        createErrorOutput(
+          "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
+        ),
+      );
+    }
+
+    // MTM was already applied in the main dispatch path
+    return this.portfolioGetAll(simBroker);
+  }
+
+  private portfolioGetCash(simBroker: SimBroker): NodeResult {
+    const state = simBroker.getPortfolioState();
+
+    return toNodeResult(
+      createSuccessOutput({
+        cash: state.cash,
+        buying_power: state.cash,
+        initial_capital: simBroker.getConfig().initialCapital,
+      }),
+    );
+  }
+
+  private portfolioGetEquity(simBroker: SimBroker): NodeResult {
+    const state = simBroker.getPortfolioState();
+    const positionsValue = Object.values(state.positions).reduce(
+      (sum, pos) => sum + pos.marketValue,
+      0,
+    );
+    const totalEquity = state.cash + positionsValue;
+    const peak = state.peakEquity;
+    const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
+
+    return toNodeResult(
+      createSuccessOutput({
+        total_equity: totalEquity,
+        cash: state.cash,
+        positions_value: positionsValue,
+        initial_capital: simBroker.getConfig().initialCapital,
+        return_pct:
+          ((totalEquity - simBroker.getConfig().initialCapital) /
+            simBroker.getConfig().initialCapital) *
+          100,
+        peak_equity: peak,
+        drawdown_pct: drawdownPct,
+      }),
+    );
+  }
+
+  private portfolioGetPendingOrders(simBroker: SimBroker): NodeResult {
+    const orders = simBroker.getPendingOrders();
+
+    return toNodeResult(
+      createSuccessOutput({
+        pending_orders: orders,
+        count: orders.length,
+      }),
+    );
+  }
+
+  private portfolioGetTrades(simBroker: SimBroker): NodeResult {
+    const trades = simBroker.getTrades();
+    const totalRealizedPnl = trades.reduce((sum, trade) => sum + trade.netPnl, 0);
+
+    return toNodeResult(
+      createSuccessOutput({
+        trades,
+        count: trades.length,
+        total_realized_pnl: totalRealizedPnl,
+        winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
+        losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
+      }),
+    );
+  }
+
+  private parsePrices(data: any): Record<string, number> | null {
+    if (!data) return null;
+
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof data !== "object" || Array.isArray(data)) {
+      return null;
+    }
+
+    const parsed = Object.entries(data).reduce<Record<string, number>>(
+      (acc, [symbol, price]) => {
+        const numericPrice = Number(price);
+        if (Number.isFinite(numericPrice)) {
+          acc[symbol] = numericPrice;
+        }
+        return acc;
+      },
+      {},
+    );
+
+    return Object.keys(parsed).length > 0 ? parsed : null;
   }
 
   // ============== HELPERS ==============

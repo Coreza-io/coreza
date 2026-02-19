@@ -70,7 +70,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       if (dataContext && candleData) {
         if (!context?.silent) {
           console.log(
-            `[Indicators] Resolving dataRef: ${Array.isArray(candleData) ? `${candleData.length} bars` : typeof candleData}`
+            `[Indicators] Resolving dataRef: ${Array.isArray(candleData) ? `${candleData.length} bars` : typeof candleData}`,
           );
         }
         //const barsData = dataContext.getDataByKey(candleData);
@@ -135,7 +135,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               runId,
               symbol,
               timeframe,
-              indicatorType,
+              node.id,
             );
 
             const isBacktest = !!context?.silent;
@@ -155,11 +155,7 @@ export class IndicatorsExecutor implements INodeExecutor {
                 latestBar?.t ?? latestBar?.timestamp ?? "",
               );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = await stateManager.update(
-                  key,
-                  latestBar,
-                  isBacktest,
-                );
+                state = await stateManager.update(key, latestBar, isBacktest);
               }
             }
 

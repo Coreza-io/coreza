@@ -203,8 +203,7 @@ export class IndicatorService {
             const closes = bars.map(asClose).filter(Number.isFinite);
             const window = closes.slice(-period);
             const runningSum = window.reduce((a, b) => a + b, 0);
-            const value =
-              window.length === period ? runningSum / period : null;
+            const value = window.length === period ? runningSum / period : null;
             return {
               internalState: { window, period, runningSum },
               value,
@@ -676,7 +675,10 @@ export class IndicatorService {
               };
             }
 
-            if (!Number.isFinite(state.shortMult) || !Number.isFinite(state.longMult)) {
+            if (
+              !Number.isFinite(state.shortMult) ||
+              !Number.isFinite(state.longMult)
+            ) {
               const shortMult = 2 / (state.shortPeriod + 1);
               const longMult = 2 / (state.longPeriod + 1);
               state = {
@@ -686,7 +688,9 @@ export class IndicatorService {
                 shortEma: Number.isFinite(state.shortEma)
                   ? state.shortEma
                   : volume,
-                longEma: Number.isFinite(state.longEma) ? state.longEma : volume,
+                longEma: Number.isFinite(state.longEma)
+                  ? state.longEma
+                  : volume,
                 count: Number.isFinite(state.count) ? state.count : 0,
               };
             }

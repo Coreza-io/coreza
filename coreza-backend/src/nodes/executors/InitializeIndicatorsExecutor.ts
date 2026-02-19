@@ -218,11 +218,12 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       const results: Record<string, any> = {};
 
       for (const ind of discoveredIndicators) {
+        const { candle_data, ...restParams } = ind.params;
+
         const indParams = {
-          ...ind.params,
+          ...restParams,
           symbol,
           timeframe,
-          candle_data: warmupBars,
         };
 
         const key = buildIndicatorKey(

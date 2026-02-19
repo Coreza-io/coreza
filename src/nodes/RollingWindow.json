@@ -1,0 +1,63 @@
+{
+  "name": "RollingWindow",
+  "def": "Rolling Window Buffer",
+  "node_type": "main",
+  "icon": "store.svg",
+  "category": "Data",
+  "subCategory": "RollingWindow",
+  "description": "Bounded in-memory FIFO buffer. Receives candle data, holds most recent N bars. Returns window state and readiness.",
+  "color": "#8b5cf6",
+  "size": {
+    "width": 280,
+    "height": 300
+  },
+  "handles": [
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "action": {
+    "url": "/storage/rolling-window",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "size",
+      "type": "text",
+      "label": "Window Size",
+      "required": true,
+      "placeholder": "20",
+      "default": "20",
+      "description": "Max bars to hold (1-500). Window is 'ready' when full."
+    },
+    {
+      "key": "candle_data",
+      "type": "textarea",
+      "label": "Candle Data",
+      "required": true,
+      "placeholder": "Bar or bars to add (single bar, array, or {{ $('Node').json.data }})",
+      "description": "OHLCV bar(s) to push into the window"
+    },
+    {
+      "key": "symbol",
+      "type": "text",
+      "label": "Symbol",
+      "required": false,
+      "placeholder": "e.g. BTCUSDT"
+    },
+    {
+      "key": "timeframe",
+      "type": "text",
+      "label": "Timeframe",
+      "required": false,
+      "placeholder": "e.g. 1d"
+    }
+  ]
+}

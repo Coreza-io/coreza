@@ -241,6 +241,62 @@ export class SimBroker {
     return fills;
   }
 
+  /**
+   * Attempt to fill a specific pending order at the current bar.
+   * Used for immediate fill model only (same-bar execution).
+   * Does NOT mutate previousBar or process other pending orders.
+   */
+  tryFillImmediateOrder(orderId: string, bar: Bar): OrderFill | null {
+    if (this.config.fillModel !== 'immediate') {
+      return null;
+    }
+
+    const orderIdx = this.state.pendingOrders.findIndex((o) => o.id === orderId);
+    if (orderIdx === -1) {
+      return null;
+    }
+
+    const order = this.state.pendingOrders[orderIdx];
+    const fillResult = this.fillModel.fill(order, bar);
+
+    if (!fillResult.filled || !fillResult.price || !fillResult.quantity) {
+      return null;
+    }
+
+    // Keep current bar in state for order validation/price usage
+    this.state.currentBar = bar;
+
+    const slippage = this.slippageModel.getSlippage(order, fillResult.price, bar);
+    const adjustedPrice = fillResult.price + slippage;
+    const commission = this.feeModel.getCommission(order, adjustedPrice, fillResult.quantity);
+
+    this.applyFill(order, adjustedPrice, fillResult.quantity, slippage, commission, bar.timestamp);
+
+    order.status = 'filled';
+    order.filledQty = fillResult.quantity;
+    order.avgFillPrice = adjustedPrice;
+    order.commission = commission;
+    order.slippage = slippage;
+    order.filledAt = bar.timestamp;
+    order.barTimestamp = bar.timestamp;
+
+    this.state.filledOrders.push(order);
+    this.state.pendingOrders.splice(orderIdx, 1);
+
+    this.updatePositionMTM(order.symbol, bar.close);
+
+    return {
+      orderId: order.id,
+      symbol: order.symbol,
+      side: order.side,
+      quantity: fillResult.quantity,
+      price: adjustedPrice,
+      slippage,
+      commission,
+      timestamp: bar.timestamp,
+    };
+  }
+
   private applyFill(
     order: Order,
     price: number,
@@ -286,7 +342,7 @@ export class SimBroker {
       const existing = this.state.positions[order.symbol];
       if (existing && existing.quantity > 0) {
         // Calculate realized P&L
-        const realizedPnl = (price - existing.avgEntryPrice) * quantity - commission - Math.abs(slippage) * quantity;
+        const realizedPnl = (price - existing.avgEntryPrice) * quantity - commission;
         existing.realizedPnl += realizedPnl;
         existing.quantity -= quantity;
         existing.currentPrice = price;
@@ -294,26 +350,24 @@ export class SimBroker {
         existing.unrealizedPnl = (price - existing.avgEntryPrice) * existing.quantity;
 
         // Record closed trade
-        if (existing.quantity === 0 || quantity === existing.quantity) {
-          const trade: Trade = {
-            id: `TRD-${uuidv4().slice(0, 8)}`,
-            symbol: order.symbol,
-            side: order.side,
-            entryOrderId: 'unknown',
-            exitOrderId: order.id,
-            entryPrice: existing.avgEntryPrice,
-            exitPrice: price,
-            quantity,
-            grossPnl: (price - existing.avgEntryPrice) * quantity,
-            commission,
-            slippage: Math.abs(slippage) * quantity,
-            netPnl: realizedPnl,
-            entryTime: 'unknown',
-            exitTime: timestamp,
-            holdingPeriodBars: 0,
-          };
-          this.state.trades.push(trade);
-        }
+        const trade: Trade = {
+          id: `TRD-${uuidv4().slice(0, 8)}`,
+          symbol: order.symbol,
+          side: order.side,
+          entryOrderId: 'unknown',
+          exitOrderId: order.id,
+          entryPrice: existing.avgEntryPrice,
+          exitPrice: price,
+          quantity,
+          grossPnl: (price - existing.avgEntryPrice) * quantity,
+          commission,
+          slippage: Math.abs(slippage),
+          netPnl: realizedPnl,
+          entryTime: 'unknown',
+          exitTime: timestamp,
+          holdingPeriodBars: 0,
+        };
+        this.state.trades.push(trade);
 
         // Remove position if fully closed
         if (existing.quantity <= 0) {

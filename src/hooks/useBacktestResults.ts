@@ -48,7 +48,7 @@ export interface BacktestTrade {
   holding_period_bars?: number;
 }
 
-// Matches backtest_portfolio_snapshots table schema
+// Equity curve data — written by BacktestExecutor after run completes (daily-resampled from SimBroker.state.equityCurve)
 export interface PortfolioSnapshot {
   id: string;
   backtest_id: string;
@@ -101,18 +101,22 @@ export const useBacktestResults = (id?: string) => {
       if (backtestError) throw backtestError;
       setBacktest(backtestData as BacktestWithRelations);
 
-      const [{ data: metricsData }, { data: tradesData }, { data: snapshotsData }] = await Promise.all([
+      const [metricsResult, tradesResult, snapshotsResult] = await Promise.allSettled([
         supabase.from('backtest_results').select('*').eq('backtest_id', id).maybeSingle(),
         supabase.from('backtest_trades').select('*').eq('backtest_id', id).order('timestamp', { ascending: true }),
         supabase.from('backtest_portfolio_snapshots').select('*').eq('backtest_id', id).order('date', { ascending: true }),
       ]);
 
-      if (metricsData) {
-        setMetrics(metricsData as BacktestResultMetrics);
+      if (metricsResult.status === 'fulfilled' && metricsResult.value.data) {
+        setMetrics(metricsResult.value.data as BacktestResultMetrics);
       }
 
-      setTrades((tradesData || []) as BacktestTrade[]);
-      setSnapshots((snapshotsData || []) as PortfolioSnapshot[]);
+      setTrades(
+        tradesResult.status === 'fulfilled' ? (tradesResult.value.data || []) as BacktestTrade[] : []
+      );
+      setSnapshots(
+        snapshotsResult.status === 'fulfilled' ? (snapshotsResult.value.data || []) as PortfolioSnapshot[] : []
+      );
     } catch (err: any) {
       console.error('Error loading backtest results', err);
       setError(err.message || 'Failed to load backtest results');

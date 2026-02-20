@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EquityCurveChart } from "@/components/backtest/EquityCurveChart";
 import { PerformanceMetricsCard } from "@/components/backtest/PerformanceMetricsCard";
 import { TradesTable } from "@/components/backtest/TradesTable";
-import { PortfolioTimeline } from "@/components/backtest/PortfolioTimeline";
 import { useBacktestResults } from "@/hooks/useBacktestResults";
 import { ArrowLeft, Download, Workflow, Clock3, Calendar, DollarSign } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -112,7 +111,6 @@ const BacktestResults = () => {
         <TabsList>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="trades">Trades</TabsTrigger>
-          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
@@ -124,9 +122,6 @@ const BacktestResults = () => {
           <TradesTable trades={trades} />
         </TabsContent>
 
-        <TabsContent value="portfolio">
-          <PortfolioTimeline snapshots={snapshots} />
-        </TabsContent>
 
         <TabsContent value="settings">
           <Card>

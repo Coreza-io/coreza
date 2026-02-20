@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 import {
   SimBrokerConfig,
   DEFAULT_SIM_BROKER_CONFIG,
@@ -31,22 +31,22 @@ import {
   IFillModel,
   ISlippageModel,
   IFeeModel,
-} from './interfaces';
-import { createFillModel } from './FillModel';
-import { createSlippageModel } from './SlippageModel';
-import { createFeeModel } from './FeeModel';
+} from "./interfaces";
+import { createFillModel } from "./FillModel";
+import { createSlippageModel } from "./SlippageModel";
+import { createFeeModel } from "./FeeModel";
 
 /**
  * SimBroker - In-Memory Simulated Broker for Backtesting
- * 
+ *
  * High-performance in-memory portfolio state management.
  * All operations are SYNCHRONOUS for maximum speed during bar iteration.
  * No Redis round-trips during backtest execution.
- * 
+ *
  * Performance: 100-500x faster than Redis-based approach
  * - 10 years daily bars (2,520): ~0.1-0.5 seconds
  * - 1 year 1-minute bars (390,000): ~10-30 seconds
- * 
+ *
  * Usage:
  * 1. Initialize with BacktestInit node (creates in-memory state)
  * 2. Call placeOrder() from BacktestTrade node (synchronous)
@@ -60,7 +60,7 @@ export class SimBroker {
   private slippageModel: ISlippageModel;
   private feeModel: IFeeModel;
   private previousBar: Bar | null = null;
-  
+
   // IN-MEMORY STATE - no Redis!
   private state: PortfolioState;
 
@@ -68,9 +68,15 @@ export class SimBroker {
     this.backtestId = backtestId;
     this.config = { ...DEFAULT_SIM_BROKER_CONFIG, ...config };
     this.fillModel = createFillModel(this.config.fillModel);
-    this.slippageModel = createSlippageModel(this.config.slippageModel, this.config.slippageValue);
-    this.feeModel = createFeeModel(this.config.commissionModel, this.config.commissionValue);
-    
+    this.slippageModel = createSlippageModel(
+      this.config.slippageModel,
+      this.config.slippageValue,
+    );
+    this.feeModel = createFeeModel(
+      this.config.commissionModel,
+      this.config.commissionValue,
+    );
+
     // Initialize state immediately in memory
     this.state = {
       cash: this.config.initialCapital,
@@ -90,7 +96,9 @@ export class SimBroker {
    * State is already initialized in constructor, this just logs
    */
   initializePortfolio(): void {
-    console.log(`[SimBroker] Initialized in-memory portfolio for backtest ${this.backtestId} with $${this.config.initialCapital}`);
+    console.log(
+      `[SimBroker] Initialized in-memory portfolio for backtest ${this.backtestId} with $${this.config.initialCapital}`,
+    );
   }
 
   /**
@@ -116,7 +124,7 @@ export class SimBroker {
     const order: Order = {
       ...request,
       id: `SIM-${uuidv4().slice(0, 8)}`,
-      status: 'pending',
+      status: "pending",
       submittedAt: new Date().toISOString(),
       filledQty: 0,
       avgFillPrice: 0,
@@ -126,45 +134,63 @@ export class SimBroker {
 
     this.state.pendingOrders.push(order);
 
-    console.log(`[SimBroker] Order placed: ${order.id} ${order.side} ${order.quantity} ${order.symbol} @ ${order.type}`);
-    
-    return { success: true, orderId: order.id, status: 'pending' };
+    console.log(
+      `[SimBroker] Order placed: ${order.id} ${order.side} ${order.quantity} ${order.symbol} @ ${order.type}`,
+    );
+
+    return { success: true, orderId: order.id, status: "pending" };
   }
 
-  private validateOrder(request: OrderRequest, state: PortfolioState): { valid: boolean; error?: string } {
+  private validateOrder(
+    request: OrderRequest,
+    state: PortfolioState,
+  ): { valid: boolean; error?: string } {
     // Check quantity
     if (request.quantity <= 0) {
-      return { valid: false, error: 'Quantity must be positive' };
+      return { valid: false, error: "Quantity must be positive" };
     }
 
     // Check limit/stop prices
-    if (request.type === 'limit' && !request.limitPrice) {
-      return { valid: false, error: 'Limit price required for limit orders' };
+    if (request.type === "limit" && !request.limitPrice) {
+      return { valid: false, error: "Limit price required for limit orders" };
     }
-    if (request.type === 'stop' && !request.stopPrice) {
-      return { valid: false, error: 'Stop price required for stop orders' };
+    if (request.type === "stop" && !request.stopPrice) {
+      return { valid: false, error: "Stop price required for stop orders" };
     }
-    if (request.type === 'stop_limit' && (!request.stopPrice || !request.limitPrice)) {
-      return { valid: false, error: 'Both stop and limit prices required for stop-limit orders' };
+    if (
+      request.type === "stop_limit" &&
+      (!request.stopPrice || !request.limitPrice)
+    ) {
+      return {
+        valid: false,
+        error: "Both stop and limit prices required for stop-limit orders",
+      };
     }
 
     // Estimate required capital for buy orders
-    if (request.side === 'buy') {
+    if (request.side === "buy") {
       const currentPrice = state.currentBar?.close ?? request.limitPrice ?? 100;
       const estimatedCost = request.quantity * currentPrice;
-      
-      if (estimatedCost > state.cash * 0.99) { // 1% buffer for commissions
-        return { valid: false, error: `Insufficient buying power. Required: $${estimatedCost.toFixed(2)}, Available: $${state.cash.toFixed(2)}` };
+
+      if (estimatedCost > state.cash * 0.99) {
+        // 1% buffer for commissions
+        return {
+          valid: false,
+          error: `Insufficient buying power. Required: $${estimatedCost.toFixed(2)}, Available: $${state.cash.toFixed(2)}`,
+        };
       }
     }
 
     // Check for short selling
-    if (request.side === 'sell' && !this.config.allowShort) {
+    if (request.side === "sell" && !this.config.allowShort) {
       const position = state.positions[request.symbol];
       const currentQty = position?.quantity ?? 0;
-      
+
       if (request.quantity > currentQty) {
-        return { valid: false, error: `Cannot sell ${request.quantity} shares. Only ${currentQty} shares held. Short selling disabled.` };
+        return {
+          valid: false,
+          error: `Cannot sell ${request.quantity} shares. Only ${currentQty} shares held. Short selling disabled.`,
+        };
       }
     }
 
@@ -183,25 +209,48 @@ export class SimBroker {
     this.state.currentBar = bar;
 
     // Process pending orders for this symbol
-    const pendingForSymbol = this.state.pendingOrders.filter(o => o.symbol === symbol);
-    const remainingPending: Order[] = this.state.pendingOrders.filter(o => o.symbol !== symbol);
+    const pendingForSymbol = this.state.pendingOrders.filter(
+      (o) => o.symbol === symbol,
+    );
+    const remainingPending: Order[] = this.state.pendingOrders.filter(
+      (o) => o.symbol !== symbol,
+    );
 
     for (const order of pendingForSymbol) {
-      const fillResult = this.fillModel.fill(order, bar, this.previousBar ?? undefined);
+      const fillResult = this.fillModel.fill(
+        order,
+        bar,
+        this.previousBar ?? undefined,
+      );
 
       if (fillResult.filled && fillResult.price && fillResult.quantity) {
         // Calculate slippage
-        const slippage = this.slippageModel.getSlippage(order, fillResult.price, bar);
+        const slippage = this.slippageModel.getSlippage(
+          order,
+          fillResult.price,
+          bar,
+        );
         const adjustedPrice = fillResult.price + slippage;
 
         // Calculate commission
-        const commission = this.feeModel.getCommission(order, adjustedPrice, fillResult.quantity);
+        const commission = this.feeModel.getCommission(
+          order,
+          adjustedPrice,
+          fillResult.quantity,
+        );
 
         // Apply fill
-        this.applyFill(order, adjustedPrice, fillResult.quantity, slippage, commission, bar.timestamp);
+        this.applyFill(
+          order,
+          adjustedPrice,
+          fillResult.quantity,
+          slippage,
+          commission,
+          bar.timestamp,
+        );
 
         // Update order status
-        order.status = 'filled';
+        order.status = "filled";
         order.filledQty = fillResult.quantity;
         order.avgFillPrice = adjustedPrice;
         order.commission = commission;
@@ -222,7 +271,9 @@ export class SimBroker {
           timestamp: bar.timestamp,
         });
 
-        console.log(`[SimBroker] Order filled: ${order.id} ${order.side} ${fillResult.quantity} ${symbol} @ $${adjustedPrice.toFixed(2)} (slip: $${slippage.toFixed(4)}, comm: $${commission.toFixed(4)})`);
+        console.log(
+          `[SimBroker] Order filled: ${order.id} ${order.side} ${fillResult.quantity} ${symbol} @ $${adjustedPrice.toFixed(2)} (slip: $${slippage.toFixed(4)}, comm: $${commission.toFixed(4)})`,
+        );
       } else {
         // Order not filled, keep it pending
         remainingPending.push(order);
@@ -269,11 +320,13 @@ export class SimBroker {
    * Does NOT mutate previousBar or process other pending orders.
    */
   tryFillImmediateOrder(orderId: string, bar: Bar): OrderFill | null {
-    if (this.config.fillModel !== 'immediate') {
+    if (this.config.fillModel !== "immediate") {
       return null;
     }
 
-    const orderIdx = this.state.pendingOrders.findIndex((o) => o.id === orderId);
+    const orderIdx = this.state.pendingOrders.findIndex(
+      (o) => o.id === orderId,
+    );
     if (orderIdx === -1) {
       return null;
     }
@@ -288,13 +341,28 @@ export class SimBroker {
     // Keep current bar in state for order validation/price usage
     this.state.currentBar = bar;
 
-    const slippage = this.slippageModel.getSlippage(order, fillResult.price, bar);
+    const slippage = this.slippageModel.getSlippage(
+      order,
+      fillResult.price,
+      bar,
+    );
     const adjustedPrice = fillResult.price + slippage;
-    const commission = this.feeModel.getCommission(order, adjustedPrice, fillResult.quantity);
+    const commission = this.feeModel.getCommission(
+      order,
+      adjustedPrice,
+      fillResult.quantity,
+    );
 
-    this.applyFill(order, adjustedPrice, fillResult.quantity, slippage, commission, bar.timestamp);
+    this.applyFill(
+      order,
+      adjustedPrice,
+      fillResult.quantity,
+      slippage,
+      commission,
+      bar.timestamp,
+    );
 
-    order.status = 'filled';
+    order.status = "filled";
     order.filledQty = fillResult.quantity;
     order.avgFillPrice = adjustedPrice;
     order.commission = commission;
@@ -325,21 +393,21 @@ export class SimBroker {
     quantity: number,
     slippage: number,
     commission: number,
-    timestamp: string
+    timestamp: string,
   ): void {
-    const signedQuantity = order.side === 'buy' ? quantity : -quantity;
+    const signedQuantity = order.side === "buy" ? quantity : -quantity;
 
-    if (order.side === 'buy') {
-      this.state.cash -= (price * quantity) + commission;
+    if (order.side === "buy") {
+      this.state.cash -= price * quantity + commission;
     } else {
-      this.state.cash += (price * quantity) - commission;
+      this.state.cash += price * quantity - commission;
     }
 
     const existing = this.state.positions[order.symbol];
     if (!existing) {
       this.state.positions[order.symbol] = {
         symbol: order.symbol,
-        side: signedQuantity >= 0 ? 'long' : 'short',
+        side: signedQuantity >= 0 ? "long" : "short",
         quantity: signedQuantity,
         avgEntryPrice: price,
         currentPrice: price,
@@ -351,26 +419,34 @@ export class SimBroker {
     }
 
     const existingQty = existing.quantity;
-    const sameDirection = (existingQty >= 0 && signedQuantity >= 0) || (existingQty <= 0 && signedQuantity <= 0);
+    const sameDirection =
+      (existingQty >= 0 && signedQuantity >= 0) ||
+      (existingQty <= 0 && signedQuantity <= 0);
 
     if (sameDirection) {
       const totalQty = existingQty + signedQuantity;
-      const totalCostBasis = (existing.avgEntryPrice * Math.abs(existingQty)) + (price * Math.abs(signedQuantity));
+      const totalCostBasis =
+        existing.avgEntryPrice * Math.abs(existingQty) +
+        price * Math.abs(signedQuantity);
       existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
       existing.quantity = totalQty;
-      existing.side = totalQty >= 0 ? 'long' : 'short';
+      existing.side = totalQty >= 0 ? "long" : "short";
       existing.currentPrice = price;
       existing.marketValue = totalQty * price;
       existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
       return;
     }
 
-    const closingQty = Math.min(Math.abs(existingQty), Math.abs(signedQuantity));
+    const closingQty = Math.min(
+      Math.abs(existingQty),
+      Math.abs(signedQuantity),
+    );
     const isClosingLong = existingQty > 0;
     const grossPnl = isClosingLong
       ? (price - existing.avgEntryPrice) * closingQty
       : (existing.avgEntryPrice - price) * closingQty;
-    const commissionForClose = commission * (closingQty / Math.abs(signedQuantity));
+    const commissionForClose =
+      commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
 
     existing.realizedPnl += netPnl;
@@ -378,8 +454,8 @@ export class SimBroker {
     const trade: Trade = {
       id: `TRD-${uuidv4().slice(0, 8)}`,
       symbol: order.symbol,
-      side: isClosingLong ? 'buy' : 'sell',
-      entryOrderId: 'unknown',
+      side: isClosingLong ? "buy" : "sell",
+      entryOrderId: "unknown",
       exitOrderId: order.id,
       entryPrice: existing.avgEntryPrice,
       exitPrice: price,
@@ -388,7 +464,7 @@ export class SimBroker {
       commission: commissionForClose,
       slippage: Math.abs(slippage),
       netPnl,
-      entryTime: 'unknown',
+      entryTime: "unknown",
       exitTime: timestamp,
       holdingPeriodBars: 0,
     };
@@ -402,7 +478,7 @@ export class SimBroker {
 
     if ((existingQty > 0 && newQty > 0) || (existingQty < 0 && newQty < 0)) {
       existing.quantity = newQty;
-      existing.side = newQty >= 0 ? 'long' : 'short';
+      existing.side = newQty >= 0 ? "long" : "short";
       existing.currentPrice = price;
       existing.marketValue = newQty * price;
       existing.unrealizedPnl = (price - existing.avgEntryPrice) * newQty;
@@ -411,7 +487,7 @@ export class SimBroker {
 
     // Position flipped direction on this fill; reset cost basis at fill price
     existing.quantity = newQty;
-    existing.side = newQty >= 0 ? 'long' : 'short';
+    existing.side = newQty >= 0 ? "long" : "short";
     existing.avgEntryPrice = price;
     existing.currentPrice = price;
     existing.marketValue = newQty * price;
@@ -423,10 +499,10 @@ export class SimBroker {
     if (position) {
       position.currentPrice = currentPrice;
       position.marketValue = position.quantity * currentPrice;
-      position.unrealizedPnl = (currentPrice - position.avgEntryPrice) * position.quantity;
+      position.unrealizedPnl =
+        (currentPrice - position.avgEntryPrice) * position.quantity;
     }
   }
-
 
   /**
    * Bulk mark-to-market update for all held positions.
@@ -517,7 +593,7 @@ export class SimBroker {
 
     // Calmar uses decimal return units divided by decimal max drawdown
     const calmarRatio =
-      maxDrawdownPct > 0 ? (annualizedReturn / 100) / maxDrawdownPct : 0;
+      maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0;
 
     return {
       totalReturn,
@@ -540,15 +616,15 @@ export class SimBroker {
       avgTradePnl,
       totalCommission,
       totalSlippage,
-      startDate: curve.length > 0 ? curve[0].timestamp : '',
-      endDate: curve.length > 0 ? curve[curve.length - 1].timestamp : '',
+      startDate: curve.length > 0 ? curve[0].timestamp : "",
+      endDate: curve.length > 0 ? curve[curve.length - 1].timestamp : "",
       totalBars: curve.length,
     };
   }
 
   private calculateReturns(curve: EquityPoint[]): number[] {
     if (curve.length < 2) return [];
-    
+
     const returns: number[] = [];
     for (let i = 1; i < curve.length; i++) {
       const prevEquity = curve[i - 1].totalEquity;
@@ -565,7 +641,7 @@ export class SimBroker {
 
     // Ensure chronological processing so each day keeps the true last bar
     const sortedCurve = [...curve].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp)
+      a.timestamp.localeCompare(b.timestamp),
     );
 
     const dailyMap = new Map<string, EquityPoint>();
@@ -579,37 +655,46 @@ export class SimBroker {
     return Array.from(dailyMap.values());
   }
 
-  private calculateSharpeRatio(returns: number[], riskFreeRate: number = 0.02): number {
+  private calculateSharpeRatio(
+    returns: number[],
+    riskFreeRate: number = 0.02,
+  ): number {
     if (returns.length < 30) return 0;
 
     const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
-    const excessReturns = returns.map(r => r - dailyRf);
-    const avgExcessReturn = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
+    const excessReturns = returns.map((r) => r - dailyRf);
+    const avgExcessReturn =
+      excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
     const stdDev = this.standardDeviation(excessReturns);
 
     if (stdDev === 0) return 0;
-    
+
     // Annualize
     return (avgExcessReturn / stdDev) * Math.sqrt(252);
   }
 
-  private calculateSortinoRatio(returns: number[], riskFreeRate: number = 0.02): number {
+  private calculateSortinoRatio(
+    returns: number[],
+    riskFreeRate: number = 0.02,
+  ): number {
     if (returns.length < 30) return 0;
 
     const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
-    const excessReturns = returns.map(r => r - dailyRf);
-    const avgExcessReturn = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
-    
+    const excessReturns = returns.map((r) => r - dailyRf);
+    const avgExcessReturn =
+      excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
+
     // Downside deviation (only negative returns)
-    const negativeReturns = excessReturns.filter(r => r < 0);
+    const negativeReturns = excessReturns.filter((r) => r < 0);
     if (negativeReturns.length === 0) return avgExcessReturn > 0 ? Infinity : 0;
-    
+
     const downsideDeviation = Math.sqrt(
-      negativeReturns.reduce((sum, r) => sum + r * r, 0) / negativeReturns.length
+      negativeReturns.reduce((sum, r) => sum + r * r, 0) /
+        negativeReturns.length,
     );
 
     if (downsideDeviation === 0) return 0;
-    
+
     // Annualize
     return (avgExcessReturn / downsideDeviation) * Math.sqrt(252);
   }
@@ -617,7 +702,7 @@ export class SimBroker {
   private standardDeviation(values: number[]): number {
     if (values.length === 0) return 0;
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+    const squaredDiffs = values.map((v) => Math.pow(v - mean, 2));
     return Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / values.length);
   }
 
@@ -632,7 +717,10 @@ export class SimBroker {
   }
 
   getTotalEquity(): number {
-    const positionsValue = Object.values(this.state.positions).reduce((sum, p) => sum + p.marketValue, 0);
+    const positionsValue = Object.values(this.state.positions).reduce(
+      (sum, p) => sum + p.marketValue,
+      0,
+    );
     return this.state.cash + positionsValue;
   }
 
@@ -658,4 +746,4 @@ export class SimBroker {
 }
 
 // Re-export interfaces
-export * from './interfaces';
+export * from "./interfaces";

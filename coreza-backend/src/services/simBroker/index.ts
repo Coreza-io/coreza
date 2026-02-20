@@ -387,6 +387,62 @@ export class SimBroker {
     };
   }
 
+  private findCurrentPositionEntryFill(
+    symbol: string,
+    existingQty: number,
+  ): Order | null {
+    const targetSign = Math.sign(existingQty);
+    if (targetSign === 0) {
+      return null;
+    }
+
+    const fills = this.state.filledOrders.filter((o) => o.symbol === symbol);
+    let runningQty = 0;
+    let legEntry: Order | null = null;
+
+    for (const filledOrder of fills) {
+      const signedQty =
+        filledOrder.side === "buy" ? filledOrder.filledQty : -filledOrder.filledQty;
+      const beforeQty = runningQty;
+      runningQty += signedQty;
+
+      if (beforeQty === 0 && Math.sign(runningQty) !== 0) {
+        legEntry = filledOrder;
+        continue;
+      }
+
+      if (Math.sign(beforeQty) !== 0 && Math.sign(runningQty) !== Math.sign(beforeQty)) {
+        legEntry = filledOrder;
+      }
+    }
+
+    if (runningQty !== existingQty) {
+      return null;
+    }
+
+    if (!legEntry || Math.sign(runningQty) !== targetSign) {
+      return null;
+    }
+
+    return legEntry;
+  }
+
+  private calculateHoldingPeriodBars(entryTime: string, exitTime: string): number {
+    const entryBarIndex = this.state.equityCurve.findIndex(
+      (point) => point.timestamp === entryTime,
+    );
+    const exitBarIndex = this.state.equityCurve.findIndex(
+      (point) => point.timestamp === exitTime,
+    );
+
+    const normalizedEntryBarIndex =
+      entryBarIndex >= 0 ? entryBarIndex : this.state.equityCurve.length;
+    const normalizedExitBarIndex =
+      exitBarIndex >= 0 ? exitBarIndex : this.state.equityCurve.length;
+
+    return Math.max(0, normalizedExitBarIndex - normalizedEntryBarIndex);
+  }
+
   private applyFill(
     order: Order,
     price: number,
@@ -448,6 +504,10 @@ export class SimBroker {
     const commissionForClose =
       commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
+    const entryFill = this.findCurrentPositionEntryFill(order.symbol, existingQty);
+    const entryOrderId = entryFill?.id ?? order.id;
+    const entryTime = entryFill?.filledAt ?? timestamp;
+    const holdingPeriodBars = this.calculateHoldingPeriodBars(entryTime, timestamp);
 
     existing.realizedPnl += netPnl;
 
@@ -455,7 +515,7 @@ export class SimBroker {
       id: `TRD-${uuidv4().slice(0, 8)}`,
       symbol: order.symbol,
       side: isClosingLong ? "buy" : "sell",
-      entryOrderId: "unknown",
+      entryOrderId,
       exitOrderId: order.id,
       entryPrice: existing.avgEntryPrice,
       exitPrice: price,
@@ -464,9 +524,9 @@ export class SimBroker {
       commission: commissionForClose,
       slippage: Math.abs(slippage),
       netPnl,
-      entryTime: "unknown",
+      entryTime,
       exitTime: timestamp,
-      holdingPeriodBars: 0,
+      holdingPeriodBars,
     };
     this.state.trades.push(trade);
 

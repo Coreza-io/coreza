@@ -1,291 +1,191 @@
 
+# Complete Fix Plan: Build Error + backtest_results Empty + QuantConnect-Style List
 
-# Enhanced Trade Log and QuantConnect-Style Backtest Results
+## What Was Found (Confirmed from Code + DB)
 
-## Problems Found
+### Issue 1: Build Error — `updated_at` (BLOCKING)
+`src/pages/Backtests.tsx` line 178 references `backtest.updated_at` but:
+- The `Backtest` interface in `useBacktests.ts` does NOT have `updated_at` (correctly removed previously)
+- The `backtests` DB table also has NO `updated_at` column
 
-### 1. Trade Log Only Records Sell-Side Exits
-The current `executeBacktestResults` (line 415-431) only persists entries from `simBroker.getTrades()`, which are **closed trade records** (sell fills only). BUY entries are never saved to the `backtest_trades` table. The user's desired log format shows both BUY and SELL entries chronologically:
-
-```
-2025-07-17 14:31:00 SELL (TAKE PROFIT) 4.10%
-2025-07-21 09:38:00 BUY @ 24.12
-```
-
-### 2. Missing Trade Data Fields
-The current `backtest_trades` DB schema and Trade interface are missing key fields needed for the desired log format:
-- **Exit reason** (TAKE PROFIT, STOP LOSS, SIGNAL, etc.)
-- **Return percentage** per trade
-- **Entry price** on sell rows (needed to calculate return %)
-- **Portfolio value before/after** (always null currently)
-
-### 3. BacktestResults Node Output Missing QC-Style Metrics
-The current results output is missing several QuantConnect standard metrics:
-- Sortino Ratio, Calmar Ratio (calculated but not persisted to DB)
-- Profit Factor
-- Average Win / Average Loss
-- Total Commission / Total Slippage
-- Expectancy (avg win * win rate - avg loss * loss rate)
-- Compounding Annual Return (CAR)
-- Net Profit (absolute $)
-- Average Holding Period
+Fix: Replace `backtest.updated_at` with `backtest.created_at` on line 178 (one line change).
 
 ---
 
-## Implementation Plan
+### Issue 2: `backtest_results` Has Zero Rows (Root Cause Found)
 
-### File 1: DB Schema -- Add columns to `backtest_trades` and `backtest_results`
+**Two compounding bugs found:**
 
-**`backtest_trades` -- add columns:**
-- `entry_price` (numeric) -- the avg entry price when this was a sell
-- `exit_reason` (text) -- "TAKE_PROFIT", "STOP_LOSS", "SIGNAL", "MANUAL"
-- `return_pct` (numeric) -- percentage return on this trade
-- `side` (text) -- "buy" or "sell" (currently stored in `action` but rename for clarity)
-- `net_pnl` (numeric) -- net P&L for sell trades
-- `holding_period_bars` (integer) -- bars held
+**Bug A — Missing table definitions in backend Supabase types:**
+`coreza-backend/src/types/supabase.ts` only defines `workflows`, `workflow_runs`, `node_executions`, and `user_credentials`. It does NOT define `backtest_results`, `backtest_trades`, or `backtest_portfolio_snapshots`.
 
-**`backtest_results` -- add columns:**
-- `sortino_ratio` (numeric)
-- `calmar_ratio` (numeric)
-- `profit_factor` (numeric)
-- `avg_win` (numeric)
-- `avg_loss` (numeric)
-- `total_commission` (numeric)
-- `total_slippage` (numeric)
-- `net_profit` (numeric)
-- `losing_trades` (integer)
-- `expectancy` (numeric)
-- `avg_holding_period` (numeric)
+When the backend calls `supabaseClient.from("backtest_results").insert(...)`, the typed Supabase client (created with `createClient<Database>`) has no knowledge of this table. The insert **fails silently** — there is no `const { error } = await ...` check on the `backtest_results` insert, so the error is swallowed and execution continues to `backtest_trades` (which also isn't typed but the error handling behavior may differ, or it was using a loose type path).
 
-Run via SQL migration on Supabase.
-
-### File 2: `coreza-backend/src/services/simBroker/index.ts` -- Track ALL order fills
-
-**Add a new array to PortfolioState** to record every fill (buy AND sell) chronologically:
-
+**Bug B — No error checking on the insert:**
+Line 337-372 in `BacktestExecutor.ts`:
 ```typescript
-// Add to PortfolioState interface in interfaces.ts:
-interface OrderLogEntry {
-  timestamp: string;
-  symbol: string;
-  side: 'buy' | 'sell';
-  quantity: number;
-  price: number;         // fill price
-  entryPrice?: number;   // avg entry price (for sells)
-  exitReason?: string;   // TAKE_PROFIT, STOP_LOSS, SIGNAL
-  returnPct?: number;    // % return (for sells)
-  netPnl?: number;       // net P&L (for sells)
-  commission: number;
-  slippage: number;
-  portfolioValueBefore: number;
-  portfolioValueAfter: number;
-  holdingPeriodBars?: number;
-  orderId: string;
-}
+// CURRENT — error is silently swallowed:
+await supabaseClient.from("backtest_results").insert({ ... });
+
+// SHOULD BE:
+const { error: resultsError } = await supabaseClient.from("backtest_results").insert({ ... });
+if (resultsError) console.error('[BacktestExecutor] Failed to insert backtest_results:', resultsError);
 ```
 
-**Modify `applyFill()` in SimBroker** to push an `OrderLogEntry` for EVERY fill:
+---
 
-- **BUY fill:** Log with `side: 'buy'`, `price` (fill price), `portfolioValueBefore` (equity before), `portfolioValueAfter` (equity after)
-- **SELL fill:** Log with `side: 'sell'`, `price` (exit price), `entryPrice` (avg entry), `returnPct` ((exitPrice - entryPrice) / entryPrice * 100), `netPnl`, `exitReason` from a new parameter or inferred
+### Issue 3: QuantConnect-Style List View
 
-**Add `exit_reason` inference:** When a sell trade is executed, determine the reason:
-- Check if a stop order triggered -> "STOP_LOSS"
-- Check if limit order triggered -> "TAKE_PROFIT"
-- Market order sell -> "SIGNAL"
-- This can be inferred from `order.type`: limit sells = TAKE_PROFIT, stop sells = STOP_LOSS, market sells = SIGNAL
+The current card grid shows backtests with 2 metric boxes per card. QuantConnect uses a dense **table/list layout** showing many backtests at once with columns: Name, Workflow, Status, Return, Sharpe, Trades, Date.
 
-### File 3: `coreza-backend/src/services/simBroker/interfaces.ts` -- Add types
+---
 
-Add the `OrderLogEntry` interface and the `orderLog: OrderLogEntry[]` field to `PortfolioState`.
+## All Files to Change
 
-### File 4: `coreza-backend/src/nodes/executors/BacktestExecutor.ts` -- Persist full trade log
+### File 1: `coreza-backend/src/types/supabase.ts` — Add missing table types
 
-**Modify `executeBacktestResults`** (line 415-431):
-
-Replace the current trade persistence that only saves closed trades with a full order log:
+Add `backtests`, `backtest_results`, `backtest_trades`, and `backtest_portfolio_snapshots` to the `Database` interface. This is the primary fix for `backtest_results` being empty — it ensures the typed Supabase client knows these tables exist.
 
 ```typescript
-// Instead of just trades (sell-side only):
-const orderLog = simBroker.getOrderLog();
-
-if (orderLog.length > 0) {
-  const tradeRows = orderLog.map((entry) => ({
-    backtest_id: backtestId,
-    symbol: entry.symbol,
-    action: entry.side,
-    quantity: entry.quantity,
-    price: entry.price,
-    timestamp: entry.timestamp,
-    commission: entry.commission,
-    slippage: entry.slippage,
-    portfolio_value_before: entry.portfolioValueBefore,
-    portfolio_value_after: entry.portfolioValueAfter,
-    entry_price: entry.entryPrice || null,
-    exit_reason: entry.exitReason || null,
-    return_pct: entry.returnPct || null,
-    net_pnl: entry.netPnl || null,
-    holding_period_bars: entry.holdingPeriodBars || null,
-  }));
-
-  await supabaseClient.from("backtest_trades").insert(tradeRows);
-}
+backtests: {
+  Row: {
+    id: string;
+    user_id: string;
+    workflow_id: string;
+    name: string;
+    description: string | null;
+    start_date: string;
+    end_date: string;
+    initial_capital: number;
+    commission_rate: number | null;
+    slippage_rate: number | null;
+    data_frequency: string;
+    status: string;
+    error_message: string | null;
+    created_at: string;
+    started_at: string | null;
+    completed_at: string | null;
+  };
+  Insert: { /* all fields optional except required ones */ };
+  Update: { /* all fields optional */ };
+};
+backtest_results: {
+  Row: {
+    id: string;
+    backtest_id: string;
+    total_return: number | null;
+    annualized_return: number | null;
+    max_drawdown: number | null;
+    sharpe_ratio: number | null;
+    sortino_ratio: number | null;
+    calmar_ratio: number | null;
+    total_trades: number | null;
+    win_rate: number | null;
+    profitable_trades: number | null;
+    losing_trades: number | null;
+    average_trade_return: number | null;
+    largest_win: number | null;
+    largest_loss: number | null;
+    final_portfolio_value: number | null;
+    profit_factor: number | null;
+    avg_win: number | null;
+    avg_loss: number | null;
+    total_commission: number | null;
+    total_slippage: number | null;
+    net_profit: number | null;
+    expectancy: number | null;
+    avg_holding_period: number | null;
+    created_at: string;
+  };
+  Insert: { /* backtest_id required, rest optional */ };
+  Update: { /* all optional */ };
+};
+backtest_trades: { Row: {...}; Insert: {...}; Update: {...}; };
+backtest_portfolio_snapshots: { Row: {...}; Insert: {...}; Update: {...}; };
 ```
 
-**Also persist additional QC-style metrics to `backtest_results`:**
+### File 2: `coreza-backend/src/nodes/executors/BacktestExecutor.ts` — Add error checking on inserts
+
+Add `const { error } = await ...` error checks to the `backtest_results` insert and log any failures so they're visible in the backend logs:
 
 ```typescript
-await supabaseClient.from("backtest_results").insert({
+// Line 337 — add error destructuring and logging:
+const { error: resultsError } = await supabaseClient.from("backtest_results").insert({
   backtest_id: backtestId,
-  // Existing fields...
   total_return: metrics.totalReturnPct,
-  annualized_return: metrics.annualizedReturn,
-  // NEW fields:
-  sortino_ratio: metrics.sortinoRatio,
-  calmar_ratio: metrics.calmarRatio,
-  profit_factor: metrics.profitFactor,
-  avg_win: metrics.avgWin,
-  avg_loss: metrics.avgLoss,
-  total_commission: metrics.totalCommission,
-  total_slippage: metrics.totalSlippage,
-  net_profit: metrics.totalReturn,
-  losing_trades: metrics.losingTrades,
-  expectancy: calculateExpectancy(metrics),
-  avg_holding_period: calculateAvgHoldingPeriod(trades),
+  // ... all existing fields unchanged ...
 });
-```
-
-**Update the node output** to include QC-formatted summary:
-
-```typescript
-return toNodeResult(createSuccessOutput({
-  backtest_id: backtestId,
-  // QC-style summary section
-  statistics: {
-    total_return: `${metrics.totalReturnPct.toFixed(2)}%`,
-    net_profit: `$${metrics.totalReturn.toFixed(2)}`,
-    annualized_return: `${metrics.annualizedReturn.toFixed(2)}%`,
-    sharpe_ratio: metrics.sharpeRatio.toFixed(3),
-    sortino_ratio: metrics.sortinoRatio.toFixed(3),
-    calmar_ratio: metrics.calmarRatio.toFixed(3),
-    max_drawdown: `${metrics.maxDrawdownPct.toFixed(2)}%`,
-    profit_factor: metrics.profitFactor.toFixed(2),
-    win_rate: `${metrics.winRate.toFixed(1)}%`,
-    total_trades: metrics.totalTrades,
-    winning_trades: metrics.winningTrades,
-    losing_trades: metrics.losingTrades,
-    avg_win: `$${metrics.avgWin.toFixed(2)}`,
-    avg_loss: `$${metrics.avgLoss.toFixed(2)}`,
-    largest_win: `$${metrics.largestWin.toFixed(2)}`,
-    largest_loss: `$${metrics.largestLoss.toFixed(2)}`,
-    expectancy: `$${expectancy.toFixed(2)}`,
-    total_commission: `$${metrics.totalCommission.toFixed(2)}`,
-    total_slippage: `$${metrics.totalSlippage.toFixed(2)}`,
-    initial_capital: `$${initialCapital.toFixed(2)}`,
-    final_equity: `$${finalEquity.toFixed(2)}`,
-    start_date: metrics.startDate,
-    end_date: metrics.endDate,
-    total_bars: metrics.totalBars,
-  },
-  // Trade log for output panel
-  trade_log: orderLog.map(e => ({
-    time: e.timestamp,
-    action: e.side.toUpperCase(),
-    symbol: e.symbol,
-    price: e.price,
-    quantity: e.quantity,
-    reason: e.exitReason || null,
-    return_pct: e.returnPct ? `${e.returnPct.toFixed(2)}%` : null,
-    net_pnl: e.netPnl ? `$${e.netPnl.toFixed(2)}` : null,
-  })),
-  trades_count: orderLog.length,
-  equity_points: equityCurve.length,
-}));
-```
-
-### File 5: Frontend -- `src/hooks/useBacktestResults.ts` -- Update types
-
-Add new fields to `BacktestResultMetrics`:
-
-```typescript
-export interface BacktestResultMetrics {
-  // existing...
-  sortino_ratio?: number;
-  calmar_ratio?: number;
-  profit_factor?: number;
-  avg_win?: number;
-  avg_loss?: number;
-  total_commission?: number;
-  total_slippage?: number;
-  net_profit?: number;
-  losing_trades?: number;
-  expectancy?: number;
-  avg_holding_period?: number;
+if (resultsError) {
+  console.error('[BacktestExecutor] Failed to insert backtest_results:', resultsError);
 }
 
-export interface BacktestTrade {
-  // existing...
-  entry_price?: number;
-  exit_reason?: string;
-  return_pct?: number;
-  net_pnl?: number;
-  holding_period_bars?: number;
+// Also add error check for trades insert (line 389):
+const { error: tradesError } = await supabaseClient.from("backtest_trades").insert(tradeRows);
+if (tradesError) {
+  console.error('[BacktestExecutor] Failed to insert backtest_trades:', tradesError);
+}
+
+// Also add error check for snapshots insert (line 414-418):
+const { error: snapshotError } = await supabaseClient.from("backtest_portfolio_snapshots").insert(snapshots.slice(i, i + 500));
+if (snapshotError) {
+  console.error('[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:', snapshotError);
 }
 ```
 
-### File 6: Frontend -- `src/components/backtest/TradesTable.tsx` -- QC-Style Trade Log
+### File 3: `src/pages/Backtests.tsx` — Fix build error + QuantConnect-style table layout
 
-Redesign the table to show trades like the user's desired format:
+**Change A (build error fix) — line 178:**
+```tsx
+// Remove:
+{backtest.updated_at ? new Date(backtest.updated_at).toLocaleString() : ''}
+// Replace with:
+{backtest.created_at ? new Date(backtest.created_at).toLocaleString() : ''}
+```
 
-- Show BUY rows: `2025-07-21 09:38:00 BUY @ 24.12`
-- Show SELL rows: `2025-07-17 14:31:00 SELL (TAKE PROFIT) 4.10%`
-- Color code: green for BUY, red for SELL
-- Show return % badge on sell rows (green if positive, red if negative)
-- Add exit reason badge (TAKE PROFIT / STOP LOSS / SIGNAL)
-- Add portfolio value before/after columns
-- Add net P&L column for sell rows
+**Change B — Replace card grid with QuantConnect-style table:**
 
-New columns: `Time | Action | Symbol | Price | Qty | Reason | Return % | Net P&L | Portfolio Value`
+Replace the `<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">` card grid (lines 144-199) with a `<Table>` layout. Each row shows:
 
-### File 7: Frontend -- `src/components/backtest/PerformanceMetricsCard.tsx` -- QC-Style Layout
+| Column | Value |
+|---|---|
+| Name | Clickable link to results page |
+| Workflow | `workflow_name` (or "—") |
+| Status | Colored badge |
+| Total Return | Green/red % or "—" |
+| Sharpe Ratio | Number or "—" |
+| Trades | `total_trades` or "—" |
+| Created | Formatted date |
+| Actions | View / Delete dropdown |
 
-Reorganize into sections matching QuantConnect's results page:
+Keep the loading skeleton rows, empty state, and search/filter logic unchanged. Only the rendered list changes from cards to a table.
 
-**Section 1: Key Performance**
-- Net Profit, Total Return %, Annualized Return %, Final Equity
+### File 4: `src/hooks/useBacktests.ts` — Add `total_trades` to query + interface
 
-**Section 2: Risk Metrics**
-- Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown %
+```typescript
+// Add to Backtest interface:
+total_trades?: number;
 
-**Section 3: Trade Statistics**
-- Total Trades, Winning/Losing, Win Rate %, Profit Factor
+// Update the select:
+backtest_results(total_return, sharpe_ratio, total_trades)
 
-**Section 4: P&L Analysis**
-- Avg Win, Avg Loss, Largest Win, Largest Loss, Expectancy
-
-**Section 5: Costs**
-- Total Commission, Total Slippage
-
-### File 8: Frontend -- `src/pages/BacktestResults.tsx` -- Update top metric cards
-
-Update the 4 summary cards at top to show:
-1. Net Profit ($) with green/red color
-2. Total Return (%) with green/red color
-3. Sharpe Ratio
-4. Win Rate (%)
+// Add to parsed map:
+total_trades: item.backtest_results?.[0]?.total_trades,
+```
 
 ---
 
-## Files Summary
+## Summary
 
-| File | Action | Description |
-|---|---|---|
-| SQL Migration | **Run** | Add columns to `backtest_trades` and `backtest_results` |
-| `coreza-backend/src/services/simBroker/interfaces.ts` | **Modify** | Add `OrderLogEntry` interface, add `orderLog` to `PortfolioState` |
-| `coreza-backend/src/services/simBroker/index.ts` | **Modify** | Log every fill (buy + sell) with portfolio values, exit reason, return % |
-| `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | **Modify** | Persist full order log + additional QC metrics |
-| `src/hooks/useBacktestResults.ts` | **Modify** | Add new metric and trade fields to types |
-| `src/components/backtest/TradesTable.tsx` | **Modify** | Redesign as chronological trade log with BUY/SELL, reason, return % |
-| `src/components/backtest/PerformanceMetricsCard.tsx` | **Modify** | QC-style sectioned metrics layout |
-| `src/pages/BacktestResults.tsx` | **Modify** | Update top summary cards |
+| # | File | Change | Fixes |
+|---|---|---|---|
+| 1 | `coreza-backend/src/types/supabase.ts` | Add `backtests`, `backtest_results`, `backtest_trades`, `backtest_portfolio_snapshots` types | Primary fix: `backtest_results` insert now works with typed client |
+| 2 | `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | Add error checks to all 3 inserts | Surfaces any future insert errors in backend logs |
+| 3 | `src/pages/Backtests.tsx` | Replace `updated_at` → `created_at` on line 178; replace card grid with table | Fixes build error; QuantConnect-style list |
+| 4 | `src/hooks/useBacktests.ts` | Add `total_trades` to query + interface | Shows trade count in table |
 
+## Expected Result After Fix
+
+1. Build error gone immediately (single line change)
+2. After running a new backtest, `backtest_results` will have a row with all metrics (Sharpe, Sortino, Calmar, Win Rate, etc.)
+3. The backtests list shows a clean table with Name, Status, Return, Sharpe, Trades columns
+4. Existing 3 completed backtests will still show "—" for metrics (their runs happened before this fix — no data was written then)

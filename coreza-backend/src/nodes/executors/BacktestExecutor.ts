@@ -318,6 +318,7 @@ export class BacktestExecutor implements INodeExecutor {
       // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
       const metrics = simBroker.getMetrics();
       const trades = simBroker.getTrades();
+      const equityCurve = simBroker.getEquityCurve();
       const finalEquity = simBroker.getTotalEquity();
 
       // Persist to Supabase (only at the END of backtest)
@@ -389,7 +390,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
-      const dailyCurve = this.resampleToDaily(metrics.equityCurve);
+      const dailyCurve = this.resampleToDaily(equityCurve);
       if (dailyCurve.length > 0) {
         const initialCapital = simBroker.getConfig().initialCapital;
         const snapshots = dailyCurve.map((point, idx) => {
@@ -456,7 +457,7 @@ export class BacktestExecutor implements INodeExecutor {
             total_bars: metrics.totalBars,
           },
           trades_count: trades.length,
-          equity_points: metrics.equityCurve.length,
+          equity_points: equityCurve.length,
           final_equity: finalEquity,
         }),
       );
@@ -702,8 +703,8 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
 
-  private resampleToDaily(curve: EquityPoint[]): EquityPoint[] {
-    if (curve.length === 0) {
+  private resampleToDaily(curve?: EquityPoint[]): EquityPoint[] {
+    if (!curve || curve.length === 0) {
       return [];
     }
 

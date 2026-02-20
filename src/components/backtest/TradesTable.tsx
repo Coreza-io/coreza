@@ -9,6 +9,28 @@ interface TradesTableProps {
 
 const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
 
+const getDerivedMetrics = (trade: BacktestTrade) => {
+  const entryPrice = trade.entry_price;
+  const quantity = Number(trade.quantity) || 0;
+  const commission = Number(trade.commission) || 0;
+  const slippage = Number(trade.slippage) || 0;
+
+  const computedNetPnl =
+    entryPrice != null ? (trade.price - entryPrice) * quantity - commission - slippage : null;
+  const computedReturnPct =
+    entryPrice != null && entryPrice !== 0 ? ((trade.price - entryPrice) / entryPrice) * 100 : null;
+
+  const netPnl = trade.net_pnl ?? computedNetPnl;
+  const returnPct = trade.return_pct ?? computedReturnPct;
+  const portfolioValueAfter =
+    trade.portfolio_value_after ??
+    (trade.portfolio_value_before != null && netPnl != null
+      ? trade.portfolio_value_before + netPnl
+      : null);
+
+  return { netPnl, returnPct, portfolioValueAfter };
+};
+
 const getExitReasonLabel = (reason?: string) => {
   if (!reason) return null;
   const map: Record<string, string> = {
@@ -23,6 +45,7 @@ const getExitReasonLabel = (reason?: string) => {
 const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
   const isBuy = trade.action?.toLowerCase() === 'buy';
   const reasonLabel = getExitReasonLabel(trade.exit_reason);
+  const { netPnl, returnPct, portfolioValueAfter } = getDerivedMetrics(trade);
 
   return (
     <TableRow className="text-sm">
@@ -52,30 +75,30 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
       </TableCell>
       <TableCell>{trade.quantity}</TableCell>
       <TableCell>
-        {!isBuy && trade.return_pct != null ? (
+        {!isBuy && returnPct != null ? (
           <Badge
             variant="outline"
-            className={trade.return_pct >= 0
+            className={returnPct >= 0
               ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
               : 'bg-red-500/15 text-red-600 border-red-500/30'}
           >
-            {trade.return_pct >= 0 ? '+' : ''}{trade.return_pct.toFixed(2)}%
+            {returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%
           </Badge>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell>
-        {!isBuy && trade.net_pnl != null ? (
-          <span className={trade.net_pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-            {trade.net_pnl >= 0 ? '+' : ''}{formatCurrency(trade.net_pnl)}
+        {!isBuy && netPnl != null ? (
+          <span className={netPnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+            {netPnl >= 0 ? '+' : ''}{formatCurrency(netPnl)}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {trade.portfolio_value_after ? formatCurrency(trade.portfolio_value_after) : '—'}
+        {portfolioValueAfter != null ? formatCurrency(portfolioValueAfter) : '—'}
       </TableCell>
     </TableRow>
   );

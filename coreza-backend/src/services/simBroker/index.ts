@@ -327,76 +327,95 @@ export class SimBroker {
     commission: number,
     timestamp: string
   ): void {
-    const totalCost = price * quantity + commission;
-    
+    const signedQuantity = order.side === 'buy' ? quantity : -quantity;
+
     if (order.side === 'buy') {
-      // Deduct cash
-      this.state.cash -= totalCost;
-
-      // Update or create position
-      const existing = this.state.positions[order.symbol];
-      if (existing) {
-        // Average up/down
-        const totalQty = existing.quantity + quantity;
-        const totalCostBasis = existing.avgEntryPrice * existing.quantity + price * quantity;
-        existing.avgEntryPrice = totalCostBasis / totalQty;
-        existing.quantity = totalQty;
-        existing.side = totalQty >= 0 ? 'long' : 'short';
-        existing.currentPrice = price;
-        existing.marketValue = totalQty * price;
-        existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
-      } else {
-        this.state.positions[order.symbol] = {
-          symbol: order.symbol,
-          side: quantity >= 0 ? 'long' : 'short',
-          quantity,
-          avgEntryPrice: price,
-          currentPrice: price,
-          unrealizedPnl: 0,
-          realizedPnl: 0,
-          marketValue: quantity * price,
-        };
-      }
+      this.state.cash -= (price * quantity) + commission;
     } else {
-      // Sell order
       this.state.cash += (price * quantity) - commission;
-
-      const existing = this.state.positions[order.symbol];
-      if (existing && existing.quantity > 0) {
-        // Calculate realized P&L
-        const realizedPnl = (price - existing.avgEntryPrice) * quantity - commission;
-        existing.realizedPnl += realizedPnl;
-        existing.quantity -= quantity;
-        existing.currentPrice = price;
-        existing.marketValue = existing.quantity * price;
-        existing.unrealizedPnl = (price - existing.avgEntryPrice) * existing.quantity;
-
-        // Record closed trade
-        const trade: Trade = {
-          id: `TRD-${uuidv4().slice(0, 8)}`,
-          symbol: order.symbol,
-          side: order.side,
-          entryOrderId: 'unknown',
-          exitOrderId: order.id,
-          entryPrice: existing.avgEntryPrice,
-          exitPrice: price,
-          quantity,
-          grossPnl: (price - existing.avgEntryPrice) * quantity,
-          commission,
-          slippage: Math.abs(slippage),
-          netPnl: realizedPnl,
-          entryTime: 'unknown',
-          exitTime: timestamp,
-          holdingPeriodBars: 0,
-        };
-        this.state.trades.push(trade);
-
-        // Remove position if fully closed
-        if (existing.quantity <= 0) {
-          delete this.state.positions[order.symbol];
-        }
-      }
     }
+
+    const existing = this.state.positions[order.symbol];
+    if (!existing) {
+      this.state.positions[order.symbol] = {
+        symbol: order.symbol,
+        side: signedQuantity >= 0 ? 'long' : 'short',
+        quantity: signedQuantity,
+        avgEntryPrice: price,
+        currentPrice: price,
+        unrealizedPnl: 0,
+        realizedPnl: 0,
+        marketValue: signedQuantity * price,
+      };
+      return;
+    }
+
+    const existingQty = existing.quantity;
+    const sameDirection = (existingQty >= 0 && signedQuantity >= 0) || (existingQty <= 0 && signedQuantity <= 0);
+
+    if (sameDirection) {
+      const totalQty = existingQty + signedQuantity;
+      const totalCostBasis = (existing.avgEntryPrice * Math.abs(existingQty)) + (price * Math.abs(signedQuantity));
+      existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
+      existing.quantity = totalQty;
+      existing.side = totalQty >= 0 ? 'long' : 'short';
+      existing.currentPrice = price;
+      existing.marketValue = totalQty * price;
+      existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
+      return;
+    }
+
+    const closingQty = Math.min(Math.abs(existingQty), Math.abs(signedQuantity));
+    const isClosingLong = existingQty > 0;
+    const grossPnl = isClosingLong
+      ? (price - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - price) * closingQty;
+    const commissionForClose = commission * (closingQty / Math.abs(signedQuantity));
+    const netPnl = grossPnl - commissionForClose;
+
+    existing.realizedPnl += netPnl;
+
+    const trade: Trade = {
+      id: `TRD-${uuidv4().slice(0, 8)}`,
+      symbol: order.symbol,
+      side: isClosingLong ? 'buy' : 'sell',
+      entryOrderId: 'unknown',
+      exitOrderId: order.id,
+      entryPrice: existing.avgEntryPrice,
+      exitPrice: price,
+      quantity: closingQty,
+      grossPnl,
+      commission: commissionForClose,
+      slippage: Math.abs(slippage),
+      netPnl,
+      entryTime: 'unknown',
+      exitTime: timestamp,
+      holdingPeriodBars: 0,
+    };
+    this.state.trades.push(trade);
+
+    const newQty = existingQty + signedQuantity;
+    if (newQty === 0) {
+      delete this.state.positions[order.symbol];
+      return;
+    }
+
+    if ((existingQty > 0 && newQty > 0) || (existingQty < 0 && newQty < 0)) {
+      existing.quantity = newQty;
+      existing.side = newQty >= 0 ? 'long' : 'short';
+      existing.currentPrice = price;
+      existing.marketValue = newQty * price;
+      existing.unrealizedPnl = (price - existing.avgEntryPrice) * newQty;
+      return;
+    }
+
+    // Position flipped direction on this fill; reset cost basis at fill price
+    existing.quantity = newQty;
+    existing.side = newQty >= 0 ? 'long' : 'short';
+    existing.avgEntryPrice = price;
+    existing.currentPrice = price;
+    existing.marketValue = newQty * price;
+    existing.unrealizedPnl = 0;
   }
 
   updatePositionMTM(symbol: string, currentPrice: number): void {

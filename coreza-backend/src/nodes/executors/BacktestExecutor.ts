@@ -15,7 +15,14 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { SimBroker, SimBrokerConfig, Bar, Position, OrderFill, EquityPoint } from "../../services/simBroker";
+import {
+  SimBroker,
+  SimBrokerConfig,
+  Bar,
+  Position,
+  OrderFill,
+  EquityPoint,
+} from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
@@ -334,44 +341,48 @@ export class BacktestExecutor implements INodeExecutor {
         .eq("id", backtestId);
 
       // Insert backtest results
-      const { error: resultsError } = await supabaseClient.from("backtest_results").insert({
-        backtest_id: backtestId,
-        total_return: metrics.totalReturnPct,
-        annualized_return: metrics.annualizedReturn,
-        max_drawdown: metrics.maxDrawdownPct,
-        sharpe_ratio: metrics.sharpeRatio,
-        sortino_ratio: metrics.sortinoRatio,
-        calmar_ratio: metrics.calmarRatio,
-        total_trades: metrics.totalTrades,
-        win_rate: metrics.winRate,
-        profitable_trades: metrics.winningTrades,
-        losing_trades: metrics.losingTrades,
-        average_trade_return: metrics.avgTradePnl,
-        largest_win: metrics.largestWin,
-        largest_loss: metrics.largestLoss,
-        final_portfolio_value: finalEquity,
-        profit_factor:
-          metrics.profitFactor === Infinity
-            ? 999999
-            : (metrics.profitFactor || 0),
-        avg_win: metrics.avgWin,
-        avg_loss: metrics.avgLoss,
-        total_commission: metrics.totalCommission,
-        total_slippage: metrics.totalSlippage,
-        net_profit: metrics.totalReturn,
-        expectancy:
-          metrics.totalTrades > 0
-            ? (metrics.winRate / 100) * metrics.avgWin -
-              (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
-            : 0,
-        avg_holding_period:
-          trades.length > 0
-            ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
-              trades.length
-            : 0,
-      });
+      const { error: resultsError } = await supabaseClient
+        .from("backtest_results")
+        .insert({
+          backtest_id: backtestId,
+          total_return: metrics.totalReturnPct,
+          annualized_return: metrics.annualizedReturn,
+          max_drawdown: metrics.maxDrawdownPct,
+          sharpe_ratio: metrics.sharpeRatio,
+          sortino_ratio: metrics.sortinoRatio,
+          calmar_ratio: metrics.calmarRatio,
+          total_trades: metrics.totalTrades,
+          win_rate: metrics.winRate,
+          profitable_trades: metrics.winningTrades,
+          losing_trades: metrics.losingTrades,
+          average_trade_return: metrics.avgTradePnl,
+          largest_win: metrics.largestWin,
+          largest_loss: metrics.largestLoss,
+          final_portfolio_value: finalEquity,
+          profit_factor: Number.isFinite(metrics.profitFactor)
+            ? metrics.profitFactor
+            : null,
+          avg_win: metrics.avgWin,
+          avg_loss: metrics.avgLoss,
+          total_commission: metrics.totalCommission,
+          total_slippage: metrics.totalSlippage,
+          net_profit: metrics.totalReturn,
+          expectancy:
+            metrics.totalTrades > 0
+              ? (metrics.winRate / 100) * metrics.avgWin -
+                (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
+              : 0,
+          avg_holding_period:
+            trades.length > 0
+              ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
+                trades.length
+              : 0,
+        });
       if (resultsError) {
-        console.error('[BacktestExecutor] Failed to insert backtest_results:', resultsError);
+        console.error(
+          "[BacktestExecutor] Failed to insert backtest_results:",
+          resultsError,
+        );
       }
 
       // Insert trades
@@ -389,9 +400,14 @@ export class BacktestExecutor implements INodeExecutor {
           portfolio_value_after: null,
         }));
 
-        const { error: tradesError } = await supabaseClient.from("backtest_trades").insert(tradeRows);
+        const { error: tradesError } = await supabaseClient
+          .from("backtest_trades")
+          .insert(tradeRows);
         if (tradesError) {
-          console.error('[BacktestExecutor] Failed to insert backtest_trades:', tradesError);
+          console.error(
+            "[BacktestExecutor] Failed to insert backtest_trades:",
+            tradesError,
+          );
         }
       }
 
@@ -422,11 +438,13 @@ export class BacktestExecutor implements INodeExecutor {
             .from("backtest_portfolio_snapshots")
             .insert(snapshots.slice(i, i + 500));
           if (snapshotError) {
-            console.error('[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:', snapshotError);
+            console.error(
+              "[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:",
+              snapshotError,
+            );
           }
         }
       }
-
 
       // Cleanup: remove SimBroker from executor cache (free memory)
       this.cleanupSimBroker(backtestId);
@@ -499,7 +517,11 @@ export class BacktestExecutor implements INodeExecutor {
       const prices = this.parsePrices(params.prices);
 
       // If pricing data is provided, mark-to-market BEFORE reading portfolio data
-      if (["get_portfolio", "get_position", "update_mtm", "get_equity"].includes(operation)) {
+      if (
+        ["get_portfolio", "get_position", "update_mtm", "get_equity"].includes(
+          operation,
+        )
+      ) {
         if (prices && Object.keys(prices).length > 0) {
           simBroker.updateAllPositionsMTM(prices);
         } else if (currentBar && symbol) {
@@ -546,10 +568,19 @@ export class BacktestExecutor implements INodeExecutor {
     const formattedPositions = positions.map((position) =>
       this.formatPositionWithPnlPercent(position),
     );
-    const positionsValue = positions.reduce((sum, pos) => sum + pos.marketValue, 0);
+    const positionsValue = positions.reduce(
+      (sum, pos) => sum + pos.marketValue,
+      0,
+    );
     const initialCapital = simBroker.getConfig().initialCapital;
-    const unrealizedPnlValue = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
-    const realizedPnlValue = positions.reduce((sum, pos) => sum + pos.realizedPnl, 0);
+    const unrealizedPnlValue = positions.reduce(
+      (sum, pos) => sum + pos.unrealizedPnl,
+      0,
+    );
+    const realizedPnlValue = positions.reduce(
+      (sum, pos) => sum + pos.realizedPnl,
+      0,
+    );
 
     return toNodeResult(
       createSuccessOutput({
@@ -571,7 +602,10 @@ export class BacktestExecutor implements INodeExecutor {
     );
   }
 
-  private portfolioGetPosition(simBroker: SimBroker, symbol?: string): NodeResult {
+  private portfolioGetPosition(
+    simBroker: SimBroker,
+    symbol?: string,
+  ): NodeResult {
     if (!symbol) {
       return toNodeResult(
         createErrorOutput("'symbol' is required for get_position"),
@@ -698,7 +732,10 @@ export class BacktestExecutor implements INodeExecutor {
 
   private portfolioGetTrades(simBroker: SimBroker): NodeResult {
     const trades = simBroker.getTrades();
-    const totalRealizedPnl = trades.reduce((sum, trade) => sum + trade.netPnl, 0);
+    const totalRealizedPnl = trades.reduce(
+      (sum, trade) => sum + trade.netPnl,
+      0,
+    );
 
     return toNodeResult(
       createSuccessOutput({
@@ -710,7 +747,6 @@ export class BacktestExecutor implements INodeExecutor {
       }),
     );
   }
-
 
   private resampleToDaily(curve?: EquityPoint[]): EquityPoint[] {
     if (!curve || curve.length === 0) {

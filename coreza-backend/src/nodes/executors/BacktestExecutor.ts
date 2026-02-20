@@ -83,22 +83,6 @@ export class BacktestExecutor implements INodeExecutor {
     this.simBrokerCache.delete(key);
   }
 
-  /**
-   * Normalize ratio-like values into NUMERIC(5,4) safe range.
-   * Postgres NUMERIC(5,4) supports absolute values < 10.
-   */
-  private toNumeric54(value: number | null | undefined): number | null {
-    if (value === null || value === undefined || Number.isNaN(value)) {
-      return null;
-    }
-    if (!Number.isFinite(value)) {
-      return value > 0 ? 9.9999 : -9.9999;
-    }
-
-    const clamped = Math.max(-9.9999, Math.min(9.9999, value));
-    return Math.round(clamped * 10000) / 10000;
-  }
-
   // ============== BACKTEST INIT ==============
   private async executeBacktestInit(
     node: WorkflowNode,
@@ -349,21 +333,15 @@ export class BacktestExecutor implements INodeExecutor {
         })
         .eq("id", backtestId);
 
-      const expectancy =
-        metrics.totalTrades > 0
-          ? (metrics.winRate / 100) * metrics.avgWin -
-            (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
-          : 0;
-
       // Insert backtest results
       const { error: resultsError } = await supabaseClient.from("backtest_results").insert({
         backtest_id: backtestId,
         total_return: metrics.totalReturnPct,
         annualized_return: metrics.annualizedReturn,
         max_drawdown: metrics.maxDrawdownPct,
-        sharpe_ratio: this.toNumeric54(metrics.sharpeRatio),
-        sortino_ratio: this.toNumeric54(metrics.sortinoRatio),
-        calmar_ratio: this.toNumeric54(metrics.calmarRatio),
+        sharpe_ratio: metrics.sharpeRatio,
+        sortino_ratio: metrics.sortinoRatio,
+        calmar_ratio: metrics.calmarRatio,
         total_trades: metrics.totalTrades,
         win_rate: metrics.winRate,
         profitable_trades: metrics.winningTrades,
@@ -372,13 +350,20 @@ export class BacktestExecutor implements INodeExecutor {
         largest_win: metrics.largestWin,
         largest_loss: metrics.largestLoss,
         final_portfolio_value: finalEquity,
-        profit_factor: this.toNumeric54(metrics.profitFactor),
+        profit_factor:
+          metrics.profitFactor === Infinity
+            ? 999999
+            : (metrics.profitFactor || 0),
         avg_win: metrics.avgWin,
         avg_loss: metrics.avgLoss,
         total_commission: metrics.totalCommission,
         total_slippage: metrics.totalSlippage,
         net_profit: metrics.totalReturn,
-        expectancy: this.toNumeric54(expectancy),
+        expectancy:
+          metrics.totalTrades > 0
+            ? (metrics.winRate / 100) * metrics.avgWin -
+              (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
+            : 0,
         avg_holding_period:
           trades.length > 0
             ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /

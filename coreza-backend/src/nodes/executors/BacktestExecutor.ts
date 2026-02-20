@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { SimBroker, SimBrokerConfig, Bar, Position, OrderFill } from "../../services/simBroker";
+import { SimBroker, SimBrokerConfig, Bar, Position, OrderFill, EquityPoint } from "../../services/simBroker";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
@@ -45,8 +45,6 @@ export class BacktestExecutor implements INodeExecutor {
         return this.executeBacktestInit(node, input, context);
       case "BacktestTrade":
         return this.executeBacktestTrade(node, input, context);
-      case "BacktestSnapshot":
-        return this.executeBacktestSnapshot(node, input, context);
       case "BacktestResults":
         return this.executeBacktestResults(node, input, context);
       case "BacktestPortfolio":
@@ -298,62 +296,6 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
-  // ============== BACKTEST SNAPSHOT ==============
-  private async executeBacktestSnapshot(
-    node: WorkflowNode,
-    input: NodeInput,
-    context: any,
-  ): Promise<NodeResult> {
-    try {
-      const params = context?.resolveNodeParameters
-        ? context.resolveNodeParameters(node, input)
-        : { ...node.values, ...input };
-
-      const backtestId = params.backtest_id;
-      if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required"));
-      }
-
-      // Parse current bar or prices
-      const currentBar = this.parseBar(params.current_bar || input);
-      const timestamp =
-        params.timestamp || currentBar?.timestamp || new Date().toISOString();
-
-      // Build prices map from current bar or explicit prices
-      const prices: Record<string, number> = {};
-      if (currentBar) {
-        prices[params.symbol || "UNKNOWN"] = currentBar.close;
-      }
-      if (params.prices && typeof params.prices === "object") {
-        Object.assign(prices, params.prices);
-      }
-
-      // Get SimBroker from executor cache - SYNCHRONOUS
-      const simBroker = this.getSimBroker(backtestId);
-
-      // Process pending orders with current bar - SYNCHRONOUS
-      if (currentBar && params.symbol) {
-        simBroker.onBar(params.symbol, currentBar);
-      }
-
-      // Record equity snapshot - SYNCHRONOUS
-      const snapshot = simBroker.recordSnapshot(timestamp, prices);
-
-      return toNodeResult(
-        createSuccessOutput({
-          timestamp: snapshot.timestamp,
-          cash: snapshot.cash,
-          positions_value: snapshot.positionsValue,
-          total_equity: snapshot.totalEquity,
-          drawdown_pct: snapshot.drawdownPct,
-        }),
-      );
-    } catch (error) {
-      console.error("[BacktestExecutor] BacktestSnapshot failed:", error);
-      return toNodeResult(createErrorOutput(error));
-    }
-  }
-
   // ============== BACKTEST RESULTS ==============
   private async executeBacktestResults(
     node: WorkflowNode,
@@ -376,8 +318,7 @@ export class BacktestExecutor implements INodeExecutor {
       // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
       const metrics = simBroker.getMetrics();
       const trades = simBroker.getTrades();
-      const equityCurve = simBroker.getEquityCurve();
-      const portfolioState = simBroker.getPortfolioState();
+      const finalEquity = simBroker.getTotalEquity();
 
       // Persist to Supabase (only at the END of backtest)
       const supabaseClient = supabase;
@@ -400,19 +341,20 @@ export class BacktestExecutor implements INodeExecutor {
         sharpe_ratio: metrics.sharpeRatio,
         sortino_ratio: metrics.sortinoRatio,
         calmar_ratio: metrics.calmarRatio,
-        profit_factor:
-          metrics.profitFactor === Infinity
-            ? 999999
-            : (metrics.profitFactor || 0),
         total_trades: metrics.totalTrades,
         win_rate: metrics.winRate,
         profitable_trades: metrics.winningTrades,
         losing_trades: metrics.losingTrades,
         average_trade_return: metrics.avgTradePnl,
-        avg_win: metrics.avgWin,
-        avg_loss: metrics.avgLoss,
         largest_win: metrics.largestWin,
         largest_loss: metrics.largestLoss,
+        final_portfolio_value: finalEquity,
+        profit_factor:
+          metrics.profitFactor === Infinity
+            ? 999999
+            : (metrics.profitFactor || 0),
+        avg_win: metrics.avgWin,
+        avg_loss: metrics.avgLoss,
         total_commission: metrics.totalCommission,
         total_slippage: metrics.totalSlippage,
         net_profit: metrics.totalReturn,
@@ -423,15 +365,9 @@ export class BacktestExecutor implements INodeExecutor {
             : 0,
         avg_holding_period:
           trades.length > 0
-            ? trades.reduce((sum, t) => sum + t.holdingPeriodBars, 0) /
+            ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
               trades.length
             : 0,
-        final_portfolio_value:
-          portfolioState.cash +
-          Object.values(portfolioState.positions).reduce(
-            (sum, p) => sum + p.marketValue,
-            0,
-          ),
       });
 
       // Insert trades
@@ -452,28 +388,35 @@ export class BacktestExecutor implements INodeExecutor {
         await supabaseClient.from("backtest_trades").insert(tradeRows);
       }
 
-      // Insert equity curve samples (limit to avoid too many rows)
-      if (equityCurve.length > 0) {
-        // Sample every Nth point if too many
-        const maxPoints = 500;
-        const step = Math.max(1, Math.floor(equityCurve.length / maxPoints));
-        const sampledCurve = equityCurve.filter(
-          (_, i) => i % step === 0 || i === equityCurve.length - 1,
-        );
+      // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
+      const dailyCurve = this.resampleToDaily(metrics.equityCurve);
+      if (dailyCurve.length > 0) {
+        const initialCapital = simBroker.getConfig().initialCapital;
+        const snapshots = dailyCurve.map((point, idx) => {
+          const prevValue =
+            idx > 0 ? dailyCurve[idx - 1].totalEquity : initialCapital;
+          const dailyReturn =
+            prevValue > 0
+              ? ((point.totalEquity - prevValue) / prevValue) * 100
+              : 0;
 
-        const snapshotRows = sampledCurve.map((p) => ({
-          backtest_id: backtestId,
-          date: p.timestamp.split("T")[0],
-          cash_balance: p.cash,
-          stock_value: p.positionsValue,
-          total_value: p.totalEquity,
-          daily_return: null,
-        }));
+          return {
+            backtest_id: backtestId,
+            date: point.timestamp.substring(0, 10),
+            cash_balance: point.cash,
+            stock_value: point.positionsValue,
+            total_value: point.totalEquity,
+            daily_return: dailyReturn,
+          };
+        });
 
-        await supabaseClient
-          .from("backtest_portfolio_snapshots")
-          .insert(snapshotRows);
+        for (let i = 0; i < snapshots.length; i += 500) {
+          await supabaseClient
+            .from("backtest_portfolio_snapshots")
+            .insert(snapshots.slice(i, i + 500));
+        }
       }
+
 
       // Cleanup: remove SimBroker from executor cache (free memory)
       this.cleanupSimBroker(backtestId);
@@ -513,13 +456,8 @@ export class BacktestExecutor implements INodeExecutor {
             total_bars: metrics.totalBars,
           },
           trades_count: trades.length,
-          equity_points: equityCurve.length,
-          final_equity:
-            portfolioState.cash +
-            Object.values(portfolioState.positions).reduce(
-              (sum, p) => sum + p.marketValue,
-              0,
-            ),
+          equity_points: metrics.equityCurve.length,
+          final_equity: finalEquity,
         }),
       );
     } catch (error) {
@@ -761,6 +699,21 @@ export class BacktestExecutor implements INodeExecutor {
         losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
       }),
     );
+  }
+
+
+  private resampleToDaily(curve: EquityPoint[]): EquityPoint[] {
+    if (curve.length === 0) {
+      return [];
+    }
+
+    const byDate = new Map<string, EquityPoint>();
+    for (const point of curve) {
+      const day = point.timestamp.substring(0, 10);
+      byDate.set(day, point);
+    }
+
+    return Array.from(byDate.values());
   }
 
   private parsePrices(data: any): Record<string, number> | null {

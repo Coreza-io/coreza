@@ -29,7 +29,15 @@ export const useBacktests = () => {
     try {
       const { data, error: supabaseError } = await supabase
         .from('backtests')
-        .select('id, name, workflow_id, status, created_at, updated_at, total_return, sharpe_ratio, workflows(name)')
+        .select(`
+          id,
+          name,
+          workflow_id,
+          status,
+          created_at,
+          workflows(name),
+          backtest_results(total_return, sharpe_ratio)
+        `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -41,10 +49,9 @@ export const useBacktests = () => {
         workflow_id: item.workflow_id,
         workflow_name: item.workflows?.name,
         status: item.status as BacktestStatus,
-        total_return: item.total_return,
-        sharpe_ratio: item.sharpe_ratio,
+        total_return: item.backtest_results?.[0]?.total_return,
+        sharpe_ratio: item.backtest_results?.[0]?.sharpe_ratio,
         created_at: item.created_at,
-        updated_at: item.updated_at,
       }));
 
       setBacktests(parsed);
@@ -58,7 +65,7 @@ export const useBacktests = () => {
 
   useEffect(() => {
     loadBacktests();
-  }, [loadBacktests]);
+  }, [loadBacktests, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -77,7 +84,7 @@ export const useBacktests = () => {
     return () => {
       channel.unsubscribe();
     };
-  }, [loadBacktests, user?.id]);
+  }, [loadBacktests, user]);
 
   const stats = useMemo(() => {
     return backtests.reduce(

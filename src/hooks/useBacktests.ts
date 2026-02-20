@@ -4,6 +4,12 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type BacktestStatus = "pending" | "running" | "completed" | "failed";
 
+const BACKTEST_STATUSES: BacktestStatus[] = ["pending", "running", "completed", "failed"];
+
+const toBacktestStatus = (value: unknown): BacktestStatus => {
+  return BACKTEST_STATUSES.includes(value as BacktestStatus) ? (value as BacktestStatus) : "pending";
+};
+
 export interface Backtest {
   id: string;
   name: string;
@@ -48,7 +54,7 @@ export const useBacktests = () => {
         name: item.name,
         workflow_id: item.workflow_id,
         workflow_name: item.workflows?.name,
-        status: item.status as BacktestStatus,
+        status: toBacktestStatus(item.status),
         total_return: item.backtest_results?.[0]?.total_return,
         sharpe_ratio: item.backtest_results?.[0]?.sharpe_ratio,
         total_trades: item.backtest_results?.[0]?.total_trades,
@@ -91,7 +97,8 @@ export const useBacktests = () => {
     return backtests.reduce(
       (acc, backtest) => {
         acc.total += 1;
-        acc[backtest.status] = (acc[backtest.status] || 0) + 1;
+        const status = toBacktestStatus(backtest.status);
+        acc[status] += 1;
         return acc;
       },
       { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }

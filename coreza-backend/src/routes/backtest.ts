@@ -135,48 +135,6 @@ router.post("/trade", async (req: Request, res: Response) => {
   }
 });
 
-// POST /backtest/snapshot - Record equity snapshot
-router.post("/snapshot", async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { backtest_id, timestamp, symbol, current_bar, prices } = req.body;
-
-    if (!backtest_id) {
-      return res.status(400).json({ error: "backtest_id is required" });
-    }
-
-    const result = await backtestExecutor.execute(
-      {
-        id: "api-snapshot",
-        name: "BacktestSnapshot",
-        node_type: "BacktestSnapshot",
-        values: {
-          backtest_id,
-          timestamp,
-          symbol,
-          current_bar,
-          prices,
-        },
-      } as any,
-      {},
-      { userId }
-    );
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    return res.json({ success: true, data: result.data, meta: result.meta });
-  } catch (error) {
-    console.error("[BacktestRoutes] /snapshot error:", error);
-    return res.status(500).json({ error: "Failed to record snapshot" });
-  }
-});
-
 // POST /backtest/results - Finalize backtest and persist results
 router.post("/results", async (req: Request, res: Response) => {
   try {

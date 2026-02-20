@@ -51,8 +51,7 @@ import { createFeeModel } from './FeeModel';
  * 1. Initialize with BacktestInit node (creates in-memory state)
  * 2. Call placeOrder() from BacktestTrade node (synchronous)
  * 3. Call onBar() during each loop iteration to process pending orders (synchronous)
- * 4. Call recordSnapshot() with BacktestSnapshot node to record equity (synchronous)
- * 5. Call getMetrics() with BacktestResults node to calculate performance (synchronous)
+ * 4. Call getMetrics() with BacktestResults node to calculate performance (synchronous)
  */
 export class SimBroker {
   private backtestId: string;
@@ -428,38 +427,6 @@ export class SimBroker {
   }
 
   // ============== SNAPSHOT & EQUITY ==============
-
-  /**
-   * Record snapshot - SYNCHRONOUS (no Redis)
-   */
-  recordSnapshot(timestamp: string, prices: Record<string, number>): EquityPoint {
-    // Update all positions with current prices
-    for (const [symbol, price] of Object.entries(prices)) {
-      this.updatePositionMTM(symbol, price);
-    }
-
-    // Calculate total equity
-    const positionsValue = Object.values(this.state.positions).reduce((sum, p) => sum + p.marketValue, 0);
-    const totalEquity = this.state.cash + positionsValue;
-
-    // Track peak equity and drawdown
-    if (totalEquity > this.state.peakEquity) {
-      this.state.peakEquity = totalEquity;
-    }
-    const drawdownPct = this.state.peakEquity > 0 ? ((this.state.peakEquity - totalEquity) / this.state.peakEquity) * 100 : 0;
-
-    const point: EquityPoint = {
-      timestamp,
-      cash: this.state.cash,
-      positionsValue,
-      totalEquity,
-      drawdownPct,
-    };
-
-    this.state.equityCurve.push(point);
-
-    return point;
-  }
 
   // ============== METRICS CALCULATION ==============
 

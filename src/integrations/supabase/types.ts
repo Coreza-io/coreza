@@ -270,7 +270,15 @@ export type Database = {
           user_id?: string
           workflow_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_backtests_workflow_id"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       node_executions: {
         Row: {

@@ -334,7 +334,7 @@ export class BacktestExecutor implements INodeExecutor {
         .eq("id", backtestId);
 
       // Insert backtest results
-      await supabaseClient.from("backtest_results").insert({
+      const { error: resultsError } = await supabaseClient.from("backtest_results").insert({
         backtest_id: backtestId,
         total_return: metrics.totalReturnPct,
         annualized_return: metrics.annualizedReturn,
@@ -370,6 +370,9 @@ export class BacktestExecutor implements INodeExecutor {
               trades.length
             : 0,
       });
+      if (resultsError) {
+        console.error('[BacktestExecutor] Failed to insert backtest_results:', resultsError);
+      }
 
       // Insert trades
       if (trades.length > 0) {
@@ -386,7 +389,10 @@ export class BacktestExecutor implements INodeExecutor {
           portfolio_value_after: null,
         }));
 
-        await supabaseClient.from("backtest_trades").insert(tradeRows);
+        const { error: tradesError } = await supabaseClient.from("backtest_trades").insert(tradeRows);
+        if (tradesError) {
+          console.error('[BacktestExecutor] Failed to insert backtest_trades:', tradesError);
+        }
       }
 
       // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
@@ -412,9 +418,12 @@ export class BacktestExecutor implements INodeExecutor {
         });
 
         for (let i = 0; i < snapshots.length; i += 500) {
-          await supabaseClient
+          const { error: snapshotError } = await supabaseClient
             .from("backtest_portfolio_snapshots")
             .insert(snapshots.slice(i, i + 500));
+          if (snapshotError) {
+            console.error('[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:', snapshotError);
+          }
         }
       }
 

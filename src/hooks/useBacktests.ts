@@ -12,6 +12,7 @@ export interface Backtest {
   status: BacktestStatus;
   total_return?: number;
   sharpe_ratio?: number;
+  total_trades?: number;
   created_at?: string;
 }
 
@@ -35,7 +36,7 @@ export const useBacktests = () => {
           status,
           created_at,
           workflows(name),
-          backtest_results(total_return, sharpe_ratio)
+          backtest_results(total_return, sharpe_ratio, total_trades)
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -50,6 +51,7 @@ export const useBacktests = () => {
         status: item.status as BacktestStatus,
         total_return: item.backtest_results?.[0]?.total_return,
         sharpe_ratio: item.backtest_results?.[0]?.sharpe_ratio,
+        total_trades: item.backtest_results?.[0]?.total_trades,
         created_at: item.created_at,
       }));
 

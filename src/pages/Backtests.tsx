@@ -4,20 +4,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useBacktests, BacktestStatus } from "@/hooks/useBacktests";
 import { NewBacktestDialog } from "@/components/backtest/NewBacktestDialog";
-import { MoreHorizontal, Plus, Search, Trash2, BarChart2, CheckCircle2, PlayCircle, AlertTriangle } from "lucide-react";
-import { motion } from "framer-motion";
+import { MoreHorizontal, Plus, Search, Trash2, BarChart2, CheckCircle2, PlayCircle, AlertTriangle, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-const statusConfig: Record<BacktestStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: 'Pending', variant: 'outline' },
-  running: { label: 'Running', variant: 'secondary' },
-  completed: { label: 'Completed', variant: 'default' },
-  failed: { label: 'Failed', variant: 'destructive' },
+const statusConfig: Record<BacktestStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
+  pending:   { label: 'Pending',   variant: 'outline',     className: 'text-muted-foreground' },
+  running:   { label: 'Running',   variant: 'secondary',   className: 'text-amber-500' },
+  completed: { label: 'Completed', variant: 'default',     className: 'text-green-500' },
+  failed:    { label: 'Failed',    variant: 'destructive', className: 'text-destructive' },
+};
+
+const fmt = (val: number | undefined, suffix = '', decimals = 2) =>
+  val !== undefined && val !== null ? `${val.toFixed(decimals)}${suffix}` : '—';
+
+const fmtReturn = (val: number | undefined) => {
+  if (val === undefined || val === null) return <span className="text-muted-foreground">—</span>;
+  const cls = val >= 0 ? 'text-green-500' : 'text-destructive';
+  return <span className={cls}>{val >= 0 ? '+' : ''}{val.toFixed(2)}%</span>;
 };
 
 const Backtests = () => {
@@ -60,16 +69,12 @@ const Backtests = () => {
           <h1 className="text-3xl font-bold">Backtests</h1>
           <p className="text-muted-foreground">Manage and review your strategy backtests.</p>
         </div>
-        <div className="flex gap-3">
-          <Button variant={statusFilter === 'all' ? 'default' : 'outline'} onClick={() => setStatusFilter('all')}>
-            All
-          </Button>
-          <Button variant="secondary" className="gap-2" onClick={() => setShowNewDialog(true)}>
-            <Plus className="h-4 w-4" /> New Backtest
-          </Button>
-        </div>
+        <Button variant="secondary" className="gap-2 self-start" onClick={() => setShowNewDialog(true)}>
+          <Plus className="h-4 w-4" /> New Backtest
+        </Button>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -103,11 +108,12 @@ const Backtests = () => {
         </Card>
       </div>
 
+      {/* Table */}
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle>Backtests</CardTitle>
-            <div className="flex gap-3 w-full md:w-auto">
+            <div className="flex flex-wrap gap-2">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -126,9 +132,9 @@ const Backtests = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <div key={idx} className="h-40 rounded-xl bg-muted animate-pulse" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <div key={idx} className="h-12 rounded-lg bg-muted animate-pulse" />
               ))}
             </div>
           ) : filtered.length === 0 ? (
@@ -141,60 +147,81 @@ const Backtests = () => {
               <Button onClick={() => setShowNewDialog(true)}>New Backtest</Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filtered.map((backtest, index) => (
-                <motion.div
-                  key={backtest.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                >
-                  <Card className="h-full">
-                    <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                      <div>
-                        <CardTitle className="text-xl">{backtest.name}</CardTitle>
-                        <CardDescription>{backtest.workflow_name ? `Workflow: ${backtest.workflow_name}` : 'Workflow'}</CardDescription>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link to={`/dashboard/backtests/${backtest.id}`}>View Results</Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteId(backtest.id)}>
-                            <Trash2 className="h-4 w-4 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusConfig[backtest.status].variant}>{statusConfig[backtest.status].label}</Badge>
-                        <p className="text-xs text-muted-foreground">
-                          {backtest.updated_at ? new Date(backtest.updated_at).toLocaleString() : ''}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="rounded-lg border p-3">
-                          <p className="text-xs text-muted-foreground">Total Return</p>
-                          <p className="text-lg font-semibold">{backtest.total_return ? `${backtest.total_return.toFixed(2)}%` : '—'}</p>
-                        </div>
-                        <div className="rounded-lg border p-3">
-                          <p className="text-xs text-muted-foreground">Sharpe Ratio</p>
-                          <p className="text-lg font-semibold">{backtest.sharpe_ratio ? backtest.sharpe_ratio.toFixed(2) : '—'}</p>
-                        </div>
-                      </div>
-                      <Button asChild className="w-full" variant="secondary">
-                        <Link to={`/dashboard/backtests/${backtest.id}`}>View Results</Link>
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Workflow</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Total Return</TableHead>
+                    <TableHead className="text-right">Sharpe Ratio</TableHead>
+                    <TableHead className="text-right">Trades</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((backtest) => (
+                    <TableRow
+                      key={backtest.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => window.location.href = `/dashboard/backtests/${backtest.id}`}
+                    >
+                      <TableCell className="font-medium">
+                        <Link
+                          to={`/dashboard/backtests/${backtest.id}`}
+                          className="hover:underline flex items-center gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {backtest.name}
+                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {backtest.workflow_name ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusConfig[backtest.status].variant}>
+                          {statusConfig[backtest.status].label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {fmtReturn(backtest.total_return)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {backtest.sharpe_ratio !== undefined && backtest.sharpe_ratio !== null
+                          ? <span className={backtest.sharpe_ratio >= 1 ? 'text-green-500' : 'text-muted-foreground'}>{fmt(backtest.sharpe_ratio)}</span>
+                          : <span className="text-muted-foreground">—</span>
+                        }
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {backtest.total_trades ?? <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {backtest.created_at ? new Date(backtest.created_at).toLocaleString() : '—'}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link to={`/dashboard/backtests/${backtest.id}`}>View Results</Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteId(backtest.id)}>
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
@@ -222,11 +249,12 @@ const Backtests = () => {
 
 const SelectStatus = ({ value, onChange }: { value: BacktestStatus | 'all'; onChange: (value: BacktestStatus | 'all') => void }) => {
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 flex-wrap">
       {(['all', 'pending', 'running', 'completed', 'failed'] as const).map((status) => (
         <Button
           key={status}
           variant={value === status ? 'default' : 'outline'}
+          size="sm"
           onClick={() => onChange(status as BacktestStatus | 'all')}
           className="capitalize"
         >

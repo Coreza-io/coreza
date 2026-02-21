@@ -155,9 +155,9 @@ export type Database = {
           created_at: string
           entryPrice: number | null
           entryTime: string | null
-          exitPrice: number | null
-          exitTime: string | null
           exit_reason: string | null
+          exitPrice: number
+          exitTime: string
           holding_period_bars: number | null
           id: string
           net_pnl: number | null
@@ -175,9 +175,9 @@ export type Database = {
           created_at?: string
           entryPrice?: number | null
           entryTime?: string | null
-          exitPrice?: number | null
-          exitTime?: string | null
           exit_reason?: string | null
+          exitPrice: number
+          exitTime: string
           holding_period_bars?: number | null
           id?: string
           net_pnl?: number | null
@@ -195,9 +195,9 @@ export type Database = {
           created_at?: string
           entryPrice?: number | null
           entryTime?: string | null
-          exitPrice?: number | null
-          exitTime?: string | null
           exit_reason?: string | null
+          exitPrice?: number
+          exitTime?: string
           holding_period_bars?: number | null
           id?: string
           net_pnl?: number | null

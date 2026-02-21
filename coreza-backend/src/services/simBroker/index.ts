@@ -14,7 +14,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { v4 as uuidv4 } from "uuid";
 import {
   SimBrokerConfig,
   DEFAULT_SIM_BROKER_CONFIG,
@@ -35,6 +34,7 @@ import {
 import { createFillModel } from "./FillModel";
 import { createSlippageModel } from "./SlippageModel";
 import { createFeeModel } from "./FeeModel";
+import { BarBuffer } from "./BarBuffer";
 
 /**
  * SimBroker - In-Memory Simulated Broker for Backtesting
@@ -60,6 +60,17 @@ export class SimBroker {
   private slippageModel: ISlippageModel;
   private feeModel: IFeeModel;
   private previousBar: Bar | null = null;
+  private orderIdCounter = 0;
+  private tradeIdCounter = 0;
+  private currentEntryMap = new Map<string, { orderId: string; filledAt: string; barIndex: number }>();
+  private equityCurveData: {
+    timestamps: Float64Array;
+    cash: Float64Array;
+    positionsValue: Float64Array;
+    totalEquity: Float64Array;
+    drawdownPct: Float64Array;
+  };
+  private equityCurveIndex = 0;
 
   // IN-MEMORY STATE - no Redis!
   private state: PortfolioState;
@@ -86,6 +97,15 @@ export class SimBroker {
       trades: [],
       equityCurve: [],
       peakEquity: this.config.initialCapital,
+    };
+
+    const expectedBars = Math.max(1, this.config.expectedBars);
+    this.equityCurveData = {
+      timestamps: new Float64Array(expectedBars),
+      cash: new Float64Array(expectedBars),
+      positionsValue: new Float64Array(expectedBars),
+      totalEquity: new Float64Array(expectedBars),
+      drawdownPct: new Float64Array(expectedBars),
     };
   }
 
@@ -123,9 +143,9 @@ export class SimBroker {
     // Create order
     const order: Order = {
       ...request,
-      id: `SIM-${uuidv4().slice(0, 8)}`,
+      id: `SIM-${++this.orderIdCounter}`,
       status: "pending",
-      submittedAt: new Date().toISOString(),
+      submittedAt: Date.now().toString(),
       filledQty: 0,
       avgFillPrice: 0,
       commission: 0,
@@ -139,6 +159,52 @@ export class SimBroker {
     );
 
     return { success: true, orderId: order.id, status: "pending" };
+  }
+
+  private ensureEquityCapacity(): void {
+    if (this.equityCurveIndex < this.equityCurveData.timestamps.length) {
+      return;
+    }
+
+    const current = this.equityCurveData.timestamps.length;
+    const next = Math.max(1, current * 2);
+    const grow = (arr: Float64Array) => {
+      const n = new Float64Array(next);
+      n.set(arr);
+      return n;
+    };
+
+    this.equityCurveData = {
+      timestamps: grow(this.equityCurveData.timestamps),
+      cash: grow(this.equityCurveData.cash),
+      positionsValue: grow(this.equityCurveData.positionsValue),
+      totalEquity: grow(this.equityCurveData.totalEquity),
+      drawdownPct: grow(this.equityCurveData.drawdownPct),
+    };
+  }
+
+  private recordEquityPoint(
+    timestamp: string,
+    cash: number,
+    positionsValue: number,
+    totalEquity: number,
+    drawdownPct: number,
+  ): void {
+    this.ensureEquityCapacity();
+    const idx = this.equityCurveIndex++;
+    this.equityCurveData.timestamps[idx] = BarBuffer.toEpochMs(timestamp);
+    this.equityCurveData.cash[idx] = cash;
+    this.equityCurveData.positionsValue[idx] = positionsValue;
+    this.equityCurveData.totalEquity[idx] = totalEquity;
+    this.equityCurveData.drawdownPct[idx] = drawdownPct;
+
+    this.state.equityCurve.push({
+      timestamp,
+      cash,
+      positionsValue,
+      totalEquity,
+      drawdownPct,
+    });
   }
 
   private validateOrder(
@@ -300,13 +366,13 @@ export class SimBroker {
         ? ((this.state.peakEquity - totalEquity) / this.state.peakEquity) * 100
         : 0;
 
-    this.state.equityCurve.push({
-      timestamp: bar.timestamp,
-      cash: this.state.cash,
+    this.recordEquityPoint(
+      bar.timestamp,
+      this.state.cash,
       positionsValue,
       totalEquity,
       drawdownPct,
-    });
+    );
 
     // Remember this bar for next iteration
     this.previousBar = bar;
@@ -387,70 +453,6 @@ export class SimBroker {
     };
   }
 
-  private findCurrentPositionEntryFill(
-    symbol: string,
-    existingQty: number,
-  ): Order | null {
-    const targetSign = Math.sign(existingQty);
-    if (targetSign === 0) {
-      return null;
-    }
-
-    const fills = this.state.filledOrders.filter((o) => o.symbol === symbol);
-    let runningQty = 0;
-    let legEntry: Order | null = null;
-
-    for (const filledOrder of fills) {
-      const signedQty =
-        filledOrder.side === "buy"
-          ? filledOrder.filledQty
-          : -filledOrder.filledQty;
-      const beforeQty = runningQty;
-      runningQty += signedQty;
-
-      if (beforeQty === 0 && Math.sign(runningQty) !== 0) {
-        legEntry = filledOrder;
-        continue;
-      }
-
-      if (
-        Math.sign(beforeQty) !== 0 &&
-        Math.sign(runningQty) !== Math.sign(beforeQty)
-      ) {
-        legEntry = filledOrder;
-      }
-    }
-
-    if (runningQty !== existingQty) {
-      return null;
-    }
-
-    if (!legEntry || Math.sign(runningQty) !== targetSign) {
-      return null;
-    }
-
-    return legEntry;
-  }
-
-  private calculateHoldingPeriodBars(
-    entryTime: string,
-    exitTime: string,
-  ): number {
-    const entryBarIndex = this.state.equityCurve.findIndex(
-      (point) => point.timestamp === entryTime,
-    );
-    const exitBarIndex = this.state.equityCurve.findIndex(
-      (point) => point.timestamp === exitTime,
-    );
-
-    const normalizedEntryBarIndex =
-      entryBarIndex >= 0 ? entryBarIndex : this.state.equityCurve.length;
-    const normalizedExitBarIndex =
-      exitBarIndex >= 0 ? exitBarIndex : this.state.equityCurve.length;
-
-    return Math.max(0, normalizedExitBarIndex - normalizedEntryBarIndex);
-  }
-
   private applyFill(
     order: Order,
     price: number,
@@ -479,6 +481,11 @@ export class SimBroker {
         realizedPnl: 0,
         marketValue: signedQuantity * price,
       };
+      this.currentEntryMap.set(order.symbol, {
+        orderId: order.id,
+        filledAt: timestamp,
+        barIndex: this.equityCurveIndex,
+      });
       return;
     }
 
@@ -512,21 +519,18 @@ export class SimBroker {
     const commissionForClose =
       commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
-    const entryFill = this.findCurrentPositionEntryFill(
-      order.symbol,
-      existingQty,
-    );
-    const entryOrderId = entryFill?.id ?? order.id;
-    const entryTime = entryFill?.filledAt ?? timestamp;
-    const holdingPeriodBars = this.calculateHoldingPeriodBars(
-      entryTime,
-      timestamp,
+    const entry = this.currentEntryMap.get(order.symbol);
+    const entryOrderId = entry?.orderId ?? order.id;
+    const entryTime = entry?.filledAt ?? timestamp;
+    const holdingPeriodBars = Math.max(
+      0,
+      this.equityCurveIndex - (entry?.barIndex ?? this.equityCurveIndex),
     );
 
     existing.realizedPnl += netPnl;
 
     const trade: Trade = {
-      id: `TRD-${uuidv4().slice(0, 8)}`,
+      id: `TRD-${++this.tradeIdCounter}`,
       symbol: order.symbol,
       side: isClosingLong ? "buy" : "sell",
       entryOrderId,
@@ -547,6 +551,7 @@ export class SimBroker {
     const newQty = existingQty + signedQuantity;
     if (newQty === 0) {
       delete this.state.positions[order.symbol];
+      this.currentEntryMap.delete(order.symbol);
       return;
     }
 
@@ -566,6 +571,11 @@ export class SimBroker {
     existing.currentPrice = price;
     existing.marketValue = newQty * price;
     existing.unrealizedPnl = 0;
+    this.currentEntryMap.set(order.symbol, {
+      orderId: order.id,
+      filledAt: timestamp,
+      barIndex: this.equityCurveIndex,
+    });
   }
 
   updatePositionMTM(symbol: string, currentPrice: number): void {
@@ -714,15 +724,13 @@ export class SimBroker {
     if (curve.length === 0) return [];
 
     // Ensure chronological processing so each day keeps the true last bar
-    const sortedCurve = [...curve].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp),
+    const sortedCurve = [...curve].sort(
+      (a, b) => BarBuffer.toEpochMs(a.timestamp) - BarBuffer.toEpochMs(b.timestamp),
     );
 
-    const dailyMap = new Map<string, EquityPoint>();
+    const dailyMap = new Map<number, EquityPoint>();
     for (const point of sortedCurve) {
-      // Extract YYYY-MM-DD from ISO timestamp
-      const dateKey = point.timestamp.substring(0, 10);
-      // Last point seen for the day is treated as end-of-day equity
+      const dateKey = BarBuffer.dayBucket(BarBuffer.toEpochMs(point.timestamp));
       dailyMap.set(dateKey, point);
     }
 

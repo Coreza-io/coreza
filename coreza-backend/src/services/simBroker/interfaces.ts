@@ -18,7 +18,6 @@
 
 export interface SimBrokerConfig {
   initialCapital: number;
-  expectedBars: number;
   fillModel: 'immediate' | 'next_bar_open';
   slippageModel: 'none' | 'fixed' | 'percentage';
   slippageValue: number; // e.g., 0.001 for 0.1% or 0.01 for $0.01 fixed
@@ -29,7 +28,6 @@ export interface SimBrokerConfig {
 
 export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
   initialCapital: 10000,
-  expectedBars: 10000,
   fillModel: 'next_bar_open',
   slippageModel: 'percentage',
   slippageValue: 0.001, // 0.1%
@@ -42,15 +40,6 @@ export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
 
 export interface Bar {
   timestamp: string; // ISO 8601 UTC
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-export interface NumericBar {
-  timestamp: number; // epoch milliseconds UTC
   open: number;
   high: number;
   low: number;
@@ -142,14 +131,6 @@ export interface Trade {
 
 export interface EquityPoint {
   timestamp: string;
-  cash: number;
-  positionsValue: number;
-  totalEquity: number;
-  drawdownPct: number;
-}
-
-export interface NumericEquityPoint {
-  timestamp: number;
   cash: number;
   positionsValue: number;
   totalEquity: number;

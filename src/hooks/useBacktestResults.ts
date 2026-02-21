@@ -35,18 +35,18 @@ export interface BacktestTrade {
   symbol: string;
   action: string;
   quantity: number;
-  entryPrice: number;
-  entryTime: string;
-  exitPrice: number;
-  exitTime: string;
-  commission?: number;
-  slippage?: number;
-  portfolio_value_before?: number;
-  portfolio_value_after?: number;
-  exit_reason?: string;
-  return_pct?: number;
-  net_pnl?: number;
-  holding_period_bars?: number;
+  entryPrice: number | null;
+  entryTime: string | null;
+  exitPrice: number | null;
+  exitTime: string | null;
+  commission?: number | null;
+  slippage?: number | null;
+  portfolio_value_before?: number | null;
+  portfolio_value_after?: number | null;
+  exit_reason?: string | null;
+  return_pct?: number | null;
+  net_pnl?: number | null;
+  holding_period_bars?: number | null;
 }
 
 // Equity curve data — written by BacktestExecutor after run completes (daily-resampled from SimBroker.state.equityCurve)

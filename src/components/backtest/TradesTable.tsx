@@ -14,7 +14,8 @@ interface TradesTableProps {
   trades: BacktestTrade[];
 }
 
-const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+const formatCurrency = (value?: number | null) =>
+  value == null ? "—" : `$${value.toFixed(2)}`;
 
 const getExitReasonLabel = (reason?: string) => {
   if (!reason) return null;
@@ -34,10 +35,10 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
   return (
     <TableRow className="text-sm">
       <TableCell className="text-muted-foreground whitespace-nowrap">
-        {new Date(trade.entryTime).toLocaleString()}
+        {trade.entryTime ? new Date(trade.entryTime).toLocaleString() : "—"}
       </TableCell>
       <TableCell className="text-muted-foreground whitespace-nowrap">
-        {new Date(trade.exitTime).toLocaleString()}
+        {trade.exitTime ? new Date(trade.exitTime).toLocaleString() : "—"}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
@@ -60,18 +61,10 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
       </TableCell>
       <TableCell className="font-medium">{trade.symbol}</TableCell>
       <TableCell>
-        {isBuy ? (
-          <span>@ {formatCurrency(trade.entryPrice)}</span>
-        ) : (
-          <span>@ {formatCurrency(trade.entryPrice)}</span>
-        )}
+        <span>@ {formatCurrency(trade.entryPrice)}</span>
       </TableCell>
       <TableCell>
-        {isBuy ? (
-          <span>@ {formatCurrency(trade.exitPrice)}</span>
-        ) : (
-          <span>@ {formatCurrency(trade.exitPrice)}</span>
-        )}
+        <span>@ {formatCurrency(trade.exitPrice)}</span>
       </TableCell>
       <TableCell>{trade.quantity}</TableCell>
       <TableCell>
@@ -104,7 +97,7 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {trade.portfolio_value_after
+        {trade.portfolio_value_after != null
           ? formatCurrency(trade.portfolio_value_after)
           : "—"}
       </TableCell>

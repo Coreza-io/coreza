@@ -95,7 +95,7 @@ export class SimBroker {
       pendingOrders: [],
       filledOrders: [],
       trades: [],
-      equityCurve: [],
+      equityCurve: [], // kept for PortfolioState interface compat; not used in hot path
       peakEquity: this.config.initialCapital,
     };
 
@@ -154,9 +154,7 @@ export class SimBroker {
 
     this.state.pendingOrders.push(order);
 
-    console.log(
-      `[SimBroker] Order placed: ${order.id} ${order.side} ${order.quantity} ${order.symbol} @ ${order.type}`,
-    );
+    // Removed console.log from hot path for performance
 
     return { success: true, orderId: order.id, status: "pending" };
   }
@@ -198,13 +196,7 @@ export class SimBroker {
     this.equityCurveData.totalEquity[idx] = totalEquity;
     this.equityCurveData.drawdownPct[idx] = drawdownPct;
 
-    this.state.equityCurve.push({
-      timestamp,
-      cash,
-      positionsValue,
-      totalEquity,
-      drawdownPct,
-    });
+    // TypedArrays are the primary store — no object array push
   }
 
   private validateOrder(
@@ -337,9 +329,7 @@ export class SimBroker {
           timestamp: bar.timestamp,
         });
 
-        console.log(
-          `[SimBroker] Order filled: ${order.id} ${order.side} ${fillResult.quantity} ${symbol} @ $${adjustedPrice.toFixed(2)} (slip: $${slippage.toFixed(4)}, comm: $${commission.toFixed(4)})`,
-        );
+        // Removed console.log from hot path for performance
       } else {
         // Order not filled, keep it pending
         remainingPending.push(order);
@@ -614,26 +604,32 @@ export class SimBroker {
    */
   getMetrics(): BacktestMetrics {
     const trades = this.state.trades;
-    const curve = this.state.equityCurve;
     const initialCapital = this.config.initialCapital;
+    const ecIdx = this.equityCurveIndex;
+    const ecData = this.equityCurveData;
 
-    // Equity -- always from curve (guaranteed populated by onBar)
-    const finalEquity = curve[curve.length - 1]?.totalEquity ?? initialCapital;
+    // Equity from TypedArrays (no object array)
+    const lastIdx = ecIdx - 1;
+    const finalEquity = lastIdx >= 0 ? ecData.totalEquity[lastIdx] : initialCapital;
     const totalReturn = finalEquity - initialCapital;
     const totalReturnPct = (totalReturn / initialCapital) * 100;
 
-    // Drawdown -- always from curve
-    const maxDrawdownPct =
-      curve.length > 0 ? Math.max(...curve.map((p) => p.drawdownPct), 0) : 0;
+    // Max drawdown from TypedArray (no .map() needed)
+    let maxDrawdownPct = 0;
+    for (let i = 0; i < ecIdx; i++) {
+      if (ecData.drawdownPct[i] > maxDrawdownPct) {
+        maxDrawdownPct = ecData.drawdownPct[i];
+      }
+    }
     const maxDrawdown = (maxDrawdownPct / 100) * this.state.peakEquity;
 
-    // Trade statistics (unchanged)
+    // Trade statistics
     const totalTrades = trades.length;
     const winningTrades = trades.filter((t) => t.netPnl > 0).length;
     const losingTrades = trades.filter((t) => t.netPnl < 0).length;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
-    // P&L stats (unchanged)
+    // P&L stats
     const winPnls = trades.filter((t) => t.netPnl > 0).map((t) => t.netPnl);
     const lossPnls = trades.filter((t) => t.netPnl < 0).map((t) => t.netPnl);
     const avgWin =
@@ -651,24 +647,23 @@ export class SimBroker {
         ? trades.reduce((sum, t) => sum + t.netPnl, 0) / totalTrades
         : 0;
 
-    // Profit factor (unchanged)
+    // Profit factor
     const totalWins = winPnls.reduce((a, b) => a + b, 0);
     const totalLosses = Math.abs(lossPnls.reduce((a, b) => a + b, 0));
     const profitFactor =
       totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0;
 
-    // Commission & Slippage (unchanged)
+    // Commission & Slippage
     const totalCommission = trades.reduce((sum, t) => sum + t.commission, 0);
     const totalSlippage = trades.reduce((sum, t) => sum + t.slippage, 0);
 
-    // Risk metrics use daily resampled equity curve (industry standard)
-    const dailyCurve = this.resampleToDaily(curve);
-    const returns = this.calculateReturns(dailyCurve);
-    const sharpeRatio = this.calculateSharpeRatio(returns);
-    const sortinoRatio = this.calculateSortinoRatio(returns);
+    // Risk metrics — resample directly from TypedArrays (no sort, no object creation)
+    const dailyReturns = this.resampleToDailyReturns();
+    const sharpeRatio = this.calculateSharpeRatio(dailyReturns);
+    const sortinoRatio = this.calculateSortinoRatio(dailyReturns);
 
     // Annualized return from daily resampled curve
-    const dailyPoints = dailyCurve.length;
+    const dailyPoints = dailyReturns.length + 1; // returns = points - 1
     const yearsElapsed = dailyPoints > 1 ? (dailyPoints - 1) / 252 : 0;
     const annualizedReturn =
       yearsElapsed > 0
@@ -678,6 +673,12 @@ export class SimBroker {
     // Calmar uses decimal return units divided by decimal max drawdown
     const calmarRatio =
       maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0;
+
+    // Timestamps from TypedArrays
+    const startDate = ecIdx > 0 ? new Date(ecData.timestamps[0]).toISOString() : "";
+    const endDate = ecIdx > 0 ? new Date(ecData.timestamps[lastIdx]).toISOString() : "";
+
+    console.log(`[SimBroker] Completed: ${trades.length} trades, ${ecIdx} bars`);
 
     return {
       totalReturn,
@@ -700,41 +701,36 @@ export class SimBroker {
       avgTradePnl,
       totalCommission,
       totalSlippage,
-      startDate: curve.length > 0 ? curve[0].timestamp : "",
-      endDate: curve.length > 0 ? curve[curve.length - 1].timestamp : "",
-      totalBars: curve.length,
+      startDate,
+      endDate,
+      totalBars: ecIdx,
     };
   }
 
-  private calculateReturns(curve: EquityPoint[]): number[] {
-    if (curve.length < 2) return [];
+  /**
+   * Resample equity curve to daily returns directly from TypedArrays.
+   * No sort, no object creation, no Map — just a single linear scan.
+   */
+  private resampleToDailyReturns(): number[] {
+    if (this.equityCurveIndex < 2) return [];
 
+    const DAY_MS = 86_400_000;
     const returns: number[] = [];
-    for (let i = 1; i < curve.length; i++) {
-      const prevEquity = curve[i - 1].totalEquity;
-      const currEquity = curve[i].totalEquity;
-      if (prevEquity > 0) {
-        returns.push((currEquity - prevEquity) / prevEquity);
+    let prevDayBucket = Math.floor(this.equityCurveData.timestamps[0] / DAY_MS);
+    let prevEquity = this.equityCurveData.totalEquity[0];
+
+    for (let i = 1; i < this.equityCurveIndex; i++) {
+      const dayBucket = Math.floor(this.equityCurveData.timestamps[i] / DAY_MS);
+      if (dayBucket !== prevDayBucket) {
+        const equity = this.equityCurveData.totalEquity[i];
+        if (prevEquity > 0) {
+          returns.push((equity - prevEquity) / prevEquity);
+        }
+        prevEquity = equity;
+        prevDayBucket = dayBucket;
       }
     }
     return returns;
-  }
-
-  private resampleToDaily(curve: EquityPoint[]): EquityPoint[] {
-    if (curve.length === 0) return [];
-
-    // Ensure chronological processing so each day keeps the true last bar
-    const sortedCurve = [...curve].sort(
-      (a, b) => BarBuffer.toEpochMs(a.timestamp) - BarBuffer.toEpochMs(b.timestamp),
-    );
-
-    const dailyMap = new Map<number, EquityPoint>();
-    for (const point of sortedCurve) {
-      const dateKey = BarBuffer.dayBucket(BarBuffer.toEpochMs(point.timestamp));
-      dailyMap.set(dateKey, point);
-    }
-
-    return Array.from(dailyMap.values());
   }
 
   private calculateSharpeRatio(
@@ -815,7 +811,18 @@ export class SimBroker {
   }
 
   getEquityCurve(): EquityPoint[] {
-    return this.state.equityCurve;
+    // Reconstruct from TypedArrays on demand (for DB persistence only)
+    const result: EquityPoint[] = new Array(this.equityCurveIndex);
+    for (let i = 0; i < this.equityCurveIndex; i++) {
+      result[i] = {
+        timestamp: new Date(this.equityCurveData.timestamps[i]).toISOString(),
+        cash: this.equityCurveData.cash[i],
+        positionsValue: this.equityCurveData.positionsValue[i],
+        totalEquity: this.equityCurveData.totalEquity[i],
+        drawdownPct: this.equityCurveData.drawdownPct[i],
+      };
+    }
+    return result;
   }
 
   getConfig(): SimBrokerConfig {

@@ -153,57 +153,60 @@ export type Database = {
           backtest_id: string
           commission: number | null
           created_at: string
-          entry_price: number | null
+          entryPrice: number | null
+          entryTime: string | null
+          exitPrice: number | null
+          exitTime: string | null
           exit_reason: string | null
           holding_period_bars: number | null
           id: string
           net_pnl: number | null
           portfolio_value_after: number | null
           portfolio_value_before: number | null
-          price: number
           quantity: number
           return_pct: number | null
           slippage: number | null
           symbol: string
-          timestamp: string
         }
         Insert: {
           action: string
           backtest_id: string
           commission?: number | null
           created_at?: string
-          entry_price?: number | null
+          entryPrice?: number | null
+          entryTime?: string | null
+          exitPrice?: number | null
+          exitTime?: string | null
           exit_reason?: string | null
           holding_period_bars?: number | null
           id?: string
           net_pnl?: number | null
           portfolio_value_after?: number | null
           portfolio_value_before?: number | null
-          price: number
           quantity: number
           return_pct?: number | null
           slippage?: number | null
           symbol: string
-          timestamp: string
         }
         Update: {
           action?: string
           backtest_id?: string
           commission?: number | null
           created_at?: string
-          entry_price?: number | null
+          entryPrice?: number | null
+          entryTime?: string | null
+          exitPrice?: number | null
+          exitTime?: string | null
           exit_reason?: string | null
           holding_period_bars?: number | null
           id?: string
           net_pnl?: number | null
           portfolio_value_after?: number | null
           portfolio_value_before?: number | null
-          price?: number
           quantity?: number
           return_pct?: number | null
           slippage?: number | null
           symbol?: string
-          timestamp?: string
         }
         Relationships: [
           {

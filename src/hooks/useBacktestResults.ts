@@ -35,13 +35,14 @@ export interface BacktestTrade {
   symbol: string;
   action: string;
   quantity: number;
-  price: number;
-  timestamp: string;
+  entryPrice: number;
+  entryTime: string;
+  exitPrice: number;
+  exitTime: string;
   commission?: number;
   slippage?: number;
   portfolio_value_before?: number;
   portfolio_value_after?: number;
-  entry_price?: number;
   exit_reason?: string;
   return_pct?: number;
   net_pnl?: number;
@@ -92,34 +93,53 @@ export const useBacktestResults = (id?: string) => {
     setError(null);
     try {
       const { data: backtestData, error: backtestError } = await supabase
-        .from('backtests')
-        .select('id, name, workflow_id, status, description, start_date, end_date, initial_capital, commission_rate, slippage_rate, data_frequency, started_at, completed_at, error_message')
-        .eq('user_id', user.id)
-        .eq('id', id)
+        .from("backtests")
+        .select(
+          "id, name, workflow_id, status, description, start_date, end_date, initial_capital, commission_rate, slippage_rate, data_frequency, started_at, completed_at, error_message",
+        )
+        .eq("user_id", user.id)
+        .eq("id", id)
         .single();
 
       if (backtestError) throw backtestError;
       setBacktest(backtestData as BacktestWithRelations);
 
-      const [metricsResult, tradesResult, snapshotsResult] = await Promise.allSettled([
-        supabase.from('backtest_results').select('*').eq('backtest_id', id).maybeSingle(),
-        supabase.from('backtest_trades').select('*').eq('backtest_id', id).order('timestamp', { ascending: true }),
-        supabase.from('backtest_portfolio_snapshots').select('*').eq('backtest_id', id).order('date', { ascending: true }),
-      ]);
+      const [metricsResult, tradesResult, snapshotsResult] =
+        await Promise.allSettled([
+          supabase
+            .from("backtest_results")
+            .select("*")
+            .eq("backtest_id", id)
+            .maybeSingle(),
+          supabase
+            .from("backtest_trades")
+            .select("*")
+            .eq("backtest_id", id)
+            .order("exitTime", { ascending: true }),
+          supabase
+            .from("backtest_portfolio_snapshots")
+            .select("*")
+            .eq("backtest_id", id)
+            .order("date", { ascending: true }),
+        ]);
 
-      if (metricsResult.status === 'fulfilled' && metricsResult.value.data) {
+      if (metricsResult.status === "fulfilled" && metricsResult.value.data) {
         setMetrics(metricsResult.value.data as BacktestResultMetrics);
       }
 
       setTrades(
-        tradesResult.status === 'fulfilled' ? (tradesResult.value.data || []) as BacktestTrade[] : []
+        tradesResult.status === "fulfilled"
+          ? ((tradesResult.value.data || []) as BacktestTrade[])
+          : [],
       );
       setSnapshots(
-        snapshotsResult.status === 'fulfilled' ? (snapshotsResult.value.data || []) as PortfolioSnapshot[] : []
+        snapshotsResult.status === "fulfilled"
+          ? ((snapshotsResult.value.data || []) as PortfolioSnapshot[])
+          : [],
       );
     } catch (err: any) {
-      console.error('Error loading backtest results', err);
-      setError(err.message || 'Failed to load backtest results');
+      console.error("Error loading backtest results", err);
+      setError(err.message || "Failed to load backtest results");
     } finally {
       setLoading(false);
     }
@@ -129,5 +149,13 @@ export const useBacktestResults = (id?: string) => {
     loadData();
   }, [loadData]);
 
-  return { backtest, metrics, trades, snapshots, loading, error, refetch: loadData };
+  return {
+    backtest,
+    metrics,
+    trades,
+    snapshots,
+    loading,
+    error,
+    refetch: loadData,
+  };
 };

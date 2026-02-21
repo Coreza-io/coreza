@@ -34,7 +34,10 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
   return (
     <TableRow className="text-sm">
       <TableCell className="text-muted-foreground whitespace-nowrap">
-        {new Date(trade.timestamp).toLocaleString()}
+        {new Date(trade.entryTime).toLocaleString()}
+      </TableCell>
+      <TableCell className="text-muted-foreground whitespace-nowrap">
+        {new Date(trade.exitTime).toLocaleString()}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
@@ -58,16 +61,16 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
       <TableCell className="font-medium">{trade.symbol}</TableCell>
       <TableCell>
         {isBuy ? (
-          <span>@ {formatCurrency(trade.entry_price)}</span>
+          <span>@ {formatCurrency(trade.entryPrice)}</span>
         ) : (
-          <span>@ {formatCurrency(trade.entry_price)}</span>
+          <span>@ {formatCurrency(trade.entryPrice)}</span>
         )}
       </TableCell>
       <TableCell>
         {isBuy ? (
-          <span>@ {formatCurrency(trade.price)}</span>
+          <span>@ {formatCurrency(trade.exitPrice)}</span>
         ) : (
-          <span>@ {formatCurrency(trade.price)}</span>
+          <span>@ {formatCurrency(trade.exitPrice)}</span>
         )}
       </TableCell>
       <TableCell>{trade.quantity}</TableCell>
@@ -123,7 +126,8 @@ export const TradesTable = ({ trades }: TradesTableProps) => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Time</TableHead>
+                <TableHead>Entry Time</TableHead>
+                <TableHead>Exit Time</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Symbol</TableHead>
                 <TableHead>Entry Price</TableHead>

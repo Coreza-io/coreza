@@ -402,7 +402,9 @@ export class SimBroker {
 
     for (const filledOrder of fills) {
       const signedQty =
-        filledOrder.side === "buy" ? filledOrder.filledQty : -filledOrder.filledQty;
+        filledOrder.side === "buy"
+          ? filledOrder.filledQty
+          : -filledOrder.filledQty;
       const beforeQty = runningQty;
       runningQty += signedQty;
 
@@ -411,7 +413,10 @@ export class SimBroker {
         continue;
       }
 
-      if (Math.sign(beforeQty) !== 0 && Math.sign(runningQty) !== Math.sign(beforeQty)) {
+      if (
+        Math.sign(beforeQty) !== 0 &&
+        Math.sign(runningQty) !== Math.sign(beforeQty)
+      ) {
         legEntry = filledOrder;
       }
     }
@@ -427,7 +432,10 @@ export class SimBroker {
     return legEntry;
   }
 
-  private calculateHoldingPeriodBars(entryTime: string, exitTime: string): number {
+  private calculateHoldingPeriodBars(
+    entryTime: string,
+    exitTime: string,
+  ): number {
     const entryBarIndex = this.state.equityCurve.findIndex(
       (point) => point.timestamp === entryTime,
     );
@@ -504,10 +512,16 @@ export class SimBroker {
     const commissionForClose =
       commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
-    const entryFill = this.findCurrentPositionEntryFill(order.symbol, existingQty);
+    const entryFill = this.findCurrentPositionEntryFill(
+      order.symbol,
+      existingQty,
+    );
     const entryOrderId = entryFill?.id ?? order.id;
     const entryTime = entryFill?.filledAt ?? timestamp;
-    const holdingPeriodBars = this.calculateHoldingPeriodBars(entryTime, timestamp);
+    const holdingPeriodBars = this.calculateHoldingPeriodBars(
+      entryTime,
+      timestamp,
+    );
 
     existing.realizedPnl += netPnl;
 

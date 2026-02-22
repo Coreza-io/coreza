@@ -456,6 +456,26 @@ export class WorkflowEngine {
         await this.indicatorStateManager.flushToRedis();
       }
 
+      // Auto-finalize backtest if this is a backtest workflow
+      if (this.silent && !hasFailedNodes) {
+        try {
+          const backtestExecutor =
+            this.executors.get("Backtest") || getNodeExecutor("Backtest");
+          if (
+            backtestExecutor &&
+            typeof (backtestExecutor as any).finalizeAll === "function"
+          ) {
+            await (backtestExecutor as any).finalizeAll(this.store);
+          }
+        } catch (finalizeError) {
+          console.error(
+            "[WorkflowEngine] Auto-finalize backtest failed:",
+            finalizeError,
+          );
+          // Don't fail the entire workflow -- results just won't be persisted
+        }
+      }
+
       // Log DataContext stats before cleanup
       const ctxStats = this.dataContext.getStats();
       console.log(

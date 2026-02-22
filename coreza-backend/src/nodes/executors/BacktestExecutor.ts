@@ -90,6 +90,22 @@ export class BacktestExecutor implements INodeExecutor {
     this.simBrokerCache.delete(key);
   }
 
+  public async finalizeAll(_store?: any): Promise<void> {
+    const entries = Array.from(this.simBrokerCache.entries());
+
+    for (const [key, simBroker] of entries) {
+      const backtestId = key.replace(SIM_BROKER_KEY_PREFIX, "");
+      try {
+        await this.portfolioFinalize(simBroker, backtestId);
+      } catch (error) {
+        console.error(
+          `[BacktestExecutor] Auto-finalize failed for ${backtestId}:`,
+          error,
+        );
+      }
+    }
+  }
+
   // ============== BACKTEST INIT ==============
   private async executeBacktestInit(
     node: WorkflowNode,
@@ -322,141 +338,12 @@ export class BacktestExecutor implements INodeExecutor {
       // Get SimBroker from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
       const metrics = simBroker.getMetrics();
       const trades = simBroker.getTrades();
       const equityCurve = simBroker.getEquityCurve();
       const finalEquity = simBroker.getTotalEquity();
 
-      // Persist to Supabase (only at the END of backtest)
-      const supabaseClient = supabase;
-
-      // Update backtest status
-      await supabaseClient
-        .from("backtests")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", backtestId);
-
-      // Insert backtest results
-      const { error: resultsError } = await supabaseClient
-        .from("backtest_results")
-        .insert({
-          backtest_id: backtestId,
-          total_return: metrics.totalReturnPct,
-          annualized_return: metrics.annualizedReturn,
-          max_drawdown: metrics.maxDrawdownPct,
-          sharpe_ratio: metrics.sharpeRatio,
-          sortino_ratio: metrics.sortinoRatio,
-          calmar_ratio: metrics.calmarRatio,
-          total_trades: metrics.totalTrades,
-          win_rate: metrics.winRate,
-          profitable_trades: metrics.winningTrades,
-          losing_trades: metrics.losingTrades,
-          average_trade_return: metrics.avgTradePnl,
-          largest_win: metrics.largestWin,
-          largest_loss: metrics.largestLoss,
-          final_portfolio_value: finalEquity,
-          profit_factor: Number.isFinite(metrics.profitFactor)
-            ? metrics.profitFactor
-            : null,
-          avg_win: metrics.avgWin,
-          avg_loss: metrics.avgLoss,
-          total_commission: metrics.totalCommission,
-          total_slippage: metrics.totalSlippage,
-          net_profit: metrics.totalReturn,
-          expectancy:
-            metrics.totalTrades > 0
-              ? (metrics.winRate / 100) * metrics.avgWin -
-                (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
-              : 0,
-          avg_holding_period:
-            trades.length > 0
-              ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
-                trades.length
-              : 0,
-        });
-      if (resultsError) {
-        console.error(
-          "[BacktestExecutor] Failed to insert backtest_results:",
-          resultsError,
-        );
-      }
-
-      // Insert trades
-      if (trades.length > 0) {
-        const tradeRows = trades.map((t) => ({
-          backtest_id: backtestId,
-          symbol: t.symbol,
-          action: t.side,
-          quantity: t.quantity,
-          entryPrice: t.entryPrice,
-          entryTime: t.entryTime,
-          exitPrice: t.exitPrice,
-          exitTime: t.exitTime,
-          commission: t.commission,
-          net_pnl: t.netPnl,
-          slippage: t.slippage,
-          portfolio_value_before: null,
-          portfolio_value_after: null,
-        }));
-
-        const { error: tradesError } = await supabaseClient
-          .from("backtest_trades")
-          .insert(tradeRows);
-        if (tradesError) {
-          console.error(
-            "[BacktestExecutor] Failed to insert backtest_trades:",
-            tradesError,
-          );
-        }
-      }
-
-      // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
-      const dailyCurve = this.resampleToDaily(equityCurve);
-      if (dailyCurve.length > 0) {
-        const initialCapital = simBroker.getConfig().initialCapital;
-        const snapshots = dailyCurve.map((point, idx) => {
-          const prevValue =
-            idx > 0 ? dailyCurve[idx - 1].totalEquity : initialCapital;
-          const dailyReturn =
-            prevValue > 0
-              ? ((point.totalEquity - prevValue) / prevValue) * 100
-              : 0;
-
-          return {
-            backtest_id: backtestId,
-            date: point.timestamp.substring(0, 10),
-            cash_balance: point.cash,
-            stock_value: point.positionsValue,
-            total_value: point.totalEquity,
-            daily_return: dailyReturn,
-          };
-        });
-
-        for (let i = 0; i < snapshots.length; i += 500) {
-          const { error: snapshotError } = await supabaseClient
-            .from("backtest_portfolio_snapshots")
-            .insert(snapshots.slice(i, i + 500));
-          if (snapshotError) {
-            console.error(
-              "[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:",
-              snapshotError,
-            );
-          }
-        }
-      }
-
-      // Cleanup: remove SimBroker from executor cache (free memory)
-      this.cleanupSimBroker(backtestId);
-
-      console.log(
-        `[BacktestExecutor] Backtest completed: ${backtestId}, Total Return: ${metrics.totalReturnPct.toFixed(
-          2,
-        )}%, Bars: ${metrics.totalBars} (in-memory mode)`,
-      );
+      await this.portfolioFinalize(simBroker, backtestId);
 
       return toNodeResult(
         createSuccessOutput({
@@ -495,6 +382,147 @@ export class BacktestExecutor implements INodeExecutor {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
       return toNodeResult(createErrorOutput(error));
     }
+  }
+
+  private async portfolioFinalize(
+    simBroker: SimBroker,
+    backtestId: string,
+  ): Promise<void> {
+    // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
+    const metrics = simBroker.getMetrics();
+    const trades = simBroker.getTrades();
+    const equityCurve = simBroker.getEquityCurve();
+    const finalEquity = simBroker.getTotalEquity();
+
+      // Persist to Supabase (only at the END of backtest)
+    const supabaseClient = supabase;
+
+      // Update backtest status
+    await supabaseClient
+      .from("backtests")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", backtestId);
+
+      // Insert backtest results
+    const { error: resultsError } = await supabaseClient
+      .from("backtest_results")
+      .insert({
+        backtest_id: backtestId,
+        total_return: metrics.totalReturnPct,
+        annualized_return: metrics.annualizedReturn,
+        max_drawdown: metrics.maxDrawdownPct,
+        sharpe_ratio: metrics.sharpeRatio,
+        sortino_ratio: metrics.sortinoRatio,
+        calmar_ratio: metrics.calmarRatio,
+        total_trades: metrics.totalTrades,
+        win_rate: metrics.winRate,
+        profitable_trades: metrics.winningTrades,
+        losing_trades: metrics.losingTrades,
+        average_trade_return: metrics.avgTradePnl,
+        largest_win: metrics.largestWin,
+        largest_loss: metrics.largestLoss,
+        final_portfolio_value: finalEquity,
+        profit_factor: Number.isFinite(metrics.profitFactor)
+          ? metrics.profitFactor
+          : null,
+        avg_win: metrics.avgWin,
+        avg_loss: metrics.avgLoss,
+        total_commission: metrics.totalCommission,
+        total_slippage: metrics.totalSlippage,
+        net_profit: metrics.totalReturn,
+        expectancy:
+          metrics.totalTrades > 0
+            ? (metrics.winRate / 100) * metrics.avgWin -
+              (1 - metrics.winRate / 100) * Math.abs(metrics.avgLoss)
+            : 0,
+        avg_holding_period:
+          trades.length > 0
+            ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
+              trades.length
+            : 0,
+      });
+    if (resultsError) {
+      console.error(
+        "[BacktestExecutor] Failed to insert backtest_results:",
+        resultsError,
+      );
+    }
+
+      // Insert trades
+    if (trades.length > 0) {
+      const tradeRows = trades.map((t) => ({
+        backtest_id: backtestId,
+        symbol: t.symbol,
+        action: t.side,
+        quantity: t.quantity,
+        entryPrice: t.entryPrice,
+        entryTime: t.entryTime,
+        exitPrice: t.exitPrice,
+        exitTime: t.exitTime,
+        commission: t.commission,
+        net_pnl: t.netPnl,
+        slippage: t.slippage,
+        portfolio_value_before: null,
+        portfolio_value_after: null,
+      }));
+
+      const { error: tradesError } = await supabaseClient
+        .from("backtest_trades")
+        .insert(tradeRows);
+      if (tradesError) {
+        console.error(
+          "[BacktestExecutor] Failed to insert backtest_trades:",
+          tradesError,
+        );
+      }
+    }
+
+      // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
+    const dailyCurve = this.resampleToDaily(equityCurve);
+    if (dailyCurve.length > 0) {
+      const initialCapital = simBroker.getConfig().initialCapital;
+      const snapshots = dailyCurve.map((point, idx) => {
+        const prevValue =
+          idx > 0 ? dailyCurve[idx - 1].totalEquity : initialCapital;
+        const dailyReturn =
+          prevValue > 0
+            ? ((point.totalEquity - prevValue) / prevValue) * 100
+            : 0;
+
+        return {
+          backtest_id: backtestId,
+          date: point.timestamp.substring(0, 10),
+          cash_balance: point.cash,
+          stock_value: point.positionsValue,
+          total_value: point.totalEquity,
+          daily_return: dailyReturn,
+        };
+      });
+
+      for (let i = 0; i < snapshots.length; i += 500) {
+        const { error: snapshotError } = await supabaseClient
+          .from("backtest_portfolio_snapshots")
+          .insert(snapshots.slice(i, i + 500));
+        if (snapshotError) {
+          console.error(
+            "[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:",
+            snapshotError,
+          );
+        }
+      }
+    }
+
+      // Cleanup: remove SimBroker from executor cache (free memory)
+    this.cleanupSimBroker(backtestId);
+
+    console.log(
+      `[BacktestExecutor] Backtest completed: ${backtestId}, Total Return: ${metrics.totalReturnPct.toFixed(
+        2,
+      )}%, Bars: ${metrics.totalBars} (in-memory mode)`,
+    );
   }
 
   // ============== BACKTEST PORTFOLIO ==============

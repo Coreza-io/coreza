@@ -109,7 +109,7 @@ export class BacktestRunner {
             const event = JSON.parse(rawEvent);
             // Use executeFromEntries to start from the identified entry nodes
             await this.engine.executeFromEntries(
-              { data: event?.bar ?? event },
+              { data: event },
               this.entryNodeIds,
             );
           } catch (error) {

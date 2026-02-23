@@ -23,6 +23,8 @@ export class BacktestRunner {
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
+    private readonly entryNodeIds: string[],
+    private readonly backtestInitResult: Record<string, any>,
     private readonly totalBars: number,
   ) {
     this.redisStream = createDedicatedCacheConnection(`Backtest-${backtestId}`);
@@ -79,9 +81,17 @@ export class BacktestRunner {
 
           this.engine.resetLight(uuidv4(), this.abortController.signal);
 
+          // Pre-load BacktestInit results so templates like
+          // {{ $('BacktestInit').json.backtest_id }} resolve correctly
+          this.engine.preloadResults(this.backtestInitResult);
+
           try {
             const event = JSON.parse(rawEvent);
-            await this.engine.execute({ data: event?.bar ?? event });
+            // Use executeFromEntries to start from the identified entry nodes
+            await this.engine.executeFromEntries(
+              { data: event?.bar ?? event },
+              this.entryNodeIds,
+            );
           } catch (error) {
             console.error("[BacktestRunner] Error processing stream event:", error);
           }

@@ -18,6 +18,8 @@ export class BacktestRunnerManager {
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
+    entryNodeIds: string[],
+    backtestInitResult: Record<string, any>,
     totalBars: number,
   ): Promise<void> {
     if (this.runners.has(backtestId)) return;
@@ -28,6 +30,8 @@ export class BacktestRunnerManager {
       userId,
       nodes,
       edges,
+      entryNodeIds,
+      backtestInitResult,
       totalBars,
     );
     this.runners.set(backtestId, runner);

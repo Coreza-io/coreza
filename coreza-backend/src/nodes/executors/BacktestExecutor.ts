@@ -47,11 +47,14 @@ function extractStrategySubgraph(
   backtestNodeId: string,
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[],
-): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  const visited = new Set<string>();
-  const queue = allEdges
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[]; entryNodeIds: string[] } {
+  // Identify entry nodes: nodes directly downstream of BacktestInit
+  const entryNodeIds = allEdges
     .filter((edge) => edge.source === backtestNodeId)
     .map((edge) => edge.target);
+
+  const visited = new Set<string>();
+  const queue = [...entryNodeIds];
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
 
@@ -63,6 +66,7 @@ function extractStrategySubgraph(
     const node = allNodes.find((n) => n.id === nodeId);
     if (node) nodes.push(node);
 
+    // Only include edges BETWEEN strategy nodes (not from BacktestInit)
     const outgoing = allEdges.filter((edge) => edge.source === nodeId);
     edges.push(...outgoing);
     for (const edge of outgoing) {
@@ -70,11 +74,10 @@ function extractStrategySubgraph(
     }
   }
 
-  const rootEdges = allEdges.filter(
-    (edge) => edge.source === backtestNodeId && visited.has(edge.target),
-  );
+  // Deduplicate entry node IDs
+  const uniqueEntryNodeIds = [...new Set(entryNodeIds)].filter((id) => visited.has(id));
 
-  return { nodes, edges: [...rootEdges, ...edges] };
+  return { nodes, edges, entryNodeIds: uniqueEntryNodeIds };
 }
 
 // Key prefix for caching SimBroker instances by backtest id
@@ -307,7 +310,7 @@ export class BacktestExecutor implements INodeExecutor {
         }
       }
 
-      const { nodes: strategyNodes, edges: strategyEdges } = extractStrategySubgraph(
+      const { nodes: strategyNodes, edges: strategyEdges, entryNodeIds } = extractStrategySubgraph(
         node.id,
         allNodes,
         allEdges,
@@ -335,13 +338,38 @@ export class BacktestExecutor implements INodeExecutor {
       }
       await pipeline.exec();
 
-      if (remainingBars.length > 0 && strategyNodes.length > 0) {
+      // Build the BacktestInit result that downstream nodes need via templates
+      const backtestInitResult: Record<string, any> = {
+        [node.id]: {
+          success: true,
+          data: {
+            backtest_id: backtestId,
+            symbol,
+            interval,
+            initial_capital: config.initialCapital,
+            start_date: startDate,
+            end_date: endDate,
+            config: {
+              fill_model: config.fillModel,
+              slippage_model: config.slippageModel,
+              slippage_value: config.slippageValue,
+              commission_model: config.commissionModel,
+              commission_value: config.commissionValue,
+              allow_short: config.allowShort,
+            },
+          },
+        },
+      };
+
+      if (remainingBars.length > 0 && strategyNodes.length > 0 && entryNodeIds.length > 0) {
         await BacktestRunnerManager.getInstance().startBacktest(
           backtestId,
           workflowId,
           userId,
           strategyNodes,
           strategyEdges,
+          entryNodeIds,
+          backtestInitResult,
           remainingBars.length,
         );
       } else {

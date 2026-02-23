@@ -100,10 +100,19 @@ function parseValueByType(value: any, dataType: string): any {
   }
 }
 
-const COMPARATOR_CONTEXT = { category: "control-flow", nodeName: "Comparator" };
+const COMPARATOR_CONTEXT = {
+  category: "control-flow",
+  nodeName: "Comparator",
+  skipTimestamp: true,
+};
+const SWITCH_CONTEXT = {
+  category: "control-flow",
+  nodeName: "Switch",
+  skipTimestamp: true,
+};
 
 export class ComparatorService {
-  static async evaluate(input: ComparatorInput): Promise<ComparatorResult> {
+  static evaluate(input: ComparatorInput): ComparatorResult {
     try {
       const { operator, dataType = "any" } = input;
       const left = parseValueByType(input.left, dataType);
@@ -278,31 +287,25 @@ export class ComparatorService {
     }
   }
 
-  static async executeSwitch(
+  static executeSwitch(
     cases: Array<{ condition: ComparatorInput; value: any }>,
     defaultValue?: any
-  ): Promise<StandardNodeOutput<{ result: any; matchedCase?: number }>> {
+  ): StandardNodeOutput<{ result: any; matchedCase?: number }> {
     try {
       for (let i = 0; i < cases.length; i++) {
-        const caseResult = await this.evaluate(cases[i].condition);
+        const caseResult = this.evaluate(cases[i].condition);
         if (caseResult.success && caseResult.data) {
-          return createSuccessOutput(cases[i].value, {
-            ...COMPARATOR_CONTEXT,
-            nodeName: "Switch",
-          });
+          return createSuccessOutput(cases[i].value, SWITCH_CONTEXT);
         }
       }
 
       // No case matched, return default value
       return createSuccessOutput(
         { result: defaultValue ?? null },
-        { ...COMPARATOR_CONTEXT, nodeName: "Switch" }
+        SWITCH_CONTEXT
       );
     } catch (error: any) {
-      return createErrorOutput(error, {
-        ...COMPARATOR_CONTEXT,
-        nodeName: "Switch",
-      });
+      return createErrorOutput(error, SWITCH_CONTEXT);
     }
   }
 }

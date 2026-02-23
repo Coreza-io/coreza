@@ -28,7 +28,7 @@ import { NodeResult } from "../nodes/types";
  */
 export function normalizeOutput(
   raw: NodeResult | any,
-  context: NormalizeContext = {}
+  context: NormalizeContext = {},
 ): StandardNodeOutput {
   const now = new Date().toISOString();
   const executionTime = context.startTime
@@ -129,29 +129,12 @@ export function toNodeResult(output: StandardNodeOutput): NodeResult {
  */
 export function createSuccessOutput<T = any>(
   data: T,
-  context: NormalizeContext = {}
+  context: NormalizeContext = {},
 ): StandardNodeOutput<T> {
-  const meta = context.skipTimestamp
-    ? {
-        nodeId: context.nodeId,
-        nodeName: context.nodeName,
-        category: context.category,
-      }
-    : {
-        timestamp: new Date().toISOString(),
-        executionTime: context.startTime
-          ? Date.now() - context.startTime
-          : undefined,
-        nodeId: context.nodeId,
-        nodeName: context.nodeName,
-        category: context.category,
-      };
-
   return {
     success: true,
     status: "success",
     data,
-    meta,
   };
 }
 
@@ -194,7 +177,7 @@ function normalizeError(err: unknown): NormalizedError {
  */
 export function createErrorOutput(
   error: unknown,
-  context: NormalizeContext = {}
+  context: NormalizeContext = {},
 ): StandardNodeOutput {
   const normalized = normalizeError(error);
 
@@ -225,7 +208,7 @@ export function createErrorOutput(
 export function createWaitingOutput(
   message: string,
   data: any = {},
-  context: NormalizeContext = {}
+  context: NormalizeContext = {},
 ): StandardNodeOutput {
   return {
     success: true,
@@ -245,7 +228,7 @@ export function createWaitingOutput(
  */
 export function createStreamingOutput(
   data: any,
-  context: NormalizeContext = {}
+  context: NormalizeContext = {},
 ): StandardNodeOutput {
   return {
     success: true,

@@ -15,7 +15,6 @@
  */
 
 import { createError } from "../middleware/errorHandler";
-import { Item } from "../nodes/types";
 import { StandardNodeOutput } from "../types/nodeOutput";
 import {
   createSuccessOutput,
@@ -100,17 +99,6 @@ function parseValueByType(value: any, dataType: string): any {
   }
 }
 
-const COMPARATOR_CONTEXT = {
-  category: "control-flow",
-  nodeName: "Comparator",
-  skipTimestamp: true,
-};
-const SWITCH_CONTEXT = {
-  category: "control-flow",
-  nodeName: "Switch",
-  skipTimestamp: true,
-};
-
 export class ComparatorService {
   static evaluate(input: ComparatorInput): ComparatorResult {
     try {
@@ -155,7 +143,7 @@ export class ComparatorService {
             // Array contains logic
             result = left.some(
               (item) =>
-                String(item).toLowerCase() === String(right).toLowerCase()
+                String(item).toLowerCase() === String(right).toLowerCase(),
             );
           } else {
             // String contains logic
@@ -169,7 +157,7 @@ export class ComparatorService {
           if (Array.isArray(left)) {
             // Array does NOT contain right
             result = !left.some((item) =>
-              String(item).toLowerCase().includes(String(right).toLowerCase())
+              String(item).toLowerCase().includes(String(right).toLowerCase()),
             );
           } else {
             // String does NOT contain right
@@ -281,31 +269,28 @@ export class ComparatorService {
           throw createError(`Unsupported operator: ${operator}`, 400);
       }
 
-      return createSuccessOutput(result, COMPARATOR_CONTEXT);
+      return createSuccessOutput(result);
     } catch (error: any) {
-      return createErrorOutput(error, COMPARATOR_CONTEXT);
+      return createErrorOutput(error);
     }
   }
 
   static executeSwitch(
     cases: Array<{ condition: ComparatorInput; value: any }>,
-    defaultValue?: any
+    defaultValue?: any,
   ): StandardNodeOutput<{ result: any; matchedCase?: number }> {
     try {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = this.evaluate(cases[i].condition);
         if (caseResult.success && caseResult.data) {
-          return createSuccessOutput(cases[i].value, SWITCH_CONTEXT);
+          return createSuccessOutput(cases[i].value);
         }
       }
 
       // No case matched, return default value
-      return createSuccessOutput(
-        { result: defaultValue ?? null },
-        SWITCH_CONTEXT
-      );
+      return createSuccessOutput({ result: defaultValue ?? null });
     } catch (error: any) {
-      return createErrorOutput(error, SWITCH_CONTEXT);
+      return createErrorOutput(error);
     }
   }
 }

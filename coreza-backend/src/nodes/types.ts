@@ -22,15 +22,14 @@ export interface NodeResult {
   success?: boolean;
   data?: any;
   index?: number;
-  isLastIndex?: boolean;
-  islastindex?: boolean;
+  isLastBatch?: boolean;
   error?: string;
-  /** 
+  /**
    * Execution context metadata (e.g., error summaries, timing info).
    * For loop iteration context, use IterMeta in QueueItem.
    */
   meta?: Record<string, any>;
-  /** 
+  /**
    * Engine routing signals (loopCompleted, loopIteration, sourceHandle, etc.)
    * that tell the workflow engine what action to take.
    */
@@ -91,7 +90,7 @@ export interface ControlFlags {
   setState?: Record<string, any>;
   /** Convenience branch decision for conditional nodes. */
   branch?: "true" | "false";
-  
+
   // Unified loop control flags
   /** Loop completed all items - route to "done" handle */
   loopCompleted?: boolean;
@@ -106,10 +105,7 @@ export interface ControlFlags {
   /** Whether this is the last batch in sequential mode */
   isLastBatch?: boolean;
   /** Whether this iteration is at the last item index */
-  isLastIndex?: boolean;
-  /** Lowercase alias for compatibility */
-  islastindex?: boolean;
-  
+
   // Parallel distribution metadata
   /** Number of items being processed */
   itemCount?: number;
@@ -145,7 +141,7 @@ export interface INodeExecutorV2 {
     node: WorkflowNode,
     params: Record<string, any>,
     input: Item[],
-    context?: any
+    context?: any,
   ): Promise<NodeExecutionOutput>;
 }
 

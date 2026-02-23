@@ -27,11 +27,6 @@ import {
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
 
-  private static readonly CONTEXT = {
-    category: "control-flow",
-    skipTimestamp: true,
-  };
-
   async execute(
     node: WorkflowNode,
     input: NodeInput,
@@ -54,14 +49,11 @@ export class ControlFlowExecutor implements INodeExecutor {
           return toNodeResult(
             createErrorOutput(
               `Unsupported control flow node type: ${nodeName}`,
-              ControlFlowExecutor.CONTEXT,
             ),
           );
       }
     } catch (error) {
-      return toNodeResult(
-        createErrorOutput(error, ControlFlowExecutor.CONTEXT),
-      );
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -76,69 +68,32 @@ export class ControlFlowExecutor implements INodeExecutor {
       : { ...node.values, ...input };
 
     // If a conditions array is provided, use it with logicalOp
-    const conditions = resolvedParams.conditions;
+    const conditions = Array.isArray(resolvedParams.conditions)
+      ? resolvedParams.conditions
+      : [];
     const logicalOp: "AND" | "OR" =
       (resolvedParams.logicalOp || "AND").toUpperCase() === "OR" ? "OR" : "AND";
 
     let result: boolean;
-
-    if (Array.isArray(conditions)) {
-      // Evaluate each condition using ComparatorService for full operator support
-      const evalPromises = conditions.map(async (cond: any) => {
-        const evalResult = await ComparatorService.evaluate({
-          left: cond.left,
-          operator: cond.operator,
-          right: cond.right,
-          dataType: cond.dataType,
-        });
-        return evalResult.success && evalResult.data;
+    const evals = conditions.map((cond: any) => {
+      const evalResult = ComparatorService.evaluate({
+        left: cond.left,
+        operator: cond.operator,
+        right: cond.right,
+        dataType: cond.dataType,
       });
 
-      const evals = await Promise.all(evalPromises);
+      return evalResult.success && evalResult.data;
+    });
 
-      // Aggregate based on logicalOp
-      result =
-        logicalOp === "OR" ? evals.some((e) => e) : evals.every((e) => e);
-
-      return toNodeResult(
-        createSuccessOutput(
-          {
-            true: result,
-            false: !result,
-          },
-          ControlFlowExecutor.CONTEXT,
-        ),
-      );
-    }
-
-    // Otherwise fallback to single comparison or direct condition
-    const condition = resolvedParams.condition;
-    const value1 = resolvedParams.value1;
-    const value2 = resolvedParams.value2;
-    const operation = resolvedParams.operation || "===";
-    const dataType = resolvedParams.dataType;
-
-    if (condition !== undefined) {
-      result = Boolean(condition);
-    } else {
-      // Use ComparatorService for full operator support
-      const evalResult = await ComparatorService.evaluate({
-        left: value1,
-        operator: operation,
-        right: value2,
-        dataType,
-      });
-      result = evalResult.success && evalResult.data?.result === true;
-    }
+    // Aggregate based on logicalOp
+    result = logicalOp === "OR" ? evals.some(Boolean) : evals.every(Boolean);
 
     return toNodeResult(
-      createSuccessOutput(
-        {
-          true: result,
-          false: !result,
-        },
-        ControlFlowExecutor.CONTEXT,
-      ),
+      createSuccessOutput({
+        true: result,
+        false: !result,
+      }),
     );
   }
 
@@ -179,16 +134,11 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     if (!result.success) {
       return toNodeResult(
-        createErrorOutput(
-          result.error || "Switch evaluation failed",
-          ControlFlowExecutor.CONTEXT,
-        ),
+        createErrorOutput(result.error || "Switch evaluation failed"),
       );
     }
 
-    return toNodeResult(
-      createSuccessOutput(result.result, ControlFlowExecutor.CONTEXT),
-    );
+    return toNodeResult(createSuccessOutput(result.result));
   }
 
   private async executeFieldNode(
@@ -235,7 +185,6 @@ export class ControlFlowExecutor implements INodeExecutor {
             }
             // Also set in result for immediate use in current execution
             result[fieldName] = finalValue;
-
           } else {
             // Regular non-persistent field
             result[fieldName] = value;
@@ -265,9 +214,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
     }
 
-    return toNodeResult(
-      createSuccessOutput(result, ControlFlowExecutor.CONTEXT),
-    );
+    return toNodeResult(createSuccessOutput(result));
   }
 
   private async executeComputeNode(
@@ -291,20 +238,18 @@ export class ControlFlowExecutor implements INodeExecutor {
       inputFormat,
       targetDay,
     } = resolvedParams;
-    const result = ComputeService.compute(
-      {
-        value,
-        operator,
-        arg1,
-        arg2,
-        filterOperator,
-        unit,
-        date2,
-        timezone,
-        inputFormat,
-        targetDay,
-      },
-    );
+    const result = ComputeService.compute({
+      value,
+      operator,
+      arg1,
+      arg2,
+      filterOperator,
+      unit,
+      date2,
+      timezone,
+      inputFormat,
+      targetDay,
+    });
 
     // ComputeService already returns StandardNodeOutput, just convert to NodeResult
     return toNodeResult(result);
@@ -346,7 +291,10 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
 
       const batchSize = Number(cachedConfig.batchSize) || 1;
-      const currentBatch = cachedItems.slice(currentIndex, currentIndex + batchSize);
+      const currentBatch = cachedItems.slice(
+        currentIndex,
+        currentIndex + batchSize,
+      );
       const nextIndex = currentIndex + currentBatch.length;
       const isLastBatch = nextIndex >= cachedItems.length;
 
@@ -355,8 +303,8 @@ export class ControlFlowExecutor implements INodeExecutor {
         context?.setState("isCompleted", true);
       }
 
-      const loopData = currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
-      const isLastIndex = isLastBatch;
+      const loopData =
+        currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
 
       return {
         success: true,
@@ -364,15 +312,13 @@ export class ControlFlowExecutor implements INodeExecutor {
           Item: loopData,
           totalItem: cachedItems.length,
           CurrentIndex: currentIndex,
-          isLastIndex,
+          isLastBatch: isLastBatch,
         },
         control: {
           loopIteration: true,
           sourceHandle: "loop",
           currentIndex,
-          isLastBatch,
-          isLastIndex,
-          islastindex: isLastIndex,
+          isLastBatch: isLastBatch,
         },
       };
     }
@@ -450,7 +396,7 @@ export class ControlFlowExecutor implements INodeExecutor {
           Item: parallelItems,
           totalItem: items.length,
           CurrentIndex: parallelCurrentIndex,
-          isLastIndex: Boolean(v2Result.control?.isLastIndex),
+          isLastBatch: Boolean(v2Result.control?.isLastBatch),
         },
         control: v2Result.control,
         meta: v2Result.meta,
@@ -475,7 +421,6 @@ export class ControlFlowExecutor implements INodeExecutor {
       return toNodeResult(
         createErrorOutput(
           `No array found for field: ${inputArray} or array is empty`,
-          ControlFlowExecutor.CONTEXT,
         ),
       );
     }
@@ -530,8 +475,8 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     // Return current batch for loop body execution
-    const loopData = currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
-    const isLastIndex = isLastBatch;
+    const loopData =
+      currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
 
     return {
       success: true,
@@ -539,15 +484,13 @@ export class ControlFlowExecutor implements INodeExecutor {
         Item: loopData,
         totalItem: items.length,
         CurrentIndex: currentIndexFromState,
-        isLastIndex,
+        isLastBatch: isLastBatch,
       },
       control: {
         loopIteration: true,
         sourceHandle: "loop",
         currentIndex: currentIndexFromState,
         isLastBatch,
-        isLastIndex,
-        islastindex: isLastIndex,
       },
     };
   }

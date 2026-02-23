@@ -469,9 +469,10 @@ export class BacktestExecutor implements INodeExecutor {
     const symbol = data?.symbol || bar?.S || bar?.symbol;
     const barIndex = data?.barIndex ?? 0;
 
+    const allNodeData = context?.getAllNodeResults?.();
     let timeframe = "1Day";
-    if (context?.allNodeData?.BacktestInit?.data?.interval) {
-      timeframe = context.allNodeData.BacktestInit.data.interval;
+    if (allNodeData?.BacktestInit?.data?.interval) {
+      timeframe = allNodeData.BacktestInit.data.interval;
     }
 
     return toNodeResult(

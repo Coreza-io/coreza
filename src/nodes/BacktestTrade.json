@@ -86,7 +86,7 @@
       "key": "current_bar",
       "label": "Current Bar Data",
       "type": "text",
-      "placeholder": "Pass bar from loop iteration",
+      "placeholder": "{{ $('OnBar').json.bar }}",
       "required": false
     }
   ]

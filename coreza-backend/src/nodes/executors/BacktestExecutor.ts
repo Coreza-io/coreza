@@ -113,6 +113,8 @@ export class BacktestExecutor implements INodeExecutor {
         return this.executeBacktestResults(node, input, context);
       case "BacktestPortfolio":
         return this.executeBacktestPortfolio(node, input, context);
+      case "OnBar":
+        return this.executeOnBar(node, input, context);
       default:
         return toNodeResult(
           createErrorOutput(`Unknown backtest node type: ${nodeName}`),
@@ -452,6 +454,31 @@ export class BacktestExecutor implements INodeExecutor {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
       return toNodeResult(createErrorOutput(error));
     }
+  }
+
+
+  // ============== ON BAR ==============
+  private async executeOnBar(
+    node: WorkflowNode,
+    input: NodeInput,
+    _context: any,
+  ): Promise<NodeResult> {
+    void node;
+
+    const bar = input?.data?.bar || input?.data || input?.bar || input;
+
+    return toNodeResult(
+      createSuccessOutput({
+        bar,
+        symbol: bar?.S || bar?.symbol,
+        timestamp: bar?.t || bar?.Timestamp,
+        open: bar?.o || bar?.Open,
+        high: bar?.h || bar?.High,
+        low: bar?.l || bar?.Low,
+        close: bar?.c || bar?.Close,
+        volume: bar?.v || bar?.Volume,
+      }),
+    );
   }
 
   // ============== BACKTEST TRADE ==============

@@ -52,7 +52,7 @@
       "key": "current_bar",
       "label": "Current Bar",
       "type": "textarea",
-      "placeholder": "{{ $('Loop').json.item }}",
+      "placeholder": "{{ $('OnBar').json.bar }}",
       "required": false,
       "description": "Current OHLCV bar for mark-to-market pricing",
       "displayOptions": {

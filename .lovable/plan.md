@@ -1,356 +1,211 @@
 
 
-# Hybrid Architecture: Warm Pool + Long-Lived Strategy Runner
+# Review: Event-Driven BacktestInit Implementation
 
-## Overview
+## Status: 2 Critical Issues, 2 Medium Issues, Implementation Otherwise Solid
 
-Use **two execution models** based on workflow trigger type:
+The BacktestInit.json, BacktestRunner, BacktestRunnerManager, workflowEngine.resetLight(), GracefulShutdownHandler integration, and jobQueueManager integration are all well-implemented. However, the BacktestRunner cannot actually execute the strategy subgraph due to two fundamental issues in how the WorkflowEngine processes it.
 
-- **Non-stream workflows** (manual, scheduled, webhook, backtest): Keep per-event BullMQ jobs but reuse WorkflowEngine instances via a warm pool (Option A)
-- **Stream workflows** (market_data from streaming nodes): One long-lived BullMQ job per workflow that consumes events from a Redis Stream (Option B)
+---
 
+## Critical Issue 1: Strategy subgraph entry nodes are never found
+
+The `BacktestRunner` creates a `WorkflowEngine` with the strategy subgraph (BacktestPortfolio, indicators, If/Switch, Trade nodes) and calls `engine.execute({ data: bar })` without a `startNodeId`.
+
+Inside `WorkflowEngine.run()`, the engine looks for entry nodes filtered by:
 ```text
-                     +-- manual/scheduled/webhook/backtest -->  [Warm Engine Pool]
-                     |       BullMQ job per trigger              Reuse engine instance
-  Workflow Trigger --+                                           Reset state per run
-                     |
-                     +-- market_data (streaming nodes) -------> [Live Strategy Runner]
-                            One BullMQ job per workflow          XADD events to Redis Stream
-                            Stays alive, consumes events         Engine lives in memory
-                            via XREAD BLOCK loop
+node_type === "trigger" || node_type === "backtest"
 ```
+
+The strategy subgraph contains **none** of these types -- its nodes are indicators, portfolio, trade, control-flow, etc. So the queue stays empty and **nothing executes**.
+
+### Fix
+
+The BacktestRunner needs to identify the "first" strategy nodes (the ones directly connected to BacktestInit's output edge) and pass one as `startNodeId` to `engine.execute()`. But this alone isn't enough due to Issue 2.
+
+The better fix: modify the strategy subgraph extraction to add a **synthetic entry node** -- a lightweight pass-through trigger node that receives the bar data and routes it to the first real strategy nodes. Or, modify `WorkflowEngine.run()` to handle a new entry mode where nodes with no valid incoming source are treated as entry points.
+
+**Recommended approach**: Add a `startNodeIds` parameter (or use `startNodeId` for the first strategy node) and pre-mark all incoming edge payloads from the excluded BacktestInit. This already works when `startNodeId` is provided (lines 610-621 in workflowEngine.ts), but only for a single entry point. If the strategy subgraph has multiple roots (e.g., BacktestInit connects to both BacktestPortfolio AND an indicator node), all of them need to be enqueued.
+
+**Implementation**:
+1. In `extractStrategySubgraph()`, also return `entryNodeIds` -- the node IDs directly connected to BacktestInit's output
+2. Store these on the BacktestRunner
+3. In `BacktestRunner.start()`, call `engine.execute(barData, firstEntryNodeId)` and also manually enqueue the other entry nodes
+
+Or more cleanly: add a `executeFromEntries(input, entryNodeIds)` method on WorkflowEngine that pre-marks all incoming edges for the given entry nodes and enqueues them all.
 
 ---
 
-## Part 1: Warm Engine Pool (Non-Stream Workflows)
+## Critical Issue 2: `backtest_id` doesn't flow to downstream strategy nodes
 
-### File 1 (NEW): `coreza-backend/src/services/EnginePool.ts`
+Downstream nodes like `BacktestTrade` and `BacktestPortfolio` read `params.backtest_id` which resolves from either:
+- `node.values.backtest_id` (a template like `{{ $('BacktestInit').json.backtest_id }}`)
+- Direct input
 
-A singleton Map cache of warm WorkflowEngine instances keyed by `workflowId`.
+In the BacktestRunner:
+- The input per bar is just `{ data: bar }` -- no `backtest_id`
+- The template `{{ $('BacktestInit').json.backtest_id }}` won't resolve because BacktestInit's output isn't in the new engine's NodeStore (BacktestInit was excluded from the subgraph)
 
-- `getOrCreate(workflowId, nodes, edges, userId)`: Returns cached engine or creates new one
-- `evict(workflowId)`: Removes engine from cache
-- TTL-based cleanup: Engines idle for >5 minutes are evicted automatically (setInterval every 60s)
-- Cache stores: `{ engine: WorkflowEngine, lastUsed: number }`
+**Result**: Every BacktestTrade and BacktestPortfolio call fails with "backtest_id is required".
 
-```typescript
-class EnginePool {
-  private static instance: EnginePool;
-  private cache = new Map<string, { engine: WorkflowEngine; lastUsed: number }>();
-  private readonly TTL_MS = 5 * 60 * 1000; // 5 minutes
+### Fix
 
-  getOrCreate(workflowId, runId, userId, nodes, edges, opts): WorkflowEngine {
-    const cached = this.cache.get(workflowId);
-    if (cached) {
-      cached.engine.reset(runId);  // Reset execution state, keep maps/router
-      cached.lastUsed = Date.now();
-      return cached.engine;
-    }
-    const engine = new WorkflowEngine(runId, workflowId, userId, nodes, edges, opts.mode, opts.abortSignal);
-    this.cache.set(workflowId, { engine, lastUsed: Date.now() });
-    return engine;
-  }
-}
+Two options:
+
+**Option A (Simple)**: Before each `engine.execute()` call in BacktestRunner, pre-populate the engine's store with BacktestInit's result so templates resolve:
+```text
+engine.store.setNodeResult(backtestInitNodeId, {
+  success: true,
+  data: { backtest_id: backtestId, symbol, ... }
+});
 ```
+This requires either exposing `store.setNodeResult()` publicly or adding a method like `engine.preloadNodeResult(nodeId, result)`.
 
-### File 2 (MODIFY): `coreza-backend/src/services/workflowEngine.ts`
+**Option B (Cleaner)**: Include the `backtest_id` in the bar event data passed to `execute()`, and modify the subgraph nodes' values to reference it from input. But this requires changing how users configure BacktestTrade/Portfolio nodes.
 
-Add a `reset(newRunId)` method to WorkflowEngine:
-
-```typescript
-reset(newRunId: string): void {
-  this.runId = newRunId;
-  this.edgePayload.clear();
-  this.failed.clear();
-  this.failedNodeErrors.clear();
-  this.enqueuedKeys.clear();
-  this.retryCount.clear();
-  this.executionOrder = [];
-  this.queue = new NodeQueueManager();
-  if (this.silent) this.queue.silent = true;
-  this.store = new NodeStoreV2(newRunId, this.nodes);
-  this.dataContext = DataContextManager.getInstance().getContext({
-    runId: newRunId, workflowId: this.workflowId, userId: this.userId,
-  });
-  // Keep: nodeById, incomingEdgesByTarget, outgoingEdgesBySource, router, executors, _nodeHasTemplatesCache
-}
-```
-
-What is preserved (the expensive stuff):
-- `nodeById` Map (built from node array)
-- `incomingEdgesByTarget` / `outgoingEdgesBySource` Maps (built from edge array)
-- `NodeRouter` instance
-- `executors` Map (executor instances with their internal caches, e.g., SimBroker cache, indicator cache)
-- `_nodeHasTemplatesCache` (template detection results)
-
-What is reset (per-run state):
-- `edgePayload`, `failed`, `failedNodeErrors`, `enqueuedKeys`, `retryCount`
-- `executionOrder`
-- `NodeQueueManager` (fresh queue)
-- `NodeStoreV2` (fresh results store)
-- `DataContext` (fresh execution-scoped RAM)
-
-### File 3 (MODIFY): `coreza-backend/src/utils/workflowWorker.ts`
-
-In the normal workflow execution path (line 488), for non-stream triggers, use EnginePool:
-
-```typescript
-// Normal workflow execution (line 456+)
-if (trigger !== "market_data") {
-  // Use warm engine pool for non-stream workflows
-  const engine = EnginePool.getInstance().getOrCreate(
-    workflowId, runId, userId, nodes, edges, { mode: "best-effort", abortSignal: signal }
-  );
-  const result = await engine.execute(renamed, startNodeId);
-  // ... rest of success/error handling unchanged
-}
-```
-
-For `trigger === "market_data"`, the worker won't handle it here anymore -- it goes through the Live Strategy Runner (Part 2).
+**Recommended: Option A** -- it's transparent and doesn't require users to change their workflow configuration. Add a `preloadResults(results: Record<string, any>)` method on WorkflowEngine.
 
 ---
 
-## Part 2: Long-Lived Strategy Runner (Stream Workflows)
+## Medium Issue 1: `extractStrategySubgraph` includes root edges that break dependency checks
 
-### File 4 (NEW): `coreza-backend/src/services/LiveStrategyRunner.ts`
-
-The core long-lived execution engine for streaming workflows.
-
-```typescript
-class LiveStrategyRunner {
-  private engine: WorkflowEngine;
-  private redisStream: Redis;     // For XREAD
-  private streamKey: string;      // "strategy:stream:{workflowId}"
-  private running = false;
-  private abortController: AbortController;
-
-  constructor(workflowId, userId, nodes, edges) {
-    this.engine = new WorkflowEngine(runId, workflowId, userId, nodes, edges);
-    this.streamKey = `strategy:stream:${workflowId}`;
-    this.abortController = new AbortController();
-  }
-
-  async start(): Promise<void> {
-    this.running = true;
-    // Create consumer group (if not exists)
-    await this.redisStream.xgroup("CREATE", this.streamKey, "strategy-group", "0", "MKSTREAM").catch(() => {});
-
-    while (this.running) {
-      // Block-read from Redis Stream (5 second timeout)
-      const results = await this.redisStream.xreadgroup(
-        "GROUP", "strategy-group", `consumer-${this.engine.workflowId}`,
-        "BLOCK", 5000,
-        "COUNT", 10,  // Process up to 10 events per batch
-        "STREAMS", this.streamKey, ">"
-      );
-
-      if (!results || results.length === 0) continue;
-
-      for (const [, messages] of results) {
-        for (const [messageId, fields] of messages) {
-          const event = JSON.parse(fields[1]); // Parse event data
-          const runId = uuidv4();
-
-          // Reset engine for new event (reuse all maps/router/executors)
-          this.engine.reset(runId);
-
-          try {
-            await this.engine.execute({ data: event });
-          } catch (err) {
-            console.error(`[LiveStrategy] Error processing event:`, err);
-          }
-
-          // Acknowledge message
-          await this.redisStream.xack(this.streamKey, "strategy-group", messageId);
-        }
-      }
-    }
-  }
-
-  async stop(): Promise<void> {
-    this.running = false;
-    this.abortController.abort();
-  }
-}
-```
-
-Key design decisions:
-- Uses **Redis Streams** (XREADGROUP with consumer groups) instead of Pub/Sub for durability and ordered processing
-- **Block-reads** with 5s timeout so the loop doesn't spin
-- **Acknowledges** each message after processing (at-least-once delivery)
-- Engine is **reused** across all events (same `reset()` as Option A)
-- Indicator state, executor caches (SimBroker, etc.) persist in memory across ticks
-
-### File 5 (NEW): `coreza-backend/src/services/liveStrategyManager.ts`
-
-Manages the lifecycle of all active LiveStrategyRunners.
-
-```typescript
-class LiveStrategyManager {
-  private static instance: LiveStrategyManager;
-  private runners = new Map<string, LiveStrategyRunner>(); // workflowId -> runner
-
-  async startStrategy(workflowId, userId, nodes, edges): Promise<void> {
-    if (this.runners.has(workflowId)) return; // Already running
-
-    const runner = new LiveStrategyRunner(workflowId, userId, nodes, edges);
-    this.runners.set(workflowId, runner);
-
-    // Start in background (don't await -- it's an infinite loop)
-    runner.start().catch(err => {
-      console.error(`[LiveStrategyManager] Strategy ${workflowId} crashed:`, err);
-      this.runners.delete(workflowId);
-    });
-  }
-
-  async stopStrategy(workflowId: string): Promise<void> {
-    const runner = this.runners.get(workflowId);
-    if (runner) {
-      await runner.stop();
-      this.runners.delete(workflowId);
-    }
-  }
-
-  isRunning(workflowId: string): boolean {
-    return this.runners.has(workflowId);
-  }
-
-  async stopAll(): Promise<void> {
-    for (const [id, runner] of this.runners) {
-      await runner.stop();
-    }
-    this.runners.clear();
-  }
-}
-```
-
-### File 6 (MODIFY): `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts`
-
-Change `triggerWorkflowExecution()` (line 437) to use Redis Stream XADD instead of BullMQ job:
-
-**Before** (current):
-```typescript
-await bullMqJobQueue.addWorkflowExecution({ runId, workflowId, userId, nodes, edges, trigger: "market_data", ... });
-```
-
-**After**:
-```typescript
-// Push event to Redis Stream (LiveStrategyRunner consumes via XREADGROUP)
-const streamKey = `strategy:stream:${workflowId}`;
-const redis = getRedisCache();
-await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*",
-  "event", JSON.stringify(formattedPayload)
+The function includes edges from BacktestInit to the first strategy nodes:
+```text
+const rootEdges = allEdges.filter(
+  (edge) => edge.source === backtestNodeId && visited.has(edge.target),
 );
 ```
 
-This eliminates:
-- BullMQ job creation per tick (no enqueue/dequeue overhead)
-- Redis HSET for run metadata per tick
-- Redis LPUSH to pending sync list per tick
+These edges have `source === backtestNodeId`, but BacktestInit is NOT in the subgraph's node list. When `areDependenciesSatisfied()` checks incoming edges for the first strategy nodes, it finds these root edges, checks `isSubNode(backtestNodeId)` which returns `false` (node not found), so they become "required" edges that will never have payloads. The first strategy nodes are **permanently blocked**.
 
-The stream is capped at ~1000 messages to prevent unbounded growth.
+### Fix
 
-### File 7 (MODIFY): `coreza-backend/src/services/jobQueueManager.ts`
-
-Add methods to manage live strategies:
-
-```typescript
-// In BullMQJobQueue class:
-
-async startLiveStrategy(workflowId: string, userId: string, nodes: any[], edges: any[]): Promise<void> {
-  const manager = LiveStrategyManager.getInstance();
-  await manager.startStrategy(workflowId, userId, nodes, edges);
-}
-
-async stopLiveStrategy(workflowId: string): Promise<void> {
-  const manager = LiveStrategyManager.getInstance();
-  await manager.stopStrategy(workflowId);
-}
-```
-
-Update `cancelWorkflowJobs()` to also stop live strategies:
-```typescript
-async cancelWorkflowJobs(userId, workflowId): Promise<number> {
-  // ... existing BullMQ cancellation ...
-  // Also stop live strategy if running
-  const manager = LiveStrategyManager.getInstance();
-  if (manager.isRunning(workflowId)) {
-    await manager.stopStrategy(workflowId);
-    cancelledCount++;
-  }
-  return cancelledCount;
-}
-```
-
-### File 8 (MODIFY): `coreza-backend/src/services/GracefulShutdownHandler.ts`
-
-Register LiveStrategyManager for graceful shutdown:
-
-```typescript
-// In shutdown sequence:
-await LiveStrategyManager.getInstance().stopAll();
-```
+Do NOT include the root edges (from BacktestInit to strategy nodes) in the subgraph edges. Instead, the first strategy nodes should have zero incoming edges in the subgraph context, making them natural entry points. Or handle this via the `startNodeId` / pre-marking approach from Issue 1.
 
 ---
 
-## How Strategies Get Started
+## Medium Issue 2: Route `/backtest/init` doesn't pass required context
 
-When a user activates a workflow that contains a streaming node:
-
-1. The stream node execution (via MarketExecutor) calls `MarketDataSubscriber.registerWorkflow()`
-2. **New**: After registration, it also calls `LiveStrategyManager.startStrategy(workflowId, userId, nodes, edges)`
-3. The LiveStrategyRunner starts its XREAD loop
-4. MarketDataSubscriber's message handler now does `XADD` to the stream instead of `addWorkflowExecution()`
-5. LiveStrategyRunner picks up events, resets engine, executes
-
-For non-stream workflows (manual run, scheduled, webhook):
-1. `addWorkflowExecution()` is called as before
-2. BullMQ worker picks up the job
-3. Worker uses `EnginePool.getOrCreate()` instead of `new WorkflowEngine()`
-4. Engine is reset and reused on next trigger
-
----
-
-## Data Flow Comparison
-
+The REST route `POST /backtest/init` (in `routes/backtest.ts`) calls `backtestExecutor.execute()` with context:
 ```text
-NON-STREAM (webhook/scheduled/manual):
-  Trigger --> BullMQ.addWorkflowExecution() --> Worker --> EnginePool.getOrCreate() --> engine.reset() --> engine.execute()
-                                                          [reuses maps, router, executors]
-
-STREAM (market_data):
-  MarketEvent --> Redis Pub/Sub --> MarketDataSubscriber --> XADD to Redis Stream
-                                                                    |
-  LiveStrategyRunner (long-lived) <-- XREADGROUP BLOCK <------------+
-       |
-       engine.reset(newRunId) --> engine.execute(event)
-       [engine lives in memory, indicator state preserved, executor caches warm]
+{ userId, workflowId: workflow_id }
 ```
 
+But `executeBacktestInit` now needs:
+- `context.nodes` -- for indicator discovery and subgraph extraction
+- `context.edges` -- same
+- `context.indicatorStateManager` -- for warmup
+- `context.internalToken` -- for the internal broker HTTP call
+
+When called via the REST route (not via WorkflowEngine), these are all undefined/empty. The indicator warmup silently skips (because `allNodes` is empty), the subgraph extraction returns zero nodes, and the internal broker HTTP call has no auth token.
+
+### Fix
+
+The REST route should either:
+1. Fetch the workflow's nodes/edges from Supabase and pass them in context
+2. Or document that the REST route is a simplified init-only path (no data fetch, no warmup, no event emission) and the full event-driven flow only works when triggered via WorkflowEngine
+
+Option 2 is pragmatic -- the REST route was the old API path. The new event-driven flow runs through the workflow engine. Add the new fields (`broker`, `symbol`, `interval`, etc.) to the destructured `req.body` so they at least get stored, even if the full pipeline doesn't run via REST.
+
 ---
 
-## Files Summary
+## What's Working Well
 
-| File | Type | Purpose |
+| Component | Status | Notes |
 |---|---|---|
-| `coreza-backend/src/services/EnginePool.ts` | NEW | Warm engine cache for non-stream workflows |
-| `coreza-backend/src/services/LiveStrategyRunner.ts` | NEW | Long-lived event loop for stream workflows |
-| `coreza-backend/src/services/liveStrategyManager.ts` | NEW | Manages lifecycle of all LiveStrategyRunners |
-| `coreza-backend/src/services/workflowEngine.ts` | MODIFY | Add `reset()` method (shared by both options) |
-| `coreza-backend/src/utils/workflowWorker.ts` | MODIFY | Use EnginePool for non-stream triggers |
-| `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` | MODIFY | XADD to Redis Stream instead of BullMQ job |
-| `coreza-backend/src/services/jobQueueManager.ts` | MODIFY | Add startLiveStrategy/stopLiveStrategy, update cancel |
-| `coreza-backend/src/services/GracefulShutdownHandler.ts` | MODIFY | Register LiveStrategyManager for shutdown |
+| BacktestInit.json | Good | All fields present with correct displayOptions |
+| BacktestRunner.ts | Good | Dedicated Redis connection, non-blocking XREAD, progress reporting, auto-finalize, proper cleanup |
+| BacktestRunnerManager.ts | Good | Singleton, fire-and-forget with crash handling, proper cleanup in finally |
+| workflowEngine.resetLight() | Good | Preserves DataContext, indicatorStateManager, executors |
+| extractStrategySubgraph() | Mostly good | BFS logic correct, but root edge inclusion causes issues (see Medium Issue 1) |
+| GracefulShutdownHandler | Good | BacktestRunnerManager.stopAll() registered |
+| jobQueueManager | Good | startBacktest/stopBacktest methods, cancelWorkflowJobs integration with Supabase lookup |
+| SimBroker cache (static) | Good | Cross-engine singleton access works correctly |
+| BacktestExecutor 3-phase init | Good | Fetch, warmup, emit logic is sound |
+| Pipelined XADD | Good | Efficient bulk write with MAXLEN cap |
 
 ---
 
-## Per-Tick Overhead Comparison
+## Implementation Plan (Fixes)
 
-| Metric | Current (all workflows) | Non-Stream (Pool) | Stream (Long-Lived) |
-|---|---|---|---|
-| BullMQ jobs per tick | 1 | 1 | 0 |
-| Redis writes per tick | 3 (HSET + LPUSH + BullMQ) | 3 | 1 (XADD only) |
-| Engine construction | Full rebuild | Reuse (reset only) | Reuse (reset only) |
-| Indicator state | Lost between ticks | Lost between ticks | Preserved in memory |
-| Executor caches | Lost between ticks | Preserved (warm pool) | Preserved (in-memory) |
+### Step 1: Fix subgraph extraction (remove root edges, return entry node IDs)
+
+Modify `extractStrategySubgraph()` in `BacktestExecutor.ts`:
+- Do NOT include edges from BacktestInit in the returned edges
+- Return a third field: `entryNodeIds: string[]` -- the node IDs directly downstream of BacktestInit
+
+### Step 2: Add `preloadResults()` and multi-entry execution to WorkflowEngine
+
+Add two methods to `WorkflowEngine`:
+- `preloadResults(results: Record<string, any>)` -- sets node results into the store so templates can resolve
+- `executeFromEntries(input, entryNodeIds)` -- enqueues multiple entry nodes with pre-marked edge payloads
+
+### Step 3: Update BacktestRunner to use new methods
+
+In `BacktestRunner`:
+- After creating the engine, call `engine.preloadResults()` with BacktestInit's output (backtest_id, symbol, config, etc.)
+- Call `engine.executeFromEntries(barData, entryNodeIds)` instead of `engine.execute(barData)`
+
+This requires passing `backtestInitNodeId`, `backtestInitResult`, and `entryNodeIds` from `BacktestExecutor` to `BacktestRunner` (via constructor or the manager).
+
+### Step 4: Update REST route
+
+Add the new fields (`broker`, `symbol`, `interval`, etc.) to the route's `req.body` destructuring so they're stored in `node.values`. The full event-driven pipeline won't run via REST (no nodes/edges context), but the basic init will still work for API consumers.
+
+---
+
+## Technical Details
+
+### Modified `extractStrategySubgraph` signature:
+```text
+function extractStrategySubgraph(
+  backtestNodeId, allNodes, allEdges
+): {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];      // edges BETWEEN strategy nodes only
+  entryNodeIds: string[];      // first nodes after BacktestInit
+}
+```
+
+### New `WorkflowEngine` methods:
+```text
+preloadResults(results: Record<string, any>): void
+  -- calls this.store.setNodeResult(nodeId, result) for each entry
+
+executeFromEntries(input: any, entryNodeIds: string[]): Promise<...>
+  -- for each entryNodeId: pre-mark incoming edge payloads, enqueue
+  -- then run the main processing loop
+```
+
+### Updated `BacktestRunner` constructor:
+```text
+constructor(
+  backtestId, workflowId, userId,
+  nodes, edges,
+  entryNodeIds: string[],           // NEW
+  backtestInitResult: Record<string, any>,  // NEW (nodeId -> result)
+  totalBars
+)
+```
+
+### Updated `BacktestRunnerManager.startBacktest`:
+```text
+async startBacktest(
+  backtestId, workflowId, userId,
+  nodes, edges,
+  entryNodeIds: string[],
+  backtestInitResult: Record<string, any>,
+  totalBars
+)
+```
+
+### Files to modify:
+
+| File | Change |
+|---|---|
+| `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | Fix `extractStrategySubgraph` return type; pass entryNodeIds + backtestInitResult to runner |
+| `coreza-backend/src/services/workflowEngine.ts` | Add `preloadResults()` and `executeFromEntries()` methods |
+| `coreza-backend/src/services/BacktestRunner.ts` | Accept entryNodeIds + backtestInitResult; use new engine methods |
+| `coreza-backend/src/services/BacktestRunnerManager.ts` | Pass through new parameters |
+| `coreza-backend/src/routes/backtest.ts` | Add new fields to req.body destructuring |
 

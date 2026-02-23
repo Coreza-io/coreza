@@ -37,7 +37,10 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { discoverIndicators } from "./InitializeIndicatorsExecutor";
-import { buildIndicatorKey } from "../../services/indicatorStateManager";
+import {
+  buildIndicatorKey,
+  IndicatorStateManager,
+} from "../../services/indicatorStateManager";
 import { getRedisCache } from "../../config/redis";
 import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
 
@@ -301,7 +304,7 @@ export class BacktestExecutor implements INodeExecutor {
       const allEdges: WorkflowEdge[] = context?.edges || [];
 
       let discoveredIndicators: DiscoveredIndicator[] = [];
-      if (autoDetect && context?.indicatorStateManager && allNodes.length > 0) {
+      if (autoDetect && allNodes.length > 0) {
         discoveredIndicators = discoverIndicators(
           node.id,
           allNodes,
@@ -312,7 +315,8 @@ export class BacktestExecutor implements INodeExecutor {
       const warmupBars = bars.slice(0, warmupPeriod);
       const remainingBars = bars.slice(warmupPeriod);
 
-      const stateManager = context?.indicatorStateManager;
+      const stateManager =
+        context?.indicatorStateManager ?? new IndicatorStateManager();
       if (
         stateManager &&
         discoveredIndicators.length > 0 &&

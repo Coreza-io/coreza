@@ -385,22 +385,16 @@ export class BacktestExecutor implements INodeExecutor {
         initial_capital: config.initialCapital,
         start_date: startDate,
         end_date: endDate,
-        config: {
-          fill_model: config.fillModel,
-          slippage_model: config.slippageModel,
-          slippage_value: config.slippageValue,
-          commission_model: config.commissionModel,
-          commission_value: config.commissionValue,
-          allow_short: config.allowShort,
-        },
+        fill_model: config.fillModel,
+        slippage_model: config.slippageModel,
+        slippage_value: config.slippageValue,
+        commission_model: config.commissionModel,
+        commission_value: config.commissionValue,
+        allow_short: config.allowShort,
       };
 
       const backtestInitResult: Record<string, any> = {
         [node.id]: {
-          success: true,
-          data: backtestInitData,
-        },
-        BacktestInit: {
           success: true,
           data: backtestInitData,
         },
@@ -429,9 +423,10 @@ export class BacktestExecutor implements INodeExecutor {
         createSuccessOutput({
           backtest_id: backtestId,
           initial_capital: config.initialCapital,
-          start_date:
-            params.start_date || new Date().toISOString().split("T")[0],
-          end_date: params.end_date || new Date().toISOString().split("T")[0],
+          start_date: params.start_date,
+          end_date: params.end_date,
+          symbol,
+          interval,
           config: {
             fill_model: config.fillModel,
             slippage_model: config.slippageModel,
@@ -445,7 +440,6 @@ export class BacktestExecutor implements INodeExecutor {
             warmup_bars_used: warmupBars.length,
             bars_emitted: remainingBars.length,
             indicators_initialized: discoveredIndicators.length,
-            strategy_nodes: strategyNodes.length,
           },
           status: "running",
         }),
@@ -480,7 +474,6 @@ export class BacktestExecutor implements INodeExecutor {
         bar,
         symbol,
         timeframe,
-        resolution: timeframe,
         barIndex,
         tradeCount: bar?.n,
       }),

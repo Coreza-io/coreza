@@ -74,97 +74,95 @@ export class IndicatorsExecutor implements INodeExecutor {
           );
         }
         //const barsData = dataContext.getDataByKey(candleData);
-        const barsData = candleData;
+        const barsData = Array.isArray(candleData) ? candleData : [candleData];
 
-        if (Array.isArray(barsData)) {
-          // Extract close prices from bars for indicator calculation
-          // const closePrices = extractPrices(barsData, "close");
+        // Extract close prices from bars for indicator calculation
+        // const closePrices = extractPrices(barsData, "close");
 
-          // Set fields that IndicatorService expects
-          processedParams.candle_data = barsData; // For ADX, Stoch, VWAP, OBV, Ichimoku
-          // processedParams.prices = closePrices; // For RSI, EMA, SMA, MACD, BB
+        // Set fields that IndicatorService expects
+        processedParams.candle_data = barsData; // For ADX, Stoch, VWAP, OBV, Ichimoku
+        // processedParams.prices = closePrices; // For RSI, EMA, SMA, MACD, BB
 
-          // // Keep existing fields for compatibility
-          // processedParams.data = closePrices;
-          // processedParams.values = closePrices;
-          // processedParams.bars = barsData;
-          // processedParams.open = extractPrices(barsData, "open");
-          // processedParams.high = extractPrices(barsData, "high");
-          // processedParams.low = extractPrices(barsData, "low");
-          // processedParams.close = closePrices;
-          // processedParams.volume = barsData.map(
-          //   (bar) => bar.volume || bar.v || bar.vol || 0,
-          // );
+        // // Keep existing fields for compatibility
+        // processedParams.data = closePrices;
+        // processedParams.values = closePrices;
+        // processedParams.bars = barsData;
+        // processedParams.open = extractPrices(barsData, "open");
+        // processedParams.high = extractPrices(barsData, "high");
+        // processedParams.low = extractPrices(barsData, "low");
+        // processedParams.close = closePrices;
+        // processedParams.volume = barsData.map(
+        //   (bar) => bar.volume || bar.v || bar.vol || 0,
+        // );
 
-          // console.log(
-          //   `📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`,
-          // );
+        // console.log(
+        //   `📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`,
+        // );
 
-          const stateManager = context?.indicatorStateManager as
-            | IndicatorStateManager
-            | undefined;
-          const userId = context?.userId || context?.user_id;
-          const workflowId = context?.workflowId;
-          const runId = context?.runId || context?.user_id;
-          let symbol = String(processedParams.symbol || "");
-          let timeframe = String(processedParams.timeframe || "");
+        const stateManager = context?.indicatorStateManager as
+          | IndicatorStateManager
+          | undefined;
+        const userId = context?.userId || context?.user_id;
+        const workflowId = context?.workflowId;
+        const runId = context?.runId || context?.user_id;
+        let symbol = String(processedParams.symbol || "");
+        let timeframe = String(processedParams.timeframe || "");
 
-          // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
-          // if ((!symbol || !timeframe) && barsData) {
-          //   const parts = barsData.split(":");
-          //   if (parts.length >= 4) {
-          //     if (!symbol) symbol = parts[1];
-          //     if (!timeframe) timeframe = parts[2];
-          //   }
-          // }
+        // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
+        // if ((!symbol || !timeframe) && barsData) {
+        //   const parts = barsData.split(":");
+        //   if (parts.length >= 4) {
+        //     if (!symbol) symbol = parts[1];
+        //     if (!timeframe) timeframe = parts[2];
+        //   }
+        // }
 
-          if (
-            stateManager &&
-            userId &&
-            workflowId &&
-            runId &&
-            symbol &&
-            timeframe &&
-            barsData.length > 0
-          ) {
-            // const indicatorParams =
-            //   this.extractIndicatorParams(processedParams);
-            const key = buildIndicatorKey(
-              userId,
-              workflowId,
-              runId,
-              symbol,
-              timeframe,
-              node.id,
+        if (
+          stateManager &&
+          userId &&
+          workflowId &&
+          runId &&
+          symbol &&
+          timeframe &&
+          barsData.length > 0
+        ) {
+          // const indicatorParams =
+          //   this.extractIndicatorParams(processedParams);
+          const key = buildIndicatorKey(
+            userId,
+            workflowId,
+            runId,
+            symbol,
+            timeframe,
+            node.id,
+          );
+
+          const isBacktest = !!context?.silent;
+
+          let state = await stateManager.getState(key);
+          if (!state) {
+            state = await stateManager.warmUp(
+              key,
+              indicatorType,
+              processedParams,
+              barsData,
+              isBacktest,
             );
-
-            const isBacktest = !!context?.silent;
-
-            let state = await stateManager.getState(key);
-            if (!state) {
-              state = await stateManager.warmUp(
-                key,
-                indicatorType,
-                processedParams,
-                barsData,
-                isBacktest,
-              );
-            } else {
-              const latestBar = barsData[barsData.length - 1];
-              const latestBarTime = String(
-                latestBar?.t ?? latestBar?.timestamp ?? "",
-              );
-              if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = await stateManager.update(key, latestBar, isBacktest);
-              }
+          } else {
+            const latestBar = barsData[barsData.length - 1];
+            const latestBarTime = String(
+              latestBar?.t ?? latestBar?.timestamp ?? "",
+            );
+            if (latestBarTime && latestBarTime !== state.lastBarTime) {
+              state = await stateManager.update(key, latestBar, isBacktest);
             }
-
-            const normalized = normalizeOutput({
-              success: true,
-              data: [state.value],
-            });
-            return toNodeResult(normalized);
           }
+
+          const normalized = normalizeOutput({
+            success: true,
+            data: [state.value],
+          });
+          return toNodeResult(normalized);
         }
       }
 

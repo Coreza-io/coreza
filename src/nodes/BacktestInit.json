@@ -6,7 +6,7 @@
   "category": "Backtest",
   "description": "Initialize a backtest session with capital and simulation settings",
   "color": "text-orange-500",
-  "size": { "width": 340, "height": 420 },
+  "size": { "width": 380, "height": 700 },
   "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "action": { "url": "/backtest/init", "method": "POST" },
   "fields": [
@@ -44,6 +44,112 @@
       "label": "End Date",
       "type": "text",
       "placeholder": "2024-01-01",
+      "required": false
+    },
+    {
+      "key": "broker",
+      "label": "Broker",
+      "type": "select",
+      "options": [
+        { "id": "alpaca", "name": "Alpaca" },
+        { "id": "binance", "name": "Binance" },
+        { "id": "dhan", "name": "Dhan" },
+        { "id": "schwab", "name": "Schwab" },
+        { "id": "yahoo_finance", "name": "Yahoo Finance" },
+        { "id": "fmp", "name": "FMP" },
+        { "id": "polygon", "name": "Polygon" }
+      ],
+      "default": "alpaca",
+      "required": true
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": false,
+      "displayOptions": {
+        "hide": {
+          "broker": ["yahoo_finance"]
+        }
+      }
+    },
+    {
+      "key": "asset_type",
+      "label": "Asset Type",
+      "type": "select",
+      "options": [
+        { "id": "stock", "name": "Stock" },
+        { "id": "crypto", "name": "Crypto" }
+      ],
+      "default": "stock",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "broker": ["alpaca", "binance"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "AAPL",
+      "required": true
+    },
+    {
+      "key": "interval",
+      "label": "Interval",
+      "type": "select",
+      "options": [
+        { "id": "1Min", "name": "1 min" },
+        { "id": "5Min", "name": "5 min" },
+        { "id": "15Min", "name": "15 min" },
+        { "id": "1Hour", "name": "1 hour" },
+        { "id": "1Day", "name": "1 day" }
+      ],
+      "default": "1Day",
+      "required": true
+    },
+    {
+      "key": "feed",
+      "label": "Data Feed",
+      "type": "select",
+      "options": [
+        { "id": "sip", "name": "SIP - All US Exchanges" },
+        { "id": "iex", "name": "IEX - Investors Exchange" },
+        { "id": "delayed_sip", "name": "Delayed SIP (15 min)" },
+        { "id": "otc", "name": "OTC - Over-the-counter" },
+        { "id": "boats", "name": "BOATS - Blue Ocean" },
+        { "id": "overnight", "name": "Overnight Data" }
+      ],
+      "default": "sip",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "broker": ["alpaca"],
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
+      "key": "warmup_period",
+      "label": "Warmup Period",
+      "type": "text",
+      "placeholder": "200",
+      "default": "200",
+      "required": false
+    },
+    {
+      "key": "auto_detect",
+      "label": "Auto-Detect Indicators",
+      "type": "select",
+      "options": [
+        { "id": "true", "name": "True" },
+        { "id": "false", "name": "False" }
+      ],
+      "default": "true",
       "required": false
     },
     {

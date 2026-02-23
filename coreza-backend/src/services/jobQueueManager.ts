@@ -31,6 +31,7 @@ import {
   isWorkflowCancelled,
 } from "../types/workflowJobResult";
 import { LiveStrategyManager } from "./liveStrategyManager";
+import { BacktestRunnerManager } from "./BacktestRunnerManager";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -293,6 +294,25 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await manager.stopStrategy(workflowId);
   }
 
+
+
+  async startBacktest(
+    backtestId: string,
+    workflowId: string,
+    userId: string,
+    nodes: any[],
+    edges: any[],
+    totalBars: number,
+  ): Promise<void> {
+    const manager = BacktestRunnerManager.getInstance();
+    await manager.startBacktest(backtestId, workflowId, userId, nodes, edges, totalBars);
+  }
+
+  async stopBacktest(backtestId: string): Promise<void> {
+    const manager = BacktestRunnerManager.getInstance();
+    await manager.stopBacktest(backtestId);
+  }
+
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
@@ -421,6 +441,20 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     if (manager.isRunning(workflowId)) {
       await manager.stopStrategy(workflowId);
       cancelledCount++;
+    }
+
+    const backtestManager = BacktestRunnerManager.getInstance();
+    const activeBacktests = await supabase
+      .from("backtests")
+      .select("id")
+      .eq("workflow_id", workflowId)
+      .eq("status", "running");
+
+    for (const backtest of activeBacktests.data || []) {
+      if (backtestManager.isRunning(backtest.id)) {
+        await backtestManager.stopBacktest(backtest.id);
+        cancelledCount++;
+      }
     }
 
     console.log(

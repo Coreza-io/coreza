@@ -23,7 +23,7 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 
-const INDICATOR_NAMES = new Set([
+export const INDICATOR_NAMES = new Set([
   "RSI",
   "EMA",
   "SMA",
@@ -50,7 +50,7 @@ interface DiscoveredIndicator {
  * BFS walk from startNodeId through all downstream edges to discover
  * every indicator node in the workflow graph.
  */
-function discoverIndicators(
+export function discoverIndicators(
   startNodeId: string,
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[],

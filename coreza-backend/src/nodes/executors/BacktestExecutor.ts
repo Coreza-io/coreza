@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { INodeExecutor, NodeInput, NodeResult, WorkflowEdge, WorkflowNode } from "../types";
 import {
   SimBroker,
   SimBrokerConfig,
@@ -23,21 +23,66 @@ import {
   OrderFill,
   EquityPoint,
 } from "../../services/simBroker";
+import axios from "axios";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
   createErrorOutput,
-  toNodeResult,
-  NormalizeContext,
+  toNodeResult
 } from "../../utils/normalizeOutput";
+import { discoverIndicators } from "./InitializeIndicatorsExecutor";
+import { buildIndicatorKey } from "../../services/indicatorStateManager";
+import { getRedisCache } from "../../config/redis";
+import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
+
+
+
+interface DiscoveredIndicator {
+  nodeId: string;
+  type: string;
+  params: Record<string, any>;
+}
+
+function extractStrategySubgraph(
+  backtestNodeId: string,
+  allNodes: WorkflowNode[],
+  allEdges: WorkflowEdge[],
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  const visited = new Set<string>();
+  const queue = allEdges
+    .filter((edge) => edge.source === backtestNodeId)
+    .map((edge) => edge.target);
+  const nodes: WorkflowNode[] = [];
+  const edges: WorkflowEdge[] = [];
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (!nodeId || visited.has(nodeId)) continue;
+
+    visited.add(nodeId);
+    const node = allNodes.find((n) => n.id === nodeId);
+    if (node) nodes.push(node);
+
+    const outgoing = allEdges.filter((edge) => edge.source === nodeId);
+    edges.push(...outgoing);
+    for (const edge of outgoing) {
+      if (!visited.has(edge.target)) queue.push(edge.target);
+    }
+  }
+
+  const rootEdges = allEdges.filter(
+    (edge) => edge.source === backtestNodeId && visited.has(edge.target),
+  );
+
+  return { nodes, edges: [...rootEdges, ...edges] };
+}
 
 // Key prefix for caching SimBroker instances by backtest id
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
-const SIM_BROKER_CACHE_KEY = "__simBrokerCache";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
-  private simBrokerCache = new Map<string, SimBroker>();
+  private static simBrokerCache = new Map<string, SimBroker>();
 
   async execute(
     node: WorkflowNode,
@@ -73,13 +118,13 @@ export class BacktestExecutor implements INodeExecutor {
     config?: Partial<SimBrokerConfig>,
   ): SimBroker {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    const existing = this.simBrokerCache.get(key);
+    const existing = BacktestExecutor.simBrokerCache.get(key);
     if (existing) {
       return existing;
     }
 
     const simBroker = new SimBroker(backtestId, config);
-    this.simBrokerCache.set(key, simBroker);
+    BacktestExecutor.simBrokerCache.set(key, simBroker);
 
     return simBroker;
   }
@@ -87,11 +132,11 @@ export class BacktestExecutor implements INodeExecutor {
   /** Remove SimBroker instance from cache after backtest completion. */
   private cleanupSimBroker(backtestId: string): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    this.simBrokerCache.delete(key);
+    BacktestExecutor.simBrokerCache.delete(key);
   }
 
   public async finalizeAll(_store?: any): Promise<void> {
-    const entries = Array.from(this.simBrokerCache.entries());
+    const entries = Array.from(BacktestExecutor.simBrokerCache.entries());
 
     for (const [key, simBroker] of entries) {
       const backtestId = key.replace(SIM_BROKER_KEY_PREFIX, "");
@@ -119,6 +164,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const userId = context?.userId;
       const workflowId = context?.workflowId;
+      const runId = context?.runId || context?.user_id || userId;
 
       if (!userId || !workflowId) {
         return toNodeResult(
@@ -126,7 +172,6 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      // Parse configuration
       const config: Partial<SimBrokerConfig> = {
         initialCapital: parseFloat(params.initial_capital) || 10000,
         fillModel: params.fill_model || "next_bar_open",
@@ -138,7 +183,6 @@ export class BacktestExecutor implements INodeExecutor {
           params.allow_short === "true" || params.allow_short === true,
       };
 
-      // Create backtest session in Supabase
       const supabaseClient = supabase;
       const { data: backtest, error: insertError } = await supabaseClient
         .from("backtests")
@@ -160,10 +204,6 @@ export class BacktestExecutor implements INodeExecutor {
         .single();
 
       if (insertError || !backtest) {
-        console.error(
-          "[BacktestExecutor] Failed to create backtest session:",
-          insertError,
-        );
         return toNodeResult(
           createErrorOutput(
             `Failed to create backtest: ${insertError?.message}`,
@@ -172,14 +212,141 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = backtest.id;
-
-      // Initialize SimBroker - SYNCHRONOUS, cached in executor
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
 
-      console.log(
-        `[BacktestExecutor] Backtest initialized: ${backtestId} with $${config.initialCapital} (in-memory mode)`,
+      const broker = String(params.broker || "").toLowerCase();
+      const credentialId = params.credential_id;
+      const symbol = params.symbol;
+      const interval = params.interval;
+      const startDate = params.start_date;
+      const endDate = params.end_date;
+      const assetType = params.asset_type;
+      const feed = params.feed;
+
+      if (!broker || !symbol || !interval) {
+        return toNodeResult(
+          createErrorOutput("broker, symbol, and interval are required"),
+        );
+      }
+
+      if (broker !== "yahoo_finance" && !credentialId) {
+        return toNodeResult(
+          createErrorOutput("credential_id is required for selected broker"),
+        );
+      }
+
+      const backendPort = process.env.PORT || "8000";
+      const headers: Record<string, string> = {};
+      if (context?.internalToken) {
+        headers.Authorization = `Bearer ${context.internalToken}`;
+      }
+
+      const fetchResponse = await axios.post(
+        `http://localhost:${backendPort}/broker/${broker}/get_candle`,
+        {
+          symbol,
+          interval,
+          start: startDate,
+          end: endDate,
+          asset_type: assetType,
+          feed,
+          credential_id: credentialId,
+          limit: "50000",
+        },
+        Object.keys(headers).length ? { headers } : undefined,
       );
+
+      const bars =
+        fetchResponse?.data?.data?.bars || fetchResponse?.data?.bars || [];
+
+      if (!Array.isArray(bars) || bars.length === 0) {
+        return toNodeResult(
+          createErrorOutput("No historical bars returned for backtest"),
+        );
+      }
+
+      const warmupPeriodRaw = parseInt(params.warmup_period, 10) || 200;
+      const warmupPeriod = Math.min(Math.max(warmupPeriodRaw, 0), bars.length);
+      const autoDetect = String(params.auto_detect ?? "true") === "true";
+
+      const allNodes: WorkflowNode[] = context?.nodes || [];
+      const allEdges: WorkflowEdge[] = context?.edges || [];
+
+      let discoveredIndicators: DiscoveredIndicator[] = [];
+      if (autoDetect && context?.indicatorStateManager && allNodes.length > 0) {
+        discoveredIndicators = discoverIndicators(
+          node.id,
+          allNodes,
+          allEdges,
+        ) as DiscoveredIndicator[];
+      }
+
+      const warmupBars = bars.slice(0, warmupPeriod);
+      const remainingBars = bars.slice(warmupPeriod);
+
+      const stateManager = context?.indicatorStateManager;
+      if (stateManager && discoveredIndicators.length > 0 && warmupBars.length > 0) {
+        for (const ind of discoveredIndicators) {
+          const { candle_data, ...restParams } = ind.params;
+          const indParams = {
+            ...restParams,
+            symbol,
+            timeframe: interval,
+          };
+          const key = buildIndicatorKey(
+            userId,
+            workflowId,
+            runId,
+            symbol,
+            interval,
+            ind.nodeId,
+          );
+
+          await stateManager.warmUp(key, ind.type, indParams, warmupBars, false);
+        }
+      }
+
+      const { nodes: strategyNodes, edges: strategyEdges } = extractStrategySubgraph(
+        node.id,
+        allNodes,
+        allEdges,
+      );
+
+      const redis = getRedisCache();
+      const streamKey = `backtest:stream:${backtestId}`;
+      await redis.del(streamKey);
+
+      const pipeline = redis.pipeline();
+      for (let i = 0; i < remainingBars.length; i += 1) {
+        pipeline.xadd(
+          streamKey,
+          "MAXLEN",
+          "~",
+          String(remainingBars.length + 200),
+          "*",
+          "event",
+          JSON.stringify({
+            bar: remainingBars[i],
+            symbol,
+            barIndex: i,
+          }),
+        );
+      }
+      await pipeline.exec();
+
+      if (remainingBars.length > 0 && strategyNodes.length > 0) {
+        await BacktestRunnerManager.getInstance().startBacktest(
+          backtestId,
+          workflowId,
+          userId,
+          strategyNodes,
+          strategyEdges,
+          remainingBars.length,
+        );
+      } else {
+        await this.portfolioFinalize(simBroker, backtestId);
+      }
 
       return toNodeResult(
         createSuccessOutput({
@@ -195,6 +362,13 @@ export class BacktestExecutor implements INodeExecutor {
             commission_model: config.commissionModel,
             commission_value: config.commissionValue,
             allow_short: config.allowShort,
+          },
+          data: {
+            bars_fetched: bars.length,
+            warmup_bars_used: warmupBars.length,
+            bars_emitted: remainingBars.length,
+            indicators_initialized: discoveredIndicators.length,
+            strategy_nodes: strategyNodes.length,
           },
           status: "running",
         }),
@@ -525,6 +699,12 @@ export class BacktestExecutor implements INodeExecutor {
     );
   }
 
+
+
+  async finalizeBacktestById(backtestId: string): Promise<void> {
+    const simBroker = this.getSimBroker(backtestId);
+    await this.portfolioFinalize(simBroker, backtestId);
+  }
   // ============== BACKTEST PORTFOLIO ==============
   private async executeBacktestPortfolio(
     node: WorkflowNode,

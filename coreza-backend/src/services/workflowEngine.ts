@@ -86,6 +86,7 @@ export class WorkflowEngine {
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
+  private hasBacktestInit = false;
   private nodeById = new Map<string, WorkflowNode>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
@@ -121,6 +122,7 @@ export class WorkflowEngine {
     const hasBacktestNode = this.nodes.some((node) =>
       (node.name || node.node_type || "").toLowerCase().includes("backtest"),
     );
+    this.hasBacktestInit = this.nodes.some((node) => node.name === "BacktestInit");
     this.silent = hasBacktestNode;
     if (this.silent) {
       this.queue.silent = true;
@@ -187,6 +189,24 @@ export class WorkflowEngine {
     });
     this._execCtx = null;
   }
+
+  resetLight(newRunId: string, abortSignal?: AbortSignal): void {
+    this.runId = newRunId;
+    this.abortSignal = abortSignal;
+    this.edgePayload.clear();
+    this.failed.clear();
+    this.failedNodeErrors.clear();
+    this.enqueuedKeys.clear();
+    this.retryCount.clear();
+    this.executionOrder = [];
+    this.queue = new NodeQueueManager();
+    if (this.silent) {
+      this.queue.silent = true;
+    }
+    this.store = new NodeStoreV2(newRunId, this.nodes);
+    this._execCtx = null;
+  }
+
 
   private getExecutionOrderForResponse(): string[] | undefined {
     return this.executionOrder.length > 0 ? this.executionOrder : undefined;
@@ -484,7 +504,7 @@ export class WorkflowEngine {
       }
 
       // Auto-finalize backtest if this is a backtest workflow
-      if (this.silent && !hasFailedNodes) {
+      if (this.hasBacktestInit && !hasFailedNodes) {
         try {
           const backtestExecutor =
             this.executors.get("Backtest") || getNodeExecutor("Backtest");

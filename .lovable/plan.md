@@ -1,163 +1,356 @@
 
 
-# Performance Fix Plan: Make TypedArrays Actually Work + Eliminate Real Bottleneck
+# Hybrid Architecture: Warm Pool + Long-Lived Strategy Runner
 
-## Why You See Zero Improvement (Root Cause)
+## Overview
 
-Three bugs in the current implementation completely nullify the TypedArray optimization:
+Use **two execution models** based on workflow trigger type:
 
-### Bug 1: BarBuffer is Dead Code
-`BarBuffer` class exists but is never instantiated or used for bar iteration. `onBar()` still receives a `Bar` object (heap-allocated). The only usage is two static utility methods (`toEpochMs`, `dayBucket`) which are just number converters -- not TypedArray storage.
+- **Non-stream workflows** (manual, scheduled, webhook, backtest): Keep per-event BullMQ jobs but reuse WorkflowEngine instances via a warm pool (Option A)
+- **Stream workflows** (market_data from streaming nodes): One long-lived BullMQ job per workflow that consumes events from a Redis Stream (Option B)
 
-### Bug 2: Double-Writing Equity Curve
-`recordEquityPoint()` writes to BOTH the new TypedArray AND the old `state.equityCurve` object array. Net effect: **more** work than before.
-
-### Bug 3: Consumers Read Old Array
-`getMetrics()`, `resampleToDaily()`, `getEquityCurve()` all read from `this.state.equityCurve` (the old object array). The TypedArray data is written but never read by anything.
-
-### The Real Bottleneck at 27K Bars
-At 27K bars, GC pressure is negligible. The dominant cost is likely:
-- **Per-bar workflow engine overhead** (if using the node-by-node executor path, not the fast path)
-- **`console.log` on every order fill** (line 340-342) -- synchronous I/O in the hot loop
-- **`resampleToDaily()` sorts the entire equity curve** (line 727) at metrics time -- `[...curve].sort()` copies + sorts 27K objects
+```text
+                     +-- manual/scheduled/webhook/backtest -->  [Warm Engine Pool]
+                     |       BullMQ job per trigger              Reuse engine instance
+  Workflow Trigger --+                                           Reset state per run
+                     |
+                     +-- market_data (streaming nodes) -------> [Live Strategy Runner]
+                            One BullMQ job per workflow          XADD events to Redis Stream
+                            Stays alive, consumes events         Engine lives in memory
+                            via XREAD BLOCK loop
+```
 
 ---
 
-## Fix Plan (3 tiers, ordered by impact)
+## Part 1: Warm Engine Pool (Non-Stream Workflows)
 
-### Tier A: Remove Double-Write + Wire TypedArrays as Primary Store
+### File 1 (NEW): `coreza-backend/src/services/EnginePool.ts`
 
-**File: `coreza-backend/src/services/simBroker/index.ts`**
+A singleton Map cache of warm WorkflowEngine instances keyed by `workflowId`.
 
-1. **Remove `state.equityCurve` entirely** -- delete the object array from `PortfolioState` initialization (line 98) and stop pushing to it (line 201-207 in `recordEquityPoint`).
+- `getOrCreate(workflowId, nodes, edges, userId)`: Returns cached engine or creates new one
+- `evict(workflowId)`: Removes engine from cache
+- TTL-based cleanup: Engines idle for >5 minutes are evicted automatically (setInterval every 60s)
+- Cache stores: `{ engine: WorkflowEngine, lastUsed: number }`
 
-2. **Replace `getEquityCurve()`** (line 817) -- reconstruct `EquityPoint[]` from TypedArrays only when needed (at the end, for DB persistence):
 ```typescript
-getEquityCurve(): EquityPoint[] {
-  const result: EquityPoint[] = new Array(this.equityCurveIndex);
-  for (let i = 0; i < this.equityCurveIndex; i++) {
-    result[i] = {
-      timestamp: new Date(this.equityCurveData.timestamps[i]).toISOString(),
-      cash: this.equityCurveData.cash[i],
-      positionsValue: this.equityCurveData.positionsValue[i],
-      totalEquity: this.equityCurveData.totalEquity[i],
-      drawdownPct: this.equityCurveData.drawdownPct[i],
-    };
-  }
-  return result;
-}
-```
+class EnginePool {
+  private static instance: EnginePool;
+  private cache = new Map<string, { engine: WorkflowEngine; lastUsed: number }>();
+  private readonly TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-3. **Rewrite `getMetrics()`** to read directly from TypedArrays instead of `state.equityCurve`:
-```typescript
-// Final equity from TypedArray:
-const lastIdx = this.equityCurveIndex - 1;
-const finalEquity = lastIdx >= 0
-  ? this.equityCurveData.totalEquity[lastIdx]
-  : initialCapital;
-
-// Max drawdown from TypedArray (no .map() needed):
-let maxDrawdownPct = 0;
-for (let i = 0; i < this.equityCurveIndex; i++) {
-  if (this.equityCurveData.drawdownPct[i] > maxDrawdownPct) {
-    maxDrawdownPct = this.equityCurveData.drawdownPct[i];
+  getOrCreate(workflowId, runId, userId, nodes, edges, opts): WorkflowEngine {
+    const cached = this.cache.get(workflowId);
+    if (cached) {
+      cached.engine.reset(runId);  // Reset execution state, keep maps/router
+      cached.lastUsed = Date.now();
+      return cached.engine;
+    }
+    const engine = new WorkflowEngine(runId, workflowId, userId, nodes, edges, opts.mode, opts.abortSignal);
+    this.cache.set(workflowId, { engine, lastUsed: Date.now() });
+    return engine;
   }
 }
 ```
 
-4. **Rewrite `resampleToDaily()`** to work on TypedArrays directly -- no sort, no object creation:
+### File 2 (MODIFY): `coreza-backend/src/services/workflowEngine.ts`
+
+Add a `reset(newRunId)` method to WorkflowEngine:
+
 ```typescript
-private resampleToDailyReturns(): number[] {
-  if (this.equityCurveIndex < 2) return [];
+reset(newRunId: string): void {
+  this.runId = newRunId;
+  this.edgePayload.clear();
+  this.failed.clear();
+  this.failedNodeErrors.clear();
+  this.enqueuedKeys.clear();
+  this.retryCount.clear();
+  this.executionOrder = [];
+  this.queue = new NodeQueueManager();
+  if (this.silent) this.queue.silent = true;
+  this.store = new NodeStoreV2(newRunId, this.nodes);
+  this.dataContext = DataContextManager.getInstance().getContext({
+    runId: newRunId, workflowId: this.workflowId, userId: this.userId,
+  });
+  // Keep: nodeById, incomingEdgesByTarget, outgoingEdgesBySource, router, executors, _nodeHasTemplatesCache
+}
+```
 
-  const DAY_MS = 86_400_000;
-  const returns: number[] = [];
-  let prevDayBucket = Math.floor(this.equityCurveData.timestamps[0] / DAY_MS);
-  let prevEquity = this.equityCurveData.totalEquity[0];
+What is preserved (the expensive stuff):
+- `nodeById` Map (built from node array)
+- `incomingEdgesByTarget` / `outgoingEdgesBySource` Maps (built from edge array)
+- `NodeRouter` instance
+- `executors` Map (executor instances with their internal caches, e.g., SimBroker cache, indicator cache)
+- `_nodeHasTemplatesCache` (template detection results)
 
-  for (let i = 1; i < this.equityCurveIndex; i++) {
-    const dayBucket = Math.floor(this.equityCurveData.timestamps[i] / DAY_MS);
-    if (dayBucket !== prevDayBucket) {
-      const equity = this.equityCurveData.totalEquity[i];
-      if (prevEquity > 0) {
-        returns.push((equity - prevEquity) / prevEquity);
+What is reset (per-run state):
+- `edgePayload`, `failed`, `failedNodeErrors`, `enqueuedKeys`, `retryCount`
+- `executionOrder`
+- `NodeQueueManager` (fresh queue)
+- `NodeStoreV2` (fresh results store)
+- `DataContext` (fresh execution-scoped RAM)
+
+### File 3 (MODIFY): `coreza-backend/src/utils/workflowWorker.ts`
+
+In the normal workflow execution path (line 488), for non-stream triggers, use EnginePool:
+
+```typescript
+// Normal workflow execution (line 456+)
+if (trigger !== "market_data") {
+  // Use warm engine pool for non-stream workflows
+  const engine = EnginePool.getInstance().getOrCreate(
+    workflowId, runId, userId, nodes, edges, { mode: "best-effort", abortSignal: signal }
+  );
+  const result = await engine.execute(renamed, startNodeId);
+  // ... rest of success/error handling unchanged
+}
+```
+
+For `trigger === "market_data"`, the worker won't handle it here anymore -- it goes through the Live Strategy Runner (Part 2).
+
+---
+
+## Part 2: Long-Lived Strategy Runner (Stream Workflows)
+
+### File 4 (NEW): `coreza-backend/src/services/LiveStrategyRunner.ts`
+
+The core long-lived execution engine for streaming workflows.
+
+```typescript
+class LiveStrategyRunner {
+  private engine: WorkflowEngine;
+  private redisStream: Redis;     // For XREAD
+  private streamKey: string;      // "strategy:stream:{workflowId}"
+  private running = false;
+  private abortController: AbortController;
+
+  constructor(workflowId, userId, nodes, edges) {
+    this.engine = new WorkflowEngine(runId, workflowId, userId, nodes, edges);
+    this.streamKey = `strategy:stream:${workflowId}`;
+    this.abortController = new AbortController();
+  }
+
+  async start(): Promise<void> {
+    this.running = true;
+    // Create consumer group (if not exists)
+    await this.redisStream.xgroup("CREATE", this.streamKey, "strategy-group", "0", "MKSTREAM").catch(() => {});
+
+    while (this.running) {
+      // Block-read from Redis Stream (5 second timeout)
+      const results = await this.redisStream.xreadgroup(
+        "GROUP", "strategy-group", `consumer-${this.engine.workflowId}`,
+        "BLOCK", 5000,
+        "COUNT", 10,  // Process up to 10 events per batch
+        "STREAMS", this.streamKey, ">"
+      );
+
+      if (!results || results.length === 0) continue;
+
+      for (const [, messages] of results) {
+        for (const [messageId, fields] of messages) {
+          const event = JSON.parse(fields[1]); // Parse event data
+          const runId = uuidv4();
+
+          // Reset engine for new event (reuse all maps/router/executors)
+          this.engine.reset(runId);
+
+          try {
+            await this.engine.execute({ data: event });
+          } catch (err) {
+            console.error(`[LiveStrategy] Error processing event:`, err);
+          }
+
+          // Acknowledge message
+          await this.redisStream.xack(this.streamKey, "strategy-group", messageId);
+        }
       }
-      prevEquity = equity;
-      prevDayBucket = dayBucket;
     }
   }
-  return returns;
-}
-```
-This eliminates the `[...curve].sort()` copy + sort of 27K objects AND the `Map` allocation in one shot.
 
-5. **Remove `console.log` from fill path** (line 340-342 and line 157-159) -- replace with a counter that logs summary at end:
-```typescript
-// Remove from onBar fill loop:
-// console.log(`[SimBroker] Order filled: ...`);
-
-// Add to getMetrics() or a summary method:
-console.log(`[SimBroker] Completed: ${this.state.trades.length} trades, ${this.equityCurveIndex} bars`);
-```
-
-### Tier B: Use BarBuffer in Fast Path (if fast path engine exists)
-
-**File: `coreza-backend/src/services/simBroker/index.ts`**
-
-Add an `onBarFromBuffer(symbol: string, buffer: BarBuffer, index: number)` method that reads directly from TypedArrays without creating a `Bar` object:
-
-```typescript
-onBarFromBuffer(symbol: string, buffer: BarBuffer, index: number): OrderFill[] {
-  // Read directly from TypedArrays -- no Bar object created
-  const open = buffer.open[index];
-  const high = buffer.high[index];
-  const low = buffer.low[index];
-  const close = buffer.close[index];
-  const volume = buffer.volume[index];
-  const timestamp = buffer.timestamps[index]; // numeric
-
-  // Process pending orders using raw values...
+  async stop(): Promise<void> {
+    this.running = false;
+    this.abortController.abort();
+  }
 }
 ```
 
-This requires the caller (BacktestExecutor or fast engine) to pre-load all bars into a `BarBuffer` before the loop, then iterate by index. This is only useful if there's a fast-path loop that can use it.
+Key design decisions:
+- Uses **Redis Streams** (XREADGROUP with consumer groups) instead of Pub/Sub for durability and ordered processing
+- **Block-reads** with 5s timeout so the loop doesn't spin
+- **Acknowledges** each message after processing (at-least-once delivery)
+- Engine is **reused** across all events (same `reset()` as Option A)
+- Indicator state, executor caches (SimBroker, etc.) persist in memory across ticks
 
-However, at 27K bars this won't make a measurable difference. The bar object allocation is ~0.5ms total for 27K bars.
+### File 5 (NEW): `coreza-backend/src/services/liveStrategyManager.ts`
 
-### Tier C: Interface Cleanup
+Manages the lifecycle of all active LiveStrategyRunners.
 
-**File: `coreza-backend/src/services/simBroker/interfaces.ts`**
+```typescript
+class LiveStrategyManager {
+  private static instance: LiveStrategyManager;
+  private runners = new Map<string, LiveStrategyRunner>(); // workflowId -> runner
 
-The `EquityPoint` and `NumericEquityPoint` interfaces can stay as-is since they're used for DB persistence and API responses. The internal hot path just won't create them during iteration anymore.
+  async startStrategy(workflowId, userId, nodes, edges): Promise<void> {
+    if (this.runners.has(workflowId)) return; // Already running
+
+    const runner = new LiveStrategyRunner(workflowId, userId, nodes, edges);
+    this.runners.set(workflowId, runner);
+
+    // Start in background (don't await -- it's an infinite loop)
+    runner.start().catch(err => {
+      console.error(`[LiveStrategyManager] Strategy ${workflowId} crashed:`, err);
+      this.runners.delete(workflowId);
+    });
+  }
+
+  async stopStrategy(workflowId: string): Promise<void> {
+    const runner = this.runners.get(workflowId);
+    if (runner) {
+      await runner.stop();
+      this.runners.delete(workflowId);
+    }
+  }
+
+  isRunning(workflowId: string): boolean {
+    return this.runners.has(workflowId);
+  }
+
+  async stopAll(): Promise<void> {
+    for (const [id, runner] of this.runners) {
+      await runner.stop();
+    }
+    this.runners.clear();
+  }
+}
+```
+
+### File 6 (MODIFY): `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts`
+
+Change `triggerWorkflowExecution()` (line 437) to use Redis Stream XADD instead of BullMQ job:
+
+**Before** (current):
+```typescript
+await bullMqJobQueue.addWorkflowExecution({ runId, workflowId, userId, nodes, edges, trigger: "market_data", ... });
+```
+
+**After**:
+```typescript
+// Push event to Redis Stream (LiveStrategyRunner consumes via XREADGROUP)
+const streamKey = `strategy:stream:${workflowId}`;
+const redis = getRedisCache();
+await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*",
+  "event", JSON.stringify(formattedPayload)
+);
+```
+
+This eliminates:
+- BullMQ job creation per tick (no enqueue/dequeue overhead)
+- Redis HSET for run metadata per tick
+- Redis LPUSH to pending sync list per tick
+
+The stream is capped at ~1000 messages to prevent unbounded growth.
+
+### File 7 (MODIFY): `coreza-backend/src/services/jobQueueManager.ts`
+
+Add methods to manage live strategies:
+
+```typescript
+// In BullMQJobQueue class:
+
+async startLiveStrategy(workflowId: string, userId: string, nodes: any[], edges: any[]): Promise<void> {
+  const manager = LiveStrategyManager.getInstance();
+  await manager.startStrategy(workflowId, userId, nodes, edges);
+}
+
+async stopLiveStrategy(workflowId: string): Promise<void> {
+  const manager = LiveStrategyManager.getInstance();
+  await manager.stopStrategy(workflowId);
+}
+```
+
+Update `cancelWorkflowJobs()` to also stop live strategies:
+```typescript
+async cancelWorkflowJobs(userId, workflowId): Promise<number> {
+  // ... existing BullMQ cancellation ...
+  // Also stop live strategy if running
+  const manager = LiveStrategyManager.getInstance();
+  if (manager.isRunning(workflowId)) {
+    await manager.stopStrategy(workflowId);
+    cancelledCount++;
+  }
+  return cancelledCount;
+}
+```
+
+### File 8 (MODIFY): `coreza-backend/src/services/GracefulShutdownHandler.ts`
+
+Register LiveStrategyManager for graceful shutdown:
+
+```typescript
+// In shutdown sequence:
+await LiveStrategyManager.getInstance().stopAll();
+```
 
 ---
 
-## Expected Impact
+## How Strategies Get Started
 
-| Change | Impact at 27K bars | Impact at 390K bars |
+When a user activates a workflow that contains a streaming node:
+
+1. The stream node execution (via MarketExecutor) calls `MarketDataSubscriber.registerWorkflow()`
+2. **New**: After registration, it also calls `LiveStrategyManager.startStrategy(workflowId, userId, nodes, edges)`
+3. The LiveStrategyRunner starts its XREAD loop
+4. MarketDataSubscriber's message handler now does `XADD` to the stream instead of `addWorkflowExecution()`
+5. LiveStrategyRunner picks up events, resets engine, executes
+
+For non-stream workflows (manual run, scheduled, webhook):
+1. `addWorkflowExecution()` is called as before
+2. BullMQ worker picks up the job
+3. Worker uses `EnginePool.getOrCreate()` instead of `new WorkflowEngine()`
+4. Engine is reset and reused on next trigger
+
+---
+
+## Data Flow Comparison
+
+```text
+NON-STREAM (webhook/scheduled/manual):
+  Trigger --> BullMQ.addWorkflowExecution() --> Worker --> EnginePool.getOrCreate() --> engine.reset() --> engine.execute()
+                                                          [reuses maps, router, executors]
+
+STREAM (market_data):
+  MarketEvent --> Redis Pub/Sub --> MarketDataSubscriber --> XADD to Redis Stream
+                                                                    |
+  LiveStrategyRunner (long-lived) <-- XREADGROUP BLOCK <------------+
+       |
+       engine.reset(newRunId) --> engine.execute(event)
+       [engine lives in memory, indicator state preserved, executor caches warm]
+```
+
+---
+
+## Files Summary
+
+| File | Type | Purpose |
 |---|---|---|
-| Remove double-write (Tier A.1) | ~10-20% faster | ~30-40% faster |
-| TypedArray-based getMetrics (Tier A.3) | ~5% faster | ~20% faster |
-| TypedArray resampleToDaily (Tier A.4) | ~15% faster (eliminates sort+copy) | ~40% faster |
-| Remove console.log from fills (Tier A.5) | **~20-50% faster** (biggest at 27K) | ~10% faster |
-| BarBuffer in hot path (Tier B) | Negligible | ~10-15% faster |
+| `coreza-backend/src/services/EnginePool.ts` | NEW | Warm engine cache for non-stream workflows |
+| `coreza-backend/src/services/LiveStrategyRunner.ts` | NEW | Long-lived event loop for stream workflows |
+| `coreza-backend/src/services/liveStrategyManager.ts` | NEW | Manages lifecycle of all LiveStrategyRunners |
+| `coreza-backend/src/services/workflowEngine.ts` | MODIFY | Add `reset()` method (shared by both options) |
+| `coreza-backend/src/utils/workflowWorker.ts` | MODIFY | Use EnginePool for non-stream triggers |
+| `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` | MODIFY | XADD to Redis Stream instead of BullMQ job |
+| `coreza-backend/src/services/jobQueueManager.ts` | MODIFY | Add startLiveStrategy/stopLiveStrategy, update cancel |
+| `coreza-backend/src/services/GracefulShutdownHandler.ts` | MODIFY | Register LiveStrategyManager for shutdown |
 
-**The single biggest win at 27K bars is removing `console.log` from the fill loop.** Each `console.log` is a synchronous I/O call. If you have 200 trades, that's 200+ console.log calls in the hot path. At 390K bars, the memory optimizations dominate.
+---
 
-## Honest Assessment: Can Coreza Match QuantConnect?
+## Per-Tick Overhead Comparison
 
-**No, not at the language level.** But that's the wrong question. The right question is: **Is 27K bars in <1 second acceptable?** After these fixes, it should be. The current bottleneck is almost certainly NOT the TypedArray vs object gap -- it's console.log I/O, double-writes, and the sort-copy in resampleToDaily.
+| Metric | Current (all workflows) | Non-Stream (Pool) | Stream (Long-Lived) |
+|---|---|---|---|
+| BullMQ jobs per tick | 1 | 1 | 0 |
+| Redis writes per tick | 3 (HSET + LPUSH + BullMQ) | 3 | 1 (XADD only) |
+| Engine construction | Full rebuild | Reuse (reset only) | Reuse (reset only) |
+| Indicator state | Lost between ticks | Lost between ticks | Preserved in memory |
+| Executor caches | Lost between ticks | Preserved (warm pool) | Preserved (in-memory) |
 
-After Tier A fixes, expected performance:
-- 27K bars: 0.1-0.3 seconds (from current ~0.5-2s, depending on trade count)
-- 390K bars: 3-8 seconds (from current ~10-30s)
-
-The remaining gap vs LEAN is V8 JIT overhead, heap-allocated objects for orders/trades (unavoidable in JS), and GC pauses -- none of which can be closed without switching languages.
-
-## Files Changed
-
-| File | Changes |
-|---|---|
-| `coreza-backend/src/services/simBroker/index.ts` | Remove double-write in `recordEquityPoint`, rewrite `getMetrics` to read TypedArrays, rewrite `resampleToDaily` to avoid sort+copy, remove `console.log` from fill loop, rewrite `getEquityCurve` to reconstruct from TypedArrays on demand |
-
-Only one file needs changes. The `BarBuffer.ts` class is fine as-is -- it just needs to actually be used by callers (Tier B, optional).

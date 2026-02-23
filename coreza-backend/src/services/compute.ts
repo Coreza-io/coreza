@@ -972,6 +972,70 @@ export class ComputeService {
           return createSuccessOutput(filtered);
         }
 
+        case "map": {
+          const validation = this.validateArray(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+
+          const subOp = String(arg1 || "").toLowerCase();
+          const subArg = arg2;
+          const mapIndexRaw = input.mapIndex;
+          const pickIndex =
+            mapIndexRaw !== undefined && mapIndexRaw !== ""
+              ? Number(mapIndexRaw)
+              : undefined;
+
+          const mapped = validation.array.map((item) => {
+            switch (subOp) {
+              case "split": {
+                const delimiter =
+                  subArg !== undefined && subArg !== "" ? String(subArg) : ",";
+                const parts = String(item).split(delimiter);
+                return pickIndex !== undefined ? (parts[pickIndex] ?? null) : parts;
+              }
+              case "upper":
+                return String(item).toUpperCase();
+              case "lower":
+                return String(item).toLowerCase();
+              case "trim":
+                return String(item).trim();
+              case "substring": {
+                const start = subArg !== undefined ? Number(subArg) : 0;
+                const len = pickIndex !== undefined ? pickIndex : undefined;
+                return String(item).substring(
+                  start,
+                  len !== undefined ? start + len : undefined,
+                );
+              }
+              case "replace": {
+                const [search, replacement] = String(subArg || "")
+                  .split("->")
+                  .map((segment) => segment.trim());
+                return String(item).replace(search || "", replacement || "");
+              }
+              case "getproperty": {
+                if (item && typeof item === "object") {
+                  return this.getNestedValue(item, String(subArg || ""));
+                }
+                return null;
+              }
+              case "tostring":
+                return String(item);
+              case "tonumber":
+                return Number(item);
+              case "round":
+                return Math.round(Number(item));
+              case "floor":
+                return Math.floor(Number(item));
+              case "ceil":
+                return Math.ceil(Number(item));
+              default:
+                return item;
+            }
+          });
+
+          return createSuccessOutput(mapped);
+        }
+
         // ============== OBJECT OPERATIONS ==============
         case "keys": {
           const validation = this.validateObject(value);

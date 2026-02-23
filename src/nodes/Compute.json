@@ -115,6 +115,7 @@
             { "label": "Is Empty", "value": "arrayIsEmpty" },
             { "label": "Join", "value": "join" },
             { "label": "Find", "value": "find" },
+            { "label": "Map", "value": "map" },
             { "label": "Filter", "value": "filter" }
           ]
         },
@@ -176,6 +177,7 @@
             "pick",
             "omit",
             "find",
+            "map",
             "filter"
           ]
         }
@@ -216,6 +218,7 @@
           "pick": "Keys (comma-separated)",
           "omit": "Keys (comma-separated)",
           "find": "Property Name",
+          "map": "Sub-Operation (split/upper/lower/trim/substring/replace/getProperty)",
           "filter": "Property Name"
         }
       }
@@ -347,6 +350,17 @@
       }
     },
     {
+      "key": "mapIndex",
+      "label": "Pick Index",
+      "type": "text",
+      "placeholder": "0",
+      "displayOptions": {
+        "show": {
+          "operator": ["map"]
+        }
+      }
+    },
+    {
       "key": "arg2",
       "label": "Argument 2",
       "type": "text",
@@ -359,6 +373,7 @@
             "slice",
             "setProperty",
             "find",
+            "map",
             "filter"
           ]
         }
@@ -371,6 +386,7 @@
           "slice": "End Index",
           "setProperty": "Value",
           "find": "Match Value",
+          "map": "Argument (e.g. delimiter, property path)",
           "filter": "Match Value"
         }
       }

@@ -117,7 +117,7 @@ describe('Compute node and API', () => {
       .send({
         value: ['2024-11-13T18:27:00Z', '2024-11-13T18:29:00Z', '2024-11-13T18:40:00Z'],
         operator: 'map',
-        arg1: 'split',
+        mapSubOperation: 'split',
         arg2: 'T',
         mapIndex: '0'
       })
@@ -136,7 +136,7 @@ describe('Compute node and API', () => {
       .send({
         value: ['hello', 'world'],
         operator: 'map',
-        arg1: 'upper'
+        mapSubOperation: 'upper'
       })
       .expect(200);
 
@@ -153,7 +153,7 @@ describe('Compute node and API', () => {
       .send({
         value: [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }],
         operator: 'map',
-        arg1: 'getProperty',
+        mapSubOperation: 'getProperty',
         arg2: 'name'
       })
       .expect(200);

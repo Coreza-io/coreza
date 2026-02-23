@@ -77,6 +77,8 @@ export interface ComputeInput {
   arg2?: any;
   arg3?: any;
   filterOperator?: string;
+  mapSubOperation?: string;
+  mapIndex?: string | number;
   // Date-specific fields
   date2?: any;
   unit?: string;
@@ -976,7 +978,7 @@ export class ComputeService {
           const validation = this.validateArray(value);
           if (!validation.valid) return createErrorOutput(validation.error);
 
-          const subOp = String(arg1 || "").toLowerCase();
+          const subOp = String(input.mapSubOperation || arg1 || "").toLowerCase();
           const subArg = arg2;
           const mapIndexRaw = input.mapIndex;
           const pickIndex =

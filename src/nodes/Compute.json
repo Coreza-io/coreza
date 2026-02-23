@@ -7,10 +7,21 @@
   "category": "Logic",
   "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations.",
   "color": "text-yellow-500",
-  "size": { "width": 320, "height": 320 },
+  "size": {
+    "width": 320,
+    "height": 320
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/comparator/compute",
@@ -35,105 +46,330 @@
           "label": "String",
           "icon": "T",
           "options": [
-            { "label": "Length", "value": "len" },
-            { "label": "Trim", "value": "trim" },
-            { "label": "To Upper", "value": "upper" },
-            { "label": "To Lower", "value": "lower" },
-            { "label": "Substring", "value": "substring" },
-            { "label": "Replace", "value": "replace" },
-            { "label": "Split", "value": "split" },
-            { "label": "Concat", "value": "concat" },
-            { "label": "Starts With", "value": "startsWith" },
-            { "label": "Ends With", "value": "endsWith" },
-            { "label": "Contains", "value": "contains" },
-            { "label": "Is Empty", "value": "isEmpty" },
-            { "label": "Parse to JSON", "value": "toJson" }
+            {
+              "label": "Length",
+              "value": "len"
+            },
+            {
+              "label": "Trim",
+              "value": "trim"
+            },
+            {
+              "label": "To Upper",
+              "value": "upper"
+            },
+            {
+              "label": "To Lower",
+              "value": "lower"
+            },
+            {
+              "label": "Substring",
+              "value": "substring"
+            },
+            {
+              "label": "Replace",
+              "value": "replace"
+            },
+            {
+              "label": "Split",
+              "value": "split"
+            },
+            {
+              "label": "Concat",
+              "value": "concat"
+            },
+            {
+              "label": "Starts With",
+              "value": "startsWith"
+            },
+            {
+              "label": "Ends With",
+              "value": "endsWith"
+            },
+            {
+              "label": "Contains",
+              "value": "contains"
+            },
+            {
+              "label": "Is Empty",
+              "value": "isEmpty"
+            },
+            {
+              "label": "Parse to JSON",
+              "value": "toJson"
+            }
           ]
         },
         "number": {
           "label": "Number",
           "icon": "#",
           "options": [
-            { "label": "Round", "value": "round" },
-            { "label": "Floor", "value": "floor" },
-            { "label": "Ceil", "value": "ceil" },
-            { "label": "Abs", "value": "abs" },
-            { "label": "Add", "value": "add" },
-            { "label": "Subtract", "value": "subtract" },
-            { "label": "Multiply", "value": "multiply" },
-            { "label": "Divide", "value": "divide" },
-            { "label": "Modulo", "value": "modulo" },
-            { "label": "To String", "value": "toString" }
+            {
+              "label": "Round",
+              "value": "round"
+            },
+            {
+              "label": "Floor",
+              "value": "floor"
+            },
+            {
+              "label": "Ceil",
+              "value": "ceil"
+            },
+            {
+              "label": "Abs",
+              "value": "abs"
+            },
+            {
+              "label": "Add",
+              "value": "add"
+            },
+            {
+              "label": "Subtract",
+              "value": "subtract"
+            },
+            {
+              "label": "Multiply",
+              "value": "multiply"
+            },
+            {
+              "label": "Divide",
+              "value": "divide"
+            },
+            {
+              "label": "Modulo",
+              "value": "modulo"
+            },
+            {
+              "label": "To String",
+              "value": "toString"
+            }
           ]
         },
         "datetime": {
           "label": "Date & Time",
-          "icon": "📅",
+          "icon": "\ud83d\udcc5",
           "options": [
-            { "label": "Now", "value": "now" },
-            { "label": "Format", "value": "formatDate" },
-            { "label": "Add", "value": "addTime" },
-            { "label": "Subtract", "value": "subtractTime" },
-            { "label": "Difference", "value": "difference" },
-            { "label": "Start Of", "value": "startOf" },
-            { "label": "End Of", "value": "endOf" },
-            { "label": "Is Before", "value": "isBefore" },
-            { "label": "Is After", "value": "isAfter" },
-            { "label": "Is Same Day", "value": "isSameDay" },
-            { "label": "Is Weekend", "value": "isWeekend" },
-            { "label": "Is Day Of Week", "value": "isDayOfWeek" },
-            { "label": "Convert Timezone", "value": "convertTimezone" },
-            { "label": "Extract Component", "value": "extract" },
-            { "label": "To Timestamp", "value": "toTimestamp" }
+            {
+              "label": "Now",
+              "value": "now"
+            },
+            {
+              "label": "Format",
+              "value": "formatDate"
+            },
+            {
+              "label": "Add",
+              "value": "addTime"
+            },
+            {
+              "label": "Subtract",
+              "value": "subtractTime"
+            },
+            {
+              "label": "Difference",
+              "value": "difference"
+            },
+            {
+              "label": "Start Of",
+              "value": "startOf"
+            },
+            {
+              "label": "End Of",
+              "value": "endOf"
+            },
+            {
+              "label": "Is Before",
+              "value": "isBefore"
+            },
+            {
+              "label": "Is After",
+              "value": "isAfter"
+            },
+            {
+              "label": "Is Same Day",
+              "value": "isSameDay"
+            },
+            {
+              "label": "Is Weekend",
+              "value": "isWeekend"
+            },
+            {
+              "label": "Is Day Of Week",
+              "value": "isDayOfWeek"
+            },
+            {
+              "label": "Convert Timezone",
+              "value": "convertTimezone"
+            },
+            {
+              "label": "Extract Component",
+              "value": "extract"
+            },
+            {
+              "label": "To Timestamp",
+              "value": "toTimestamp"
+            }
           ]
         },
         "array": {
           "label": "Array",
-          "icon": "≡",
+          "icon": "\u2261",
           "options": [
-            { "label": "Length", "value": "arrayLength" },
-            { "label": "Average", "value": "avg" },
-            { "label": "Sum", "value": "sum" },
-            { "label": "Min", "value": "min" },
-            { "label": "Max", "value": "max" },
-            { "label": "Count", "value": "count" },
-            { "label": "Median", "value": "median" },
-            { "label": "Std Deviation", "value": "std" },
-            { "label": "Push", "value": "push" },
-            { "label": "Pop", "value": "pop" },
-            { "label": "Shift", "value": "shift" },
-            { "label": "Unshift", "value": "unshift" },
-            { "label": "Concat", "value": "arrayConcat" },
-            { "label": "Slice", "value": "slice" },
-            { "label": "Reverse", "value": "reverse" },
-            { "label": "Sort", "value": "sort" },
-            { "label": "Unique", "value": "unique" },
-            { "label": "Flatten", "value": "flatten" },
-            { "label": "First", "value": "first" },
-            { "label": "Last", "value": "last" },
-            { "label": "Contains", "value": "arrayContains" },
-            { "label": "Is Empty", "value": "arrayIsEmpty" },
-            { "label": "Join", "value": "join" },
-            { "label": "Find", "value": "find" },
-            { "label": "Map", "value": "map" },
-            { "label": "Filter", "value": "filter" }
+            {
+              "label": "Length",
+              "value": "arrayLength"
+            },
+            {
+              "label": "Average",
+              "value": "avg"
+            },
+            {
+              "label": "Sum",
+              "value": "sum"
+            },
+            {
+              "label": "Min",
+              "value": "min"
+            },
+            {
+              "label": "Max",
+              "value": "max"
+            },
+            {
+              "label": "Count",
+              "value": "count"
+            },
+            {
+              "label": "Median",
+              "value": "median"
+            },
+            {
+              "label": "Std Deviation",
+              "value": "std"
+            },
+            {
+              "label": "Push",
+              "value": "push"
+            },
+            {
+              "label": "Pop",
+              "value": "pop"
+            },
+            {
+              "label": "Shift",
+              "value": "shift"
+            },
+            {
+              "label": "Unshift",
+              "value": "unshift"
+            },
+            {
+              "label": "Concat",
+              "value": "arrayConcat"
+            },
+            {
+              "label": "Slice",
+              "value": "slice"
+            },
+            {
+              "label": "Reverse",
+              "value": "reverse"
+            },
+            {
+              "label": "Sort",
+              "value": "sort"
+            },
+            {
+              "label": "Unique",
+              "value": "unique"
+            },
+            {
+              "label": "Flatten",
+              "value": "flatten"
+            },
+            {
+              "label": "First",
+              "value": "first"
+            },
+            {
+              "label": "Last",
+              "value": "last"
+            },
+            {
+              "label": "Contains",
+              "value": "arrayContains"
+            },
+            {
+              "label": "Is Empty",
+              "value": "arrayIsEmpty"
+            },
+            {
+              "label": "Join",
+              "value": "join"
+            },
+            {
+              "label": "Find",
+              "value": "find"
+            },
+            {
+              "label": "Map",
+              "value": "map"
+            },
+            {
+              "label": "Filter",
+              "value": "filter"
+            }
           ]
         },
         "object": {
           "label": "Object",
-          "icon": "⊕",
+          "icon": "\u2295",
           "options": [
-            { "label": "Get Keys", "value": "keys" },
-            { "label": "Get Values", "value": "values" },
-            { "label": "Get Entries", "value": "entries" },
-            { "label": "Get Property", "value": "getProperty" },
-            { "label": "Set Property", "value": "setProperty" },
-            { "label": "Delete Property", "value": "deleteProperty" },
-            { "label": "Has Property", "value": "hasProperty" },
-            { "label": "Merge", "value": "merge" },
-            { "label": "Extract", "value": "pick" },
-            { "label": "Delete", "value": "omit" },
-            { "label": "Is Empty", "value": "objectIsEmpty" }
+            {
+              "label": "Get Keys",
+              "value": "keys"
+            },
+            {
+              "label": "Get Values",
+              "value": "values"
+            },
+            {
+              "label": "Get Entries",
+              "value": "entries"
+            },
+            {
+              "label": "Get Property",
+              "value": "getProperty"
+            },
+            {
+              "label": "Set Property",
+              "value": "setProperty"
+            },
+            {
+              "label": "Delete Property",
+              "value": "deleteProperty"
+            },
+            {
+              "label": "Has Property",
+              "value": "hasProperty"
+            },
+            {
+              "label": "Merge",
+              "value": "merge"
+            },
+            {
+              "label": "Extract",
+              "value": "pick"
+            },
+            {
+              "label": "Delete",
+              "value": "omit"
+            },
+            {
+              "label": "Is Empty",
+              "value": "objectIsEmpty"
+            }
           ]
         }
       }
@@ -228,13 +464,34 @@
       "label": "Unit",
       "type": "select",
       "options": [
-        { "label": "Second", "value": "second" },
-        { "label": "Minute", "value": "minute" },
-        { "label": "Hour", "value": "hour" },
-        { "label": "Day", "value": "day" },
-        { "label": "Week", "value": "week" },
-        { "label": "Month", "value": "month" },
-        { "label": "Year", "value": "year" }
+        {
+          "label": "Second",
+          "value": "second"
+        },
+        {
+          "label": "Minute",
+          "value": "minute"
+        },
+        {
+          "label": "Hour",
+          "value": "hour"
+        },
+        {
+          "label": "Day",
+          "value": "day"
+        },
+        {
+          "label": "Week",
+          "value": "week"
+        },
+        {
+          "label": "Month",
+          "value": "month"
+        },
+        {
+          "label": "Year",
+          "value": "year"
+        }
       ],
       "default": "days",
       "displayOptions": {
@@ -257,7 +514,12 @@
       "placeholder": "Date to compare",
       "displayOptions": {
         "show": {
-          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
+          "operator": [
+            "difference",
+            "isBefore",
+            "isAfter",
+            "isSameDay"
+          ]
         }
       }
     },
@@ -266,40 +528,118 @@
       "label": "Timezone",
       "type": "select",
       "options": [
-        { "label": "UTC", "value": "UTC" },
-        { "label": "America/New_York (Eastern)", "value": "America/New_York" },
-        { "label": "America/Chicago (Central)", "value": "America/Chicago" },
-        { "label": "America/Denver (Mountain)", "value": "America/Denver" },
+        {
+          "label": "UTC",
+          "value": "UTC"
+        },
+        {
+          "label": "America/New_York (Eastern)",
+          "value": "America/New_York"
+        },
+        {
+          "label": "America/Chicago (Central)",
+          "value": "America/Chicago"
+        },
+        {
+          "label": "America/Denver (Mountain)",
+          "value": "America/Denver"
+        },
         {
           "label": "America/Los_Angeles (Pacific)",
           "value": "America/Los_Angeles"
         },
-        { "label": "America/Toronto", "value": "America/Toronto" },
-        { "label": "America/Vancouver", "value": "America/Vancouver" },
-        { "label": "America/Sao_Paulo", "value": "America/Sao_Paulo" },
-        { "label": "America/Mexico_City", "value": "America/Mexico_City" },
-        { "label": "Europe/London", "value": "Europe/London" },
-        { "label": "Europe/Paris", "value": "Europe/Paris" },
-        { "label": "Europe/Berlin", "value": "Europe/Berlin" },
-        { "label": "Europe/Amsterdam", "value": "Europe/Amsterdam" },
-        { "label": "Europe/Zurich", "value": "Europe/Zurich" },
-        { "label": "Europe/Moscow", "value": "Europe/Moscow" },
-        { "label": "Asia/Tokyo", "value": "Asia/Tokyo" },
-        { "label": "Asia/Shanghai", "value": "Asia/Shanghai" },
-        { "label": "Asia/Hong_Kong", "value": "Asia/Hong_Kong" },
-        { "label": "Asia/Singapore", "value": "Asia/Singapore" },
-        { "label": "Asia/Seoul", "value": "Asia/Seoul" },
-        { "label": "Asia/Dubai", "value": "Asia/Dubai" },
-        { "label": "Asia/Kolkata (India)", "value": "Asia/Kolkata" },
-        { "label": "Australia/Sydney", "value": "Australia/Sydney" },
-        { "label": "Australia/Melbourne", "value": "Australia/Melbourne" },
-        { "label": "Pacific/Auckland", "value": "Pacific/Auckland" },
-        { "label": "Pacific/Honolulu", "value": "Pacific/Honolulu" }
+        {
+          "label": "America/Toronto",
+          "value": "America/Toronto"
+        },
+        {
+          "label": "America/Vancouver",
+          "value": "America/Vancouver"
+        },
+        {
+          "label": "America/Sao_Paulo",
+          "value": "America/Sao_Paulo"
+        },
+        {
+          "label": "America/Mexico_City",
+          "value": "America/Mexico_City"
+        },
+        {
+          "label": "Europe/London",
+          "value": "Europe/London"
+        },
+        {
+          "label": "Europe/Paris",
+          "value": "Europe/Paris"
+        },
+        {
+          "label": "Europe/Berlin",
+          "value": "Europe/Berlin"
+        },
+        {
+          "label": "Europe/Amsterdam",
+          "value": "Europe/Amsterdam"
+        },
+        {
+          "label": "Europe/Zurich",
+          "value": "Europe/Zurich"
+        },
+        {
+          "label": "Europe/Moscow",
+          "value": "Europe/Moscow"
+        },
+        {
+          "label": "Asia/Tokyo",
+          "value": "Asia/Tokyo"
+        },
+        {
+          "label": "Asia/Shanghai",
+          "value": "Asia/Shanghai"
+        },
+        {
+          "label": "Asia/Hong_Kong",
+          "value": "Asia/Hong_Kong"
+        },
+        {
+          "label": "Asia/Singapore",
+          "value": "Asia/Singapore"
+        },
+        {
+          "label": "Asia/Seoul",
+          "value": "Asia/Seoul"
+        },
+        {
+          "label": "Asia/Dubai",
+          "value": "Asia/Dubai"
+        },
+        {
+          "label": "Asia/Kolkata (India)",
+          "value": "Asia/Kolkata"
+        },
+        {
+          "label": "Australia/Sydney",
+          "value": "Australia/Sydney"
+        },
+        {
+          "label": "Australia/Melbourne",
+          "value": "Australia/Melbourne"
+        },
+        {
+          "label": "Pacific/Auckland",
+          "value": "Pacific/Auckland"
+        },
+        {
+          "label": "Pacific/Honolulu",
+          "value": "Pacific/Honolulu"
+        }
       ],
       "default": "UTC",
       "displayOptions": {
         "show": {
-          "operator": ["now", "convertTimezone"]
+          "operator": [
+            "now",
+            "convertTimezone"
+          ]
         }
       }
     },
@@ -308,18 +648,41 @@
       "label": "Target Day",
       "type": "select",
       "options": [
-        { "label": "Sunday", "value": "0" },
-        { "label": "Monday", "value": "1" },
-        { "label": "Tuesday", "value": "2" },
-        { "label": "Wednesday", "value": "3" },
-        { "label": "Thursday", "value": "4" },
-        { "label": "Friday", "value": "5" },
-        { "label": "Saturday", "value": "6" }
+        {
+          "label": "Sunday",
+          "value": "0"
+        },
+        {
+          "label": "Monday",
+          "value": "1"
+        },
+        {
+          "label": "Tuesday",
+          "value": "2"
+        },
+        {
+          "label": "Wednesday",
+          "value": "3"
+        },
+        {
+          "label": "Thursday",
+          "value": "4"
+        },
+        {
+          "label": "Friday",
+          "value": "5"
+        },
+        {
+          "label": "Saturday",
+          "value": "6"
+        }
       ],
       "default": "1",
       "displayOptions": {
         "show": {
-          "operator": ["isDayOfWeek"]
+          "operator": [
+            "isDayOfWeek"
+          ]
         }
       }
     },
@@ -328,24 +691,141 @@
       "label": "Operator",
       "type": "select",
       "options": [
-        { "label": "Equals (===)", "value": "===" },
-        { "label": "Not Equals (!==)", "value": "!==" },
-        { "label": "Greater Than (>)", "value": ">" },
-        { "label": "Greater Than or Equal (>=)", "value": ">=" },
-        { "label": "Less Than (<)", "value": "<" },
-        { "label": "Less Than or Equal (<=)", "value": "<=" },
-        { "label": "Contains", "value": "contains" },
-        { "label": "Does Not Contain", "value": "does_not_contain" },
-        { "label": "Starts With", "value": "starts_with" },
-        { "label": "Ends With", "value": "ends_with" },
-        { "label": "Is Empty", "value": "is_empty" },
-        { "label": "Is Not Empty", "value": "is_not_empty" },
-        { "label": "Matches Regex", "value": "matches_regex" }
+        {
+          "label": "Equals (===)",
+          "value": "==="
+        },
+        {
+          "label": "Not Equals (!==)",
+          "value": "!=="
+        },
+        {
+          "label": "Greater Than (>)",
+          "value": ">"
+        },
+        {
+          "label": "Greater Than or Equal (>=)",
+          "value": ">="
+        },
+        {
+          "label": "Less Than (<)",
+          "value": "<"
+        },
+        {
+          "label": "Less Than or Equal (<=)",
+          "value": "<="
+        },
+        {
+          "label": "Contains",
+          "value": "contains"
+        },
+        {
+          "label": "Does Not Contain",
+          "value": "does_not_contain"
+        },
+        {
+          "label": "Starts With",
+          "value": "starts_with"
+        },
+        {
+          "label": "Ends With",
+          "value": "ends_with"
+        },
+        {
+          "label": "Is Empty",
+          "value": "is_empty"
+        },
+        {
+          "label": "Is Not Empty",
+          "value": "is_not_empty"
+        },
+        {
+          "label": "Matches Regex",
+          "value": "matches_regex"
+        }
       ],
       "default": "===",
       "displayOptions": {
         "show": {
-          "operator": ["find", "filter"]
+          "operator": [
+            "find",
+            "filter"
+          ]
+        }
+      }
+    },
+    {
+      "key": "mapSubOperation",
+      "label": "Sub-Operation",
+      "type": "select",
+      "options": [
+        {
+          "label": "Split",
+          "value": "split"
+        },
+        {
+          "label": "To Upper",
+          "value": "upper"
+        },
+        {
+          "label": "To Lower",
+          "value": "lower"
+        },
+        {
+          "label": "Trim",
+          "value": "trim"
+        },
+        {
+          "label": "Substring",
+          "value": "substring"
+        },
+        {
+          "label": "Replace",
+          "value": "replace"
+        },
+        {
+          "label": "Get Property",
+          "value": "getProperty"
+        },
+        {
+          "label": "To String",
+          "value": "toString"
+        },
+        {
+          "label": "To Number",
+          "value": "toNumber"
+        },
+        {
+          "label": "Round",
+          "value": "round"
+        },
+        {
+          "label": "Floor",
+          "value": "floor"
+        },
+        {
+          "label": "Ceil",
+          "value": "ceil"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "map"
+          ]
+        }
+      }
+    },
+    {
+      "key": "mapIndex",
+      "label": "Pick Index",
+      "type": "text",
+      "placeholder": "0",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "map"
+          ]
         }
       }
     },

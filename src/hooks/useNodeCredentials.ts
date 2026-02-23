@@ -26,7 +26,7 @@ interface UseNodeCredentialsProps {
 interface UseNodeCredentialsReturn {
   loadingSelect: Record<string, boolean>;
   selectOptions: Record<string, any[]>;
-  fetchCredentials: (fieldKey: string) => void;
+  fetchCredentials: (fieldKey: string, serviceTypeOverride?: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   fetchStoreWorkflows: (fieldKey: string) => void;
   fetchStoreVariables: (field: any, workflowId: string) => void;
@@ -50,10 +50,11 @@ export function useNodeCredentials({
 
   // Fetch credentials from API using correct broker-specific endpoints
   const fetchCredentials = useCallback(
-    async (fieldKey: string) => {
+    async (fieldKey: string, serviceTypeOverride?: string) => {
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
       try {
         const serviceType = (
+          serviceTypeOverride ||
           definition?.subCategory ||
           definition?.parentNode ||
           definition?.name ||
@@ -246,7 +247,10 @@ export function useNodeCredentials({
 
     (definition?.fields || []).forEach(async (f: any) => {
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
-        fetchCredentials(f.key);
+        const serviceTypeOverride = f.dependsOn
+          ? fieldState[f.dependsOn]
+          : undefined;
+        fetchCredentials(f.key, serviceTypeOverride);
       }
       if (f.type === "select" && f.optionsSource === "storeWorkflowsApi") {
         fetchStoreWorkflows(f.key);
@@ -260,8 +264,23 @@ export function useNodeCredentials({
     definition?.name,
     fetchCredentials,
     fetchStoreWorkflows,
+    fieldState,
     loading,
   ]);
+
+  // Re-fetch credential options when dependency fields change (e.g. broker)
+  useEffect(() => {
+    (definition?.fields || []).forEach((field: any) => {
+      if (
+        field.type === "select" &&
+        field.optionsSource === "credentialsApi" &&
+        field.dependsOn &&
+        fieldState[field.dependsOn]
+      ) {
+        fetchCredentials(field.key, fieldState[field.dependsOn]);
+      }
+    });
+  }, [definition?.fields, fieldState, fetchCredentials]);
 
   // Load dependent API options on mount or when parent field changes
   useEffect(() => {

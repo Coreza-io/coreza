@@ -106,6 +106,61 @@ describe('Compute node and API', () => {
     expect(res.body.data).toBe(3);
   });
 
+
+  test('POST /comparator/compute maps array with split', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/comparator', comparatorRoutes);
+
+    const res = await request(app)
+      .post('/comparator/compute')
+      .send({
+        value: ['2024-11-13T18:27:00Z', '2024-11-13T18:29:00Z', '2024-11-13T18:40:00Z'],
+        operator: 'map',
+        arg1: 'split',
+        arg2: 'T',
+        mapIndex: '0'
+      })
+      .expect(200);
+
+    expect(res.body.data).toEqual(['2024-11-13', '2024-11-13', '2024-11-13']);
+  });
+
+  test('POST /comparator/compute maps array with upper', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/comparator', comparatorRoutes);
+
+    const res = await request(app)
+      .post('/comparator/compute')
+      .send({
+        value: ['hello', 'world'],
+        operator: 'map',
+        arg1: 'upper'
+      })
+      .expect(200);
+
+    expect(res.body.data).toEqual(['HELLO', 'WORLD']);
+  });
+
+  test('POST /comparator/compute maps array with getProperty', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/comparator', comparatorRoutes);
+
+    const res = await request(app)
+      .post('/comparator/compute')
+      .send({
+        value: [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }],
+        operator: 'map',
+        arg1: 'getProperty',
+        arg2: 'name'
+      })
+      .expect(200);
+
+    expect(res.body.data).toEqual(['Alice', 'Bob']);
+  });
+
   test('ControlFlowExecutor executes Compute node with avg', async () => {
     const executor = new ControlFlowExecutor();
     const node = {

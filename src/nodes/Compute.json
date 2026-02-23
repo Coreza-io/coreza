@@ -413,6 +413,7 @@
             "pick",
             "omit",
             "find",
+            "map",
             "filter"
           ]
         }
@@ -453,6 +454,7 @@
           "pick": "Keys (comma-separated)",
           "omit": "Keys (comma-separated)",
           "find": "Property Name",
+          "map": "Sub-Operation (split/upper/lower/trim/substring/replace/getProperty)",
           "filter": "Property Name"
         }
       }
@@ -824,6 +826,17 @@
           "operator": [
             "map"
           ]
+        }
+      }
+    },
+    {
+      "key": "mapIndex",
+      "label": "Pick Index",
+      "type": "text",
+      "placeholder": "0",
+      "displayOptions": {
+        "show": {
+          "operator": ["map"]
         }
       }
     },

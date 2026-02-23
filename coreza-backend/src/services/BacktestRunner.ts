@@ -47,6 +47,26 @@ export class BacktestRunner {
     if (this.running) return;
     this.running = true;
 
+    await new Promise<void>((resolve, reject) => {
+      if (this.redisStream.status === "ready") {
+        resolve();
+        return;
+      }
+
+      const onReady = () => {
+        this.redisStream.off("error", onError);
+        resolve();
+      };
+
+      const onError = (error: Error) => {
+        this.redisStream.off("ready", onReady);
+        reject(error);
+      };
+
+      this.redisStream.once("ready", onReady);
+      this.redisStream.once("error", onError);
+    });
+
     await this.redisStream
       .xgroup("CREATE", this.streamKey, BACKTEST_GROUP, "0", "MKSTREAM")
       .catch(() => undefined);

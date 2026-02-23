@@ -591,13 +591,25 @@ export class WorkflowEngine {
       // Auto-finalize backtest if this is a backtest workflow
       if (this.hasBacktestInit && !hasFailedNodes) {
         try {
-          const backtestExecutor =
-            this.executors.get("Backtest") || getNodeExecutor("Backtest");
-          if (
-            backtestExecutor &&
-            typeof (backtestExecutor as any).finalizeAll === "function"
-          ) {
-            await (backtestExecutor as any).finalizeAll(this.store);
+          const backtestInitNode = this.nodes.find(
+            (node) => node.name === "BacktestInit",
+          );
+          const backtestInitResult = backtestInitNode
+            ? this.store.getNodeResult(backtestInitNode.id)
+            : undefined;
+          const backtestRunnerActive =
+            backtestInitResult?.status === "running" ||
+            backtestInitResult?.data?.status === "running";
+
+          if (!backtestRunnerActive) {
+            const backtestExecutor =
+              this.executors.get("Backtest") || getNodeExecutor("Backtest");
+            if (
+              backtestExecutor &&
+              typeof (backtestExecutor as any).finalizeAll === "function"
+            ) {
+              await (backtestExecutor as any).finalizeAll(this.store);
+            }
           }
         } catch (finalizeError) {
           console.error(

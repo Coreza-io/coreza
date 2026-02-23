@@ -47,6 +47,8 @@ router.post("/init", async (req: Request, res: Response) => {
       feed,
       warmup_period,
       auto_detect,
+      nodes,
+      edges,
     } = req.body;
 
     if (!workflow_id) {
@@ -81,7 +83,7 @@ router.post("/init", async (req: Request, res: Response) => {
         },
       } as any,
       {},
-      { userId, workflowId: workflow_id }
+      { userId, workflowId: workflow_id, nodes, edges },
     );
 
     if (!result.success) {
@@ -137,7 +139,7 @@ router.post("/trade", async (req: Request, res: Response) => {
         },
       } as any,
       {},
-      { userId }
+      { userId },
     );
 
     if (!result.success) {
@@ -173,7 +175,7 @@ router.post("/results", async (req: Request, res: Response) => {
         values: { backtest_id },
       } as any,
       {},
-      { userId }
+      { userId },
     );
 
     if (!result.success) {
@@ -209,7 +211,7 @@ router.post("/portfolio", async (req: Request, res: Response) => {
         values: { backtest_id, operation, symbol, current_bar, prices },
       } as any,
       {},
-      { userId }
+      { userId },
     );
 
     if (!result.success) {

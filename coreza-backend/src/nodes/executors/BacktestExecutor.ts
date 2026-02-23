@@ -14,7 +14,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { INodeExecutor, NodeInput, NodeResult, WorkflowEdge, WorkflowNode } from "../types";
+import {
+  INodeExecutor,
+  NodeInput,
+  NodeResult,
+  WorkflowEdge,
+  WorkflowNode,
+} from "../types";
 import {
   SimBroker,
   SimBrokerConfig,
@@ -28,14 +34,12 @@ import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
   createErrorOutput,
-  toNodeResult
+  toNodeResult,
 } from "../../utils/normalizeOutput";
 import { discoverIndicators } from "./InitializeIndicatorsExecutor";
 import { buildIndicatorKey } from "../../services/indicatorStateManager";
 import { getRedisCache } from "../../config/redis";
 import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
-
-
 
 interface DiscoveredIndicator {
   nodeId: string;
@@ -75,7 +79,9 @@ function extractStrategySubgraph(
   }
 
   // Deduplicate entry node IDs
-  const uniqueEntryNodeIds = [...new Set(entryNodeIds)].filter((id) => visited.has(id));
+  const uniqueEntryNodeIds = [...new Set(entryNodeIds)].filter((id) =>
+    visited.has(id),
+  );
 
   return { nodes, edges, entryNodeIds: uniqueEntryNodeIds };
 }
@@ -273,11 +279,13 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (!brokerResult.success) {
         return toNodeResult(
-          createErrorOutput(`Failed to fetch historical data: ${brokerResult.error}`),
+          createErrorOutput(
+            `Failed to fetch historical data: ${brokerResult.error}`,
+          ),
         );
       }
 
-      const bars = brokerResult.data?.bars || [];
+      const bars = brokerResult.data?.candles || [];
 
       if (!Array.isArray(bars) || bars.length === 0) {
         return toNodeResult(
@@ -305,7 +313,11 @@ export class BacktestExecutor implements INodeExecutor {
       const remainingBars = bars.slice(warmupPeriod);
 
       const stateManager = context?.indicatorStateManager;
-      if (stateManager && discoveredIndicators.length > 0 && warmupBars.length > 0) {
+      if (
+        stateManager &&
+        discoveredIndicators.length > 0 &&
+        warmupBars.length > 0
+      ) {
         for (const ind of discoveredIndicators) {
           const { candle_data, ...restParams } = ind.params;
           const indParams = {
@@ -322,15 +334,21 @@ export class BacktestExecutor implements INodeExecutor {
             ind.nodeId,
           );
 
-          await stateManager.warmUp(key, ind.type, indParams, warmupBars, false);
+          await stateManager.warmUp(
+            key,
+            ind.type,
+            indParams,
+            warmupBars,
+            false,
+          );
         }
       }
 
-      const { nodes: strategyNodes, edges: strategyEdges, entryNodeIds } = extractStrategySubgraph(
-        node.id,
-        allNodes,
-        allEdges,
-      );
+      const {
+        nodes: strategyNodes,
+        edges: strategyEdges,
+        entryNodeIds,
+      } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
       const redis = getRedisCache();
       const streamKey = `backtest:stream:${backtestId}`;
@@ -377,7 +395,11 @@ export class BacktestExecutor implements INodeExecutor {
         },
       };
 
-      if (remainingBars.length > 0 && strategyNodes.length > 0 && entryNodeIds.length > 0) {
+      if (
+        remainingBars.length > 0 &&
+        strategyNodes.length > 0 &&
+        entryNodeIds.length > 0
+      ) {
         await BacktestRunnerManager.getInstance().startBacktest(
           backtestId,
           workflowId,
@@ -612,10 +634,10 @@ export class BacktestExecutor implements INodeExecutor {
     const equityCurve = simBroker.getEquityCurve();
     const finalEquity = simBroker.getTotalEquity();
 
-      // Persist to Supabase (only at the END of backtest)
+    // Persist to Supabase (only at the END of backtest)
     const supabaseClient = supabase;
 
-      // Update backtest status
+    // Update backtest status
     await supabaseClient
       .from("backtests")
       .update({
@@ -624,7 +646,7 @@ export class BacktestExecutor implements INodeExecutor {
       })
       .eq("id", backtestId);
 
-      // Insert backtest results
+    // Insert backtest results
     const { error: resultsError } = await supabaseClient
       .from("backtest_results")
       .insert({
@@ -669,7 +691,7 @@ export class BacktestExecutor implements INodeExecutor {
       );
     }
 
-      // Insert trades
+    // Insert trades
     if (trades.length > 0) {
       const tradeRows = trades.map((t) => ({
         backtest_id: backtestId,
@@ -698,7 +720,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
     }
 
-      // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
+    // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
     const dailyCurve = this.resampleToDaily(equityCurve);
     if (dailyCurve.length > 0) {
       const initialCapital = simBroker.getConfig().initialCapital;
@@ -733,7 +755,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
     }
 
-      // Cleanup: remove SimBroker from executor cache (free memory)
+    // Cleanup: remove SimBroker from executor cache (free memory)
     this.cleanupSimBroker(backtestId);
 
     console.log(
@@ -742,8 +764,6 @@ export class BacktestExecutor implements INodeExecutor {
       )}%, Bars: ${metrics.totalBars} (in-memory mode)`,
     );
   }
-
-
 
   async finalizeBacktestById(backtestId: string): Promise<void> {
     const simBroker = this.getSimBroker(backtestId);

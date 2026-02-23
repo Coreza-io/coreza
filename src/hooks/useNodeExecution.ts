@@ -239,7 +239,10 @@ export function useNodeExecution({
 
       // For InitializeIndicators: send the full graph so backend BFS can
       // traverse through control nodes and discover downstream indicators.
-      if (definition?.name === "InitializeIndicators") {
+      if (
+        definition?.name === "InitializeIndicators" ||
+        definition?.name === "BacktestInit"
+      ) {
         payload.nodes = nodes.map((n) => {
           const nodeDefinition = n.data?.definition as any;
           const serializedNode: Record<string, any> = {

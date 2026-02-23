@@ -487,9 +487,14 @@ export function createWorkflowWorker({
         };
 
         if (trigger === "market_data") {
-          throw new Error(
-            "market_data jobs are handled by LiveStrategyRunner and should not be queued",
+          console.warn(
+            `⚠️ [Worker] Legacy market_data job ${job.id} for workflow ${workflowId} — skipping (handled by LiveStrategyRunner)`,
           );
+          return {
+            success: true,
+            skipped: true,
+            reason: "legacy_market_data_job",
+          };
         }
 
         const engine = EnginePool.getInstance().getOrCreate(

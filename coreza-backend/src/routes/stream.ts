@@ -20,6 +20,8 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
+import { supabase } from "../config/supabase";
+import { bullMqJobQueue } from "../services/jobQueueManager";
 import {
   StreamExecutionRequest,
   StreamExecutionResponse,
@@ -448,6 +450,27 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     });
 
+    // Start in-backend live strategy runner for stream event consumption
+    const { data: workflow, error: workflowError } = await supabase
+      .from("workflows")
+      .select("nodes, edges")
+      .eq("id", workflow_id)
+      .eq("user_id", userId)
+      .single();
+
+    if (workflowError || !workflow) {
+      throw new Error(
+        `Failed to load workflow ${workflow_id} for live strategy start: ${workflowError?.message || "not found"}`,
+      );
+    }
+
+    await bullMqJobQueue.startLiveStrategy(
+      workflow_id,
+      userId,
+      (workflow.nodes as any[]) || [],
+      (workflow.edges as any[]) || [],
+    );
+
     console.log(`📡 [ExecuteStreamNode] Published register_workflow`);
 
     // Return success response
@@ -501,6 +524,8 @@ router.post("/unregister", async (req, res) => {
       userId,
       workflowId: workflow_id,
     });
+
+    await bullMqJobQueue.stopLiveStrategy(workflow_id);
 
     console.log(`🛑 Stopped listener: ${workflow_id}:${node_id}`);
 

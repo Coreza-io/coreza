@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import Redis from "ioredis";
-import { getRedisCache } from "../config/redis";
+import { createDedicatedCacheConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "./workflowEngine";
 
@@ -20,7 +20,7 @@ export class LiveStrategyRunner {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
   ) {
-    this.redisStream = getRedisCache();
+    this.redisStream = createDedicatedCacheConnection(`Strategy-${workflowId}`);
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}`;
@@ -88,5 +88,6 @@ export class LiveStrategyRunner {
   async stop(): Promise<void> {
     this.running = false;
     this.abortController.abort();
+    await this.redisStream.quit();
   }
 }

@@ -439,6 +439,7 @@ export function useNodeExecution({
           const batch = items.slice(startIndex, endIndex);
           let current = batchSize === 1 ? batch[0] : batch;
           current = !aggregateMode ? batch[0] : batch;
+          const isLastIndex = currentIndex >= arrayLength - 1;
 
           const incomingToLoop = edges.filter((e) => e.target === nodeId!);
           const loopDataNow = executionStore.getNodeData(nodeId!) || {};
@@ -486,7 +487,12 @@ export function useNodeExecution({
             finished,
             edgeArrivals,
           );
-          const uiOut = { data: next.output };
+          const uiOut = {
+            data: next.output,
+            index: currentIndex,
+            isLastIndex,
+            islastindex: isLastIndex,
+          };
           setLastOutput(uiOut);
           data.output = uiOut;
           setNodes((nds) =>

@@ -1,9 +1,9 @@
-import { v4 as uuidv4 } from "uuid";
 import Redis from "ioredis";
 import { createDedicatedCacheConnection, getRedisCache } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "./workflowEngine";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
+import { IndicatorStateManager } from "./indicatorStateManager";
 
 const BACKTEST_GROUP = "backtest-group";
 
@@ -16,6 +16,7 @@ export class BacktestRunner {
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private barsProcessed = 0;
+  private readonly runId: string;
 
   constructor(
     private readonly backtestId: string,
@@ -26,14 +27,17 @@ export class BacktestRunner {
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
     private readonly totalBars: number,
+    runId: string,
+    stateManager?: IndicatorStateManager,
   ) {
     this.redisStream = createDedicatedCacheConnection(`Backtest-${backtestId}`);
     this.redisCache = getRedisCache();
     this.streamKey = `backtest:stream:${backtestId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${backtestId}`;
+    this.runId = runId;
     this.engine = new WorkflowEngine(
-      uuidv4(),
+      this.runId,
       workflowId,
       userId,
       nodes,
@@ -41,6 +45,10 @@ export class BacktestRunner {
       "best-effort",
       this.abortController.signal,
     );
+
+    if (stateManager) {
+      this.engine.setIndicatorStateManager(stateManager);
+    }
   }
 
   async start(): Promise<void> {
@@ -99,7 +107,7 @@ export class BacktestRunner {
             continue;
           }
 
-          this.engine.resetLight(uuidv4(), this.abortController.signal);
+          this.engine.resetLight(this.runId, this.abortController.signal);
 
           // Pre-load BacktestInit results so templates like
           // {{ $('BacktestInit').json.backtest_id }} resolve correctly

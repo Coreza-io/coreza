@@ -414,6 +414,8 @@ export class BacktestExecutor implements INodeExecutor {
           entryNodeIds,
           backtestInitResult,
           remainingBars.length,
+          runId,
+          stateManager,
         );
       } else {
         await this.portfolioFinalize(simBroker, backtestId);

@@ -18,6 +18,7 @@ import { Worker, Queue, FlowProducer } from "bullmq";
 import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
+import { LiveStrategyManager } from "./liveStrategyManager";
 
 export interface ShutdownStats {
   activeJobsAtStart: number;
@@ -125,7 +126,10 @@ export class GracefulShutdownHandler {
         }
       }
 
-      // 5. Close all workers
+      // 5. Stop all long-lived strategy runners
+      await LiveStrategyManager.getInstance().stopAll();
+
+      // 6. Close all workers
       logger.info("🔒 Closing workers...");
       await Promise.all(this.workers.map((w) => w.close()));
       logger.info("Workers closed");

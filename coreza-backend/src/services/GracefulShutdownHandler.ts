@@ -19,6 +19,7 @@ import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
 import { LiveStrategyManager } from "./liveStrategyManager";
+import { BacktestRunnerManager } from "./BacktestRunnerManager";
 
 export interface ShutdownStats {
   activeJobsAtStart: number;
@@ -128,6 +129,7 @@ export class GracefulShutdownHandler {
 
       // 5. Stop all long-lived strategy runners
       await LiveStrategyManager.getInstance().stopAll();
+      await BacktestRunnerManager.getInstance().stopAll();
 
       // 6. Close all workers
       logger.info("🔒 Closing workers...");

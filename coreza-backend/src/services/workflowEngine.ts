@@ -207,6 +207,91 @@ export class WorkflowEngine {
     this._execCtx = null;
   }
 
+  /**
+   * Pre-populate the store with node results so that template expressions
+   * like {{ $('BacktestInit').json.backtest_id }} can resolve even when
+   * the referenced node is not part of the current subgraph.
+   */
+  preloadResults(results: Record<string, any>): void {
+    for (const [nodeId, result] of Object.entries(results)) {
+      this.store.setNodeResult(nodeId, result);
+    }
+  }
+
+  /**
+   * Execute the workflow starting from multiple entry nodes simultaneously.
+   * Pre-marks all incoming edge payloads for the entry nodes so dependency
+   * checks pass, then enqueues all of them before running the processing loop.
+   *
+   * Used by BacktestRunner where the strategy subgraph has no trigger/backtest
+   * nodes and needs explicit entry points.
+   */
+  async executeFromEntries(
+    input: any,
+    entryNodeIds: string[],
+  ): Promise<{
+    success: boolean;
+    result?: any;
+    executionOrder?: string[];
+    error?: string;
+  }> {
+    const workflowStartTime = Date.now();
+    try {
+      this.MAX_RETRIES = this.nodes.length * 2;
+
+      // Pre-mark incoming edges and enqueue all entry nodes
+      for (const entryNodeId of entryNodeIds) {
+        const incomingEdges = this.getIncomingEdges(entryNodeId);
+        for (const edge of incomingEdges) {
+          this.markEdgePayload(edge.id, input);
+        }
+        this.enqueue({ nodeId: entryNodeId, input });
+      }
+
+      // Process queue until empty
+      while (this.queue.length > 0) {
+        if (this.abortSignal?.aborted) {
+          throw new Error("Workflow cancelled by user");
+        }
+        const item = this.dequeue();
+        if (!item) break;
+        await this.executeOnce(item);
+      }
+
+      const hasFailedNodes = this.failed.size > 0;
+      if (hasFailedNodes) {
+        const firstFailedNodeId = Array.from(this.failed)[0];
+        const errorMessage =
+          this.failedNodeErrors.get(firstFailedNodeId) ||
+          `Workflow completed with failures`;
+        return {
+          success: false,
+          error: errorMessage,
+          result: this.store.getAllResults(),
+          executionOrder: this.executionOrder,
+        };
+      }
+
+      return {
+        success: true,
+        result: this.store.getAllResults(),
+        executionOrder: this.executionOrder,
+      };
+    } catch (error) {
+      const executionTimeMs = Date.now() - workflowStartTime;
+      const formattedExecutionTime = this.formatExecutionDuration(executionTimeMs);
+      console.error(
+        `❌ executeFromEntries failed after ${formattedExecutionTime}:`,
+        error,
+      );
+      return {
+        success: false,
+        error: (error as Error).message,
+        executionOrder: this.executionOrder,
+      };
+    }
+  }
+
 
   private getExecutionOrderForResponse(): string[] | undefined {
     return this.executionOrder.length > 0 ? this.executionOrder : undefined;

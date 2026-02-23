@@ -23,7 +23,7 @@ import {
   OrderFill,
   EquityPoint,
 } from "../../services/simBroker";
-import axios from "axios";
+import { BrokerExecutor } from "./BrokerExecutor";
 import { supabase } from "../../config/supabase";
 import {
   createSuccessOutput,
@@ -239,29 +239,45 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const backendPort = process.env.PORT || "8000";
-      const headers: Record<string, string> = {};
-      if (context?.internalToken) {
-        headers.Authorization = `Bearer ${context.internalToken}`;
-      }
+      const brokerExecutor = new BrokerExecutor();
+      const brokerInput: NodeInput = {
+        operation: "get_candle",
+        symbol,
+        interval,
+        start: startDate,
+        end: endDate,
+        asset_type: assetType,
+        feed,
+        credential_id: credentialId,
+        limit: "50000",
+      };
 
-      const fetchResponse = await axios.post(
-        `http://localhost:${backendPort}/broker/${broker}/get_candle`,
+      const brokerNode: WorkflowNode = {
+        id: `broker:${broker}:get_candle`,
+        name: broker,
+        node_type: "main",
+        category: "Broker",
+        subCategory: broker,
+        values: brokerInput,
+      };
+
+      const brokerResult = await brokerExecutor.execute(
+        brokerNode,
+        brokerInput,
         {
-          symbol,
-          interval,
-          start: startDate,
-          end: endDate,
-          asset_type: assetType,
-          feed,
-          credential_id: credentialId,
-          limit: "50000",
+          userId: context?.userId,
+          workflowId: context?.workflowId || "backtest-init",
+          runId: context?.runId || `backtest-${Date.now()}`,
         },
-        Object.keys(headers).length ? { headers } : undefined,
       );
 
-      const bars =
-        fetchResponse?.data?.data?.bars || fetchResponse?.data?.bars || [];
+      if (!brokerResult.success) {
+        return toNodeResult(
+          createErrorOutput(`Failed to fetch historical data: ${brokerResult.error}`),
+        );
+      }
+
+      const bars = brokerResult.data?.bars || [];
 
       if (!Array.isArray(bars) || bars.length === 0) {
         return toNodeResult(

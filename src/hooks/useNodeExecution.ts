@@ -487,11 +487,18 @@ export function useNodeExecution({
             finished,
             edgeArrivals,
           );
+          const loopItemsOutput = Array.isArray(next.output)
+            ? next.output
+            : next.output == null
+              ? []
+              : [next.output];
           const uiOut = {
-            data: next.output,
-            index: currentIndex,
-            isLastIndex,
-            islastindex: isLastIndex,
+            data: {
+              Item: loopItemsOutput,
+              totalItem: arrayLength,
+              CurrentIndex: currentIndex,
+              isLastIndex,
+            },
           };
           setLastOutput(uiOut);
           data.output = uiOut;

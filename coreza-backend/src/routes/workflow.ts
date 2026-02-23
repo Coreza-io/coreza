@@ -276,6 +276,7 @@ router.delete("/:workflowId", async (req, res, next) => {
           userId,
           workflowId,
         });
+        await jobQueue.stopLiveStrategy(workflowId);
         console.log(
           `📤 [Workflow Delete] Unregistered streaming workflow ${workflowId} from MarketDataSubscriber`,
         );
@@ -556,6 +557,13 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             onlyClosedBars,
           });
 
+          await jobQueue.startLiveStrategy(
+            workflowId,
+            userId,
+            workflow.nodes as any[],
+            workflow.edges as any[],
+          );
+
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} activated and registered with market-stream-service`,
             {
@@ -710,6 +718,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             workflowId,
             isTestListener: false,
           });
+
+          await jobQueue.stopLiveStrategy(workflowId);
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`,

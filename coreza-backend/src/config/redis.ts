@@ -234,7 +234,7 @@ const buildSentinelOptions = (
 };
 
 // Create Redis instance with Sentinel or standalone mode
-function createRedisInstance(
+export function createRedisInstance(
   usage: "queue" | "cache",
   logContext: string,
 ): Redis {
@@ -348,6 +348,14 @@ export function getRedisCache(): Redis {
   if (redisCacheInstance) return redisCacheInstance;
   redisCacheInstance = createRedisInstance("cache", "Cache");
   return redisCacheInstance;
+}
+
+/**
+ * Create a dedicated cache Redis connection (non-singleton).
+ * Useful for long-blocking operations such as XREAD BLOCK consumers.
+ */
+export function createDedicatedCacheConnection(label: string): Redis {
+  return createRedisInstance("cache", `Cache (${label})`);
 }
 
 // Backward compatibility (deprecated, maps to getRedisQueue)

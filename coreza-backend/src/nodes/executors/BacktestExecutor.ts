@@ -306,7 +306,7 @@ export class BacktestExecutor implements INodeExecutor {
       let discoveredIndicators: DiscoveredIndicator[] = [];
       if (autoDetect && allNodes.length > 0) {
         discoveredIndicators = discoverIndicators(
-          node.id,
+          node.name,
           allNodes,
           allEdges,
         ) as DiscoveredIndicator[];
@@ -315,8 +315,7 @@ export class BacktestExecutor implements INodeExecutor {
       const warmupBars = bars.slice(0, warmupPeriod);
       const remainingBars = bars.slice(warmupPeriod);
 
-      const stateManager =
-        context?.indicatorStateManager ?? new IndicatorStateManager();
+      const stateManager = new IndicatorStateManager();
       if (
         stateManager &&
         discoveredIndicators.length > 0 &&
@@ -352,7 +351,7 @@ export class BacktestExecutor implements INodeExecutor {
         nodes: strategyNodes,
         edges: strategyEdges,
         entryNodeIds,
-      } = extractStrategySubgraph(node.id, allNodes, allEdges);
+      } = extractStrategySubgraph(node.name, allNodes, allEdges);
 
       const redis = getRedisCache();
       const streamKey = `backtest:stream:${backtestId}`;

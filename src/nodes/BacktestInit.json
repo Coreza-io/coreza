@@ -67,6 +67,7 @@
       "label": "Credential",
       "type": "select",
       "optionsSource": "credentialsApi",
+      "dependsOn": "broker",
       "placeholder": "Select credential",
       "required": false,
       "displayOptions": {

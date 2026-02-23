@@ -1,5 +1,4 @@
 import Redis from "ioredis";
-import { v4 as uuidv4 } from "uuid";
 import { createRedisPubSub, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -7,7 +6,6 @@ import {
   MarketSource,
   MarketEventType,
 } from "../types/marketEvent";
-import { bullMqJobQueue } from "./jobQueueManager";
 import WorkflowCache from "./WorkflowCache";
 import {
   redisPublishBreaker,
@@ -458,58 +456,30 @@ export class MarketDataSubscriber {
         return;
       }
 
-      // Generate run ID locally (no Supabase round-trip)
-      const runId = uuidv4();
       const redis = getRedisCache();
-
-      // Store run metadata in Redis hash (instant, no DB latency)
-      const runData = {
-        id: runId,
-        workflow_id: workflowId,
-        initiated_by: userId,
-        status: "queued",
-        started_at: new Date().toISOString(),
-      };
-
-      await redis.hset(`runs:data:${runId}`, runData);
-      await redis.expire(`runs:data:${runId}`, 86400); // 24 hour TTL
-
-      // Add to pending sync list
-      await redis.lpush("runs:pending:all", runId);
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
 
-      // Add job to BullMQ queue with Redis storage flag
-      try {
-        await bullMqJobQueue.addWorkflowExecution({
-          runId,
-          workflowId,
-          userId,
-          nodes: workflow.nodes,
-          edges: workflow.edges,
-          trigger: "market_data",
-          initialInput: formattedPayload,
-          useRedisStorage: true, // Use Redis instead of direct Supabase
-        });
+      // Push to Redis Stream for long-lived strategy runner consumption
+      const streamKey = `strategy:stream:${workflowId}`;
+      await redis.xadd(
+        streamKey,
+        "MAXLEN",
+        "~",
+        "1000",
+        "*",
+        "event",
+        JSON.stringify(formattedPayload),
+      );
 
-        logger.debug(
-          {
-            workflowId,
-            runId,
-            symbol: event.symbol,
-          },
-          "Queued workflow execution (Redis-first)",
-        );
-      } catch (queueError) {
-        logger.error(
-          { err: queueError, workflowId, runId },
-          "Failed to add workflow to execution queue",
-        );
-        // Clean up Redis entry on queue failure
-        await redis.del(`runs:data:${runId}`);
-        await redis.lrem("runs:pending:all", 1, runId);
-      }
+      logger.debug(
+        {
+          workflowId,
+          symbol: event.symbol,
+        },
+        "Pushed market event to strategy stream",
+      );
     } catch (error) {
       logger.error(
         { err: error, workflowId, userId, symbol: event.symbol },

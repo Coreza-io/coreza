@@ -19,6 +19,7 @@ import { Job, Queue, Worker } from "bullmq";
 import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "../services/workflowEngine";
+import { EnginePool } from "../services/EnginePool";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
@@ -485,17 +486,25 @@ export function createWorkflowWorker({
           data: input?.marketEvent ?? input?.data ?? input,
         };
 
-        const result = await executeWorkflow(
-          runId,
+        if (trigger === "market_data") {
+          throw new Error(
+            "market_data jobs are handled by LiveStrategyRunner and should not be queued",
+          );
+        }
+
+        const engine = EnginePool.getInstance().getOrCreate(
           workflowId,
+          runId,
           userId,
           nodes,
           edges,
           {
-            initialInput: renamed,
-            abortSignal: signal, // Pass abort signal from BullMQ for cancellation
+            mode: "best-effort",
+            abortSignal: signal,
           },
         );
+
+        const result = await engine.execute(renamed);
         executionResult = result;
 
         // Check if workflow actually succeeded - if not, throw to enter catch block

@@ -30,6 +30,7 @@ import {
   WorkflowJobResult,
   isWorkflowCancelled,
 } from "../types/workflowJobResult";
+import { LiveStrategyManager } from "./liveStrategyManager";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -276,6 +277,22 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     );
   }
 
+
+  async startLiveStrategy(
+    workflowId: string,
+    userId: string,
+    nodes: any[],
+    edges: any[]
+  ): Promise<void> {
+    const manager = LiveStrategyManager.getInstance();
+    await manager.startStrategy(workflowId, userId, nodes, edges);
+  }
+
+  async stopLiveStrategy(workflowId: string): Promise<void> {
+    const manager = LiveStrategyManager.getInstance();
+    await manager.stopStrategy(workflowId);
+  }
+
   async scheduleWorkflow(
     workflowId: string,
     userId: string,
@@ -400,6 +417,12 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       }
     }
 
+    const manager = LiveStrategyManager.getInstance();
+    if (manager.isRunning(workflowId)) {
+      await manager.stopStrategy(workflowId);
+      cancelledCount++;
+    }
+
     console.log(
       `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
     );
@@ -515,6 +538,7 @@ const gracefulShutdown = new GracefulShutdownHandler(
 // Register signal handlers for graceful shutdown
 gracefulShutdown.registerSignalHandlers(async () => {
   // Additional cleanup after workers are shut down
+  await LiveStrategyManager.getInstance().stopAll();
   await redis.quit();
   console.log("✅ All queue resources cleaned up");
 });

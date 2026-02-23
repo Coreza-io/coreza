@@ -179,6 +179,8 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       control.loopIteration = true;
       control.sourceHandle = 'loop';
       control.currentIndex = startIndex - batch.length;
+      control.isLastIndex = false;
+      control.islastindex = false;
       control.requeueSelf = true; // Keep for EngineV2 backward compatibility
       if (throttleMs > 0) {
         control.throttleUntil = Date.now() + throttleMs;

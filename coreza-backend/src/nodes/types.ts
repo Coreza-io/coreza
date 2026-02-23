@@ -21,6 +21,9 @@ export interface NodeInput {
 export interface NodeResult {
   success?: boolean;
   data?: any;
+  index?: number;
+  isLastIndex?: boolean;
+  islastindex?: boolean;
   error?: string;
   /** 
    * Execution context metadata (e.g., error summaries, timing info).
@@ -102,6 +105,10 @@ export interface ControlFlags {
   currentIndex?: number;
   /** Whether this is the last batch in sequential mode */
   isLastBatch?: boolean;
+  /** Whether this iteration is at the last item index */
+  isLastIndex?: boolean;
+  /** Lowercase alias for compatibility */
+  islastindex?: boolean;
   
   // Parallel distribution metadata
   /** Number of items being processed */

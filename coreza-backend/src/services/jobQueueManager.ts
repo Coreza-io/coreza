@@ -63,7 +63,12 @@ function createItemParentStore(
     // Override Loop node's output with current item (not the full array)
     // This allows {{ $('Loop').json.data }} to resolve to current item during execution
     [loopId]: {
-      data: item,
+      data: {
+        Item: [item],
+        totalItem: totalItems,
+        CurrentIndex: itemIndex,
+        isLastIndex: itemIndex === totalItems - 1,
+      },
       $loopContext: {
         itemIndex,
         totalItems,

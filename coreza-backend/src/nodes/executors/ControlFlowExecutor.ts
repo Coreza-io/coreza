@@ -355,14 +355,24 @@ export class ControlFlowExecutor implements INodeExecutor {
         context?.setState("isCompleted", true);
       }
 
+      const loopData = currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
+      const isLastIndex = isLastBatch;
+
       return {
         success: true,
-        data: currentBatch.length === 1 ? currentBatch[0] : currentBatch,
+        data: {
+          Item: loopData,
+          totalItem: cachedItems.length,
+          CurrentIndex: currentIndex,
+          isLastIndex,
+        },
         control: {
           loopIteration: true,
           sourceHandle: "loop",
           currentIndex,
           isLastBatch,
+          isLastIndex,
+          islastindex: isLastIndex,
         },
       };
     }
@@ -427,9 +437,21 @@ export class ControlFlowExecutor implements INodeExecutor {
       );
 
       // Convert v2 output format to NodeResult format with standardized output
+      const parallelCurrentIndex = v2Result.control?.currentIndex ?? 0;
+      const parallelItems = Array.isArray(v2Result.output)
+        ? v2Result.output
+        : v2Result.output == null
+          ? []
+          : [v2Result.output];
+
       return {
         success: true,
-        data: v2Result.output,
+        data: {
+          Item: parallelItems,
+          totalItem: items.length,
+          CurrentIndex: parallelCurrentIndex,
+          isLastIndex: Boolean(v2Result.control?.isLastIndex),
+        },
         control: v2Result.control,
         meta: v2Result.meta,
       };
@@ -508,14 +530,24 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     // Return current batch for loop body execution
+    const loopData = currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
+    const isLastIndex = isLastBatch;
+
     return {
       success: true,
-      data: currentBatch.length === 1 ? currentBatch[0] : currentBatch,
+      data: {
+        Item: loopData,
+        totalItem: items.length,
+        CurrentIndex: currentIndexFromState,
+        isLastIndex,
+      },
       control: {
         loopIteration: true,
         sourceHandle: "loop",
         currentIndex: currentIndexFromState,
         isLastBatch,
+        isLastIndex,
+        islastindex: isLastIndex,
       },
     };
   }

@@ -461,22 +461,35 @@ export class BacktestExecutor implements INodeExecutor {
   private async executeOnBar(
     node: WorkflowNode,
     input: NodeInput,
-    _context: any,
+    context: any,
   ): Promise<NodeResult> {
     void node;
 
-    const bar = input?.data?.bar || input?.data || input?.bar || input;
+    const data = input?.data || input;
+    const bar = data?.bar || data;
+    const symbol = data?.symbol || bar?.S || bar?.symbol;
+    const barIndex = data?.barIndex ?? 0;
+
+    let timeframe = "1Day";
+    if (context?.allNodeData?.BacktestInit?.data?.interval) {
+      timeframe = context.allNodeData.BacktestInit.data.interval;
+    }
 
     return toNodeResult(
       createSuccessOutput({
         bar,
-        symbol: bar?.S || bar?.symbol,
+        symbol,
+        timeframe,
+        resolution: timeframe,
+        barIndex,
         timestamp: bar?.t || bar?.Timestamp,
         open: bar?.o || bar?.Open,
         high: bar?.h || bar?.High,
         low: bar?.l || bar?.Low,
         close: bar?.c || bar?.Close,
         volume: bar?.v || bar?.Volume,
+        vwap: bar?.vw || bar?.VWAP,
+        tradeCount: bar?.n || bar?.TradeCount,
       }),
     );
   }

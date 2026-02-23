@@ -4,12 +4,23 @@
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
-  "description": "Receives each bar during backtest execution. Downstream nodes access bar data via {{ $('OnBar').json.bar }}",
+  "description": "Receives each bar during backtest. Access: {{ $('OnBar').json.close }}, {{ $('OnBar').json.symbol }}, {{ $('OnBar').json.timeframe }}",
   "color": "text-orange-500",
-  "size": { "width": 280, "height": 180 },
+  "size": {
+    "width": 280,
+    "height": 180
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "fields": []
 }

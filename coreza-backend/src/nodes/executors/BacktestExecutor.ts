@@ -228,7 +228,7 @@ export class BacktestExecutor implements INodeExecutor {
       simBroker.initializePortfolio();
 
       const broker = String(params.broker || "").toLowerCase();
-      const credentialId = params.credential_id;
+      const credentialId = input.data.credential_id;
       const symbol = params.symbol;
       const interval = params.interval;
       const startDate = params.start_date;

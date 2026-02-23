@@ -456,7 +456,6 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
-
   // ============== ON BAR ==============
   private async executeOnBar(
     node: WorkflowNode,
@@ -482,14 +481,7 @@ export class BacktestExecutor implements INodeExecutor {
         timeframe,
         resolution: timeframe,
         barIndex,
-        timestamp: bar?.t || bar?.Timestamp,
-        open: bar?.o || bar?.Open,
-        high: bar?.h || bar?.High,
-        low: bar?.l || bar?.Low,
-        close: bar?.c || bar?.Close,
-        volume: bar?.v || bar?.Volume,
-        vwap: bar?.vw || bar?.VWAP,
-        tradeCount: bar?.n || bar?.TradeCount,
+        tradeCount: bar?.n,
       }),
     );
   }

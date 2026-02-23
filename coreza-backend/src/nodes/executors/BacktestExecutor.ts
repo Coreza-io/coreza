@@ -306,7 +306,7 @@ export class BacktestExecutor implements INodeExecutor {
       let discoveredIndicators: DiscoveredIndicator[] = [];
       if (autoDetect && allNodes.length > 0) {
         discoveredIndicators = discoverIndicators(
-          node.name,
+          node.id,
           allNodes,
           allEdges,
         ) as DiscoveredIndicator[];
@@ -351,7 +351,7 @@ export class BacktestExecutor implements INodeExecutor {
         nodes: strategyNodes,
         edges: strategyEdges,
         entryNodeIds,
-      } = extractStrategySubgraph(node.name, allNodes, allEdges);
+      } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
       const redis = getRedisCache();
       const streamKey = `backtest:stream:${backtestId}`;
@@ -376,25 +376,31 @@ export class BacktestExecutor implements INodeExecutor {
       await pipeline.exec();
 
       // Build the BacktestInit result that downstream nodes need via templates
+      const backtestInitData = {
+        backtest_id: backtestId,
+        symbol,
+        interval,
+        initial_capital: config.initialCapital,
+        start_date: startDate,
+        end_date: endDate,
+        config: {
+          fill_model: config.fillModel,
+          slippage_model: config.slippageModel,
+          slippage_value: config.slippageValue,
+          commission_model: config.commissionModel,
+          commission_value: config.commissionValue,
+          allow_short: config.allowShort,
+        },
+      };
+
       const backtestInitResult: Record<string, any> = {
         [node.id]: {
           success: true,
-          data: {
-            backtest_id: backtestId,
-            symbol,
-            interval,
-            initial_capital: config.initialCapital,
-            start_date: startDate,
-            end_date: endDate,
-            config: {
-              fill_model: config.fillModel,
-              slippage_model: config.slippageModel,
-              slippage_value: config.slippageValue,
-              commission_model: config.commissionModel,
-              commission_value: config.commissionValue,
-              allow_short: config.allowShort,
-            },
-          },
+          data: backtestInitData,
+        },
+        BacktestInit: {
+          success: true,
+          data: backtestInitData,
         },
       };
 

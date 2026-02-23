@@ -70,13 +70,16 @@ router.post("/if", async (req, res) => {
     }
 
     // Combine results based on logicalOp
-    const passed = results.reduce((acc, cur, i) => {
-      if (i === 0) return cur; // seed with the first result
-      const op = logicalOps[i - 1];
-      if (op === "AND") return acc && cur;
-      if (op === "OR") return acc || cur;
-      throw new Error(`Unsupported logical operator: ${op}`);
-    }, undefined as unknown as boolean);
+    const passed = results.reduce(
+      (acc, cur, i) => {
+        if (i === 0) return cur; // seed with the first result
+        const op = logicalOps[i - 1];
+        if (op === "AND") return acc && cur;
+        if (op === "OR") return acc || cur;
+        throw new Error(`Unsupported logical operator: ${op}`);
+      },
+      undefined as unknown as boolean,
+    );
 
     res.json({
       success: true,
@@ -138,7 +141,7 @@ router.post("/switch", async (req, res) => {
     // Use ComparatorService to evaluate switch
     const result = await ComparatorService.executeSwitch(
       serviceCases,
-      defaultCase
+      defaultCase,
     );
 
     if (!result.success) {
@@ -212,7 +215,7 @@ router.post("/field", async (req, res) => {
             if (persistent && persistentContext) {
               await persistentContext.setPersistentValue(
                 fieldName,
-                result[value]
+                result[value],
               );
             }
             result[fieldName] = result[value];
@@ -259,6 +262,8 @@ router.post("/compute", async (req, res) => {
       timezone,
       inputFormat,
       targetDay,
+      mapSubOperation,
+      mapIndex,
     } = req.body;
 
     if (operator == null) {
@@ -279,6 +284,8 @@ router.post("/compute", async (req, res) => {
       timezone,
       inputFormat,
       targetDay,
+      mapSubOperation,
+      mapIndex,
     });
     if (!result.success) {
       return res.status(400).json({ error: result.error });

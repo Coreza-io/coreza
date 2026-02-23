@@ -413,7 +413,6 @@
             "pick",
             "omit",
             "find",
-            "map",
             "filter"
           ]
         }
@@ -454,7 +453,6 @@
           "pick": "Keys (comma-separated)",
           "omit": "Keys (comma-separated)",
           "find": "Property Name",
-          "map": "Sub-Operation (split/upper/lower/trim/substring/replace/getProperty)",
           "filter": "Property Name"
         }
       }
@@ -514,12 +512,7 @@
       "placeholder": "Date to compare",
       "displayOptions": {
         "show": {
-          "operator": [
-            "difference",
-            "isBefore",
-            "isAfter",
-            "isSameDay"
-          ]
+          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
         }
       }
     },
@@ -636,10 +629,7 @@
       "default": "UTC",
       "displayOptions": {
         "show": {
-          "operator": [
-            "now",
-            "convertTimezone"
-          ]
+          "operator": ["now", "convertTimezone"]
         }
       }
     },
@@ -680,9 +670,7 @@
       "default": "1",
       "displayOptions": {
         "show": {
-          "operator": [
-            "isDayOfWeek"
-          ]
+          "operator": ["isDayOfWeek"]
         }
       }
     },
@@ -747,10 +735,7 @@
       "default": "===",
       "displayOptions": {
         "show": {
-          "operator": [
-            "find",
-            "filter"
-          ]
+          "operator": ["find", "filter"]
         }
       }
     },
@@ -810,22 +795,7 @@
       ],
       "displayOptions": {
         "show": {
-          "operator": [
-            "map"
-          ]
-        }
-      }
-    },
-    {
-      "key": "mapIndex",
-      "label": "Pick Index",
-      "type": "text",
-      "placeholder": "0",
-      "displayOptions": {
-        "show": {
-          "operator": [
-            "map"
-          ]
+          "operator": ["map"]
         }
       }
     },

@@ -237,6 +237,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       timezone,
       inputFormat,
       targetDay,
+      mapSubOperation,
+      mapIndex,
     } = resolvedParams;
     const result = ComputeService.compute({
       value,
@@ -249,6 +251,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       timezone,
       inputFormat,
       targetDay,
+      mapSubOperation,
+      mapIndex,
     });
 
     // ComputeService already returns StandardNodeOutput, just convert to NodeResult

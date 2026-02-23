@@ -163,6 +163,8 @@ export class ComputeService {
         timezone,
         inputFormat,
         targetDay,
+        mapSubOperation,
+        mapIndex,
       } = input;
 
       switch (operator) {
@@ -978,7 +980,9 @@ export class ComputeService {
           const validation = this.validateArray(value);
           if (!validation.valid) return createErrorOutput(validation.error);
 
-          const subOp = String(input.mapSubOperation || arg1 || "").toLowerCase();
+          const subOp = String(
+            input.mapSubOperation || arg1 || "",
+          ).toLowerCase();
           const subArg = arg2;
           const mapIndexRaw = input.mapIndex;
           const pickIndex =
@@ -992,7 +996,9 @@ export class ComputeService {
                 const delimiter =
                   subArg !== undefined && subArg !== "" ? String(subArg) : ",";
                 const parts = String(item).split(delimiter);
-                return pickIndex !== undefined ? (parts[pickIndex] ?? null) : parts;
+                return pickIndex !== undefined
+                  ? (parts[pickIndex] ?? null)
+                  : parts;
               }
               case "upper":
                 return String(item).toUpperCase();

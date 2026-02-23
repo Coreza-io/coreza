@@ -95,6 +95,7 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
   private static simBrokerCache = new Map<string, SimBroker>();
+  private static backtestStartTimes = new Map<string, number>();
 
   async execute(
     node: WorkflowNode,
@@ -147,6 +148,21 @@ export class BacktestExecutor implements INodeExecutor {
   private cleanupSimBroker(backtestId: string): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     BacktestExecutor.simBrokerCache.delete(key);
+    BacktestExecutor.backtestStartTimes.delete(backtestId);
+  }
+
+  private formatDuration(durationMs: number): string {
+    const totalCentiseconds = Math.max(0, Math.floor(durationMs / 10));
+    const hours = Math.floor(totalCentiseconds / 360000);
+    const minutes = Math.floor((totalCentiseconds % 360000) / 6000);
+    const seconds = Math.floor((totalCentiseconds % 6000) / 100);
+    const centiseconds = totalCentiseconds % 100;
+
+    return `${hours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}:${centiseconds
+      .toString()
+      .padStart(2, "0")}`;
   }
 
   public async finalizeAll(_store?: any): Promise<void> {
@@ -226,6 +242,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = backtest.id;
+      BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
 
@@ -792,13 +809,19 @@ export class BacktestExecutor implements INodeExecutor {
       }
     }
 
+    const startedAtMs = BacktestExecutor.backtestStartTimes.get(backtestId);
+    const elapsedTime =
+      typeof startedAtMs === "number"
+        ? this.formatDuration(Date.now() - startedAtMs)
+        : "00:00:00:00";
+
     // Cleanup: remove SimBroker from executor cache (free memory)
     this.cleanupSimBroker(backtestId);
 
     console.log(
       `[BacktestExecutor] Backtest completed: ${backtestId}, Total Return: ${metrics.totalReturnPct.toFixed(
         2,
-      )}%, Bars: ${metrics.totalBars} (in-memory mode)`,
+      )}%, Bars: ${metrics.totalBars} (in-memory mode), Time: ${elapsedTime}`,
     );
   }
 

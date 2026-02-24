@@ -43,6 +43,92 @@ import {
 } from "../../services/indicatorStateManager";
 
 import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
+import { BacktestScheduler, ScheduleRule } from "../../services/BacktestScheduler";
+
+
+function intervalToMinutes(interval: string): number {
+  const normalized = String(interval || "").trim().toLowerCase();
+  const match = normalized.match(/^(\d+)\s*([a-z]+)$/);
+
+  if (match) {
+    const value = Number.parseInt(match[1], 10);
+    const unit = match[2];
+
+    if (["m", "min", "mins", "minute", "minutes"].includes(unit)) {
+      return value;
+    }
+    if (["h", "hr", "hrs", "hour", "hours"].includes(unit)) {
+      return value * 60;
+    }
+    if (["d", "day", "days"].includes(unit)) {
+      return value * 1440;
+    }
+    if (["w", "wk", "wks", "week", "weeks"].includes(unit)) {
+      return value * 10080;
+    }
+  }
+
+  if (normalized.includes("min")) return 1;
+  if (normalized.includes("hour") || normalized.endsWith("h")) return 60;
+  if (normalized.includes("day") || normalized.endsWith("d")) return 1440;
+  if (normalized.includes("week") || normalized.endsWith("w")) return 10080;
+
+  return 1;
+}
+
+function convertSchedulerNodeToRule(
+  nodeId: string,
+  values: Record<string, any>,
+  barInterval: string,
+): ScheduleRule {
+  const interval = String(values.interval || "Days");
+  const count = Math.max(1, Number.parseInt(String(values.count ?? "1"), 10) || 1);
+  const hour = Number.parseInt(String(values.hour ?? "0"), 10) || 0;
+  const minute = Number.parseInt(String(values.minute ?? "0"), 10) || 0;
+  const timezone = values.timezone ? String(values.timezone) : "UTC";
+
+  if (interval === "Weeks") {
+    const daysOfWeek = (Array.isArray(values.dow) ? values.dow : [])
+      .map((day: string | number) => Number.parseInt(String(day), 10))
+      .filter((day: number) => Number.isInteger(day) && day >= 0 && day <= 6);
+
+    return {
+      id: nodeId,
+      type: "day_of_week",
+      daysOfWeek,
+      timezone,
+    };
+  }
+
+  if (interval === "Months") {
+    return {
+      id: nodeId,
+      type: "monthly",
+      dayOfMonth: count,
+      timezone,
+    };
+  }
+
+  if (interval === "Hours") {
+    const barMinutes = intervalToMinutes(barInterval);
+    const everyNBars = Math.max(1, Math.round((count * 60) / barMinutes));
+
+    return {
+      id: nodeId,
+      type: "every_n_bars",
+      everyNBars,
+      timezone,
+    };
+  }
+
+  return {
+    id: nodeId,
+    type: "time_of_day",
+    hour: Math.min(Math.max(hour, 0), 23),
+    minute: Math.min(Math.max(minute, 0), 59),
+    timezone,
+  };
+}
 
 interface DiscoveredIndicator {
   nodeId: string;
@@ -372,6 +458,17 @@ export class BacktestExecutor implements INodeExecutor {
         entryNodeIds,
       } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
+      const schedulerNodes = strategyNodes.filter((n) => n.name === "Scheduler");
+      let scheduler: BacktestScheduler | undefined;
+      if (schedulerNodes.length > 0) {
+        scheduler = new BacktestScheduler(warmupPeriod);
+        for (const schedulerNode of schedulerNodes) {
+          const vals = (schedulerNode.values || {}) as Record<string, any>;
+          const rule = convertSchedulerNodeToRule(schedulerNode.id, vals, interval);
+          scheduler.registerRule(rule);
+        }
+      }
+
       // Build bar events array for in-memory processing (no Redis Stream)
       const barEvents = remainingBars.map((bar: any, i: number) => ({
         bar,
@@ -416,6 +513,7 @@ export class BacktestExecutor implements INodeExecutor {
           barEvents,
           runId,
           stateManager,
+          scheduler,
         );
       } else {
         await this.portfolioFinalize(simBroker, backtestId);

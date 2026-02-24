@@ -202,6 +202,8 @@ export class BacktestExecutor implements INodeExecutor {
         return this.executeBacktestPortfolio(node, input, context);
       case "OnBar":
         return this.executeOnBar(node, input, context);
+      case "BacktestScheduler":
+        return this.executeBacktestScheduler(node, input, context);
       default:
         return toNodeResult(
           createErrorOutput(`Unknown backtest node type: ${nodeName}`),
@@ -458,7 +460,9 @@ export class BacktestExecutor implements INodeExecutor {
         entryNodeIds,
       } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
-      const schedulerNodes = strategyNodes.filter((n) => n.name === "Scheduler");
+      const schedulerNodes = strategyNodes.filter(
+        (n) => n.name === "BacktestScheduler",
+      );
       let scheduler: BacktestScheduler | undefined;
       if (schedulerNodes.length > 0) {
         scheduler = new BacktestScheduler(warmupPeriod);
@@ -547,6 +551,19 @@ export class BacktestExecutor implements INodeExecutor {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
       return toNodeResult(createErrorOutput(error));
     }
+  }
+
+  private async executeBacktestScheduler(
+    node: WorkflowNode,
+    input: NodeInput,
+    context: any,
+  ): Promise<NodeResult> {
+    void node;
+    void input;
+    void context;
+
+    // Signal is preloaded by BacktestRunner; if it is missing, scheduler didn't fire.
+    return toNodeResult(createSuccessOutput({ fired: false }));
   }
 
   // ============== ON BAR ==============

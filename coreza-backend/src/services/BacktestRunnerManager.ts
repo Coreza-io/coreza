@@ -1,5 +1,5 @@
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { BacktestRunner } from "./BacktestRunner";
+import { BacktestRunner, BarEvent } from "./BacktestRunner";
 import { IndicatorStateManager } from "./indicatorStateManager";
 
 export class BacktestRunnerManager {
@@ -21,7 +21,7 @@ export class BacktestRunnerManager {
     edges: WorkflowEdge[],
     entryNodeIds: string[],
     backtestInitResult: Record<string, any>,
-    totalBars: number,
+    bars: BarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
   ): Promise<void> {
@@ -35,7 +35,7 @@ export class BacktestRunnerManager {
       edges,
       entryNodeIds,
       backtestInitResult,
-      totalBars,
+      bars,
       runId,
       stateManager,
     );

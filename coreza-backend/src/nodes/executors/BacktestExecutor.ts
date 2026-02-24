@@ -41,7 +41,7 @@ import {
   buildIndicatorKey,
   IndicatorStateManager,
 } from "../../services/indicatorStateManager";
-import { getRedisCache } from "../../config/redis";
+
 import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
 
 interface DiscoveredIndicator {
@@ -372,28 +372,13 @@ export class BacktestExecutor implements INodeExecutor {
         entryNodeIds,
       } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
-      const redis = getRedisCache();
-      const streamKey = `backtest:stream:${backtestId}`;
-      await redis.del(streamKey);
-
-      const pipeline = redis.pipeline();
-      for (let i = 0; i < remainingBars.length; i += 1) {
-        pipeline.xadd(
-          streamKey,
-          "MAXLEN",
-          "~",
-          String(remainingBars.length + 200),
-          "*",
-          "event",
-          JSON.stringify({
-            bar: remainingBars[i],
-            symbol,
-            interval,
-            barIndex: i,
-          }),
-        );
-      }
-      await pipeline.exec();
+      // Build bar events array for in-memory processing (no Redis Stream)
+      const barEvents = remainingBars.map((bar: any, i: number) => ({
+        bar,
+        symbol,
+        interval,
+        barIndex: i,
+      }));
 
       // Build the BacktestInit result that downstream nodes need via templates
       const backtestInitData = {
@@ -412,10 +397,8 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const backtestInitResult: Record<string, any> = {
-        [node.id]: {
-          success: true,
-          data: backtestInitData,
-        },
+        [node.id]: { success: true, data: backtestInitData },
+        "BacktestInit": { success: true, data: backtestInitData },
       };
 
       if (
@@ -431,7 +414,7 @@ export class BacktestExecutor implements INodeExecutor {
           strategyEdges,
           entryNodeIds,
           backtestInitResult,
-          remainingBars.length,
+          barEvents,
           runId,
           stateManager,
         );
@@ -489,8 +472,16 @@ export class BacktestExecutor implements INodeExecutor {
         bar,
         symbol,
         timeframe,
+        resolution: timeframe,
         barIndex,
-        tradeCount: bar?.n,
+        timestamp: bar?.t || bar?.Timestamp,
+        open: bar?.o || bar?.Open,
+        high: bar?.h || bar?.High,
+        low: bar?.l || bar?.Low,
+        close: bar?.c || bar?.Close,
+        volume: bar?.v || bar?.Volume,
+        vwap: bar?.vw || bar?.VWAP,
+        tradeCount: bar?.n || bar?.TradeCount,
       }),
     );
   }

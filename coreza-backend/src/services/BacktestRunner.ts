@@ -1,20 +1,20 @@
-import Redis from "ioredis";
-import { createDedicatedCacheConnection, getRedisCache } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "./workflowEngine";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { IndicatorStateManager } from "./indicatorStateManager";
+import { getRedisCache } from "../config/redis";
 
-const BACKTEST_GROUP = "backtest-group";
+export interface BarEvent {
+  bar: any;
+  symbol: string;
+  interval: string;
+  barIndex: number;
+}
 
 export class BacktestRunner {
   private readonly engine: WorkflowEngine;
-  private readonly redisStream: Redis;
-  private readonly redisCache: Redis;
-  private readonly streamKey: string;
   private running = false;
   private readonly abortController: AbortController;
-  private readonly consumerName: string;
   private barsProcessed = 0;
   private readonly runId: string;
 
@@ -26,15 +26,11 @@ export class BacktestRunner {
     edges: WorkflowEdge[],
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
-    private readonly totalBars: number,
+    private readonly bars: BarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
   ) {
-    this.redisStream = createDedicatedCacheConnection(`Backtest-${backtestId}`);
-    this.redisCache = getRedisCache();
-    this.streamKey = `backtest:stream:${backtestId}`;
     this.abortController = new AbortController();
-    this.consumerName = `consumer-${backtestId}`;
     this.runId = runId;
     this.engine = new WorkflowEngine(
       this.runId,
@@ -55,107 +51,50 @@ export class BacktestRunner {
     if (this.running) return;
     this.running = true;
 
-    await new Promise<void>((resolve, reject) => {
-      if (this.redisStream.status === "ready") {
-        resolve();
-        return;
+    const totalBars = this.bars.length;
+
+    for (let i = 0; i < totalBars; i++) {
+      if (!this.running || this.abortController.signal.aborted) break;
+
+      this.engine.resetLight(this.runId, this.abortController.signal);
+      this.engine.preloadResults(this.backtestInitResult);
+
+      try {
+        await this.engine.executeFromEntries(
+          { data: this.bars[i] },
+          this.entryNodeIds,
+        );
+      } catch (error) {
+        console.error("[BacktestRunner] Error processing bar:", error);
       }
 
-      const onReady = () => {
-        this.redisStream.off("error", onError);
-        resolve();
-      };
+      this.barsProcessed = i + 1;
 
-      const onError = (error: Error) => {
-        this.redisStream.off("ready", onReady);
-        reject(error);
-      };
-
-      this.redisStream.once("ready", onReady);
-      this.redisStream.once("error", onError);
-    });
-
-    await this.redisStream
-      .xgroup("CREATE", this.streamKey, BACKTEST_GROUP, "0", "MKSTREAM")
-      .catch(() => undefined);
-
-    while (this.running) {
-      const results = (await this.redisStream.xreadgroup(
-        "GROUP",
-        BACKTEST_GROUP,
-        this.consumerName,
-        "COUNT",
-        "100",
-        "STREAMS",
-        this.streamKey,
-        ">",
-      )) as [string, [string, string[]][]][] | null;
-
-      if (!results?.length) {
-        await this.finalize();
-        break;
-      }
-
-      for (const [, messages] of results) {
-        for (const [messageId, fields] of messages) {
-          const payloadIndex = fields.findIndex((field) => field === "event");
-          const rawEvent =
-            payloadIndex >= 0 ? fields[payloadIndex + 1] : undefined;
-
-          if (!rawEvent) {
-            await this.redisStream.xack(this.streamKey, BACKTEST_GROUP, messageId);
-            continue;
-          }
-
-          this.engine.resetLight(this.runId, this.abortController.signal);
-
-          // Pre-load BacktestInit results so templates like
-          // {{ $('BacktestInit').json.backtest_id }} resolve correctly
-          this.engine.preloadResults(this.backtestInitResult);
-
-          try {
-            const event = JSON.parse(rawEvent);
-            // Use executeFromEntries to start from the identified entry nodes
-            await this.engine.executeFromEntries(
-              { data: event },
-              this.entryNodeIds,
-            );
-          } catch (error) {
-            console.error("[BacktestRunner] Error processing stream event:", error);
-          }
-
-          await this.redisStream.xack(this.streamKey, BACKTEST_GROUP, messageId);
-          this.barsProcessed += 1;
-
-          if (this.barsProcessed % 1000 === 0) {
-            await this.reportProgress();
-          }
-        }
-      }
-
-      if (this.barsProcessed >= this.totalBars) {
-        await this.finalize();
-        break;
+      if (this.barsProcessed % 1000 === 0) {
+        await this.reportProgress(totalBars);
       }
     }
+
+    await this.finalize();
   }
 
   async stop(): Promise<void> {
     this.running = false;
     this.abortController.abort();
-    await this.redisStream.quit();
   }
 
-  private async reportProgress(): Promise<void> {
-    const percent =
-      this.totalBars > 0 ? Math.round((this.barsProcessed / this.totalBars) * 100) : 100;
+  private async reportProgress(totalBars: number): Promise<void> {
+    const percent = totalBars > 0
+      ? Math.round((this.barsProcessed / totalBars) * 100)
+      : 100;
 
-    await this.redisCache.set(
+    const redis = getRedisCache();
+    await redis.set(
       `backtest:progress:${this.backtestId}`,
       JSON.stringify({
         backtestId: this.backtestId,
         barsProcessed: this.barsProcessed,
-        totalBars: this.totalBars,
+        totalBars,
         percent,
         updatedAt: new Date().toISOString(),
       }),
@@ -166,17 +105,19 @@ export class BacktestRunner {
 
   private async finalize(): Promise<void> {
     this.running = false;
-    await this.reportProgress();
+    await this.reportProgress(this.bars.length);
 
     try {
       const backtestExecutor = new BacktestExecutor();
       await backtestExecutor.finalizeBacktestById(this.backtestId);
     } catch (error) {
-      console.error(`[BacktestRunner] Finalization failed for ${this.backtestId}:`, error);
+      console.error(
+        `[BacktestRunner] Finalization failed for ${this.backtestId}:`,
+        error,
+      );
     }
 
-    await this.redisCache.del(`backtest:progress:${this.backtestId}`);
-    await this.redisStream.del(this.streamKey).catch(() => undefined);
-    await this.redisStream.quit();
+    const redis = getRedisCache();
+    await redis.del(`backtest:progress:${this.backtestId}`);
   }
 }

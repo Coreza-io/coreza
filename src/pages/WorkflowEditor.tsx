@@ -74,8 +74,6 @@ import {
 import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHistory";
-import { BacktestProgressButton } from "@/components/workflow/BacktestProgressButton";
-import { useBacktestProgress } from "@/hooks/useBacktestProgress";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -224,9 +222,6 @@ const WorkflowEditorContent = () => {
   // Workflow versioning hooks
   const { createVersionBeforeSave, shouldBlockEmptySave } =
     useWorkflowVersioning();
-
-  // Backtest progress tracking
-  const backtestProgress = useBacktestProgress(workflowId);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
@@ -886,8 +881,6 @@ const WorkflowEditorContent = () => {
         throw new Error(errorText);
       }
 
-      const activationData: { backtestId?: string | null } = await res.json();
-
       // Update database to reflect the change
       const { error } = await supabase
         .from("workflows")
@@ -900,10 +893,6 @@ const WorkflowEditorContent = () => {
 
       // Update local state
       setIsActive(newStatus);
-
-      if (newStatus && activationData?.backtestId) {
-        backtestProgress.startTracking(activationData.backtestId);
-      }
 
       if (!newStatus) {
         nodes
@@ -1665,12 +1654,6 @@ const WorkflowEditorContent = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <BacktestProgressButton
-            progress={backtestProgress.progress}
-            isRunning={backtestProgress.isRunning}
-            isCompleted={backtestProgress.isCompleted}
-            onDismiss={backtestProgress.dismiss}
-          />
           <Button
             onClick={() => handleSaveWorkflow()}
             disabled={loading}

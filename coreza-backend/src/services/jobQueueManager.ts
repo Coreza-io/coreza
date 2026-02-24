@@ -32,6 +32,7 @@ import {
 } from "../types/workflowJobResult";
 import { LiveStrategyManager } from "./liveStrategyManager";
 import { BacktestRunnerManager } from "./BacktestRunnerManager";
+import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -297,15 +298,26 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
 
   async startBacktest(
-    backtestId: string,
+    runId: string,
     workflowId: string,
     userId: string,
     nodes: any[],
     edges: any[],
-    totalBars: number,
+    backtestInitNode: any,
   ): Promise<void> {
-    const manager = BacktestRunnerManager.getInstance();
-    await manager.startBacktest(backtestId, workflowId, userId, nodes, edges, totalBars);
+    const backtestExecutor = new BacktestExecutor();
+    const context = { userId, workflowId, runId, nodes, edges };
+    const input = backtestInitNode?.values || {};
+
+    const result = await backtestExecutor.executeBacktestInit(
+      backtestInitNode,
+      input,
+      context,
+    );
+
+    if (!result.success) {
+      throw new Error(result.error || "Backtest initialization failed");
+    }
   }
 
   async stopBacktest(backtestId: string): Promise<void> {

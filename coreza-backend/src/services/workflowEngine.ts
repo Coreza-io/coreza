@@ -86,7 +86,6 @@ export class WorkflowEngine {
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
-  private hasBacktestInit = false;
   private nodeById = new Map<string, WorkflowNode>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
@@ -122,7 +121,6 @@ export class WorkflowEngine {
     const hasBacktestNode = this.nodes.some((node) =>
       (node.name || node.node_type || "").toLowerCase().includes("backtest"),
     );
-    this.hasBacktestInit = this.nodes.some((node) => node.name === "BacktestInit");
     this.silent = hasBacktestNode;
     if (this.silent) {
       this.queue.silent = true;
@@ -590,38 +588,6 @@ export class WorkflowEngine {
 
       if (this.silent && this.indicatorStateManager) {
         await this.indicatorStateManager.flushToRedis();
-      }
-
-      // Auto-finalize backtest if this is a backtest workflow
-      if (this.hasBacktestInit && !hasFailedNodes) {
-        try {
-          const backtestInitNode = this.nodes.find(
-            (node) => node.name === "BacktestInit",
-          );
-          const backtestInitResult = backtestInitNode
-            ? this.store.getNodeResult(backtestInitNode.id)
-            : undefined;
-          const backtestRunnerActive =
-            backtestInitResult?.status === "running" ||
-            backtestInitResult?.data?.status === "running";
-
-          if (!backtestRunnerActive) {
-            const backtestExecutor =
-              this.executors.get("Backtest") || getNodeExecutor("Backtest");
-            if (
-              backtestExecutor &&
-              typeof (backtestExecutor as any).finalizeAll === "function"
-            ) {
-              await (backtestExecutor as any).finalizeAll(this.store);
-            }
-          }
-        } catch (finalizeError) {
-          console.error(
-            "[WorkflowEngine] Auto-finalize backtest failed:",
-            finalizeError,
-          );
-          // Don't fail the entire workflow -- results just won't be persisted
-        }
       }
 
       // Log DataContext stats before cleanup

@@ -30,6 +30,11 @@ export const useBacktestProgress = (
   const [isCompleted, setIsCompleted] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeBacktestIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeBacktestIdRef.current = activeBacktestId;
+  }, [activeBacktestId]);
 
   // Watch for new backtests created for this workflow via realtime
   useEffect(() => {
@@ -48,6 +53,7 @@ export const useBacktestProgress = (
         (payload) => {
           const bt = payload.new as any;
           if (bt.user_id === user.id && (bt.status === "running" || bt.status === "pending")) {
+            activeBacktestIdRef.current = bt.id;
             setActiveBacktestId(bt.id);
             setIsCompleted(false);
             setProgress({
@@ -71,7 +77,7 @@ export const useBacktestProgress = (
         },
         (payload) => {
           const bt = payload.new as any;
-          if (bt.id === activeBacktestId && (bt.status === "completed" || bt.status === "failed")) {
+          if (bt.id === activeBacktestIdRef.current && (bt.status === "completed" || bt.status === "failed")) {
             setProgress((prev) => prev ? { ...prev, percent: 100, completed: true, status: bt.status } : null);
             setIsCompleted(true);
           }
@@ -82,7 +88,7 @@ export const useBacktestProgress = (
     return () => {
       channel.unsubscribe();
     };
-  }, [workflowId, user, activeBacktestId]);
+  }, [workflowId, user]);
 
   // Poll progress endpoint
   const pollProgress = useCallback(async () => {
@@ -122,6 +128,7 @@ export const useBacktestProgress = (
   useEffect(() => {
     if (isCompleted) {
       dismissRef.current = setTimeout(() => {
+        activeBacktestIdRef.current = null;
         setActiveBacktestId(null);
         setProgress(null);
         setIsCompleted(false);
@@ -134,6 +141,7 @@ export const useBacktestProgress = (
   }, [isCompleted]);
 
   const dismiss = useCallback(() => {
+    activeBacktestIdRef.current = null;
     setActiveBacktestId(null);
     setProgress(null);
     setIsCompleted(false);
@@ -141,11 +149,28 @@ export const useBacktestProgress = (
     if (dismissRef.current) clearTimeout(dismissRef.current);
   }, []);
 
+  const startTracking = useCallback((backtestId: string) => {
+    if (!backtestId) return;
+
+    activeBacktestIdRef.current = backtestId;
+    setActiveBacktestId(backtestId);
+    setIsCompleted(false);
+    setProgress({
+      backtestId,
+      percent: 0,
+      barsProcessed: 0,
+      totalBars: 0,
+      status: "running",
+      completed: false,
+    });
+  }, []);
+
   return {
     activeBacktestId,
     progress,
     isRunning: !!activeBacktestId && !isCompleted,
     isCompleted,
+    startTracking,
     dismiss,
   };
 };

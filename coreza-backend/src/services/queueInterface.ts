@@ -96,7 +96,7 @@ export interface IWorkflowJobQueue {
     nodes: any[],
     edges: any[],
     backtestInitNode: any
-  ): Promise<void>;
+  ): Promise<string>;
   stopLiveStrategy(workflowId: string): Promise<void>;
   /** Cancel all queued/running jobs for a workflow and return count of cancelled jobs */
   cancelWorkflowJobs(userId: string, workflowId: string): Promise<number>;

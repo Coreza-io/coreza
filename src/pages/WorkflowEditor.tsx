@@ -886,6 +886,8 @@ const WorkflowEditorContent = () => {
         throw new Error(errorText);
       }
 
+      const activationData: { backtestId?: string | null } = await res.json();
+
       // Update database to reflect the change
       const { error } = await supabase
         .from("workflows")
@@ -898,6 +900,10 @@ const WorkflowEditorContent = () => {
 
       // Update local state
       setIsActive(newStatus);
+
+      if (newStatus && activationData?.backtestId) {
+        backtestProgress.startTracking(activationData.backtestId);
+      }
 
       if (!newStatus) {
         nodes

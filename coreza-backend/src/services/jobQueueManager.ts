@@ -304,7 +304,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     nodes: any[],
     edges: any[],
     backtestInitNode: any,
-  ): Promise<void> {
+  ): Promise<string> {
     // No workflow_runs update -- backtests use the `backtests` table directly
 
     const backtestExecutor = new BacktestExecutor();
@@ -320,6 +320,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     if (!result.success) {
       throw new Error(result.error || "Backtest initialization failed");
     }
+
+    const backtestId = result.data?.backtestId;
+    if (!backtestId) {
+      throw new Error("Backtest initialization did not return backtestId");
+    }
+
+    return backtestId;
   }
 
   async stopBacktest(backtestId: string): Promise<void> {

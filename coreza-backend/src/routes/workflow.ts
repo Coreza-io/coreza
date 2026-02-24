@@ -508,6 +508,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
     let tzToUse = "UTC";
     let nextRun: string | null = null;
     let newsSubscription: { symbols: string[] } | null = null;
+    let activatedBacktestId: string | null = null;
 
     try {
       if (is_active) {
@@ -589,7 +590,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // No workflow_runs row -- backtests use their own `backtests` table
           const tempRunId = `bt-${Date.now()}`;
           try {
-            await jobQueue.startBacktest(
+            activatedBacktestId = await jobQueue.startBacktest(
               tempRunId,
               workflowId,
               userId,
@@ -762,6 +763,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
         workflow: updated,
         next_run_at: is_active && nextRun ? nextRun : null,
         news_subscription: is_active ? newsSubscription : null,
+        backtestId: is_active ? activatedBacktestId : null,
         message,
       });
     } catch (e: any) {

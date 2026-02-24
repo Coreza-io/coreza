@@ -305,13 +305,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     edges: any[],
     backtestInitNode: any,
   ): Promise<void> {
-    await supabase
-      .from("workflow_runs")
-      .update({
-        status: "running",
-        started_at: new Date().toISOString(),
-      })
-      .eq("id", runId);
+    // No workflow_runs update -- backtests use the `backtests` table directly
 
     const backtestExecutor = new BacktestExecutor();
     const context = { userId, workflowId, runId, nodes, edges };

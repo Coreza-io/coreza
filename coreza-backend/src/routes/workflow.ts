@@ -610,18 +610,33 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               `Failed to create workflow run for backtest: ${runError.message}`,
             );
           } else {
-            await jobQueue.startBacktest(
-              run.id,
-              workflowId,
-              userId,
-              workflow.nodes as any[],
-              workflow.edges as any[],
-              triggerNode as any,
-            );
+            try {
+              await jobQueue.startBacktest(
+                run.id,
+                workflowId,
+                userId,
+                workflow.nodes as any[],
+                workflow.edges as any[],
+                triggerNode as any,
+              );
 
-            console.log(
-              `📊 [Workflow Route] BacktestInit workflow ${workflowId} started directly (run: ${run.id})`,
-            );
+              console.log(
+                `📊 [Workflow Route] BacktestInit workflow ${workflowId} started directly (run: ${run.id})`,
+              );
+            } catch (error: any) {
+              await supabase
+                .from("workflow_runs")
+                .update({
+                  status: "failed",
+                  completed_at: new Date().toISOString(),
+                  error_message: error?.message || "Backtest initialization failed",
+                })
+                .eq("id", run.id);
+
+              console.error(
+                `Failed to start backtest for run ${run.id}: ${error?.message || error}`,
+              );
+            }
           }
         }
       } else {

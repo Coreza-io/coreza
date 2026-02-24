@@ -247,7 +247,7 @@ export class BacktestExecutor implements INodeExecutor {
       simBroker.initializePortfolio();
 
       const broker = String(params.broker || "").toLowerCase();
-      const credentialId = input.data.credential_id;
+      const credentialId = input.credential_id;
       const symbol = params.symbol;
       const interval = params.interval;
       const startDate = params.start_date;
@@ -482,9 +482,7 @@ export class BacktestExecutor implements INodeExecutor {
     const bar = data?.bar;
     const symbol = data?.symbol;
     const barIndex = data?.barIndex;
-
-    const allNodeData = context?.getAllNodeResults?.();
-    const timeframe = allNodeData.BacktestInit.data.interval;
+    const timeframe = data?.interval;
 
     return toNodeResult(
       createSuccessOutput({

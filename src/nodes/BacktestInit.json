@@ -18,13 +18,6 @@
       "required": false
     },
     {
-      "key": "description",
-      "label": "Description",
-      "type": "text",
-      "placeholder": "Optional description",
-      "required": false
-    },
-    {
       "key": "initial_capital",
       "label": "Initial Capital ($)",
       "type": "text",
@@ -143,17 +136,6 @@
       "required": false
     },
     {
-      "key": "auto_detect",
-      "label": "Auto-Detect Indicators",
-      "type": "select",
-      "options": [
-        { "id": "true", "name": "True" },
-        { "id": "false", "name": "False" }
-      ],
-      "default": "true",
-      "required": false
-    },
-    {
       "key": "fill_model",
       "label": "Fill Model",
       "type": "select",
@@ -203,17 +185,6 @@
       "type": "text",
       "placeholder": "0.01 ($0.01/share)",
       "default": "0.01",
-      "required": false
-    },
-    {
-      "key": "allow_short",
-      "label": "Allow Short Selling",
-      "type": "select",
-      "options": [
-        { "id": "false", "name": "No" },
-        { "id": "true", "name": "Yes" }
-      ],
-      "default": "false",
       "required": false
     }
   ]

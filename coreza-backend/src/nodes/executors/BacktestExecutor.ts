@@ -388,6 +388,7 @@ export class BacktestExecutor implements INodeExecutor {
           JSON.stringify({
             bar: remainingBars[i],
             symbol,
+            interval,
             barIndex: i,
           }),
         );
@@ -477,16 +478,13 @@ export class BacktestExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     void node;
 
-    const data = input?.data || input;
-    const bar = data?.bar || data;
-    const symbol = data?.symbol || bar?.S || bar?.symbol;
-    const barIndex = data?.barIndex ?? 0;
+    const data = input?.data;
+    const bar = data?.bar;
+    const symbol = data?.symbol;
+    const barIndex = data?.barIndex;
 
     const allNodeData = context?.getAllNodeResults?.();
-    let timeframe = "1Day";
-    if (allNodeData?.BacktestInit?.data?.interval) {
-      timeframe = allNodeData.BacktestInit.data.interval;
-    }
+    const timeframe = allNodeData.BacktestInit.data.interval;
 
     return toNodeResult(
       createSuccessOutput({

@@ -317,13 +317,13 @@ export class BacktestExecutor implements INodeExecutor {
 
       const warmupPeriodRaw = parseInt(params.warmup_period, 10) || 200;
       const warmupPeriod = Math.min(Math.max(warmupPeriodRaw, 0), bars.length);
-      const autoDetect = String(params.auto_detect ?? "true") === "true";
+      //const autoDetect = String(params.auto_detect ?? "true") === "true";
 
       const allNodes: WorkflowNode[] = context?.nodes || [];
       const allEdges: WorkflowEdge[] = context?.edges || [];
 
       let discoveredIndicators: DiscoveredIndicator[] = [];
-      if (autoDetect && allNodes.length > 0) {
+      if (allNodes.length > 0) {
         discoveredIndicators = discoverIndicators(
           node.id,
           allNodes,
@@ -393,12 +393,11 @@ export class BacktestExecutor implements INodeExecutor {
         slippage_value: config.slippageValue,
         commission_model: config.commissionModel,
         commission_value: config.commissionValue,
-        allow_short: config.allowShort,
       };
 
       const backtestInitResult: Record<string, any> = {
         [node.id]: { success: true, data: backtestInitData },
-        "BacktestInit": { success: true, data: backtestInitData },
+        BacktestInit: { success: true, data: backtestInitData },
       };
 
       if (
@@ -436,7 +435,6 @@ export class BacktestExecutor implements INodeExecutor {
             slippage_value: config.slippageValue,
             commission_model: config.commissionModel,
             commission_value: config.commissionValue,
-            allow_short: config.allowShort,
           },
           data: {
             bars_fetched: bars.length,

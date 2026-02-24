@@ -3,6 +3,7 @@ import { WorkflowEngine } from "./workflowEngine";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { getRedisCache } from "../config/redis";
+import { BacktestScheduler } from "./BacktestScheduler";
 
 export interface BarEvent {
   bar: any;
@@ -29,6 +30,7 @@ export class BacktestRunner {
     private readonly bars: BarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
+    private readonly scheduler?: BacktestScheduler,
   ) {
     this.abortController = new AbortController();
     this.runId = runId;
@@ -56,8 +58,31 @@ export class BacktestRunner {
     for (let i = 0; i < totalBars; i++) {
       if (!this.running || this.abortController.signal.aborted) break;
 
+      const barTimestamp = this.bars[i].bar?.t || this.bars[i].bar?.Timestamp;
+      const signals = barTimestamp
+        ? this.scheduler?.checkAndFire(
+          barTimestamp,
+          this.bars[i].barIndex,
+        ) || []
+        : [];
+
       this.engine.resetLight(this.runId, this.abortController.signal);
-      this.engine.preloadResults(this.backtestInitResult);
+
+      const preload = { ...this.backtestInitResult };
+      if (signals.length > 0) {
+        for (const signal of signals) {
+          preload[signal.ruleId] = {
+            success: true,
+            data: {
+              fired: true,
+              barTimestamp: signal.barTimestamp,
+              barIndex: signal.barIndex,
+              ruleId: signal.ruleId,
+            },
+          };
+        }
+      }
+      this.engine.preloadResults(preload);
 
       try {
         await this.engine.executeFromEntries(

@@ -584,7 +584,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           );
         }
 
-        // Handle BacktestInit activation - execute immediately via BullMQ
+        // Handle BacktestInit activation - execute init directly and start runner
         if (triggerNode.node_type === "backtest") {
           // Create a workflow run record with snapshot
           const { data: run, error: runError } = await supabase
@@ -610,23 +610,17 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
               `Failed to create workflow run for backtest: ${runError.message}`,
             );
           } else {
-            // Extract initial input from BacktestInit node values
-            const nodeValues = triggerNode.values || {};
-            const initialInput = nodeValues;
-
-            // Queue workflow for execution
-            await jobQueue.addWorkflowExecution({
-              runId: run.id,
+            await jobQueue.startBacktest(
+              run.id,
               workflowId,
               userId,
-              nodes: workflow.nodes as any[],
-              edges: workflow.edges as any[],
-              trigger: triggerNode.node_type,
-              initialInput,
-            });
+              workflow.nodes as any[],
+              workflow.edges as any[],
+              triggerNode as any,
+            );
 
             console.log(
-              `📊 [Workflow Route] BacktestInit workflow ${workflowId} queued for execution (run: ${run.id})`,
+              `📊 [Workflow Route] BacktestInit workflow ${workflowId} started directly (run: ${run.id})`,
             );
           }
         }

@@ -182,7 +182,7 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   // ============== BACKTEST INIT ==============
-  private async executeBacktestInit(
+  public async executeBacktestInit(
     node: WorkflowNode,
     input: NodeInput,
     context: any,

@@ -253,6 +253,64 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
+// GET /backtest/:id/progress - Get live backtest progress from Redis
+router.get("/:id/progress", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+
+    // Verify ownership
+    const { data: backtest, error: fetchError } = await supabase
+      .from("backtests")
+      .select("id, status")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (fetchError || !backtest) {
+      return res.status(404).json({ error: "Backtest not found" });
+    }
+
+    // If backtest is already completed/failed, return final state
+    if (backtest.status === "completed" || backtest.status === "failed") {
+      return res.json({
+        backtestId: id,
+        status: backtest.status,
+        percent: backtest.status === "completed" ? 100 : 0,
+        barsProcessed: 0,
+        totalBars: 0,
+        completed: true,
+      });
+    }
+
+    // Read progress from Redis
+    const { getRedisCache } = await import("../config/redis");
+    const redis = getRedisCache();
+    const raw = await redis.get(`backtest:progress:${id}`);
+
+    if (!raw) {
+      return res.json({
+        backtestId: id,
+        status: backtest.status,
+        percent: 0,
+        barsProcessed: 0,
+        totalBars: 0,
+        completed: false,
+      });
+    }
+
+    const progress = JSON.parse(raw);
+    return res.json({ ...progress, status: backtest.status, completed: false });
+  } catch (error) {
+    console.error("[BacktestRoutes] GET /:id/progress error:", error);
+    return res.status(500).json({ error: "Failed to get progress" });
+  }
+});
+
 // DELETE /backtest/:id - Cleanup backtest data
 router.delete("/:id", async (req: Request, res: Response) => {
   try {

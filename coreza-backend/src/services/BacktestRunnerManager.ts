@@ -1,7 +1,6 @@
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { BacktestRunner, BarEvent } from "./BacktestRunner";
 import { IndicatorStateManager } from "./indicatorStateManager";
-import { BacktestScheduler } from "./BacktestScheduler";
 
 export class BacktestRunnerManager {
   private static instance: BacktestRunnerManager;
@@ -25,7 +24,6 @@ export class BacktestRunnerManager {
     bars: BarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
-    scheduler?: BacktestScheduler,
   ): Promise<void> {
     if (this.runners.has(backtestId)) return;
 
@@ -40,7 +38,6 @@ export class BacktestRunnerManager {
       bars,
       runId,
       stateManager,
-      scheduler,
     );
     this.runners.set(backtestId, runner);
 

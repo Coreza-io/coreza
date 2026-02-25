@@ -41,7 +41,7 @@
     },
     {
       "key": "broker",
-      "label": "Broker",
+      "label": "Data Provider",
       "type": "select",
       "options": [
         { "id": "alpaca", "name": "Alpaca" },

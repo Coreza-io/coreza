@@ -211,7 +211,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context?.runId || context?.user_id || userId;
+      const runId = context?.runId;
 
       if (!userId || !workflowId) {
         return toNodeResult(
@@ -264,7 +264,7 @@ export class BacktestExecutor implements INodeExecutor {
       simBroker.initializePortfolio();
 
       const broker = String(params.broker || "").toLowerCase();
-      const credentialId = input.credential_id;
+      const credentialId = params.credential_id;
       const symbol = params.symbol;
       const interval = params.interval;
       const startDate = params.start_date;
@@ -440,9 +440,14 @@ export class BacktestExecutor implements INodeExecutor {
         strategyNodes.length > 0 &&
         entryNodeIds.length > 0
       ) {
-        session.runAll()
-          .catch((err) => console.error("[BacktestSession] runAll failed:", err))
-          .finally(() => BacktestSessionManager.getInstance().deleteSession(backtestId));
+        session
+          .runAll()
+          .catch((err) =>
+            console.error("[BacktestSession] runAll failed:", err),
+          )
+          .finally(() =>
+            BacktestSessionManager.getInstance().deleteSession(backtestId),
+          );
       }
 
       if (

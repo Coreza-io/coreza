@@ -50,9 +50,9 @@ async function executeIndicatorWithState(
   req: express.Request,
   batchCalculate: (input: any) => Promise<IndicatorResult>,
 ): Promise<IndicatorResult> {
-  const userId = req.user?.id || req.body.user_id;
+  const userId = req.user?.id;
   const workflowId = req.body.workflow_id;
-  const runId = req.body.run_id || userId;
+  const runId = req.body.run_id;
   const symbol = req.body.symbol;
   const timeframe = req.body.timeframe;
   const node_id = req.body.node_id;

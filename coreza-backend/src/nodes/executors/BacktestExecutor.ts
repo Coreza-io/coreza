@@ -211,7 +211,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context?.runId;
+      const runId = context?.runId || workflowId;
 
       if (!userId || !workflowId) {
         return toNodeResult(

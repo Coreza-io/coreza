@@ -701,8 +701,14 @@ export class WorkflowExecutor {
       roots
     );
 
+    let onBarNodeId: string | null = null;
+    let onBarHasMore = false;
+
     try {
-      while (queue.length) {
+      do {
+        onBarHasMore = false;
+
+        while (queue.length) {
         const id = queue.shift()!;
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
@@ -772,16 +778,6 @@ export class WorkflowExecutor {
           );
 
           const defName = (node.data?.definition as any)?.name;
-          if (defName === "OnBar" && result?.data && result.data.isLast === false) {
-            queue.unshift(id);
-            executed.delete(id);
-
-            const outEdges = this.context.edges.filter((e) => e.source === id);
-            for (const edge of outEdges) {
-              executed.delete(edge.target);
-              failed.delete(edge.target);
-            }
-          }
 
           // Add delay between node executions to make highlighting visible
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -905,6 +901,12 @@ export class WorkflowExecutor {
               }
             }
           }
+
+          if (defName === "OnBar") {
+            onBarNodeId = id;
+            onBarHasMore = result?.data?.isLast === false;
+          }
+
           this.clearIncomingEdgePayloads(id);
           console.log(
             `📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`,
@@ -936,7 +938,22 @@ export class WorkflowExecutor {
           );
           independentNodes.forEach((n) => queue.push(n.id));
         }
-      }
+        }
+
+        if (onBarNodeId && onBarHasMore) {
+          const downstream = this.getDownstreamNodes(onBarNodeId, new Set());
+          for (const downId of downstream) {
+            executed.delete(downId);
+            failed.delete(downId);
+            this.clearIncomingEdgePayloads(downId);
+          }
+
+          executed.delete(onBarNodeId);
+          failed.delete(onBarNodeId);
+          this.clearIncomingEdgePayloads(onBarNodeId);
+          queue.push(onBarNodeId);
+        }
+      } while (queue.length);
 
       const totalTime = performance.now() - metrics.startTime;
       const successCount = metrics.completedNodes.size;

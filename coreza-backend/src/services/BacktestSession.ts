@@ -112,6 +112,31 @@ export class BacktestSession {
     return this.normalizeBarPayload(currentEvent, isLast);
   }
 
+  async nextBar(): Promise<Record<string, any>> {
+    if (this.status === "finished" || this.currentIndex >= this.bars.length) {
+      this.status = "finished";
+      return { isLast: true, total_bars: this.totalBars };
+    }
+
+    this.status = "running";
+    const currentEvent = this.bars[this.currentIndex];
+
+    this.currentIndex += 1;
+    this.barsProcessed = this.currentIndex;
+
+    if (this.barsProcessed % 1000 === 0) {
+      await this.reportProgress();
+    }
+
+    const isLast = this.currentIndex >= this.bars.length;
+    if (isLast) {
+      this.status = "finished";
+      await this.reportProgress();
+    }
+
+    return this.normalizeBarPayload(currentEvent, isLast);
+  }
+
   async runAll(): Promise<void> {
     if (this.status === "finished") {
       return;

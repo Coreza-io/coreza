@@ -104,6 +104,11 @@ export class IndicatorStateManager {
     this.dirtyKeys.clear();
   }
 
+  clearL1Cache(): void {
+    this.l1Cache.clear();
+    this.dirtyKeys.clear();
+  }
+
   async warmUp(
     key: string,
     indicator: string,

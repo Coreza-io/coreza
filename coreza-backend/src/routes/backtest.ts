@@ -120,7 +120,7 @@ router.post("/onbar", async (req: Request, res: Response) => {
       return res.json({ success: true, data: { isLast: true } });
     }
 
-    const result = await session.step();
+    const result = await session.nextBar();
     return res.json({ success: true, data: result });
   } catch (error) {
     console.error("[BacktestRoutes] /onbar error:", error);

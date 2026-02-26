@@ -18,8 +18,10 @@ export class BacktestSession {
   public status: BacktestSessionStatus = "ready";
 
   private readonly engine: WorkflowEngine;
+  private readonly stateManager?: IndicatorStateManager;
   private readonly abortController: AbortController;
   private barsProcessed = 0;
+  private stepping = false;
 
   constructor(
     public readonly backtestId: string,
@@ -35,6 +37,7 @@ export class BacktestSession {
     stateManager?: IndicatorStateManager,
   ) {
     this.abortController = new AbortController();
+    this.stateManager = stateManager;
     this.engine = new WorkflowEngine(
       this.runId,
       this.workflowId,
@@ -76,65 +79,83 @@ export class BacktestSession {
   }
 
   async step(): Promise<Record<string, any>> {
-    if (this.status === "finished" || this.currentIndex >= this.bars.length) {
-      this.status = "finished";
-      return { isLast: true, total_bars: this.totalBars };
+    if (this.stepping) {
+      throw new Error("Step already in progress");
     }
 
-    this.status = "running";
-    const currentEvent = this.bars[this.currentIndex];
-
-    this.engine.resetLight(this.runId, this.abortController.signal);
-    this.engine.preloadResults(this.backtestInitResult);
-
+    this.stepping = true;
     try {
-      await this.engine.executeFromEntries(
-        { data: currentEvent },
-        this.entryNodeIds,
-      );
-    } catch (error) {
-      console.error("[BacktestSession] Error processing bar:", error);
+      if (this.status === "finished" || this.currentIndex >= this.bars.length) {
+        this.status = "finished";
+        return { isLast: true, total_bars: this.totalBars };
+      }
+
+      this.status = "running";
+      const currentEvent = this.bars[this.currentIndex];
+
+      this.engine.resetLight(this.runId, this.abortController.signal);
+      this.engine.preloadResults(this.backtestInitResult);
+
+      try {
+        await this.engine.executeFromEntries(
+          { data: currentEvent },
+          this.entryNodeIds,
+        );
+      } catch (error) {
+        console.error("[BacktestSession] Error processing bar:", error);
+      }
+
+      this.currentIndex += 1;
+      this.barsProcessed = this.currentIndex;
+
+      if (this.barsProcessed % 1000 === 0) {
+        await this.reportProgress();
+      }
+
+      const isLast = this.currentIndex >= this.bars.length;
+      if (isLast) {
+        this.status = "finished";
+        await this.reportProgress();
+      }
+
+      return this.normalizeBarPayload(currentEvent, isLast);
+    } finally {
+      this.stepping = false;
     }
-
-    this.currentIndex += 1;
-    this.barsProcessed = this.currentIndex;
-
-    if (this.barsProcessed % 1000 === 0) {
-      await this.reportProgress();
-    }
-
-    const isLast = this.currentIndex >= this.bars.length;
-    if (isLast) {
-      this.status = "finished";
-      await this.reportProgress();
-    }
-
-    return this.normalizeBarPayload(currentEvent, isLast);
   }
 
   async nextBar(): Promise<Record<string, any>> {
-    if (this.status === "finished" || this.currentIndex >= this.bars.length) {
-      this.status = "finished";
-      return { isLast: true, total_bars: this.totalBars };
+    if (this.stepping) {
+      throw new Error("Step already in progress");
     }
 
-    this.status = "running";
-    const currentEvent = this.bars[this.currentIndex];
+    this.stepping = true;
+    try {
+      if (this.status === "finished" || this.currentIndex >= this.bars.length) {
+        this.status = "finished";
+        return { isLast: true, total_bars: this.totalBars };
+      }
 
-    this.currentIndex += 1;
-    this.barsProcessed = this.currentIndex;
+      this.status = "running";
+      const currentEvent = this.bars[this.currentIndex];
 
-    if (this.barsProcessed % 1000 === 0) {
-      await this.reportProgress();
+      this.currentIndex += 1;
+      this.barsProcessed = this.currentIndex;
+
+      if (this.barsProcessed % 1000 === 0) {
+        await this.reportProgress();
+      }
+
+      const isLast = this.currentIndex >= this.bars.length;
+      if (isLast) {
+        this.status = "finished";
+        await this.reportProgress();
+      }
+
+      return this.normalizeBarPayload(currentEvent, isLast);
+    } finally {
+      this.stepping = false;
     }
-
-    const isLast = this.currentIndex >= this.bars.length;
-    if (isLast) {
-      this.status = "finished";
-      await this.reportProgress();
-    }
-
-    return this.normalizeBarPayload(currentEvent, isLast);
   }
 
   async runAll(): Promise<void> {
@@ -148,6 +169,10 @@ export class BacktestSession {
       this.currentIndex < this.bars.length
     ) {
       await this.step();
+
+      if (this.currentIndex % 500 === 0) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
     }
 
     if (this.status === "finished") {
@@ -161,6 +186,8 @@ export class BacktestSession {
     this.status = "ready";
 
     BacktestExecutor.resetBacktestState(this.backtestId);
+    this.engine.reset(this.runId, this.abortController.signal);
+    this.stateManager?.clearL1Cache();
 
     await this.reportProgress();
   }

@@ -123,6 +123,10 @@ router.post("/onbar", async (req: Request, res: Response) => {
     const result = await session.nextBar();
     return res.json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof Error && error.message === "Step already in progress") {
+      return res.status(409).json({ error: "Step already in progress" });
+    }
+
     console.error("[BacktestRoutes] /onbar error:", error);
     return res.status(500).json({ error: "Failed to process backtest bar" });
   }

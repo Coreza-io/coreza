@@ -31,7 +31,7 @@ import {
   isWorkflowCancelled,
 } from "../types/workflowJobResult";
 import { LiveStrategyManager } from "./liveStrategyManager";
-import { BacktestRunnerManager } from "./BacktestRunnerManager";
+import { BacktestSessionManager } from "./BacktestSessionManager";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 
 const redis = getRedisQueue();
@@ -329,7 +329,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   }
 
   async stopBacktest(backtestId: string): Promise<void> {
-    const manager = BacktestRunnerManager.getInstance();
+    const manager = BacktestSessionManager.getInstance();
     await manager.stopBacktest(backtestId);
   }
 
@@ -463,7 +463,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       cancelledCount++;
     }
 
-    const backtestManager = BacktestRunnerManager.getInstance();
+    const backtestManager = BacktestSessionManager.getInstance();
     const activeBacktests = await supabase
       .from("backtests")
       .select("id")

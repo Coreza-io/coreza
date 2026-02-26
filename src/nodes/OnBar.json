@@ -8,7 +8,7 @@
   "color": "text-orange-500",
   "size": {
     "width": 280,
-    "height": 180
+    "height": 220
   },
   "handles": [
     {
@@ -22,5 +22,17 @@
       "id": "output"
     }
   ],
-  "fields": []
+  "action": {
+    "url": "/backtest/onbar",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "{{ $('BacktestInit').json.backtest_id }}",
+      "required": true
+    }
+  ]
 }

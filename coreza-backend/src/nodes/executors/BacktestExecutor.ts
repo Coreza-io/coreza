@@ -42,7 +42,7 @@ import {
   IndicatorStateManager,
 } from "../../services/indicatorStateManager";
 
-import { BacktestRunnerManager } from "../../services/BacktestRunnerManager";
+import { BacktestSessionManager } from "../../services/BacktestSessionManager";
 
 interface DiscoveredIndicator {
   nodeId: string;
@@ -97,6 +97,25 @@ export class BacktestExecutor implements INodeExecutor {
   private static simBrokerCache = new Map<string, SimBroker>();
   private static backtestStartTimes = new Map<string, number>();
 
+  public static cleanupBacktestResources(backtestId: string): void {
+    const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
+    BacktestExecutor.simBrokerCache.delete(key);
+    BacktestExecutor.backtestStartTimes.delete(backtestId);
+  }
+
+  public static resetBacktestState(backtestId: string): void {
+    const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
+    const existing = BacktestExecutor.simBrokerCache.get(key);
+    if (!existing) {
+      return;
+    }
+
+    const config = existing.getConfig();
+    const freshSimBroker = new SimBroker(backtestId, config);
+    BacktestExecutor.simBrokerCache.set(key, freshSimBroker);
+    BacktestExecutor.backtestStartTimes.delete(backtestId);
+  }
+
   async execute(
     node: WorkflowNode,
     input: NodeInput,
@@ -146,9 +165,7 @@ export class BacktestExecutor implements INodeExecutor {
 
   /** Remove SimBroker instance from cache after backtest completion. */
   private cleanupSimBroker(backtestId: string): void {
-    const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
-    BacktestExecutor.simBrokerCache.delete(key);
-    BacktestExecutor.backtestStartTimes.delete(backtestId);
+    BacktestExecutor.cleanupBacktestResources(backtestId);
   }
 
   private formatDuration(durationMs: number): string {
@@ -400,30 +417,48 @@ export class BacktestExecutor implements INodeExecutor {
         BacktestInit: { success: true, data: backtestInitData },
       };
 
+      const isManual = !context?.runId;
+      const effectiveRunId = context?.runId || `manual-${backtestId}`;
+
+      const session = BacktestSessionManager.getInstance().createSession(
+        backtestId,
+        workflowId,
+        node.id,
+        userId,
+        strategyNodes,
+        strategyEdges,
+        entryNodeIds,
+        backtestInitResult,
+        barEvents,
+        effectiveRunId,
+        stateManager,
+      );
+
       if (
+        !isManual &&
         remainingBars.length > 0 &&
         strategyNodes.length > 0 &&
         entryNodeIds.length > 0
       ) {
-        await BacktestRunnerManager.getInstance().startBacktest(
-          backtestId,
-          workflowId,
-          userId,
-          strategyNodes,
-          strategyEdges,
-          entryNodeIds,
-          backtestInitResult,
-          barEvents,
-          runId,
-          stateManager,
-        );
-      } else {
+        session.runAll()
+          .catch((err) => console.error("[BacktestSession] runAll failed:", err))
+          .finally(() => BacktestSessionManager.getInstance().deleteSession(backtestId));
+      }
+
+      if (
+        remainingBars.length === 0 ||
+        strategyNodes.length === 0 ||
+        entryNodeIds.length === 0
+      ) {
         await this.portfolioFinalize(simBroker, backtestId);
+        BacktestSessionManager.getInstance().deleteSession(backtestId);
       }
 
       return toNodeResult(
         createSuccessOutput({
           backtest_id: backtestId,
+          mode: isManual ? "manual" : "batch",
+          total_bars: remainingBars.length,
           initial_capital: config.initialCapital,
           start_date: params.start_date,
           end_date: params.end_date,
@@ -442,7 +477,7 @@ export class BacktestExecutor implements INodeExecutor {
             bars_emitted: remainingBars.length,
             indicators_initialized: discoveredIndicators.length,
           },
-          status: "running",
+          status: !isManual && remainingBars.length > 0 ? "running" : "ready",
         }),
       );
     } catch (error) {

@@ -11,6 +11,7 @@ import { requireAuth } from "../middleware/jwtAuth";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { supabase } from "../config/supabase";
 import { SimBroker } from "../services/simBroker";
+import { BacktestSessionManager } from "../services/BacktestSessionManager";
 
 const router = Router();
 const backtestExecutor = new BacktestExecutor();
@@ -93,6 +94,92 @@ router.post("/init", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[BacktestRoutes] /init error:", error);
     return res.status(500).json({ error: "Failed to initialize backtest" });
+  }
+});
+
+
+// POST /backtest/onbar - Process one bar from an active backtest session
+router.post("/onbar", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { backtest_id } = req.body;
+    if (!backtest_id) {
+      return res.status(400).json({ error: "backtest_id is required" });
+    }
+
+    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    if (!session) {
+      return res.status(404).json({ error: "No active session. Run BacktestInit first." });
+    }
+
+    if (session.status === "finished") {
+      return res.json({ success: true, data: { isLast: true } });
+    }
+
+    const result = await session.step();
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("[BacktestRoutes] /onbar error:", error);
+    return res.status(500).json({ error: "Failed to process backtest bar" });
+  }
+});
+
+// POST /backtest/run - Run remaining bars asynchronously
+router.post("/run", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { backtest_id } = req.body;
+    if (!backtest_id) {
+      return res.status(400).json({ error: "backtest_id is required" });
+    }
+
+    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    if (!session) {
+      return res.status(404).json({ error: "No active session" });
+    }
+
+    session.runAll()
+      .catch((err) => console.error("[Backtest] runAll failed:", err))
+      .finally(() => BacktestSessionManager.getInstance().deleteSession(backtest_id));
+
+    return res.json({ success: true, status: "running" });
+  } catch (error) {
+    console.error("[BacktestRoutes] /run error:", error);
+    return res.status(500).json({ error: "Failed to run backtest" });
+  }
+});
+
+// POST /backtest/reset - Reset session to first bar
+router.post("/reset", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { backtest_id } = req.body;
+    if (!backtest_id) {
+      return res.status(400).json({ error: "backtest_id is required" });
+    }
+
+    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    if (!session) {
+      return res.status(404).json({ error: "No active session" });
+    }
+
+    await session.reset();
+    return res.json({ success: true, status: "ready" });
+  } catch (error) {
+    console.error("[BacktestRoutes] /reset error:", error);
+    return res.status(500).json({ error: "Failed to reset backtest" });
   }
 });
 

@@ -771,6 +771,18 @@ export class WorkflowExecutor {
             )}ms`
           );
 
+          const defName = (node.data?.definition as any)?.name;
+          if (defName === "OnBar" && result?.data && result.data.isLast === false) {
+            queue.unshift(id);
+            executed.delete(id);
+
+            const outEdges = this.context.edges.filter((e) => e.source === id);
+            for (const edge of outEdges) {
+              executed.delete(edge.target);
+              failed.delete(edge.target);
+            }
+          }
+
           // Add delay between node executions to make highlighting visible
           await new Promise((resolve) => setTimeout(resolve, 50));
 

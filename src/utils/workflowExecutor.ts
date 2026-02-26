@@ -701,8 +701,14 @@ export class WorkflowExecutor {
       roots
     );
 
+    let onBarNodeId: string | null = null;
+    let onBarHasMore = false;
+
     try {
-      while (queue.length) {
+      do {
+        onBarHasMore = false;
+
+        while (queue.length) {
         const id = queue.shift()!;
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
@@ -896,15 +902,9 @@ export class WorkflowExecutor {
             }
           }
 
-          if (defName === "OnBar" && result?.data?.isLast === false) {
-            const downstream = this.getDownstreamNodes(id, new Set());
-            for (const downId of downstream) {
-              executed.delete(downId);
-              failed.delete(downId);
-              this.clearIncomingEdgePayloads(downId);
-            }
-
-            queue.push(id);
+          if (defName === "OnBar") {
+            onBarNodeId = id;
+            onBarHasMore = result?.data?.isLast === false;
           }
 
           this.clearIncomingEdgePayloads(id);
@@ -938,7 +938,22 @@ export class WorkflowExecutor {
           );
           independentNodes.forEach((n) => queue.push(n.id));
         }
-      }
+        }
+
+        if (onBarNodeId && onBarHasMore) {
+          const downstream = this.getDownstreamNodes(onBarNodeId, new Set());
+          for (const downId of downstream) {
+            executed.delete(downId);
+            failed.delete(downId);
+            this.clearIncomingEdgePayloads(downId);
+          }
+
+          executed.delete(onBarNodeId);
+          failed.delete(onBarNodeId);
+          this.clearIncomingEdgePayloads(onBarNodeId);
+          queue.push(onBarNodeId);
+        }
+      } while (queue.length);
 
       const totalTime = performance.now() - metrics.startTime;
       const successCount = metrics.completedNodes.size;

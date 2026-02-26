@@ -28,6 +28,9 @@ router.post("/init", async (req: Request, res: Response) => {
 
     const {
       workflow_id,
+      node_id,
+      nodeName,
+      node_type,
       name,
       description,
       initial_capital,
@@ -38,7 +41,6 @@ router.post("/init", async (req: Request, res: Response) => {
       slippage_value,
       commission_model,
       commission_value,
-      allow_short,
       broker,
       credential_id,
       symbol,
@@ -46,7 +48,6 @@ router.post("/init", async (req: Request, res: Response) => {
       asset_type,
       feed,
       warmup_period,
-      auto_detect,
       nodes,
       edges,
     } = req.body;
@@ -57,9 +58,9 @@ router.post("/init", async (req: Request, res: Response) => {
 
     const result = await backtestExecutor.execute(
       {
-        id: "api-init",
-        name: "BacktestInit",
-        node_type: "BacktestInit",
+        id: node_id,
+        name: nodeName,
+        node_type: node_type,
         values: {
           name,
           description,
@@ -71,7 +72,6 @@ router.post("/init", async (req: Request, res: Response) => {
           slippage_value,
           commission_model,
           commission_value,
-          allow_short,
           broker,
           credential_id,
           symbol,
@@ -79,7 +79,6 @@ router.post("/init", async (req: Request, res: Response) => {
           asset_type,
           feed,
           warmup_period,
-          auto_detect,
         },
       } as any,
       {},

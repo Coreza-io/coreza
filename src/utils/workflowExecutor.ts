@@ -772,16 +772,6 @@ export class WorkflowExecutor {
           );
 
           const defName = (node.data?.definition as any)?.name;
-          if (defName === "OnBar" && result?.data && result.data.isLast === false) {
-            queue.unshift(id);
-            executed.delete(id);
-
-            const outEdges = this.context.edges.filter((e) => e.source === id);
-            for (const edge of outEdges) {
-              executed.delete(edge.target);
-              failed.delete(edge.target);
-            }
-          }
 
           // Add delay between node executions to make highlighting visible
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -905,6 +895,18 @@ export class WorkflowExecutor {
               }
             }
           }
+
+          if (defName === "OnBar" && result?.data?.isLast === false) {
+            const downstream = this.getDownstreamNodes(id, new Set());
+            for (const downId of downstream) {
+              executed.delete(downId);
+              failed.delete(downId);
+              this.clearIncomingEdgePayloads(downId);
+            }
+
+            queue.push(id);
+          }
+
           this.clearIncomingEdgePayloads(id);
           console.log(
             `📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`,

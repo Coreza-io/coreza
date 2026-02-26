@@ -701,14 +701,13 @@ export class WorkflowExecutor {
       roots
     );
 
-    let onBarNodeId: string | null = null;
-    let onBarHasMore = false;
+    const barState = {
+      onBarNodeId: null as string | null,
+      onBarHasMore: false,
+    };
 
-    try {
-      do {
-        onBarHasMore = false;
-
-        while (queue.length) {
+    const runInnerQueue = async () => {
+      while (queue.length) {
         const id = queue.shift()!;
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
@@ -903,8 +902,8 @@ export class WorkflowExecutor {
           }
 
           if (defName === "OnBar") {
-            onBarNodeId = id;
-            onBarHasMore = result?.data?.isLast === false;
+            barState.onBarNodeId = id;
+            barState.onBarHasMore = result?.data?.isLast === false;
           }
 
           this.clearIncomingEdgePayloads(id);
@@ -938,22 +937,34 @@ export class WorkflowExecutor {
           );
           independentNodes.forEach((n) => queue.push(n.id));
         }
+      }
+    };
+
+    try {
+      // Phase 1: Full DAG execution (BacktestInit → OnBar → downstream)
+      await runInnerQueue();
+
+      // Phase 2: Bar iteration loop (OnBar → downstream only)
+      while (barState.onBarNodeId && barState.onBarHasMore) {
+        const downstream = this.getDownstreamNodes(
+          barState.onBarNodeId,
+          new Set()
+        );
+        for (const downId of downstream) {
+          executed.delete(downId);
+          failed.delete(downId);
+          this.clearIncomingEdgePayloads(downId);
         }
 
-        if (onBarNodeId && onBarHasMore) {
-          const downstream = this.getDownstreamNodes(onBarNodeId, new Set());
-          for (const downId of downstream) {
-            executed.delete(downId);
-            failed.delete(downId);
-            this.clearIncomingEdgePayloads(downId);
-          }
+        executed.delete(barState.onBarNodeId);
+        failed.delete(barState.onBarNodeId);
+        this.clearIncomingEdgePayloads(barState.onBarNodeId);
 
-          executed.delete(onBarNodeId);
-          failed.delete(onBarNodeId);
-          this.clearIncomingEdgePayloads(onBarNodeId);
-          queue.push(onBarNodeId);
-        }
-      } while (queue.length);
+        queue.push(barState.onBarNodeId);
+        barState.onBarHasMore = false;
+
+        await runInnerQueue();
+      }
 
       const totalTime = performance.now() - metrics.startTime;
       const successCount = metrics.completedNodes.size;

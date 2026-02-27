@@ -46,16 +46,38 @@ const isFieldVisible = (
   field: any,
   currentFieldState: Record<string, any>,
 ): boolean => {
-  if (!field.displayOptions?.show) return true;
+  if (field.displayOptions?.show) {
+    const showResult = Object.entries(field.displayOptions.show).every(
+      ([depKey, rawAllowed]) => {
+        const allowedValues = Array.isArray(rawAllowed)
+          ? rawAllowed
+          : [rawAllowed];
+        return allowedValues.includes(currentFieldState[depKey]);
+      },
+    );
 
-  return Object.entries(field.displayOptions.show).every(
-    ([depKey, rawAllowed]) => {
-      const allowedValues = Array.isArray(rawAllowed)
-        ? rawAllowed
-        : [rawAllowed];
-      return allowedValues.includes(currentFieldState[depKey]);
-    },
-  );
+    if (!showResult) return false;
+  }
+
+  if (field.displayOptions?.hide) {
+    const shouldHide = Object.entries(field.displayOptions.hide).some(
+      ([depKey, rawAllowed]) => {
+        const allowedValues = Array.isArray(rawAllowed)
+          ? rawAllowed
+          : [rawAllowed];
+        const current = currentFieldState[depKey];
+        return allowedValues.some((v: any) => {
+          const compareVal =
+            typeof v === "object" && v !== null ? (v.id || v.value) : v;
+          return String(current) === String(compareVal);
+        });
+      },
+    );
+
+    if (shouldHide) return false;
+  }
+
+  return true;
 };
 
 interface UseNodeExecutionProps {
@@ -314,21 +336,7 @@ export function useNodeExecution({
 
       // Validate required fields *only if visible*
       for (const f of definition?.fields || []) {
-        let shouldShow = true;
-        if (f.displayOptions?.show) {
-          for (const [depKey, rawAllowed] of Object.entries(
-            f.displayOptions.show,
-          )) {
-            const allowedValues = Array.isArray(rawAllowed)
-              ? (rawAllowed as string[])
-              : [];
-            if (!allowedValues.includes(fieldState[depKey])) {
-              shouldShow = false;
-              break;
-            }
-          }
-        }
-        if (!shouldShow) continue;
+        if (!isFieldVisible(f, fieldState)) continue;
 
         if (f.required && !fieldState[f.key]) {
           setError(`${f.label || f.key} is required`);

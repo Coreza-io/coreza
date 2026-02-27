@@ -249,11 +249,12 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             indicator: ind.type,
             warmupBars: warmupBars.length,
             isReady: state.warmupCompleted,
-            currentValue: state.value,
+            currentValue: state.currentValue,
+            previousValue: state.previousValue,
           };
 
           console.log(
-            `  ✓ ${ind.type} warmed up (value: ${JSON.stringify(state.value)?.slice(0, 80)})`,
+            `  ✓ ${ind.type} warmed up (value: ${JSON.stringify(state.currentValue)?.slice(0, 80)})`,
           );
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);

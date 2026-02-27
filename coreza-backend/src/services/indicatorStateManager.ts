@@ -15,7 +15,8 @@ export interface IndicatorState {
   version: number;
   indicator: string;
   params: Record<string, any>;
-  value: number | Record<string, any> | null;
+  currentValue: number | Record<string, any> | null;
+  previousValue: number | Record<string, any> | null;
   lastBarTime: string;
   warmupCompleted: boolean;
   internalState: Record<string, any>;
@@ -42,7 +43,7 @@ export function serializeParams(params: Record<string, any>): string {
 }
 
 
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 
 export class IndicatorStateManager {
   private readonly l1Cache = new Map<string, IndicatorState>();
@@ -126,7 +127,8 @@ export class IndicatorStateManager {
       version: STATE_VERSION,
       indicator,
       params,
-      value: warmup.value,
+      currentValue: warmup.value,
+      previousValue: null,
       lastBarTime: warmup.lastBarTime,
       warmupCompleted: true,
       internalState: warmup.internalState,
@@ -158,7 +160,8 @@ export class IndicatorStateManager {
 
     const updatedState: IndicatorState = {
       ...existing,
-      value,
+      previousValue: existing.currentValue,
+      currentValue: value,
       lastBarTime: String(bar?.t ?? bar?.timestamp ?? ""),
       internalState,
     };

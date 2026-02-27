@@ -61,6 +61,20 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     if (!shouldShow) return null;
   }
 
+  if (field.displayOptions?.hide) {
+    const shouldHide = Object.entries(field.displayOptions.hide).some(
+      ([depKey, allowedValues]) => {
+        const currentValue = fieldState[depKey];
+        const values = Array.isArray(allowedValues) ? allowedValues : [allowedValues];
+        return values.some((v: any) => {
+          const compareVal = typeof v === "object" && v !== null ? (v.id || v.value) : v;
+          return String(currentValue) === String(compareVal);
+        });
+      },
+    );
+    if (shouldHide) return null;
+  }
+
   let displayLabel = field.label;
   if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {
     const dependentValue = fieldState[field.dynamicLabel.dependsOn];

@@ -82,9 +82,8 @@ async function executeIndicatorWithState(
           return {
             success: true,
             status: "success",
-            data: [updated.currentValue],
-            meta: {
-              category: "indicators",
+            data: {
+              currentValue: updated.currentValue,
               previousValue: updated.previousValue,
             },
           };
@@ -93,9 +92,8 @@ async function executeIndicatorWithState(
         return {
           success: true,
           status: "success",
-          data: [state.currentValue],
-          meta: {
-            category: "indicators",
+          data: {
+            currentValue: state.currentValue,
             previousValue: state.previousValue,
           },
         };

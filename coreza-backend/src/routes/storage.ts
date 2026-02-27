@@ -41,14 +41,22 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    const { size, candle_data, symbol, timeframe, workflow_id, run_id } = req.body;
+    const {
+      size,
+      candle_data,
+      symbol,
+      timeframe,
+      workflow_id,
+      run_id,
+      node_id,
+    } = req.body;
 
     const windowSize = Math.min(Math.max(parseInt(size) || 20, 1), 500);
     const storeKey = buildExecutionScopedKey({
       userId,
-      workflowId: workflow_id || "manual",
+      workflowId: workflow_id,
       runId: run_id || "manual",
-      scope: "rolling_window",
+      scope: node_id,
       parts: [symbol || "_", timeframe || "_"],
     });
 
@@ -101,7 +109,6 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
         size: window.size,
         isReady: window.isReady,
         remaining: window.size - window.count,
-        latest: window.count > 0 ? window.at(0) : null,
       },
       meta: {
         key: storeKey,
@@ -162,7 +169,7 @@ router.get("/:service/credentials", async (req: Request, res: Response) => {
     const { service } = req.params;
     const credentials = await CredentialManager.listCredentials(
       userId,
-      service
+      service,
     );
 
     res.json({
@@ -207,7 +214,7 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       // Validate credential structure
       const validation = CredentialValidator.validateCredentials(
         "redis",
-        credentials
+        credentials,
       );
       if (!validation.isValid) {
         return res.status(400).json({
@@ -219,7 +226,7 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       // Test connection before saving
       logger.info(
         { userId, credential_name, host },
-        "Testing Redis connection"
+        "Testing Redis connection",
       );
       const testResult = await testRedisConnection(credentials);
 
@@ -237,12 +244,12 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
         "redis",
         credential_name,
         credentials,
-        "api"
+        "api",
       );
 
       logger.info(
         { userId, credential_name, credentialId },
-        "Redis credentials saved successfully"
+        "Redis credentials saved successfully",
       );
 
       res.json({
@@ -257,7 +264,7 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
         service,
         credential_name,
         req.body,
-        "api"
+        "api",
       );
 
       res.json({
@@ -347,7 +354,7 @@ router.get("/store/value", async (req: Request, res: Response) => {
     const key = buildStoreKey(
       userId,
       workflow_id as string,
-      variable_name as string
+      variable_name as string,
     );
     const storedValue = await getStoreValue(redis, key);
 

@@ -33,7 +33,12 @@
       "label": "Value",
       "type": "text",
       "placeholder": "{{ $json.field }}",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "hide": {
+          "operator": ["now"]
+        }
+      }
     },
     {
       "key": "operator",

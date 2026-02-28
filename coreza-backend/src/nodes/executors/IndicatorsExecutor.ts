@@ -160,7 +160,10 @@ export class IndicatorsExecutor implements INodeExecutor {
 
           const normalized = normalizeOutput({
             success: true,
-            data: [state.currentValue],
+            data: {
+              currentValue: state.currentValue,
+              previousValue: state.previousValue,
+            },
           });
           return toNodeResult(normalized);
         }

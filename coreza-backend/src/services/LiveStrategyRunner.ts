@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import Redis from "ioredis";
-import { createDedicatedCacheConnection } from "../config/redis";
+import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "./workflowEngine";
 
@@ -20,7 +20,7 @@ export class LiveStrategyRunner {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
   ) {
-    this.redisStream = createDedicatedCacheConnection(`Strategy-${workflowId}`);
+    this.redisStream = createDedicatedStreamConnection(`Strategy-${workflowId}`);
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}`;

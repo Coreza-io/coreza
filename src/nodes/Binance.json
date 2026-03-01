@@ -75,6 +75,7 @@
         { "name": "Get Account", "id": "get_account" },
         { "name": "Get Positions", "id": "get_positions" },
         { "name": "Get Orders", "id": "get_orders" },
+        { "name": "Get Trades", "id": "get_trades" },
         { "name": "Cancel Order", "id": "cancel_order" },
         { "name": "Get Candle", "id": "get_candle" },
         { "name": "Get Latest Bar", "id": "get_latest_bar" },
@@ -94,7 +95,9 @@
             "get_candle",
             "get_latest_bar",
             "get_ticker",
-            "cancel_order"
+            "cancel_order",
+            "get_orders",
+            "get_trades"
           ]
         }
       }
@@ -110,6 +113,28 @@
         }
       },
       "required": true
+    },
+    {
+      "key": "orderId",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Order ID to filter",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_trades"]
+        }
+      }
+    },
+    {
+      "key": "fromId",
+      "label": "From ID",
+      "type": "text",
+      "placeholder": "Trade ID to start from",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_trades"]
+        }
+      }
     },
     {
       "key": "interval",
@@ -141,7 +166,7 @@
       "placeholder": "Number of records",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": ["get_candle", "get_orders", "get_trades"]
         }
       }
     },
@@ -152,7 +177,7 @@
       "placeholder": "YYYY-MM-DD HH:mm:ss",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": ["get_candle", "get_orders", "get_trades"]
         }
       }
     },
@@ -163,7 +188,7 @@
       "placeholder": "YYYY-MM-DD HH:mm:ss",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_orders"]
+          "operation": ["get_candle", "get_orders", "get_trades"]
         }
       }
     }

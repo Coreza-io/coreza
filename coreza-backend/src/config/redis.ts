@@ -358,6 +358,15 @@ export function createDedicatedCacheConnection(label: string): Redis {
   return createRedisInstance("cache", `Cache (${label})`);
 }
 
+/**
+ * Create a dedicated stream Redis connection (non-singleton).
+ * Uses queue options (maxRetriesPerRequest: null, enableOfflineQueue: true)
+ * for long-lived blocking operations like XREADGROUP BLOCK.
+ */
+export function createDedicatedStreamConnection(label: string): Redis {
+  return createRedisInstance("queue", `Stream (${label})`);
+}
+
 // Backward compatibility (deprecated, maps to getRedisQueue)
 export const getRedis = getRedisQueue;
 export const getRedisPubSub = getRedisQueuePubSub;

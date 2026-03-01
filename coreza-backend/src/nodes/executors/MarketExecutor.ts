@@ -67,12 +67,40 @@ export class MarketExecutor implements INodeExecutor {
 
       // Handle subscription nodes (ACTION nodes that manage subscriptions)
       if (operation === "subscribe") {
-        return this.handleSubscriptionNode(
-          node,
-          context,
-          sourceId,
-          normalizeCtx,
-        );
+        const result = await SubscriptionService.execute({
+          source: sourceId,
+          userId: context?.userId,
+          workflowId: context?.workflowId,
+          nodeId: context?.nodeId,
+          credentialId: node.values.credential_id,
+          operation: resolvedParams.operation,
+          symbols: resolvedParams.symbols,
+          initialInput: context?.initialInput,
+          streamTypes: resolvedParams.stream_types
+            ? typeof resolvedParams.stream_types === "string"
+              ? resolvedParams.stream_types
+                  .split(",")
+                  .map((s: string) => s.trim())
+              : resolvedParams.stream_types
+            : undefined,
+          feed: resolvedParams.feed,
+          environment: resolvedParams.environment,
+          assetType: resolvedParams.asset_type,
+          interval: resolvedParams.interval,
+          depth_levels: resolvedParams.depth_levels,
+          scope: resolvedParams.scope,
+          targetWorkflowId: resolvedParams.targetWorkflowId,
+        });
+
+        if (!result.success) {
+          return toNodeResult(
+            createErrorOutput(
+              result.error || "Subscription failed",
+              normalizeCtx,
+            ),
+          );
+        }
+        return toNodeResult(createSuccessOutput(result.data, normalizeCtx));
       }
 
       // Handle streaming trigger nodes (pure data receivers)

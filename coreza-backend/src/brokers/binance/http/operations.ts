@@ -67,10 +67,39 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       const recvWindow = 5000;
       const params: any = { recvWindow, timestamp };
 
-      if (input.symbol) params.symbol = input.symbol;
+      if (!input.symbol) throw new Error('symbol is required for get_orders');
+      params.symbol = input.symbol;
       if (input.limit) params.limit = input.limit;
       if (input.startTime) params.startTime = new Date(input.startTime).getTime();
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+
+      return signHmacSha256(params, creds.secret_key);
+    },
+  },
+  get_trades: {
+    method: 'get',
+    path: (input: any) => {
+      const assetType = input?.asset_type || 'spot';
+      return assetType === 'futures' ? '/fapi/v1/userTrades' : '/api/v3/myTrades';
+    },
+    makeParams: (input: any, creds: any) => {
+      if (!input.symbol) throw new Error('symbol is required for get_trades');
+
+      const environment = input?.environment || 'live';
+      const assetType = input?.asset_type || 'spot';
+      const timestamp = getBinanceTimestamp(environment, assetType);
+      const recvWindow = 5000;
+      const params: any = {
+        symbol: input.symbol,
+        recvWindow,
+        timestamp,
+      };
+
+      if (input.orderId) params.orderId = input.orderId;
+      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input.fromId) params.fromId = input.fromId;
+      if (input.limit) params.limit = input.limit;
 
       return signHmacSha256(params, creds.secret_key);
     },

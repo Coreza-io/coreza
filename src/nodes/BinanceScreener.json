@@ -4,6 +4,7 @@
   "node_type": "main",
   "category": "Screener",
   "parentNode": "binance",
+  "subCategory": "binance",
   "icon": "/assets/icons/binance.svg",
   "size": { "width": 340, "height": 340 },
   "handles": [
@@ -11,7 +12,7 @@
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": {
-    "url": "/screener/binance/{{filter_type}}",
+    "url": "/screener/binance/{{operation}}",
     "method": "POST"
   },
   "fields": [
@@ -46,7 +47,7 @@
       "required": true
     },
     {
-      "key": "filter_type",
+      "key": "operation",
       "label": "Filter Type",
       "type": "select",
       "options": [
@@ -90,7 +91,7 @@
       "placeholder": "Minimum 24h volume",
       "displayOptions": {
         "show": {
-          "filter_type": ["most_active"]
+          "operation": ["most_active"]
         }
       }
     },
@@ -101,7 +102,7 @@
       "placeholder": "Minimum price change percentage",
       "displayOptions": {
         "show": {
-          "filter_type": ["top_gainers", "top_losers"]
+          "operation": ["top_gainers", "top_losers"]
         }
       }
     }

@@ -29,7 +29,7 @@ export class ScreenerExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
@@ -47,14 +47,14 @@ export class ScreenerExecutor implements INodeExecutor {
 
       // Resolve and merge node parameters with input data
       console.log(
-        `📊 [SCREENER] Starting parameter resolution for node ${node.id}`
+        `📊 [SCREENER] Starting parameter resolution for node ${node.id}`,
       );
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
       console.log(
         `📊 [SCREENER] Parameter resolution completed for node ${node.id}`,
-        resolvedParams
+        resolvedParams,
       );
 
       const screenerService = getScreenerService(screener.toLowerCase());
@@ -66,7 +66,7 @@ export class ScreenerExecutor implements INodeExecutor {
       }
 
       console.log(
-        `📊 [SCREENER] Executing ${screener} screener with operation: ${operation}`
+        `📊 [SCREENER] Executing ${screener} screener with operation: ${operation}`,
       );
       const result = await screenerService.execute({
         user_id: context?.userId,
@@ -84,7 +84,7 @@ export class ScreenerExecutor implements INodeExecutor {
             nodeName: screener,
             category: this.category,
             startTime,
-          }
+          },
         );
         return toNodeResult(errOutput);
       }
@@ -106,7 +106,7 @@ export class ScreenerExecutor implements INodeExecutor {
           nodeName: node.name,
           category: this.category,
           startTime,
-        }
+        },
       );
       return toNodeResult(errOutput);
     }

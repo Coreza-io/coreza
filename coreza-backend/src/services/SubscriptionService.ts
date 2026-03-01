@@ -99,7 +99,6 @@ export class SubscriptionService {
         : [];
   }
 
-
   /**
    * Subscribe or unsubscribe from market data
    *
@@ -148,16 +147,49 @@ export class SubscriptionService {
         };
       }
 
+      function safeJsonParse(value: unknown): unknown {
+        if (typeof value !== "string") return value;
+
+        const trimmed = value.trim();
+        if (!trimmed) return value;
+
+        try {
+          return JSON.parse(trimmed);
+        } catch {
+          return value;
+        }
+      }
+
+      function normalizeSymbols(input: unknown): string[] {
+        const parsed = safeJsonParse(input);
+
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((s): s is string => typeof s === "string")
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean);
+        }
+
+        if (typeof parsed === "string") {
+          return parsed
+            .split(",")
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean);
+        }
+
+        return [];
+      }
+      const symbolArray = normalizeSymbols(symbols);
       // Resolve symbols
-      const symbolArray =
-        typeof symbols === "string"
-          ? symbols
-              .split(",")
-              .map((s) => s.trim().toUpperCase())
-              .filter(Boolean)
-          : Array.isArray(symbols)
-            ? symbols.map((s) => s.trim().toUpperCase())
-            : [];
+      // const symbolArray =
+      //   typeof symbols === "string"
+      //     ? symbols
+      //         .split(",")
+      //         .map((s) => s.trim().toUpperCase())
+      //         .filter(Boolean)
+      //     : Array.isArray(symbols)
+      //       ? symbols.map((s) => s.trim().toUpperCase())
+      //       : [];
 
       // For unsubscribe, allow empty symbols if workflowId is provided (workflow cleanup)
       if (symbolArray.length === 0 && operation === "subscribe") {

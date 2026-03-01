@@ -53,9 +53,20 @@ export class MarketExecutor implements INodeExecutor {
       const source = node.subCategory;
       const data_type = node.values.data_type;
       const sourceId = `${source}_${data_type}`;
+      const operation = node.values.operation;
+
+      // Default: historical/REST market data
+      const resolvedParams = context?.resolveNodeParameters
+        ? context.resolveNodeParameters(node, input)
+        : { ...node.values, ...input };
+
+      console.log(
+        `🏪 Executing ${node.name} node with params:`,
+        resolvedParams,
+      );
 
       // Handle subscription nodes (ACTION nodes that manage subscriptions)
-      if (nodeName.includes("Subscribe")) {
+      if (operation === "subscribe") {
         return this.handleSubscriptionNode(
           node,
           context,
@@ -73,16 +84,6 @@ export class MarketExecutor implements INodeExecutor {
           normalizeCtx,
         );
       }
-
-      // Default: historical/REST market data
-      const resolvedParams = context?.resolveNodeParameters
-        ? context.resolveNodeParameters(node, input)
-        : { ...node.values, ...input };
-
-      console.log(
-        `🏪 Executing ${node.name} node with params:`,
-        resolvedParams,
-      );
 
       const dataSourceService = getDataSourceService("yahoofinance");
       if (!dataSourceService) {

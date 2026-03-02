@@ -222,9 +222,7 @@ export class BrokerExecutor implements INodeExecutor {
           timeout: 30000,
         });
 
-        data = op.transformResult
-          ? op.transformResult(response.data, resolvedParams)
-          : response.data;
+        ((data = response.data), resolvedParams);
       }
 
       data = {

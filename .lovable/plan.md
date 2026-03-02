@@ -1,100 +1,140 @@
 
 
-# Support Multiple Symbols in Portfolio Node (Broker Mode)
+# Update Portfolio: Use Explicit Fields Instead of Fill Data Blob
 
 ## Problem
 
-Currently, `params.symbol` is treated as a single string everywhere in the broker mode executor. When users provide multiple symbols (e.g., "BTCUSDT,ETHUSDT") or when operations should work across all tracked symbols, the code only handles one symbol at a time. This affects:
+The previous plan proposed a single `fill_data` textarea for `update_portfolio`, expecting the user to pass the entire Trade node JSON output. This is fragile and opaque. Instead, use three explicit fields -- `symbol`, `quantity`, and `price` -- that the user can wire individually from the Trade node output or type manually.
 
-1. **`ensureSymbolTracked`** -- only tracks one symbol per execution
-2. **`brokerGetPosition`** -- only returns one position
-3. **`brokerGetPendingOrders`** -- only queries one symbol
-4. **`sync_trades`** -- only syncs one symbol
+## Changes
 
-## Solution
+### 1. Replace `fill_data` with explicit fields in `Portfolio.json`
 
-### 1. Parse symbol(s) from params (`PortfolioExecutor.ts`)
+Remove the proposed `fill_data` textarea. Instead, show `symbol`, `quantity`, and `price` fields when `operation = update_portfolio`:
 
-Add a helper that parses `params.symbol` into an array, supporting comma-separated input:
-
-```text
-private parseSymbols(symbol?: string): string[] {
-  if (!symbol) return [];
-  return symbol.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+```json
+{
+  "key": "symbol",
+  "label": "Symbol",
+  "type": "text",
+  "placeholder": "{{ $('BinanceTrade').json.symbol }}",
+  "required": true,
+  "displayOptions": { "show": { "operation": ["update_portfolio", "get_position", "update_mtm", "sync_trades", "get_pending_orders"] } }
+},
+{
+  "key": "quantity",
+  "label": "Quantity",
+  "type": "text",
+  "placeholder": "{{ $('BinanceTrade').json.executedQty }}",
+  "required": true,
+  "description": "Filled quantity. Positive for BUY, negative for SELL.",
+  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+},
+{
+  "key": "price",
+  "label": "Price",
+  "type": "text",
+  "placeholder": "{{ $('BinanceTrade').json.avgPrice }}",
+  "required": true,
+  "description": "Average fill price.",
+  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
 }
 ```
 
-### 2. Update `executeBrokerMode` lazy tracking (lines 203-207)
+Quantity uses the QC convention: positive = BUY, negative = SELL. This is simpler than a separate `side` field.
 
-Change from single-symbol tracking to multi-symbol:
+### 2. Optional fields for commissions
 
-```text
-const symbols = this.parseSymbols(params.symbol);
-for (const sym of symbols) {
-  await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
+Add an optional `commission` field for accurate cash tracking:
+
+```json
+{
+  "key": "commission",
+  "label": "Commission",
+  "type": "text",
+  "placeholder": "0",
+  "required": false,
+  "default": "0",
+  "description": "Trade commission (deducted from cash).",
+  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
 }
 ```
 
-### 3. Update `brokerGetPosition` (lines 429-462)
+### 3. Update `PortfolioExecutor.ts` -- `update_portfolio` case
 
-- If multiple symbols provided, return an array of positions for all of them
-- If single symbol, keep current behavior (returns one position object)
-- If no symbol, return ALL tracked positions from the portfolio manager
-
-### 4. Update `brokerGetPendingOrders` (lines 510-537)
-
-- Binance `/api/v3/openOrders` already returns ALL open orders when no `symbol` param is passed
-- If multiple symbols given, make one call per symbol or one call with no filter then filter client-side
-- Current code already handles `symbol` being undefined (line 520: `if (symbol) rawParams.symbol = symbol`) -- so this mostly works already
-
-### 5. Update `sync_trades` (lines 224-236)
-
-- Accept multiple symbols, loop and sync each
-- Remove the hard requirement for a single symbol -- allow syncing all tracked symbols if none specified
+Instead of parsing a fill blob, read the three explicit params:
 
 ```text
-case "sync_trades": {
-  const syncSymbols = symbols.length > 0
-    ? symbols
-    : pm.getTrackedSymbols();
-  let totalCount = 0;
-  for (const sym of syncSymbols) {
-    totalCount += await pm.syncSymbolTrades(baseUrl, headers, creds, sym, environment);
+case "update_portfolio": {
+  const symbol = params.symbol?.trim().toUpperCase();
+  const quantity = parseFloat(params.quantity);   // positive=BUY, negative=SELL
+  const price = parseFloat(params.price);
+  const commission = parseFloat(params.commission || "0");
+
+  if (!symbol) return error("symbol is required");
+  if (isNaN(quantity) || quantity === 0) return error("quantity must be non-zero");
+  if (isNaN(price) || price <= 0) return error("price must be positive");
+
+  pm.applyFill({ symbol, quantity, price, commission });
+  return success({ updated: true, ...this.getPortfolioSummary(pm) });
+}
+```
+
+### 4. Update `PortfolioManager.ts` -- new `applyFill` method
+
+A clean method that takes the three values and applies both the accounting loop updates:
+
+```text
+applyFill(fill: { symbol: string; quantity: number; price: number; commission?: number }): void {
+  const { symbol, quantity, price, commission = 0 } = fill;
+  const side = quantity > 0 ? "BUY" : "SELL";
+  const absQty = Math.abs(quantity);
+
+  // 1. Update holdings (quantity, avg price, realized PnL)
+  // -- same logic as existing applyFillToHoldings
+
+  // 2. Update cash (accounting loop)
+  const cost = absQty * price;
+  const baseCurrency = this.baseCurrency || "USDT";
+  const currentCash = this.cashBook.get(baseCurrency) ?? 0;
+  if (side === "BUY") {
+    this.cashBook.set(baseCurrency, currentCash - cost - commission);
+  } else {
+    this.cashBook.set(baseCurrency, currentCash + cost - commission);
   }
-  return toNodeResult(createSuccessOutput({
-    synced_trades: totalCount,
-    symbols: syncSymbols,
-    message: `Synced ${totalCount} new trades for ${syncSymbols.length} symbol(s)`,
-  }));
 }
 ```
 
-### 6. Update `Portfolio.json` symbol field (line 91)
-
-Change placeholder to indicate multiple symbols are supported:
+### 5. Workflow wiring after this change
 
 ```text
-"placeholder": "e.g. BTCUSDT or BTCUSDT,ETHUSDT"
+[Create Portfolio]
+  base_currency: USDT
+  cash_balance: 64786
+       |
+       v
+[BinanceTrade]  -- places order, returns fill info
+       |
+       v
+[Update Portfolio]  -- Accounting loop
+  symbol:     {{ $('BinanceTrade').json.symbol }}
+  quantity:   {{ $('BinanceTrade').json.executedQty }}
+  price:      {{ $('BinanceTrade').json.avgPrice }}
+  commission: {{ $('BinanceTrade').json.commission }}
+       |
+       v
+[Update MTM]  -- Valuation loop (on each bar)
+  current_bar: {{ $('OnBar').json.bar }}
+       |
+       v
+[Get Portfolio]  -- pure memory read
 ```
-
-Also make `symbol` optional for `get_pending_orders` (already optional in Binance API) and `sync_trades` (can sync all tracked). Update `displayOptions` to show the symbol field for `get_pending_orders` too (currently hidden in broker mode since `get_pending_orders` is backtest-only in `operationDisplayOptions` -- this needs fixing separately).
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Add `parseSymbols()` helper. Update lazy tracking loop, `brokerGetPosition`, `sync_trades` to handle multiple symbols. |
-| `src/nodes/Portfolio.json` | Update symbol placeholder. Make symbol not required for `sync_trades`. |
-
-## Behavior Summary
-
-| Operation | No symbol | Single symbol | Multiple symbols |
-|---|---|---|---|
-| `get_portfolio` | All positions (unchanged) | All positions (unchanged) | All positions (unchanged) |
-| `get_position` | Error | Returns 1 position | Returns array of positions |
-| `get_pending_orders` | All open orders | Orders for that symbol | Orders for those symbols |
-| `sync_trades` | Sync all tracked symbols | Sync that symbol | Sync those symbols |
-| `get_cash` | Unchanged | Unchanged | Unchanged |
-| `get_equity` | Unchanged | Unchanged | Unchanged |
-| `get_trades` | Unchanged | Unchanged | Unchanged |
+| `src/nodes/Portfolio.json` | Replace `fill_data` with `quantity`, `price`, `commission` fields for `update_portfolio`. Update symbol displayOptions. |
+| `coreza-backend/src/services/PortfolioManager.ts` | Add `applyFill({ symbol, quantity, price, commission })` method. |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Update `update_portfolio` case to read explicit fields and call `pm.applyFill()`. |
 

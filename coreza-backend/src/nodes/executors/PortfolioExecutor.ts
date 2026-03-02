@@ -26,6 +26,11 @@ import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import { getBrokerConfig } from "../../brokers";
 import { Bar } from "../../services/simBroker/interfaces";
+import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
+import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
+import axios from "axios";
+import { signHmacSha256 } from "../../utils/crypto";
+import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -97,8 +102,8 @@ export class PortfolioExecutor implements INodeExecutor {
 
     const operation = params.operation || "get_portfolio";
     const symbol = params.symbol;
-    const currentBar = this.parseBar(params.current_bar);
-    const prices = this.parsePrices(params.prices);
+    const currentBar = parseBar(params.current_bar);
+    const prices = parsePrices(params.prices);
 
     // Mark-to-market before reading
     if (
@@ -179,6 +184,7 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
+    const environment = (params.environment || "live") as "live" | "testnet";
     const baseUrl =
       typeof config.baseUrl === "function"
         ? config.baseUrl(creds, params)
@@ -191,11 +197,16 @@ export class PortfolioExecutor implements INodeExecutor {
     // Bootstrap if first access
     if (!pm.isBootstrapped()) {
       const symbols = params.symbol ? [params.symbol] : [];
-      await pm.bootstrap(baseUrl, headers, symbols);
+      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
+    }
+
+    // Ensure current symbol is tracked (lazy symbol tracking)
+    const symbol = params.symbol;
+    if (symbol) {
+      await pm.ensureSymbolTracked(baseUrl, headers, creds, symbol, environment);
     }
 
     const operation = params.operation || "get_portfolio";
-    const symbol = params.symbol;
 
     switch (operation) {
       case "get_portfolio":
@@ -208,11 +219,13 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerGetEquity(pm);
       case "get_trades":
         return this.brokerGetTrades(pm);
+      case "get_pending_orders":
+        return this.brokerGetPendingOrders(baseUrl, headers, creds, symbol, environment);
       case "sync_trades": {
         if (!symbol) {
           return toNodeResult(createErrorOutput("symbol is required for sync_trades"));
         }
-        const count = await pm.syncSymbolTrades(baseUrl, headers, symbol);
+        const count = await pm.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
         return toNodeResult(
           createSuccessOutput({
             synced_trades: count,
@@ -228,14 +241,12 @@ export class PortfolioExecutor implements INodeExecutor {
     }
   }
 
-  // ============== BACKTEST HELPERS (same logic as BacktestExecutor) ==============
+  // ============== BACKTEST HELPERS ==============
 
   private backtestGetAll(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
     const positions = Object.values(state.positions);
-    const formattedPositions = positions.map((p) =>
-      this.formatPositionWithPnlPercent(p),
-    );
+    const formattedPositions = positions.map((p) => formatPositionWithPnlPercent(p));
     const positionsValue = positions.reduce((sum, p) => sum + p.marketValue, 0);
     const initialCapital = simBroker.getConfig().initialCapital;
     const unrealizedPnlValue = positions.reduce(
@@ -254,10 +265,10 @@ export class PortfolioExecutor implements INodeExecutor {
         positions: formattedPositions,
         positions_count: positions.length,
         positions_value: positionsValue,
-        unrealized_pnl: this.toPercent(unrealizedPnlValue, initialCapital),
-        unrealized_pnl_value: unrealizedPnlValue,
-        realized_pnl: this.toPercent(realizedPnlValue, initialCapital),
-        realized_pnl_value: realizedPnlValue,
+        unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
+        unrealized_pnl: unrealizedPnlValue,
+        realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
+        realized_pnl: realizedPnlValue,
         total_equity: state.cash + positionsValue,
         pending_orders: state.pendingOrders,
         pending_orders_count: state.pendingOrders.length,
@@ -276,7 +287,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
     const position = simBroker.getPosition(symbol);
     const formattedPosition = position
-      ? this.formatPositionWithPnlPercent(position)
+      ? formatPositionWithPnlPercent(position)
       : null;
     const positionCostBasis = position
       ? Math.abs(position.avgEntryPrice * position.quantity)
@@ -291,16 +302,16 @@ export class PortfolioExecutor implements INodeExecutor {
         side: position?.side || null,
         avg_entry_price: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
-        unrealized_pnl: this.toPercent(
+        unrealized_pnl_pct: toPercent(
           position?.unrealizedPnl || 0,
           positionCostBasis,
         ),
-        unrealized_pnl_value: position?.unrealizedPnl || 0,
-        realized_pnl: this.toPercent(
+        unrealized_pnl: position?.unrealizedPnl || 0,
+        realized_pnl_pct: toPercent(
           position?.realizedPnl || 0,
           positionCostBasis,
         ),
-        realized_pnl_value: position?.realizedPnl || 0,
+        realized_pnl: position?.realizedPnl || 0,
         market_value: position?.marketValue || 0,
       }),
     );
@@ -398,12 +409,17 @@ export class PortfolioExecutor implements INodeExecutor {
     return toNodeResult(
       createSuccessOutput({
         cash: state.cash,
-        positions: positions.map((p) => this.formatPositionWithPnlPercent(p)),
+        positions: positions.map((p) => formatPositionWithPnlPercent(p)),
         positions_count: positions.length,
         positions_value: positionsValue,
-        unrealized_pnl_value: unrealizedPnlValue,
-        realized_pnl_value: realizedPnlValue,
+        unrealized_pnl: unrealizedPnlValue,
+        realized_pnl: realizedPnlValue,
         total_equity: state.totalEquity,
+        peak_equity: state.peakEquity,
+        drawdown_pct:
+          state.peakEquity > 0
+            ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
+            : 0,
         trades: state.trades,
         trades_count: state.trades.length,
       }),
@@ -426,20 +442,20 @@ export class PortfolioExecutor implements INodeExecutor {
       createSuccessOutput({
         has_position: !!position,
         position: position
-          ? this.formatPositionWithPnlPercent(position)
+          ? formatPositionWithPnlPercent(position)
           : null,
         symbol,
         quantity: position?.quantity || 0,
         side: position?.side || null,
         avg_entry_price: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
-        unrealized_pnl: this.toPercent(
+        unrealized_pnl_pct: toPercent(
           position?.unrealizedPnl || 0,
           costBasis,
         ),
-        unrealized_pnl_value: position?.unrealizedPnl || 0,
-        realized_pnl: this.toPercent(position?.realizedPnl || 0, costBasis),
-        realized_pnl_value: position?.realizedPnl || 0,
+        unrealized_pnl: position?.unrealizedPnl || 0,
+        realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
+        realized_pnl: position?.realizedPnl || 0,
         market_value: position?.marketValue || 0,
       }),
     );
@@ -465,6 +481,11 @@ export class PortfolioExecutor implements INodeExecutor {
         total_equity: state.totalEquity,
         cash_usdt: pm.getCash()["USDT"] || 0,
         positions_value: positionsValue,
+        peak_equity: state.peakEquity,
+        drawdown_pct:
+          state.peakEquity > 0
+            ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
+            : 0,
       }),
     );
   }
@@ -483,78 +504,35 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  // ============== SHARED HELPERS ==============
+  /**
+   * Fetch open orders from Binance /api/v3/openOrders (SIGNED).
+   */
+  private async brokerGetPendingOrders(
+    baseUrl: string,
+    headers: Record<string, string>,
+    creds: any,
+    symbol?: string,
+    environment: "live" | "testnet" = "live",
+  ): Promise<NodeResult> {
+    try {
+      const timestamp = getBinanceTimestamp(environment, "spot");
+      const rawParams: Record<string, any> = { recvWindow: 5000, timestamp };
+      if (symbol) rawParams.symbol = symbol;
+      const signedParams = signHmacSha256(rawParams, creds.secret_key);
 
-  private formatPositionWithPnlPercent(position: Position): Position & {
-    unrealizedPnlValue: number;
-    realizedPnlValue: number;
-  } {
-    const costBasis = Math.abs(position.avgEntryPrice * position.quantity);
-    return {
-      ...position,
-      unrealizedPnlValue: position.unrealizedPnl,
-      realizedPnlValue: position.realizedPnl,
-      unrealizedPnl: this.toPercent(position.unrealizedPnl, costBasis),
-      realizedPnl: this.toPercent(position.realizedPnl, costBasis),
-    };
-  }
+      const response = await axios.get(`${baseUrl}/api/v3/openOrders`, {
+        headers,
+        params: signedParams,
+        timeout: 15000,
+      });
 
-  private toPercent(value: number, base: number): number {
-    if (!Number.isFinite(value) || !Number.isFinite(base) || base === 0) return 0;
-    return (value / base) * 100;
-  }
-
-  private parseBar(data: any): Bar | null {
-    if (!data) return null;
-    if (typeof data === "string") {
-      try { data = JSON.parse(data); } catch { return null; }
+      const orders = Array.isArray(response.data) ? response.data : [];
+      return toNodeResult(
+        createSuccessOutput({ pending_orders: orders, count: orders.length }),
+      );
+    } catch (err) {
+      console.error("[PortfolioExecutor] brokerGetPendingOrders failed:", err);
+      return toNodeResult(createErrorOutput(err));
     }
-    if (data.bar) data = data.bar;
-
-    const timestamp = data.timestamp || data.date || data.t;
-    if (
-      timestamp &&
-      data.open !== undefined &&
-      data.high !== undefined &&
-      data.low !== undefined &&
-      data.close !== undefined
-    ) {
-      return {
-        timestamp,
-        open: parseFloat(data.open || data.o),
-        high: parseFloat(data.high || data.h),
-        low: parseFloat(data.low || data.l),
-        close: parseFloat(data.close || data.c),
-        volume: parseFloat(data.volume || data.v || 0),
-      };
-    }
-    if (data.t && data.o !== undefined) {
-      return {
-        timestamp: data.t,
-        open: parseFloat(data.o),
-        high: parseFloat(data.h),
-        low: parseFloat(data.l),
-        close: parseFloat(data.c),
-        volume: parseFloat(data.v || 0),
-      };
-    }
-    return null;
-  }
-
-  private parsePrices(data: any): Record<string, number> | null {
-    if (!data) return null;
-    if (typeof data === "string") {
-      try { data = JSON.parse(data); } catch { return null; }
-    }
-    if (typeof data !== "object" || Array.isArray(data)) return null;
-    const parsed = Object.entries(data).reduce<Record<string, number>>(
-      (acc, [symbol, price]) => {
-        const num = Number(price);
-        if (Number.isFinite(num)) acc[symbol] = num;
-        return acc;
-      },
-      {},
-    );
-    return Object.keys(parsed).length > 0 ? parsed : null;
   }
 }

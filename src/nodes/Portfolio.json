@@ -106,5 +106,10 @@
         }
       }
     }
-  ]
+  ],
+  "operationDisplayOptions": {
+    "update_mtm": { "show": { "mode": ["backtest"] } },
+    "sync_trades": { "show": { "mode": ["broker"] } },
+    "get_pending_orders": { "show": { "mode": ["backtest"] } }
+  }
 }

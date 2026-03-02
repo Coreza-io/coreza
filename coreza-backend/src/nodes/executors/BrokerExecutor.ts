@@ -244,7 +244,8 @@ export class BrokerExecutor implements INodeExecutor {
             credential_id,
           );
           if (pm.isBootstrapped() && resolvedParams.symbol) {
-            pm.syncSymbolTrades(baseUrl, headers, resolvedParams.symbol).catch(
+            const environment = (resolvedParams.environment || "live") as "live" | "testnet";
+            pm.syncSymbolTrades(baseUrl, headers, workingCreds, resolvedParams.symbol, environment).catch(
               (err: any) =>
                 console.error("[BROKER] Portfolio sync after order failed:", err),
             );

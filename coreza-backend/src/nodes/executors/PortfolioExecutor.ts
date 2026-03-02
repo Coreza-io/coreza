@@ -64,7 +64,7 @@ export class PortfolioExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      const mode = params.mode || "backtest";
+      const mode = params.mode;
 
       if (mode === "backtest") {
         return this.executeBacktestMode(params, context);
@@ -146,15 +146,19 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     context: any,
   ): Promise<NodeResult> {
-    const broker = (params.broker || "binance").toLowerCase();
+    const broker = params.broker.toLowerCase();
     const credentialId = params.credential_id;
     const userId = context?.userId;
 
     if (!credentialId) {
-      return toNodeResult(createErrorOutput("credential_id is required for broker mode"));
+      return toNodeResult(
+        createErrorOutput("credential_id is required for broker mode"),
+      );
     }
     if (!userId) {
-      return toNodeResult(createErrorOutput("User ID required for broker mode"));
+      return toNodeResult(
+        createErrorOutput("User ID required for broker mode"),
+      );
     }
 
     // Get broker config and credentials
@@ -184,7 +188,7 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    const environment = (params.environment || "live") as "live" | "testnet";
+    const environment = params.environment as "live" | "testnet";
     const baseUrl =
       typeof config.baseUrl === "function"
         ? config.baseUrl(creds, params)
@@ -203,10 +207,16 @@ export class PortfolioExecutor implements INodeExecutor {
     // Ensure current symbol is tracked (lazy symbol tracking)
     const symbol = params.symbol;
     if (symbol) {
-      await pm.ensureSymbolTracked(baseUrl, headers, creds, symbol, environment);
+      await pm.ensureSymbolTracked(
+        baseUrl,
+        headers,
+        creds,
+        symbol,
+        environment,
+      );
     }
 
-    const operation = params.operation || "get_portfolio";
+    const operation = params.operation;
 
     switch (operation) {
       case "get_portfolio":
@@ -220,12 +230,26 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_trades":
         return this.brokerGetTrades(pm);
       case "get_pending_orders":
-        return this.brokerGetPendingOrders(baseUrl, headers, creds, symbol, environment);
+        return this.brokerGetPendingOrders(
+          baseUrl,
+          headers,
+          creds,
+          symbol,
+          environment,
+        );
       case "sync_trades": {
         if (!symbol) {
-          return toNodeResult(createErrorOutput("symbol is required for sync_trades"));
+          return toNodeResult(
+            createErrorOutput("symbol is required for sync_trades"),
+          );
         }
-        const count = await pm.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
+        const count = await pm.syncSymbolTrades(
+          baseUrl,
+          headers,
+          creds,
+          symbol,
+          environment,
+        );
         return toNodeResult(
           createSuccessOutput({
             synced_trades: count,
@@ -246,7 +270,9 @@ export class PortfolioExecutor implements INodeExecutor {
   private backtestGetAll(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
     const positions = Object.values(state.positions);
-    const formattedPositions = positions.map((p) => formatPositionWithPnlPercent(p));
+    const formattedPositions = positions.map((p) =>
+      formatPositionWithPnlPercent(p),
+    );
     const positionsValue = positions.reduce((sum, p) => sum + p.marketValue, 0);
     const initialCapital = simBroker.getConfig().initialCapital;
     const unrealizedPnlValue = positions.reduce(
@@ -283,7 +309,9 @@ export class PortfolioExecutor implements INodeExecutor {
     symbol?: string,
   ): NodeResult {
     if (!symbol) {
-      return toNodeResult(createErrorOutput("'symbol' is required for get_position"));
+      return toNodeResult(
+        createErrorOutput("'symbol' is required for get_position"),
+      );
     }
     const position = simBroker.getPosition(symbol);
     const formattedPosition = position
@@ -401,10 +429,7 @@ export class PortfolioExecutor implements INodeExecutor {
       (s, p) => s + p.unrealizedPnl,
       0,
     );
-    const realizedPnlValue = positions.reduce(
-      (s, p) => s + p.realizedPnl,
-      0,
-    );
+    const realizedPnlValue = positions.reduce((s, p) => s + p.realizedPnl, 0);
 
     return toNodeResult(
       createSuccessOutput({
@@ -426,12 +451,11 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private brokerGetPosition(
-    pm: PortfolioManager,
-    symbol?: string,
-  ): NodeResult {
+  private brokerGetPosition(pm: PortfolioManager, symbol?: string): NodeResult {
     if (!symbol) {
-      return toNodeResult(createErrorOutput("'symbol' is required for get_position"));
+      return toNodeResult(
+        createErrorOutput("'symbol' is required for get_position"),
+      );
     }
     const position = pm.getPosition(symbol);
     const costBasis = position
@@ -441,18 +465,13 @@ export class PortfolioExecutor implements INodeExecutor {
     return toNodeResult(
       createSuccessOutput({
         has_position: !!position,
-        position: position
-          ? formatPositionWithPnlPercent(position)
-          : null,
+        position: position ? formatPositionWithPnlPercent(position) : null,
         symbol,
         quantity: position?.quantity || 0,
         side: position?.side || null,
         avg_entry_price: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
-        unrealized_pnl_pct: toPercent(
-          position?.unrealizedPnl || 0,
-          costBasis,
-        ),
+        unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
         unrealized_pnl: position?.unrealizedPnl || 0,
         realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
         realized_pnl: position?.realizedPnl || 0,

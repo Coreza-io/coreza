@@ -25,14 +25,16 @@ router.post("/", async (req: Request, res: Response) => {
 
     const executor = getNodeExecutor("Portfolio");
     if (!executor) {
-      return res.status(500).json({ error: "Portfolio executor is not registered" });
+      return res
+        .status(500)
+        .json({ error: "Portfolio executor is not registered" });
     }
 
     const result = await executor.execute(
       {
-        id: req.body.node_id || "api-portfolio",
-        name: req.body.node_name || "Portfolio",
-        node_type: "Portfolio",
+        id: req.body.node_id,
+        name: req.body.nodeName,
+        node_type: req.body.node_type,
         values: { ...req.body, mode },
       } as any,
       {},
@@ -40,7 +42,9 @@ router.post("/", async (req: Request, res: Response) => {
     );
 
     if (!result.success) {
-      return res.status(400).json({ error: result.error || "Portfolio execution failed" });
+      return res
+        .status(400)
+        .json({ error: result.error || "Portfolio execution failed" });
     }
 
     return res.json(result);

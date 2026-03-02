@@ -1,85 +1,100 @@
 
 
-# Refactor PortfolioManager: Pure In-Memory, No Database Persistence
+# Support Multiple Symbols in Portfolio Node (Broker Mode)
 
 ## Problem
 
-The current `PortfolioManager` treats fills as persistent data -- it writes every fill to a `live_fills` Supabase table and reads them back on bootstrap. This is wrong for the intended architecture. Following QuantConnect's model:
+Currently, `params.symbol` is treated as a single string everywhere in the broker mode executor. When users provide multiple symbols (e.g., "BTCUSDT,ETHUSDT") or when operations should work across all tracked symbols, the code only handles one symbol at a time. This affects:
 
-- All portfolio state (orders, fills, holdings, PnL) lives **in RAM only**, scoped to the algorithm/workflow run.
-- When the workflow stops, memory is gone.
-- On the next workflow run, portfolio is re-initialized fresh from the broker API (account balances + recent trades).
+1. **`ensureSymbolTracked`** -- only tracks one symbol per execution
+2. **`brokerGetPosition`** -- only returns one position
+3. **`brokerGetPendingOrders`** -- only queries one symbol
+4. **`sync_trades`** -- only syncs one symbol
 
-The `live_fills`, `position_snapshots`, and `cash_snapshots` tables become unnecessary overhead.
+## Solution
 
-## Changes
+### 1. Parse symbol(s) from params (`PortfolioExecutor.ts`)
 
-### 1. Remove all Supabase persistence from `PortfolioManager.ts`
-
-**Remove these methods entirely:**
-- `loadPersistedFills()` -- no longer loading from DB
-- `persistFill()` -- no longer writing fills to DB
-- `snapshotToDb()` -- no longer snapshotting to DB
-
-**Remove the Supabase import:**
-- `import { supabase } from "../config/supabase";`
-
-**Update `bootstrap()`:**
-- Remove step 1 (`await this.loadPersistedFills()`)
-- Bootstrap now only does: (a) fetch cash balances from broker API, (b) fetch recent trades from broker API for each symbol, (c) replay fills in-memory
-
-**Update `syncSymbolTrades()`:**
-- Remove the `this.persistFill(fill)` fire-and-forget call at line 343-345
-- Fills are only stored in-memory (`fillLedger`, `fillIdSet`, `holdings`)
-
-### 2. Change static instance lifecycle
-
-Currently `PortfolioManager.instances` is a global static `Map` that persists across workflow runs. This means stale state leaks between runs.
-
-**Add a `destroy()` method** that clears all in-memory state and removes the instance from the static cache. The `PortfolioExecutor` (or the workflow engine cleanup hook) should call this when a workflow run ends.
-
-**Add `static destroyAll()`** for batch cleanup on process shutdown.
-
-### 3. Update `PortfolioExecutor.ts` broker mode
-
-- Remove any references to `snapshotToDb`
-- The executor already doesn't call `snapshotToDb` directly, so no change needed there
-- Ensure `sync_trades` operation still works (it will -- it just won't persist to DB anymore)
-
-### 4. Consider removing DB tables
-
-The following Supabase tables are no longer needed by `PortfolioManager`:
-- `live_fills` -- was the fill persistence layer, now replaced by pure in-memory
-- `position_snapshots` -- was periodic DB snapshots
-- `cash_snapshots` -- was periodic DB snapshots
-
-However, these tables may still be useful for **audit/reporting purposes** (e.g., a separate analytics job that snapshots portfolio state periodically for the user dashboard). So the recommendation is:
-
-- **Do NOT delete the tables yet** -- they may serve a reporting/dashboard purpose later
-- **Remove all references from PortfolioManager** -- the manager itself should be pure in-memory
-- If snapshot/audit logging is needed later, it should be a separate service that reads from the PortfolioManager, not baked into it
-
-## Technical Summary
-
-| File | Action |
-|---|---|
-| `coreza-backend/src/services/PortfolioManager.ts` | Remove `supabase` import, delete `loadPersistedFills()`, `persistFill()`, `snapshotToDb()`. Update `bootstrap()` to skip DB load. Remove persist call from `syncSymbolTrades()`. Add `destroy()` and `static destroyAll()`. |
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | No changes needed (doesn't call persistence methods directly) |
-| Supabase tables (`live_fills`, `position_snapshots`, `cash_snapshots`) | Keep for now, but no longer written to by PortfolioManager |
-
-## Lifecycle per workflow run
+Add a helper that parses `params.symbol` into an array, supporting comma-separated input:
 
 ```text
-Workflow Start
-  --> PortfolioExecutor.executeBrokerMode()
-      --> PortfolioManager.getInstance() (creates fresh instance)
-      --> pm.bootstrap()
-          --> fetchCashBalances() via broker API
-          --> syncSymbolTrades() via broker API (fills replayed in-memory)
-      --> pm.getPortfolioState() / getPosition() / etc.
-
-Workflow End
-  --> PortfolioManager.removeInstance() or pm.destroy()
-      --> All in-memory state (fills, holdings, trades, cash) is garbage collected
+private parseSymbols(symbol?: string): string[] {
+  if (!symbol) return [];
+  return symbol.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+}
 ```
+
+### 2. Update `executeBrokerMode` lazy tracking (lines 203-207)
+
+Change from single-symbol tracking to multi-symbol:
+
+```text
+const symbols = this.parseSymbols(params.symbol);
+for (const sym of symbols) {
+  await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
+}
+```
+
+### 3. Update `brokerGetPosition` (lines 429-462)
+
+- If multiple symbols provided, return an array of positions for all of them
+- If single symbol, keep current behavior (returns one position object)
+- If no symbol, return ALL tracked positions from the portfolio manager
+
+### 4. Update `brokerGetPendingOrders` (lines 510-537)
+
+- Binance `/api/v3/openOrders` already returns ALL open orders when no `symbol` param is passed
+- If multiple symbols given, make one call per symbol or one call with no filter then filter client-side
+- Current code already handles `symbol` being undefined (line 520: `if (symbol) rawParams.symbol = symbol`) -- so this mostly works already
+
+### 5. Update `sync_trades` (lines 224-236)
+
+- Accept multiple symbols, loop and sync each
+- Remove the hard requirement for a single symbol -- allow syncing all tracked symbols if none specified
+
+```text
+case "sync_trades": {
+  const syncSymbols = symbols.length > 0
+    ? symbols
+    : pm.getTrackedSymbols();
+  let totalCount = 0;
+  for (const sym of syncSymbols) {
+    totalCount += await pm.syncSymbolTrades(baseUrl, headers, creds, sym, environment);
+  }
+  return toNodeResult(createSuccessOutput({
+    synced_trades: totalCount,
+    symbols: syncSymbols,
+    message: `Synced ${totalCount} new trades for ${syncSymbols.length} symbol(s)`,
+  }));
+}
+```
+
+### 6. Update `Portfolio.json` symbol field (line 91)
+
+Change placeholder to indicate multiple symbols are supported:
+
+```text
+"placeholder": "e.g. BTCUSDT or BTCUSDT,ETHUSDT"
+```
+
+Also make `symbol` optional for `get_pending_orders` (already optional in Binance API) and `sync_trades` (can sync all tracked). Update `displayOptions` to show the symbol field for `get_pending_orders` too (currently hidden in broker mode since `get_pending_orders` is backtest-only in `operationDisplayOptions` -- this needs fixing separately).
+
+## Files Changed
+
+| File | Change |
+|---|---|
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Add `parseSymbols()` helper. Update lazy tracking loop, `brokerGetPosition`, `sync_trades` to handle multiple symbols. |
+| `src/nodes/Portfolio.json` | Update symbol placeholder. Make symbol not required for `sync_trades`. |
+
+## Behavior Summary
+
+| Operation | No symbol | Single symbol | Multiple symbols |
+|---|---|---|---|
+| `get_portfolio` | All positions (unchanged) | All positions (unchanged) | All positions (unchanged) |
+| `get_position` | Error | Returns 1 position | Returns array of positions |
+| `get_pending_orders` | All open orders | Orders for that symbol | Orders for those symbols |
+| `sync_trades` | Sync all tracked symbols | Sync that symbol | Sync those symbols |
+| `get_cash` | Unchanged | Unchanged | Unchanged |
+| `get_equity` | Unchanged | Unchanged | Unchanged |
+| `get_trades` | Unchanged | Unchanged | Unchanged |
 

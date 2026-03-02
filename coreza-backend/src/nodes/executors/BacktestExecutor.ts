@@ -41,6 +41,8 @@ import {
   buildIndicatorKey,
   IndicatorStateManager,
 } from "../../services/indicatorStateManager";
+import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
+import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 
 import { BacktestSessionManager } from "../../services/BacktestSessionManager";
 
@@ -938,7 +940,7 @@ export class BacktestExecutor implements INodeExecutor {
     const state = simBroker.getPortfolioState();
     const positions = Object.values(state.positions);
     const formattedPositions = positions.map((position) =>
-      this.formatPositionWithPnlPercent(position),
+      formatPositionWithPnlPercent(position),
     );
     const positionsValue = positions.reduce(
       (sum, pos) => sum + pos.marketValue,
@@ -961,10 +963,10 @@ export class BacktestExecutor implements INodeExecutor {
         positions: formattedPositions,
         positions_count: positions.length,
         positions_value: positionsValue,
-        unrealized_pnl: this.toPercent(unrealizedPnlValue, initialCapital),
-        unrealized_pnl_value: unrealizedPnlValue,
-        realized_pnl: this.toPercent(realizedPnlValue, initialCapital),
-        realized_pnl_value: realizedPnlValue,
+        unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
+        unrealized_pnl: unrealizedPnlValue,
+        realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
+        realized_pnl: realizedPnlValue,
         total_equity: state.cash + positionsValue,
         pending_orders: state.pendingOrders,
         pending_orders_count: state.pendingOrders.length,
@@ -986,7 +988,7 @@ export class BacktestExecutor implements INodeExecutor {
 
     const position = simBroker.getPosition(symbol);
     const formattedPosition = position
-      ? this.formatPositionWithPnlPercent(position)
+      ? formatPositionWithPnlPercent(position)
       : null;
     const positionCostBasis = position
       ? Math.abs(position.avgEntryPrice * position.quantity)
@@ -1003,36 +1005,13 @@ export class BacktestExecutor implements INodeExecutor {
         side: position?.side || null,
         avg_entry_price: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
-        unrealized_pnl: this.toPercent(unrealizedPnlValue, positionCostBasis),
-        unrealized_pnl_value: unrealizedPnlValue,
-        realized_pnl: this.toPercent(realizedPnlValue, positionCostBasis),
-        realized_pnl_value: realizedPnlValue,
+        unrealized_pnl_pct: toPercent(unrealizedPnlValue, positionCostBasis),
+        unrealized_pnl: unrealizedPnlValue,
+        realized_pnl_pct: toPercent(realizedPnlValue, positionCostBasis),
+        realized_pnl: realizedPnlValue,
         market_value: position?.marketValue || 0,
       }),
     );
-  }
-
-  private formatPositionWithPnlPercent(position: Position): Position & {
-    unrealizedPnlValue: number;
-    realizedPnlValue: number;
-  } {
-    const costBasis = Math.abs(position.avgEntryPrice * position.quantity);
-
-    return {
-      ...position,
-      unrealizedPnlValue: position.unrealizedPnl,
-      realizedPnlValue: position.realizedPnl,
-      unrealizedPnl: this.toPercent(position.unrealizedPnl, costBasis),
-      realizedPnl: this.toPercent(position.realizedPnl, costBasis),
-    };
-  }
-
-  private toPercent(value: number, base: number): number {
-    if (!Number.isFinite(value) || !Number.isFinite(base) || base === 0) {
-      return 0;
-    }
-
-    return (value / base) * 100;
   }
 
   private portfolioUpdateMTM(
@@ -1074,17 +1053,15 @@ export class BacktestExecutor implements INodeExecutor {
     const totalEquity = state.cash + positionsValue;
     const peak = state.peakEquity;
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
+    const initialCapital = simBroker.getConfig().initialCapital;
 
     return toNodeResult(
       createSuccessOutput({
         total_equity: totalEquity,
         cash: state.cash,
         positions_value: positionsValue,
-        initial_capital: simBroker.getConfig().initialCapital,
-        return_pct:
-          ((totalEquity - simBroker.getConfig().initialCapital) /
-            simBroker.getConfig().initialCapital) *
-          100,
+        initial_capital: initialCapital,
+        return_pct: ((totalEquity - initialCapital) / initialCapital) * 100,
         peak_equity: peak,
         drawdown_pct: drawdownPct,
       }),
@@ -1134,85 +1111,4 @@ export class BacktestExecutor implements INodeExecutor {
     return Array.from(byDate.values());
   }
 
-  private parsePrices(data: any): Record<string, number> | null {
-    if (!data) return null;
-
-    if (typeof data === "string") {
-      try {
-        data = JSON.parse(data);
-      } catch {
-        return null;
-      }
-    }
-
-    if (typeof data !== "object" || Array.isArray(data)) {
-      return null;
-    }
-
-    const parsed = Object.entries(data).reduce<Record<string, number>>(
-      (acc, [symbol, price]) => {
-        const numericPrice = Number(price);
-        if (Number.isFinite(numericPrice)) {
-          acc[symbol] = numericPrice;
-        }
-        return acc;
-      },
-      {},
-    );
-
-    return Object.keys(parsed).length > 0 ? parsed : null;
-  }
-
-  // ============== HELPERS ==============
-  private parseBar(data: any): Bar | null {
-    if (!data) return null;
-
-    // Handle JSON string input
-    if (typeof data === "string") {
-      try {
-        data = JSON.parse(data);
-      } catch {
-        return null;
-      }
-    }
-
-    // Handle various input formats
-    if (data.bar) {
-      data = data.bar;
-    }
-
-    // Get timestamp from multiple possible field names
-    const timestamp = data.timestamp || data.date || data.t;
-
-    if (
-      timestamp &&
-      data.open !== undefined &&
-      data.high !== undefined &&
-      data.low !== undefined &&
-      data.close !== undefined
-    ) {
-      return {
-        timestamp: timestamp,
-        open: parseFloat(data.open || data.o),
-        high: parseFloat(data.high || data.h),
-        low: parseFloat(data.low || data.l),
-        close: parseFloat(data.close || data.c),
-        volume: parseFloat(data.volume || data.v || 0),
-      };
-    }
-
-    // Try OHLCV format
-    if (data.t && data.o !== undefined) {
-      return {
-        timestamp: data.t,
-        open: parseFloat(data.o),
-        high: parseFloat(data.h),
-        low: parseFloat(data.l),
-        close: parseFloat(data.c),
-        volume: parseFloat(data.v || 0),
-      };
-    }
-
-    return null;
-  }
 }

@@ -17,6 +17,8 @@
 import axios from "axios";
 import { Position, Trade } from "./simBroker/interfaces";
 import { supabase } from "../config/supabase";
+import { signHmacSha256 } from "../utils/crypto";
+import { getBinanceTimestamp } from "../utils/binanceTimeSync";
 
 // ============== INTERFACES ==============
 
@@ -69,9 +71,12 @@ export class PortfolioManager {
   private cashBook = new Map<string, number>(); // asset -> total balance
   private holdings = new Map<string, SpotHolding>(); // symbol -> holding
   private fillLedger: LiveFill[] = [];
+  private fillIdSet = new Set<string>(); // O(1) dedup: "${symbol}:${tradeId}"
   private trades: Trade[] = [];
   private lastSyncedTradeId = new Map<string, number>(); // symbol -> last trade_id
+  private trackedSymbols = new Set<string>(); // symbols synced so far
   private tradeIdCounter = 0;
+  private peakEquity = 0;
 
   private bootstrapped = false;
 
@@ -110,14 +115,16 @@ export class PortfolioManager {
   /**
    * Bootstrap portfolio from broker API and persisted fills.
    * 1. Load persisted fills from Supabase
-   * 2. Fetch cash balances from Binance /api/v3/account
-   * 3. Fetch new fills from /api/v3/myTrades (incremental)
+   * 2. Fetch cash balances from Binance /api/v3/account (SIGNED)
+   * 3. Fetch new fills from /api/v3/myTrades (incremental, SIGNED)
    * 4. Replay all fills to derive avg entry and realized PnL
    */
   async bootstrap(
     baseUrl: string,
     headers: Record<string, string>,
+    creds: any,
     symbols: string[],
+    environment: "live" | "testnet" = "live",
   ): Promise<void> {
     if (this.bootstrapped) return;
 
@@ -128,14 +135,15 @@ export class PortfolioManager {
     // 1. Load persisted fills from Supabase
     await this.loadPersistedFills();
 
-    // 2. Fetch cash balances from broker
-    await this.fetchCashBalances(baseUrl, headers);
+    // 2. Fetch cash balances from broker (SIGNED)
+    await this.fetchCashBalances(baseUrl, headers, creds, environment);
 
     // 3. Fetch new fills for each tracked symbol
     for (const symbol of symbols) {
-      await this.syncSymbolTrades(baseUrl, headers, symbol);
+      await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
     }
 
+    this.updatePeakEquity();
     this.bootstrapped = true;
     console.log(
       `[PortfolioManager] Bootstrap complete: ${this.holdings.size} holdings, ${this.fillLedger.length} fills`,
@@ -143,24 +151,31 @@ export class PortfolioManager {
   }
 
   /**
-   * Load previously persisted fills from Supabase and replay them.
+   * Load previously persisted fills from Supabase with pagination and replay them.
    */
   private async loadPersistedFills(): Promise<void> {
     try {
-      const { data, error } = await supabase
-        .from("live_fills")
-        .select("*")
-        .eq("user_id", this.userId)
-        .eq("broker", this.broker)
-        .eq("credential_id", this.credentialId)
-        .order("event_time", { ascending: true });
+      const PAGE_SIZE = 5000;
+      let offset = 0;
+      let totalLoaded = 0;
 
-      if (error) {
-        console.error("[PortfolioManager] Failed to load persisted fills:", error);
-        return;
-      }
+      while (true) {
+        const { data, error } = await supabase
+          .from("live_fills")
+          .select("*")
+          .eq("user_id", this.userId)
+          .eq("broker", this.broker)
+          .eq("credential_id", this.credentialId)
+          .order("event_time", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-      if (data && data.length > 0) {
+        if (error) {
+          console.error("[PortfolioManager] Failed to load persisted fills:", error);
+          return;
+        }
+
+        if (!data || data.length === 0) break;
+
         for (const row of data) {
           const fill: LiveFill = {
             tradeId: row.trade_id,
@@ -174,8 +189,14 @@ export class PortfolioManager {
             commissionAsset: row.commission_asset,
             eventTime: new Date(row.event_time).getTime(),
           };
+
+          const dedupKey = `${fill.symbol}:${fill.tradeId}`;
+          if (this.fillIdSet.has(dedupKey)) continue;
+
+          this.fillIdSet.add(dedupKey);
           this.fillLedger.push(fill);
           this.applyFillToHoldings(fill);
+          this.trackedSymbols.add(fill.symbol);
 
           // Track last synced trade ID per symbol
           const tradeIdNum = parseInt(fill.tradeId, 10);
@@ -184,8 +205,17 @@ export class PortfolioManager {
             this.lastSyncedTradeId.set(fill.symbol, tradeIdNum);
           }
         }
+
+        totalLoaded += data.length;
+        offset += PAGE_SIZE;
+
+        // If we got fewer than PAGE_SIZE, we've reached the end
+        if (data.length < PAGE_SIZE) break;
+      }
+
+      if (totalLoaded > 0) {
         console.log(
-          `[PortfolioManager] Loaded ${data.length} persisted fills`,
+          `[PortfolioManager] Loaded ${totalLoaded} persisted fills`,
         );
       }
     } catch (err) {
@@ -194,15 +224,24 @@ export class PortfolioManager {
   }
 
   /**
-   * Fetch cash balances from Binance Spot /api/v3/account.
+   * Fetch cash balances from Binance Spot /api/v3/account (SIGNED endpoint).
    */
   private async fetchCashBalances(
     baseUrl: string,
     headers: Record<string, string>,
+    creds: any,
+    environment: "live" | "testnet",
   ): Promise<void> {
     try {
+      const timestamp = getBinanceTimestamp(environment, "spot");
+      const signedParams = signHmacSha256(
+        { recvWindow: 5000, timestamp },
+        creds.secret_key,
+      );
+
       const response = await axios.get(`${baseUrl}/api/v3/account`, {
         headers,
+        params: signedParams,
         timeout: 15000,
       });
 
@@ -228,23 +267,46 @@ export class PortfolioManager {
   // ============== SYNC ==============
 
   /**
-   * Incremental sync: fetch new trades from broker for a symbol.
+   * Ensure a symbol is tracked. If not yet synced, fetch its trades.
+   */
+  async ensureSymbolTracked(
+    baseUrl: string,
+    headers: Record<string, string>,
+    creds: any,
+    symbol: string,
+    environment: "live" | "testnet" = "live",
+  ): Promise<void> {
+    if (this.trackedSymbols.has(symbol)) return;
+    await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
+  }
+
+  /**
+   * Incremental sync: fetch new trades from broker for a symbol (SIGNED).
    */
   async syncSymbolTrades(
     baseUrl: string,
     headers: Record<string, string>,
+    creds: any,
     symbol: string,
+    environment: "live" | "testnet" = "live",
   ): Promise<number> {
     try {
+      this.trackedSymbols.add(symbol);
+
       const fromId = this.lastSyncedTradeId.get(symbol);
-      const params: Record<string, any> = { symbol };
+      const rawParams: Record<string, any> = { symbol };
       if (fromId) {
-        params.fromId = fromId + 1; // Binance fromId is inclusive
+        rawParams.fromId = fromId + 1; // Binance fromId is inclusive
       }
+
+      const timestamp = getBinanceTimestamp(environment, "spot");
+      rawParams.recvWindow = 5000;
+      rawParams.timestamp = timestamp;
+      const signedParams = signHmacSha256(rawParams, creds.secret_key);
 
       const response = await axios.get(`${baseUrl}/api/v3/myTrades`, {
         headers,
-        params,
+        params: signedParams,
         timeout: 15000,
       });
 
@@ -254,11 +316,10 @@ export class PortfolioManager {
       let newCount = 0;
       for (const t of trades) {
         const tradeId = String(t.id);
+        const dedupKey = `${symbol}:${tradeId}`;
 
-        // Dedup against in-memory ledger
-        if (this.fillLedger.some((f) => f.symbol === symbol && f.tradeId === tradeId)) {
-          continue;
-        }
+        // O(1) dedup
+        if (this.fillIdSet.has(dedupKey)) continue;
 
         const fill: LiveFill = {
           tradeId,
@@ -273,11 +334,12 @@ export class PortfolioManager {
           eventTime: t.time,
         };
 
+        this.fillIdSet.add(dedupKey);
         this.fillLedger.push(fill);
         this.applyFillToHoldings(fill);
         newCount++;
 
-        // Async persist (fire-and-forget)
+        // Async persist (fire-and-forget with error logging)
         this.persistFill(fill).catch((err) =>
           console.error("[PortfolioManager] Persist fill error:", err),
         );
@@ -290,6 +352,7 @@ export class PortfolioManager {
       }
 
       if (newCount > 0) {
+        this.updatePeakEquity();
         console.log(
           `[PortfolioManager] Synced ${newCount} new trades for ${symbol}`,
         );
@@ -311,11 +374,13 @@ export class PortfolioManager {
   async syncFromBroker(
     baseUrl: string,
     headers: Record<string, string>,
+    creds: any,
     symbols: string[],
+    environment: "live" | "testnet" = "live",
   ): Promise<number> {
     let total = 0;
     for (const symbol of symbols) {
-      total += await this.syncSymbolTrades(baseUrl, headers, symbol);
+      total += await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
     }
     return total;
   }
@@ -395,7 +460,7 @@ export class PortfolioManager {
    * Persist a single fill to Supabase (async, fire-and-forget).
    */
   private async persistFill(fill: LiveFill): Promise<void> {
-    await supabase.from("live_fills").upsert(
+    const { error } = await supabase.from("live_fills").upsert(
       {
         user_id: this.userId,
         broker: this.broker,
@@ -413,6 +478,10 @@ export class PortfolioManager {
       },
       { onConflict: "user_id,broker,symbol,trade_id" },
     );
+
+    if (error) {
+      console.error("[PortfolioManager] persistFill failed:", error.message);
+    }
   }
 
   /**
@@ -436,7 +505,10 @@ export class PortfolioManager {
     }));
 
     if (posRows.length > 0) {
-      await supabase.from("position_snapshots").insert(posRows);
+      const { error } = await supabase.from("position_snapshots").insert(posRows);
+      if (error) {
+        console.error("[PortfolioManager] snapshotToDb position_snapshots failed:", error.message);
+      }
     }
 
     // Cash snapshot
@@ -445,7 +517,7 @@ export class PortfolioManager {
       balancesObj[asset] = amount;
     }
 
-    await supabase.from("cash_snapshots").insert({
+    const { error } = await supabase.from("cash_snapshots").insert({
       user_id: this.userId,
       broker: this.broker,
       credential_id: this.credentialId,
@@ -453,6 +525,17 @@ export class PortfolioManager {
       total_value_usdt: this.cashBook.get("USDT") ?? 0,
       snapshot_at: now,
     });
+
+    if (error) {
+      console.error("[PortfolioManager] snapshotToDb cash_snapshots failed:", error.message);
+    }
+  }
+
+  // ============== PEAK EQUITY ==============
+
+  private updatePeakEquity(): void {
+    const currentEquity = this.getTotalEquity();
+    this.peakEquity = Math.max(this.peakEquity, currentEquity);
   }
 
   // ============== GETTERS (mirror SimBroker interface) ==============
@@ -470,13 +553,14 @@ export class PortfolioManager {
     const positions = this.getPositions();
     const cashUsdt = this.cashBook.get("USDT") ?? 0;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
+    const totalEquity = cashUsdt + positionsValue;
 
     return {
       cash: Object.fromEntries(this.cashBook),
       positions,
       trades: this.trades,
-      totalEquity: cashUsdt + positionsValue,
-      peakEquity: cashUsdt + positionsValue, // Peak tracking not implemented for live yet
+      totalEquity,
+      peakEquity: this.peakEquity,
     };
   }
 
@@ -525,11 +609,19 @@ export class PortfolioManager {
     return cashUsdt + posValue;
   }
 
+  getPeakEquity(): number {
+    return this.peakEquity;
+  }
+
   getTrades(): Trade[] {
     return this.trades;
   }
 
   isBootstrapped(): boolean {
     return this.bootstrapped;
+  }
+
+  getTrackedSymbols(): string[] {
+    return Array.from(this.trackedSymbols);
   }
 }

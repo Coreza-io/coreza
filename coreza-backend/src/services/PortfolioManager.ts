@@ -465,8 +465,8 @@ export class PortfolioManager {
 
   // ============== PEAK EQUITY ==============
 
-  private updatePeakEquity(): void {
-    const currentEquity = this.getTotalEquity();
+  private updatePeakEquity(baseCurrency: string = "USDT"): void {
+    const currentEquity = this.getTotalEquity(baseCurrency);
     this.peakEquity = Math.max(this.peakEquity, currentEquity);
   }
 
@@ -475,7 +475,7 @@ export class PortfolioManager {
   /**
    * Get full portfolio state in the same shape as SimBroker.
    */
-  getPortfolioState(): {
+  getPortfolioState(baseCurrency: string = "USDT"): {
     cash: Record<string, number>;
     positions: Position[];
     trades: Trade[];
@@ -483,9 +483,9 @@ export class PortfolioManager {
     peakEquity: number;
   } {
     const positions = this.getPositions();
-    const cashUsdt = this.cashBook.get("USDT") ?? 0;
+    const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
-    const totalEquity = cashUsdt + positionsValue;
+    const totalEquity = cashBase + positionsValue;
 
     return {
       cash: Object.fromEntries(this.cashBook),
@@ -532,13 +532,13 @@ export class PortfolioManager {
     return Object.fromEntries(this.cashBook);
   }
 
-  getTotalEquity(): number {
-    const cashUsdt = this.cashBook.get("USDT") ?? 0;
+  getTotalEquity(baseCurrency: string = "USDT"): number {
+    const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const posValue = Array.from(this.holdings.values()).reduce(
       (s, h) => s + h.quantity * h.currentPrice,
       0,
     );
-    return cashUsdt + posValue;
+    return cashBase + posValue;
   }
 
   getPeakEquity(): number {
@@ -579,12 +579,15 @@ export class PortfolioManager {
    * Positive quantity = BUY, negative = SELL.
    * Updates holdings (qty, avg price, realized PnL) and cash.
    */
-  applyFill(fill: {
-    symbol: string;
-    quantity: number;
-    price: number;
-    commission?: number;
-  }): void {
+  applyFill(
+    fill: {
+      symbol: string;
+      quantity: number;
+      price: number;
+      commission?: number;
+    },
+    baseCurrency: string,
+  ): void {
     const { symbol, quantity, price, commission = 0 } = fill;
     const side: "BUY" | "SELL" = quantity > 0 ? "BUY" : "SELL";
     const absQty = Math.abs(quantity);
@@ -597,6 +600,7 @@ export class PortfolioManager {
       qty: absQty,
       price,
       commission,
+      commissionAsset: this.extractQuoteAsset(symbol) ?? baseCurrency,
       eventTime: Date.now(),
     };
 
@@ -604,7 +608,7 @@ export class PortfolioManager {
     this.fillLedger.push(liveFill);
     this.applyFillToHoldings(liveFill, true);
     this.trackedSymbols.add(symbol);
-    this.updatePeakEquity();
+    this.updatePeakEquity(baseCurrency);
 
     console.log(
       `[PortfolioManager] Applied fill: ${side} ${absQty} ${symbol} @ ${price} (commission: ${commission})`,

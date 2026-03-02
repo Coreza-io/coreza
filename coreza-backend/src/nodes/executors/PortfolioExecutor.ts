@@ -212,6 +212,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";
+    const baseCurrency = params.base_currency || "USDT";
 
     if (operation === "create_portfolio") {
       if (pm.isBootstrapped()) {
@@ -219,7 +220,7 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             message: "Portfolio already initialized",
             already_created: true,
-            ...this.getPortfolioSummary(pm),
+            ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );
       }
@@ -233,7 +234,7 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             message: "Portfolio created with explicit cash balance",
             created: true,
-            ...this.getPortfolioSummary(pm),
+            ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );
       }
@@ -244,7 +245,7 @@ export class PortfolioExecutor implements INodeExecutor {
         createSuccessOutput({
           message: "Portfolio created from broker account",
           created: true,
-          ...this.getPortfolioSummary(pm),
+          ...this.getPortfolioSummary(pm, baseCurrency),
         }),
       );
     }
@@ -263,7 +264,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
     switch (operation) {
       case "get_portfolio":
-        return this.brokerGetAll(pm);
+        return this.brokerGetAll(pm, baseCurrency);
       case "update_portfolio": {
         // Explicit fill fields: symbol, quantity, price, commission
         const fillSymbol = params.symbol?.trim().toUpperCase();
@@ -281,21 +282,21 @@ export class PortfolioExecutor implements INodeExecutor {
           return toNodeResult(createErrorOutput("price must be a positive number"));
         }
 
-        pm.applyFill({ symbol: fillSymbol, quantity, price, commission });
+        pm.applyFill({ symbol: fillSymbol, quantity, price, commission }, baseCurrency);
         return toNodeResult(
           createSuccessOutput({
             updated: true,
             fill_applied: { symbol: fillSymbol, quantity, price, commission },
-            ...this.getPortfolioSummary(pm),
+            ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );
       }
       case "get_position":
         return this.brokerGetPosition(pm, symbols);
       case "get_cash":
-        return this.brokerGetCash(pm);
+        return this.brokerGetCash(pm, baseCurrency);
       case "get_equity":
-        return this.brokerGetEquity(pm);
+        return this.brokerGetEquity(pm, baseCurrency);
       case "get_trades":
         return this.brokerGetTrades(pm);
       case "get_pending_orders":
@@ -325,7 +326,7 @@ export class PortfolioExecutor implements INodeExecutor {
               "sync_trades is deprecated; use update_portfolio for QC-aligned semantics",
             synced_trades: totalCount,
             symbols: syncSymbols,
-            ...this.getPortfolioSummary(pm),
+            ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );
       }
@@ -492,11 +493,11 @@ export class PortfolioExecutor implements INodeExecutor {
 
   // ============== BROKER HELPERS ==============
 
-  private brokerGetAll(pm: PortfolioManager): NodeResult {
-    const state = pm.getPortfolioState();
+  private brokerGetAll(pm: PortfolioManager, baseCurrency: string): NodeResult {
+    const state = pm.getPortfolioState(baseCurrency);
     return toNodeResult(
       createSuccessOutput({
-        ...this.getPortfolioSummary(pm),
+        ...this.getPortfolioSummary(pm, baseCurrency),
         drawdown_pct:
           state.peakEquity > 0
             ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
@@ -506,8 +507,8 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private getPortfolioSummary(pm: PortfolioManager): Record<string, any> {
-    const state = pm.getPortfolioState();
+  private getPortfolioSummary(pm: PortfolioManager, baseCurrency: string): Record<string, any> {
+    const state = pm.getPortfolioState(baseCurrency);
     const positions = state.positions;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
 
@@ -595,17 +596,17 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private brokerGetCash(pm: PortfolioManager): NodeResult {
+  private brokerGetCash(pm: PortfolioManager, baseCurrency: string): NodeResult {
     return toNodeResult(
       createSuccessOutput({
         cash: pm.getCash(),
-        buying_power: pm.getCash()["USDT"] || 0,
+        buying_power: pm.getCash()[baseCurrency] || 0,
       }),
     );
   }
 
-  private brokerGetEquity(pm: PortfolioManager): NodeResult {
-    const state = pm.getPortfolioState();
+  private brokerGetEquity(pm: PortfolioManager, baseCurrency: string): NodeResult {
+    const state = pm.getPortfolioState(baseCurrency);
     const positionsValue = state.positions.reduce(
       (s, p) => s + p.marketValue,
       0,
@@ -613,7 +614,7 @@ export class PortfolioExecutor implements INodeExecutor {
     return toNodeResult(
       createSuccessOutput({
         total_equity: state.totalEquity,
-        cash_usdt: pm.getCash()["USDT"] || 0,
+        cash_base: pm.getCash()[baseCurrency] || 0,
         positions_value: positionsValue,
         peak_equity: state.peakEquity,
         drawdown_pct:

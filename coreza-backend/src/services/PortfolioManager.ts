@@ -246,7 +246,7 @@ export class PortfolioManager {
     headers: Record<string, string>,
     creds: any,
     symbol: string,
-    environment: "live" | "testnet" = "live",
+    environment: "live" | "testnet",
   ): Promise<number> {
     try {
       this.trackedSymbols.add(symbol);
@@ -333,7 +333,13 @@ export class PortfolioManager {
   ): Promise<number> {
     let total = 0;
     for (const symbol of symbols) {
-      total += await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
+      total += await this.syncSymbolTrades(
+        baseUrl,
+        headers,
+        creds,
+        symbol,
+        environment,
+      );
     }
     return total;
   }

@@ -283,6 +283,93 @@ export type Database = {
           },
         ]
       }
+      cash_snapshots: {
+        Row: {
+          balances: Json
+          broker: string
+          created_at: string
+          credential_id: string
+          id: string
+          snapshot_at: string
+          total_value_usdt: number | null
+          user_id: string
+        }
+        Insert: {
+          balances?: Json
+          broker: string
+          created_at?: string
+          credential_id: string
+          id?: string
+          snapshot_at: string
+          total_value_usdt?: number | null
+          user_id: string
+        }
+        Update: {
+          balances?: Json
+          broker?: string
+          created_at?: string
+          credential_id?: string
+          id?: string
+          snapshot_at?: string
+          total_value_usdt?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_fills: {
+        Row: {
+          broker: string
+          commission: number
+          commission_asset: string | null
+          created_at: string
+          credential_id: string
+          event_time: string
+          id: string
+          order_id: string | null
+          price: number
+          qty: number
+          quote_qty: number | null
+          side: string
+          symbol: string
+          trade_id: string
+          user_id: string
+        }
+        Insert: {
+          broker: string
+          commission?: number
+          commission_asset?: string | null
+          created_at?: string
+          credential_id: string
+          event_time: string
+          id?: string
+          order_id?: string | null
+          price: number
+          qty: number
+          quote_qty?: number | null
+          side: string
+          symbol: string
+          trade_id: string
+          user_id: string
+        }
+        Update: {
+          broker?: string
+          commission?: number
+          commission_asset?: string | null
+          created_at?: string
+          credential_id?: string
+          event_time?: string
+          id?: string
+          order_id?: string | null
+          price?: number
+          qty?: number
+          quote_qty?: number | null
+          side?: string
+          symbol?: string
+          trade_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       node_executions: {
         Row: {
           error_message: string | null
@@ -326,6 +413,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      position_snapshots: {
+        Row: {
+          avg_entry_price: number
+          broker: string
+          created_at: string
+          credential_id: string
+          current_price: number | null
+          id: string
+          quantity: number
+          realized_pnl: number | null
+          snapshot_at: string
+          symbol: string
+          unrealized_pnl: number | null
+          user_id: string
+        }
+        Insert: {
+          avg_entry_price: number
+          broker: string
+          created_at?: string
+          credential_id: string
+          current_price?: number | null
+          id?: string
+          quantity: number
+          realized_pnl?: number | null
+          snapshot_at: string
+          symbol: string
+          unrealized_pnl?: number | null
+          user_id: string
+        }
+        Update: {
+          avg_entry_price?: number
+          broker?: string
+          created_at?: string
+          credential_id?: string
+          current_price?: number | null
+          id?: string
+          quantity?: number
+          realized_pnl?: number | null
+          snapshot_at?: string
+          symbol?: string
+          unrealized_pnl?: number | null
+          user_id?: string
+        }
+        Relationships: []
       }
       projects: {
         Row: {

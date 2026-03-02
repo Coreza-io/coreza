@@ -572,6 +572,25 @@ export class PortfolioManager {
     );
   }
 
+  // ============== MARK-TO-MARKET (Valuation Loop) ==============
+
+  /**
+   * Update holding market prices for mark-to-market valuation.
+   * Does not modify quantity, avg entry price, cash, or realized PnL.
+   */
+  updateMarketPrices(
+    prices: Record<string, number>,
+    baseCurrency: string = "USDT",
+  ): void {
+    for (const [symbol, price] of Object.entries(prices)) {
+      const holding = this.holdings.get(symbol);
+      if (holding) {
+        holding.currentPrice = price;
+      }
+    }
+    this.updatePeakEquity(baseCurrency);
+  }
+
   // ============== APPLY FILL (Accounting Loop) ==============
 
   /**

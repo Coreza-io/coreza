@@ -174,7 +174,11 @@
       "placeholder": "{{ $('BinanceTrade').json.avgPrice }}",
       "required": true,
       "description": "Average fill price.",
-      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+      "displayOptions": {
+        "show": {
+          "operation": ["update_portfolio", "update_mtm"]
+        }
+      }
     },
     {
       "key": "commission",

@@ -44,6 +44,18 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
 
+  /**
+   * Parse a symbol param into an array. Supports comma-separated values.
+   * e.g. "BTCUSDT" -> ["BTCUSDT"], "BTCUSDT,ETHUSDT" -> ["BTCUSDT","ETHUSDT"]
+   */
+  private parseSymbols(symbol?: string): string[] {
+    if (!symbol) return [];
+    return symbol
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+  }
+
   // Reference to the shared SimBroker cache from BacktestExecutor
   private static simBrokerCache = new Map<string, SimBroker>();
 
@@ -200,20 +212,14 @@ export class PortfolioExecutor implements INodeExecutor {
 
     // Bootstrap if first access
     if (!pm.isBootstrapped()) {
-      const symbols = params.symbol ? [params.symbol] : [];
-      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
+      const extraSymbols = this.parseSymbols(params.symbol);
+      await pm.bootstrap(baseUrl, headers, creds, extraSymbols, environment);
     }
 
-    // Ensure current symbol is tracked (lazy symbol tracking)
-    const symbol = params.symbol;
-    if (symbol) {
-      await pm.ensureSymbolTracked(
-        baseUrl,
-        headers,
-        creds,
-        symbol,
-        environment,
-      );
+    // Ensure all requested symbols are tracked (lazy symbol tracking)
+    const symbols = this.parseSymbols(params.symbol);
+    for (const sym of symbols) {
+      await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
     }
 
     const operation = params.operation;
@@ -222,7 +228,7 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_portfolio":
         return this.brokerGetAll(pm);
       case "get_position":
-        return this.brokerGetPosition(pm, symbol);
+        return this.brokerGetPosition(pm, symbols);
       case "get_cash":
         return this.brokerGetCash(pm);
       case "get_equity":
@@ -234,27 +240,27 @@ export class PortfolioExecutor implements INodeExecutor {
           baseUrl,
           headers,
           creds,
-          symbol,
+          symbols,
           environment,
         );
       case "sync_trades": {
-        if (!symbol) {
-          return toNodeResult(
-            createErrorOutput("symbol is required for sync_trades"),
+        const syncSymbols =
+          symbols.length > 0 ? symbols : pm.getTrackedSymbols();
+        let totalCount = 0;
+        for (const sym of syncSymbols) {
+          totalCount += await pm.syncSymbolTrades(
+            baseUrl,
+            headers,
+            creds,
+            sym,
+            environment,
           );
         }
-        const count = await pm.syncSymbolTrades(
-          baseUrl,
-          headers,
-          creds,
-          symbol,
-          environment,
-        );
         return toNodeResult(
           createSuccessOutput({
-            synced_trades: count,
-            symbol,
-            message: `Synced ${count} new trades for ${symbol}`,
+            synced_trades: totalCount,
+            symbols: syncSymbols,
+            message: `Synced ${totalCount} new trades for ${syncSymbols.length} symbol(s)`,
           }),
         );
       }
@@ -451,19 +457,57 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private brokerGetPosition(pm: PortfolioManager, symbol?: string): NodeResult {
-    if (!symbol) {
+  private brokerGetPosition(
+    pm: PortfolioManager,
+    symbols: string[],
+  ): NodeResult {
+    if (symbols.length === 0) {
+      // No symbol provided: return all tracked positions
+      const positions = pm.getPositions();
       return toNodeResult(
-        createErrorOutput("'symbol' is required for get_position"),
+        createSuccessOutput({
+          positions: positions.map((p) => formatPositionWithPnlPercent(p)),
+          positions_count: positions.length,
+        }),
       );
     }
-    const position = pm.getPosition(symbol);
-    const costBasis = position
-      ? Math.abs(position.avgEntryPrice * position.quantity)
-      : 0;
 
-    return toNodeResult(
-      createSuccessOutput({
+    if (symbols.length === 1) {
+      // Single symbol: keep backward-compatible flat output
+      const symbol = symbols[0];
+      const position = pm.getPosition(symbol);
+      const costBasis = position
+        ? Math.abs(position.avgEntryPrice * position.quantity)
+        : 0;
+
+      return toNodeResult(
+        createSuccessOutput({
+          has_position: !!position,
+          position: position ? formatPositionWithPnlPercent(position) : null,
+          symbol,
+          quantity: position?.quantity || 0,
+          side: position?.side || null,
+          avg_entry_price: position?.avgEntryPrice || 0,
+          current_price: position?.currentPrice || 0,
+          unrealized_pnl_pct: toPercent(
+            position?.unrealizedPnl || 0,
+            costBasis,
+          ),
+          unrealized_pnl: position?.unrealizedPnl || 0,
+          realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
+          realized_pnl: position?.realizedPnl || 0,
+          market_value: position?.marketValue || 0,
+        }),
+      );
+    }
+
+    // Multiple symbols: return array of positions
+    const results = symbols.map((symbol) => {
+      const position = pm.getPosition(symbol);
+      const costBasis = position
+        ? Math.abs(position.avgEntryPrice * position.quantity)
+        : 0;
+      return {
         has_position: !!position,
         position: position ? formatPositionWithPnlPercent(position) : null,
         symbol,
@@ -476,7 +520,11 @@ export class PortfolioExecutor implements INodeExecutor {
         realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
         realized_pnl: position?.realizedPnl || 0,
         market_value: position?.marketValue || 0,
-      }),
+      };
+    });
+
+    return toNodeResult(
+      createSuccessOutput({ positions: results, positions_count: results.length }),
     );
   }
 
@@ -525,18 +573,27 @@ export class PortfolioExecutor implements INodeExecutor {
 
   /**
    * Fetch open orders from Binance /api/v3/openOrders (SIGNED).
+   * Supports zero, one, or multiple symbols.
+   * - No symbols: fetches ALL open orders (no symbol filter).
+   * - One symbol: passes symbol param to Binance.
+   * - Multiple symbols: fetches ALL and filters client-side.
    */
   private async brokerGetPendingOrders(
     baseUrl: string,
     headers: Record<string, string>,
     creds: any,
-    symbol?: string,
+    symbols: string[],
     environment: "live" | "testnet" = "live",
   ): Promise<NodeResult> {
     try {
       const timestamp = getBinanceTimestamp(environment, "spot");
       const rawParams: Record<string, any> = { recvWindow: 5000, timestamp };
-      if (symbol) rawParams.symbol = symbol;
+
+      // Only pass symbol param for single-symbol queries (Binance API limitation)
+      if (symbols.length === 1) {
+        rawParams.symbol = symbols[0];
+      }
+
       const signedParams = signHmacSha256(rawParams, creds.secret_key);
 
       const response = await axios.get(`${baseUrl}/api/v3/openOrders`, {
@@ -545,7 +602,14 @@ export class PortfolioExecutor implements INodeExecutor {
         timeout: 15000,
       });
 
-      const orders = Array.isArray(response.data) ? response.data : [];
+      let orders = Array.isArray(response.data) ? response.data : [];
+
+      // Client-side filter for multi-symbol queries
+      if (symbols.length > 1) {
+        const symbolSet = new Set(symbols);
+        orders = orders.filter((o: any) => symbolSet.has(o.symbol));
+      }
+
       return toNodeResult(
         createSuccessOutput({ pending_orders: orders, count: orders.length }),
       );

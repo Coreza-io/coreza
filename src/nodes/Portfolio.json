@@ -107,23 +107,74 @@
       ]
     },
     {
+      "key": "base_currency",
+      "label": "Base Currency",
+      "type": "select",
+      "required": true,
+      "default": "USDT",
+      "options": [
+        { "id": "USDT", "name": "USDT" },
+        { "id": "USDC", "name": "USDC" },
+        { "id": "USD", "name": "USD" },
+        { "id": "EUR", "name": "EUR" }
+      ],
+      "displayOptions": { "show": { "operation": ["create_portfolio"] } }
+    },
+    {
+      "key": "cash_balance",
+      "label": "Cash Balance",
+      "type": "text",
+      "placeholder": "e.g. 64786.0",
+      "required": true,
+      "description": "Starting cash balance in the base currency.",
+      "displayOptions": { "show": { "operation": ["create_portfolio"] } }
+    },
+    {
       "key": "symbol",
       "label": "Symbol(s)",
       "type": "text",
       "placeholder": "e.g. BTCUSDT or BTCUSDT,ETHUSDT",
       "required": false,
-      "description": "One or more symbols (comma-separated). Leave empty for update_portfolio / sync_trades to sync all tracked symbols.",
+      "description": "One or more symbols (comma-separated).",
       "displayOptions": {
         "show": {
           "operation": [
+            "update_portfolio",
             "get_position",
             "update_mtm",
-            "update_portfolio",
             "sync_trades",
             "get_pending_orders"
           ]
         }
       }
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "{{ $('BinanceTrade').json.executedQty }}",
+      "required": true,
+      "description": "Filled quantity. Positive for BUY, negative for SELL.",
+      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "text",
+      "placeholder": "{{ $('BinanceTrade').json.avgPrice }}",
+      "required": true,
+      "description": "Average fill price.",
+      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+    },
+    {
+      "key": "commission",
+      "label": "Commission",
+      "type": "text",
+      "placeholder": "0",
+      "required": false,
+      "default": "0",
+      "description": "Trade commission (deducted from cash).",
+      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
     },
     {
       "key": "current_bar",
@@ -143,7 +194,7 @@
   "operationDisplayOptions": {
     "create_portfolio": { "show": { "mode": ["broker"] } },
     "update_portfolio": { "show": { "mode": ["broker"] } },
-    "update_mtm": { "show": { "mode": ["backtest"] } },
+    "update_mtm": { "show": { "mode": ["backtest", "broker"] } },
     "sync_trades": { "show": { "mode": ["broker"] } },
     "get_pending_orders": { "show": { "mode": ["backtest", "broker"] } }
   }

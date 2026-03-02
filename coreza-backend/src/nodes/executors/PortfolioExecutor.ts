@@ -224,6 +224,21 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
+      // Use explicit base_currency + cash_balance if provided
+      const baseCurrency = params.base_currency;
+      const cashBalance = parseFloat(params.cash_balance);
+      if (baseCurrency && !isNaN(cashBalance) && cashBalance >= 0) {
+        pm.initializePortfolio(baseCurrency, cashBalance);
+        return toNodeResult(
+          createSuccessOutput({
+            message: "Portfolio created with explicit cash balance",
+            created: true,
+            ...this.getPortfolioSummary(pm),
+          }),
+        );
+      }
+
+      // Fallback: bootstrap from broker API
       await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
       return toNodeResult(
         createSuccessOutput({
@@ -250,22 +265,27 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_portfolio":
         return this.brokerGetAll(pm);
       case "update_portfolio": {
-        const syncSymbols =
-          symbols.length > 0 ? symbols : pm.getTrackedSymbols();
-        let totalCount = 0;
-        for (const sym of syncSymbols) {
-          totalCount += await pm.syncSymbolTrades(
-            baseUrl,
-            headers,
-            creds,
-            sym,
-            environment,
-          );
+        // Explicit fill fields: symbol, quantity, price, commission
+        const fillSymbol = params.symbol?.trim().toUpperCase();
+        const quantity = parseFloat(params.quantity);
+        const price = parseFloat(params.price);
+        const commission = parseFloat(params.commission || "0");
+
+        if (!fillSymbol) {
+          return toNodeResult(createErrorOutput("symbol is required for update_portfolio"));
         }
+        if (isNaN(quantity) || quantity === 0) {
+          return toNodeResult(createErrorOutput("quantity must be a non-zero number"));
+        }
+        if (isNaN(price) || price <= 0) {
+          return toNodeResult(createErrorOutput("price must be a positive number"));
+        }
+
+        pm.applyFill({ symbol: fillSymbol, quantity, price, commission });
         return toNodeResult(
           createSuccessOutput({
-            synced_fills: totalCount,
-            symbols_synced: syncSymbols,
+            updated: true,
+            fill_applied: { symbol: fillSymbol, quantity, price, commission },
             ...this.getPortfolioSummary(pm),
           }),
         );

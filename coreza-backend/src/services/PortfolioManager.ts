@@ -556,4 +556,58 @@ export class PortfolioManager {
   getTrackedSymbols(): string[] {
     return Array.from(this.trackedSymbols);
   }
+
+  // ============== EXPLICIT PORTFOLIO INIT ==============
+
+  /**
+   * Initialize portfolio with explicit base currency and cash balance.
+   * Used by create_portfolio operation (no broker API call).
+   */
+  initializePortfolio(baseCurrency: string, cashBalance: number): void {
+    if (this.bootstrapped) return;
+    this.cashBook.set(baseCurrency, cashBalance);
+    this.bootstrapped = true;
+    console.log(
+      `[PortfolioManager] Initialized portfolio: ${baseCurrency} = ${cashBalance}`,
+    );
+  }
+
+  // ============== APPLY FILL (Accounting Loop) ==============
+
+  /**
+   * Apply a fill from explicit symbol/quantity/price/commission fields.
+   * Positive quantity = BUY, negative = SELL.
+   * Updates holdings (qty, avg price, realized PnL) and cash.
+   */
+  applyFill(fill: {
+    symbol: string;
+    quantity: number;
+    price: number;
+    commission?: number;
+  }): void {
+    const { symbol, quantity, price, commission = 0 } = fill;
+    const side: "BUY" | "SELL" = quantity > 0 ? "BUY" : "SELL";
+    const absQty = Math.abs(quantity);
+
+    // Convert to LiveFill and delegate to existing logic
+    const liveFill: LiveFill = {
+      tradeId: `MANUAL-${++this.tradeIdCounter}`,
+      symbol,
+      side,
+      qty: absQty,
+      price,
+      commission,
+      eventTime: Date.now(),
+    };
+
+    this.fillIdSet.add(`${symbol}:${liveFill.tradeId}`);
+    this.fillLedger.push(liveFill);
+    this.applyFillToHoldings(liveFill, true);
+    this.trackedSymbols.add(symbol);
+    this.updatePeakEquity();
+
+    console.log(
+      `[PortfolioManager] Applied fill: ${side} ${absQty} ${symbol} @ ${price} (commission: ${commission})`,
+    );
+  }
 }

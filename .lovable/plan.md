@@ -1,118 +1,113 @@
 
 
-# Unified Portfolio Node -- Replace BacktestPortfolio with Generic Portfolio ✅ IMPLEMENTED
+# Review: Unified Portfolio Implementation -- Issues and Optimization Recommendations
 
-## Problem
+## Overall Assessment
 
-Currently `BacktestPortfolio.json` is hardcoded to the Backtest category and `SimBroker`. The user wants a single `Portfolio` node that works for both backtest and live (broker) contexts, avoiding duplicate nodes.
+The implementation is **structurally sound** -- the architecture (unified node, mode-based routing, shared SimBroker cache, static PortfolioManager instances) follows the existing config-driven patterns well. However, there are several **critical bugs**, **code duplication**, and **optimization gaps** that should be addressed.
 
-## Design
+---
 
-A single `Portfolio.json` node with a **mode** field (`backtest` vs `broker`) that determines the data source. The output shape stays identical -- positions, cash, equity, PnL -- regardless of mode. This follows the existing config-driven architecture principle.
+## Critical Issues
 
-### How it works
+### 1. PortfolioManager calls Binance SIGNED endpoints without signing
 
-- **Backtest mode**: Routes to existing `SimBroker` logic (unchanged behavior)
-- **Broker mode**: Routes to the new `PortfolioManager` which bootstraps from Binance Spot APIs (`/api/v3/account` for balances, `/api/v3/myTrades` for cost basis) and maintains in-memory state with async Supabase persistence
+**Severity: BLOCKER -- will fail at runtime**
 
-The operations remain the same across both modes: `get_portfolio`, `get_position`, `get_cash`, `get_equity`, `get_pending_orders`, `get_trades`, `update_mtm` (backtest only), `sync_trades` (broker only).
+`PortfolioManager.fetchCashBalances()` calls `/api/v3/account` and `syncSymbolTrades()` calls `/api/v3/myTrades` using raw `axios.get()` with only headers. These are **SIGNED** endpoints requiring `timestamp`, `recvWindow`, and `signature` query parameters (HMAC-SHA256).
 
-## Changes
+The existing `BrokerExecutor` path uses `signHmacSha256()` via `operations.ts` `makeParams()`, but `PortfolioManager` bypasses this entirely. Every call will return Binance error `-2014` or `-1022`.
 
-### 1. Frontend: Replace `BacktestPortfolio.json` with `Portfolio.json`
+**Fix**: Import and use `signHmacSha256` and `getBinanceTimestamp` from existing utils. The `bootstrap()` and `syncSymbolTrades()` methods need `creds` (with `secret_key`) passed in, not just `headers`.
 
-**Delete**: `src/nodes/BacktestPortfolio.json`
-**Create**: `src/nodes/Portfolio.json`
+### 2. Supabase 1000-row default limit on `loadPersistedFills()`
 
-```text
-- name: "Portfolio"
-- def: "Portfolio"
-- category: "Utility" (or a new "Portfolio" category)
-- icon: reuse backtest icon or a generic portfolio icon
-- Fields:
-  - mode: select ["backtest", "broker"] (default: "backtest")
-  - backtest_id: text (shown when mode = backtest)
-  - credential_id: text (shown when mode = broker)
-  - broker: select ["binance"] (shown when mode = broker)
-  - operation: select (shared operations + mode-specific ones)
-  - symbol: text (shown for get_position, update_mtm, sync_trades)
-  - current_bar: textarea (shown for update_mtm, mode = backtest only)
-```
+The query at line 150-156 fetches fills without a `.limit()` override. Supabase caps at 1000 rows by default. Users with more than 1000 historical fills will silently lose data, causing incorrect cost basis calculations.
 
-### 2. Database: Supabase migration for persistence tables
+**Fix**: Add pagination or set an explicit higher limit (e.g., `.limit(10000)`) with a loop for accounts with very large fill histories.
 
-Create three tables for the broker-mode fill ledger and snapshots:
+### 3. No `get_pending_orders` support in broker mode
 
-**`live_fills`** -- Event-sourced fill history
-- `id` (uuid PK), `user_id` (uuid), `broker` (text), `credential_id` (uuid), `symbol` (text), `trade_id` (text), `order_id` (text), `side` (text), `qty` (numeric), `price` (numeric), `quote_qty` (numeric), `commission` (numeric), `commission_asset` (text), `event_time` (timestamptz), `created_at` (timestamptz)
-- Unique on `(user_id, broker, symbol, trade_id)`
-- RLS: `auth.uid() = user_id`
+`Portfolio.json` includes `get_pending_orders` as an operation, but the broker-mode switch statement in `PortfolioExecutor` (lines 200-228) has no case for it. It falls to the default error handler.
 
-**`position_snapshots`** -- Periodic portfolio state
-- `id` (uuid PK), `user_id` (uuid), `broker` (text), `credential_id` (uuid), `symbol` (text), `quantity` (numeric), `avg_entry_price` (numeric), `current_price` (numeric), `unrealized_pnl` (numeric), `realized_pnl` (numeric), `snapshot_at` (timestamptz), `created_at` (timestamptz)
-- RLS: `auth.uid() = user_id`
+**Fix**: Either implement it by calling Binance `/api/v3/openOrders` via the existing `BrokerExecutor` operations, or remove it from the node JSON's operation list when in broker mode (via `displayOptions`).
 
-**`cash_snapshots`** -- Cash balance snapshots
-- `id` (uuid PK), `user_id` (uuid), `broker` (text), `credential_id` (uuid), `balances` (jsonb), `total_value_usdt` (numeric), `snapshot_at` (timestamptz), `created_at` (timestamptz)
-- RLS: `auth.uid() = user_id`
+---
 
-### 3. Backend: `PortfolioManager` service
+## Code Duplication
 
-**Create**: `coreza-backend/src/services/PortfolioManager.ts`
+### 4. BacktestExecutor and PortfolioExecutor have duplicated portfolio logic
 
-In-memory portfolio engine for live broker mode. Reuses the same `Position` and `PortfolioState` interfaces from `simBroker/interfaces.ts`.
+`BacktestExecutor.executeBacktestPortfolio()` (line 870) and `PortfolioExecutor.executeBacktestMode()` (line 79) contain **identical logic** -- parameter resolution, MTM application, operation switch. Similarly, the helper methods (`portfolioGetAll`, `portfolioGetPosition`, etc.) are duplicated between both files.
 
-Key methods:
-- `bootstrap(broker, creds, symbols)` -- Fetch `/api/v3/account` for cash, load persisted fills from Supabase, fetch new fills from `/api/v3/myTrades` using `fromId`, replay all fills to derive avg entry and realized PnL
-- `applyFill(fill)` -- Same weighted-average math as SimBroker's position update logic; async persist to `live_fills`
-- `syncFromBroker(symbols)` -- Incremental trade fetch using `fromId`
-- `getPortfolioState()` -- Returns same `PortfolioState` shape as SimBroker
-- `getPosition(symbol)`, `getCash()`, `getEquity()` -- Mirror SimBroker methods
-- `snapshotToDb()` -- Periodic persistence of position and cash snapshots
+The `BacktestExecutor` still routes `"BacktestPortfolio"` and `"Portfolio"` node types to its own internal methods, while `PortfolioExecutor` has its own copies.
 
-Static instance cache keyed by `${userId}:${credentialId}`.
+**Fix**: Remove the duplicated helpers from `BacktestExecutor` and have the `"BacktestPortfolio"` / `"Portfolio"` cases delegate to `PortfolioExecutor` directly, or extract helpers to a shared utility module.
 
-### 4. Backend: `PortfolioExecutor` (new executor)
+### 5. `parseBar()` and `parsePrices()` duplicated
 
-**Create**: `coreza-backend/src/nodes/executors/PortfolioExecutor.ts`
+Both `PortfolioExecutor` and `BacktestExecutor` have identical `parseBar()` and `parsePrices()` methods.
 
-Registered with category `"Portfolio"`. Routes based on `mode`:
+**Fix**: Move to a shared utility (e.g., `coreza-backend/src/utils/barParser.ts`).
 
-- **backtest**: Delegates to existing SimBroker logic (extract the portfolio methods from `BacktestExecutor` into shared helpers or call SimBroker directly)
-- **broker**: Delegates to `PortfolioManager`
+---
 
-Both paths produce identical output shapes -- the same `createSuccessOutput` format currently used by `executeBacktestPortfolio`.
+## Design / Optimization Issues
 
-### 5. Backend: Update executor registry
+### 6. `fillLedger` linear scan for deduplication is O(n) per fill
 
-**Modify**: `coreza-backend/src/nodes/index.ts`
-- Import and register `PortfolioExecutor`
+Line 259: `this.fillLedger.some((f) => f.symbol === symbol && f.tradeId === tradeId)` scans the entire ledger for every incoming fill. With thousands of fills, this becomes expensive.
 
-**Modify**: `coreza-backend/src/nodes/executors/BacktestExecutor.ts`
-- Keep `BacktestPortfolio` case as a backward-compatible alias that delegates to the new `PortfolioExecutor` (or remove if safe)
-- Extract shared portfolio formatting helpers (e.g., `portfolioGetAll`, `portfolioGetPosition`, `formatPositionWithPnlPercent`) into a shared utility so both executors can use them
+**Fix**: Use a `Set<string>` keyed by `${symbol}:${tradeId}` for O(1) dedup lookups.
 
-### 6. Backend: BrokerExecutor integration
+### 7. Bootstrap only tracks symbols passed at first call
 
-**Modify**: `coreza-backend/src/nodes/executors/BrokerExecutor.ts`
-- After a successful `place_order` on Binance, notify the `PortfolioManager` instance to trigger an incremental sync
+`PortfolioExecutor.executeBrokerMode()` bootstraps with `params.symbol ? [params.symbol] : []`. If the first call is `get_portfolio` (no symbol), bootstrap runs with zero symbols -- meaning no fills are loaded and no cost basis is reconstructed.
 
-## Files Summary
+**Fix**: Either require symbols at bootstrap, or store a "tracked symbols" set that grows over time, syncing new symbols on first access.
 
-| File | Action | Description |
+### 8. `fetchCashBalances` doesn't use signing (reiteration of issue 1)
+
+The `baseUrl + headers` pattern throughout PortfolioManager assumes the headers alone are sufficient for auth. The Binance broker config's `makeAuthHeaders()` returns `{ 'X-MBX-APIKEY': apiKey }` but the signed params must be in the query string.
+
+### 9. No error result checking on `persistFill` and `snapshotToDb`
+
+The Supabase `upsert` and `insert` calls don't check `error` from the response. Silent failures will go unnoticed.
+
+**Fix**: Check `{ error }` and log appropriately.
+
+### 10. `peakEquity` always equals `totalEquity` in broker mode
+
+Line 479: `peakEquity: cashUsdt + positionsValue` -- this is always set to current equity, never tracking the actual peak. This makes drawdown calculations impossible.
+
+**Fix**: Add a `peakEquity` field that updates on each state change via `Math.max(this.peakEquity, currentEquity)`.
+
+---
+
+## Minor Issues
+
+### 11. Node JSON: `sync_trades` and `update_mtm` missing `displayOptions` for mode
+
+`sync_trades` should only appear when `mode = broker`, and `update_mtm` only when `mode = backtest`. Currently both are always visible regardless of mode.
+
+### 12. `formatPositionWithPnlPercent` overwrites `unrealizedPnl` with percentage
+
+The helper replaces the numeric PnL value with a percentage, which is confusing. It stores the original in `unrealizedPnlValue` but the original field name now holds a percentage. Downstream consumers expecting a dollar value will get a percentage.
+
+---
+
+## Recommended Fix Plan
+
+| Priority | Issue | Effort |
 |---|---|---|
-| `src/nodes/BacktestPortfolio.json` | Delete | Replaced by Portfolio.json |
-| `src/nodes/Portfolio.json` | Create | Unified portfolio node definition |
-| Supabase migration | Create | `live_fills`, `position_snapshots`, `cash_snapshots` tables |
-| `coreza-backend/src/services/PortfolioManager.ts` | Create | In-memory portfolio engine for broker mode |
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Create | Unified executor routing backtest vs broker |
-| `coreza-backend/src/nodes/index.ts` | Modify | Register PortfolioExecutor |
-| `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | Modify | Extract shared helpers, add backward compat alias |
-| `coreza-backend/src/nodes/executors/BrokerExecutor.ts` | Modify | Notify PortfolioManager after place_order |
-
-## Backward Compatibility
-
-- Existing workflows using `BacktestPortfolio` will still work -- the `BacktestExecutor` keeps the case match and delegates to the shared logic
-- The output shape is identical, so downstream nodes consuming portfolio data need no changes
-- New workflows should use the unified `Portfolio` node
+| P0 | 1. Add Binance request signing to PortfolioManager | Medium -- refactor to accept `creds` and use `signHmacSha256` |
+| P0 | 2. Fix Supabase 1000-row limit on fill loading | Small -- add pagination |
+| P0 | 3. Add `get_pending_orders` for broker mode or hide it | Small |
+| P1 | 4-5. Extract shared helpers, remove duplication | Medium |
+| P1 | 6. Use Set for fill dedup instead of linear scan | Small |
+| P1 | 7. Fix bootstrap symbol tracking | Small |
+| P2 | 9. Add error checking on persistence calls | Small |
+| P2 | 10. Track peak equity properly | Small |
+| P2 | 11. Add mode-specific displayOptions to node JSON | Small |
+| P2 | 12. Fix PnL format confusion | Small |
 

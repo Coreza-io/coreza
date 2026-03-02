@@ -63,6 +63,23 @@ export interface PortfolioSnapshot {
  */
 export class PortfolioManager {
   private static instances = new Map<string, PortfolioManager>();
+  private static readonly DISCOVERY_QUOTE_ASSETS = new Set([
+    "USDT",
+    "USDC",
+    "BUSD",
+    "FDUSD",
+    "TUSD",
+    "USD",
+    "EUR",
+    "GBP",
+    "BNB",
+  ]);
+  private static readonly SYMBOL_QUOTE_SUFFIXES = [
+    "USDT",
+    "USDC",
+    "BUSD",
+    "FDUSD",
+  ];
 
   private userId: string;
   private broker: string;
@@ -168,8 +185,20 @@ export class PortfolioManager {
     // 1. Fetch cash balances from broker (SIGNED)
     await this.fetchCashBalances(baseUrl, headers, creds, environment);
 
-    // 2. Fetch recent fills for each symbol and replay in-memory
-    for (const symbol of symbols) {
+    // 2. Auto-discover likely trading symbols from non-quote assets
+    const discoveredSymbols: string[] = [];
+    for (const [asset, balance] of this.cashBook.entries()) {
+      if (
+        balance > 0 &&
+        !PortfolioManager.DISCOVERY_QUOTE_ASSETS.has(asset)
+      ) {
+        discoveredSymbols.push(`${asset}USDT`);
+      }
+    }
+
+    // 3. Fetch recent fills for each symbol and replay in-memory
+    const allSymbols = [...new Set([...symbols, ...discoveredSymbols])];
+    for (const symbol of allSymbols) {
       await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
     }
 
@@ -294,7 +323,7 @@ export class PortfolioManager {
 
         this.fillIdSet.add(dedupKey);
         this.fillLedger.push(fill);
-        this.applyFillToHoldings(fill);
+        this.applyFillToHoldings(fill, this.bootstrapped);
         newCount++;
 
         const idNum = parseInt(tradeId, 10);
@@ -328,7 +357,7 @@ export class PortfolioManager {
    * Apply a fill to in-memory holdings.
    * Uses the same weighted-average cost basis logic as SimBroker.applyFill().
    */
-  private applyFillToHoldings(fill: LiveFill): void {
+  private applyFillToHoldings(fill: LiveFill, adjustCash: boolean = false): void {
     const existing = this.holdings.get(fill.symbol);
 
     if (!existing) {
@@ -341,6 +370,7 @@ export class PortfolioManager {
           realizedPnl: 0,
           currentPrice: fill.price,
         });
+        this.adjustCashBookForFill(fill, adjustCash);
       }
       // SELL without existing position (shouldn't happen in spot, but handle gracefully)
       return;
@@ -389,6 +419,52 @@ export class PortfolioManager {
         this.holdings.delete(fill.symbol);
       }
     }
+
+    this.adjustCashBookForFill(fill, adjustCash);
+  }
+
+  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean): void {
+    if (!adjustCash) return;
+
+    const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? "USDT";
+    const cashImpact = fill.quoteQty ?? fill.price * fill.qty;
+    const quoteCommission =
+      fill.commissionAsset === quoteAsset ? fill.commission : 0;
+    const currentQuote = this.cashBook.get(quoteAsset) ?? 0;
+
+    if (fill.side === "BUY") {
+      this.cashBook.set(quoteAsset, currentQuote - cashImpact - quoteCommission);
+    } else {
+      this.cashBook.set(quoteAsset, currentQuote + cashImpact - quoteCommission);
+    }
+
+    const baseAsset = this.extractBaseAsset(fill.symbol);
+    if (!baseAsset) return;
+
+    const currentBase = this.cashBook.get(baseAsset) ?? 0;
+    if (fill.side === "BUY") {
+      const baseCommission = fill.commissionAsset === baseAsset ? fill.commission : 0;
+      this.cashBook.set(baseAsset, currentBase + fill.qty - baseCommission);
+    } else {
+      this.cashBook.set(baseAsset, currentBase - fill.qty);
+    }
+  }
+
+  private extractQuoteAsset(symbol: string): string | null {
+    for (const quote of PortfolioManager.SYMBOL_QUOTE_SUFFIXES) {
+      if (symbol.endsWith(quote)) {
+        return quote;
+      }
+    }
+    return null;
+  }
+
+  private extractBaseAsset(symbol: string): string | null {
+    const quoteAsset = this.extractQuoteAsset(symbol);
+    if (!quoteAsset) return null;
+
+    const baseAsset = symbol.slice(0, -quoteAsset.length);
+    return baseAsset || null;
   }
 
   // ============== PEAK EQUITY ==============

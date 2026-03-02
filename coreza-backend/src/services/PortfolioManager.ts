@@ -321,28 +321,6 @@ export class PortfolioManager {
     }
   }
 
-  /**
-   * Sync trades for multiple symbols.
-   */
-  async syncFromBroker(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    symbols: string[],
-    environment: "live" | "testnet" = "live",
-  ): Promise<number> {
-    let total = 0;
-    for (const symbol of symbols) {
-      total += await this.syncSymbolTrades(
-        baseUrl,
-        headers,
-        creds,
-        symbol,
-        environment,
-      );
-    }
-    return total;
-  }
 
   // ============== FILL APPLICATION (mirrors SimBroker logic) ==============
 

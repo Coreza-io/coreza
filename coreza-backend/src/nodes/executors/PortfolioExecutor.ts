@@ -291,6 +291,29 @@ export class PortfolioExecutor implements INodeExecutor {
           }),
         );
       }
+      case "update_mtm": {
+        // Valuation loop: update current prices without changing cash/holdings
+        const mtmPrice = parseFloat(params.price);
+        if (symbols.length === 0 || isNaN(mtmPrice) || mtmPrice <= 0) {
+          return toNodeResult(
+            createErrorOutput("Provide symbol and price for update_mtm"),
+          );
+        }
+
+        const priceMap: Record<string, number> = {};
+        for (const sym of symbols) {
+          priceMap[sym] = mtmPrice;
+        }
+
+        pm.updateMarketPrices(priceMap, baseCurrency);
+        return toNodeResult(
+          createSuccessOutput({
+            updated: true,
+            prices_updated: priceMap,
+            ...this.getPortfolioSummary(pm, baseCurrency),
+          }),
+        );
+      }
       case "get_position":
         return this.brokerGetPosition(pm, symbols);
       case "get_cash":

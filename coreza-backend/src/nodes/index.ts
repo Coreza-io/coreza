@@ -29,6 +29,7 @@ import { ToolExecutor } from "./executors/ToolExecutor";
 import { ScreenerExecutor } from "./executors/ScreenerExecutor";
 import { TriggerExecutor } from "./executors/TriggerExecutor";
 import { BacktestExecutor } from "./executors/BacktestExecutor";
+import { PortfolioExecutor } from "./executors/PortfolioExecutor";
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -47,6 +48,7 @@ export function initializeNodeExecutors() {
     new ScreenerExecutor(),
     new TriggerExecutor(),
     new BacktestExecutor(),
+    new PortfolioExecutor(),
   ];
 
   executors.forEach((executor) => {
@@ -56,6 +58,9 @@ export function initializeNodeExecutors() {
       console.error(`Failed to register executor ${executor.category}:`, error);
     }
   });
+
+  // Wire PortfolioExecutor to BacktestExecutor's SimBroker cache
+  PortfolioExecutor.setSimBrokerCache(BacktestExecutor.getSimBrokerCache());
 
   console.log("🚀 Node executors initialized successfully");
 }

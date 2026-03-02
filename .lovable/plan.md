@@ -1,6 +1,6 @@
 
 
-# Unified Portfolio Node -- Replace BacktestPortfolio with Generic Portfolio
+# Unified Portfolio Node -- Replace BacktestPortfolio with Generic Portfolio ✅ IMPLEMENTED
 
 ## Problem
 

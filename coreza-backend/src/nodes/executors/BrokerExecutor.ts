@@ -234,6 +234,26 @@ export class BrokerExecutor implements INodeExecutor {
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
+      // Notify PortfolioManager of new fill after successful place_order
+      if (isPlaceOrder && broker === "binance") {
+        try {
+          const { PortfolioManager } = await import("../../services/PortfolioManager");
+          const pm = PortfolioManager.getInstance(
+            context?.userId,
+            broker,
+            credential_id,
+          );
+          if (pm.isBootstrapped() && resolvedParams.symbol) {
+            pm.syncSymbolTrades(baseUrl, headers, resolvedParams.symbol).catch(
+              (err: any) =>
+                console.error("[BROKER] Portfolio sync after order failed:", err),
+            );
+          }
+        } catch {
+          // PortfolioManager not available, skip
+        }
+      }
+
       if (isPlaceOrder && idempotencyKey) {
         await updateOrderCache(
           idempotencyKey,

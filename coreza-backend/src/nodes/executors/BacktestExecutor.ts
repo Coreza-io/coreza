@@ -97,6 +97,14 @@ export class BacktestExecutor implements INodeExecutor {
   private static simBrokerCache = new Map<string, SimBroker>();
   private static backtestStartTimes = new Map<string, number>();
 
+  /**
+   * Expose the SimBroker cache so PortfolioExecutor can access it
+   * for backtest-mode portfolio queries.
+   */
+  static getSimBrokerCache(): Map<string, SimBroker> {
+    return BacktestExecutor.simBrokerCache;
+  }
+
   public static cleanupBacktestResources(backtestId: string): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     BacktestExecutor.simBrokerCache.delete(key);
@@ -132,6 +140,10 @@ export class BacktestExecutor implements INodeExecutor {
       case "BacktestResults":
         return this.executeBacktestResults(node, input, context);
       case "BacktestPortfolio":
+        // Backward compat: delegate to the same internal method
+        return this.executeBacktestPortfolio(node, input, context);
+      case "Portfolio":
+        // Unified Portfolio node in backtest mode also routes here
         return this.executeBacktestPortfolio(node, input, context);
       case "OnBar":
         return this.executeOnBar(node, input, context);

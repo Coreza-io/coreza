@@ -55,6 +55,22 @@
       }
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "required": true,
+      "default": "testnet",
+      "options": [
+        { "id": "testnet", "name": "Testnet / Paper (Sandbox)" },
+        { "id": "live", "name": "Production (Live)" }
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": ["broker"]
+        }
+      }
+    },
+    {
       "key": "credential_id",
       "label": "Credential",
       "type": "select",

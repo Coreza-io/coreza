@@ -43,7 +43,10 @@
       "required": true,
       "default": "binance",
       "options": [
-        { "id": "binance", "name": "Binance" }
+        { "id": "alpaca", "name": "Alpaca" },
+        { "id": "binance", "name": "Binance" },
+        { "id": "dhan", "name": "Dhan" },
+        { "id": "schwab", "name": "Schwab" }
       ],
       "displayOptions": {
         "show": {
@@ -54,7 +57,9 @@
     {
       "key": "credential_id",
       "label": "Credential",
-      "type": "text",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "dependsOn": "broker",
       "placeholder": "Select credential",
       "required": true,
       "displayOptions": {

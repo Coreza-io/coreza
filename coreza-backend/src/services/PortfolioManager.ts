@@ -185,20 +185,7 @@ export class PortfolioManager {
     // 1. Fetch cash balances from broker (SIGNED)
     await this.fetchCashBalances(baseUrl, headers, creds, environment);
 
-    // 2. Auto-discover likely trading symbols from non-quote assets
-    const discoveredSymbols: string[] = [];
-    for (const [asset, balance] of this.cashBook.entries()) {
-      if (
-        balance > 0 &&
-        !PortfolioManager.DISCOVERY_QUOTE_ASSETS.has(asset)
-      ) {
-        discoveredSymbols.push(`${asset}USDT`);
-      }
-    }
-
-    // 3. Fetch recent fills for each symbol and replay in-memory
-    const allSymbols = [...new Set([...symbols, ...discoveredSymbols])];
-    for (const symbol of allSymbols) {
+    for (const symbol of symbols) {
       await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
     }
 
@@ -350,14 +337,16 @@ export class PortfolioManager {
     }
   }
 
-
   // ============== FILL APPLICATION (mirrors SimBroker logic) ==============
 
   /**
    * Apply a fill to in-memory holdings.
    * Uses the same weighted-average cost basis logic as SimBroker.applyFill().
    */
-  private applyFillToHoldings(fill: LiveFill, adjustCash: boolean = false): void {
+  private applyFillToHoldings(
+    fill: LiveFill,
+    adjustCash: boolean = false,
+  ): void {
     const existing = this.holdings.get(fill.symbol);
 
     if (!existing) {
@@ -433,9 +422,15 @@ export class PortfolioManager {
     const currentQuote = this.cashBook.get(quoteAsset) ?? 0;
 
     if (fill.side === "BUY") {
-      this.cashBook.set(quoteAsset, currentQuote - cashImpact - quoteCommission);
+      this.cashBook.set(
+        quoteAsset,
+        currentQuote - cashImpact - quoteCommission,
+      );
     } else {
-      this.cashBook.set(quoteAsset, currentQuote + cashImpact - quoteCommission);
+      this.cashBook.set(
+        quoteAsset,
+        currentQuote + cashImpact - quoteCommission,
+      );
     }
 
     const baseAsset = this.extractBaseAsset(fill.symbol);
@@ -443,7 +438,8 @@ export class PortfolioManager {
 
     const currentBase = this.cashBook.get(baseAsset) ?? 0;
     if (fill.side === "BUY") {
-      const baseCommission = fill.commissionAsset === baseAsset ? fill.commission : 0;
+      const baseCommission =
+        fill.commissionAsset === baseAsset ? fill.commission : 0;
       this.cashBook.set(baseAsset, currentBase + fill.qty - baseCommission);
     } else {
       this.cashBook.set(baseAsset, currentBase - fill.qty);

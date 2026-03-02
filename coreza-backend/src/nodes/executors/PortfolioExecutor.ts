@@ -210,23 +210,66 @@ export class PortfolioExecutor implements INodeExecutor {
     // Get or create PortfolioManager
     const pm = PortfolioManager.getInstance(userId, broker, credentialId);
 
-    // Bootstrap if first access
+    const symbols = this.parseSymbols(params.symbol);
+    const operation = params.operation || "get_portfolio";
+
+    if (operation === "create_portfolio") {
+      if (pm.isBootstrapped()) {
+        return toNodeResult(
+          createSuccessOutput({
+            message: "Portfolio already initialized",
+            already_created: true,
+            ...this.getPortfolioSummary(pm),
+          }),
+        );
+      }
+
+      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
+      return toNodeResult(
+        createSuccessOutput({
+          message: "Portfolio created from broker account",
+          created: true,
+          ...this.getPortfolioSummary(pm),
+        }),
+      );
+    }
+
     if (!pm.isBootstrapped()) {
-      const extraSymbols = this.parseSymbols(params.symbol);
-      await pm.bootstrap(baseUrl, headers, creds, extraSymbols, environment);
+      console.warn(
+        `[PortfolioExecutor] Implicit bootstrap triggered for operation '${operation}'. Consider running create_portfolio first.`,
+      );
+      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
     }
 
     // Ensure all requested symbols are tracked (lazy symbol tracking)
-    const symbols = this.parseSymbols(params.symbol);
     for (const sym of symbols) {
       await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
     }
 
-    const operation = params.operation;
-
     switch (operation) {
       case "get_portfolio":
         return this.brokerGetAll(pm);
+      case "update_portfolio": {
+        const syncSymbols =
+          symbols.length > 0 ? symbols : pm.getTrackedSymbols();
+        let totalCount = 0;
+        for (const sym of syncSymbols) {
+          totalCount += await pm.syncSymbolTrades(
+            baseUrl,
+            headers,
+            creds,
+            sym,
+            environment,
+          );
+        }
+        return toNodeResult(
+          createSuccessOutput({
+            synced_fills: totalCount,
+            symbols_synced: syncSymbols,
+            ...this.getPortfolioSummary(pm),
+          }),
+        );
+      }
       case "get_position":
         return this.brokerGetPosition(pm, symbols);
       case "get_cash":
@@ -258,9 +301,11 @@ export class PortfolioExecutor implements INodeExecutor {
         }
         return toNodeResult(
           createSuccessOutput({
+            message:
+              "sync_trades is deprecated; use update_portfolio for QC-aligned semantics",
             synced_trades: totalCount,
             symbols: syncSymbols,
-            message: `Synced ${totalCount} new trades for ${syncSymbols.length} symbol(s)`,
+            ...this.getPortfolioSummary(pm),
           }),
         );
       }
@@ -429,32 +474,34 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private brokerGetAll(pm: PortfolioManager): NodeResult {
     const state = pm.getPortfolioState();
-    const positions = state.positions;
-    const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
-    const unrealizedPnlValue = positions.reduce(
-      (s, p) => s + p.unrealizedPnl,
-      0,
-    );
-    const realizedPnlValue = positions.reduce((s, p) => s + p.realizedPnl, 0);
-
     return toNodeResult(
       createSuccessOutput({
-        cash: state.cash,
-        positions: positions.map((p) => formatPositionWithPnlPercent(p)),
-        positions_count: positions.length,
-        positions_value: positionsValue,
-        unrealized_pnl: unrealizedPnlValue,
-        realized_pnl: realizedPnlValue,
-        total_equity: state.totalEquity,
-        peak_equity: state.peakEquity,
+        ...this.getPortfolioSummary(pm),
         drawdown_pct:
           state.peakEquity > 0
             ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
             : 0,
         trades: state.trades,
-        trades_count: state.trades.length,
       }),
     );
+  }
+
+  private getPortfolioSummary(pm: PortfolioManager): Record<string, any> {
+    const state = pm.getPortfolioState();
+    const positions = state.positions;
+    const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
+
+    return {
+      cash: state.cash,
+      positions: positions.map((p) => formatPositionWithPnlPercent(p)),
+      positions_count: positions.length,
+      positions_value: positionsValue,
+      unrealized_pnl: positions.reduce((s, p) => s + p.unrealizedPnl, 0),
+      realized_pnl: positions.reduce((s, p) => s + p.realizedPnl, 0),
+      total_equity: state.totalEquity,
+      peak_equity: state.peakEquity,
+      trades_count: state.trades.length,
+    };
   }
 
   private brokerGetPosition(

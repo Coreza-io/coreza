@@ -1,113 +1,85 @@
 
 
-# Review: Unified Portfolio Implementation -- Issues and Optimization Recommendations
+# Refactor PortfolioManager: Pure In-Memory, No Database Persistence
 
-## Overall Assessment
+## Problem
 
-The implementation is **structurally sound** -- the architecture (unified node, mode-based routing, shared SimBroker cache, static PortfolioManager instances) follows the existing config-driven patterns well. However, there are several **critical bugs**, **code duplication**, and **optimization gaps** that should be addressed.
+The current `PortfolioManager` treats fills as persistent data -- it writes every fill to a `live_fills` Supabase table and reads them back on bootstrap. This is wrong for the intended architecture. Following QuantConnect's model:
 
----
+- All portfolio state (orders, fills, holdings, PnL) lives **in RAM only**, scoped to the algorithm/workflow run.
+- When the workflow stops, memory is gone.
+- On the next workflow run, portfolio is re-initialized fresh from the broker API (account balances + recent trades).
 
-## Critical Issues
+The `live_fills`, `position_snapshots`, and `cash_snapshots` tables become unnecessary overhead.
 
-### 1. PortfolioManager calls Binance SIGNED endpoints without signing
+## Changes
 
-**Severity: BLOCKER -- will fail at runtime**
+### 1. Remove all Supabase persistence from `PortfolioManager.ts`
 
-`PortfolioManager.fetchCashBalances()` calls `/api/v3/account` and `syncSymbolTrades()` calls `/api/v3/myTrades` using raw `axios.get()` with only headers. These are **SIGNED** endpoints requiring `timestamp`, `recvWindow`, and `signature` query parameters (HMAC-SHA256).
+**Remove these methods entirely:**
+- `loadPersistedFills()` -- no longer loading from DB
+- `persistFill()` -- no longer writing fills to DB
+- `snapshotToDb()` -- no longer snapshotting to DB
 
-The existing `BrokerExecutor` path uses `signHmacSha256()` via `operations.ts` `makeParams()`, but `PortfolioManager` bypasses this entirely. Every call will return Binance error `-2014` or `-1022`.
+**Remove the Supabase import:**
+- `import { supabase } from "../config/supabase";`
 
-**Fix**: Import and use `signHmacSha256` and `getBinanceTimestamp` from existing utils. The `bootstrap()` and `syncSymbolTrades()` methods need `creds` (with `secret_key`) passed in, not just `headers`.
+**Update `bootstrap()`:**
+- Remove step 1 (`await this.loadPersistedFills()`)
+- Bootstrap now only does: (a) fetch cash balances from broker API, (b) fetch recent trades from broker API for each symbol, (c) replay fills in-memory
 
-### 2. Supabase 1000-row default limit on `loadPersistedFills()`
+**Update `syncSymbolTrades()`:**
+- Remove the `this.persistFill(fill)` fire-and-forget call at line 343-345
+- Fills are only stored in-memory (`fillLedger`, `fillIdSet`, `holdings`)
 
-The query at line 150-156 fetches fills without a `.limit()` override. Supabase caps at 1000 rows by default. Users with more than 1000 historical fills will silently lose data, causing incorrect cost basis calculations.
+### 2. Change static instance lifecycle
 
-**Fix**: Add pagination or set an explicit higher limit (e.g., `.limit(10000)`) with a loop for accounts with very large fill histories.
+Currently `PortfolioManager.instances` is a global static `Map` that persists across workflow runs. This means stale state leaks between runs.
 
-### 3. No `get_pending_orders` support in broker mode
+**Add a `destroy()` method** that clears all in-memory state and removes the instance from the static cache. The `PortfolioExecutor` (or the workflow engine cleanup hook) should call this when a workflow run ends.
 
-`Portfolio.json` includes `get_pending_orders` as an operation, but the broker-mode switch statement in `PortfolioExecutor` (lines 200-228) has no case for it. It falls to the default error handler.
+**Add `static destroyAll()`** for batch cleanup on process shutdown.
 
-**Fix**: Either implement it by calling Binance `/api/v3/openOrders` via the existing `BrokerExecutor` operations, or remove it from the node JSON's operation list when in broker mode (via `displayOptions`).
+### 3. Update `PortfolioExecutor.ts` broker mode
 
----
+- Remove any references to `snapshotToDb`
+- The executor already doesn't call `snapshotToDb` directly, so no change needed there
+- Ensure `sync_trades` operation still works (it will -- it just won't persist to DB anymore)
 
-## Code Duplication
+### 4. Consider removing DB tables
 
-### 4. BacktestExecutor and PortfolioExecutor have duplicated portfolio logic
+The following Supabase tables are no longer needed by `PortfolioManager`:
+- `live_fills` -- was the fill persistence layer, now replaced by pure in-memory
+- `position_snapshots` -- was periodic DB snapshots
+- `cash_snapshots` -- was periodic DB snapshots
 
-`BacktestExecutor.executeBacktestPortfolio()` (line 870) and `PortfolioExecutor.executeBacktestMode()` (line 79) contain **identical logic** -- parameter resolution, MTM application, operation switch. Similarly, the helper methods (`portfolioGetAll`, `portfolioGetPosition`, etc.) are duplicated between both files.
+However, these tables may still be useful for **audit/reporting purposes** (e.g., a separate analytics job that snapshots portfolio state periodically for the user dashboard). So the recommendation is:
 
-The `BacktestExecutor` still routes `"BacktestPortfolio"` and `"Portfolio"` node types to its own internal methods, while `PortfolioExecutor` has its own copies.
+- **Do NOT delete the tables yet** -- they may serve a reporting/dashboard purpose later
+- **Remove all references from PortfolioManager** -- the manager itself should be pure in-memory
+- If snapshot/audit logging is needed later, it should be a separate service that reads from the PortfolioManager, not baked into it
 
-**Fix**: Remove the duplicated helpers from `BacktestExecutor` and have the `"BacktestPortfolio"` / `"Portfolio"` cases delegate to `PortfolioExecutor` directly, or extract helpers to a shared utility module.
+## Technical Summary
 
-### 5. `parseBar()` and `parsePrices()` duplicated
+| File | Action |
+|---|---|
+| `coreza-backend/src/services/PortfolioManager.ts` | Remove `supabase` import, delete `loadPersistedFills()`, `persistFill()`, `snapshotToDb()`. Update `bootstrap()` to skip DB load. Remove persist call from `syncSymbolTrades()`. Add `destroy()` and `static destroyAll()`. |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | No changes needed (doesn't call persistence methods directly) |
+| Supabase tables (`live_fills`, `position_snapshots`, `cash_snapshots`) | Keep for now, but no longer written to by PortfolioManager |
 
-Both `PortfolioExecutor` and `BacktestExecutor` have identical `parseBar()` and `parsePrices()` methods.
+## Lifecycle per workflow run
 
-**Fix**: Move to a shared utility (e.g., `coreza-backend/src/utils/barParser.ts`).
+```text
+Workflow Start
+  --> PortfolioExecutor.executeBrokerMode()
+      --> PortfolioManager.getInstance() (creates fresh instance)
+      --> pm.bootstrap()
+          --> fetchCashBalances() via broker API
+          --> syncSymbolTrades() via broker API (fills replayed in-memory)
+      --> pm.getPortfolioState() / getPosition() / etc.
 
----
-
-## Design / Optimization Issues
-
-### 6. `fillLedger` linear scan for deduplication is O(n) per fill
-
-Line 259: `this.fillLedger.some((f) => f.symbol === symbol && f.tradeId === tradeId)` scans the entire ledger for every incoming fill. With thousands of fills, this becomes expensive.
-
-**Fix**: Use a `Set<string>` keyed by `${symbol}:${tradeId}` for O(1) dedup lookups.
-
-### 7. Bootstrap only tracks symbols passed at first call
-
-`PortfolioExecutor.executeBrokerMode()` bootstraps with `params.symbol ? [params.symbol] : []`. If the first call is `get_portfolio` (no symbol), bootstrap runs with zero symbols -- meaning no fills are loaded and no cost basis is reconstructed.
-
-**Fix**: Either require symbols at bootstrap, or store a "tracked symbols" set that grows over time, syncing new symbols on first access.
-
-### 8. `fetchCashBalances` doesn't use signing (reiteration of issue 1)
-
-The `baseUrl + headers` pattern throughout PortfolioManager assumes the headers alone are sufficient for auth. The Binance broker config's `makeAuthHeaders()` returns `{ 'X-MBX-APIKEY': apiKey }` but the signed params must be in the query string.
-
-### 9. No error result checking on `persistFill` and `snapshotToDb`
-
-The Supabase `upsert` and `insert` calls don't check `error` from the response. Silent failures will go unnoticed.
-
-**Fix**: Check `{ error }` and log appropriately.
-
-### 10. `peakEquity` always equals `totalEquity` in broker mode
-
-Line 479: `peakEquity: cashUsdt + positionsValue` -- this is always set to current equity, never tracking the actual peak. This makes drawdown calculations impossible.
-
-**Fix**: Add a `peakEquity` field that updates on each state change via `Math.max(this.peakEquity, currentEquity)`.
-
----
-
-## Minor Issues
-
-### 11. Node JSON: `sync_trades` and `update_mtm` missing `displayOptions` for mode
-
-`sync_trades` should only appear when `mode = broker`, and `update_mtm` only when `mode = backtest`. Currently both are always visible regardless of mode.
-
-### 12. `formatPositionWithPnlPercent` overwrites `unrealizedPnl` with percentage
-
-The helper replaces the numeric PnL value with a percentage, which is confusing. It stores the original in `unrealizedPnlValue` but the original field name now holds a percentage. Downstream consumers expecting a dollar value will get a percentage.
-
----
-
-## Recommended Fix Plan
-
-| Priority | Issue | Effort |
-|---|---|---|
-| P0 | 1. Add Binance request signing to PortfolioManager | Medium -- refactor to accept `creds` and use `signHmacSha256` |
-| P0 | 2. Fix Supabase 1000-row limit on fill loading | Small -- add pagination |
-| P0 | 3. Add `get_pending_orders` for broker mode or hide it | Small |
-| P1 | 4-5. Extract shared helpers, remove duplication | Medium |
-| P1 | 6. Use Set for fill dedup instead of linear scan | Small |
-| P1 | 7. Fix bootstrap symbol tracking | Small |
-| P2 | 9. Add error checking on persistence calls | Small |
-| P2 | 10. Track peak equity properly | Small |
-| P2 | 11. Add mode-specific displayOptions to node JSON | Small |
-| P2 | 12. Fix PnL format confusion | Small |
+Workflow End
+  --> PortfolioManager.removeInstance() or pm.destroy()
+      --> All in-memory state (fills, holdings, trades, cash) is garbage collected
+```
 

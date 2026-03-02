@@ -16,7 +16,6 @@
 
 import axios from "axios";
 import { Position, Trade } from "./simBroker/interfaces";
-import { supabase } from "../config/supabase";
 import { signHmacSha256 } from "../utils/crypto";
 import { getBinanceTimestamp } from "../utils/binanceTimeSync";
 
@@ -53,10 +52,12 @@ export interface PortfolioSnapshot {
 // ============== PORTFOLIO MANAGER ==============
 
 /**
- * PortfolioManager - In-memory portfolio engine for live broker mode.
+ * PortfolioManager - Pure in-memory portfolio engine for live broker mode.
  *
- * Reuses the same weighted-average cost basis and PnL logic as SimBroker
- * to ensure parity between backtest and live results.
+ * All state (fills, holdings, PnL) lives in RAM only, scoped to the
+ * workflow run. When the workflow ends, destroy() is called and all
+ * state is garbage collected. On the next run, bootstrap() re-initializes
+ * fresh from the broker API.
  *
  * One instance per (userId, credentialId) pair, managed via static cache.
  */
@@ -67,7 +68,7 @@ export class PortfolioManager {
   private broker: string;
   private credentialId: string;
 
-  // In-memory state
+  // In-memory state (scoped to workflow run)
   private cashBook = new Map<string, number>(); // asset -> total balance
   private holdings = new Map<string, SpotHolding>(); // symbol -> holding
   private fillLedger: LiveFill[] = [];
@@ -110,14 +111,46 @@ export class PortfolioManager {
     PortfolioManager.instances.delete(`${userId}:${credentialId}`);
   }
 
+  /**
+   * Destroy this instance: clear all in-memory state and remove from cache.
+   * Should be called when a workflow run ends.
+   */
+  destroy(): void {
+    this.cashBook.clear();
+    this.holdings.clear();
+    this.fillLedger.length = 0;
+    this.fillIdSet.clear();
+    this.trades.length = 0;
+    this.lastSyncedTradeId.clear();
+    this.trackedSymbols.clear();
+    this.tradeIdCounter = 0;
+    this.peakEquity = 0;
+    this.bootstrapped = false;
+
+    PortfolioManager.instances.delete(`${this.userId}:${this.credentialId}`);
+    console.log(
+      `[PortfolioManager] Destroyed instance for user=${this.userId} cred=${this.credentialId}`,
+    );
+  }
+
+  /**
+   * Destroy all cached instances (e.g., on process shutdown).
+   */
+  static destroyAll(): void {
+    for (const instance of PortfolioManager.instances.values()) {
+      instance.destroy();
+    }
+    PortfolioManager.instances.clear();
+    console.log("[PortfolioManager] All instances destroyed");
+  }
+
   // ============== BOOTSTRAP ==============
 
   /**
-   * Bootstrap portfolio from broker API and persisted fills.
-   * 1. Load persisted fills from Supabase
-   * 2. Fetch cash balances from Binance /api/v3/account (SIGNED)
-   * 3. Fetch new fills from /api/v3/myTrades (incremental, SIGNED)
-   * 4. Replay all fills to derive avg entry and realized PnL
+   * Bootstrap portfolio from broker API (pure in-memory).
+   * 1. Fetch cash balances from Binance /api/v3/account (SIGNED)
+   * 2. Fetch recent fills from /api/v3/myTrades (SIGNED) per symbol
+   * 3. Replay fills in-memory to derive avg entry and realized PnL
    */
   async bootstrap(
     baseUrl: string,
@@ -132,13 +165,10 @@ export class PortfolioManager {
       `[PortfolioManager] Bootstrapping for ${this.broker} user=${this.userId}`,
     );
 
-    // 1. Load persisted fills from Supabase
-    await this.loadPersistedFills();
-
-    // 2. Fetch cash balances from broker (SIGNED)
+    // 1. Fetch cash balances from broker (SIGNED)
     await this.fetchCashBalances(baseUrl, headers, creds, environment);
 
-    // 3. Fetch new fills for each tracked symbol
+    // 2. Fetch recent fills for each symbol and replay in-memory
     for (const symbol of symbols) {
       await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
     }
@@ -148,79 +178,6 @@ export class PortfolioManager {
     console.log(
       `[PortfolioManager] Bootstrap complete: ${this.holdings.size} holdings, ${this.fillLedger.length} fills`,
     );
-  }
-
-  /**
-   * Load previously persisted fills from Supabase with pagination and replay them.
-   */
-  private async loadPersistedFills(): Promise<void> {
-    try {
-      const PAGE_SIZE = 5000;
-      let offset = 0;
-      let totalLoaded = 0;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from("live_fills")
-          .select("*")
-          .eq("user_id", this.userId)
-          .eq("broker", this.broker)
-          .eq("credential_id", this.credentialId)
-          .order("event_time", { ascending: true })
-          .range(offset, offset + PAGE_SIZE - 1);
-
-        if (error) {
-          console.error("[PortfolioManager] Failed to load persisted fills:", error);
-          return;
-        }
-
-        if (!data || data.length === 0) break;
-
-        for (const row of data) {
-          const fill: LiveFill = {
-            tradeId: row.trade_id,
-            orderId: row.order_id,
-            symbol: row.symbol,
-            side: row.side as "BUY" | "SELL",
-            qty: Number(row.qty),
-            price: Number(row.price),
-            quoteQty: row.quote_qty ? Number(row.quote_qty) : undefined,
-            commission: Number(row.commission),
-            commissionAsset: row.commission_asset,
-            eventTime: new Date(row.event_time).getTime(),
-          };
-
-          const dedupKey = `${fill.symbol}:${fill.tradeId}`;
-          if (this.fillIdSet.has(dedupKey)) continue;
-
-          this.fillIdSet.add(dedupKey);
-          this.fillLedger.push(fill);
-          this.applyFillToHoldings(fill);
-          this.trackedSymbols.add(fill.symbol);
-
-          // Track last synced trade ID per symbol
-          const tradeIdNum = parseInt(fill.tradeId, 10);
-          const currentMax = this.lastSyncedTradeId.get(fill.symbol) ?? 0;
-          if (tradeIdNum > currentMax) {
-            this.lastSyncedTradeId.set(fill.symbol, tradeIdNum);
-          }
-        }
-
-        totalLoaded += data.length;
-        offset += PAGE_SIZE;
-
-        // If we got fewer than PAGE_SIZE, we've reached the end
-        if (data.length < PAGE_SIZE) break;
-      }
-
-      if (totalLoaded > 0) {
-        console.log(
-          `[PortfolioManager] Loaded ${totalLoaded} persisted fills`,
-        );
-      }
-    } catch (err) {
-      console.error("[PortfolioManager] Error loading persisted fills:", err);
-    }
   }
 
   /**
@@ -282,6 +239,7 @@ export class PortfolioManager {
 
   /**
    * Incremental sync: fetch new trades from broker for a symbol (SIGNED).
+   * Fills are stored in-memory only — no DB persistence.
    */
   async syncSymbolTrades(
     baseUrl: string,
@@ -338,11 +296,6 @@ export class PortfolioManager {
         this.fillLedger.push(fill);
         this.applyFillToHoldings(fill);
         newCount++;
-
-        // Async persist (fire-and-forget with error logging)
-        this.persistFill(fill).catch((err) =>
-          console.error("[PortfolioManager] Persist fill error:", err),
-        );
 
         const idNum = parseInt(tradeId, 10);
         const currentMax = this.lastSyncedTradeId.get(symbol) ?? 0;
@@ -451,83 +404,6 @@ export class PortfolioManager {
       if (existing.quantity <= 0) {
         this.holdings.delete(fill.symbol);
       }
-    }
-  }
-
-  // ============== PERSISTENCE ==============
-
-  /**
-   * Persist a single fill to Supabase (async, fire-and-forget).
-   */
-  private async persistFill(fill: LiveFill): Promise<void> {
-    const { error } = await supabase.from("live_fills").upsert(
-      {
-        user_id: this.userId,
-        broker: this.broker,
-        credential_id: this.credentialId,
-        symbol: fill.symbol,
-        trade_id: fill.tradeId,
-        order_id: fill.orderId,
-        side: fill.side,
-        qty: fill.qty,
-        price: fill.price,
-        quote_qty: fill.quoteQty,
-        commission: fill.commission,
-        commission_asset: fill.commissionAsset,
-        event_time: new Date(fill.eventTime).toISOString(),
-      },
-      { onConflict: "user_id,broker,symbol,trade_id" },
-    );
-
-    if (error) {
-      console.error("[PortfolioManager] persistFill failed:", error.message);
-    }
-  }
-
-  /**
-   * Take a periodic snapshot of positions and cash to Supabase.
-   */
-  async snapshotToDb(): Promise<void> {
-    const now = new Date().toISOString();
-
-    // Position snapshots
-    const posRows = Array.from(this.holdings.values()).map((h) => ({
-      user_id: this.userId,
-      broker: this.broker,
-      credential_id: this.credentialId,
-      symbol: h.symbol,
-      quantity: h.quantity,
-      avg_entry_price: h.avgEntryPrice,
-      current_price: h.currentPrice,
-      unrealized_pnl: (h.currentPrice - h.avgEntryPrice) * h.quantity,
-      realized_pnl: h.realizedPnl,
-      snapshot_at: now,
-    }));
-
-    if (posRows.length > 0) {
-      const { error } = await supabase.from("position_snapshots").insert(posRows);
-      if (error) {
-        console.error("[PortfolioManager] snapshotToDb position_snapshots failed:", error.message);
-      }
-    }
-
-    // Cash snapshot
-    const balancesObj: Record<string, number> = {};
-    for (const [asset, amount] of this.cashBook) {
-      balancesObj[asset] = amount;
-    }
-
-    const { error } = await supabase.from("cash_snapshots").insert({
-      user_id: this.userId,
-      broker: this.broker,
-      credential_id: this.credentialId,
-      balances: balancesObj,
-      total_value_usdt: this.cashBook.get("USDT") ?? 0,
-      snapshot_at: now,
-    });
-
-    if (error) {
-      console.error("[PortfolioManager] snapshotToDb cash_snapshots failed:", error.message);
     }
   }
 

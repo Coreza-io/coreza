@@ -118,7 +118,17 @@
         { "id": "USD", "name": "USD" },
         { "id": "EUR", "name": "EUR" }
       ],
-      "displayOptions": { "show": { "operation": ["create_portfolio"] } }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio",
+            "update_portfolio",
+            "get_portfolio",
+            "get_cash",
+            "get_equity"
+          ]
+        }
+      }
     },
     {
       "key": "cash_balance",

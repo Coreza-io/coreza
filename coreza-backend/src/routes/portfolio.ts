@@ -21,7 +21,7 @@ router.post("/", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { mode } = req.body;
+    const { mode, workflow_id } = req.body;
 
     const executor = getNodeExecutor("Portfolio");
     if (!executor) {
@@ -38,7 +38,7 @@ router.post("/", async (req: Request, res: Response) => {
         values: { ...req.body, mode },
       } as any,
       {},
-      { userId },
+      { userId, workflow_id },
     );
 
     if (!result.success) {

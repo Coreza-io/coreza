@@ -56,7 +56,7 @@ export interface PortfolioSnapshot {
  * state is garbage collected. On the next run, initializePortfolio()
  * starts from explicit cash and subsequent update_portfolio fills.
  *
- * One instance per (userId, credentialId) pair, managed via static cache.
+ * One instance per (userId, runId) pair, managed via static cache.
  */
 export class PortfolioManager {
   private static instances = new Map<string, PortfolioManager>();
@@ -68,7 +68,7 @@ export class PortfolioManager {
   ];
 
   private userId: string;
-  private credentialId: string;
+  private runId: string;
 
   // In-memory state (scoped to workflow run)
   private cashBook = new Map<string, number>(); // asset -> total balance
@@ -81,33 +81,29 @@ export class PortfolioManager {
 
   private bootstrapped = false;
 
-  private constructor(userId: string, _broker: string, credentialId: string) {
+  private constructor(userId: string, runId: string) {
     this.userId = userId;
-    this.credentialId = credentialId;
+    this.runId = runId;
   }
 
   /**
-   * Get or create a PortfolioManager instance for the given user/credential.
+   * Get or create a PortfolioManager instance for the given user/run.
    */
-  static getInstance(
-    userId: string,
-    broker: string,
-    credentialId: string,
-  ): PortfolioManager {
-    const key = `${userId}:${credentialId}`;
+  static getInstance(userId: string, runId: string): PortfolioManager {
+    const key = `${userId}:${runId}`;
     let instance = PortfolioManager.instances.get(key);
     if (!instance) {
-      instance = new PortfolioManager(userId, broker, credentialId);
+      instance = new PortfolioManager(userId, runId);
       PortfolioManager.instances.set(key, instance);
     }
     return instance;
   }
 
   /**
-   * Remove a cached instance (e.g., on credential change or cleanup).
+   * Remove a cached instance (e.g., on run cleanup).
    */
-  static removeInstance(userId: string, credentialId: string): void {
-    PortfolioManager.instances.delete(`${userId}:${credentialId}`);
+  static removeInstance(userId: string, runId: string): void {
+    PortfolioManager.instances.delete(`${userId}:${runId}`);
   }
 
   /**
@@ -124,9 +120,9 @@ export class PortfolioManager {
     this.peakEquity = 0;
     this.bootstrapped = false;
 
-    PortfolioManager.instances.delete(`${this.userId}:${this.credentialId}`);
+    PortfolioManager.instances.delete(`${this.userId}:${this.runId}`);
     console.log(
-      `[PortfolioManager] Destroyed instance for user=${this.userId} cred=${this.credentialId}`,
+      `[PortfolioManager] Destroyed instance for user=${this.userId} run=${this.runId}`,
     );
   }
 

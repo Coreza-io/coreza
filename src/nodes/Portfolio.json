@@ -37,54 +37,6 @@
       }
     },
     {
-      "key": "broker",
-      "label": "Broker",
-      "type": "select",
-      "required": true,
-      "default": "binance",
-      "options": [
-        { "id": "alpaca", "name": "Alpaca" },
-        { "id": "binance", "name": "Binance" },
-        { "id": "dhan", "name": "Dhan" },
-        { "id": "schwab", "name": "Schwab" }
-      ],
-      "displayOptions": {
-        "show": {
-          "mode": ["broker"]
-        }
-      }
-    },
-    {
-      "key": "environment",
-      "label": "Environment",
-      "type": "select",
-      "required": true,
-      "default": "testnet",
-      "options": [
-        { "id": "testnet", "name": "Testnet / Paper (Sandbox)" },
-        { "id": "live", "name": "Production (Live)" }
-      ],
-      "displayOptions": {
-        "show": {
-          "mode": ["broker"]
-        }
-      }
-    },
-    {
-      "key": "credential_id",
-      "label": "Credential",
-      "type": "select",
-      "optionsSource": "credentialsApi",
-      "dependsOn": "broker",
-      "placeholder": "Select credential",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "mode": ["broker"]
-        }
-      }
-    },
-    {
       "key": "operation",
       "label": "Operation",
       "type": "select",
@@ -98,12 +50,7 @@
         { "id": "update_mtm", "name": "Update Portfolio (MTM)" },
         { "id": "get_cash", "name": "Get Cash" },
         { "id": "get_equity", "name": "Get Equity" },
-        { "id": "get_pending_orders", "name": "Get Pending Orders" },
-        { "id": "get_trades", "name": "Get Trades" },
-        {
-          "id": "sync_trades",
-          "name": "Sync Trades (deprecated - use Update Portfolio)"
-        }
+        { "id": "get_trades", "name": "Get Trades" }
       ]
     },
     {
@@ -151,9 +98,7 @@
           "operation": [
             "update_portfolio",
             "get_position",
-            "update_mtm",
-            "sync_trades",
-            "get_pending_orders"
+            "update_mtm"
           ]
         }
       }
@@ -206,10 +151,6 @@
     }
   ],
   "operationDisplayOptions": {
-    "create_portfolio": { "show": { "mode": ["broker"] } },
-    "update_portfolio": { "show": { "mode": ["broker"] } },
-    "update_mtm": { "show": { "mode": ["backtest", "broker"] } },
-    "sync_trades": { "show": { "mode": ["broker"] } },
-    "get_pending_orders": { "show": { "mode": ["backtest", "broker"] } }
+    "update_mtm": { "show": { "mode": ["backtest", "broker"] } }
   }
 }

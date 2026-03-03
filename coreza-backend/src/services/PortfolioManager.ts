@@ -76,6 +76,13 @@ export class PortfolioManager {
   private fillLedger: LiveFill[] = [];
   private fillIdSet = new Set<string>(); // O(1) dedup: "${symbol}:${tradeId}"
   private trades: Trade[] = [];
+  private currentEntryMap = new Map<
+    string,
+    {
+      fillId: string;
+      entryTime: string;
+    }
+  >();
   private tradeIdCounter = 0;
   private peakEquity = 0;
 
@@ -116,6 +123,7 @@ export class PortfolioManager {
     this.fillLedger.length = 0;
     this.fillIdSet.clear();
     this.trades.length = 0;
+    this.currentEntryMap.clear();
     this.tradeIdCounter = 0;
     this.peakEquity = 0;
     this.bootstrapped = false;
@@ -147,66 +155,101 @@ export class PortfolioManager {
     fill: LiveFill,
     adjustCash: boolean = false,
   ): void {
+    const fillTime = new Date(fill.eventTime).toISOString();
+    const signedQuantity = fill.side === "BUY" ? fill.qty : -fill.qty;
     const existing = this.holdings.get(fill.symbol);
 
     if (!existing) {
-      // New position
-      if (fill.side === "BUY") {
-        this.holdings.set(fill.symbol, {
-          symbol: fill.symbol,
-          quantity: fill.qty,
-          avgEntryPrice: fill.price,
-          realizedPnl: 0,
-          currentPrice: fill.price,
-        });
-        this.adjustCashBookForFill(fill, adjustCash);
-      }
-      // SELL without existing position (shouldn't happen in spot, but handle gracefully)
+      this.holdings.set(fill.symbol, {
+        symbol: fill.symbol,
+        quantity: signedQuantity,
+        avgEntryPrice: fill.price,
+        realizedPnl: 0,
+        currentPrice: fill.price,
+      });
+      this.currentEntryMap.set(fill.symbol, {
+        fillId: fill.tradeId,
+        entryTime: fillTime,
+      });
+      this.adjustCashBookForFill(fill, adjustCash);
       return;
     }
 
-    if (fill.side === "BUY") {
-      // Increase position: weighted average entry
-      const totalQty = existing.quantity + fill.qty;
-      const totalCost =
-        existing.avgEntryPrice * existing.quantity + fill.price * fill.qty;
-      existing.avgEntryPrice = totalCost / totalQty;
+    const existingQty = existing.quantity;
+    const sameDirection =
+      (existingQty >= 0 && signedQuantity >= 0) ||
+      (existingQty <= 0 && signedQuantity <= 0);
+
+    if (sameDirection) {
+      const totalQty = existingQty + signedQuantity;
+      const totalCostBasis =
+        existing.avgEntryPrice * Math.abs(existingQty) +
+        fill.price * Math.abs(signedQuantity);
+
+      existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
       existing.quantity = totalQty;
       existing.currentPrice = fill.price;
-    } else {
-      // SELL: realize PnL on sold portion
-      const sellQty = Math.min(fill.qty, existing.quantity);
-      const grossPnl = (fill.price - existing.avgEntryPrice) * sellQty;
-      const netPnl = grossPnl - fill.commission;
 
-      existing.realizedPnl += netPnl;
-      existing.quantity -= sellQty;
-      existing.currentPrice = fill.price;
-
-      // Record trade (closed round-trip portion)
-      const trade: Trade = {
-        id: `LT-${++this.tradeIdCounter}`,
-        symbol: fill.symbol,
-        side: "buy", // entry side for long spot
-        entryOrderId: "",
-        exitOrderId: fill.orderId || "",
-        entryPrice: existing.avgEntryPrice,
-        exitPrice: fill.price,
-        quantity: sellQty,
-        grossPnl,
-        commission: fill.commission,
-        slippage: 0,
-        netPnl,
-        entryTime: "", // Not tracked in live mode
-        exitTime: new Date(fill.eventTime).toISOString(),
-        holdingPeriodBars: 0,
-      };
-      this.trades.push(trade);
-
-      // Remove position if fully closed
-      if (existing.quantity <= 0) {
-        this.holdings.delete(fill.symbol);
+      if (!this.currentEntryMap.has(fill.symbol)) {
+        this.currentEntryMap.set(fill.symbol, {
+          fillId: fill.tradeId,
+          entryTime: fillTime,
+        });
       }
+      this.adjustCashBookForFill(fill, adjustCash);
+      return;
+    }
+
+    const closingQty = Math.min(Math.abs(existingQty), Math.abs(signedQuantity));
+    const isClosingLong = existingQty > 0;
+    const grossPnl = isClosingLong
+      ? (fill.price - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - fill.price) * closingQty;
+    const commissionForClose =
+      fill.commission * (closingQty / Math.abs(signedQuantity));
+    const netPnl = grossPnl - commissionForClose;
+    const entry = this.currentEntryMap.get(fill.symbol);
+
+    existing.realizedPnl += netPnl;
+
+    const trade: Trade = {
+      id: `LT-${++this.tradeIdCounter}`,
+      symbol: fill.symbol,
+      side: isClosingLong ? "buy" : "sell",
+      entryOrderId: entry?.fillId ?? "",
+      exitOrderId: fill.tradeId,
+      entryPrice: existing.avgEntryPrice,
+      exitPrice: fill.price,
+      quantity: closingQty,
+      grossPnl,
+      commission: commissionForClose,
+      slippage: 0,
+      netPnl,
+      entryTime: entry?.entryTime ?? "",
+      exitTime: fillTime,
+      holdingPeriodBars: 0,
+    };
+    this.trades.push(trade);
+
+    const newQty = existingQty + signedQuantity;
+    if (newQty === 0) {
+      this.holdings.delete(fill.symbol);
+      this.currentEntryMap.delete(fill.symbol);
+      this.adjustCashBookForFill(fill, adjustCash);
+      return;
+    }
+
+    const flippedDirection =
+      (existingQty > 0 && newQty < 0) || (existingQty < 0 && newQty > 0);
+
+    existing.quantity = newQty;
+    existing.currentPrice = fill.price;
+    if (flippedDirection) {
+      existing.avgEntryPrice = fill.price;
+      this.currentEntryMap.set(fill.symbol, {
+        fillId: fill.tradeId,
+        entryTime: fillTime,
+      });
     }
 
     this.adjustCashBookForFill(fill, adjustCash);
@@ -302,7 +345,7 @@ export class PortfolioManager {
   getPositions(): Position[] {
     return Array.from(this.holdings.values()).map((h) => ({
       symbol: h.symbol,
-      side: "long" as const,
+      side: h.quantity >= 0 ? ("long" as const) : ("short" as const),
       quantity: h.quantity,
       avgEntryPrice: h.avgEntryPrice,
       currentPrice: h.currentPrice,
@@ -318,7 +361,7 @@ export class PortfolioManager {
 
     return {
       symbol: h.symbol,
-      side: "long",
+      side: h.quantity >= 0 ? "long" : "short",
       quantity: h.quantity,
       avgEntryPrice: h.avgEntryPrice,
       currentPrice: h.currentPrice,

@@ -14,10 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import axios from "axios";
 import { Position, Trade } from "./simBroker/interfaces";
-import { signHmacSha256 } from "../utils/crypto";
-import { getBinanceTimestamp } from "../utils/binanceTimeSync";
 
 // ============== INTERFACES ==============
 
@@ -56,24 +53,13 @@ export interface PortfolioSnapshot {
  *
  * All state (fills, holdings, PnL) lives in RAM only, scoped to the
  * workflow run. When the workflow ends, destroy() is called and all
- * state is garbage collected. On the next run, bootstrap() re-initializes
- * fresh from the broker API.
+ * state is garbage collected. On the next run, initializePortfolio()
+ * starts from explicit cash and subsequent update_portfolio fills.
  *
  * One instance per (userId, credentialId) pair, managed via static cache.
  */
 export class PortfolioManager {
   private static instances = new Map<string, PortfolioManager>();
-  private static readonly DISCOVERY_QUOTE_ASSETS = new Set([
-    "USDT",
-    "USDC",
-    "BUSD",
-    "FDUSD",
-    "TUSD",
-    "USD",
-    "EUR",
-    "GBP",
-    "BNB",
-  ]);
   private static readonly SYMBOL_QUOTE_SUFFIXES = [
     "USDT",
     "USDC",
@@ -82,7 +68,6 @@ export class PortfolioManager {
   ];
 
   private userId: string;
-  private broker: string;
   private credentialId: string;
 
   // In-memory state (scoped to workflow run)
@@ -91,16 +76,13 @@ export class PortfolioManager {
   private fillLedger: LiveFill[] = [];
   private fillIdSet = new Set<string>(); // O(1) dedup: "${symbol}:${tradeId}"
   private trades: Trade[] = [];
-  private lastSyncedTradeId = new Map<string, number>(); // symbol -> last trade_id
-  private trackedSymbols = new Set<string>(); // symbols synced so far
   private tradeIdCounter = 0;
   private peakEquity = 0;
 
   private bootstrapped = false;
 
-  private constructor(userId: string, broker: string, credentialId: string) {
+  private constructor(userId: string, _broker: string, credentialId: string) {
     this.userId = userId;
-    this.broker = broker;
     this.credentialId = credentialId;
   }
 
@@ -138,8 +120,6 @@ export class PortfolioManager {
     this.fillLedger.length = 0;
     this.fillIdSet.clear();
     this.trades.length = 0;
-    this.lastSyncedTradeId.clear();
-    this.trackedSymbols.clear();
     this.tradeIdCounter = 0;
     this.peakEquity = 0;
     this.bootstrapped = false;
@@ -159,182 +139,6 @@ export class PortfolioManager {
     }
     PortfolioManager.instances.clear();
     console.log("[PortfolioManager] All instances destroyed");
-  }
-
-  // ============== BOOTSTRAP ==============
-
-  /**
-   * Bootstrap portfolio from broker API (pure in-memory).
-   * 1. Fetch cash balances from Binance /api/v3/account (SIGNED)
-   * 2. Fetch recent fills from /api/v3/myTrades (SIGNED) per symbol
-   * 3. Replay fills in-memory to derive avg entry and realized PnL
-   */
-  async bootstrap(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    symbols: string[],
-    environment: "live" | "testnet" = "live",
-  ): Promise<void> {
-    if (this.bootstrapped) return;
-
-    console.log(
-      `[PortfolioManager] Bootstrapping for ${this.broker} user=${this.userId}`,
-    );
-
-    // 1. Fetch cash balances from broker (SIGNED)
-    await this.fetchCashBalances(baseUrl, headers, creds, environment);
-
-    for (const symbol of symbols) {
-      await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
-    }
-
-    this.updatePeakEquity();
-    this.bootstrapped = true;
-    console.log(
-      `[PortfolioManager] Bootstrap complete: ${this.holdings.size} holdings, ${this.fillLedger.length} fills`,
-    );
-  }
-
-  /**
-   * Fetch cash balances from Binance Spot /api/v3/account (SIGNED endpoint).
-   */
-  private async fetchCashBalances(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    environment: "live" | "testnet",
-  ): Promise<void> {
-    try {
-      const timestamp = getBinanceTimestamp(environment, "spot");
-      const signedParams = signHmacSha256(
-        { recvWindow: 5000, timestamp },
-        creds.secret_key,
-      );
-
-      const response = await axios.get(`${baseUrl}/api/v3/account`, {
-        headers,
-        params: signedParams,
-        timeout: 15000,
-      });
-
-      const balances = response.data?.balances;
-      if (Array.isArray(balances)) {
-        for (const bal of balances) {
-          const total =
-            parseFloat(bal.free || "0") + parseFloat(bal.locked || "0");
-          if (total > 0) {
-            this.cashBook.set(bal.asset, total);
-          }
-        }
-      }
-
-      console.log(
-        `[PortfolioManager] Loaded ${this.cashBook.size} cash balances`,
-      );
-    } catch (err) {
-      console.error("[PortfolioManager] Failed to fetch cash balances:", err);
-    }
-  }
-
-  // ============== SYNC ==============
-
-  /**
-   * Ensure a symbol is tracked. If not yet synced, fetch its trades.
-   */
-  async ensureSymbolTracked(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    symbol: string,
-    environment: "live" | "testnet" = "live",
-  ): Promise<void> {
-    if (this.trackedSymbols.has(symbol)) return;
-    await this.syncSymbolTrades(baseUrl, headers, creds, symbol, environment);
-  }
-
-  /**
-   * Incremental sync: fetch new trades from broker for a symbol (SIGNED).
-   * Fills are stored in-memory only — no DB persistence.
-   */
-  async syncSymbolTrades(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    symbol: string,
-    environment: "live" | "testnet",
-  ): Promise<number> {
-    try {
-      this.trackedSymbols.add(symbol);
-
-      const fromId = this.lastSyncedTradeId.get(symbol);
-      const rawParams: Record<string, any> = { symbol };
-      if (fromId) {
-        rawParams.fromId = fromId + 1; // Binance fromId is inclusive
-      }
-
-      const timestamp = getBinanceTimestamp(environment, "spot");
-      rawParams.recvWindow = 5000;
-      rawParams.timestamp = timestamp;
-      const signedParams = signHmacSha256(rawParams, creds.secret_key);
-
-      const response = await axios.get(`${baseUrl}/api/v3/myTrades`, {
-        headers,
-        params: signedParams,
-        timeout: 15000,
-      });
-
-      const trades = response.data;
-      if (!Array.isArray(trades) || trades.length === 0) return 0;
-
-      let newCount = 0;
-      for (const t of trades) {
-        const tradeId = String(t.id);
-        const dedupKey = `${symbol}:${tradeId}`;
-
-        // O(1) dedup
-        if (this.fillIdSet.has(dedupKey)) continue;
-
-        const fill: LiveFill = {
-          tradeId,
-          orderId: String(t.orderId),
-          symbol,
-          side: t.isBuyer ? "BUY" : "SELL",
-          qty: parseFloat(t.qty),
-          price: parseFloat(t.price),
-          quoteQty: t.quoteQty ? parseFloat(t.quoteQty) : undefined,
-          commission: parseFloat(t.commission),
-          commissionAsset: t.commissionAsset,
-          eventTime: t.time,
-        };
-
-        this.fillIdSet.add(dedupKey);
-        this.fillLedger.push(fill);
-        this.applyFillToHoldings(fill, this.bootstrapped);
-        newCount++;
-
-        const idNum = parseInt(tradeId, 10);
-        const currentMax = this.lastSyncedTradeId.get(symbol) ?? 0;
-        if (idNum > currentMax) {
-          this.lastSyncedTradeId.set(symbol, idNum);
-        }
-      }
-
-      if (newCount > 0) {
-        this.updatePeakEquity();
-        console.log(
-          `[PortfolioManager] Synced ${newCount} new trades for ${symbol}`,
-        );
-      }
-
-      return newCount;
-    } catch (err) {
-      console.error(
-        `[PortfolioManager] Failed to sync trades for ${symbol}:`,
-        err,
-      );
-      return 0;
-    }
   }
 
   // ============== FILL APPLICATION (mirrors SimBroker logic) ==============
@@ -553,10 +357,6 @@ export class PortfolioManager {
     return this.bootstrapped;
   }
 
-  getTrackedSymbols(): string[] {
-    return Array.from(this.trackedSymbols);
-  }
-
   // ============== EXPLICIT PORTFOLIO INIT ==============
 
   /**
@@ -626,7 +426,6 @@ export class PortfolioManager {
     this.fillIdSet.add(`${symbol}:${liveFill.tradeId}`);
     this.fillLedger.push(liveFill);
     this.applyFillToHoldings(liveFill, true);
-    this.trackedSymbols.add(symbol);
     this.updatePeakEquity(baseCurrency);
 
     console.log(

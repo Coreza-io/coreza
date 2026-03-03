@@ -22,15 +22,9 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
-import CredentialManager from "../../utils/credentialManager";
-import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
-import { getBrokerConfig } from "../../brokers";
 import { Bar } from "../../services/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
-import axios from "axios";
-import { signHmacSha256 } from "../../utils/crypto";
-import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -141,8 +135,6 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.backtestGetCash(simBroker);
       case "get_equity":
         return this.backtestGetEquity(simBroker);
-      case "get_pending_orders":
-        return this.backtestGetPendingOrders(simBroker);
       case "get_trades":
         return this.backtestGetTrades(simBroker);
       default:
@@ -158,57 +150,15 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     context: any,
   ): Promise<NodeResult> {
-    const broker = params.broker.toLowerCase();
-    const credentialId = params.credential_id;
     const userId = context?.userId;
-
-    if (!credentialId) {
-      return toNodeResult(
-        createErrorOutput("credential_id is required for broker mode"),
-      );
-    }
     if (!userId) {
       return toNodeResult(
         createErrorOutput("User ID required for broker mode"),
       );
     }
 
-    // Get broker config and credentials
-    const config = getBrokerConfig(broker);
-    if (!config) {
-      return toNodeResult(createErrorOutput(`Unsupported broker: ${broker}`));
-    }
-
-    const { credentials } = await CredentialManager.getCredentials(
-      userId,
-      broker,
-      credentialId,
-    );
-    if (!credentials) {
-      return toNodeResult(
-        createErrorOutput(`Credentials not found for ${broker}`),
-      );
-    }
-
-    let creds = credentials.client_json;
-    if (config.authType === "oauth") {
-      creds = await refreshOAuthTokenIfNeeded(
-        broker,
-        creds,
-        userId,
-        credentialId,
-      );
-    }
-
-    const environment = params.environment as "live" | "testnet";
-    const baseUrl =
-      typeof config.baseUrl === "function"
-        ? config.baseUrl(creds, params)
-        : config.baseUrl;
-    const headers = await config.makeAuthHeaders(creds);
-
     // Get or create PortfolioManager
-    const pm = PortfolioManager.getInstance(userId, broker, credentialId);
+    const pm = PortfolioManager.getInstance(userId, "manual", "default");
 
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";
@@ -237,28 +187,20 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
-      // Fallback: bootstrap from broker API
-      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
       return toNodeResult(
-        createSuccessOutput({
-          message: "Portfolio created from broker account",
-          created: true,
-          ...this.getPortfolioSummary(pm, baseCurrency),
-        }),
+        createErrorOutput(
+          "cash_balance must be a non-negative number for create_portfolio",
+        ),
       );
     }
 
     if (!pm.isBootstrapped()) {
-      console.warn(
-        `[PortfolioExecutor] Implicit bootstrap triggered for operation '${operation}'. Consider running create_portfolio first.`,
+      return toNodeResult(
+        createErrorOutput(
+          "Portfolio not initialized. Run create_portfolio with cash_balance first.",
+        ),
       );
-      await pm.bootstrap(baseUrl, headers, creds, symbols, environment);
     }
-
-    // Ensure all requested symbols are tracked (lazy symbol tracking)
-    // for (const sym of symbols) {
-    //   await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
-    // }
 
     switch (operation) {
       case "get_portfolio":
@@ -329,37 +271,6 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerGetEquity(pm, baseCurrency);
       case "get_trades":
         return this.brokerGetTrades(pm);
-      case "get_pending_orders":
-        return this.brokerGetPendingOrders(
-          baseUrl,
-          headers,
-          creds,
-          symbols,
-          environment,
-        );
-      case "sync_trades": {
-        const syncSymbols =
-          symbols.length > 0 ? symbols : pm.getTrackedSymbols();
-        let totalCount = 0;
-        for (const sym of syncSymbols) {
-          totalCount += await pm.syncSymbolTrades(
-            baseUrl,
-            headers,
-            creds,
-            sym,
-            environment,
-          );
-        }
-        return toNodeResult(
-          createSuccessOutput({
-            message:
-              "sync_trades is deprecated; use update_portfolio for QC-aligned semantics",
-            synced_trades: totalCount,
-            symbols: syncSymbols,
-            ...this.getPortfolioSummary(pm, baseCurrency),
-          }),
-        );
-      }
       default:
         return toNodeResult(
           createErrorOutput(`Unknown portfolio operation: ${operation}`),
@@ -497,13 +408,6 @@ export class PortfolioExecutor implements INodeExecutor {
         peak_equity: peak,
         drawdown_pct: drawdownPct,
       }),
-    );
-  }
-
-  private backtestGetPendingOrders(simBroker: SimBroker): NodeResult {
-    const orders = simBroker.getPendingOrders();
-    return toNodeResult(
-      createSuccessOutput({ pending_orders: orders, count: orders.length }),
     );
   }
 
@@ -679,53 +583,5 @@ export class PortfolioExecutor implements INodeExecutor {
         losing_trades: trades.filter((t) => t.netPnl < 0).length,
       }),
     );
-  }
-
-  /**
-   * Fetch open orders from Binance /api/v3/openOrders (SIGNED).
-   * Supports zero, one, or multiple symbols.
-   * - No symbols: fetches ALL open orders (no symbol filter).
-   * - One symbol: passes symbol param to Binance.
-   * - Multiple symbols: fetches ALL and filters client-side.
-   */
-  private async brokerGetPendingOrders(
-    baseUrl: string,
-    headers: Record<string, string>,
-    creds: any,
-    symbols: string[],
-    environment: "live" | "testnet" = "live",
-  ): Promise<NodeResult> {
-    try {
-      const timestamp = getBinanceTimestamp(environment, "spot");
-      const rawParams: Record<string, any> = { recvWindow: 5000, timestamp };
-
-      // Only pass symbol param for single-symbol queries (Binance API limitation)
-      if (symbols.length === 1) {
-        rawParams.symbol = symbols[0];
-      }
-
-      const signedParams = signHmacSha256(rawParams, creds.secret_key);
-
-      const response = await axios.get(`${baseUrl}/api/v3/openOrders`, {
-        headers,
-        params: signedParams,
-        timeout: 15000,
-      });
-
-      let orders = Array.isArray(response.data) ? response.data : [];
-
-      // Client-side filter for multi-symbol queries
-      if (symbols.length > 1) {
-        const symbolSet = new Set(symbols);
-        orders = orders.filter((o: any) => symbolSet.has(o.symbol));
-      }
-
-      return toNodeResult(
-        createSuccessOutput({ pending_orders: orders, count: orders.length }),
-      );
-    } catch (err) {
-      console.error("[PortfolioExecutor] brokerGetPendingOrders failed:", err);
-      return toNodeResult(createErrorOutput(err));
-    }
   }
 }

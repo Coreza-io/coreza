@@ -208,9 +208,10 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_portfolio": {
-        // Explicit fill fields: symbol, quantity, price, commission
+        // Explicit fill fields: symbol, side, quantity, price, commission
         const fillSymbol = params.symbol?.trim().toUpperCase();
-        const quantity = parseFloat(params.quantity);
+        const side = params.side?.trim().toUpperCase();
+        const rawQuantity = parseFloat(params.quantity);
         const price = parseFloat(params.price);
         const commission = parseFloat(params.commission || "0");
 
@@ -219,7 +220,12 @@ export class PortfolioExecutor implements INodeExecutor {
             createErrorOutput("symbol is required for update_portfolio"),
           );
         }
-        if (isNaN(quantity) || quantity === 0) {
+        if (!side || (side !== "BUY" && side !== "SELL")) {
+          return toNodeResult(
+            createErrorOutput("side must be BUY or SELL"),
+          );
+        }
+        if (isNaN(rawQuantity) || rawQuantity === 0) {
           return toNodeResult(
             createErrorOutput("quantity must be a non-zero number"),
           );
@@ -230,6 +236,9 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
+        const normalizedQuantity = Math.abs(rawQuantity);
+        const quantity = side === "SELL" ? -normalizedQuantity : normalizedQuantity;
+
         pm.applyFill(
           { symbol: fillSymbol, quantity, price, commission },
           baseCurrency,
@@ -237,7 +246,14 @@ export class PortfolioExecutor implements INodeExecutor {
         return toNodeResult(
           createSuccessOutput({
             updated: true,
-            fill_applied: { symbol: fillSymbol, quantity, price, commission },
+            fill_applied: {
+              symbol: fillSymbol,
+              side,
+              quantity: normalizedQuantity,
+              signedQuantity: quantity,
+              price,
+              commission,
+            },
             ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );

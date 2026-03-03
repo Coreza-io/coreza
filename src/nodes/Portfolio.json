@@ -6,12 +6,26 @@
   "category": "Utility",
   "description": "Query and update portfolio state -- positions, cash, equity, orders, trades. Works in both backtest and live broker modes.",
   "color": "text-orange-500",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
-  "action": { "url": "/portfolio", "method": "POST" },
+  "action": {
+    "url": "/portfolio",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "mode",
@@ -20,8 +34,14 @@
       "required": true,
       "default": "backtest",
       "options": [
-        { "id": "backtest", "name": "Backtest (SimBroker)" },
-        { "id": "broker", "name": "Live (Broker)" }
+        {
+          "id": "backtest",
+          "name": "Backtest (SimBroker)"
+        },
+        {
+          "id": "broker",
+          "name": "Live (Broker)"
+        }
       ]
     },
     {
@@ -32,7 +52,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "mode": ["backtest"]
+          "mode": [
+            "backtest"
+          ]
         }
       }
     },
@@ -43,14 +65,38 @@
       "required": true,
       "default": "get_portfolio",
       "options": [
-        { "id": "create_portfolio", "name": "Create Portfolio (Bootstrap)" },
-        { "id": "update_portfolio", "name": "Update Portfolio (Sync Fills)" },
-        { "id": "get_portfolio", "name": "Get Portfolio" },
-        { "id": "get_position", "name": "Get Position" },
-        { "id": "update_mtm", "name": "Update Portfolio (MTM)" },
-        { "id": "get_cash", "name": "Get Cash" },
-        { "id": "get_equity", "name": "Get Equity" },
-        { "id": "get_trades", "name": "Get Trades" }
+        {
+          "id": "create_portfolio",
+          "name": "Create Portfolio (Bootstrap)"
+        },
+        {
+          "id": "update_portfolio",
+          "name": "Update Portfolio (Sync Fills)"
+        },
+        {
+          "id": "get_portfolio",
+          "name": "Get Portfolio"
+        },
+        {
+          "id": "get_position",
+          "name": "Get Position"
+        },
+        {
+          "id": "update_mtm",
+          "name": "Update Portfolio (MTM)"
+        },
+        {
+          "id": "get_cash",
+          "name": "Get Cash"
+        },
+        {
+          "id": "get_equity",
+          "name": "Get Equity"
+        },
+        {
+          "id": "get_trades",
+          "name": "Get Trades"
+        }
       ]
     },
     {
@@ -60,10 +106,22 @@
       "required": true,
       "default": "USDT",
       "options": [
-        { "id": "USDT", "name": "USDT" },
-        { "id": "USDC", "name": "USDC" },
-        { "id": "USD", "name": "USD" },
-        { "id": "EUR", "name": "EUR" }
+        {
+          "id": "USDT",
+          "name": "USDT"
+        },
+        {
+          "id": "USDC",
+          "name": "USDC"
+        },
+        {
+          "id": "USD",
+          "name": "USD"
+        },
+        {
+          "id": "EUR",
+          "name": "EUR"
+        }
       ],
       "displayOptions": {
         "show": {
@@ -84,7 +142,13 @@
       "placeholder": "e.g. 64786.0",
       "required": true,
       "description": "Starting cash balance in the base currency.",
-      "displayOptions": { "show": { "operation": ["create_portfolio"] } }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ]
+        }
+      }
     },
     {
       "key": "symbol",
@@ -104,13 +168,43 @@
       }
     },
     {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "required": true,
+      "description": "Trade side. Determines whether quantity adds or reduces the position.",
+      "options": [
+        {
+          "id": "BUY",
+          "name": "BUY"
+        },
+        {
+          "id": "SELL",
+          "name": "SELL"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "update_portfolio"
+          ]
+        }
+      }
+    },
+    {
       "key": "quantity",
       "label": "Quantity",
       "type": "text",
       "placeholder": "{{ $('BinanceTrade').json.executedQty }}",
       "required": true,
-      "description": "Filled quantity. Positive for BUY, negative for SELL.",
-      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+      "description": "Filled quantity (absolute value). Trade side controls whether it adds to or reduces the position.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "update_portfolio"
+          ]
+        }
+      }
     },
     {
       "key": "price",
@@ -121,7 +215,10 @@
       "description": "Average fill price.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "update_mtm"]
+          "operation": [
+            "update_portfolio",
+            "update_mtm"
+          ]
         }
       }
     },
@@ -133,7 +230,13 @@
       "required": false,
       "default": "0",
       "description": "Trade commission (deducted from cash).",
-      "displayOptions": { "show": { "operation": ["update_portfolio"] } }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "update_portfolio"
+          ]
+        }
+      }
     },
     {
       "key": "current_bar",
@@ -144,13 +247,24 @@
       "description": "Current OHLCV bar for mark-to-market pricing",
       "displayOptions": {
         "show": {
-          "operation": ["update_mtm"],
-          "mode": ["backtest"]
+          "operation": [
+            "update_mtm"
+          ],
+          "mode": [
+            "backtest"
+          ]
         }
       }
     }
   ],
   "operationDisplayOptions": {
-    "update_mtm": { "show": { "mode": ["backtest", "broker"] } }
+    "update_mtm": {
+      "show": {
+        "mode": [
+          "backtest",
+          "broker"
+        ]
+      }
+    }
   }
 }

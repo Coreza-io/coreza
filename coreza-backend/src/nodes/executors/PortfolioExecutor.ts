@@ -157,8 +157,10 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
+    const runId = context?.runId || `manual-${userId}`;
+
     // Get or create PortfolioManager
-    const pm = PortfolioManager.getInstance(userId, "manual", "default");
+    const pm = PortfolioManager.getInstance(userId, runId);
 
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";

@@ -225,8 +225,6 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
-      // Use explicit base_currency + cash_balance if provided
-      const baseCurrency = params.base_currency;
       const cashBalance = parseFloat(params.cash_balance);
       if (baseCurrency && !isNaN(cashBalance) && cashBalance >= 0) {
         pm.initializePortfolio(baseCurrency, cashBalance);
@@ -258,9 +256,9 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     // Ensure all requested symbols are tracked (lazy symbol tracking)
-    for (const sym of symbols) {
-      await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
-    }
+    // for (const sym of symbols) {
+    //   await pm.ensureSymbolTracked(baseUrl, headers, creds, sym, environment);
+    // }
 
     switch (operation) {
       case "get_portfolio":
@@ -273,16 +271,25 @@ export class PortfolioExecutor implements INodeExecutor {
         const commission = parseFloat(params.commission || "0");
 
         if (!fillSymbol) {
-          return toNodeResult(createErrorOutput("symbol is required for update_portfolio"));
+          return toNodeResult(
+            createErrorOutput("symbol is required for update_portfolio"),
+          );
         }
         if (isNaN(quantity) || quantity === 0) {
-          return toNodeResult(createErrorOutput("quantity must be a non-zero number"));
+          return toNodeResult(
+            createErrorOutput("quantity must be a non-zero number"),
+          );
         }
         if (isNaN(price) || price <= 0) {
-          return toNodeResult(createErrorOutput("price must be a positive number"));
+          return toNodeResult(
+            createErrorOutput("price must be a positive number"),
+          );
         }
 
-        pm.applyFill({ symbol: fillSymbol, quantity, price, commission }, baseCurrency);
+        pm.applyFill(
+          { symbol: fillSymbol, quantity, price, commission },
+          baseCurrency,
+        );
         return toNodeResult(
           createSuccessOutput({
             updated: true,
@@ -530,7 +537,10 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private getPortfolioSummary(pm: PortfolioManager, baseCurrency: string): Record<string, any> {
+  private getPortfolioSummary(
+    pm: PortfolioManager,
+    baseCurrency: string,
+  ): Record<string, any> {
     const state = pm.getPortfolioState(baseCurrency);
     const positions = state.positions;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
@@ -615,11 +625,17 @@ export class PortfolioExecutor implements INodeExecutor {
     });
 
     return toNodeResult(
-      createSuccessOutput({ positions: results, positions_count: results.length }),
+      createSuccessOutput({
+        positions: results,
+        positions_count: results.length,
+      }),
     );
   }
 
-  private brokerGetCash(pm: PortfolioManager, baseCurrency: string): NodeResult {
+  private brokerGetCash(
+    pm: PortfolioManager,
+    baseCurrency: string,
+  ): NodeResult {
     return toNodeResult(
       createSuccessOutput({
         cash: pm.getCash(),
@@ -628,7 +644,10 @@ export class PortfolioExecutor implements INodeExecutor {
     );
   }
 
-  private brokerGetEquity(pm: PortfolioManager, baseCurrency: string): NodeResult {
+  private brokerGetEquity(
+    pm: PortfolioManager,
+    baseCurrency: string,
+  ): NodeResult {
     const state = pm.getPortfolioState(baseCurrency);
     const positionsValue = state.positions.reduce(
       (s, p) => s + p.marketValue,

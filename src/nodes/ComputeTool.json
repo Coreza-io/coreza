@@ -701,6 +701,55 @@
       "showDescription": false
     },
     {
+      "key": "inputFormat",
+      "label": "Input Format",
+      "type": "select",
+      "options": [
+        {
+          "label": "Auto Detect",
+          "value": "auto"
+        },
+        {
+          "label": "Unix Timestamp (ms)",
+          "value": "timestamp_ms"
+        },
+        {
+          "label": "Unix Timestamp (s)",
+          "value": "timestamp_s"
+        },
+        {
+          "label": "ISO 8601",
+          "value": "iso"
+        },
+        {
+          "label": "YYYY-MM-DD",
+          "value": "YYYY-MM-DD"
+        },
+        {
+          "label": "DD/MM/YYYY",
+          "value": "DD/MM/YYYY"
+        },
+        {
+          "label": "MM/DD/YYYY",
+          "value": "MM/DD/YYYY"
+        },
+        {
+          "label": "YYYY-MM-DD HH:mm:ss",
+          "value": "YYYY-MM-DD HH:mm:ss"
+        }
+      ],
+      "default": "auto",
+      "description": "Format of the incoming date value. Use 'Auto Detect' if unsure.",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "formatDate"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
       "key": "arg2",
       "label": "Argument 2",
       "type": "text",

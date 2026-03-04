@@ -78,7 +78,6 @@
         { "name": "Get Trades", "id": "get_trades" },
         { "name": "Cancel Order", "id": "cancel_order" },
         { "name": "Get Candle", "id": "get_candle" },
-        { "name": "Get Latest Bar", "id": "get_latest_bar" },
         { "name": "Get Ticker", "id": "get_ticker" }
       ],
       "required": true,

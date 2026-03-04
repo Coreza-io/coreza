@@ -1,38 +1,41 @@
-import { convertToISO8601 } from '../../../utils/dates';
-import { BrokerOperation } from '../../types';
+import { convertToISO8601 } from "../../../utils/dates";
+import { BrokerOperation } from "../../types";
 
 export const alpacaOperations: Record<string, BrokerOperation> = {
   get_account: {
-    method: 'get',
-    path: '/v2/account',
+    method: "get",
+    path: "/v2/account",
   },
   get_positions: {
-    method: 'get',
-    path: '/v2/positions',
+    method: "get",
+    path: "/v2/positions",
   },
   get_orders: {
-    method: 'get',
-    path: '/v2/orders',
+    method: "get",
+    path: "/v2/orders",
     makeParams: () => ({
-      status: 'all',
-      limit: '100',
+      status: "all",
+      limit: "100",
     }),
   },
   cancel_orders: {
-    method: 'delete',
-    path: '/v2/orders',
+    method: "delete",
+    path: "/v2/orders",
   },
   get_candle: {
-    method: 'get',
+    method: "get",
     path: (input: any) =>
-      input.asset_type === 'crypto' ? '/v1beta3/crypto/us/bars' : '/v2/stocks/bars',
+      input.asset_type === "crypto"
+        ? "/v1beta3/crypto/us/bars"
+        : "/v2/stocks/bars",
     makeParams: (input: any) => {
-      if (!input.symbol) throw new Error('Symbol is required for get_candle operation');
+      if (!input.symbol)
+        throw new Error("Symbol is required for get_candle operation");
       const params: Record<string, any> = {
         symbols: input.symbol,
         timeframe: input.interval,
         start: input.start,
-        adjustment: 'raw',
+        adjustment: "raw",
         feed: input.feed,
         sort: input.sort,
         limit: Math.min(Number(input.limit) || 10000, 10000), // Max 10000 per request
@@ -43,10 +46,10 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
     pagination: {
       enabled: true,
-      tokenField: 'next_page_token',
-      paramField: 'page_token',
-      dataField: 'bars',
-      mergeStrategy: 'concat',
+      tokenField: "next_page_token",
+      paramField: "page_token",
+      dataField: "bars",
+      mergeStrategy: "concat",
     },
     transformResult: (raw: any, input: any) => ({
       symbol: input.symbol,
@@ -56,66 +59,83 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     }),
   },
   get_latest_bar: {
-    method: 'get',
+    method: "get",
     path: (input: any) =>
-      input.asset_type === 'crypto' ? '/v1beta3/crypto/us/latest/bars' : '/v2/stocks/bars/latest',
+      input.asset_type === "crypto"
+        ? "/v1beta3/crypto/us/latest/bars"
+        : "/v2/stocks/bars/latest",
     makeParams: (input: any) => {
-      if (!input.symbol) throw new Error('Symbol is required for get_latest_bar operation');
+      if (!input.symbol)
+        throw new Error("Symbol is required for get_latest_bar operation");
       const params: any = { symbols: input.symbol };
-      if (input.asset_type !== 'crypto' && input.feed) params.feed = input.feed;
+      if (input.asset_type !== "crypto" && input.feed) params.feed = input.feed;
       if (input.currency) params.currency = input.currency;
       return params;
     },
     transformResult: (raw: any, input: any) => ({
       symbol: input.symbol,
-      bar: raw.bars?.[input.symbol] ? [raw.bars[input.symbol]] : [],
+      bars: raw.bars?.[input.symbol]
+        ? [
+            {
+              openTime: raw.bars[input.symbol].t,
+              open: raw.bars[input.symbol].o,
+              high: raw.bars[input.symbol].h,
+              low: raw.bars[input.symbol].l,
+              close: raw.bars[input.symbol].c,
+              volume: raw.bars[input.symbol].v,
+              trades: raw.bars[input.symbol].n,
+              vwap: raw.bars[input.symbol].vw,
+            },
+          ]
+        : [],
     }),
   },
   fetch_news: {
-    method: 'get',
-    path: '/v1beta1/news',
+    method: "get",
+    path: "/v1beta1/news",
     makeParams: (input: any) => {
       const params: any = {};
 
       if (input.symbols) {
         const symbolArray =
-          typeof input.symbols === 'string'
+          typeof input.symbols === "string"
             ? input.symbols
-                .split(',')
+                .split(",")
                 .map((s: string) => s.trim())
                 .filter(Boolean)
             : Array.isArray(input.symbols)
               ? input.symbols
               : [];
         if (symbolArray.length > 0) {
-          params.symbols = symbolArray.join(',');
+          params.symbols = symbolArray.join(",");
         }
       }
 
-      if (input.start && input.start.trim() !== '') {
+      if (input.start && input.start.trim() !== "") {
         params.start = convertToISO8601(input.start);
       }
-      if (input.end && input.end.trim() !== '') {
+      if (input.end && input.end.trim() !== "") {
         params.end = convertToISO8601(input.end);
       }
 
-      if (input.limit && input.limit.toString().trim() !== '') {
+      if (input.limit && input.limit.toString().trim() !== "") {
         const limitNum = Number(input.limit);
         if (!isNaN(limitNum) && limitNum > 0) {
           params.limit = limitNum;
         }
       }
 
-      if (input.sort && input.sort.trim() !== '') {
+      if (input.sort && input.sort.trim() !== "") {
         params.sort = input.sort.trim();
       }
 
-      if (input.page_token && input.page_token.trim() !== '') {
+      if (input.page_token && input.page_token.trim() !== "") {
         params.page_token = input.page_token.trim();
       }
 
-      if (input.include_content !== undefined && input.include_content !== '') {
-        params.include_content = input.include_content === 'true' || input.include_content === true;
+      if (input.include_content !== undefined && input.include_content !== "") {
+        params.include_content =
+          input.include_content === "true" || input.include_content === true;
       }
 
       return params;
@@ -127,8 +147,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     }),
   },
   place_order: {
-    method: 'post',
-    path: '/v2/orders',
+    method: "post",
+    path: "/v2/orders",
     makeBody: (input: any) => {
       const {
         symbol,
@@ -145,26 +165,31 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         extended_hours,
       } = input;
 
-      if (!symbol) throw new Error('Symbol is required for place_order');
-      if (!qty && !notional) throw new Error('Either qty or notional must be provided');
+      if (!symbol) throw new Error("Symbol is required for place_order");
+      if (!qty && !notional)
+        throw new Error("Either qty or notional must be provided");
 
       const body: any = { symbol, side, type, time_in_force };
 
-      if (type === 'limit') {
-        if (!limit_price) throw new Error('Limit orders require a limit_price');
+      if (type === "limit") {
+        if (!limit_price) throw new Error("Limit orders require a limit_price");
         body.limit_price = String(limit_price);
-      } else if (type === 'stop') {
-        if (!stop_price) throw new Error('Stop orders require a stop_price');
+      } else if (type === "stop") {
+        if (!stop_price) throw new Error("Stop orders require a stop_price");
         body.stop_price = String(stop_price);
-      } else if (type === 'stop_limit') {
+      } else if (type === "stop_limit") {
         if (!stop_price || !stop_limit_price) {
-          throw new Error('Stop limit orders require both stop_price and limit_price');
+          throw new Error(
+            "Stop limit orders require both stop_price and limit_price",
+          );
         }
         body.stop_price = String(stop_price);
         body.limit_price = String(stop_limit_price);
-      } else if (type === 'trailing_stop') {
+      } else if (type === "trailing_stop") {
         if (!trail_percent && !trail_price) {
-          throw new Error('Either trail percent or trail price must be provided');
+          throw new Error(
+            "Either trail percent or trail price must be provided",
+          );
         }
         if (trail_percent) body.trail_percent = String(trail_percent);
         else body.trail_price = String(trail_price);
@@ -173,7 +198,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       if (notional) body.notional = String(notional);
       else body.qty = String(qty);
 
-      if (extended_hours === 'true' || extended_hours === true) {
+      if (extended_hours === "true" || extended_hours === true) {
         body.extended_hours = true;
       }
 

@@ -222,13 +222,10 @@ export class BrokerExecutor implements INodeExecutor {
           timeout: 30000,
         });
 
-        ((data = response.data), resolvedParams);
+        data = op.transformResult
+          ? op.transformResult(response.data, resolvedParams)
+          : response.data;
       }
-
-      data = {
-        ...data,
-        interval: resolvedParams.interval,
-      };
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 

@@ -1,3 +1,4 @@
+import { interval } from "date-fns";
 import { getBinanceTimestamp } from "../../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../../utils/crypto";
 import { BrokerOperation } from "../../types";
@@ -159,54 +160,21 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     transformResult: (raw: any, input: any) => {
       if (!Array.isArray(raw)) return { symbol: input.symbol, candles: [] };
 
-      const candles = raw.map((kline: any) => ({
-        t: kline[0],
-        o: parseFloat(kline[1]),
-        h: parseFloat(kline[2]),
-        l: parseFloat(kline[3]),
-        c: parseFloat(kline[4]),
-        v: parseFloat(kline[5]),
+      const bars = raw.map((kline: any) => ({
+        openTime: kline[0],
+        open: parseFloat(kline[1]),
+        high: parseFloat(kline[2]),
+        low: parseFloat(kline[3]),
+        close: parseFloat(kline[4]),
+        volume: parseFloat(kline[5]),
+        closeTime: kline[6],
+        quoteVolume: kline[7],
+        numberOfTrades: kline[8],
+        takerBuyBaseVolume: kline[9],
+        takerBuyQuoteVolume: kline[10],
       }));
 
-      return { symbol: input.symbol, candles };
-    },
-  },
-  get_latest_bar: {
-    method: "get",
-    path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
-    },
-    makeParams: (input: any) => {
-      if (!input.symbol)
-        throw new Error("symbol is required for get_latest_bar");
-      return {
-        symbol: input.symbol,
-        interval: input.interval || "1h",
-        limit: 1,
-      };
-    },
-    transformResult: (raw: any[], input: any) => {
-      if (!Array.isArray(raw) || raw.length === 0) {
-        return { symbol: input.symbol, bar: [] };
-      }
-
-      const k = raw[0];
-
-      return {
-        symbol: input.symbol,
-        bar: [
-          {
-            t: k[0],
-            o: parseFloat(k[1]),
-            h: parseFloat(k[2]),
-            l: parseFloat(k[3]),
-            c: parseFloat(k[4]),
-            v: parseFloat(k[5]),
-            T: k[6],
-          },
-        ],
-      };
+      return { symbol: input.symbol, bars: bars };
     },
   },
   get_ticker: {

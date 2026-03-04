@@ -36,7 +36,9 @@
       "required": true,
       "displayOptions": {
         "hide": {
-          "operator": ["now"]
+          "operator": [
+            "now"
+          ]
         }
       }
     },
@@ -153,7 +155,7 @@
         },
         "datetime": {
           "label": "Date & Time",
-          "icon": "\ud83d\udcc5",
+          "icon": "📅",
           "options": [
             {
               "label": "Now",
@@ -219,7 +221,7 @@
         },
         "array": {
           "label": "Array",
-          "icon": "\u2261",
+          "icon": "≡",
           "options": [
             {
               "label": "Length",
@@ -329,7 +331,7 @@
         },
         "object": {
           "label": "Object",
-          "icon": "\u2295",
+          "icon": "⊕",
           "options": [
             {
               "label": "Get Keys",
@@ -400,7 +402,6 @@
             "multiply",
             "divide",
             "modulo",
-            "formatDate",
             "addTime",
             "subtractTime",
             "push",
@@ -438,7 +439,6 @@
           "multiply": "Number",
           "divide": "Number",
           "modulo": "Number",
-          "formatDate": "Format (e.g. yyyy-MM-dd)",
           "addTime": "Amount",
           "subtractTime": "Amount",
           "convertTimezone": "Format (optional)",
@@ -517,7 +517,12 @@
       "placeholder": "Date to compare",
       "displayOptions": {
         "show": {
-          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
+          "operator": [
+            "difference",
+            "isBefore",
+            "isAfter",
+            "isSameDay"
+          ]
         }
       }
     },
@@ -634,7 +639,10 @@
       "default": "UTC",
       "displayOptions": {
         "show": {
-          "operator": ["now", "convertTimezone"]
+          "operator": [
+            "now",
+            "convertTimezone"
+          ]
         }
       }
     },
@@ -675,7 +683,9 @@
       "default": "1",
       "displayOptions": {
         "show": {
-          "operator": ["isDayOfWeek"]
+          "operator": [
+            "isDayOfWeek"
+          ]
         }
       }
     },
@@ -740,7 +750,10 @@
       "default": "===",
       "displayOptions": {
         "show": {
-          "operator": ["find", "filter"]
+          "operator": [
+            "find",
+            "filter"
+          ]
         }
       }
     },
@@ -800,7 +813,9 @@
       ],
       "displayOptions": {
         "show": {
-          "operator": ["map"]
+          "operator": [
+            "map"
+          ]
         }
       }
     },
@@ -811,7 +826,123 @@
       "placeholder": "0",
       "displayOptions": {
         "show": {
-          "operator": ["map"]
+          "operator": [
+            "map"
+          ]
+        }
+      }
+    },
+    {
+      "key": "inputFormat",
+      "label": "Input Format",
+      "type": "select",
+      "options": [
+        {
+          "label": "Auto Detect",
+          "value": "auto"
+        },
+        {
+          "label": "Unix Timestamp (ms)",
+          "value": "timestamp_ms"
+        },
+        {
+          "label": "Unix Timestamp (s)",
+          "value": "timestamp_s"
+        },
+        {
+          "label": "ISO 8601",
+          "value": "iso"
+        },
+        {
+          "label": "YYYY-MM-DD",
+          "value": "YYYY-MM-DD"
+        },
+        {
+          "label": "DD/MM/YYYY",
+          "value": "DD/MM/YYYY"
+        },
+        {
+          "label": "MM/DD/YYYY",
+          "value": "MM/DD/YYYY"
+        },
+        {
+          "label": "YYYY-MM-DD HH:mm:ss",
+          "value": "YYYY-MM-DD HH:mm:ss"
+        }
+      ],
+      "default": "auto",
+      "description": "Format of the incoming date value.",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "formatDate"
+          ]
+        }
+      }
+    },
+    {
+      "key": "outputFormat",
+      "label": "Output Format",
+      "type": "select",
+      "options": [
+        {
+          "label": "YYYY-MM-DD",
+          "value": "YYYY-MM-DD"
+        },
+        {
+          "label": "DD/MM/YYYY",
+          "value": "DD/MM/YYYY"
+        },
+        {
+          "label": "MM/DD/YYYY",
+          "value": "MM/DD/YYYY"
+        },
+        {
+          "label": "YYYY-MM-DD HH:mm:ss",
+          "value": "YYYY-MM-DD HH:mm:ss"
+        },
+        {
+          "label": "DD MMM YYYY",
+          "value": "DD MMM YYYY"
+        },
+        {
+          "label": "ISO 8601",
+          "value": "iso"
+        },
+        {
+          "label": "Unix Timestamp (ms)",
+          "value": "timestamp_ms"
+        },
+        {
+          "label": "Unix Timestamp (s)",
+          "value": "timestamp_s"
+        },
+        {
+          "label": "Custom",
+          "value": "custom"
+        }
+      ],
+      "default": "YYYY-MM-DD HH:mm:ss",
+      "description": "Desired output format for the date.",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "formatDate"
+          ]
+        }
+      }
+    },
+    {
+      "key": "customOutputFormat",
+      "label": "Custom Format Pattern",
+      "type": "text",
+      "placeholder": "e.g. DD-MMM-YYYY HH:mm",
+      "description": "Custom date format pattern using YYYY, MM, DD, HH, mm, ss tokens.",
+      "displayOptions": {
+        "show": {
+          "outputFormat": [
+            "custom"
+          ]
         }
       }
     },

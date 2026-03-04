@@ -84,6 +84,8 @@ export interface ComputeInput {
   unit?: string;
   timezone?: string;
   inputFormat?: string;
+  outputFormat?: string;
+  customOutputFormat?: string;
   targetDay?: string;
 }
 
@@ -162,6 +164,8 @@ export class ComputeService {
         unit,
         timezone,
         inputFormat,
+        outputFormat,
+        customOutputFormat,
         targetDay,
         mapSubOperation,
         mapIndex,
@@ -398,14 +402,74 @@ export class ComputeService {
 
         // ============== DATETIME OPERATIONS ==============
         case "formatDate": {
-          const date = new Date(value);
+          const selectedInputFormat = String(inputFormat || "auto");
+          let date: Date;
+
+          switch (selectedInputFormat) {
+            case "timestamp_ms":
+              date = new Date(Number(value));
+              break;
+            case "timestamp_s":
+              date = new Date(Number(value) * 1000);
+              break;
+            case "DD/MM/YYYY": {
+              const [d, m, y] = String(value).split("/");
+              date = new Date(`${y}-${m}-${d}`);
+              break;
+            }
+            case "MM/DD/YYYY": {
+              const [m, d, y] = String(value).split("/");
+              date = new Date(`${y}-${m}-${d}`);
+              break;
+            }
+            default:
+              date = new Date(value);
+          }
+
           if (isNaN(date.getTime()))
-            return createErrorOutput("Invalid date value");
-          const formatStr = String(arg1 || "YYYY-MM-DD HH:mm:ss");
+            return createErrorOutput(
+              "Invalid date value for the specified input format",
+            );
+
+          const selectedOutputFormat = String(
+            outputFormat || "YYYY-MM-DD HH:mm:ss",
+          );
+
+          if (selectedOutputFormat === "iso") {
+            return createSuccessOutput(date.toISOString());
+          }
+
+          if (selectedOutputFormat === "timestamp_ms") {
+            return createSuccessOutput(date.getTime());
+          }
+
+          if (selectedOutputFormat === "timestamp_s") {
+            return createSuccessOutput(Math.floor(date.getTime() / 1000));
+          }
+
+          const formatStr =
+            selectedOutputFormat === "custom"
+              ? String(customOutputFormat || "YYYY-MM-DD HH:mm:ss")
+              : selectedOutputFormat;
 
           const pad = (n: number) => n.toString().padStart(2, "0");
+          const months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
           const formatted = formatStr
             .replace("YYYY", date.getFullYear().toString())
+            .replace("MMM", months[date.getMonth()])
             .replace("MM", pad(date.getMonth() + 1))
             .replace("DD", pad(date.getDate()))
             .replace("HH", pad(date.getHours()))

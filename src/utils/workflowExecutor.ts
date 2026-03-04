@@ -28,7 +28,7 @@ export interface ExecutorContext {
   executeNode?: (
     nodeId: string,
     executed: Set<string>,
-    explicitlyTriggered?: boolean
+    explicitlyTriggered?: boolean,
   ) => Promise<any>;
 }
 
@@ -100,7 +100,7 @@ export class WorkflowExecutor {
   private areDependenciesSatisfied(
     nodeId: string,
     executed: Set<string>,
-    failed: Set<string>
+    failed: Set<string>,
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
       const n = this.context.nodes.find((x) => x.id === nodeId);
@@ -148,7 +148,7 @@ export class WorkflowExecutor {
 
     console.log(
       `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`,
-      Array.from(this.conditionalMap.entries())
+      Array.from(this.conditionalMap.entries()),
     );
   }
   /**
@@ -156,7 +156,7 @@ export class WorkflowExecutor {
    */
   async executeConditionalChain(
     startNodeId: string,
-    completedNodes: Set<string>
+    completedNodes: Set<string>,
   ): Promise<void> {
     console.log(`🎯 Starting conditional chain from: ${startNodeId}`);
 
@@ -171,7 +171,7 @@ export class WorkflowExecutor {
             console.log(`✅ Node ${startNodeId} succeeded with result`, result);
             completedNodes.add(startNodeId);
             const currentNode = this.context.nodes.find(
-              (n) => n.id === startNodeId
+              (n) => n.id === startNodeId,
             );
 
             const isBranchNode = this.conditionalMap.has(startNodeId);
@@ -179,7 +179,7 @@ export class WorkflowExecutor {
               await this.handleBranchNodeResult(
                 startNodeId,
                 result,
-                completedNodes
+                completedNodes,
               );
             } else {
               await this.executeDownstreamNodes(startNodeId, completedNodes);
@@ -204,7 +204,7 @@ export class WorkflowExecutor {
   private async handleBranchNodeResult(
     nodeId: string,
     result: any,
-    completedNodes: Set<string>
+    completedNodes: Set<string>,
   ): Promise<void> {
     // Normalize result to handle key
     let handleKey: string;
@@ -233,7 +233,7 @@ export class WorkflowExecutor {
     }
 
     console.log(
-      `🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targets}`
+      `🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targets}`,
     );
     // Execute all targets for this branch
     for (const targetId of targets) {
@@ -246,7 +246,7 @@ export class WorkflowExecutor {
    */
   private async executeDownstreamNodes(
     nodeId: string,
-    completedNodes: Set<string>
+    completedNodes: Set<string>,
   ): Promise<void> {
     const downstream = this.context.edges.filter((e) => {
       if (e.source !== nodeId) return false;
@@ -271,12 +271,12 @@ export class WorkflowExecutor {
     if (targetNodeId) {
       // Highlight only the specific edge from source to target (for conditional paths)
       connected = this.context.edges.filter(
-        (e) => e.source === nodeId && e.target === targetNodeId
+        (e) => e.source === nodeId && e.target === targetNodeId,
       );
     } else {
       // Highlight all edges connected to the node
       connected = this.context.edges.filter(
-        (e) => e.source === nodeId || e.target === nodeId
+        (e) => e.source === nodeId || e.target === nodeId,
       );
     }
 
@@ -304,8 +304,8 @@ export class WorkflowExecutor {
                 stroke: undefined,
                 strokeWidth: undefined,
               },
-            }
-      )
+            },
+      ),
     );
   }
 
@@ -335,8 +335,8 @@ export class WorkflowExecutor {
                 backgroundColor: undefined,
                 boxShadow: undefined,
               },
-            }
-      )
+            },
+      ),
     );
   }
 
@@ -370,8 +370,8 @@ export class WorkflowExecutor {
                 backgroundColor: undefined,
                 boxShadow: undefined,
               },
-            }
-      )
+            },
+      ),
     );
   }
 
@@ -381,14 +381,14 @@ export class WorkflowExecutor {
   private async executeStreamingNode(
     nodeId: string,
     executedSet: Set<string>,
-    explicitlyTriggered: boolean
+    explicitlyTriggered: boolean,
   ): Promise<any> {
     const node = this.context.nodes.find((n) => n.id === nodeId);
     const definition = node?.data?.definition as any;
     const timeout = definition?.streamingConfig?.timeout || 30000;
 
     console.log(
-      `🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`
+      `🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`,
     );
 
     this.context.setExecutingNode(nodeId);
@@ -419,7 +419,7 @@ export class WorkflowExecutor {
     } catch (error) {
       console.error(
         `❌ [STREAMING] Node ${nodeId} subscription failed:`,
-        error
+        error,
       );
       throw error;
     }
@@ -431,8 +431,8 @@ export class WorkflowExecutor {
       const timeoutId = setTimeout(() => {
         reject(
           new Error(
-            `Streaming node ${nodeId} timed out waiting for data after ${timeout}ms`
-          )
+            `Streaming node ${nodeId} timed out waiting for data after ${timeout}ms`,
+          ),
         );
       }, timeout);
 
@@ -454,7 +454,7 @@ export class WorkflowExecutor {
           clearTimeout(timeoutId);
           console.log(
             `📨 [STREAMING] Node ${nodeId} received first data:`,
-            output
+            output,
           );
           resolve(output);
           return;
@@ -465,7 +465,7 @@ export class WorkflowExecutor {
           clearTimeout(timeoutId);
           console.log(
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
-            output
+            output,
           );
           resolve(output);
           return;
@@ -492,8 +492,8 @@ export class WorkflowExecutor {
                 isStreamingWaiting: false,
               },
             }
-          : n
-      )
+          : n,
+      ),
     );
 
     this.nodeStore.setNodeData(nodeId, { output: result });
@@ -519,7 +519,7 @@ export class WorkflowExecutor {
 
     if (!isFeedbackEdge) {
       console.log(
-        `🚫 [LOOP AGGREGATION] Skipping trigger edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} - not a feedback edge`
+        `🚫 [LOOP AGGREGATION] Skipping trigger edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} - not a feedback edge`,
       );
       return;
     }
@@ -531,7 +531,7 @@ export class WorkflowExecutor {
 
     console.log(
       `🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated feedback result:`,
-      result
+      result,
     );
 
     // Optional: mirror payload to edge UI for visibility
@@ -539,8 +539,8 @@ export class WorkflowExecutor {
       eds.map((e) =>
         e.id === edge.id
           ? { ...e, data: { ...e.data, lastPayload: result } }
-          : e
-      )
+          : e,
+      ),
     );
   }
 
@@ -550,7 +550,7 @@ export class WorkflowExecutor {
    */
   private isNodeDownstreamOfLoop(
     sourceNodeId: string,
-    loopNodeId: string
+    loopNodeId: string,
   ): boolean {
     // Get all nodes that are downstream of the Loop node
     const downstreamNodes = this.getDownstreamNodes(loopNodeId, new Set());
@@ -564,7 +564,7 @@ export class WorkflowExecutor {
    */
   private getDownstreamNodes(
     nodeId: string,
-    visited: Set<string> = new Set()
+    visited: Set<string> = new Set(),
   ): Set<string> {
     if (visited.has(nodeId)) return new Set();
 
@@ -579,7 +579,7 @@ export class WorkflowExecutor {
       // Recursively get downstream nodes, but avoid infinite loops
       const nestedDownstream = this.getDownstreamNodes(
         edge.target,
-        new Set(visited)
+        new Set(visited),
       );
       nestedDownstream.forEach((id) => downstream.add(id));
     }
@@ -593,7 +593,7 @@ export class WorkflowExecutor {
   async executeNode(
     nodeId: string,
     executedSet: Set<string>,
-    explicitlyTriggered = false
+    explicitlyTriggered = false,
   ): Promise<any> {
     const node = this.context.nodes.find((n) => n.id === nodeId);
     if (!node) {
@@ -607,7 +607,7 @@ export class WorkflowExecutor {
       return this.executeStreamingNode(
         nodeId,
         executedSet,
-        explicitlyTriggered
+        explicitlyTriggered,
       );
     }
 
@@ -622,28 +622,29 @@ export class WorkflowExecutor {
     // Default (non-Loop) node execution
     const result: any = await Promise.race([
       new Promise((resolve, reject) => {
-      const execEvent = new CustomEvent("auto-execute-node", {
-        detail: {
-          nodeId,
-          executedSet,
-          allNodes: this.context.nodes,
-          allEdges: this.context.edges,
-          explicitlyTriggered,
-          onSuccess: (res?: any) => {
-            resolve(res);
-          },
-          onError: (err: any) => {
-            reject(err);
-          },
-        } as NodeExecutionDetail,
-      });
-      window.dispatchEvent(execEvent);
+        const execEvent = new CustomEvent("auto-execute-node", {
+          detail: {
+            nodeId,
+            executedSet,
+            allNodes: this.context.nodes,
+            allEdges: this.context.edges,
+            explicitlyTriggered,
+            onSuccess: (res?: any) => {
+              resolve(res);
+            },
+            onError: (err: any) => {
+              reject(err);
+            },
+          } as NodeExecutionDetail,
+        });
+        window.dispatchEvent(execEvent);
       }),
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Node ${nodeId} execution timed out after 30s`)),
-          30000
-        )
+          () =>
+            reject(new Error(`Node ${nodeId} execution timed out after 30s`)),
+          30000,
+        ),
       ),
     ]);
 
@@ -660,7 +661,7 @@ export class WorkflowExecutor {
    */
   async executeAllNodes(): Promise<void> {
     console.log(
-      "🚀 [WORKFLOW EXECUTOR] Starting optimized FIFO queue‑based workflow execution"
+      "🚀 [WORKFLOW EXECUTOR] Starting optimized FIFO queue‑based workflow execution",
     );
 
     if (this.isAutoExecuting) {
@@ -691,14 +692,14 @@ export class WorkflowExecutor {
         (n) =>
           ((n.data.definition as any)?.node_type === "trigger" ||
             (n.data.definition as any)?.node_type === "backtest") &&
-          !this.context.edges.some((e) => e.target === n.id)
+          !this.context.edges.some((e) => e.target === n.id),
       )
       .map((n) => n.id);
     const queue: string[] = [...roots];
 
     console.log(
       `🎯 [WORKFLOW EXECUTOR] Found ${roots.length} root nodes:`,
-      roots
+      roots,
     );
 
     const barState = {
@@ -712,30 +713,30 @@ export class WorkflowExecutor {
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
 
-        const inc = this.context.edges.filter((e) => e.target === id);
-        const missing =
-          (node.data.definition as any)?.node_type == "trigger" ||
-          (node.data.definition as any)?.node_type == "backtest" ||
-          node.type === "Loop"
-            ? []
-            : inc.filter(
-                (e) => !executed.has(e.source) && !failed.has(e.source)
-              );
+        // const inc = this.context.edges.filter((e) => e.target === id);
+        // const missing =
+        //   (node.data.definition as any)?.node_type == "trigger" ||
+        //   (node.data.definition as any)?.node_type == "backtest" ||
+        //   node.type === "Loop"
+        //     ? []
+        //     : inc.filter(
+        //         (e) => !executed.has(e.source) && !failed.has(e.source),
+        //       );
 
-        if (missing.length) {
-          const retries = retryCount.get(id) || 0;
-          if (retries >= MAX_RETRIES) {
-            console.error(
-              `❌ [WORKFLOW EXECUTOR] Node ${id} exceeded retry limit (${MAX_RETRIES}), marking as failed`
-            );
-            failed.add(id);
-            metrics.failedNodes.add(id);
-            continue;
-          }
-          retryCount.set(id, retries + 1);
-          queue.push(id);
-          continue;
-        }
+        // if (missing.length) {
+        //   const retries = retryCount.get(id) || 0;
+        //   if (retries >= MAX_RETRIES) {
+        //     console.error(
+        //       `❌ [WORKFLOW EXECUTOR] Node ${id} exceeded retry limit (${MAX_RETRIES}), marking as failed`,
+        //     );
+        //     failed.add(id);
+        //     metrics.failedNodes.add(id);
+        //     continue;
+        //   }
+        //   retryCount.set(id, retries + 1);
+        //   queue.push(id);
+        //   continue;
+        // }
 
         console.log(`⚡ [WORKFLOW EXECUTOR] Executing node: ${id}`);
         const nodeStart = performance.now();
@@ -746,14 +747,14 @@ export class WorkflowExecutor {
           const result = await this.executeNode(
             id,
             executed,
-            isConditionalTarget
+            isConditionalTarget,
           );
           if (node.type === "Loop") {
             const nodeData = this.nodeStore.getNodeData(node.id);
             const isFinalBatch = nodeData.done;
             if (isFinalBatch) {
               const doneEdges = this.context.edges.filter(
-                (e) => e.source === node.id && e.sourceHandle === "done"
+                (e) => e.source === node.id && e.sourceHandle === "done",
               );
               doneEdges.forEach((e) => {
                 this.nodeStore.setNodeData(e.target, {
@@ -772,8 +773,8 @@ export class WorkflowExecutor {
           metrics.completedNodes.add(id);
           console.log(
             `✅ [WORKFLOW EXECUTOR] Node ${id} completed in ${nodeTime.toFixed(
-              2
-            )}ms`
+              2,
+            )}ms`,
           );
 
           const defName = (node.data?.definition as any)?.name;
@@ -787,13 +788,13 @@ export class WorkflowExecutor {
             out = out.filter((e) =>
               loopState.done
                 ? e.sourceHandle === "done"
-                : !e.sourceHandle || e.sourceHandle === "loop"
+                : !e.sourceHandle || e.sourceHandle === "loop",
             );
           }
 
           console.log(
             `🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`,
-            out.map((e) => `${e.source} → ${e.target}`)
+            out.map((e) => `${e.source} → ${e.target}`),
           );
 
           // Use optimized conditional branch handling
@@ -804,12 +805,12 @@ export class WorkflowExecutor {
           const isBranchNode = this.conditionalMap.has(id);
           console.log(
             `🔍 [WORKFLOW EXECUTOR] Node ${id} is branch node: ${isBranchNode}, conditionalMap has:`,
-            Array.from(this.conditionalMap.keys())
+            Array.from(this.conditionalMap.keys()),
           );
 
           if (isBranchNode) {
             console.log(
-              `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`
+              `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`,
             );
 
             // 1) figure out the handle key exactly as you already do
@@ -826,20 +827,20 @@ export class WorkflowExecutor {
                 result.data.true === true
                   ? "true"
                   : result.data.false === true
-                  ? "false"
-                  : "";
+                    ? "false"
+                    : "";
             } else {
               handleKey = String(result.output || result);
             }
             console.log(
-              `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`
+              `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );
 
             // 2) pull back an array of targets (might be undefined)
             const branchMap = this.conditionalMap.get(id) || {};
             console.log(
               `🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`,
-              branchMap
+              branchMap,
             );
 
             // --- CHANGED HERE: treat entry as string[] not single string ---
@@ -849,7 +850,7 @@ export class WorkflowExecutor {
               // 3) for each target node, find its outgoing edge and collect into next[]
               next = targets
                 .map((targetNodeId) =>
-                  out.find((e) => e.target === targetNodeId)
+                  out.find((e) => e.target === targetNodeId),
                 )
                 .filter((e): e is Edge => !!e);
 
@@ -858,30 +859,30 @@ export class WorkflowExecutor {
 
               console.log(
                 `🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to`,
-                targets
+                targets,
               );
 
               // 4) highlight them all
               targets.forEach((t) => this.highlightEdges(id, t));
             } else {
               console.log(
-                `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`
+                `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`,
               );
             }
           } else {
             console.log(
-              `📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`
+              `📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`,
             );
             next = out;
             console.log(
               `➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`,
-              next.map((e) => e.target)
+              next.map((e) => e.target),
             );
           }
 
           // Deliver payloads, record them, and enqueue when dependencies are satisfied
           console.log(
-            `📝 [WORKFLOW EXECUTOR] About to deliver ${next.length} edges from node ${id}`
+            `📝 [WORKFLOW EXECUTOR] About to deliver ${next.length} edges from node ${id}`,
           );
           for (const e of next) {
             this.nodeStore.setNodeData(e.target, { input: result });
@@ -889,15 +890,15 @@ export class WorkflowExecutor {
             this.markEdgePayload(e.id, result);
 
             if (
-              !queue.includes(e.target) &&
+              !queue.includes(e.target) //&&
               //!executed.has(e.target) &&
               //!failed.has(e.target) &&
-              this.areDependenciesSatisfied(e.target, executed, failed)
+              //this.areDependenciesSatisfied(e.target, executed, failed)
             ) {
               queue.push(e.target);
-              if (isConditionalExecution) {
-                retryCount.set(e.target + "_conditional", 1);
-              }
+              // if (isConditionalExecution) {
+              //   retryCount.set(e.target + "_conditional", 1);
+              // }
             }
           }
 
@@ -909,7 +910,7 @@ export class WorkflowExecutor {
           this.clearIncomingEdgePayloads(id);
           console.log(
             `📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`,
-            queue
+            queue,
           );
         } catch (error) {
           const nodeTime = performance.now() - nodeStart;
@@ -918,9 +919,9 @@ export class WorkflowExecutor {
           metrics.failedNodes.add(id);
           console.error(
             `❌ [WORKFLOW EXECUTOR] Node ${id} failed after ${nodeTime.toFixed(
-              2
+              2,
             )}ms:`,
-            error
+            error,
           );
 
           this.clearIncomingEdgePayloads(id);
@@ -932,8 +933,8 @@ export class WorkflowExecutor {
               !failed.has(n.id) &&
               !queue.includes(n.id) &&
               !this.context.edges.some(
-                (e) => e.target === n.id && e.source === id
-              )
+                (e) => e.target === n.id && e.source === id,
+              ),
           );
           independentNodes.forEach((n) => queue.push(n.id));
         }
@@ -948,7 +949,7 @@ export class WorkflowExecutor {
       while (barState.onBarNodeId && barState.onBarHasMore) {
         const downstream = this.getDownstreamNodes(
           barState.onBarNodeId,
-          new Set()
+          new Set(),
         );
         for (const downId of downstream) {
           executed.delete(downId);
@@ -971,10 +972,10 @@ export class WorkflowExecutor {
       const failureCount = metrics.failedNodes.size;
 
       console.log(
-        `🎉 [WORKFLOW EXECUTOR] Execution complete in ${totalTime.toFixed(2)}ms`
+        `🎉 [WORKFLOW EXECUTOR] Execution complete in ${totalTime.toFixed(2)}ms`,
       );
       console.log(
-        `📊 [WORKFLOW EXECUTOR] Results: ${successCount} succeeded, ${failureCount} failed`
+        `📊 [WORKFLOW EXECUTOR] Results: ${successCount} succeeded, ${failureCount} failed`,
       );
 
       if (metrics.nodeTimings.size > 0) {
@@ -983,8 +984,8 @@ export class WorkflowExecutor {
           metrics.nodeTimings.size;
         console.log(
           `⏱️ [WORKFLOW EXECUTOR] Average node execution time: ${avgTime.toFixed(
-            2
-          )}ms`
+            2,
+          )}ms`,
         );
       }
 
@@ -1010,7 +1011,7 @@ export class WorkflowExecutor {
           animated: false,
           className: "",
           style: { ...e.style, stroke: undefined, strokeWidth: undefined },
-        }))
+        })),
       );
       this.context.setNodes((nodes) =>
         nodes.map((n) => ({
@@ -1022,7 +1023,7 @@ export class WorkflowExecutor {
             backgroundColor: undefined,
             boxShadow: undefined,
           },
-        }))
+        })),
       );
     }
   }

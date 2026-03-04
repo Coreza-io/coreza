@@ -36,9 +36,7 @@
       "required": true,
       "displayOptions": {
         "hide": {
-          "operator": [
-            "now"
-          ]
+          "operator": ["now"]
         }
       }
     },
@@ -517,12 +515,7 @@
       "placeholder": "Date to compare",
       "displayOptions": {
         "show": {
-          "operator": [
-            "difference",
-            "isBefore",
-            "isAfter",
-            "isSameDay"
-          ]
+          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
         }
       }
     },
@@ -639,10 +632,7 @@
       "default": "UTC",
       "displayOptions": {
         "show": {
-          "operator": [
-            "now",
-            "convertTimezone"
-          ]
+          "operator": ["now", "convertTimezone"]
         }
       }
     },
@@ -683,9 +673,7 @@
       "default": "1",
       "displayOptions": {
         "show": {
-          "operator": [
-            "isDayOfWeek"
-          ]
+          "operator": ["isDayOfWeek"]
         }
       }
     },
@@ -750,10 +738,7 @@
       "default": "===",
       "displayOptions": {
         "show": {
-          "operator": [
-            "find",
-            "filter"
-          ]
+          "operator": ["find", "filter"]
         }
       }
     },
@@ -813,9 +798,7 @@
       ],
       "displayOptions": {
         "show": {
-          "operator": [
-            "map"
-          ]
+          "operator": ["map"]
         }
       }
     },
@@ -826,9 +809,7 @@
       "placeholder": "0",
       "displayOptions": {
         "show": {
-          "operator": [
-            "map"
-          ]
+          "operator": ["map"]
         }
       }
     },
@@ -874,9 +855,7 @@
       "description": "Format of the incoming date value.",
       "displayOptions": {
         "show": {
-          "operator": [
-            "formatDate"
-          ]
+          "operator": ["formatDate"]
         }
       }
     },
@@ -926,9 +905,7 @@
       "description": "Desired output format for the date.",
       "displayOptions": {
         "show": {
-          "operator": [
-            "formatDate"
-          ]
+          "operator": ["formatDate"]
         }
       }
     },
@@ -940,9 +917,7 @@
       "description": "Custom date format pattern using YYYY, MM, DD, HH, mm, ss tokens.",
       "displayOptions": {
         "show": {
-          "outputFormat": [
-            "custom"
-          ]
+          "outputFormat": ["custom"]
         }
       }
     },
@@ -960,8 +935,7 @@
             "setProperty",
             "find",
             "map",
-            "filter",
-            "formatDate"
+            "filter"
           ]
         }
       },

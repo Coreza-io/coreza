@@ -175,28 +175,39 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const assetType = input?.asset_type || "spot";
-      return assetType === "futures"
-        ? "/fapi/v1/ticker/24hr"
-        : "/api/v3/ticker/24hr";
+      return assetType === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
     },
     makeParams: (input: any) => {
       if (!input.symbol)
         throw new Error("symbol is required for get_latest_bar");
-      return { symbol: input.symbol };
+      return {
+        symbol: input.symbol,
+        interval: input.interval || "1h",
+        limit: 1,
+      };
     },
-    transformResult: (raw: any, input: any) => ({
-      symbol: input.symbol,
-      bar: [
-        {
-          t: raw.closeTime,
-          o: parseFloat(raw.openPrice),
-          h: parseFloat(raw.highPrice),
-          l: parseFloat(raw.lowPrice),
-          c: parseFloat(raw.lastPrice),
-          v: parseFloat(raw.volume),
-        },
-      ],
-    }),
+    transformResult: (raw: any[], input: any) => {
+      if (!Array.isArray(raw) || raw.length === 0) {
+        return { symbol: input.symbol, bar: [] };
+      }
+
+      const k = raw[0];
+
+      return {
+        symbol: input.symbol,
+        bar: [
+          {
+            t: k[0],
+            o: parseFloat(k[1]),
+            h: parseFloat(k[2]),
+            l: parseFloat(k[3]),
+            c: parseFloat(k[4]),
+            v: parseFloat(k[5]),
+            T: k[6],
+          },
+        ],
+      };
+    },
   },
   get_ticker: {
     method: "get",

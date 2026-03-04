@@ -212,7 +212,7 @@
       "description": "Kline/candlestick interval.",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": ["get_candle", "get_latest_bar"]
         }
       },
       "showDescription": false

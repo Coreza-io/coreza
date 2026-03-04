@@ -161,7 +161,6 @@ export class ComputeService {
         filterOperator,
         unit,
         timezone,
-        inputFormat,
         targetDay,
         mapSubOperation,
         mapIndex,
@@ -398,7 +397,7 @@ export class ComputeService {
 
         // ============== DATETIME OPERATIONS ==============
         case "formatDate": {
-          const selectedInputFormat = String(inputFormat || arg2 || "auto");
+          const selectedInputFormat = String(arg1 || "auto");
           let date: Date;
 
           switch (selectedInputFormat) {
@@ -433,7 +432,7 @@ export class ComputeService {
               "Invalid date value for the specified input format",
             );
 
-          const formatStr = String(arg1 || "YYYY-MM-DD HH:mm:ss");
+          const formatStr = String(arg2 || "YYYY-MM-DD HH:mm:ss");
 
           const pad = (n: number) => n.toString().padStart(2, "0");
           const formatted = formatStr

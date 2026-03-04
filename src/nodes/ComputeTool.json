@@ -432,7 +432,6 @@
             "multiply",
             "divide",
             "modulo",
-            "formatDate",
             "addTime",
             "subtractTime",
             "startOf",
@@ -474,7 +473,6 @@
           "multiply": "Number",
           "divide": "Number",
           "modulo": "Number",
-          "formatDate": "Input Format",
           "addTime": "Amount",
           "subtractTime": "Amount",
           "startOf": "Format (optional)",
@@ -744,6 +742,74 @@
         "show": {
           "operator": [
             "formatDate"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "outputFormat",
+      "label": "Output Format",
+      "type": "select",
+      "options": [
+        {
+          "label": "YYYY-MM-DD",
+          "value": "YYYY-MM-DD"
+        },
+        {
+          "label": "DD/MM/YYYY",
+          "value": "DD/MM/YYYY"
+        },
+        {
+          "label": "MM/DD/YYYY",
+          "value": "MM/DD/YYYY"
+        },
+        {
+          "label": "YYYY-MM-DD HH:mm:ss",
+          "value": "YYYY-MM-DD HH:mm:ss"
+        },
+        {
+          "label": "DD MMM YYYY",
+          "value": "DD MMM YYYY"
+        },
+        {
+          "label": "ISO 8601",
+          "value": "iso"
+        },
+        {
+          "label": "Unix Timestamp (ms)",
+          "value": "timestamp_ms"
+        },
+        {
+          "label": "Unix Timestamp (s)",
+          "value": "timestamp_s"
+        },
+        {
+          "label": "Custom",
+          "value": "custom"
+        }
+      ],
+      "default": "YYYY-MM-DD HH:mm:ss",
+      "description": "Desired output format for the date.",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "formatDate"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "customOutputFormat",
+      "label": "Custom Format Pattern",
+      "type": "text",
+      "placeholder": "e.g. DD-MMM-YYYY HH:mm",
+      "description": "Custom date format pattern using YYYY, MM, DD, HH, mm, ss tokens.",
+      "displayOptions": {
+        "show": {
+          "outputFormat": [
+            "custom"
           ]
         }
       },

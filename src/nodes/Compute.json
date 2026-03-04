@@ -960,7 +960,8 @@
             "setProperty",
             "find",
             "map",
-            "filter"
+            "filter",
+            "formatDate"
           ]
         }
       },
@@ -973,7 +974,8 @@
           "setProperty": "Value",
           "find": "Match Value",
           "map": "Argument (e.g. delimiter, property path)",
-          "filter": "Match Value"
+          "filter": "Match Value",
+          "formatDate": "Output Format (e.g. YYYY-MM-DD)"
         }
       }
     }

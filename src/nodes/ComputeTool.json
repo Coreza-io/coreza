@@ -831,7 +831,8 @@
             "find",
             "filter",
             "addTime",
-            "subtractTime"
+            "subtractTime",
+            "formatDate"
           ]
         }
       },
@@ -845,7 +846,8 @@
           "find": "Match Value",
           "filter": "Match Value",
           "addTime": "Format (optional)",
-          "subtractTime": "Format (optional)"
+          "subtractTime": "Format (optional)",
+          "formatDate": "Output Format (e.g. YYYY-MM-DD)"
         }
       },
       "showDescription": false

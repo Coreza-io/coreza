@@ -474,7 +474,7 @@
           "multiply": "Number",
           "divide": "Number",
           "modulo": "Number",
-          "formatDate": "Format (e.g. yyyy-MM-dd)",
+          "formatDate": "Input Format",
           "addTime": "Amount",
           "subtractTime": "Amount",
           "startOf": "Format (optional)",
@@ -716,7 +716,8 @@
             "find",
             "filter",
             "addTime",
-            "subtractTime"
+            "subtractTime",
+            "formatDate"
           ]
         }
       },
@@ -730,7 +731,8 @@
           "find": "Match Value",
           "filter": "Match Value",
           "addTime": "Format (optional)",
-          "subtractTime": "Format (optional)"
+          "subtractTime": "Format (optional)",
+          "formatDate": "Output Format (e.g. YYYY-MM-DD)"
         }
       },
       "showDescription": false

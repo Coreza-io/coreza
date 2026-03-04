@@ -398,9 +398,41 @@ export class ComputeService {
 
         // ============== DATETIME OPERATIONS ==============
         case "formatDate": {
-          const date = new Date(value);
+          const selectedInputFormat = String(inputFormat || arg2 || "auto");
+          let date: Date;
+
+          switch (selectedInputFormat) {
+            case "timestamp_ms":
+              date = new Date(Number(value));
+              break;
+            case "timestamp_s":
+              date = new Date(Number(value) * 1000);
+              break;
+            case "iso":
+            case "auto":
+            case "YYYY-MM-DD":
+            case "YYYY-MM-DD HH:mm:ss":
+              date = new Date(value);
+              break;
+            case "DD/MM/YYYY": {
+              const [d, m, y] = String(value).split("/");
+              date = new Date(`${y}-${m}-${d}`);
+              break;
+            }
+            case "MM/DD/YYYY": {
+              const [m, d, y] = String(value).split("/");
+              date = new Date(`${y}-${m}-${d}`);
+              break;
+            }
+            default:
+              date = new Date(value);
+          }
+
           if (isNaN(date.getTime()))
-            return createErrorOutput("Invalid date value");
+            return createErrorOutput(
+              "Invalid date value for the specified input format",
+            );
+
           const formatStr = String(arg1 || "YYYY-MM-DD HH:mm:ss");
 
           const pad = (n: number) => n.toString().padStart(2, "0");

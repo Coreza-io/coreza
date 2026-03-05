@@ -1,4 +1,4 @@
-import { Bar } from '../types';
+import type { Bar } from '../types';
 
 export interface BinanceBar {
   openTime: number;

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { lookupSecurityId } from './scripMaster';
-import { Bar, BarSeriesOutput, toBarSeries } from '../types';
+import type { Bar, BarSeriesOutput } from '../types';
+import { toBarSeries } from '../types';
 
 
 export interface DhanBar {

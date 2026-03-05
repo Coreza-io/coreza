@@ -1,4 +1,4 @@
-import { Bar } from '../types';
+import type { Bar } from '../types';
 import type { MarketEvent } from '../../types/marketEvent';
 
 export function buildAlpacaAuthMessage(creds: any) {

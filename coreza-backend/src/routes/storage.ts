@@ -55,7 +55,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     const storeKey = buildExecutionScopedKey({
       userId,
       workflowId: workflow_id,
-      runId: run_id || "manual",
+      runId: run_id || workflow_id,
       scope: node_id,
       parts: [symbol || "_", timeframe || "_"],
     });

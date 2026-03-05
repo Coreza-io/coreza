@@ -1,140 +1,77 @@
 
 
-# Update Portfolio: Use Explicit Fields Instead of Fill Data Blob
+# Plan: Workflow Download/Export (like n8n)
 
-## Problem
+## Overview
 
-The previous plan proposed a single `fill_data` textarea for `update_portfolio`, expecting the user to pass the entire Trade node JSON output. This is fragile and opaque. Instead, use three explicit fields -- `symbol`, `quantity`, and `price` -- that the user can wire individually from the Trade node output or type manually.
+Add a "Download" button to the WorkflowHeader that exports the current workflow as a `.json` file, similar to n8n's workflow export. The exported file will contain all workflow metadata, nodes, and edges in a portable format that can later be imported.
+
+## Export Format
+
+The exported JSON will follow a structure inspired by n8n:
+
+```json
+{
+  "meta": {
+    "exportedAt": "2026-03-05T...",
+    "version": "1.0",
+    "source": "coreza"
+  },
+  "name": "My Workflow",
+  "nodes": [
+    {
+      "id": "get_candle",
+      "type": "get_candle",
+      "category": "Market Data",
+      "subCategory": "Binance",
+      "position": { "x": 100, "y": 200 },
+      "values": { "symbol": "BTCUSDT", "interval": "1m" },
+      "displayName": "Get BTC Candles"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "get_candle",
+      "target": "sma",
+      "sourceHandle": "output_0",
+      "targetHandle": "input_0"
+    }
+  ],
+  "isActive": false
+}
+```
+
+This reuses the exact same `minimalNodes` format already used in `saveWorkflow` (lines 177-187 of `useWorkflowState.ts`), ensuring consistency.
 
 ## Changes
 
-### 1. Replace `fill_data` with explicit fields in `Portfolio.json`
+### 1. New utility: `src/utils/workflowExport.ts`
 
-Remove the proposed `fill_data` textarea. Instead, show `symbol`, `quantity`, and `price` fields when `operation = update_portfolio`:
+A small helper with two functions:
 
-```json
-{
-  "key": "symbol",
-  "label": "Symbol",
-  "type": "text",
-  "placeholder": "{{ $('BinanceTrade').json.symbol }}",
-  "required": true,
-  "displayOptions": { "show": { "operation": ["update_portfolio", "get_position", "update_mtm", "sync_trades", "get_pending_orders"] } }
-},
-{
-  "key": "quantity",
-  "label": "Quantity",
-  "type": "text",
-  "placeholder": "{{ $('BinanceTrade').json.executedQty }}",
-  "required": true,
-  "description": "Filled quantity. Positive for BUY, negative for SELL.",
-  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
-},
-{
-  "key": "price",
-  "label": "Price",
-  "type": "text",
-  "placeholder": "{{ $('BinanceTrade').json.avgPrice }}",
-  "required": true,
-  "description": "Average fill price.",
-  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
-}
-```
+- **`exportWorkflow(name, nodes, edges, isActive)`** — Builds the export object, strips runtime data (definitions, execution state), serializes to JSON, triggers a browser download as `{workflow-name}.json`
+- Uses the same `minimalNodes` cleaning logic from `saveWorkflow` to ensure only portable data is included (no node definitions, no execution results)
 
-Quantity uses the QC convention: positive = BUY, negative = SELL. This is simpler than a separate `side` field.
+### 2. Update `WorkflowHeader.tsx`
 
-### 2. Optional fields for commissions
+- Add a `Download` icon button (from lucide-react) next to the Save button
+- Wire it to call `onDownload` prop
+- Add `onDownload` to `WorkflowHeaderProps`
 
-Add an optional `commission` field for accurate cash tracking:
+### 3. Update `WorkflowEditor.tsx`
 
-```json
-{
-  "key": "commission",
-  "label": "Commission",
-  "type": "text",
-  "placeholder": "0",
-  "required": false,
-  "default": "0",
-  "description": "Trade commission (deducted from cash).",
-  "displayOptions": { "show": { "operation": ["update_portfolio"] } }
-}
-```
+- Import the export utility
+- Create `handleDownload` callback that calls `exportWorkflow` with current nodes/edges/name
+- Pass it as `onDownload` to `WorkflowHeader`
 
-### 3. Update `PortfolioExecutor.ts` -- `update_portfolio` case
-
-Instead of parsing a fill blob, read the three explicit params:
-
-```text
-case "update_portfolio": {
-  const symbol = params.symbol?.trim().toUpperCase();
-  const quantity = parseFloat(params.quantity);   // positive=BUY, negative=SELL
-  const price = parseFloat(params.price);
-  const commission = parseFloat(params.commission || "0");
-
-  if (!symbol) return error("symbol is required");
-  if (isNaN(quantity) || quantity === 0) return error("quantity must be non-zero");
-  if (isNaN(price) || price <= 0) return error("price must be positive");
-
-  pm.applyFill({ symbol, quantity, price, commission });
-  return success({ updated: true, ...this.getPortfolioSummary(pm) });
-}
-```
-
-### 4. Update `PortfolioManager.ts` -- new `applyFill` method
-
-A clean method that takes the three values and applies both the accounting loop updates:
-
-```text
-applyFill(fill: { symbol: string; quantity: number; price: number; commission?: number }): void {
-  const { symbol, quantity, price, commission = 0 } = fill;
-  const side = quantity > 0 ? "BUY" : "SELL";
-  const absQty = Math.abs(quantity);
-
-  // 1. Update holdings (quantity, avg price, realized PnL)
-  // -- same logic as existing applyFillToHoldings
-
-  // 2. Update cash (accounting loop)
-  const cost = absQty * price;
-  const baseCurrency = this.baseCurrency || "USDT";
-  const currentCash = this.cashBook.get(baseCurrency) ?? 0;
-  if (side === "BUY") {
-    this.cashBook.set(baseCurrency, currentCash - cost - commission);
-  } else {
-    this.cashBook.set(baseCurrency, currentCash + cost - commission);
-  }
-}
-```
-
-### 5. Workflow wiring after this change
-
-```text
-[Create Portfolio]
-  base_currency: USDT
-  cash_balance: 64786
-       |
-       v
-[BinanceTrade]  -- places order, returns fill info
-       |
-       v
-[Update Portfolio]  -- Accounting loop
-  symbol:     {{ $('BinanceTrade').json.symbol }}
-  quantity:   {{ $('BinanceTrade').json.executedQty }}
-  price:      {{ $('BinanceTrade').json.avgPrice }}
-  commission: {{ $('BinanceTrade').json.commission }}
-       |
-       v
-[Update MTM]  -- Valuation loop (on each bar)
-  current_bar: {{ $('OnBar').json.bar }}
-       |
-       v
-[Get Portfolio]  -- pure memory read
-```
-
-## Files Changed
+## File Summary
 
 | File | Change |
 |---|---|
-| `src/nodes/Portfolio.json` | Replace `fill_data` with `quantity`, `price`, `commission` fields for `update_portfolio`. Update symbol displayOptions. |
-| `coreza-backend/src/services/PortfolioManager.ts` | Add `applyFill({ symbol, quantity, price, commission })` method. |
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Update `update_portfolio` case to read explicit fields and call `pm.applyFill()`. |
+| `src/utils/workflowExport.ts` | **New** — `exportWorkflow()` utility |
+| `src/components/workflow/WorkflowHeader.tsx` | Add Download button + `onDownload` prop |
+| `src/pages/WorkflowEditor.tsx` | Wire `handleDownload` → `WorkflowHeader` |
+
+Three files, minimal scope. Import functionality can be added as a follow-up.
 

@@ -21,9 +21,9 @@ router.post("/", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { mode, workflow_id } = req.body;
+    const { mode, workflow_id, category } = req.body;
 
-    const executor = getNodeExecutor("Portfolio");
+    const executor = getNodeExecutor(category);
     if (!executor) {
       return res
         .status(500)

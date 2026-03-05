@@ -426,7 +426,10 @@ export class MarketDataSubscriber {
               interval: event.timeframe || "1m",
               bars: [
                 {
-                  time: typeof event.t === "number" ? event.t : Date.parse(String(event.t)),
+                  time:
+                    typeof event.t === "number"
+                      ? event.t
+                      : Date.parse(String(event.t)),
                   open: event.o,
                   high: event.h,
                   low: event.l,

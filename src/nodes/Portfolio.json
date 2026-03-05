@@ -3,7 +3,7 @@
   "def": "Portfolio",
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
-  "category": "Utility",
+  "category": "Portfolio",
   "description": "Query and update portfolio state -- positions, cash, equity, orders, trades. Works in both backtest and live broker modes.",
   "color": "text-orange-500",
   "size": {
@@ -52,9 +52,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "mode": [
-            "backtest"
-          ]
+          "mode": ["backtest"]
         }
       }
     },
@@ -144,9 +142,7 @@
       "description": "Starting cash balance in the base currency.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "create_portfolio"
-          ]
+          "operation": ["create_portfolio"]
         }
       }
     },
@@ -159,11 +155,7 @@
       "description": "One or more symbols (comma-separated).",
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_portfolio",
-            "get_position",
-            "update_mtm"
-          ]
+          "operation": ["update_portfolio", "get_position", "update_mtm"]
         }
       }
     },
@@ -185,9 +177,7 @@
       ],
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_portfolio"
-          ]
+          "operation": ["update_portfolio"]
         }
       }
     },
@@ -200,9 +190,7 @@
       "description": "Filled quantity (absolute value). Trade side controls whether it adds to or reduces the position.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_portfolio"
-          ]
+          "operation": ["update_portfolio"]
         }
       }
     },
@@ -215,10 +203,7 @@
       "description": "Average fill price.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_portfolio",
-            "update_mtm"
-          ]
+          "operation": ["update_portfolio", "update_mtm"]
         }
       }
     },
@@ -232,9 +217,7 @@
       "description": "Trade commission (deducted from cash).",
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_portfolio"
-          ]
+          "operation": ["update_portfolio"]
         }
       }
     },
@@ -247,12 +230,8 @@
       "description": "Current OHLCV bar for mark-to-market pricing",
       "displayOptions": {
         "show": {
-          "operation": [
-            "update_mtm"
-          ],
-          "mode": [
-            "backtest"
-          ]
+          "operation": ["update_mtm"],
+          "mode": ["backtest"]
         }
       }
     }
@@ -260,10 +239,7 @@
   "operationDisplayOptions": {
     "update_mtm": {
       "show": {
-        "mode": [
-          "backtest",
-          "broker"
-        ]
+        "mode": ["backtest", "broker"]
       }
     }
   }

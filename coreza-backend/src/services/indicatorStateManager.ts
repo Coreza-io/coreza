@@ -42,7 +42,6 @@ export function serializeParams(params: Record<string, any>): string {
     .join(":");
 }
 
-
 const STATE_VERSION = 2;
 
 export class IndicatorStateManager {
@@ -162,7 +161,7 @@ export class IndicatorStateManager {
       ...existing,
       previousValue: existing.currentValue,
       currentValue: value,
-      lastBarTime: String(bar?.t ?? bar?.timestamp ?? ""),
+      lastBarTime: String(bar?.time ?? ""),
       internalState,
     };
 

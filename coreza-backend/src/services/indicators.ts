@@ -118,23 +118,23 @@ function toNumber(raw: any): number {
 }
 
 function asClose(bar: any): number {
-  return Number(bar?.c ?? bar?.close ?? bar?.price ?? bar);
+  return Number(bar?.close);
 }
 
 function asHigh(bar: any): number {
-  return Number(bar?.h ?? bar?.high);
+  return Number(bar?.high);
 }
 
 function asLow(bar: any): number {
-  return Number(bar?.l ?? bar?.low);
+  return Number(bar?.low);
 }
 
 function asVolume(bar: any): number {
-  return Number(bar?.v ?? bar?.volume ?? 0);
+  return Number(bar?.volume ?? 0);
 }
 
 function asBarTime(bar: any): string {
-  return String(bar?.t ?? bar?.timestamp ?? "");
+  return String(bar?.time ?? "");
 }
 
 function clampWindow(window: number[], size: number): number[] {

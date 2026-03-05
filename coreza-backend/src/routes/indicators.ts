@@ -73,9 +73,7 @@ async function executeIndicatorWithState(
 
       if (candles.length > 0) {
         const latestBar = candles[candles.length - 1];
-        const latestBarTime = String(
-          latestBar?.t ?? latestBar?.timestamp ?? "",
-        );
+        const latestBarTime = String(latestBar?.time ?? "");
 
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
           const updated = await indicatorStateManager.update(key, latestBar);

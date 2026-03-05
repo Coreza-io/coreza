@@ -54,6 +54,11 @@ export const binanceOperations: Record<string, BrokerOperation> = {
 
       return signHmacSha256(params, creds.secret_key);
     },
+    transformResult: (raw: any, input: any) => {
+      return {
+        positions: raw,
+      };
+    },
   },
   get_orders: {
     method: "get",
@@ -78,6 +83,11 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
 
       return signHmacSha256(params, creds.secret_key);
+    },
+    transformResult: (raw: any, input: any) => {
+      return {
+        orders: raw,
+      };
     },
   },
   get_trades: {
@@ -109,6 +119,11 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (input.limit) params.limit = input.limit;
 
       return signHmacSha256(params, creds.secret_key);
+    },
+    transformResult: (raw: any, input: any) => {
+      return {
+        trades: raw,
+      };
     },
   },
   cancel_order: {
@@ -158,23 +173,38 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       return params;
     },
     transformResult: (raw: any, input: any) => {
-      if (!Array.isArray(raw)) return { symbol: input.symbol, candles: [] };
+      if (!Array.isArray(raw)) {
+        return {
+          BarSeries: [],
+          next_page_token: null,
+          has_more: false,
+        };
+      }
 
       const bars = raw.map((kline: any) => ({
-        openTime: kline[0],
+        time: kline[0], // open time
         open: parseFloat(kline[1]),
         high: parseFloat(kline[2]),
         low: parseFloat(kline[3]),
         close: parseFloat(kline[4]),
         volume: parseFloat(kline[5]),
-        closeTime: kline[6],
-        quoteVolume: kline[7],
-        numberOfTrades: kline[8],
-        takerBuyBaseVolume: kline[9],
-        takerBuyQuoteVolume: kline[10],
+        trades: kline[8],
+        quoteVolume: parseFloat(kline[7]),
+        takerBuyBaseVolume: parseFloat(kline[9]),
+        takerBuyQuoteVolume: parseFloat(kline[10]),
       }));
 
-      return { symbol: input.symbol, bars: bars };
+      const BarSeries = [
+        {
+          symbol: input.symbol,
+          interval: input.interval,
+          bars,
+        },
+      ];
+
+      return {
+        BarSeries,
+      };
     },
   },
   get_ticker: {

@@ -891,8 +891,6 @@ export class WorkflowExecutor {
 
             if (
               !queue.includes(e.target) //&&
-              //!executed.has(e.target) &&
-              //!failed.has(e.target) &&
               //this.areDependenciesSatisfied(e.target, executed, failed)
             ) {
               queue.push(e.target);

@@ -9,6 +9,11 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   get_positions: {
     method: "get",
     path: "/v2/positions",
+    transformResult: (raw: any, input: any) => {
+      return {
+        positions: raw,
+      };
+    },
   },
   get_orders: {
     method: "get",
@@ -17,6 +22,11 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       status: "all",
       limit: "100",
     }),
+    transformResult: (raw: any, input: any) => {
+      return {
+        orders: raw,
+      };
+    },
   },
   cancel_orders: {
     method: "delete",
@@ -51,12 +61,39 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       dataField: "bars",
       mergeStrategy: "concat",
     },
-    transformResult: (raw: any, input: any) => ({
-      symbol: input.symbol,
-      candles: raw.bars?.[input.symbol] ?? raw.bars ?? [],
-      next_page_token: raw.next_page_token || null,
-      has_more: !!raw.next_page_token,
-    }),
+
+    transformResult: (raw: any, input: any) => {
+      const barsObj = raw?.bars ?? {};
+
+      const BarSeries = Object.entries(barsObj).map(
+        ([symbol, b]: [string, any]) => {
+          const arr = Array.isArray(b) ? b : [b];
+
+          const bars = arr.filter(Boolean).map((x: any) => ({
+            time: Date.parse(x.t),
+            open: x.o,
+            high: x.h,
+            low: x.l,
+            close: x.c,
+            volume: x.v,
+            trades: x.n,
+            vwap: x.vw,
+          }));
+
+          return {
+            symbol,
+            interval: input.interval,
+            bars,
+          };
+        },
+      );
+
+      return {
+        BarSeries: BarSeries,
+        next_page_token: raw.next_page_token || null,
+        has_more: !!raw.next_page_token,
+      };
+    },
   },
   get_latest_bar: {
     method: "get",
@@ -72,23 +109,36 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       if (input.currency) params.currency = input.currency;
       return params;
     },
-    transformResult: (raw: any, input: any) => ({
-      symbol: input.symbol,
-      bars: raw.bars?.[input.symbol]
-        ? [
-            {
-              openTime: raw.bars[input.symbol].t,
-              open: raw.bars[input.symbol].o,
-              high: raw.bars[input.symbol].h,
-              low: raw.bars[input.symbol].l,
-              close: raw.bars[input.symbol].c,
-              volume: raw.bars[input.symbol].v,
-              trades: raw.bars[input.symbol].n,
-              vwap: raw.bars[input.symbol].vw,
-            },
-          ]
-        : [],
-    }),
+    transformResult: (raw: any, input: any) => {
+      const barsObj = raw?.bars ?? {};
+
+      const BarSeries = Object.entries(barsObj).map(
+        ([symbol, b]: [string, any]) => {
+          const arr = Array.isArray(b) ? b : [b];
+
+          const bars = arr.filter(Boolean).map((x: any) => ({
+            time: Date.parse(x.t),
+            open: x.o,
+            high: x.h,
+            low: x.l,
+            close: x.c,
+            volume: x.v,
+            trades: x.n,
+            vwap: x.vw,
+          }));
+
+          return {
+            symbol,
+            interval: input.interval || "1m",
+            bars,
+          };
+        },
+      );
+
+      return {
+        BarSeries: BarSeries,
+      };
+    },
   },
   fetch_news: {
     method: "get",

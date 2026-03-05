@@ -238,12 +238,7 @@ export class BrokerExecutor implements INodeExecutor {
         );
       }
 
-      const normalized = createSuccessOutput(data, {
-        nodeId: node.id,
-        nodeName: node.name,
-        category: this.category,
-        startTime,
-      });
+      const normalized = createSuccessOutput(data);
       return toNodeResult(normalized);
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
@@ -279,7 +274,7 @@ export class BrokerExecutor implements INodeExecutor {
     broker: string,
     operation: string,
   ): Promise<any> {
-    let allData: any[] = [];
+    let allData: Record<string, any[]> = {};
     let pageToken: string | null = null;
     let requestCount = 0;
 
@@ -312,14 +307,15 @@ export class BrokerExecutor implements INodeExecutor {
       // Merge data based on strategy
       if (pagination.mergeStrategy === "concat") {
         if (typeof pageData === "object" && !Array.isArray(pageData)) {
-          // For object responses like {AAPL: [...bars]}
-          Object.values(pageData).forEach((value) => {
+          Object.entries(pageData).forEach(([symbol, value]) => {
             if (Array.isArray(value)) {
-              allData = allData.concat(value);
+              if (!allData[symbol]) {
+                allData[symbol] = [];
+              }
+
+              allData[symbol] = allData[symbol].concat(value);
             }
           });
-        } else if (Array.isArray(pageData)) {
-          allData = allData.concat(pageData);
         }
       }
 
@@ -333,9 +329,8 @@ export class BrokerExecutor implements INodeExecutor {
     } while (pageToken && requestCount < maxPages);
 
     // Build merged response for transformResult
-    const symbol = resolvedParams.symbol;
     const mergedResponse = {
-      [pagination.dataField]: symbol ? { [symbol]: allData } : allData,
+      [pagination.dataField]: allData,
       next_page_token: pageToken,
     };
 
@@ -346,7 +341,6 @@ export class BrokerExecutor implements INodeExecutor {
 
     return {
       ...transformed,
-      total_count: allData.length,
       pages_fetched: requestCount,
       pagination_complete: !pageToken,
     };

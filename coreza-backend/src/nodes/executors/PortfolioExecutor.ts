@@ -196,13 +196,11 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    if (!pm.isBootstrapped()) {
-      return toNodeResult(
-        createErrorOutput(
-          "Portfolio not initialized. Run create_portfolio with cash_balance first.",
-        ),
-      );
-    }
+    // if (!pm.isBootstrapped()) {
+    //   return toNodeResult(createSuccessOutput({
+    //         ...this.getPortfolioSummary(pm, baseCurrency),
+    //       }),);
+    // }
 
     switch (operation) {
       case "get_portfolio":
@@ -221,9 +219,7 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
         if (!side || (side !== "BUY" && side !== "SELL")) {
-          return toNodeResult(
-            createErrorOutput("side must be BUY or SELL"),
-          );
+          return toNodeResult(createErrorOutput("side must be BUY or SELL"));
         }
         if (isNaN(rawQuantity) || rawQuantity === 0) {
           return toNodeResult(
@@ -237,7 +233,8 @@ export class PortfolioExecutor implements INodeExecutor {
         }
 
         const normalizedQuantity = Math.abs(rawQuantity);
-        const quantity = side === "SELL" ? -normalizedQuantity : normalizedQuantity;
+        const quantity =
+          side === "SELL" ? -normalizedQuantity : normalizedQuantity;
 
         pm.applyFill(
           { symbol: fillSymbol, quantity, price, commission },

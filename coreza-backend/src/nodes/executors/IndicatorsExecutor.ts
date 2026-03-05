@@ -150,9 +150,7 @@ export class IndicatorsExecutor implements INodeExecutor {
             );
           } else {
             const latestBar = barsData[barsData.length - 1];
-            const latestBarTime = String(
-              latestBar?.t ?? latestBar?.timestamp ?? "",
-            );
+            const latestBarTime = String(latestBar?.time ?? "");
             if (latestBarTime && latestBarTime !== state.lastBarTime) {
               state = await stateManager.update(key, latestBar, isBacktest);
             }

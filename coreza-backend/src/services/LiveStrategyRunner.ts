@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
 import Redis from "ioredis";
 import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -13,6 +12,7 @@ export class LiveStrategyRunner {
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
+  private readonly stableRunId: string;
 
   constructor(
     private readonly workflowId: string,
@@ -24,8 +24,9 @@ export class LiveStrategyRunner {
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}`;
+    this.stableRunId = workflowId;
     this.engine = new WorkflowEngine(
-      uuidv4(),
+      this.stableRunId,
       workflowId,
       userId,
       nodes,
@@ -69,8 +70,7 @@ export class LiveStrategyRunner {
             continue;
           }
 
-          const runId = uuidv4();
-          this.engine.reset(runId, this.abortController.signal);
+          this.engine.resetLight(this.stableRunId, this.abortController.signal);
 
           try {
             const event = JSON.parse(rawEvent);

@@ -338,7 +338,7 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const bars = brokerResult.data?.candles || [];
+      const bars = brokerResult.data?.BarSeries[0].bars || [];
 
       if (!Array.isArray(bars) || bars.length === 0) {
         return toNodeResult(
@@ -1110,5 +1110,4 @@ export class BacktestExecutor implements INodeExecutor {
 
     return Array.from(byDate.values());
   }
-
 }

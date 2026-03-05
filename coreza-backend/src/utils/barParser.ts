@@ -20,37 +20,25 @@ export function parseBar(data: any): Bar | null {
 
   if (data.bar) data = data.bar;
 
-  const timestamp = data.timestamp || data.date || data.t;
-
   if (
-    timestamp &&
-    data.open !== undefined &&
-    data.high !== undefined &&
-    data.low !== undefined &&
-    data.close !== undefined
+    typeof data.time !== "number" ||
+    data.open === undefined ||
+    data.high === undefined ||
+    data.low === undefined ||
+    data.close === undefined
   ) {
-    return {
-      timestamp,
-      open: parseFloat(data.open || data.o),
-      high: parseFloat(data.high || data.h),
-      low: parseFloat(data.low || data.l),
-      close: parseFloat(data.close || data.c),
-      volume: parseFloat(data.volume || data.v || 0),
-    };
+    return null;
   }
 
-  if (data.t && data.o !== undefined) {
-    return {
-      timestamp: data.t,
-      open: parseFloat(data.o),
-      high: parseFloat(data.h),
-      low: parseFloat(data.l),
-      close: parseFloat(data.c),
-      volume: parseFloat(data.v || 0),
-    };
-  }
+  return {
+    timestamp: new Date(data.time).toISOString(),
+    open: parseFloat(data.open),
+    high: parseFloat(data.high),
+    low: parseFloat(data.low),
+    close: parseFloat(data.close),
+    volume: parseFloat(data.volume ?? 0),
+  };
 
-  return null;
 }
 
 /**

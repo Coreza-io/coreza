@@ -1,7 +1,8 @@
 import { interval } from "date-fns";
 import { getBinanceTimestamp } from "../../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../../utils/crypto";
-import { BrokerOperation } from "../../types";
+import { BrokerOperation, toBarSeries } from "../../types";
+import { fromBinanceBar, parseBinanceKline } from "../helpers";
 
 export const binanceOperations: Record<string, BrokerOperation> = {
   get_account: {
@@ -174,37 +175,11 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     },
     transformResult: (raw: any, input: any) => {
       if (!Array.isArray(raw)) {
-        return {
-          BarSeries: [],
-          next_page_token: null,
-          has_more: false,
-        };
+        return toBarSeries(input.symbol, input.interval || "1h", []);
       }
 
-      const bars = raw.map((kline: any) => ({
-        time: kline[0], // open time
-        open: parseFloat(kline[1]),
-        high: parseFloat(kline[2]),
-        low: parseFloat(kline[3]),
-        close: parseFloat(kline[4]),
-        volume: parseFloat(kline[5]),
-        trades: kline[8],
-        quoteVolume: parseFloat(kline[7]),
-        takerBuyBaseVolume: parseFloat(kline[9]),
-        takerBuyQuoteVolume: parseFloat(kline[10]),
-      }));
-
-      const BarSeries = [
-        {
-          symbol: input.symbol,
-          interval: input.interval,
-          bars,
-        },
-      ];
-
-      return {
-        BarSeries,
-      };
+      const bars = raw.map((k: any) => fromBinanceBar(parseBinanceKline(k)));
+      return toBarSeries(input.symbol, input.interval || "1h", bars);
     },
   },
   get_ticker: {

@@ -1,3 +1,4 @@
+import type { Bar } from '../types';
 import type { MarketEvent } from '../../types/marketEvent';
 
 export function buildAlpacaAuthMessage(creds: any) {
@@ -92,4 +93,42 @@ export function normalizeAlpacaMessage(msg: any): MarketEvent | null {
     default:
       return null;
   }
+}
+
+
+export interface AlpacaBar {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  trades: number;
+  vwap: number;
+}
+
+export function parseAlpacaRawBar(x: any): AlpacaBar {
+  return {
+    time: Date.parse(x.t),
+    open: x.o,
+    high: x.h,
+    low: x.l,
+    close: x.c,
+    volume: x.v,
+    trades: x.n,
+    vwap: x.vw,
+  };
+}
+
+export function fromAlpacaBar(b: AlpacaBar): Bar {
+  return {
+    time: b.time,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+    volume: b.volume,
+    trades: b.trades,
+    vwap: b.vwap,
+  };
 }

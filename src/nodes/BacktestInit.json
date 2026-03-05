@@ -6,9 +6,21 @@
   "category": "Backtest",
   "description": "Initialize a backtest session with capital and simulation settings",
   "color": "text-orange-500",
-  "size": { "width": 380, "height": 700 },
-  "handles": [{ "type": "source", "position": "right", "id": "output" }],
-  "action": { "url": "/backtest/init", "method": "POST" },
+  "size": {
+    "width": 380,
+    "height": 700
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "action": {
+    "url": "/backtest/init",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "name",
@@ -44,13 +56,34 @@
       "label": "Data Provider",
       "type": "select",
       "options": [
-        { "id": "alpaca", "name": "Alpaca" },
-        { "id": "binance", "name": "Binance" },
-        { "id": "dhan", "name": "Dhan" },
-        { "id": "schwab", "name": "Schwab" },
-        { "id": "yahoo_finance", "name": "Yahoo Finance" },
-        { "id": "fmp", "name": "FMP" },
-        { "id": "polygon", "name": "Polygon" }
+        {
+          "id": "alpaca",
+          "name": "Alpaca"
+        },
+        {
+          "id": "binance",
+          "name": "Binance"
+        },
+        {
+          "id": "dhan",
+          "name": "Dhan"
+        },
+        {
+          "id": "schwab",
+          "name": "Schwab"
+        },
+        {
+          "id": "yahoo_finance",
+          "name": "Yahoo Finance"
+        },
+        {
+          "id": "fmp",
+          "name": "FMP"
+        },
+        {
+          "id": "polygon",
+          "name": "Polygon"
+        }
       ],
       "default": "alpaca",
       "required": true
@@ -65,7 +98,9 @@
       "required": false,
       "displayOptions": {
         "hide": {
-          "broker": ["yahoo_finance"]
+          "broker": [
+            "yahoo_finance"
+          ]
         }
       }
     },
@@ -73,16 +108,37 @@
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",
-      "options": [
-        { "id": "stock", "name": "Stock" },
-        { "id": "crypto", "name": "Crypto" }
-      ],
-      "default": "stock",
       "required": false,
       "displayOptions": {
         "show": {
-          "broker": ["alpaca", "binance"]
+          "broker": [
+            "alpaca",
+            "binance"
+          ]
         }
+      },
+      "dependsOn": "broker",
+      "conditionalOptions": {
+        "alpaca": [
+          {
+            "id": "stock",
+            "name": "Stock"
+          },
+          {
+            "id": "crypto",
+            "name": "Crypto"
+          }
+        ],
+        "binance": [
+          {
+            "id": "spot",
+            "name": "Spot"
+          },
+          {
+            "id": "futures",
+            "name": "Futures"
+          }
+        ]
       }
     },
     {
@@ -96,34 +152,222 @@
       "key": "interval",
       "label": "Interval",
       "type": "select",
-      "options": [
-        { "id": "1Min", "name": "1 min" },
-        { "id": "5Min", "name": "5 min" },
-        { "id": "15Min", "name": "15 min" },
-        { "id": "1Hour", "name": "1 hour" },
-        { "id": "1Day", "name": "1 day" }
-      ],
       "default": "1Day",
-      "required": true
+      "required": true,
+      "dependsOn": "broker",
+      "conditionalOptions": {
+        "alpaca": [
+          {
+            "id": "1Min",
+            "name": "1 min"
+          },
+          {
+            "id": "5Min",
+            "name": "5 min"
+          },
+          {
+            "id": "15Min",
+            "name": "15 min"
+          },
+          {
+            "id": "1Hour",
+            "name": "1 hour"
+          },
+          {
+            "id": "1Day",
+            "name": "1 day"
+          }
+        ],
+        "binance": [
+          {
+            "id": "1m",
+            "name": "1 min"
+          },
+          {
+            "id": "3m",
+            "name": "3 min"
+          },
+          {
+            "id": "5m",
+            "name": "5 min"
+          },
+          {
+            "id": "15m",
+            "name": "15 min"
+          },
+          {
+            "id": "30m",
+            "name": "30 min"
+          },
+          {
+            "id": "1h",
+            "name": "1 hour"
+          },
+          {
+            "id": "4h",
+            "name": "4 hour"
+          },
+          {
+            "id": "1d",
+            "name": "1 day"
+          },
+          {
+            "id": "1w",
+            "name": "1 week"
+          }
+        ],
+        "dhan": [
+          {
+            "id": "1Min",
+            "name": "1 min"
+          },
+          {
+            "id": "5Min",
+            "name": "5 min"
+          },
+          {
+            "id": "15Min",
+            "name": "15 min"
+          },
+          {
+            "id": "1Hour",
+            "name": "1 hour"
+          },
+          {
+            "id": "1Day",
+            "name": "1 day"
+          }
+        ],
+        "schwab": [
+          {
+            "id": "1Min",
+            "name": "1 min"
+          },
+          {
+            "id": "5Min",
+            "name": "5 min"
+          },
+          {
+            "id": "15Min",
+            "name": "15 min"
+          },
+          {
+            "id": "1Hour",
+            "name": "1 hour"
+          },
+          {
+            "id": "1Day",
+            "name": "1 day"
+          }
+        ],
+        "yahoo_finance": [
+          {
+            "id": "1m",
+            "name": "1 min"
+          },
+          {
+            "id": "5m",
+            "name": "5 min"
+          },
+          {
+            "id": "15m",
+            "name": "15 min"
+          },
+          {
+            "id": "60m",
+            "name": "60 min"
+          },
+          {
+            "id": "1d",
+            "name": "1 day"
+          }
+        ],
+        "fmp": [
+          {
+            "id": "1min",
+            "name": "1 min"
+          },
+          {
+            "id": "5min",
+            "name": "5 min"
+          },
+          {
+            "id": "15min",
+            "name": "15 min"
+          },
+          {
+            "id": "1hour",
+            "name": "1 hour"
+          },
+          {
+            "id": "1day",
+            "name": "1 day"
+          }
+        ],
+        "polygon": [
+          {
+            "id": "1/minute",
+            "name": "1 minute"
+          },
+          {
+            "id": "5/minute",
+            "name": "5 minute"
+          },
+          {
+            "id": "15/minute",
+            "name": "15 minute"
+          },
+          {
+            "id": "1/hour",
+            "name": "1 hour"
+          },
+          {
+            "id": "1/day",
+            "name": "1 day"
+          }
+        ]
+      }
     },
     {
       "key": "feed",
       "label": "Data Feed",
       "type": "select",
       "options": [
-        { "id": "sip", "name": "SIP - All US Exchanges" },
-        { "id": "iex", "name": "IEX - Investors Exchange" },
-        { "id": "delayed_sip", "name": "Delayed SIP (15 min)" },
-        { "id": "otc", "name": "OTC - Over-the-counter" },
-        { "id": "boats", "name": "BOATS - Blue Ocean" },
-        { "id": "overnight", "name": "Overnight Data" }
+        {
+          "id": "sip",
+          "name": "SIP - All US Exchanges"
+        },
+        {
+          "id": "iex",
+          "name": "IEX - Investors Exchange"
+        },
+        {
+          "id": "delayed_sip",
+          "name": "Delayed SIP (15 min)"
+        },
+        {
+          "id": "otc",
+          "name": "OTC - Over-the-counter"
+        },
+        {
+          "id": "boats",
+          "name": "BOATS - Blue Ocean"
+        },
+        {
+          "id": "overnight",
+          "name": "Overnight Data"
+        }
       ],
       "default": "sip",
       "required": false,
       "displayOptions": {
         "show": {
-          "broker": ["alpaca"],
-          "asset_type": ["stock"]
+          "broker": [
+            "alpaca"
+          ],
+          "asset_type": [
+            "stock"
+          ]
         }
       }
     },
@@ -140,8 +384,14 @@
       "label": "Fill Model",
       "type": "select",
       "options": [
-        { "id": "next_bar_open", "name": "Next Bar Open (Realistic)" },
-        { "id": "immediate", "name": "Immediate (Current Close)" }
+        {
+          "id": "next_bar_open",
+          "name": "Next Bar Open (Realistic)"
+        },
+        {
+          "id": "immediate",
+          "name": "Immediate (Current Close)"
+        }
       ],
       "default": "next_bar_open",
       "required": true
@@ -151,9 +401,18 @@
       "label": "Slippage Model",
       "type": "select",
       "options": [
-        { "id": "none", "name": "None" },
-        { "id": "fixed", "name": "Fixed ($)" },
-        { "id": "percentage", "name": "Percentage (%)" }
+        {
+          "id": "none",
+          "name": "None"
+        },
+        {
+          "id": "fixed",
+          "name": "Fixed ($)"
+        },
+        {
+          "id": "percentage",
+          "name": "Percentage (%)"
+        }
       ],
       "default": "percentage",
       "required": true
@@ -171,10 +430,22 @@
       "label": "Commission Model",
       "type": "select",
       "options": [
-        { "id": "none", "name": "None (Zero Commission)" },
-        { "id": "per_share", "name": "Per Share ($)" },
-        { "id": "percentage", "name": "Percentage (%)" },
-        { "id": "fixed", "name": "Fixed Per Trade ($)" }
+        {
+          "id": "none",
+          "name": "None (Zero Commission)"
+        },
+        {
+          "id": "per_share",
+          "name": "Per Share ($)"
+        },
+        {
+          "id": "percentage",
+          "name": "Percentage (%)"
+        },
+        {
+          "id": "fixed",
+          "name": "Fixed Per Trade ($)"
+        }
       ],
       "default": "per_share",
       "required": true

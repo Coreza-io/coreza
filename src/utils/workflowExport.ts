@@ -1,0 +1,92 @@
+/*
+ * Copyright (C) 2024 Coreza
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+import { Node, Edge } from '@xyflow/react';
+
+interface ExportedWorkflow {
+  meta: {
+    exportedAt: string;
+    version: string;
+    source: string;
+  };
+  name: string;
+  nodes: Array<{
+    id: string;
+    type: string;
+    category?: string;
+    subCategory?: string;
+    position: { x: number; y: number };
+    values?: Record<string, any>;
+    displayName?: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }>;
+  isActive: boolean;
+}
+
+export function exportWorkflow(
+  name: string,
+  nodes: Node[],
+  edges: Edge[],
+  isActive: boolean,
+) {
+  const minimalNodes = nodes.map((node) => {
+    const def = node.data?.definition as any;
+    return {
+      id: node.id,
+      type: def?.name || node.type || 'unknown',
+      category: def?.category,
+      subCategory: def?.subCategory,
+      position: node.position,
+      values: (node.data as any)?.values || (node.data as any)?.fieldState,
+      displayName: (node.data as any)?.label || def?.displayName,
+    };
+  });
+
+  const minimalEdges = edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+  }));
+
+  const exported: ExportedWorkflow = {
+    meta: {
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+      source: 'coreza',
+    },
+    name,
+    nodes: minimalNodes,
+    edges: minimalEdges,
+    isActive,
+  };
+
+  const json = JSON.stringify(exported, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'workflow';
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slug}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

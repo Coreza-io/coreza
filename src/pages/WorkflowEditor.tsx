@@ -57,7 +57,9 @@ import {
   ChevronRight,
   Loader2,
   Zap,
+  Download,
 } from "lucide-react";
+import { exportWorkflow } from "@/utils/workflowExport";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import EdgeManager from "@/components/workflow/EdgeManager";
@@ -1654,6 +1656,16 @@ const WorkflowEditorContent = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            onClick={() => exportWorkflow(workflowName, nodes, edges, isActive)}
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 hover:bg-muted/50 transition-colors"
+            title="Download workflow as JSON"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+
           <Button
             onClick={() => handleSaveWorkflow()}
             disabled={loading}

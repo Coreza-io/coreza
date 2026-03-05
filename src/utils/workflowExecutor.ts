@@ -56,6 +56,10 @@ export class WorkflowExecutor {
   private nodeStore: ExecutionContext;
   private isAutoExecuting = false;
   private conditionalMap = new Map<string, Record<string, string[]>>();
+  private branchOrigins = new Map<
+    string,
+    Map<string, { ifNodeId: string; handle: string; edgeId: string }>
+  >();
   private edgePayload = new Map<string, any>();
 
   private getIncomingEdges = (targetId: string) =>
@@ -114,7 +118,34 @@ export class WorkflowExecutor {
 
     if (requiredEdges.length === 0) return false;
 
-    return requiredEdges.every((e) => this.edgePayload.has(e.id));
+    const branchGroups = new Map<string, Edge[]>();
+    const independentEdges: Edge[] = [];
+
+    for (const edge of requiredEdges) {
+      const origin = this.getBranchOrigin(edge, nodeId);
+      if (!origin) {
+        independentEdges.push(edge);
+        continue;
+      }
+
+      const key = `${origin.ifNodeId}::${nodeId}`;
+      const grouped = branchGroups.get(key) ?? [];
+      grouped.push(edge);
+      branchGroups.set(key, grouped);
+    }
+
+    const independentSatisfied = independentEdges.every((e) =>
+      this.edgePayload.has(e.id),
+    );
+    const branchSatisfied = Array.from(branchGroups.values()).every((group) =>
+      group.some((e) => this.edgePayload.has(e.id)),
+    );
+
+    return independentSatisfied && branchSatisfied;
+  }
+
+  private getBranchOrigin(edge: Edge, targetNodeId: string) {
+    return this.branchOrigins.get(targetNodeId)?.get(edge.id);
   }
 
   constructor(private context: ExecutorContext) {
@@ -128,6 +159,7 @@ export class WorkflowExecutor {
    */
   private preCalculateConditionalBranches(): void {
     this.conditionalMap.clear();
+    this.branchOrigins.clear();
 
     // Build a map: nodeId → { handle1: [targetA, targetB], handle2: [targetC], … }
     this.context.edges.forEach((edge) => {
@@ -150,6 +182,66 @@ export class WorkflowExecutor {
       `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`,
       Array.from(this.conditionalMap.entries()),
     );
+
+    this.buildBranchOrigins();
+  }
+
+  private buildBranchOrigins(): void {
+    for (const [ifNodeId, branchMap] of this.conditionalMap.entries()) {
+      const handleReachable = new Map<string, Set<string>>();
+
+      for (const [handle, targets] of Object.entries(branchMap)) {
+        const visited = new Set<string>();
+        const stack = [...targets];
+        while (stack.length > 0) {
+          const current = stack.pop()!;
+          if (visited.has(current)) continue;
+          visited.add(current);
+
+          for (const out of this.context.edges) {
+            if (out.source === current) stack.push(out.target);
+          }
+        }
+        handleReachable.set(handle, visited);
+      }
+
+      const nodeToHandles = new Map<string, Set<string>>();
+      for (const [handle, nodes] of handleReachable.entries()) {
+        for (const nodeId of nodes) {
+          const handles = nodeToHandles.get(nodeId) ?? new Set<string>();
+          handles.add(handle);
+          nodeToHandles.set(nodeId, handles);
+        }
+      }
+
+      for (const [targetNodeId, handles] of nodeToHandles.entries()) {
+        if (handles.size < 2) continue;
+
+        for (const incoming of this.getIncomingEdges(targetNodeId)) {
+          const matchingHandles: string[] = [];
+
+          for (const handle of handles) {
+            const reachable = handleReachable.get(handle);
+            const directFromBranchNode =
+              incoming.source === ifNodeId && incoming.sourceHandle === handle;
+            if (directFromBranchNode || reachable?.has(incoming.source)) {
+              matchingHandles.push(handle);
+            }
+          }
+
+          if (matchingHandles.length !== 1) continue;
+
+          const targetOrigins =
+            this.branchOrigins.get(targetNodeId) ?? new Map<string, any>();
+          targetOrigins.set(incoming.id, {
+            ifNodeId,
+            handle: matchingHandles[0],
+            edgeId: incoming.id,
+          });
+          this.branchOrigins.set(targetNodeId, targetOrigins);
+        }
+      }
+    }
   }
   /**
    * Execute conditional chain starting from a specific node
@@ -890,8 +982,8 @@ export class WorkflowExecutor {
             this.markEdgePayload(e.id, result);
 
             if (
-              !queue.includes(e.target) //&&
-              //this.areDependenciesSatisfied(e.target, executed, failed)
+              !queue.includes(e.target) &&
+              this.areDependenciesSatisfied(e.target, executed, failed)
             ) {
               queue.push(e.target);
               // if (isConditionalExecution) {

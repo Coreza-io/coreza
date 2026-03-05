@@ -90,3 +90,38 @@ export function exportWorkflow(
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export async function importWorkflow(file: File): Promise<{
+  name: string;
+  nodes: ExportedWorkflow['nodes'];
+  edges: ExportedWorkflow['edges'];
+  isActive: boolean;
+}> {
+  const text = await file.text();
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('Invalid JSON file');
+  }
+
+  if (!parsed.meta || parsed.meta.source !== 'coreza') {
+    throw new Error('Not a valid Coreza workflow file');
+  }
+  if (!Array.isArray(parsed.nodes)) {
+    throw new Error('Workflow file is missing nodes');
+  }
+  if (!Array.isArray(parsed.edges)) {
+    throw new Error('Workflow file is missing edges');
+  }
+  if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
+    throw new Error('Workflow file is missing a name');
+  }
+
+  return {
+    name: parsed.name,
+    nodes: parsed.nodes,
+    edges: parsed.edges,
+    isActive: parsed.isActive ?? false,
+  };
+}

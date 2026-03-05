@@ -58,8 +58,9 @@ import {
   Loader2,
   Zap,
   Download,
+  Upload,
 } from "lucide-react";
-import { exportWorkflow } from "@/utils/workflowExport";
+import { exportWorkflow, importWorkflow } from "@/utils/workflowExport";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import EdgeManager from "@/components/workflow/EdgeManager";
@@ -1656,6 +1657,47 @@ const WorkflowEditorContent = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".json"
+            className="hidden"
+            ref={(el) => { (window as any).__workflowFileInput = el; }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const imported = await importWorkflow(file);
+                setWorkflowName(imported.name);
+                const importedNodes = imported.nodes.map((n) => ({
+                  id: n.id,
+                  type: n.type,
+                  position: n.position,
+                  data: { values: n.values, label: n.displayName },
+                })) as Node[];
+                const importedEdges = imported.edges.map((ed) => ({
+                  id: ed.id,
+                  source: ed.source,
+                  target: ed.target,
+                  sourceHandle: ed.sourceHandle,
+                  targetHandle: ed.targetHandle,
+                })) as Edge[];
+                handleRestoreFromVersion(importedNodes, importedEdges);
+                toast({ title: "Workflow imported", description: `Loaded "${imported.name}" with ${imported.nodes.length} nodes.` });
+              } catch (err: any) {
+                toast({ title: "Import failed", description: err.message, variant: "destructive" });
+              }
+              e.target.value = '';
+            }}
+          />
+          <Button
+            onClick={() => (window as any).__workflowFileInput?.click()}
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 hover:bg-muted/50 transition-colors"
+            title="Upload workflow from JSON"
+          >
+            <Upload className="h-4 w-4" />
+          </Button>
           <Button
             onClick={() => exportWorkflow(workflowName, nodes, edges, isActive)}
             variant="outline"

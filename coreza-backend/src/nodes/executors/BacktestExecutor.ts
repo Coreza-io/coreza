@@ -338,7 +338,8 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const bars = brokerResult.data?.BarSeries[0].bars || [];
+      const barSeries = brokerResult.data?.BarSeries;
+      const bars = barSeries?.[0]?.bars || [];
 
       if (!Array.isArray(bars) || bars.length === 0) {
         return toNodeResult(
@@ -521,23 +522,14 @@ export class BacktestExecutor implements INodeExecutor {
 
     return toNodeResult(
       createSuccessOutput({
-        bar,
-        symbol,
-        timeframe,
-        resolution: timeframe,
+        BarSeries: [
+          {
+            symbol,
+            interval: timeframe,
+            bars: [bar],
+          },
+        ],
         barIndex,
-        timestamp: bar?.time,
-        open: bar?.open,
-        high: bar?.high,
-        low: bar?.low,
-        close: bar?.close,
-        volume: bar?.volume,
-        trades: bar?.trades,
-        vwap: bar?.vwap,
-        quoteVolume: bar?.quoteVolume,
-        takerBuyBaseVolume: bar?.takerBuyBaseVolume,
-        takerBuyQuoteVolume: bar?.takerBuyQuoteVolume,
-        closeTime: bar?.closeTime,
       }),
     );
   }

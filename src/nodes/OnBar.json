@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
-  "description": "Receives each bar during backtest. Access: {{ $('OnBar').json.close }}, {{ $('OnBar').json.symbol }}, {{ $('OnBar').json.timeframe }}",
+  "description": "Receives each bar during backtest. Access: {{ $('OnBar').json.data.BarSeries[0].bars[0].close }}, {{ $('OnBar').json.data.BarSeries[0].symbol }}, {{ $('OnBar').json.data.barIndex }}",
   "color": "text-orange-500",
   "size": {
     "width": 280,

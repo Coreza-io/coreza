@@ -417,6 +417,30 @@ export class MarketDataSubscriber {
     };
     const dataKey = typeKeyMap[type] || type;
 
+    if (type === "kline" || type === "bar" || type === "daily_bar") {
+      return {
+        data: {
+          BarSeries: [
+            {
+              symbol,
+              interval: event.timeframe || "1m",
+              bars: [
+                {
+                  time: typeof event.t === "number" ? event.t : Date.parse(String(event.t)),
+                  open: event.o,
+                  high: event.h,
+                  low: event.l,
+                  close: event.c,
+                  volume: event.v,
+                  vwap: event.vw,
+                },
+              ],
+            },
+          ],
+        },
+      };
+    }
+
     // Include timeframe in the data payload (useful for kline interval)
     return {
       data: {

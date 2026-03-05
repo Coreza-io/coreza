@@ -1,5 +1,6 @@
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
+import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 
 export const alpacaOperations: Record<string, BrokerOperation> = {
   get_account: {
@@ -69,16 +70,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         ([symbol, b]: [string, any]) => {
           const arr = Array.isArray(b) ? b : [b];
 
-          const bars = arr.filter(Boolean).map((x: any) => ({
-            time: Date.parse(x.t),
-            open: x.o,
-            high: x.h,
-            low: x.l,
-            close: x.c,
-            volume: x.v,
-            trades: x.n,
-            vwap: x.vw,
-          }));
+          const bars = arr.filter(Boolean).map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
             symbol,
@@ -116,16 +108,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         ([symbol, b]: [string, any]) => {
           const arr = Array.isArray(b) ? b : [b];
 
-          const bars = arr.filter(Boolean).map((x: any) => ({
-            time: Date.parse(x.t),
-            open: x.o,
-            high: x.h,
-            low: x.l,
-            close: x.c,
-            volume: x.v,
-            trades: x.n,
-            vwap: x.vw,
-          }));
+          const bars = arr.filter(Boolean).map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
             symbol,

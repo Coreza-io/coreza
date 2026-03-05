@@ -21,3 +21,43 @@ export interface BrokerConfig {
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   operations: Record<string, BrokerOperation>;
 }
+
+export interface Bar {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  trades?: number;
+  vwap?: number;
+  quoteVolume?: number;
+  takerBuyBaseVolume?: number;
+  takerBuyQuoteVolume?: number;
+  closeTime?: number;
+}
+
+export interface BarSeriesItem {
+  symbol: string;
+  interval: string;
+  bars: Bar[];
+}
+
+export interface BarSeriesOutput {
+  BarSeries: BarSeriesItem[];
+  next_page_token?: string | null;
+  has_more?: boolean;
+}
+
+export function toBarSeries(
+  symbol: string,
+  interval: string,
+  bars: Bar[],
+  pagination?: { next_page_token?: string | null },
+): BarSeriesOutput {
+  return {
+    BarSeries: [{ symbol, interval, bars }],
+    next_page_token: pagination?.next_page_token ?? null,
+    has_more: !!pagination?.next_page_token,
+  };
+}

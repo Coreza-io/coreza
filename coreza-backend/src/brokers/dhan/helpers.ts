@@ -1,5 +1,27 @@
 import { v4 as uuidv4 } from 'uuid';
 import { lookupSecurityId } from './scripMaster';
+import { Bar, BarSeriesOutput, toBarSeries } from '../types';
+
+
+export interface DhanBar {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export function fromDhanBar(b: DhanBar): Bar {
+  return {
+    time: b.time,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+    volume: b.volume,
+  };
+}
 
 export async function buildDhanPlaceOrder(input: any, creds: any) {
   const {
@@ -115,7 +137,7 @@ export async function buildDhanHistoricalBody(input: any) {
   };
 }
 
-export function transformDhanCandles(raw: any, input: any) {
+export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
   const open = raw.open || [];
   const high = raw.high || [];
   const low = raw.low || [];
@@ -147,5 +169,14 @@ export function transformDhanCandles(raw: any, input: any) {
     }));
   }
 
-  return { symbol: input.symbol, candles };
+  const dhanBars: DhanBar[] = candles.map((c) => ({
+    time: typeof c.t === 'string' ? Date.parse(c.t) : c.t,
+    open: c.o,
+    high: c.h,
+    low: c.l,
+    close: c.c,
+    volume: c.v,
+  }));
+
+  return toBarSeries(input.symbol, input.timeframe || '1', dhanBars.map(fromDhanBar));
 }

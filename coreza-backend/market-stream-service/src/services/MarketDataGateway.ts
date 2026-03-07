@@ -90,7 +90,7 @@ export class MarketDataGateway {
         this.logger.info({ source: this.source }, "Gateway connected");
         activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
-        const authMsg = this.config.makeAuthMessage?.(this.credentials);
+        const authMsg = this.config.makeAuthMessage?.(this.credentials, this.source);
         if (authMsg) {
           const payload = this.config.isBinary
             ? this.encodeMessage(authMsg)
@@ -151,7 +151,7 @@ export class MarketDataGateway {
         if (
           !this.isAuthenticated &&
           this.config.isAuthSuccess &&
-          this.config.isAuthSuccess(msg)
+          this.config.isAuthSuccess(msg, this.source)
         ) {
           this.logger.info(
             { source: this.source },
@@ -163,7 +163,7 @@ export class MarketDataGateway {
           continue;
         }
 
-        if (this.config.isAuthError && this.config.isAuthError(msg)) {
+        if (this.config.isAuthError && this.config.isAuthError(msg, this.source)) {
           this.logger.error(
             { source: this.source, msg },
             "Authentication failed",

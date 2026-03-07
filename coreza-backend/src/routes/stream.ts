@@ -104,26 +104,54 @@ router.post("/:source/subscribe", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    const result = await SubscriptionService.subscribe({
-      source: sourceId,
-      userId,
-      workflowId: workflow_id,
-      nodeId: node_id,
-      credentialId: credential_id,
-      symbols,
-      streamTypes: stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : undefined,
-      feed,
-      environment,
-      assetType: asset_type,
-      interval,
-      depth_levels: depth_levels,
-      scope,
-      targetWorkflowId,
-    });
+    // Parse stream_types into array
+    const streamTypes: string[] = stream_types
+      ? typeof stream_types === "string"
+        ? stream_types.split(",").map((s: string) => s.trim())
+        : stream_types
+      : [];
+
+    // If order_update is included, subscribe to the trading source separately
+    const hasOrderUpdate = streamTypes.includes("order_update");
+    const marketStreamTypes = streamTypes.filter((t: string) => t !== "order_update");
+
+    if (hasOrderUpdate) {
+      const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+      await SubscriptionService.subscribe({
+        source: tradingSource as any,
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        credentialId: credential_id,
+        symbols: ["*"],
+        streamTypes: ["order_update"],
+        scope,
+        targetWorkflowId,
+      });
+    }
+
+    // Subscribe to market/crypto streams (excluding order_update)
+    let result;
+    if (marketStreamTypes.length > 0 || !hasOrderUpdate) {
+      result = await SubscriptionService.subscribe({
+        source: sourceId,
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        credentialId: credential_id,
+        symbols,
+        streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        feed,
+        environment,
+        assetType: asset_type,
+        interval,
+        depth_levels: depth_levels,
+        scope,
+        targetWorkflowId,
+      });
+    } else {
+      result = { success: true, data: { message: "Subscribed to order updates", symbols: ["*"], streamTypes: ["order_update"] } };
+    }
 
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error });
@@ -186,6 +214,31 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
+    // Parse stream_types into array
+    const streamTypes: string[] = stream_types
+      ? typeof stream_types === "string"
+        ? stream_types.split(",").map((s: string) => s.trim())
+        : stream_types
+      : [];
+
+    // If order_update is included, also unsubscribe from trading source
+    const hasOrderUpdate = streamTypes.includes("order_update");
+    const marketStreamTypes = streamTypes.filter((t: string) => t !== "order_update");
+
+    if (hasOrderUpdate) {
+      const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+      await SubscriptionService.unsubscribe({
+        source: tradingSource as any,
+        userId,
+        workflowId: workflow_id,
+        credentialId: credential_id,
+        symbols: ["*"],
+        streamTypes: ["order_update"],
+        scope,
+        targetWorkflowId,
+      });
+    }
+
     const result = await SubscriptionService.unsubscribe({
       source: sourceId,
       userId,
@@ -193,11 +246,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       nodeId: node_id,
       credentialId: credential_id,
       symbols,
-      streamTypes: stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : undefined,
+      streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
       feed,
       environment,
       assetType: asset_type,
@@ -450,31 +499,8 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     });
 
-    // Companion gateway: Alpaca/Binance market listeners also need trading updates
-    // so order fill events arrive during manual and Execute All runs.
-    if (sourceId === "alpaca_market" || sourceId === "alpaca_crypto" || sourceId === "binance_market") {
-      const tradingSource = (sourceId === "alpaca_market" || sourceId === "alpaca_crypto") ? "alpaca_trading" : "binance_trading";
-
-      await RegistrationService.publishRegisterWorkflow({
-        userId,
-        workflowId: workflow_id,
-        nodeId: node_id,
-        source: tradingSource,
-        scope,
-        onlyClosedBars: false,
-      });
-
-      await SubscriptionService.subscribe({
-        source: tradingSource as any,
-        userId,
-        workflowId: workflow_id,
-        nodeId: node_id,
-        credentialId: credential_id || "",
-        symbols: ["*"],
-        scope,
-        targetWorkflowId: workflow_id,
-      });
-    }
+    // Note: Companion trading gateway auto-spawn removed.
+    // Trading subscriptions (order_update) are now explicitly managed via AlpacaSubscribe/BinanceSubscribe nodes.
 
     // Start in-backend live strategy runner for stream event consumption
     const { data: workflow, error: workflowError } = await supabase

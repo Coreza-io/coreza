@@ -69,6 +69,10 @@
           "name": "Market Data (Trades, Quotes, Bars)"
         },
         {
+          "id": "crypto",
+          "name": "Crypto (BTC/USD, ETH/USD)"
+        },
+        {
           "id": "news",
           "name": "News"
         }
@@ -138,7 +142,7 @@
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
-      "placeholder": "AAPL, TSLA, SPY",
+      "placeholder": "AAPL, TSLA, SPY or BTC/USD, ETH/USD",
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
@@ -173,7 +177,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["market"]
+          "data_type": ["market", "crypto"]
         }
       }
     },

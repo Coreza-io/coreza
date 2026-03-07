@@ -452,8 +452,8 @@ router.post("/:source/register", async (req, res) => {
 
     // Companion gateway: Alpaca/Binance market listeners also need trading updates
     // so order fill events arrive during manual and Execute All runs.
-    if (sourceId === "alpaca_market" || sourceId === "binance_market") {
-      const tradingSource = sourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+    if (sourceId === "alpaca_market" || sourceId === "alpaca_crypto" || sourceId === "binance_market") {
+      const tradingSource = (sourceId === "alpaca_market" || sourceId === "alpaca_crypto") ? "alpaca_trading" : "binance_trading";
 
       await RegistrationService.publishRegisterWorkflow({
         userId,

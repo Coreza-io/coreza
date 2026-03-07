@@ -20,7 +20,7 @@
       "interval": 10000
     }
   },
-  "description": "Receives real-time market data from Binance. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Receives real-time market data from Binance. Also automatically streams order fill events for your account. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,

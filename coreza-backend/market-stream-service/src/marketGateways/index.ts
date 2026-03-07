@@ -40,6 +40,7 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = {
 
   // Binance
   binance_market: { credentialServiceType: 'binance', gatewaySource: 'binance' },
+  binance_trading: { credentialServiceType: 'binance', gatewaySource: 'binance' },
   binance_stream: { credentialServiceType: 'binance', gatewaySource: 'binance' }, // Legacy support
   binance: { credentialServiceType: 'binance', gatewaySource: 'binance' },
 

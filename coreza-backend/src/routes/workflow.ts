@@ -557,26 +557,28 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             onlyClosedBars,
           });
 
-          // Companion gateway: if this is an Alpaca market stream, also register
+          // Companion gateway: if this is an Alpaca or Binance market stream, also register
           // for trading updates (order fills) so both event types flow to the same workflow
-          if (sourceId === "alpaca_market") {
+          if (sourceId === "alpaca_market" || sourceId === "binance_market") {
+            const tradingSource = sourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+
             await RegistrationService.publishRegisterWorkflow({
               userId,
               workflowId,
               nodeId: triggerNode.id,
-              source: "alpaca_trading",
+              source: tradingSource,
               scope,
               onlyClosedBars: false,
             });
 
             // Subscribe to trading stream (connects the trading WS gateway)
             await SubscriptionService.subscribe({
-              source: "alpaca_trading" as any,
+              source: tradingSource as any,
               userId,
               workflowId,
               credentialId: nodeValues.credential_id,
               operation: "subscribe",
-              symbols: ["*"], // trade_updates covers all symbols
+              symbols: ["*"], // trade_updates / user_data_stream covers all symbols
               scope,
               targetWorkflowId: workflowId,
             });
@@ -753,9 +755,11 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             isTestListener: false,
           });
 
-          // If this was an Alpaca market stream, also unregister the companion trading gateway
+          // If this was an Alpaca or Binance market stream, also unregister the companion trading gateway
           const deactivateSourceId = resolveStreamSourceId(triggerNode);
-          if (deactivateSourceId === "alpaca_market") {
+          if (deactivateSourceId === "alpaca_market" || deactivateSourceId === "binance_market") {
+            const tradingSource = deactivateSourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+
             await RegistrationService.publishUnregisterWorkflow({
               userId,
               workflowId: `${workflowId}:trading`,
@@ -763,7 +767,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             });
 
             await SubscriptionService.unsubscribe({
-              source: "alpaca_trading" as any,
+              source: tradingSource as any,
               userId,
               workflowId,
               credentialId: triggerNode.values?.credential_id,

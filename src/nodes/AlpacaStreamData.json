@@ -20,7 +20,7 @@
       "interval": 10000
     }
   },
-  "description": "Receives real-time market data or news from Alpaca. When data_type is 'market', also automatically streams order fill events (trade_updates) for the account. Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Receives real-time market data, news, or order fill events from Alpaca. Use AlpacaSubscribe node to explicitly subscribe to market streams and/or Order Updates (Fills). Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
@@ -171,6 +171,10 @@
         {
           "id": "daily_bar",
           "name": "Daily Bars"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
       "default": ["trade"],
@@ -241,6 +245,10 @@
         {
           "id": "news",
           "name": "News"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",

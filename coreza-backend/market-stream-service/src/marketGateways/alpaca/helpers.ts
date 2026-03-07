@@ -17,13 +17,29 @@ export function getAlpacaWsUrl(creds: any, source?: string): string {
   if (source === "alpaca_news") {
     return "wss://stream.data.alpaca.markets/v1beta1/news";
   }
+  if (source === "alpaca_trading") {
+    // Trading updates WebSocket (order fills, cancellations, etc.)
+    // Paper trading uses paper-api endpoint, live uses api endpoint
+    const isPaper = creds.is_paper !== false; // Default to paper
+    return isPaper
+      ? "wss://paper-api.alpaca.markets/stream"
+      : "wss://api.alpaca.markets/stream";
+  }
   // Default: market data stream
   const feed = creds.feed || "iex";
   return `wss://stream.data.alpaca.markets/v2/${feed}`;
 }
 
-// ============ AUTH (shared - identical for both) ============
-export function buildAlpacaAuthMessage(creds: any) {
+// ============ AUTH (source-aware) ============
+export function buildAlpacaAuthMessage(creds: any, source?: string) {
+  if (source === "alpaca_trading") {
+    // Trading stream uses same auth format
+    return {
+      action: "auth",
+      key: creds.api_key,
+      secret: creds.secret_key,
+    };
+  }
   return {
     action: "auth",
     key: creds.api_key,
@@ -31,13 +47,41 @@ export function buildAlpacaAuthMessage(creds: any) {
   };
 }
 
-export function isAlpacaAuthSuccess(msg: any): boolean {
+export function isAlpacaAuthSuccess(msg: any, source?: string): boolean {
+  // Trading stream auth success: [{"T":"success","msg":"authenticated"}]
+  // Same format as market data, but also handle non-array format
+  if (source === "alpaca_trading") {
+    if (Array.isArray(msg)) {
+      return msg.some(
+        (m) =>
+          (m.T === "success" && m.msg === "authenticated") ||
+          (m.stream === "authorization" && m.data?.status === "authorized"),
+      );
+    }
+    return (
+      (msg.T === "success" && msg.msg === "authenticated") ||
+      (msg.stream === "authorization" && msg.data?.status === "authorized")
+    );
+  }
   return Array.isArray(msg)
     ? msg.some((m) => m.T === "success")
     : msg.T === "success";
 }
 
-export function isAlpacaAuthError(msg: any): boolean {
+export function isAlpacaAuthError(msg: any, source?: string): boolean {
+  if (source === "alpaca_trading") {
+    if (Array.isArray(msg)) {
+      return msg.some(
+        (m) =>
+          m.T === "error" ||
+          (m.stream === "authorization" && m.data?.status === "unauthorized"),
+      );
+    }
+    return (
+      msg.T === "error" ||
+      (msg.stream === "authorization" && msg.data?.status === "unauthorized")
+    );
+  }
   return Array.isArray(msg)
     ? msg.some((m) => m.T === "error")
     : msg.T === "error";
@@ -77,6 +121,14 @@ export function buildAlpacaSubscribeMessage(
   streamNames: string[],
   source?: string,
 ) {
+  // TRADING source: listen to trade_updates
+  if (source === "alpaca_trading") {
+    return {
+      action: "listen",
+      data: { streams: ["trade_updates"] },
+    };
+  }
+
   // NEWS source: subscribe to news stream
   if (source === "alpaca_news") {
     const { symbols } = parseAlpacaStreamNames(streamNames);
@@ -97,6 +149,11 @@ export function buildAlpacaUnsubscribeMessage(
   streamNames: string[],
   source?: string,
 ) {
+  // TRADING source: no-op (Alpaca doesn't support unsubscribing from trade_updates)
+  if (source === "alpaca_trading") {
+    return null;
+  }
+
   if (source === "alpaca_news") {
     const { symbols } = parseAlpacaStreamNames(streamNames);
     return { action: "unsubscribe", news: symbols };
@@ -123,6 +180,10 @@ export function identifyAlpacaMessageType(msg: any): string {
 
 // ============ PUBLISH FILTER (source-aware) ============
 export function shouldPublishAlpacaMessage(msg: any, source?: string): boolean {
+  if (source === "alpaca_trading") {
+    // Trading stream: publish trade_updates events
+    return msg.stream === "trade_updates";
+  }
   if (source === "alpaca_news") {
     return msg.T === "n"; // News messages
   }
@@ -150,6 +211,11 @@ export function handleAlpacaControlMessage(
         { source: logSource, msg: m.msg },
         "Success message received",
       );
+    } else if (m.stream === "listening") {
+      logger.info(
+        { source: logSource, streams: m.data?.streams },
+        "Trading stream listening confirmation",
+      );
     }
   }
 }
@@ -159,6 +225,30 @@ export function normalizeAlpacaMessage(
   msg: any,
   source?: string,
 ): CorezaMarketEvent | null {
+  // TRADING source - order updates
+  if (source === "alpaca_trading") {
+    if (msg.stream !== "trade_updates") return null;
+
+    const order = msg.data?.order || {};
+    const event = msg.data?.event; // fill, partial_fill, canceled, rejected, etc.
+
+    return {
+      source: "alpaca" as any,
+      symbol: order.symbol?.toUpperCase() || "*",
+      type: "order_update" as const,
+      t: msg.data?.timestamp
+        ? new Date(msg.data.timestamp).getTime()
+        : Date.now(),
+      orderEvent: event,
+      orderId: order.id,
+      side: order.side,
+      filledQty: parseFloat(order.filled_qty) || 0,
+      filledAvgPrice: parseFloat(order.filled_avg_price) || 0,
+      orderStatus: order.status,
+      orderSymbol: order.symbol,
+    };
+  }
+
   // NEWS source
   if (source === "alpaca_news") {
     if (msg.T !== "n") return null;

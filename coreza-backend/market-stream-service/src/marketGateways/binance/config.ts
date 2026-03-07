@@ -24,8 +24,8 @@ export const binanceGatewayConfig: GatewayConfig = {
   handleControlMessage: (msg, logger, source) =>
     handleBinanceControlMessage(msg, logger, source),
   normalize: (msg, source) => normalizeBinanceMessage(msg, source),
-  requiresPreConnect: true, // Only used when source is binance_trading (preConnect checks)
-  preConnect: (creds) => preConnectBinance(creds),
+  requiresPreConnect: (source) => source === "binance_trading",
+  preConnect: (creds, _source) => preConnectBinance(creds),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
 };

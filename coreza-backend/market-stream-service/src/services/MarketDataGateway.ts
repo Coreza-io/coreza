@@ -69,10 +69,13 @@ export class MarketDataGateway {
 
     this.credentials = credentials;
 
-    // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch)
-    if (this.config.requiresPreConnect && this.config.preConnect) {
+    // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
+    const needsPreConnect = typeof this.config.requiresPreConnect === "function"
+      ? this.config.requiresPreConnect(this.source)
+      : this.config.requiresPreConnect;
+    if (needsPreConnect && this.config.preConnect) {
       this.logger.info({ source: this.source }, "Running pre-connect setup");
-      this.credentials = await this.config.preConnect(credentials);
+      this.credentials = await this.config.preConnect(credentials, this.source);
     }
 
     // Pass source to wsUrl function for behavior routing (e.g., alpaca_news uses different URL)

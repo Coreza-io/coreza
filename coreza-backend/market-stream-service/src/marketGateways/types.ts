@@ -34,6 +34,6 @@ export interface GatewayConfig {
 
   // Protocol flags
   isBinary?: boolean;
-  requiresPreConnect?: boolean;
-  preConnect?: (creds: any) => Promise<any>;
+  requiresPreConnect?: boolean | ((source?: string) => boolean);
+  preConnect?: (creds: any, source?: string) => Promise<any>;
 }

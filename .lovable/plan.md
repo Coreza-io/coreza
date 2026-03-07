@@ -1,53 +1,104 @@
 
 
-# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
+# Critical Bugs: Trading Subscription End-to-End Broken
 
-## Problem
-Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
+## The Flow (What Should Happen)
 
-## Architecture Change
+1. User selects `stream_types: ["bar", "order_update"]` in AlpacaSubscribe
+2. Backend subscribes to `alpaca_market` (for bars) and `alpaca_trading` (for order fills)
+3. Redis stores: `alpaca_market:streams → ["aapl@bar"]`, `alpaca_trading:streams → ["trade_updates"]`
+4. User clicks Test on AlpacaStreamData → registers workflow with `source: alpaca_market`
+5. Workflow should receive both bar events AND order_update events
 
-```text
-BEFORE:
-  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
+## Bug 1: Registration Never Discovers Trading Streams
 
-AFTER:
-  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
-  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
+**Location**: `MarketControlHandler.ts` → `handleRegister()` (lines 157-209)
+
+When AlpacaStreamData registers, it passes `source: "alpaca_market"`. The handler looks up streams from:
+```
+md:user:{userId}:subscription:scope:workflow:{workflowId}:alpaca_market:streams
+→ finds ["aapl@bar"] ✅
 ```
 
-## Changes Required
+It **never** checks:
+```
+md:user:{userId}:subscription:scope:workflow:{workflowId}:alpaca_trading:streams
+→ ["trade_updates"] is INVISIBLE ❌
+```
 
-### 1. Frontend — AlpacaSubscribe.json
-- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
-- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
-- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
-- Default stays `["trade"]`
+The workflow is only registered with `aapl@bar`. It never knows about `trade_updates`.
 
-### 2. Frontend — AlpacaStreamData.json
-- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
-- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
-- Update description to reflect that trading updates come via subscription, not automatically
+## Bug 2: Redis Pub/Sub Channel Mismatch
 
-### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
-When `stream_types` includes `"order_update"`, the backend needs to:
-- Detect that `order_update` is in the stream_types array
-- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
-- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
-- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
+**Location**: `MarketDataGateway.ts` (lines 199-202)
 
-### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
-Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
+Even if Bug 1 were fixed, there's a deeper issue. The gateway publishes ALL events (including order_updates) using this logic:
 
-### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
-Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
+```typescript
+const stream = `${event.symbol.toLowerCase()}@${event.type}`;
+const channel = REDIS_CHANNELS.marketData(stream);
+// → publishes to: md:symbol:aapl@order_update
+```
+
+But `buildStreamName("alpaca_trading", "*", ...)` returns `"trade_updates"`. The subscriber subscribes to `md:symbol:trade_updates`. The gateway publishes to `md:symbol:aapl@order_update`. **These channels never match** — the message is published to a channel nobody is listening on.
+
+The subscriber has fallback logic (lines 300-306) checking `symbolWorkflows.get("trade_updates")`, but this code only runs AFTER a message is received — which never happens because the Redis channel doesn't match.
+
+## Fixes Required
+
+### Fix 1: Gateway publish — align trading event channels with stream names
+**File**: `MarketDataGateway.ts` (lines 199-202)
+
+For trading sources (`alpaca_trading`, `binance_trading`), use the fixed stream name (`trade_updates` / `user_data_stream`) as the Redis channel instead of `{symbol}@{type}`:
+
+```typescript
+// Determine Redis publish channel
+let stream: string;
+if (this.source === "alpaca_trading") {
+  stream = "trade_updates";
+} else if (this.source === "binance_trading") {
+  stream = "user_data_stream";
+} else {
+  stream = event.timeframe
+    ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+    : `${event.symbol.toLowerCase()}@${event.type}`;
+}
+const channel = REDIS_CHANNELS.marketData(stream);
+```
+
+This ensures the gateway publishes to `md:symbol:trade_updates`, which the subscriber will be listening on.
+
+### Fix 2: Registration — include companion trading streams
+**File**: `MarketControlHandler.ts` → `handleRegister()`, `getWorkflowScopedSymbols()`, `getUserSubscribedSymbols()`
+
+When registering for `alpaca_market` or `alpaca_crypto`, also fetch streams from `alpaca_trading`. When registering for `binance_market`, also fetch from `binance_trading`.
+
+```typescript
+// In getWorkflowScopedSymbols and getUserSubscribedSymbols:
+// After fetching streams for the primary source, also check companion trading source
+const companionSource = this.getCompanionTradingSource(source);
+if (companionSource) {
+  const tradingKey = `md:user:${userId}:subscription:scope:...:${companionSource}:streams`;
+  const tradingStreams = await this.redisPub.smembers(tradingKey);
+  tradingStreams.forEach(s => allStreams.add(s));
+}
+```
+
+Add helper:
+```typescript
+private getCompanionTradingSource(source: string): string | null {
+  if (source === "alpaca_market" || source === "alpaca_crypto") return "alpaca_trading";
+  if (source === "binance_market") return "binance_trading";
+  return null;
+}
+```
 
 ## Files to Change
 
 | File | Change |
 |---|---|
-| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
-| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
-| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
-| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+| `market-stream-service/src/services/MarketDataGateway.ts` | Use fixed stream name for trading sources when publishing to Redis |
+| `market-stream-service/src/services/MarketControlHandler.ts` | Add companion trading source lookup in `getWorkflowScopedSymbols` and `getUserSubscribedSymbols` |
+
+Two files, two targeted fixes. Everything else (subscribe endpoint, node configs, normalization, stream names) is correct.
 

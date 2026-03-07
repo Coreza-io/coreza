@@ -22,7 +22,7 @@ export interface StreamExecutionRequest {
   credential_id?: string;
   environment?: "testnet" | "live";
   asset_type?: "spot" | "futures";
-  feed?: "iex" | "sip";
+  feed?: "iex" | "sip" | "test";
   interval?: string;
   depth_levels?: string;
   scope: "workflow" | "global";

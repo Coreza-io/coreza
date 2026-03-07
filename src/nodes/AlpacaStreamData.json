@@ -121,6 +121,10 @@
         {
           "id": "sip",
           "name": "SIP (Paid - Full Market)"
+        },
+        {
+          "id": "test",
+          "name": "Test (FAKEPACA - Always Active)"
         }
       ],
       "default": "iex",

@@ -36,6 +36,7 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = {
   alpaca_news: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
   alpaca_stream: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' }, // Legacy support
   alpaca: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
+  alpaca_trading: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
 
   // Binance
   binance_market: { credentialServiceType: 'binance', gatewaySource: 'binance' },

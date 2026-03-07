@@ -25,7 +25,8 @@ export type MarketEventType =
   | 'news'
   | 'ticker'
   | 'miniTicker'
-  | 'depth';
+  | 'depth'
+  | 'order_update';
 
 export type MarketSource =
   keyof typeof import('../brokers').GATEWAY_CONFIGS;
@@ -72,6 +73,15 @@ export interface MarketEvent {
   firstTradeId?: number;
   lastTradeId?: number;
   isBuyerMaker?: boolean;
+
+  // Order update data (from trading WebSocket)
+  orderEvent?: string;
+  orderId?: string;
+  side?: string;
+  filledQty?: number;
+  filledAvgPrice?: number;
+  orderStatus?: string;
+  orderSymbol?: string;
 
   // Metadata
   timeframe?: string;

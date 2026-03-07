@@ -13,7 +13,8 @@ export type MarketEventType =
   | "news"
   | "ticker"
   | "miniTicker"
-  | "depth";
+  | "depth"
+  | "order_update";
 
 export type MarketSource =
   keyof typeof import("../marketGateways").GATEWAY_CONFIGS;
@@ -60,6 +61,23 @@ export interface CorezaMarketEvent {
   firstTradeId?: number;
   lastTradeId?: number;
   isBuyerMaker?: boolean;
+
+  // Order update data (from trading WebSocket)
+  orderEvent?: string; // fill, partial_fill, canceled, rejected, etc.
+  orderId?: string;
+  side?: string; // buy, sell
+  filledQty?: number;
+  filledAvgPrice?: number;
+  orderStatus?: string; // filled, partially_filled, canceled, etc.
+  orderSymbol?: string; // Original symbol from order
+
+  // News data
+  headline?: string;
+  summary?: string;
+  author?: string;
+  url?: string;
+  symbols?: string[];
+  newsSource?: string;
 
   // Metadata
   timeframe?: string;

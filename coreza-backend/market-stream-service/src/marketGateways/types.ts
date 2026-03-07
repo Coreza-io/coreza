@@ -10,10 +10,10 @@ export interface GatewayConfig {
   wsUrl: string | ((creds: any, source?: string) => string);
 
   // Authentication
-  makeAuthMessage?: (creds: any) => any;
+  makeAuthMessage?: (creds: any, source?: string) => any;
   makeAuthHeaders?: (creds: any) => Record<string, string>;
-  isAuthSuccess?: (msg: any) => boolean;
-  isAuthError?: (msg: any) => boolean;
+  isAuthSuccess?: (msg: any, source?: string) => boolean;
+  isAuthError?: (msg: any, source?: string) => boolean;
 
   // Subscription management - streamNames are native broker format (btcusdt@kline_1m, bars.AAPL)
   makeSubscribeMessage: (streamNames: string[], source?: string) => any;

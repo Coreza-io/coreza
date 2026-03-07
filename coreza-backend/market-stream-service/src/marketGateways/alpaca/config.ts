@@ -16,9 +16,9 @@ import {
 export const alpacaGatewayConfig: GatewayConfig = {
   id: "alpaca",
   wsUrl: (creds, source) => getAlpacaWsUrl(creds, source),
-  makeAuthMessage: (creds) => buildAlpacaAuthMessage(creds),
-  isAuthSuccess: (msg) => isAlpacaAuthSuccess(msg),
-  isAuthError: (msg) => isAlpacaAuthError(msg),
+  makeAuthMessage: (creds, source) => buildAlpacaAuthMessage(creds, source),
+  isAuthSuccess: (msg, source) => isAlpacaAuthSuccess(msg, source),
+  isAuthError: (msg, source) => isAlpacaAuthError(msg, source),
   handleControlMessage: (msg, logger, source) =>
     handleAlpacaControlMessage(msg, logger, source),
   makeSubscribeMessage: (streamNames, source) =>

@@ -1,56 +1,53 @@
 
 
-# Plan: Single AlpacaStreamData Node Emitting Both Market Data + Order Updates
+# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
 
-## Status: ✅ IMPLEMENTED
+## Problem
+Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
 
-## Summary
-
-Implemented the Companion Gateway Pattern so a single `AlpacaStreamData` trigger node connects to both Alpaca WebSocket endpoints (market data + trading) and emits all events through the same output.
-
-## Changes Made
-
-### 1. Added `order_update` to MarketEventType + order fields
-- `coreza-backend/market-stream-service/src/types/marketEvent.ts` — Added `"order_update"` to union, added `orderEvent`, `orderId`, `side`, `filledQty`, `filledAvgPrice`, `orderStatus`, `orderSymbol` fields, plus news fields (`headline`, `summary`, etc.)
-- `coreza-backend/src/types/marketEvent.ts` — Same additions to main backend types
-
-### 2. Added `alpaca_trading` to SOURCE_MAPPING
-- `coreza-backend/market-stream-service/src/marketGateways/index.ts` — Added `alpaca_trading` source mapping
-
-### 3. Updated Alpaca helpers for trading WebSocket
-- `coreza-backend/market-stream-service/src/marketGateways/alpaca/helpers.ts` — Full rewrite with:
-  - `getAlpacaWsUrl`: Added `alpaca_trading` → `wss://paper-api.alpaca.markets/stream` (paper) or `wss://api.alpaca.markets/stream` (live)
-  - `buildAlpacaSubscribeMessage`: `alpaca_trading` → `{ action: "listen", data: { streams: ["trade_updates"] } }`
-  - `buildAlpacaUnsubscribeMessage`: `alpaca_trading` → returns `null` (no-op)
-  - `isAlpacaAuthSuccess/Error`: Handle both market data and trading stream auth response formats
-  - `shouldPublishAlpacaMessage`: `alpaca_trading` → publish when `stream === "trade_updates"`
-  - `normalizeAlpacaMessage`: `alpaca_trading` → normalize to `CorezaMarketEvent` with `type: "order_update"`
-
-### 4. Updated GatewayConfig types + MarketDataGateway
-- `coreza-backend/market-stream-service/src/marketGateways/types.ts` — Added `source?` param to `makeAuthMessage`, `isAuthSuccess`, `isAuthError`
-- `coreza-backend/market-stream-service/src/marketGateways/alpaca/config.ts` — Pass `source` through to auth functions
-- `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts` — Pass `this.source` to auth function calls
-
-### 5. Updated streamName utility
-- `coreza-backend/market-stream-service/src/utils/streamName.ts` — Added `alpaca_trading` handling: `buildStreamName` returns fixed `"trade_updates"`, `parseStreamName` returns `{ symbol: "*", eventType: "order_update" }`
-
-### 6. Updated MarketDataSubscriber
-- `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` — 
-  - Message handler now checks `trade_updates` stream name for order_update routing
-  - Added `order_update` formatting in `formatMarketEventPayload`
-
-### 7. Companion gateway activation/deactivation
-- `coreza-backend/src/routes/workflow.ts` — 
-  - On activation: if `sourceId === "alpaca_market"`, also registers `alpaca_trading` and subscribes with `symbols: ["*"]`
-  - On deactivation: if source is `alpaca_market`, also unregisters/unsubscribes the companion trading gateway
-
-### 8. Updated AlpacaStreamData.json description
-- `src/nodes/AlpacaStreamData.json` — Updated description to mention automatic order fill streaming
-
-## Workflow Shape
+## Architecture Change
 
 ```text
-                           ┌──── type === "bar" ────→ Strategy ──→ Buy/Sell
-AlpacaStreamData ──→ If ──┤
-                           └──── type === "order_update" ──→ PortfolioUpdate
+BEFORE:
+  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
+
+AFTER:
+  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
+  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
 ```
+
+## Changes Required
+
+### 1. Frontend — AlpacaSubscribe.json
+- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
+- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
+- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
+- Default stays `["trade"]`
+
+### 2. Frontend — AlpacaStreamData.json
+- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
+- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
+- Update description to reflect that trading updates come via subscription, not automatically
+
+### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
+When `stream_types` includes `"order_update"`, the backend needs to:
+- Detect that `order_update` is in the stream_types array
+- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
+- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
+- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
+
+### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
+Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
+
+### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
+Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
+
+## Files to Change
+
+| File | Change |
+|---|---|
+| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
+| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
+| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
+| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+

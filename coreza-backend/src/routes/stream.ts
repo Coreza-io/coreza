@@ -450,6 +450,30 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     });
 
+    // Companion gateway: Alpaca market listeners also need trading updates
+    // so order fill events arrive during manual and Execute All runs.
+    if (sourceId === "alpaca_market") {
+      await RegistrationService.publishRegisterWorkflow({
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        source: "alpaca_trading",
+        scope,
+        onlyClosedBars: false,
+      });
+
+      await SubscriptionService.subscribe({
+        source: "alpaca_trading" as any,
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        credentialId: credential_id || "",
+        symbols: ["*"],
+        scope,
+        targetWorkflowId: workflow_id,
+      });
+    }
+
     // Start in-backend live strategy runner for stream event consumption
     const { data: workflow, error: workflowError } = await supabase
       .from("workflows")
@@ -514,6 +538,28 @@ router.post("/unregister", async (req, res) => {
       return res
         .status(400)
         .json({ error: "workflow_id and node_id are required" });
+    }
+
+    const listeners = await RegistrationService.getActiveListeners(userId);
+    const listener = listeners.find(
+      (activeListener) =>
+        activeListener.workflowId === workflow_id &&
+        activeListener.nodeId === node_id,
+    );
+
+    if (listener?.source === "alpaca_market") {
+      await SubscriptionService.unsubscribe({
+        source: "alpaca_trading" as any,
+        userId,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        symbols: ["*"],
+        scope:
+          listener.scope === "global" || listener.scope === "workflow"
+            ? listener.scope
+            : "workflow",
+        targetWorkflowId: workflow_id,
+      });
     }
 
     // Delete listener through service

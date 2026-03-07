@@ -285,7 +285,10 @@ export class MarketDataSubscriber {
           // Not a valid CorezaMarketEvent, skip (could be subscription confirmation)
           return;
         }
-        const stream = `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`;
+
+        const stream = event.timeframe
+          ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+          : `${event.symbol.toLowerCase()}@${event.type}`;
 
         // Find workflows registered for this symbol
         const workflows = this.symbolWorkflows.get(stream);

@@ -92,9 +92,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "stock"
-          ]
+          "asset_type": ["stock"]
         }
       }
     },
@@ -106,9 +104,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "crypto"
-          ]
+          "asset_type": ["crypto"]
         }
       }
     },
@@ -247,9 +243,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "stock"
-          ]
+          "asset_type": ["stock", "crypto"]
         }
       }
     },
@@ -272,15 +266,9 @@
       "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
       "displayOptions": {
         "show": {
-          "type": [
-            "limit"
-          ],
-          "time_in_force": [
-            "day"
-          ],
-          "asset_type": [
-            "stock"
-          ]
+          "type": ["limit"],
+          "time_in_force": ["day"],
+          "asset_type": ["stock"]
         }
       },
       "showDescription": false

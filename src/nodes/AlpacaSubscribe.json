@@ -189,8 +189,8 @@
       }
     },
     {
-      "key": "subscriptionScope",
-      "label": "Subscription Scope",
+      "key": "scope",
+      "label": "Scope",
       "type": "select",
       "options": [
         {

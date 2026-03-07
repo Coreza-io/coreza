@@ -2,39 +2,30 @@ import { GatewayConfig } from "../types";
 import {
   buildBinanceSubscribeMessage,
   buildBinanceUnsubscribeMessage,
+  getBinanceWsUrl,
   handleBinanceControlMessage,
   identifyBinanceMessageType,
   normalizeBinanceMessage,
   parseBinanceMessage,
+  preConnectBinance,
   shouldPublishBinanceMessage,
 } from "./helpers";
 
 export const binanceGatewayConfig: GatewayConfig = {
   id: "binance",
-  wsUrl: (creds, _source) => {
-    const isTestnet = creds.environment === "testnet";
-    const assetType = creds.asset_type || "spot";
-
-    if (assetType === "futures") {
-      return isTestnet
-        ? "wss://stream.testnet.binancefuture.com/ws"
-        : "wss://fstream.binance.com/ws";
-    }
-
-    return isTestnet
-      ? "wss://stream.testnet.binance.vision/ws"
-      : "wss://stream.binance.com:9443/ws";
-  },
-  makeSubscribeMessage: (stream, _source) =>
-    buildBinanceSubscribeMessage(stream),
-  makeUnsubscribeMessage: (stream, _source) =>
-    buildBinanceUnsubscribeMessage(stream),
+  wsUrl: (creds, source) => getBinanceWsUrl(creds, source),
+  makeSubscribeMessage: (stream, source) =>
+    buildBinanceSubscribeMessage(stream, source),
+  makeUnsubscribeMessage: (stream, source) =>
+    buildBinanceUnsubscribeMessage(stream, source),
   parseMessage: (buffer) => parseBinanceMessage(buffer),
   identifyMessageType: (msg) => identifyBinanceMessageType(msg),
-  shouldPublish: (msg, _source) => shouldPublishBinanceMessage(msg),
-  handleControlMessage: (msg, logger, _source) =>
-    handleBinanceControlMessage(msg, logger),
-  normalize: (msg, _source) => normalizeBinanceMessage(msg),
+  shouldPublish: (msg, source) => shouldPublishBinanceMessage(msg, source),
+  handleControlMessage: (msg, logger, source) =>
+    handleBinanceControlMessage(msg, logger, source),
+  normalize: (msg, source) => normalizeBinanceMessage(msg, source),
+  requiresPreConnect: true, // Only used when source is binance_trading (preConnect checks)
+  preConnect: (creds) => preConnectBinance(creds),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
 };

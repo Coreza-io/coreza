@@ -56,6 +56,11 @@ export function buildStreamName(
     return "trade_updates";
   }
 
+  // Binance trading: fixed stream name (User Data Stream covers all account events)
+  if (source === "binance_trading") {
+    return "user_data_stream";
+  }
+
   // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL
   if (source === "alpaca" || source === "alpaca_market") {
     return `${eventType}.${symbol.toUpperCase()}`;
@@ -109,6 +114,11 @@ export function parseStreamName(
 
   // Alpaca trading: fixed stream name
   if (source === "alpaca_trading") {
+    return { symbol: "*", eventType: "order_update" };
+  }
+
+  // Binance trading: fixed stream name
+  if (source === "binance_trading") {
     return { symbol: "*", eventType: "order_update" };
   }
 

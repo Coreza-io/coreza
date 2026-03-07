@@ -450,20 +450,22 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     });
 
-    // Companion gateway: Alpaca market listeners also need trading updates
+    // Companion gateway: Alpaca/Binance market listeners also need trading updates
     // so order fill events arrive during manual and Execute All runs.
-    if (sourceId === "alpaca_market") {
+    if (sourceId === "alpaca_market" || sourceId === "binance_market") {
+      const tradingSource = sourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+
       await RegistrationService.publishRegisterWorkflow({
         userId,
         workflowId: workflow_id,
         nodeId: node_id,
-        source: "alpaca_trading",
+        source: tradingSource,
         scope,
         onlyClosedBars: false,
       });
 
       await SubscriptionService.subscribe({
-        source: "alpaca_trading" as any,
+        source: tradingSource as any,
         userId,
         workflowId: workflow_id,
         nodeId: node_id,
@@ -547,9 +549,11 @@ router.post("/unregister", async (req, res) => {
         activeListener.nodeId === node_id,
     );
 
-    if (listener?.source === "alpaca_market") {
+    if (listener?.source === "alpaca_market" || listener?.source === "binance_market") {
+      const tradingSource = listener.source === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+
       await SubscriptionService.unsubscribe({
-        source: "alpaca_trading" as any,
+        source: tradingSource as any,
         userId,
         workflowId: workflow_id,
         nodeId: node_id,

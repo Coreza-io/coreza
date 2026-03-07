@@ -51,6 +51,11 @@ export function buildStreamName(
     return `${sym}@${eventType}`;
   }
 
+  // Alpaca trading: fixed stream name (trade_updates covers all symbols for the account)
+  if (source === "alpaca_trading") {
+    return "trade_updates";
+  }
+
   // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL
   if (source === "alpaca" || source === "alpaca_market") {
     return `${eventType}.${symbol.toUpperCase()}`;
@@ -100,6 +105,11 @@ export function parseStreamName(
 
     // No interval: trade, aggTrade, ticker, bookTicker
     return { symbol: sym, eventType: typeWithInterval };
+  }
+
+  // Alpaca trading: fixed stream name
+  if (source === "alpaca_trading") {
+    return { symbol: "*", eventType: "order_update" };
   }
 
   // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL

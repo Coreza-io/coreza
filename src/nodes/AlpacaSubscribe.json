@@ -102,7 +102,7 @@
     {
       "key": "stream_types",
       "label": "Stream Types",
-      "type": "select",
+      "type": "multiselect",
       "options": [
         {
           "id": "trade",
@@ -115,9 +115,13 @@
         {
           "id": "bar",
           "name": "Bars"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
-      "default": "trade",
+      "default": ["trade"],
       "description": "Select data stream types to subscribe to",
       "required": true,
       "showDescription": false,

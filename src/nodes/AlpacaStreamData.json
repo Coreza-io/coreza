@@ -178,8 +178,8 @@
       }
     },
     {
-      "key": "subscriptionMode",
-      "label": "Subscription Mode",
+      "key": "scope",
+      "label": "scope",
       "type": "select",
       "options": [
         {

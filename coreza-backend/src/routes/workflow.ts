@@ -559,8 +559,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           // Companion gateway: if this is an Alpaca or Binance market stream, also register
           // for trading updates (order fills) so both event types flow to the same workflow
-          if (sourceId === "alpaca_market" || sourceId === "binance_market") {
-            const tradingSource = sourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+          if (sourceId === "alpaca_market" || sourceId === "alpaca_crypto" || sourceId === "binance_market") {
+            const tradingSource = (sourceId === "alpaca_market" || sourceId === "alpaca_crypto") ? "alpaca_trading" : "binance_trading";
 
             await RegistrationService.publishRegisterWorkflow({
               userId,
@@ -757,8 +757,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
 
           // If this was an Alpaca or Binance market stream, also unregister the companion trading gateway
           const deactivateSourceId = resolveStreamSourceId(triggerNode);
-          if (deactivateSourceId === "alpaca_market" || deactivateSourceId === "binance_market") {
-            const tradingSource = deactivateSourceId === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+          if (deactivateSourceId === "alpaca_market" || deactivateSourceId === "alpaca_crypto" || deactivateSourceId === "binance_market") {
+            const tradingSource = (deactivateSourceId === "alpaca_market" || deactivateSourceId === "alpaca_crypto") ? "alpaca_trading" : "binance_trading";
 
             await RegistrationService.publishUnregisterWorkflow({
               userId,

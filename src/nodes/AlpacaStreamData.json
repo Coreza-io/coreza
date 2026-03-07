@@ -3,17 +3,14 @@
   "def": "Alpaca Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/alpaca.svg",
-  "category": "Broker",
+  "category": "Market",
   "subCategory": "alpaca",
   "executionMode": "streaming",
   "action": {
-    "url": "/stream/execute-stream-node",
+    "url": "/stream/alpaca/register",
     "method": "POST"
   },
   "streamingConfig": {
-    "sourceId": "alpaca_market",
-    "sourceIdPrefix": "alpaca_",
-    "sourceIdField": "data_type",
     "waitForFirstEvent": false,
     "timeout": 300000,
     "listeningFlag": "isTestListening",

@@ -70,7 +70,9 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         ([symbol, b]: [string, any]) => {
           const arr = Array.isArray(b) ? b : [b];
 
-          const bars = arr.filter(Boolean).map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
+          const bars = arr
+            .filter(Boolean)
+            .map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
             symbol,
@@ -108,7 +110,9 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         ([symbol, b]: [string, any]) => {
           const arr = Array.isArray(b) ? b : [b];
 
-          const bars = arr.filter(Boolean).map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
+          const bars = arr
+            .filter(Boolean)
+            .map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
             symbol,
@@ -119,7 +123,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       );
 
       return {
-        BarSeries: BarSeries,
+        BarSeries,
       };
     },
   },

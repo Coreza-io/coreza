@@ -70,9 +70,10 @@ export class MarketDataGateway {
     this.credentials = credentials;
 
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
-    const needsPreConnect = typeof this.config.requiresPreConnect === "function"
-      ? this.config.requiresPreConnect(this.source)
-      : this.config.requiresPreConnect;
+    const needsPreConnect =
+      typeof this.config.requiresPreConnect === "function"
+        ? this.config.requiresPreConnect(this.source)
+        : this.config.requiresPreConnect;
     if (needsPreConnect && this.config.preConnect) {
       this.logger.info({ source: this.source }, "Running pre-connect setup");
       this.credentials = await this.config.preConnect(credentials, this.source);
@@ -93,7 +94,10 @@ export class MarketDataGateway {
         this.logger.info({ source: this.source }, "Gateway connected");
         activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
-        const authMsg = this.config.makeAuthMessage?.(this.credentials, this.source);
+        const authMsg = this.config.makeAuthMessage?.(
+          this.credentials,
+          this.source,
+        );
         if (authMsg) {
           const payload = this.config.isBinary
             ? this.encodeMessage(authMsg)
@@ -166,7 +170,10 @@ export class MarketDataGateway {
           continue;
         }
 
-        if (this.config.isAuthError && this.config.isAuthError(msg, this.source)) {
+        if (
+          this.config.isAuthError &&
+          this.config.isAuthError(msg, this.source)
+        ) {
           this.logger.error(
             { source: this.source, msg },
             "Authentication failed",

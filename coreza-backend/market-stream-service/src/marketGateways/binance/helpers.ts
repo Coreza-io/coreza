@@ -1,7 +1,10 @@
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 
 // ============ BINANCE REST API ENDPOINTS ============
-const BINANCE_REST_ENDPOINTS: Record<string, { spot: string; futures: string }> = {
+const BINANCE_REST_ENDPOINTS: Record<
+  string,
+  { spot: string; futures: string }
+> = {
   live: {
     spot: "https://api.binance.com",
     futures: "https://fapi.binance.com",
@@ -21,7 +24,9 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
   if (source === "binance_trading") {
     const listenKey = creds.listenKey;
     if (!listenKey) {
-      throw new Error("listenKey is required for binance_trading — preConnect must run first");
+      throw new Error(
+        "listenKey is required for binance_trading — preConnect must run first",
+      );
     }
 
     if (assetType === "futures") {
@@ -54,9 +59,8 @@ export async function preConnectBinance(creds: any): Promise<any> {
   const env = isTestnet ? "testnet" : "live";
   const baseUrl = BINANCE_REST_ENDPOINTS[env][assetType as "spot" | "futures"];
 
-  const endpoint = assetType === "futures"
-    ? "/fapi/v1/listenKey"
-    : "/api/v3/userDataStream";
+  const endpoint =
+    assetType === "futures" ? "/fapi/v1/listenKey" : "/api/v3/userDataStream";
 
   const url = `${baseUrl}${endpoint}`;
 
@@ -70,10 +74,12 @@ export async function preConnectBinance(creds: any): Promise<any> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Failed to create Binance listenKey: ${response.status} ${body}`);
+    throw new Error(
+      `Failed to create Binance listenKey: ${response.status} ${body}`,
+    );
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as { listenKey: string };
   const listenKey = data.listenKey;
 
   if (!listenKey) {
@@ -81,27 +87,35 @@ export async function preConnectBinance(creds: any): Promise<any> {
   }
 
   // Set up 30-minute keepalive interval
-  const refreshInterval = setInterval(async () => {
-    try {
-      const refreshResponse = await fetch(url, {
-        method: "PUT",
-        headers: {
-          "X-MBX-APIKEY": creds.api_key,
-        },
-      });
-      if (!refreshResponse.ok) {
-        console.error(`Failed to refresh Binance listenKey: ${refreshResponse.status}`);
+  const refreshInterval = setInterval(
+    async () => {
+      try {
+        const refreshResponse = await fetch(url, {
+          method: "PUT",
+          headers: {
+            "X-MBX-APIKEY": creds.api_key,
+          },
+        });
+        if (!refreshResponse.ok) {
+          console.error(
+            `Failed to refresh Binance listenKey: ${refreshResponse.status}`,
+          );
+        }
+      } catch (err) {
+        console.error("Error refreshing Binance listenKey:", err);
       }
-    } catch (err) {
-      console.error("Error refreshing Binance listenKey:", err);
-    }
-  }, 30 * 60 * 1000); // 30 minutes
+    },
+    30 * 60 * 1000,
+  ); // 30 minutes
 
   return { ...creds, listenKey, _listenKeyRefreshInterval: refreshInterval };
 }
 
 // ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============
-export function buildBinanceSubscribeMessage(stream: string[], source?: string) {
+export function buildBinanceSubscribeMessage(
+  stream: string[],
+  source?: string,
+) {
   // Trading stream: no subscription needed — User Data Stream auto-sends all account events
   if (source === "binance_trading") {
     return null;
@@ -109,7 +123,10 @@ export function buildBinanceSubscribeMessage(stream: string[], source?: string) 
   return { method: "SUBSCRIBE", params: stream, id: Date.now() };
 }
 
-export function buildBinanceUnsubscribeMessage(stream: string[], source?: string) {
+export function buildBinanceUnsubscribeMessage(
+  stream: string[],
+  source?: string,
+) {
   // Trading stream: no unsubscription needed
   if (source === "binance_trading") {
     return null;
@@ -127,7 +144,10 @@ export function identifyBinanceMessageType(msg: any): string {
 }
 
 // ============ PUBLISH FILTER (source-aware) ============
-export function shouldPublishBinanceMessage(msg: any, source?: string): boolean {
+export function shouldPublishBinanceMessage(
+  msg: any,
+  source?: string,
+): boolean {
   if (source === "binance_trading") {
     // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
     return msg.e === "executionReport" || msg.e === "ORDER_TRADE_UPDATE";
@@ -144,11 +164,22 @@ export function shouldPublishBinanceMessage(msg: any, source?: string): boolean 
 }
 
 // ============ CONTROL MESSAGES ============
-export function handleBinanceControlMessage(msg: any, logger: any, source?: string) {
+export function handleBinanceControlMessage(
+  msg: any,
+  logger: any,
+  source?: string,
+) {
   if (source === "binance_trading") {
     // User Data Stream events that aren't order updates (e.g., outboundAccountPosition, balanceUpdate)
-    if (msg.e === "outboundAccountPosition" || msg.e === "balanceUpdate" || msg.e === "ACCOUNT_UPDATE") {
-      logger.info({ source: "binance_trading", eventType: msg.e }, "Account event received");
+    if (
+      msg.e === "outboundAccountPosition" ||
+      msg.e === "balanceUpdate" ||
+      msg.e === "ACCOUNT_UPDATE"
+    ) {
+      logger.info(
+        { source: "binance_trading", eventType: msg.e },
+        "Account event received",
+      );
     }
     return;
   }
@@ -179,7 +210,10 @@ const BINANCE_EXECUTION_TYPE_MAP: Record<string, string> = {
 };
 
 // ============ NORMALIZATION (source-aware) ============
-export function normalizeBinanceMessage(msg: any, source?: string): CorezaMarketEvent | null {
+export function normalizeBinanceMessage(
+  msg: any,
+  source?: string,
+): CorezaMarketEvent | null {
   // TRADING source - order updates
   if (source === "binance_trading") {
     // Spot: executionReport
@@ -193,9 +227,10 @@ export function normalizeBinanceMessage(msg: any, source?: string): CorezaMarket
         orderId: String(msg.i),
         side: msg.S?.toLowerCase(),
         filledQty: parseFloat(msg.z) || 0, // Cumulative filled qty
-        filledAvgPrice: parseFloat(msg.z) > 0
-          ? parseFloat(msg.Z) / parseFloat(msg.z) // Cumulative quote qty / cumulative qty
-          : 0,
+        filledAvgPrice:
+          parseFloat(msg.z) > 0
+            ? parseFloat(msg.Z) / parseFloat(msg.z) // Cumulative quote qty / cumulative qty
+            : 0,
         orderStatus: BINANCE_ORDER_STATUS_MAP[msg.X] || msg.X?.toLowerCase(),
         orderSymbol: msg.s,
       };

@@ -453,6 +453,24 @@ export class MarketDataSubscriber {
       };
     }
 
+    // Order update events (from trading WebSocket)
+    if (type === "order_update") {
+      return {
+        data: {
+          symbol,
+          type: "order_update",
+          order: {
+            event: event.orderEvent,
+            orderId: event.orderId,
+            side: event.side,
+            filledQty: event.filledQty,
+            filledAvgPrice: event.filledAvgPrice,
+            status: event.orderStatus,
+          },
+        },
+      };
+    }
+
     // Include timeframe in the data payload (useful for kline interval)
     return {
       data: {

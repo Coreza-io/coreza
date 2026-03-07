@@ -23,7 +23,7 @@
       "interval": 10000
     }
   },
-  "description": "Receives real-time market data or news from Alpaca. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Receives real-time market data or news from Alpaca. When data_type is 'market', also automatically streams order fill events (trade_updates) for the account. Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,

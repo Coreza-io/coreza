@@ -557,6 +557,31 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             onlyClosedBars,
           });
 
+          // Companion gateway: if this is an Alpaca market stream, also register
+          // for trading updates (order fills) so both event types flow to the same workflow
+          if (sourceId === "alpaca_market") {
+            await RegistrationService.publishRegisterWorkflow({
+              userId,
+              workflowId,
+              nodeId: triggerNode.id,
+              source: "alpaca_trading",
+              scope,
+              onlyClosedBars: false,
+            });
+
+            // Subscribe to trading stream (connects the trading WS gateway)
+            await SubscriptionService.subscribe({
+              source: "alpaca_trading" as any,
+              userId,
+              workflowId,
+              credentialId: nodeValues.credential_id,
+              operation: "subscribe",
+              symbols: ["*"], // trade_updates covers all symbols
+              scope,
+              targetWorkflowId: workflowId,
+            });
+          }
+
           await jobQueue.startLiveStrategy(
             workflowId,
             userId,
@@ -727,6 +752,25 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
             workflowId,
             isTestListener: false,
           });
+
+          // If this was an Alpaca market stream, also unregister the companion trading gateway
+          const deactivateSourceId = resolveStreamSourceId(triggerNode);
+          if (deactivateSourceId === "alpaca_market") {
+            await RegistrationService.publishUnregisterWorkflow({
+              userId,
+              workflowId: `${workflowId}:trading`,
+              isTestListener: false,
+            });
+
+            await SubscriptionService.unsubscribe({
+              source: "alpaca_trading" as any,
+              userId,
+              workflowId,
+              credentialId: triggerNode.values?.credential_id,
+              operation: "unsubscribe",
+              symbols: ["*"],
+            });
+          }
 
           await jobQueue.stopLiveStrategy(workflowId);
 

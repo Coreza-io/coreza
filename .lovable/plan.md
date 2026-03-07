@@ -1,64 +1,56 @@
 
 
-# Plan: Fix OnBar Output to Match BarSeries Format
+# Plan: Single AlpacaStreamData Node Emitting Both Market Data + Order Updates
 
-## Problem
+## Status: ✅ IMPLEMENTED
 
-Two issues in `BacktestExecutor.ts`:
+## Summary
 
-1. **Bar extraction is broken** (line 341): `brokerResult.data?.candles` returns `undefined` because all brokers (`get_candle`) return `{ BarSeries: [{ symbol, interval, bars: [...] }] }` — not `{ candles: [...] }`. This means backtests get zero bars.
+Implemented the Companion Gateway Pattern so a single `AlpacaStreamData` trigger node connects to both Alpaca WebSocket endpoints (market data + trading) and emits all events through the same output.
 
-2. **OnBar output uses legacy field names** (lines 529-536): `bar?.o`, `bar?.vw`, `bar?.n` are Alpaca raw format. All brokers now output universal `Bar` objects with `open`, `high`, `low`, `close`, `volume`, `vwap`, `trades`. The OnBar output should wrap the bar in the same `BarSeries` envelope so downstream access is `{{ $('OnBar').json.data.BarSeries[0].bars[0].close }}`.
+## Changes Made
 
-## Changes — Single File
+### 1. Added `order_update` to MarketEventType + order fields
+- `coreza-backend/market-stream-service/src/types/marketEvent.ts` — Added `"order_update"` to union, added `orderEvent`, `orderId`, `side`, `filledQty`, `filledAvgPrice`, `orderStatus`, `orderSymbol` fields, plus news fields (`headline`, `summary`, etc.)
+- `coreza-backend/src/types/marketEvent.ts` — Same additions to main backend types
 
-**`coreza-backend/src/nodes/executors/BacktestExecutor.ts`**
+### 2. Added `alpaca_trading` to SOURCE_MAPPING
+- `coreza-backend/market-stream-service/src/marketGateways/index.ts` — Added `alpaca_trading` source mapping
 
-### Fix 1: Bar extraction (line 341)
+### 3. Updated Alpaca helpers for trading WebSocket
+- `coreza-backend/market-stream-service/src/marketGateways/alpaca/helpers.ts` — Full rewrite with:
+  - `getAlpacaWsUrl`: Added `alpaca_trading` → `wss://paper-api.alpaca.markets/stream` (paper) or `wss://api.alpaca.markets/stream` (live)
+  - `buildAlpacaSubscribeMessage`: `alpaca_trading` → `{ action: "listen", data: { streams: ["trade_updates"] } }`
+  - `buildAlpacaUnsubscribeMessage`: `alpaca_trading` → returns `null` (no-op)
+  - `isAlpacaAuthSuccess/Error`: Handle both market data and trading stream auth response formats
+  - `shouldPublishAlpacaMessage`: `alpaca_trading` → publish when `stream === "trade_updates"`
+  - `normalizeAlpacaMessage`: `alpaca_trading` → normalize to `CorezaMarketEvent` with `type: "order_update"`
 
-```typescript
-// Before
-const bars = brokerResult.data?.candles || [];
+### 4. Updated GatewayConfig types + MarketDataGateway
+- `coreza-backend/market-stream-service/src/marketGateways/types.ts` — Added `source?` param to `makeAuthMessage`, `isAuthSuccess`, `isAuthError`
+- `coreza-backend/market-stream-service/src/marketGateways/alpaca/config.ts` — Pass `source` through to auth functions
+- `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts` — Pass `this.source` to auth function calls
 
-// After
-const barSeries = brokerResult.data?.BarSeries;
-const bars = barSeries?.[0]?.bars || [];
+### 5. Updated streamName utility
+- `coreza-backend/market-stream-service/src/utils/streamName.ts` — Added `alpaca_trading` handling: `buildStreamName` returns fixed `"trade_updates"`, `parseStreamName` returns `{ symbol: "*", eventType: "order_update" }`
+
+### 6. Updated MarketDataSubscriber
+- `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` — 
+  - Message handler now checks `trade_updates` stream name for order_update routing
+  - Added `order_update` formatting in `formatMarketEventPayload`
+
+### 7. Companion gateway activation/deactivation
+- `coreza-backend/src/routes/workflow.ts` — 
+  - On activation: if `sourceId === "alpaca_market"`, also registers `alpaca_trading` and subscribes with `symbols: ["*"]`
+  - On deactivation: if source is `alpaca_market`, also unregisters/unsubscribes the companion trading gateway
+
+### 8. Updated AlpacaStreamData.json description
+- `src/nodes/AlpacaStreamData.json` — Updated description to mention automatic order fill streaming
+
+## Workflow Shape
+
+```text
+                           ┌──── type === "bar" ────→ Strategy ──→ Buy/Sell
+AlpacaStreamData ──→ If ──┤
+                           └──── type === "order_update" ──→ PortfolioUpdate
 ```
-
-### Fix 2: OnBar output format (lines 522-538)
-
-Instead of flattening individual fields, output the bar wrapped in `BarSeries` format — matching exactly what `get_candle` returns:
-
-```typescript
-return toNodeResult(
-  createSuccessOutput({
-    BarSeries: [
-      {
-        symbol,
-        interval: timeframe,
-        bars: [bar],
-      },
-    ],
-    barIndex,
-  }),
-);
-```
-
-This means downstream nodes access data as:
-- `{{ $('OnBar').json.data.BarSeries[0].bars[0].close }}`
-- `{{ $('OnBar').json.data.BarSeries[0].symbol }}`
-- `{{ $('OnBar').json.data.barIndex }}`
-
-The bar object itself contains universal fields: `time`, `open`, `high`, `low`, `close`, `volume`, `vwap`, `trades`, `quoteVolume`, `takerBuyBaseVolume`, `takerBuyQuoteVolume`, `closeTime`.
-
-### Fix 3: Update OnBar.json description
-
-Update the description in `src/nodes/OnBar.json` to reflect the new access pattern.
-
-## File Summary
-
-| File | Change |
-|---|---|
-| `coreza-backend/src/nodes/executors/BacktestExecutor.ts` | Fix bar extraction from BarSeries; reformat OnBar output to BarSeries envelope |
-| `src/nodes/OnBar.json` | Update description with correct template paths |
-

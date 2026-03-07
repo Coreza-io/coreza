@@ -195,7 +195,10 @@ export class MarketDataGateway {
         if (!event || !event.symbol) continue;
 
         // Publish to Redis symbol channel with circuit breaker
-        const stream = `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`;
+        // Publish to Redis symbol channel with circuit breaker
+        const stream = event.timeframe
+          ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+          : `${event.symbol.toLowerCase()}@${event.type}`;
         const channel = REDIS_CHANNELS.marketData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
         console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);

@@ -88,7 +88,8 @@ export function isAlpacaAuthError(msg: any, source?: string): boolean {
 }
 
 // ============ STREAM NAME PARSING ============
-// Alpaca stream names: "bars.AAPL", "trades.MSFT", "news.AAPL"
+// Universal format: symbol@eventType OR symbol@eventType_interval
+
 export function parseAlpacaStreamNames(streamNames: string[]): {
   symbols: string[];
   types: string[];
@@ -97,16 +98,21 @@ export function parseAlpacaStreamNames(streamNames: string[]): {
   const types = new Set<string>();
 
   for (const name of streamNames) {
-    const dotIndex = name.indexOf(".");
-    if (dotIndex > 0) {
-      const type = name.substring(0, dotIndex);
-      const symbol = name.substring(dotIndex + 1);
+    const atIndex = name.indexOf("@");
+
+    if (atIndex > 0) {
+      const symbol = name.substring(0, atIndex);
+      const rest = name.substring(atIndex + 1);
+
+      // bar_1m -> bar
+      const type = rest.includes("_") ? rest.split("_")[0] : rest;
+
+      symbols.add(symbol.toUpperCase());
       types.add(type);
-      symbols.add(symbol);
     } else {
-      // Fallback: treat as symbol with default type
-      symbols.add(name);
-      types.add("trades");
+      // fallback
+      symbols.add(name.toUpperCase());
+      types.add("trade");
     }
   }
 

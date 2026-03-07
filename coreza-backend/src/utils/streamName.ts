@@ -22,45 +22,16 @@ export interface StreamIdentifier {
  * @param interval - Optional interval (1m, 5m, 20 for depth)
  * @returns Native stream name (btcusdt@kline_1m, bars.AAPL)
  */
-export function buildStreamName(
+function buildStreamKey(
   source: string,
   symbol: string,
   eventType: string,
-  interval?: string
+  interval?: string,
 ): string {
   const sym = symbol.toLowerCase();
 
-  // Binance format: btcusdt@kline_1m, btcusdt@trade, btcusdt@depth20
-  if (source.startsWith("binance")) {
-    // Depth streams: depth20, depth10, etc.
-    if (eventType === "depth" || eventType === "depth_levels") {
-      return `${sym}@depth${interval || "20"}`;
-    }
-
-    // Kline streams: kline_1m, kline_5m, etc.
-    if (eventType === "kline" && interval) {
-      return `${sym}@kline_${interval}`;
-    }
-
-    // Interval-based streams (legacy format): t_1m -> kline_1m
-    if (interval && !eventType.includes("_")) {
-      return `${sym}@${eventType}_${interval}`;
-    }
-
-    // Trade, aggTrade, ticker, bookTicker, etc.
-    return `${sym}@${eventType}`;
-  }
-
-  // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL
-  if (source === "alpaca" || source === "alpaca_market") {
-    return `${eventType}.${symbol.toUpperCase()}`;
-  }
-
-  // Default fallback: symbol@eventType_interval
-  if (interval) {
-    return `${sym}@${eventType}_${interval}`;
-  }
-  return `${sym}@${eventType}`;
+  // Universal format for all brokers
+  return interval ? `${sym}@${eventType}_${interval}` : `${sym}@${eventType}`;
 }
 
 /**
@@ -72,7 +43,7 @@ export function buildStreamName(
  */
 export function parseStreamName(
   source: string,
-  streamName: string
+  streamName: string,
 ): StreamIdentifier {
   // Binance format: btcusdt@kline_1m, btcusdt@trade, btcusdt@depth20
   if (source.startsWith("binance")) {
@@ -146,7 +117,7 @@ export function parseStreamName(
 export function buildStreamNames(
   source: string,
   symbols: string[],
-  eventTypes: string[]
+  eventTypes: string[],
 ): string[] {
   const streamNames: string[] = [];
 
@@ -158,10 +129,15 @@ export function buildStreamNames(
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);
         streamNames.push(buildStreamName(source, symbol, type, interval));
-      } else if (eventType.startsWith("depth") && source.startsWith("binance")) {
+      } else if (
+        eventType.startsWith("depth") &&
+        source.startsWith("binance")
+      ) {
         // Handle depth20, depth10, etc.
         const interval = eventType.slice(5);
-        streamNames.push(buildStreamName(source, symbol, "depth", interval || "20"));
+        streamNames.push(
+          buildStreamName(source, symbol, "depth", interval || "20"),
+        );
       } else {
         streamNames.push(buildStreamName(source, symbol, eventType));
       }

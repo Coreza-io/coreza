@@ -529,6 +529,7 @@ export class MarketControlHandler {
           source,
           symbols,
           processedEventTypes,
+          interval || "",
         );
 
         // Check which stream names are NEW (not already in state.streams)
@@ -657,6 +658,7 @@ export class MarketControlHandler {
           source,
           symbols,
           processedEventTypes,
+          interval || "",
         );
 
         console.log(
@@ -952,6 +954,7 @@ export class MarketControlHandler {
                     source,
                     [entry.symbol],
                     [type],
+                    entry.interval,
                   );
                   streamNames.forEach((name) => migratedStreams.push(name));
                 });

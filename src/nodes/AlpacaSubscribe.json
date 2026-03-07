@@ -110,11 +110,7 @@
         },
         {
           "id": "bar",
-          "name": "Minute Bars"
-        },
-        {
-          "id": "daily_bar",
-          "name": "Daily Bars"
+          "name": "Bars"
         }
       ],
       "default": "trade",
@@ -126,6 +122,25 @@
           "data_type": ["market"]
         }
       }
+    },
+    {
+      "key": "interval",
+      "label": "Stream Interval",
+      "type": "select",
+      "options": [
+        {
+          "id": "1m",
+          "name": "1 Minute"
+        }
+      ],
+      "default": "1m",
+      "displayOptions": {
+        "show": {
+          "stream_types": ["trade", "quote", "bar"]
+        }
+      },
+      "description": "Candlestick timeframe for bar data",
+      "showDescription": false
     },
     {
       "key": "symbols",

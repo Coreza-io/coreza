@@ -289,14 +289,23 @@ export class MarketDataSubscriber {
 
         // Find workflows registered for this symbol
         const workflows = this.symbolWorkflows.get(stream);
-        if (!workflows || workflows.size === 0) return;
 
-        // Handle wildcard registrations (*)
+        // Handle wildcard registrations (*) — used by alpaca_trading (order_update covers all symbols)
         const wildcardWorkflows = this.symbolWorkflows.get("*");
+
+        // Also check for trade_updates stream name (alpaca_trading companion)
+        const tradeUpdatesWorkflows =
+          event.type === "order_update"
+            ? this.symbolWorkflows.get("trade_updates")
+            : undefined;
+
         const allWorkflows = new Set([
           ...(workflows || []),
           ...(wildcardWorkflows || []),
+          ...(tradeUpdatesWorkflows || []),
         ]);
+
+        if (allWorkflows.size === 0) return;
 
         logger.debug(
           {

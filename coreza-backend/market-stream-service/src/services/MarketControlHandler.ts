@@ -240,6 +240,17 @@ export class MarketControlHandler {
   }
 
   /**
+   * Get the companion trading source for a market source.
+   * Trading updates are account-wide, so when registering for market data,
+   * we also need to discover any trading streams the user subscribed to.
+   */
+  private getCompanionTradingSource(source: string): string | null {
+    if (source === "alpaca_market" || source === "alpaca_crypto") return "alpaca_trading";
+    if (source === "binance_market") return "binance_trading";
+    return null;
+  }
+
+  /**
    * Get symbols specifically scoped to a workflow
    */
   private async getWorkflowScopedSymbols(
@@ -262,6 +273,23 @@ export class MarketControlHandler {
           streams,
         );
         streams.forEach((s) => allStreams.add(s));
+
+        // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
+        const companionSource = this.getCompanionTradingSource(source);
+        if (companionSource) {
+          const tradingKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:streams`;
+          console.log(
+            `🔍 [MarketControl] Checking companion trading streams at key: ${tradingKey}`,
+          );
+          const tradingStreams = await this.redisPub.smembers(tradingKey);
+          if (tradingStreams.length > 0) {
+            console.log(
+              `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams:`,
+              tradingStreams,
+            );
+            tradingStreams.forEach((s) => allStreams.add(s));
+          }
+        }
       }
     } catch (err) {
       console.error(
@@ -286,10 +314,22 @@ export class MarketControlHandler {
     try {
       // Use pattern matching to find ALL subscription keys for this user
       const key = `md:user:${userId}:subscription:scope:global:${source}:streams`;
-
       const streams = await this.redisPub.smembers(key);
-
       streams.forEach((s) => allStream.add(s));
+
+      // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
+      const companionSource = this.getCompanionTradingSource(source);
+      if (companionSource) {
+        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:streams`;
+        const tradingStreams = await this.redisPub.smembers(tradingKey);
+        if (tradingStreams.length > 0) {
+          console.log(
+            `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
+            tradingStreams,
+          );
+          tradingStreams.forEach((s) => allStream.add(s));
+        }
+      }
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,

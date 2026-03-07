@@ -195,10 +195,17 @@ export class MarketDataGateway {
         if (!event || !event.symbol) continue;
 
         // Publish to Redis symbol channel with circuit breaker
-        // Publish to Redis symbol channel with circuit breaker
-        const stream = event.timeframe
-          ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-          : `${event.symbol.toLowerCase()}@${event.type}`;
+        // Trading sources use fixed stream names to match subscriber expectations
+        let stream: string;
+        if (this.source === "alpaca_trading") {
+          stream = "trade_updates";
+        } else if (this.source === "binance_trading") {
+          stream = "user_data_stream";
+        } else {
+          stream = event.timeframe
+            ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+            : `${event.symbol.toLowerCase()}@${event.type}`;
+        }
         const channel = REDIS_CHANNELS.marketData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
         console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);

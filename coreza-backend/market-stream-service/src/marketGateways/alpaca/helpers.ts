@@ -25,6 +25,9 @@ export function getAlpacaWsUrl(creds: any, source?: string): string {
       ? "wss://paper-api.alpaca.markets/stream"
       : "wss://api.alpaca.markets/stream";
   }
+  if (source === "alpaca_crypto") {
+    return "wss://stream.data.alpaca.markets/v1beta3/crypto/us";
+  }
   // Default: market data stream
   const feed = creds.feed || "iex";
   return `wss://stream.data.alpaca.markets/v2/${feed}`;

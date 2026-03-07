@@ -1,107 +1,56 @@
 
 
-# Analysis: Alpaca Crypto Streaming (BTC/USD) — What's Missing
+# Plan: Single AlpacaStreamData Node Emitting Both Market Data + Order Updates
 
-## How Alpaca Crypto Streaming Works
+## Status: ✅ IMPLEMENTED
 
-Alpaca has a **completely separate WebSocket endpoint** for crypto:
+## Summary
 
-| Asset | WebSocket URL | Symbol Format |
-|---|---|---|
-| Stocks | `wss://stream.data.alpaca.markets/v2/{feed}` | `AAPL`, `TSLA` |
-| Crypto | `wss://stream.data.alpaca.markets/v1beta3/crypto/us` | `BTC/USD`, `ETH/USD` |
+Implemented the Companion Gateway Pattern so a single `AlpacaStreamData` trigger node connects to both Alpaca WebSocket endpoints (market data + trading) and emits all events through the same output.
 
-Key differences:
-- **No feed parameter** — crypto has no iex/sip distinction, it uses a fixed `/crypto/us` path
-- **Slash in symbol** — crypto uses `BTC/USD` format (not `BTCUSD`)
-- **24/7 streaming** — no market hours
-- **Same auth** — identical `{action: "auth", key, secret}` message
-- **Same subscribe format** — `{action: "subscribe", trades: ["BTC/USD"], bars: ["BTC/USD"]}` 
-- **Same message types** — `t` (trade), `q` (quote), `b` (bar), `d` (daily bar) — identical to stocks
-- **Additional channel**: `orderbooks` (unique to crypto) and `updatedBars`
+## Changes Made
 
-## Current State — What We Have
+### 1. Added `order_update` to MarketEventType + order fields
+- `coreza-backend/market-stream-service/src/types/marketEvent.ts` — Added `"order_update"` to union, added `orderEvent`, `orderId`, `side`, `filledQty`, `filledAvgPrice`, `orderStatus`, `orderSymbol` fields, plus news fields (`headline`, `summary`, etc.)
+- `coreza-backend/src/types/marketEvent.ts` — Same additions to main backend types
 
-### Frontend Nodes
-- `AlpacaStreamData.json` and `AlpacaSubscribe.json` have `data_type` with options: `market` | `news`
-- No `crypto` option exists
-- Feed selector shows `iex` / `sip` / `test` — none apply to crypto
-- Symbol placeholder says "AAPL, TSLA" — no mention of crypto format
+### 2. Added `alpaca_trading` to SOURCE_MAPPING
+- `coreza-backend/market-stream-service/src/marketGateways/index.ts` — Added `alpaca_trading` source mapping
 
-### Backend — URL Builder (`helpers.ts`)
-```typescript
-// Current logic — NO crypto path
-const feed = creds.feed || "iex";
-return `wss://stream.data.alpaca.markets/v2/${feed}`;
+### 3. Updated Alpaca helpers for trading WebSocket
+- `coreza-backend/market-stream-service/src/marketGateways/alpaca/helpers.ts` — Full rewrite with:
+  - `getAlpacaWsUrl`: Added `alpaca_trading` → `wss://paper-api.alpaca.markets/stream` (paper) or `wss://api.alpaca.markets/stream` (live)
+  - `buildAlpacaSubscribeMessage`: `alpaca_trading` → `{ action: "listen", data: { streams: ["trade_updates"] } }`
+  - `buildAlpacaUnsubscribeMessage`: `alpaca_trading` → returns `null` (no-op)
+  - `isAlpacaAuthSuccess/Error`: Handle both market data and trading stream auth response formats
+  - `shouldPublishAlpacaMessage`: `alpaca_trading` → publish when `stream === "trade_updates"`
+  - `normalizeAlpacaMessage`: `alpaca_trading` → normalize to `CorezaMarketEvent` with `type: "order_update"`
+
+### 4. Updated GatewayConfig types + MarketDataGateway
+- `coreza-backend/market-stream-service/src/marketGateways/types.ts` — Added `source?` param to `makeAuthMessage`, `isAuthSuccess`, `isAuthError`
+- `coreza-backend/market-stream-service/src/marketGateways/alpaca/config.ts` — Pass `source` through to auth functions
+- `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts` — Pass `this.source` to auth function calls
+
+### 5. Updated streamName utility
+- `coreza-backend/market-stream-service/src/utils/streamName.ts` — Added `alpaca_trading` handling: `buildStreamName` returns fixed `"trade_updates"`, `parseStreamName` returns `{ symbol: "*", eventType: "order_update" }`
+
+### 6. Updated MarketDataSubscriber
+- `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` — 
+  - Message handler now checks `trade_updates` stream name for order_update routing
+  - Added `order_update` formatting in `formatMarketEventPayload`
+
+### 7. Companion gateway activation/deactivation
+- `coreza-backend/src/routes/workflow.ts` — 
+  - On activation: if `sourceId === "alpaca_market"`, also registers `alpaca_trading` and subscribes with `symbols: ["*"]`
+  - On deactivation: if source is `alpaca_market`, also unregisters/unsubscribes the companion trading gateway
+
+### 8. Updated AlpacaStreamData.json description
+- `src/nodes/AlpacaStreamData.json` — Updated description to mention automatic order fill streaming
+
+## Workflow Shape
+
+```text
+                           ┌──── type === "bar" ────→ Strategy ──→ Buy/Sell
+AlpacaStreamData ──→ If ──┤
+                           └──── type === "order_update" ──→ PortfolioUpdate
 ```
-If user selects `data_type: "market"` and types `BTC/USD`, it connects to the **stock** endpoint which will reject crypto symbols silently (no data, or error).
-
-### Backend — Source Resolution (`workflow.ts`)
-```typescript
-resolveStreamSourceId → `${subCategory}_${dataType}` → "alpaca_market"
-```
-There's no `alpaca_crypto` source ID anywhere in the system.
-
-### Backend — Stream Names (`streamName.ts`)
-Uses `symbol@eventType` universal format. `BTC/USD` contains a slash which won't break the format but needs testing. The `/` in `btc/usd@trade` is unusual but functional.
-
-### Backend — SOURCE_MAPPING (`marketGateways/index.ts`)
-No `alpaca_crypto` entry exists. It would fall through to the default mapper.
-
-### Backend — Streaming Types (`streaming.ts`)
-```typescript
-feed?: "iex" | "sip" | "test";  // No crypto-specific value
-```
-
-## What's Missing — Complete Gap List
-
-### 1. Frontend Nodes (AlpacaStreamData.json + AlpacaSubscribe.json)
-- Add `data_type` option: `{ id: "crypto", name: "Crypto (BTC/USD, ETH/USD)" }`
-- Feed selector should **hide** when `data_type === "crypto"` (crypto has no feed choice)
-- Update symbol placeholder conditionally for crypto: `"BTC/USD, ETH/USD"`
-- Optionally add `orderbooks` to stream_types when crypto is selected
-
-### 2. Backend — URL Builder (`helpers.ts`)
-Add crypto source handling:
-```typescript
-if (source === "alpaca_crypto") {
-  return "wss://stream.data.alpaca.markets/v1beta3/crypto/us";
-}
-```
-
-### 3. Backend — Source Resolution (`workflow.ts`)
-`resolveStreamSourceId` already computes `alpaca_crypto` automatically when `subCategory="alpaca"` and `data_type="crypto"` → produces `"alpaca_crypto"`. No change needed here.
-
-### 4. Backend — SOURCE_MAPPING (`marketGateways/index.ts`)
-Add entry:
-```typescript
-alpaca_crypto: { credentialServiceType: 'alpaca', gatewaySource: 'alpaca' },
-```
-
-### 5. Backend — Streaming Types (`streaming.ts`)
-No change needed — `feed` is optional and crypto won't send one.
-
-### 6. Backend — Normalization (`helpers.ts`)
-No change needed — crypto uses identical message types (`t`, `q`, `b`, `d`) with same field names. The normalizer already handles them.
-
-### 7. Backend — Companion Trading Gateway
-In `stream.ts` and `workflow.ts`, companion trading registration checks:
-```typescript
-if (sourceId === "alpaca_market" || sourceId === "binance_market")
-```
-Should also include `"alpaca_crypto"` so crypto traders get order fill events too.
-
-## Summary of Changes Required
-
-| Layer | File | Change | Effort |
-|---|---|---|---|
-| Frontend | `AlpacaStreamData.json` | Add `crypto` data_type, hide feed for crypto, add orderbooks stream type | Small |
-| Frontend | `AlpacaSubscribe.json` | Add `crypto` data_type, hide feed for crypto | Small |
-| Backend | `market-stream-service/.../alpaca/helpers.ts` | Add `alpaca_crypto` URL routing | 1 line |
-| Backend | `market-stream-service/.../index.ts` | Add `alpaca_crypto` to SOURCE_MAPPING | 1 line |
-| Backend | `src/routes/stream.ts` | Add `alpaca_crypto` to companion trading check | 1 line |
-| Backend | `src/routes/workflow.ts` | Add `alpaca_crypto` to companion trading check | 2 lines |
-| Backend | `src/types/streaming.ts` | No change needed | — |
-
-Total: 6 files, all small targeted edits. Auth, subscribe format, message parsing, and normalization all work as-is because Alpaca crypto uses the same protocol — only the WebSocket URL differs.
-

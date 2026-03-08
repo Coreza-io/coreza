@@ -123,6 +123,7 @@ export class PortfolioManager {
     this.holdings.clear();
     this.fillLedger.length = 0;
     this.fillIdSet.clear();
+    this.orderCumQtyMap.clear();
     this.trades.length = 0;
     this.currentEntryMap.clear();
     this.tradeIdCounter = 0;

@@ -74,7 +74,8 @@ export class PortfolioManager {
   private cashBook = new Map<string, number>(); // asset -> total balance
   private holdings = new Map<string, SpotHolding>(); // symbol -> holding
   private fillLedger: LiveFill[] = [];
-  private fillIdSet = new Set<string>(); // O(1) dedup: "${symbol}:${tradeId}"
+  private fillIdSet = new Set<string>(); // O(1) dedup for manual fills
+  private orderCumQtyMap = new Map<string, number>(); // orderId → cumulative qty applied (partial fill tracking)
   private trades: Trade[] = [];
   private currentEntryMap = new Map<
     string,

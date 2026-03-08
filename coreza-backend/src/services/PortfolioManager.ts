@@ -471,18 +471,11 @@ export class PortfolioManager {
 
       effectiveQty = delta;
       this.orderCumQtyMap.set(fillId, absQty);
-    } else {
-      // Manual fills (no fillId): use simple dedup via fillIdSet
-      const manualId = `MANUAL-${++this.tradeIdCounter}`;
-      const dedupKey = `${symbol}:${manualId}`;
-      if (this.fillIdSet.has(dedupKey)) {
-        return { applied: false, reason: "duplicate", deltaQty: 0 };
-      }
-      this.fillIdSet.add(dedupKey);
     }
+    // Manual fills (no fillId) have no natural dedup key — always apply
 
     // Unique tradeId for ledger: append cumulative qty to distinguish partial fills
-    const tradeId = fillId ? `${fillId}-${absQty}` : `MANUAL-${this.tradeIdCounter}`;
+    const tradeId = fillId ? `${fillId}-${absQty}` : `MANUAL-${++this.tradeIdCounter}`;
 
     const liveFill: LiveFill = {
       tradeId,
@@ -491,8 +484,8 @@ export class PortfolioManager {
       side,
       qty: effectiveQty,
       price,
-      // Prorate commission to the delta portion
-      commission: fillId && absQty > 0 ? commission * (effectiveQty / absQty) : commission,
+      // Commission from broker is per-event, not cumulative — use directly
+      commission,
       commissionAsset: this.extractQuoteAsset(symbol) ?? baseCurrency,
       eventTime: Date.now(),
     };

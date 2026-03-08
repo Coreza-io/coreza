@@ -178,7 +178,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": true,
-      "description": "Filled quantity (absolute value). Trade side controls whether it adds to or reduces the position.",
+      "description": "Cumulative filled quantity when using Fill ID (delta computed automatically). Absolute value — side controls direction.",
       "displayOptions": {
         "show": {
           "operation": ["update_portfolio"]

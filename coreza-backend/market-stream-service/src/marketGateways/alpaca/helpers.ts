@@ -330,6 +330,20 @@ export function normalizeAlpacaMessage(
         v: msg.v,
         timeframe: "1d",
       };
+    case "u":
+      return {
+        source: "alpaca" as const,
+        symbol,
+        t,
+        type: "updated_bar" as const,
+        o: msg.o,
+        h: msg.h,
+        l: msg.l,
+        c: msg.c,
+        v: msg.v,
+        vw: msg.vw,
+        timeframe: "1m",
+      };
     default:
       return null;
   }

@@ -113,37 +113,21 @@ export const buildStreamingTriggerListeningConfig = ({
       testListenWorkflowId: workflowId,
       testListenNodeId: nodeId,
     }),
-    isDataReceived: (nodeData) =>
-      nodeData?.streamDataReceived || nodeData?.output?.status === "success",
+    isDataReceived: () => false,
     shouldStop: (nodeData) =>
-      nodeData?.isTestListening === false && !nodeData?.streamDataReceived,
+      nodeData?.isTestListening === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: () => ({
       status: "timeout",
       message: "No stream data received within timeout",
     }),
-    timeout,
+    timeout: Number.MAX_SAFE_INTEGER,
     listeningFlag,
     receivedFlag: "streamDataReceived",
     recoveryPolling: {
       endpoint: recoveryEndpoint,
       interval: recoveryInterval,
       processResult: (result) => {
-        if (result.status === "data_received") {
-          return {
-            done: true,
-            output: {
-              status: "success",
-              symbol: result.data.symbol,
-              type: result.data.type,
-              data: result.data.data,
-              receivedAt: result.data.receivedAt,
-              source: result.data.source,
-              [result.data.type]:
-                result.data.data?.[result.data.type] || result.data.data,
-            },
-          };
-        }
         if (result.status === "expired") {
           return {
             done: true,
@@ -154,6 +138,7 @@ export const buildStreamingTriggerListeningConfig = ({
             expired: true,
           };
         }
+        // Data received via recovery — don't resolve, WebSocket handles continuous updates
         return { done: false };
       },
     },

@@ -435,7 +435,7 @@ export class MarketDataSubscriber {
     if (type === "kline" || type === "bar" || type === "daily_bar") {
       return {
         data: {
-          type,
+          type: "market_data",
           BarSeries: [
             {
               symbol,

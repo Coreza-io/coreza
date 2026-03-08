@@ -766,7 +766,16 @@ export class MarketControlHandler {
     source: string,
     interval?: string,
     depthLevels?: string,
+    closeBars?: boolean,
   ): string[] {
+    // Alpaca: map bar → updated_bar when close_bars is false
+    if (source.startsWith("alpaca") || source === "alpaca_market" || source === "alpaca_crypto") {
+      return eventTypes.map((type) => {
+        if (type === "bar" && closeBars === false) return "updated_bar";
+        return type;
+      });
+    }
+
     if (!source.startsWith("binance")) {
       return eventTypes;
     }

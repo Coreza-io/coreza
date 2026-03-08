@@ -445,14 +445,28 @@ export class PortfolioManager {
       commission?: number;
     },
     baseCurrency: string,
-  ): void {
+    fillId?: string,
+  ): { applied: boolean; reason?: string } {
     const { symbol, quantity, price, commission = 0 } = fill;
     const side: "BUY" | "SELL" = quantity > 0 ? "BUY" : "SELL";
     const absQty = Math.abs(quantity);
 
+    // Deterministic dedup key: use fillId if provided, otherwise auto-generate
+    const tradeId = fillId || `MANUAL-${++this.tradeIdCounter}`;
+    const dedupKey = `${symbol}:${tradeId}`;
+
+    // Check for duplicate before applying
+    if (this.fillIdSet.has(dedupKey)) {
+      console.log(
+        `[PortfolioManager] Skipping duplicate fill: ${dedupKey}`,
+      );
+      return { applied: false, reason: "duplicate" };
+    }
+
     // Convert to LiveFill and delegate to existing logic
     const liveFill: LiveFill = {
-      tradeId: `MANUAL-${++this.tradeIdCounter}`,
+      tradeId,
+      orderId: fillId,
       symbol,
       side,
       qty: absQty,
@@ -462,13 +476,14 @@ export class PortfolioManager {
       eventTime: Date.now(),
     };
 
-    this.fillIdSet.add(`${symbol}:${liveFill.tradeId}`);
+    this.fillIdSet.add(dedupKey);
     this.fillLedger.push(liveFill);
     this.applyFillToHoldings(liveFill, true);
     this.updatePeakEquity(baseCurrency);
 
     console.log(
-      `[PortfolioManager] Applied fill: ${side} ${absQty} ${symbol} @ ${price} (commission: ${commission})`,
+      `[PortfolioManager] Applied fill: ${side} ${absQty} ${symbol} @ ${price} (commission: ${commission}, fillId: ${tradeId})`,
     );
+    return { applied: true };
   }
 }

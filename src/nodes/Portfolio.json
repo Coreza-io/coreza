@@ -213,6 +213,19 @@
       }
     },
     {
+      "key": "fill_id",
+      "label": "Fill ID (Dedup Key)",
+      "type": "text",
+      "placeholder": "{{ $(AlpacaStreamData).json.data.order.orderId }}",
+      "required": false,
+      "description": "Optional unique ID for deduplication and ownership verification. If provided, the system checks that this order was placed by your workflow (via Redis reverse index) and skips duplicate fills. Map to orderId from the stream event.",
+      "displayOptions": {
+        "show": {
+          "operation": ["update_portfolio"]
+        }
+      }
+    },
+    {
       "key": "current_bar",
       "label": "Current Bar",
       "type": "textarea",

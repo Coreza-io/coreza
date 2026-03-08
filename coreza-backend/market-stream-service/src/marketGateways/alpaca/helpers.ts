@@ -198,7 +198,7 @@ export function shouldPublishAlpacaMessage(msg: any, source?: string): boolean {
   if (source === "alpaca_news") {
     return msg.T === "n"; // News messages
   }
-  return ["t", "q", "b", "d"].includes(msg.T); // Market data messages
+  return ["t", "q", "b", "d", "u"].includes(msg.T); // Market data messages
 }
 
 // ============ CONTROL MESSAGES (source-aware for logging) ============

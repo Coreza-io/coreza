@@ -1,53 +1,93 @@
 
 
-# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
+# Plan: Add `type` to Market Data Output + Fix Stream Timeout
 
-## Problem
-Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
+## Issue 1: Missing `type` field in market data output
 
-## Architecture Change
+**Root cause**: In `MarketDataSubscriber.ts` → `formatMarketEventPayload()` (line 435-460), the bar/kline branch returns `{ data: { BarSeries: [...] } }` without a `type` field. The order_update branch includes `type: "order_update"`, and the generic fallback includes `type`, but bars don't.
 
-```text
-BEFORE:
-  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
-
-AFTER:
-  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
-  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
-```
-
-## Changes Required
-
-### 1. Frontend — AlpacaSubscribe.json
-- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
-- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
-- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
-- Default stays `["trade"]`
-
-### 2. Frontend — AlpacaStreamData.json
-- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
-- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
-- Update description to reflect that trading updates come via subscription, not automatically
-
-### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
-When `stream_types` includes `"order_update"`, the backend needs to:
-- Detect that `order_update` is in the stream_types array
-- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
-- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
-- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
-
-### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
-Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
-
-### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
-Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
-
-## Files to Change
+**Fix**: Add `type` field to the bar/kline output payload.
 
 | File | Change |
 |---|---|
-| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
-| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
-| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
-| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+| `market-stream-service/src/services/MarketDataSubscriber.ts` line 437 | Add `type: "bar"` (or `"daily_bar"` / `"kline"`) to the BarSeries data object |
+
+```typescript
+// Line 437-459: Add type field
+return {
+  data: {
+    type: type,  // ← ADD THIS ("bar", "daily_bar", "kline")
+    BarSeries: [
+      {
+        symbol,
+        interval: event.timeframe || "1m",
+        bars: [{ ... }],
+      },
+    ],
+  },
+};
+```
+
+## Issue 2: Stream node stops receiving data
+
+**Root cause**: Two mechanisms kill the stream prematurely:
+
+1. **Listening handler timeout** (300s = 5 min): `useListeningHandler.ts` line 230 checks `Date.now() - startTime > timeout` and calls `handleTimeout()`, which sets `isTestListening: false`. After 5 minutes with no data → stream dies.
+
+2. **First-data resolution**: When WebSocket pushes `test_data_received`, `ExecutionStoreContext` sets `streamDataReceived: true`. The polling interval in the listening handler detects `isDataReceived()` returns true → calls `finish()` → sets `isTestListening: false` → no more data accepted.
+
+So the stream either dies after 5 minutes (no data) or after the **first event** (data received).
+
+**Desired behavior**: Stream should stay alive until user clicks Stop, refreshes, or changes workflow.
+
+**Fix**: Change the streaming trigger listening config so it never auto-resolves on data received, and remove the timeout (or set it to infinity). The listening handler should only end when the user aborts (clicks Stop).
+
+| File | Change |
+|---|---|
+| `src/hooks/useListeningConfigs.ts` | In `buildStreamingTriggerListeningConfig`: set `isDataReceived` to always return `false` (never auto-resolve), remove timeout (use `Infinity` or very large value like 24h) |
+| `src/contexts/ExecutionStoreContext.tsx` | Already correct — keeps `isTestListening: true` on data push |
+
+```typescript
+// useListeningConfigs.ts → buildStreamingTriggerListeningConfig
+return {
+  ...
+  isDataReceived: () => false,  // Never auto-resolve — user must stop manually
+  shouldStop: (nodeData) => nodeData?.isTestListening === false,
+  timeout: Number.MAX_SAFE_INTEGER,  // Effectively infinite — no auto-timeout
+  ...
+};
+```
+
+The recovery polling should still function as a backup data delivery mechanism but should NOT resolve the listener either — it should just update the node output and continue.
+
+### Recovery polling change
+
+The `recoveryPolling.processResult` currently returns `{ done: true }` when data is received, which causes the listening handler to resolve. Change it to update the node output in-place and return `{ done: false }` so recovery polling continues delivering data without killing the listener:
+
+```typescript
+recoveryPolling: {
+  endpoint: recoveryEndpoint,
+  interval: recoveryInterval,
+  processResult: (result) => {
+    if (result.status === "expired") {
+      return { done: true, output: { status: "expired", message: "Test listener expired" }, expired: true };
+    }
+    // Data received via recovery polling — don't resolve, just continue
+    return { done: false };
+  },
+},
+```
+
+However, we still need the recovery data to reach the node. The recovery polling in `useListeningHandler.ts` already calls `processResult` but only acts when `done: true`. We need to update the node output when recovery delivers data even if `done: false`. This means adding an `updateOutput` callback to the recovery polling result:
+
+Actually, simpler approach — the `market_data` WebSocket handler in `ExecutionStoreContext.tsx` (line 118-138) already handles continuous updates. Recovery polling is just a fallback. If we keep the listener alive (no timeout, no auto-resolve), the WebSocket path will continuously update the node output as long as `isTestListening` is true. Recovery polling is secondary.
+
+## Summary
+
+| File | Change |
+|---|---|
+| `market-stream-service/src/services/MarketDataSubscriber.ts` | Add `type` field to bar/kline payload |
+| `src/hooks/useListeningConfigs.ts` | Make streaming trigger never auto-resolve; infinite timeout |
+
+Two files, two targeted fixes.
 

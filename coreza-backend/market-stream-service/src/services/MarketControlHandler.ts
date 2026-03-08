@@ -535,6 +535,7 @@ export class MarketControlHandler {
       depthLevels,
       scope,
       targetWorkflowId,
+      closeBars,
     } = msg;
 
     try {

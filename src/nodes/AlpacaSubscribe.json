@@ -117,6 +117,10 @@
           "name": "Bars"
         },
         {
+          "id": "daily_bar",
+          "name": "Daily Bars"
+        },
+        {
           "id": "order_update",
           "name": "Order Updates (Fills)"
         }
@@ -130,25 +134,6 @@
           "data_type": ["market", "crypto"]
         }
       }
-    },
-    {
-      "key": "interval",
-      "label": "Stream Interval",
-      "type": "select",
-      "options": [
-        {
-          "id": "1m",
-          "name": "1 Minute"
-        }
-      ],
-      "default": "1m",
-      "displayOptions": {
-        "show": {
-          "stream_types": ["trade", "quote", "bar"]
-        }
-      },
-      "description": "Candlestick timeframe for bar data",
-      "showDescription": false
     },
     {
       "key": "symbols",

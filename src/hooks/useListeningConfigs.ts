@@ -113,10 +113,9 @@ export const buildStreamingTriggerListeningConfig = ({
       testListenWorkflowId: workflowId,
       testListenNodeId: nodeId,
     }),
-    isDataReceived: (nodeData) =>
-      nodeData?.streamDataReceived || nodeData?.output?.status === "success",
+    isDataReceived: () => false,
     shouldStop: (nodeData) =>
-      nodeData?.isTestListening === false && !nodeData?.streamDataReceived,
+      nodeData?.isTestListening === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: () => ({
       status: "timeout",

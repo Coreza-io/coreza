@@ -1,53 +1,50 @@
 
 
-# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
+# Change Stream Types from Multiselect to Select + Order Update Checkbox
 
-## Problem
-Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
+## Current State
+Both `AlpacaSubscribe.json` and `AlpacaStreamData.json` have `stream_types` as a `multiselect` with options: Trades, Quotes, Bars, Daily Bars, Order Updates.
 
-## Architecture Change
+## Proposed Change
+Split `stream_types` into two fields:
 
-```text
-BEFORE:
-  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
+### 1. `stream_type` (singular) — `type: "select"` (single choice)
+Options: Trades, Quotes, Bars (1-min), Daily Bars
 
-AFTER:
-  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
-  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
-```
-
-## Changes Required
-
-### 1. Frontend — AlpacaSubscribe.json
-- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
-- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
-- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
-- Default stays `["trade"]`
-
-### 2. Frontend — AlpacaStreamData.json
-- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
-- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
-- Update description to reflect that trading updates come via subscription, not automatically
-
-### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
-When `stream_types` includes `"order_update"`, the backend needs to:
-- Detect that `order_update` is in the stream_types array
-- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
-- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
-- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
-
-### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
-Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
-
-### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
-Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
+### 2. `include_order_updates` — `type: "checkbox"` / `type: "toggle"`
+Label: "Include Order Updates (Fills)"
+Default: `false`
+When checked, the backend receives `order_update` appended to the stream types array.
 
 ## Files to Change
 
+### `src/nodes/AlpacaSubscribe.json`
+- Replace `stream_types` multiselect (lines 102-136) with:
+  - `stream_type` select field with options: trade, quote, bar, daily_bar
+  - `include_order_updates` checkbox field, default false
+- Both fields keep `displayOptions: { show: { data_type: ["market", "crypto"] } }`
+
+### `src/nodes/AlpacaStreamData.json`
+- Same replacement for `stream_types` multiselect (lines 154-189)
+- Keep existing `displayOptions`
+
+### Backend: payload assembly
+- Wherever `stream_types` array is read from the node payload, we need to construct it from `stream_type` (single value → array) + conditionally append `"order_update"` if `include_order_updates` is true.
+- Check `MarketControlHandler.ts` and stream route handler to see if they read `stream_types` directly or if the frontend assembles it.
+
+Since the backend expects `stream_types` as an array, the simplest approach is to keep sending `stream_types` as the key but assemble it in the execution logic. However, looking at how node fields work — the backend receives whatever field keys are in the JSON. So we'd need the backend to handle `stream_type` (string) + `include_order_updates` (boolean) and build the array.
+
+**Alternative (simpler)**: Keep the field key as `stream_types` but change to select. Then add `include_order_updates` checkbox. In the backend stream route / `MarketControlHandler`, convert: `stream_types = [body.stream_types]` if string, then `if (body.include_order_updates) stream_types.push('order_update')`.
+
+### Backend files to update
+- `coreza-backend/market-stream-service/src/services/MarketControlHandler.ts` — where `streamTypes` is read from request
+- `coreza-backend/src/routes/streamRoutes.ts` or equivalent — where subscribe payload is processed
+
+## Summary
+
 | File | Change |
 |---|---|
-| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
-| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
-| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
-| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+| `src/nodes/AlpacaSubscribe.json` | Replace `stream_types` multiselect → `stream_types` select (single) + `include_order_updates` checkbox |
+| `src/nodes/AlpacaStreamData.json` | Same replacement |
+| Backend handler(s) | Normalize `stream_types` from string to array, append `order_update` if checkbox true |
 

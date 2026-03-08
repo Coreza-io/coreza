@@ -52,7 +52,11 @@ const isFieldVisible = (
         const allowedValues = Array.isArray(rawAllowed)
           ? rawAllowed
           : [rawAllowed];
-        return allowedValues.includes(currentFieldState[depKey]);
+        const current = currentFieldState[depKey];
+        if (Array.isArray(current)) {
+          return current.some((v: string) => allowedValues.includes(v));
+        }
+        return allowedValues.includes(current);
       },
     );
 

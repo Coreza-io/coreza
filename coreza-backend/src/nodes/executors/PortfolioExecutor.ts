@@ -250,12 +250,14 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
-        // Order ownership verification: if fill_id provided, check Redis reverse index
-        if (fillId) {
-          const ownership = await isOurOrder(fillId);
-          if (!ownership.ours) {
+        // Order ownership verification: check fillId first, then clientOrderId as fallback
+        if (fillId || clientOrderId) {
+          const isOurs =
+            (fillId && (await this.checkOwnership(fillId))) ||
+            (clientOrderId && (await this.checkOwnership(clientOrderId)));
+          if (!isOurs) {
             console.log(
-              `[PortfolioExecutor] Skipping fill for unknown order: ${fillId}`,
+              `[PortfolioExecutor] Skipping fill for unknown order: fillId=${fillId}, clientOrderId=${clientOrderId}`,
             );
             return toNodeResult(
               createSuccessOutput({
@@ -263,6 +265,7 @@ export class PortfolioExecutor implements INodeExecutor {
                 skipped: true,
                 reason: "unknown_order",
                 fill_id: fillId,
+                client_order_id: clientOrderId,
                 message: "Order was not placed by this system — fill skipped",
                 ...this.getPortfolioSummary(pm, baseCurrency),
               }),

@@ -101,8 +101,8 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Types",
-      "type": "multiselect",
+      "label": "Stream Type",
+      "type": "select",
       "options": [
         {
           "id": "trade",
@@ -114,26 +114,37 @@
         },
         {
           "id": "bar",
-          "name": "Bars"
+          "name": "Bars (1-min)"
         },
         {
           "id": "daily_bar",
           "name": "Daily Bars"
-        },
-        {
-          "id": "order_update",
-          "name": "Order Updates (Fills)"
         }
       ],
-      "default": ["trade"],
-      "description": "Select data stream types to subscribe to",
+      "default": "trade",
       "required": true,
-      "showDescription": false,
       "displayOptions": {
         "show": {
           "data_type": ["market", "crypto"]
         }
       }
+    },
+    {
+      "key": "include_order_updates",
+      "label": "Include Order Updates (Fills)",
+      "type": "checkbox",
+      "default": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["market", "crypto"]
+        }
+      }
+    },
+    {
+      "key": "interval",
+      "type": "hidden",
+      "label": "Interval",
+      "default": "1m"
     },
     {
       "key": "symbols",

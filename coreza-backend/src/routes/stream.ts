@@ -212,6 +212,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
+      include_order_updates,
       data_type,
       feed,
       environment,
@@ -234,11 +235,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     // Parse stream_types into array
-    const streamTypes: string[] = stream_types
-      ? typeof stream_types === "string"
-        ? stream_types.split(",").map((s: string) => s.trim())
-        : stream_types
-      : [];
+    const streamTypes: string[] = normalizeStreamTypes(stream_types, include_order_updates);
 
     // If order_update is included, also unsubscribe from trading source
     const hasOrderUpdate = streamTypes.includes("order_update");

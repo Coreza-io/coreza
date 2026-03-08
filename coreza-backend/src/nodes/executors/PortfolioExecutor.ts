@@ -25,6 +25,7 @@ import {
 import { Bar } from "../../services/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
+import { isOurOrder } from "../../utils/orderIdempotency";
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";

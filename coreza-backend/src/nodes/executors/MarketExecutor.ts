@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getDataSourceService } from "../../services/datasources";
 import { MarketSource } from "../../types/marketEvent";
 import { SubscriptionService } from "../../services/SubscriptionService";
+import { normalizeStreamTypes } from "../../utils/streamHelpers";
 import {
   createSuccessOutput,
   createErrorOutput,
@@ -76,13 +77,7 @@ export class MarketExecutor implements INodeExecutor {
           operation: resolvedParams.operation,
           symbols: resolvedParams.symbols,
           initialInput: context?.initialInput,
-          streamTypes: resolvedParams.stream_types
-            ? typeof resolvedParams.stream_types === "string"
-              ? resolvedParams.stream_types
-                  .split(",")
-                  .map((s: string) => s.trim())
-              : resolvedParams.stream_types
-            : undefined,
+          streamTypes: normalizeStreamTypes(resolvedParams.stream_types, resolvedParams.include_order_updates),
           feed: resolvedParams.feed,
           environment: resolvedParams.environment,
           assetType: resolvedParams.asset_type,
@@ -181,11 +176,7 @@ export class MarketExecutor implements INodeExecutor {
       operation: operation,
       symbols,
       initialInput,
-      streamTypes: stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : undefined,
+      streamTypes: normalizeStreamTypes(stream_types, node.values.include_order_updates),
       feed,
       environment,
       assetType: asset_type,

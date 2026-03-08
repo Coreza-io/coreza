@@ -18,7 +18,8 @@ export interface StreamExecutionRequest {
   // For subscribe mode
   symbols?: string[];
   data_type: string;
-  stream_types?: string[];
+  stream_types?: string | string[];
+  include_order_updates?: boolean;
   credential_id?: string;
   environment?: "testnet" | "live";
   asset_type?: "spot" | "futures";

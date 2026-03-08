@@ -175,11 +175,7 @@ export class MarketExecutor implements INodeExecutor {
       operation: operation,
       symbols,
       initialInput,
-      streamTypes: stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : undefined,
+      streamTypes: normalizeStreamTypes(stream_types, node.values.include_order_updates),
       feed,
       environment,
       assetType: asset_type,

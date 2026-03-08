@@ -394,6 +394,7 @@ router.post("/:source/register", async (req, res) => {
       symbols,
       data_type,
       stream_types,
+      include_order_updates,
       credential_id,
       environment,
       asset_type,
@@ -449,11 +450,7 @@ router.post("/:source/register", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id || "",
         symbols: parsedSymbols,
-        streamTypes: stream_types
-          ? typeof stream_types === "string"
-            ? stream_types.split(",").map((s: string) => s.trim())
-            : stream_types
-          : undefined,
+        streamTypes: normalizeStreamTypes(stream_types, include_order_updates),
         feed,
         environment,
         assetType: asset_type,

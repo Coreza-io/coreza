@@ -41,8 +41,17 @@ export class PortfolioExecutor implements INodeExecutor {
 
   // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
   private static ownershipCache = new Map<string, { ours: boolean; expiry: number }>();
+  private static ownershipLookupCount = 0;
 
   private async checkOwnership(id: string): Promise<boolean> {
+    // Periodic sweep every 1000 lookups to prevent unbounded memory growth
+    if (++PortfolioExecutor.ownershipLookupCount % 1000 === 0) {
+      const now = Date.now();
+      for (const [key, val] of PortfolioExecutor.ownershipCache) {
+        if (val.expiry < now) PortfolioExecutor.ownershipCache.delete(key);
+      }
+    }
+
     const cached = PortfolioExecutor.ownershipCache.get(id);
     if (cached && cached.expiry > Date.now()) return cached.ours;
 

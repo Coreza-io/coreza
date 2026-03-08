@@ -76,13 +76,7 @@ export class MarketExecutor implements INodeExecutor {
           operation: resolvedParams.operation,
           symbols: resolvedParams.symbols,
           initialInput: context?.initialInput,
-          streamTypes: resolvedParams.stream_types
-            ? typeof resolvedParams.stream_types === "string"
-              ? resolvedParams.stream_types
-                  .split(",")
-                  .map((s: string) => s.trim())
-              : resolvedParams.stream_types
-            : undefined,
+          streamTypes: normalizeStreamTypes(resolvedParams.stream_types, resolvedParams.include_order_updates),
           feed: resolvedParams.feed,
           environment: resolvedParams.environment,
           assetType: resolvedParams.asset_type,

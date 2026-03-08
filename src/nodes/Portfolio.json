@@ -218,7 +218,20 @@
       "type": "text",
       "placeholder": "{{ $(AlpacaStreamData).json.data.order.orderId }}",
       "required": false,
-      "description": "Optional unique ID for deduplication and ownership verification. If provided, the system checks that this order was placed by your workflow (via Redis reverse index) and skips duplicate fills. Map to orderId from the stream event.",
+      "description": "Optional unique ID for deduplication and ownership verification. If provided, the system checks that this order was placed by your workflow (via Redis reverse index) and skips duplicate fills. Supports partial fills via delta tracking.",
+      "displayOptions": {
+        "show": {
+          "operation": ["update_portfolio"]
+        }
+      }
+    },
+    {
+      "key": "client_order_id",
+      "label": "Client Order ID (Fallback)",
+      "type": "text",
+      "placeholder": "{{ $(AlpacaStreamData).json.data.order.client_order_id }}",
+      "required": false,
+      "description": "Fallback dedup key if orderId not yet indexed. Maps to the client_order_id sent with the original order. Used to handle race conditions where fills arrive before the orderId reverse index is written.",
       "displayOptions": {
         "show": {
           "operation": ["update_portfolio"]

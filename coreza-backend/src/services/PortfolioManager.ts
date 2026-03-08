@@ -448,44 +448,63 @@ export class PortfolioManager {
     },
     baseCurrency: string,
     fillId?: string,
-  ): { applied: boolean; reason?: string } {
+  ): { applied: boolean; reason?: string; deltaQty?: number } {
     const { symbol, quantity, price, commission = 0 } = fill;
     const side: "BUY" | "SELL" = quantity > 0 ? "BUY" : "SELL";
     const absQty = Math.abs(quantity);
 
-    // Deterministic dedup key: use fillId if provided, otherwise auto-generate
-    const tradeId = fillId || `MANUAL-${++this.tradeIdCounter}`;
-    const dedupKey = `${symbol}:${tradeId}`;
+    let effectiveQty = absQty;
 
-    // Check for duplicate before applying
-    if (this.fillIdSet.has(dedupKey)) {
-      console.log(
-        `[PortfolioManager] Skipping duplicate fill: ${dedupKey}`,
-      );
-      return { applied: false, reason: "duplicate" };
+    if (fillId) {
+      // Delta-based partial fill tracking:
+      // absQty is the cumulative filled quantity for this orderId.
+      // We only apply the increment since the last update.
+      const previousCumQty = this.orderCumQtyMap.get(fillId) || 0;
+      const delta = absQty - previousCumQty;
+
+      if (delta <= 0) {
+        console.log(
+          `[PortfolioManager] No new fill quantity for ${fillId}: cum=${absQty}, prev=${previousCumQty}`,
+        );
+        return { applied: false, reason: "no_new_fill", deltaQty: 0 };
+      }
+
+      effectiveQty = delta;
+      this.orderCumQtyMap.set(fillId, absQty);
+    } else {
+      // Manual fills (no fillId): use simple dedup via fillIdSet
+      const manualId = `MANUAL-${++this.tradeIdCounter}`;
+      const dedupKey = `${symbol}:${manualId}`;
+      if (this.fillIdSet.has(dedupKey)) {
+        return { applied: false, reason: "duplicate", deltaQty: 0 };
+      }
+      this.fillIdSet.add(dedupKey);
     }
 
-    // Convert to LiveFill and delegate to existing logic
+    // Unique tradeId for ledger: append cumulative qty to distinguish partial fills
+    const tradeId = fillId ? `${fillId}-${absQty}` : `MANUAL-${this.tradeIdCounter}`;
+
     const liveFill: LiveFill = {
       tradeId,
       orderId: fillId,
       symbol,
       side,
-      qty: absQty,
+      qty: effectiveQty,
       price,
-      commission,
+      // Prorate commission to the delta portion
+      commission: fillId && absQty > 0 ? commission * (effectiveQty / absQty) : commission,
       commissionAsset: this.extractQuoteAsset(symbol) ?? baseCurrency,
       eventTime: Date.now(),
     };
 
-    this.fillIdSet.add(dedupKey);
+    this.fillIdSet.add(`${symbol}:${tradeId}`);
     this.fillLedger.push(liveFill);
     this.applyFillToHoldings(liveFill, true);
     this.updatePeakEquity(baseCurrency);
 
     console.log(
-      `[PortfolioManager] Applied fill: ${side} ${absQty} ${symbol} @ ${price} (commission: ${commission}, fillId: ${tradeId})`,
+      `[PortfolioManager] Applied fill: ${side} ${effectiveQty} ${symbol} @ ${price} (delta from cum ${absQty}, fillId: ${fillId || tradeId})`,
     );
-    return { applied: true };
+    return { applied: true, deltaQty: effectiveQty };
   }
 }

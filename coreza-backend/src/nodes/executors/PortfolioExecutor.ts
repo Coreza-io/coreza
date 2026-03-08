@@ -307,6 +307,8 @@ export class PortfolioExecutor implements INodeExecutor {
               price,
               commission,
               fill_id: fillId,
+              client_order_id: clientOrderId,
+              delta_qty: fillResult.deltaQty,
             },
             ...this.getPortfolioSummary(pm, baseCurrency),
           }),

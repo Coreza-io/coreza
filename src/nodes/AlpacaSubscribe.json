@@ -101,8 +101,8 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Type",
-      "type": "select",
+      "label": "Stream Types",
+      "type": "multiselect",
       "options": [
         {
           "id": "trade",
@@ -114,26 +114,17 @@
         },
         {
           "id": "bar",
-          "name": "Bars (1-min)"
+          "name": "Bars"
         },
         {
-          "id": "daily_bar",
-          "name": "Daily Bars"
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
-      "default": "trade",
+      "default": ["trade"],
+      "description": "Select data stream types to subscribe to",
       "required": true,
-      "displayOptions": {
-        "show": {
-          "data_type": ["market", "crypto"]
-        }
-      }
-    },
-    {
-      "key": "include_order_updates",
-      "label": "Include Order Updates (Fills)",
-      "type": "checkbox",
-      "default": false,
+      "showDescription": false,
       "displayOptions": {
         "show": {
           "data_type": ["market", "crypto"]
@@ -142,9 +133,22 @@
     },
     {
       "key": "interval",
-      "type": "hidden",
-      "label": "Interval",
-      "default": "1m"
+      "label": "Stream Interval",
+      "type": "select",
+      "options": [
+        {
+          "id": "1m",
+          "name": "1 Minute"
+        }
+      ],
+      "default": "1m",
+      "displayOptions": {
+        "show": {
+          "stream_types": ["trade", "quote", "bar"]
+        }
+      },
+      "description": "Candlestick timeframe for bar data",
+      "showDescription": false
     },
     {
       "key": "symbols",

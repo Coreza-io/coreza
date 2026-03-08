@@ -26,7 +26,6 @@ import {
   StreamExecutionRequest,
   StreamExecutionResponse,
 } from "../types/streaming";
-import { normalizeStreamTypes } from "../utils/streamHelpers";
 
 const router = express.Router();
 
@@ -84,7 +83,6 @@ router.post("/:source/subscribe", async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      include_order_updates,
       data_type,
       feed,
       environment,
@@ -107,7 +105,11 @@ router.post("/:source/subscribe", async (req, res) => {
     }
 
     // Parse stream_types into array
-    const streamTypes: string[] = normalizeStreamTypes(stream_types, include_order_updates);
+    const streamTypes: string[] = stream_types
+      ? typeof stream_types === "string"
+        ? stream_types.split(",").map((s: string) => s.trim())
+        : stream_types
+      : [];
 
     // If order_update is included, subscribe to the trading source separately
     const hasOrderUpdate = streamTypes.includes("order_update");
@@ -191,7 +193,6 @@ router.post("/:source/unsubscribe", async (req, res) => {
       node_id,
       workflow_id,
       stream_types,
-      include_order_updates,
       data_type,
       feed,
       environment,
@@ -214,7 +215,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     // Parse stream_types into array
-    const streamTypes: string[] = normalizeStreamTypes(stream_types, include_order_updates);
+    const streamTypes: string[] = stream_types
+      ? typeof stream_types === "string"
+        ? stream_types.split(",").map((s: string) => s.trim())
+        : stream_types
+      : [];
 
     // If order_update is included, also unsubscribe from trading source
     const hasOrderUpdate = streamTypes.includes("order_update");
@@ -373,7 +378,6 @@ router.post("/:source/register", async (req, res) => {
       symbols,
       data_type,
       stream_types,
-      include_order_updates,
       credential_id,
       environment,
       asset_type,
@@ -429,7 +433,11 @@ router.post("/:source/register", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id || "",
         symbols: parsedSymbols,
-        streamTypes: normalizeStreamTypes(stream_types, include_order_updates),
+        streamTypes: stream_types
+          ? typeof stream_types === "string"
+            ? stream_types.split(",").map((s: string) => s.trim())
+            : stream_types
+          : undefined,
         feed,
         environment,
         assetType: asset_type,

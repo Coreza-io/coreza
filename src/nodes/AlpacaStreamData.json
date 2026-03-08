@@ -153,8 +153,8 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Type",
-      "type": "select",
+      "label": "Stream Types",
+      "type": "multiselect",
       "options": [
         {
           "id": "trade",
@@ -171,33 +171,19 @@
         {
           "id": "daily_bar",
           "name": "Daily Bars"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
-      "default": "trade",
+      "default": ["trade"],
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
           "data_type": ["market", "crypto"]
         }
       }
-    },
-    {
-      "key": "include_order_updates",
-      "label": "Include Order Updates (Fills)",
-      "type": "checkbox",
-      "default": false,
-      "displayOptions": {
-        "show": {
-          "mode": ["subscribe"],
-          "data_type": ["market", "crypto"]
-        }
-      }
-    },
-    {
-      "key": "interval",
-      "type": "hidden",
-      "label": "Interval",
-      "default": "1m"
     },
     {
       "key": "scope",

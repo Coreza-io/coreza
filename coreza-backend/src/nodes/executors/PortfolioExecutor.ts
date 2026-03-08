@@ -229,6 +229,7 @@ export class PortfolioExecutor implements INodeExecutor {
         const price = parseFloat(params.price);
         const commission = parseFloat(params.commission || "0");
         const fillId = params.fill_id?.trim() || undefined;
+        const clientOrderId = params.client_order_id?.trim() || undefined;
 
         if (!fillSymbol) {
           return toNodeResult(

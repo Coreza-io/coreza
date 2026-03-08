@@ -1,53 +1,76 @@
 
 
-# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
+# The Core Problem: How to Correlate Fill Events to Your Orders
 
-## Problem
-Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
+You're right to question this. The current `fill_id` approach has a gap: when a fill event arrives via AlpacaStreamData, **all** fill events for all orders arrive on the same stream — not just yours. If another system or manual trade fills on the same Alpaca account, those fills would also arrive and could be incorrectly applied to your portfolio.
 
-## Architecture Change
+## How Correlation Already Works (You Just Need to Wire It)
+
+The system already has the pieces — they just need connecting:
+
+1. **Trade node places order** → Alpaca returns `orderId` (e.g., `b0b6dd9d-8b9b-48a9-ba46-b9d54906e415`). The idempotency system also sends this as `client_order_id`.
+
+2. **Alpaca WebSocket sends fill event** → Contains `order.orderId` (same value) in the `order_update` payload (see `MarketDataSubscriber.ts` line 471).
+
+3. **The `orderId` from step 1 = `orderId` from step 2** — Alpaca guarantees this. That's how you know it's YOUR order.
+
+## The Real Question: How Does the Stream Trigger Know Which Order to Match?
+
+In a live workflow, the flow is:
 
 ```text
-BEFORE:
-  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
-
-AFTER:
-  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
-  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
+AlpacaSubscribe (stream running) ──────────────────────────┐
+                                                           │
+AlpacaTrade (place order) → orderId: "abc123"              │
+                                                           │
+... time passes ...                                        │
+                                                           │
+AlpacaStreamData (triggered by fill) ← orderId: "abc123" ←┘
+   │
+   └─→ Portfolio (Sync Fills) ← needs to verify "abc123" is ours
 ```
 
-## Changes Required
+The problem: Portfolio Sync Fills receives ALL fill events from the account. It needs to know which `orderId`s belong to this workflow.
 
-### 1. Frontend — AlpacaSubscribe.json
-- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
-- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
-- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
-- Default stays `["trade"]`
+## Recommended Approach: Use the Existing Redis Order Cache as the Registry
 
-### 2. Frontend — AlpacaStreamData.json
-- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
-- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
-- Update description to reflect that trading updates come via subscription, not automatically
+The idempotency system (`orderIdempotency.ts`) already caches every order placed by the Trade node in Redis with `order:{idempotencyKey}` → `{ orderId, status, ... }`. This is your order registry.
 
-### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
-When `stream_types` includes `"order_update"`, the backend needs to:
-- Detect that `order_update` is in the stream_types array
-- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
-- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
-- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
+### What to build
 
-### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
-Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
+**Add an order lookup utility** that checks if an incoming `orderId` was placed by this system:
 
-### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
-Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
+```typescript
+// New function in orderIdempotency.ts
+async function isOurOrder(orderId: string): Promise<boolean>
+```
 
-## Files to Change
+This scans the Redis order cache for a matching `orderId`. To make this efficient, add a **reverse index**: when `updateOrderCache` stores the orderId, also set `order-reverse:{orderId}` → `idempotencyKey`.
+
+**Add a filter condition in the Portfolio executor** (or as a separate utility the user can reference):
+- When `fill_id` is provided, check `isOurOrder(fill_id)` before applying
+- If not our order, skip with `{ applied: false, reason: "unknown_order" }`
+
+### Changes
 
 | File | Change |
 |---|---|
-| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
-| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
-| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
-| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+| `coreza-backend/src/utils/orderIdempotency.ts` | Add reverse index `order-reverse:{orderId}` in `updateOrderCache()`. Add `isOurOrder(orderId)` lookup function. |
+| `coreza-backend/src/services/PortfolioManager.ts` | Add `fillId` param to `applyFill()`, check `fillIdSet` for dedup, return `{ applied, reason }` |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Read `fill_id`, call `isOurOrder()` to verify, then pass to `applyFill()` with dedup. Return `skipped: true` with reason if not our order or duplicate. |
+| `src/nodes/Portfolio.json` | Add optional `fill_id` text field for `update_portfolio` |
+
+### Workflow wiring
+
+```text
+Portfolio (Sync Fills):
+  fill_id: {{ $(AlpacaStreamData).json.data.order.orderId }}
+```
+
+The executor then:
+1. Checks Redis reverse index → is this orderId one we placed? If no → skip
+2. Checks fillIdSet → already processed this fill? If yes → skip (dedup)
+3. Applies fill → updates positions, cash, records trade
+
+This gives you **ownership verification + deduplication** with zero new nodes, using infrastructure that already exists.
 

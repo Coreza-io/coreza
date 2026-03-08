@@ -25,6 +25,7 @@ import {
 import { Bar } from "../../services/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
+import { isOurOrder } from "../../utils/orderIdempotency";
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -206,12 +207,13 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_portfolio": {
-        // Explicit fill fields: symbol, side, quantity, price, commission
+        // Explicit fill fields: symbol, side, quantity, price, commission, fill_id
         const fillSymbol = params.symbol?.trim().toUpperCase();
         const side = params.side?.trim().toUpperCase();
         const rawQuantity = parseFloat(params.quantity);
         const price = parseFloat(params.price);
         const commission = parseFloat(params.commission || "0");
+        const fillId = params.fill_id?.trim() || undefined;
 
         if (!fillSymbol) {
           return toNodeResult(
@@ -232,14 +234,49 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
+        // Order ownership verification: if fill_id provided, check Redis reverse index
+        if (fillId) {
+          const ownership = await isOurOrder(fillId);
+          if (!ownership.ours) {
+            console.log(
+              `[PortfolioExecutor] Skipping fill for unknown order: ${fillId}`,
+            );
+            return toNodeResult(
+              createSuccessOutput({
+                updated: false,
+                skipped: true,
+                reason: "unknown_order",
+                fill_id: fillId,
+                message: "Order was not placed by this system — fill skipped",
+                ...this.getPortfolioSummary(pm, baseCurrency),
+              }),
+            );
+          }
+        }
+
         const normalizedQuantity = Math.abs(rawQuantity);
         const quantity =
           side === "SELL" ? -normalizedQuantity : normalizedQuantity;
 
-        pm.applyFill(
+        const fillResult = pm.applyFill(
           { symbol: fillSymbol, quantity, price, commission },
           baseCurrency,
+          fillId,
         );
+
+        if (!fillResult.applied) {
+          return toNodeResult(
+            createSuccessOutput({
+              updated: false,
+              skipped: true,
+              reason: fillResult.reason,
+              fill_id: fillId,
+              message: `Fill skipped: ${fillResult.reason}`,
+              ...this.getPortfolioSummary(pm, baseCurrency),
+            }),
+          );
+        }
+
         return toNodeResult(
           createSuccessOutput({
             updated: true,
@@ -250,6 +287,7 @@ export class PortfolioExecutor implements INodeExecutor {
               signedQuantity: quantity,
               price,
               commission,
+              fill_id: fillId,
             },
             ...this.getPortfolioSummary(pm, baseCurrency),
           }),

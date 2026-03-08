@@ -89,6 +89,8 @@ export async function cacheOrderIntent(
 
 /**
  * Update cache with order result.
+ * Also creates a reverse index (order-reverse:{orderId} → idempotencyKey)
+ * so we can look up whether an incoming orderId belongs to us.
  */
 export async function updateOrderCache(
   idempotencyKey: string,
@@ -106,5 +108,24 @@ export async function updateOrderCache(
       orderId,
     };
     await redis.setex(`order:${idempotencyKey}`, ORDER_CACHE_TTL, JSON.stringify(updated));
+
+    // Create reverse index for order ownership verification
+    if (orderId) {
+      await redis.setex(`order-reverse:${orderId}`, ORDER_CACHE_TTL, idempotencyKey);
+    }
   }
+}
+
+/**
+ * Check if an orderId was placed by this system (exists in Redis reverse index).
+ * Returns the cached order if found, null otherwise.
+ */
+export async function isOurOrder(orderId: string): Promise<{ ours: boolean; order?: CachedOrder }> {
+  const redis = getRedisCache();
+  const idempotencyKey = await redis.get(`order-reverse:${orderId}`);
+  if (!idempotencyKey) {
+    return { ours: false };
+  }
+  const order = await getOrderFromCache(idempotencyKey);
+  return { ours: true, order: order ?? undefined };
 }

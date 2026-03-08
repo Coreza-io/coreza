@@ -166,11 +166,11 @@
         },
         {
           "id": "bar",
-          "name": "Bars (1-min)"
+          "name": "Minute Bars (1min Candles)"
         },
         {
           "id": "daily_bar",
-          "name": "Daily Bars"
+          "name": "Daily Bars (EOD Candles)"
         },
         {
           "id": "order_update",
@@ -180,6 +180,21 @@
       "default": ["trade"],
       "displayOptions": {
         "show": {
+          "mode": ["subscribe"],
+          "data_type": ["market", "crypto"]
+        }
+      }
+    },
+    {
+      "key": "close_bars",
+      "label": "Close Bars Only",
+      "type": "checkbox",
+      "default": true,
+      "description": "When checked, only emit completed 1-min bars. When unchecked, emit continuous updated bars (tick-level partial candles).",
+      "showDescription": true,
+      "displayOptions": {
+        "show": {
+          "stream_types": ["bar"],
           "mode": ["subscribe"],
           "data_type": ["market", "crypto"]
         }
@@ -236,11 +251,15 @@
         },
         {
           "id": "bar",
-          "name": "Bars"
+          "name": "Minute Bars"
         },
         {
           "id": "daily_bar",
           "name": "Daily Bars"
+        },
+        {
+          "id": "updated_bar",
+          "name": "Updated Bars (Continuous)"
         },
         {
           "id": "news",

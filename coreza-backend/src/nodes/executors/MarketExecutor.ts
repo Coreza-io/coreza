@@ -18,6 +18,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getDataSourceService } from "../../services/datasources";
 import { MarketSource } from "../../types/marketEvent";
 import { SubscriptionService } from "../../services/SubscriptionService";
+import { normalizeStreamTypes } from "../../utils/streamHelpers";
 import {
   createSuccessOutput,
   createErrorOutput,

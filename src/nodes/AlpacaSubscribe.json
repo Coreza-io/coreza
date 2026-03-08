@@ -114,7 +114,11 @@
         },
         {
           "id": "bar",
-          "name": "Bars"
+          "name": "Minute Bars (1min Candles)"
+        },
+        {
+          "id": "daily_bar",
+          "name": "Daily Bars (EOD Candles)"
         },
         {
           "id": "order_update",
@@ -132,23 +136,18 @@
       }
     },
     {
-      "key": "interval",
-      "label": "Stream Interval",
-      "type": "select",
-      "options": [
-        {
-          "id": "1m",
-          "name": "1 Minute"
-        }
-      ],
-      "default": "1m",
+      "key": "close_bars",
+      "label": "Close Bars Only",
+      "type": "checkbox",
+      "default": true,
+      "description": "When checked, only emit completed 1-min bars. When unchecked, emit continuous updated bars (tick-level partial candles).",
+      "showDescription": true,
       "displayOptions": {
         "show": {
-          "stream_types": ["trade", "quote", "bar"]
+          "stream_types": ["bar"],
+          "data_type": ["market", "crypto"]
         }
-      },
-      "description": "Candlestick timeframe for bar data",
-      "showDescription": false
+      }
     },
     {
       "key": "symbols",

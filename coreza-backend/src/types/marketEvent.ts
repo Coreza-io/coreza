@@ -22,6 +22,7 @@ export type MarketEventType =
   | 'quote'
   | 'bar'
   | 'daily_bar'
+  | 'updated_bar'
   | 'news'
   | 'ticker'
   | 'miniTicker'

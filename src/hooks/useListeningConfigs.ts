@@ -128,21 +128,6 @@ export const buildStreamingTriggerListeningConfig = ({
       endpoint: recoveryEndpoint,
       interval: recoveryInterval,
       processResult: (result) => {
-        if (result.status === "data_received") {
-          return {
-            done: true,
-            output: {
-              status: "success",
-              symbol: result.data.symbol,
-              type: result.data.type,
-              data: result.data.data,
-              receivedAt: result.data.receivedAt,
-              source: result.data.source,
-              [result.data.type]:
-                result.data.data?.[result.data.type] || result.data.data,
-            },
-          };
-        }
         if (result.status === "expired") {
           return {
             done: true,
@@ -153,6 +138,7 @@ export const buildStreamingTriggerListeningConfig = ({
             expired: true,
           };
         }
+        // Data received via recovery — don't resolve, WebSocket handles continuous updates
         return { done: false };
       },
     },

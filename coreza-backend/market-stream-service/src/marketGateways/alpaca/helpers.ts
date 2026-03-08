@@ -6,10 +6,12 @@ const ALPACA_TYPE_TO_KEY: Record<string, string> = {
   quote: "quotes",
   bar: "bars",
   daily_bar: "dailyBars",
+  updated_bar: "updatedBars",
   trades: "trades",
   quotes: "quotes",
   bars: "bars",
   dailyBars: "dailyBars",
+  updatedBars: "updatedBars",
 };
 
 // ============ URL BUILDER (source-aware) ============

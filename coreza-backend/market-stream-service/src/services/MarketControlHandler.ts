@@ -565,6 +565,7 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
+          closeBars,
         );
 
         const requestedStreamNames = buildStreamNames(

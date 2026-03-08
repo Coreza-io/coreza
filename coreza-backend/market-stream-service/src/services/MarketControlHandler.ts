@@ -664,6 +664,7 @@ export class MarketControlHandler {
       depthLevels,
       scope,
       targetWorkflowId,
+      closeBars,
     } = msg;
 
     try {
@@ -695,6 +696,7 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
+          closeBars,
         );
 
         const streamNamesToRemove = buildStreamNames(

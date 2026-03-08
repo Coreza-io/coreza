@@ -32,7 +32,6 @@ interface ControlMessage {
   // Raw interval/depth for stream name building (centralized in market-stream-service)
   interval?: string;
   depthLevels?: string;
-  closeBars?: boolean; // For Alpaca: true = completed bars only, false = updated bars (continuous)
 }
 
 interface SourceState {
@@ -535,7 +534,6 @@ export class MarketControlHandler {
       depthLevels,
       scope,
       targetWorkflowId,
-      closeBars,
     } = msg;
 
     try {
@@ -565,7 +563,6 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
-          closeBars,
         );
 
         const requestedStreamNames = buildStreamNames(
@@ -664,7 +661,6 @@ export class MarketControlHandler {
       depthLevels,
       scope,
       targetWorkflowId,
-      closeBars,
     } = msg;
 
     try {
@@ -696,7 +692,6 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
-          closeBars,
         );
 
         const streamNamesToRemove = buildStreamNames(
@@ -768,16 +763,7 @@ export class MarketControlHandler {
     source: string,
     interval?: string,
     depthLevels?: string,
-    closeBars?: boolean,
   ): string[] {
-    // Alpaca: map bar → updated_bar when close_bars is false
-    if (source.startsWith("alpaca") || source === "alpaca_market" || source === "alpaca_crypto") {
-      return eventTypes.map((type) => {
-        if (type === "bar" && closeBars === false) return "updated_bar";
-        return type;
-      });
-    }
-
     if (!source.startsWith("binance")) {
       return eventTypes;
     }

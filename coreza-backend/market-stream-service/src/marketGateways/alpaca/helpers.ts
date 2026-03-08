@@ -6,12 +6,10 @@ const ALPACA_TYPE_TO_KEY: Record<string, string> = {
   quote: "quotes",
   bar: "bars",
   daily_bar: "dailyBars",
-  updated_bar: "updatedBars",
   trades: "trades",
   quotes: "quotes",
   bars: "bars",
   dailyBars: "dailyBars",
-  updatedBars: "updatedBars",
 };
 
 // ============ URL BUILDER (source-aware) ============
@@ -198,7 +196,7 @@ export function shouldPublishAlpacaMessage(msg: any, source?: string): boolean {
   if (source === "alpaca_news") {
     return msg.T === "n"; // News messages
   }
-  return ["t", "q", "b", "d", "u"].includes(msg.T); // Market data messages
+  return ["t", "q", "b", "d"].includes(msg.T); // Market data messages
 }
 
 // ============ CONTROL MESSAGES (source-aware for logging) ============
@@ -329,20 +327,6 @@ export function normalizeAlpacaMessage(
         c: msg.c,
         v: msg.v,
         timeframe: "1d",
-      };
-    case "u":
-      return {
-        source: "alpaca" as const,
-        symbol,
-        t,
-        type: "updated_bar" as const,
-        o: msg.o,
-        h: msg.h,
-        l: msg.l,
-        c: msg.c,
-        v: msg.v,
-        vw: msg.vw,
-        timeframe: "1m",
       };
     default:
       return null;

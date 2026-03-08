@@ -432,7 +432,7 @@ export class MarketDataSubscriber {
     };
     const dataKey = typeKeyMap[type] || type;
 
-    if (type === "kline" || type === "bar" || type === "daily_bar" || type === "updated_bar") {
+    if (type === "kline" || type === "bar" || type === "daily_bar") {
       return {
         data: {
           type: "market_data",

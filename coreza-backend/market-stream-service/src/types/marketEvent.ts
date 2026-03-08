@@ -10,7 +10,6 @@ export type MarketEventType =
   | "bar"
   | "kline"
   | "daily_bar"
-  | "updated_bar"
   | "news"
   | "ticker"
   | "miniTicker"

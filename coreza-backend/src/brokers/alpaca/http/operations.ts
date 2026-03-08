@@ -46,7 +46,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         symbols: input.symbol,
         timeframe: input.interval,
         start: input.start,
-        adjustment: "raw",
+        //adjustment: "raw",
         feed: input.feed,
         sort: input.sort,
         limit: Math.min(Number(input.limit) || 10000, 10000), // Max 10000 per request

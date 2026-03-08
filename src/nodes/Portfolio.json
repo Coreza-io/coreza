@@ -69,7 +69,7 @@
         },
         {
           "id": "update_portfolio",
-          "name": "Update Portfolio (Sync Fills)"
+          "name": "Sync Fills"
         },
         {
           "id": "get_portfolio",
@@ -162,19 +162,10 @@
     {
       "key": "side",
       "label": "Side",
-      "type": "select",
+      "type": "text",
+      "placeholder": "e.g. BUY/SELL",
       "required": true,
       "description": "Trade side. Determines whether quantity adds or reduces the position.",
-      "options": [
-        {
-          "id": "BUY",
-          "name": "BUY"
-        },
-        {
-          "id": "SELL",
-          "name": "SELL"
-        }
-      ],
       "displayOptions": {
         "show": {
           "operation": ["update_portfolio"]
@@ -185,7 +176,7 @@
       "key": "quantity",
       "label": "Quantity",
       "type": "text",
-      "placeholder": "{{ $('BinanceTrade').json.executedQty }}",
+      "placeholder": "e.g. 1",
       "required": true,
       "description": "Filled quantity (absolute value). Trade side controls whether it adds to or reduces the position.",
       "displayOptions": {
@@ -198,7 +189,7 @@
       "key": "price",
       "label": "Price",
       "type": "text",
-      "placeholder": "{{ $('BinanceTrade').json.avgPrice }}",
+      "placeholder": "e.g. 64786.0",
       "required": true,
       "description": "Average fill price.",
       "displayOptions": {

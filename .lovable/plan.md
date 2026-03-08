@@ -1,53 +1,31 @@
 
 
-# Plan: Move Trading Subscriptions to AlpacaSubscribe Node
+# Add Daily Bars + Remove Interval Field
 
-## Problem
-Currently, `alpaca_trading` (order fill events) is automatically spawned as a companion whenever `AlpacaStreamData` activates a market/crypto stream. The user wants explicit control: subscribe to `alpaca_trading` via the **AlpacaSubscribe** node, and have **AlpacaStreamData** simply emit whatever has been subscribed (including trading events).
+## Changes
 
-## Architecture Change
+### 1. `src/nodes/AlpacaSubscribe.json`
+- Add `daily_bar` option to `stream_types` multiselect: `{ "id": "daily_bar", "name": "Daily Bars" }`
+- Remove the `interval` field entirely from the JSON — bars will always default to `1m` interval
+- Add a hidden/implicit `interval` field with `"type": "hidden"`, `"default": "1m"` so the value is always sent with the request body. Alternatively, handle this server-side.
 
-```text
-BEFORE:
-  AlpacaStreamData (trigger) → auto-spawns alpaca_trading companion
+Actually, simpler: just remove the `interval` field from the JSON completely. The backend already defaults to `"1m"` — in `MarketDataSubscriber.ts` line 442: `interval: event.timeframe || "1m"`, and `MarketControlHandler.ts` line 773 only applies interval processing for Binance klines, not Alpaca bars. The interval field was cosmetic for Alpaca.
 
-AFTER:
-  AlpacaSubscribe (action) → user explicitly subscribes to "trading" stream type
-  AlpacaStreamData (trigger) → just listens/emits, no auto-companion
+### 2. Backend — no changes needed
+- `daily_bar` is already mapped in `helpers.ts` (`daily_bar → dailyBars`)
+- Normalization already handles `msg.T === "d"` → `type: "daily_bar"`
+- `buildAlpacaSubscribeMessage` uses `ALPACA_TYPE_TO_KEY` which already maps `daily_bar → dailyBars`
+- Stream route passes `streamTypes` array directly — `daily_bar` will flow through correctly
+
+### Summary of JSON changes
+
+**`stream_types` field** — add Daily Bars option:
+```json
+{
+  "id": "daily_bar",
+  "name": "Daily Bars"
+}
 ```
 
-## Changes Required
-
-### 1. Frontend — AlpacaSubscribe.json
-- Change `stream_types` field from `type: "select"` to `type: "multiselect"` (checkboxes, like the screenshot shows)
-- Add a new option: `{ id: "order_update", name: "Order Updates (Fills)" }`
-- This option should be visible for all data_types (market, crypto) — trading updates are account-wide
-- Default stays `["trade"]`
-
-### 2. Frontend — AlpacaStreamData.json
-- Add `order_update` to the `filter_types` multiselect options (listen mode) so users can filter for it
-- Add `order_update` to the `stream_types` multiselect options (subscribe mode) so self-contained mode also works
-- Update description to reflect that trading updates come via subscription, not automatically
-
-### 3. Backend — Subscribe endpoint (`stream.ts` line 72-148)
-When `stream_types` includes `"order_update"`, the backend needs to:
-- Detect that `order_update` is in the stream_types array
-- Separate it out: subscribe to `alpaca_trading` source with `symbols: ["*"]` using the same credential
-- Subscribe the remaining market stream_types (trade, quote, bar) to the normal `alpaca_market`/`alpaca_crypto` source
-- This happens in the existing `/:source/subscribe` handler — add logic after line 107 to check for `order_update` in streamTypes
-
-### 4. Backend — Remove auto-companion from execute-stream-node (`stream.ts` lines 453-477)
-Remove the automatic companion gateway spawning block. Trading subscriptions will now come explicitly from the AlpacaSubscribe node. Same for `workflow.ts` lines 561-577 and 759-773.
-
-### 5. Backend — Unsubscribe endpoint (`stream.ts` line 154)
-Mirror the subscribe logic: when `stream_types` includes `"order_update"`, also unsubscribe from `alpaca_trading`.
-
-## Files to Change
-
-| File | Change |
-|---|---|
-| `src/nodes/AlpacaSubscribe.json` | Change stream_types to multiselect, add `order_update` option |
-| `src/nodes/AlpacaStreamData.json` | Add `order_update` to filter_types and stream_types options |
-| `coreza-backend/src/routes/stream.ts` | Handle `order_update` in subscribe/unsubscribe; remove auto-companion from execute-stream-node |
-| `coreza-backend/src/routes/workflow.ts` | Remove auto-companion from activate/deactivate |
+**`interval` field** — remove entirely (lines 134-152). The backend already defaults to `"1m"` for bar timeframes.
 

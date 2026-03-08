@@ -39,6 +39,21 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
 
+  // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
+  private static ownershipCache = new Map<string, { ours: boolean; expiry: number }>();
+
+  private async checkOwnership(id: string): Promise<boolean> {
+    const cached = PortfolioExecutor.ownershipCache.get(id);
+    if (cached && cached.expiry > Date.now()) return cached.ours;
+
+    const result = await isOurOrder(id);
+    PortfolioExecutor.ownershipCache.set(id, {
+      ours: result.ours,
+      expiry: Date.now() + 300_000, // 5 minutes
+    });
+    return result.ours;
+  }
+
   /**
    * Parse a symbol param into an array. Supports comma-separated values.
    * e.g. "BTCUSDT" -> ["BTCUSDT"], "BTCUSDT,ETHUSDT" -> ["BTCUSDT","ETHUSDT"]

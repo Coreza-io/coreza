@@ -84,7 +84,12 @@ export async function cacheOrderIntent(
     createdAt: new Date().toISOString(),
     broker,
   };
-  await redis.setex(`order:${idempotencyKey}`, ORDER_CACHE_TTL, JSON.stringify(order));
+  await Promise.all([
+    redis.setex(`order:${idempotencyKey}`, ORDER_CACHE_TTL, JSON.stringify(order)),
+    // Pre-register reverse index: idempotency key IS the client_order_id sent to brokers.
+    // This ensures fills arriving before updateOrderCache() can still be verified.
+    redis.setex(`order-reverse:${idempotencyKey}`, ORDER_CACHE_TTL, idempotencyKey),
+  ]);
 }
 
 /**

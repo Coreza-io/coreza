@@ -39,6 +39,21 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
 
+  // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
+  private static ownershipCache = new Map<string, { ours: boolean; expiry: number }>();
+
+  private async checkOwnership(id: string): Promise<boolean> {
+    const cached = PortfolioExecutor.ownershipCache.get(id);
+    if (cached && cached.expiry > Date.now()) return cached.ours;
+
+    const result = await isOurOrder(id);
+    PortfolioExecutor.ownershipCache.set(id, {
+      ours: result.ours,
+      expiry: Date.now() + 300_000, // 5 minutes
+    });
+    return result.ours;
+  }
+
   /**
    * Parse a symbol param into an array. Supports comma-separated values.
    * e.g. "BTCUSDT" -> ["BTCUSDT"], "BTCUSDT,ETHUSDT" -> ["BTCUSDT","ETHUSDT"]
@@ -214,6 +229,7 @@ export class PortfolioExecutor implements INodeExecutor {
         const price = parseFloat(params.price);
         const commission = parseFloat(params.commission || "0");
         const fillId = params.fill_id?.trim() || undefined;
+        const clientOrderId = params.client_order_id?.trim() || undefined;
 
         if (!fillSymbol) {
           return toNodeResult(
@@ -234,12 +250,14 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
-        // Order ownership verification: if fill_id provided, check Redis reverse index
-        if (fillId) {
-          const ownership = await isOurOrder(fillId);
-          if (!ownership.ours) {
+        // Order ownership verification: check fillId first, then clientOrderId as fallback
+        if (fillId || clientOrderId) {
+          const isOurs =
+            (fillId && (await this.checkOwnership(fillId))) ||
+            (clientOrderId && (await this.checkOwnership(clientOrderId)));
+          if (!isOurs) {
             console.log(
-              `[PortfolioExecutor] Skipping fill for unknown order: ${fillId}`,
+              `[PortfolioExecutor] Skipping fill for unknown order: fillId=${fillId}, clientOrderId=${clientOrderId}`,
             );
             return toNodeResult(
               createSuccessOutput({
@@ -247,6 +265,7 @@ export class PortfolioExecutor implements INodeExecutor {
                 skipped: true,
                 reason: "unknown_order",
                 fill_id: fillId,
+                client_order_id: clientOrderId,
                 message: "Order was not placed by this system — fill skipped",
                 ...this.getPortfolioSummary(pm, baseCurrency),
               }),
@@ -288,6 +307,8 @@ export class PortfolioExecutor implements INodeExecutor {
               price,
               commission,
               fill_id: fillId,
+              client_order_id: clientOrderId,
+              delta_qty: fillResult.deltaQty,
             },
             ...this.getPortfolioSummary(pm, baseCurrency),
           }),

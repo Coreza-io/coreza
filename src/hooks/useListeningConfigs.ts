@@ -121,7 +121,7 @@ export const buildStreamingTriggerListeningConfig = ({
       status: "timeout",
       message: "No stream data received within timeout",
     }),
-    timeout,
+    timeout: Number.MAX_SAFE_INTEGER,
     listeningFlag,
     receivedFlag: "streamDataReceived",
     recoveryPolling: {

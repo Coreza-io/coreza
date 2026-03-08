@@ -32,6 +32,7 @@ interface ControlMessage {
   // Raw interval/depth for stream name building (centralized in market-stream-service)
   interval?: string;
   depthLevels?: string;
+  closeBars?: boolean; // For Alpaca: true = completed bars only, false = updated bars (continuous)
 }
 
 interface SourceState {

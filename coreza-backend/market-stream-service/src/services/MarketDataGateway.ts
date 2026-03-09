@@ -127,6 +127,7 @@ export class MarketDataGateway {
         );
         this.isAuthenticated = false;
         this.stopKeepalive();
+        this.clearCredentialIntervals();
         this.handleReconnect();
       });
 

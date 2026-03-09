@@ -16,7 +16,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3, List } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3, List, Pause, Play } from "lucide-react";
 import { isStandardNodeOutput } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
 import { truncateForDisplay } from "./outputTruncation";

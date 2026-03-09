@@ -604,6 +604,8 @@ export class PortfolioExecutor implements INodeExecutor {
       total_equity: state.totalEquity,
       peak_equity: state.peakEquity,
       trades_count: state.trades.length,
+      pending_orders: state.pendingOrders,
+      pending_orders_count: state.pendingOrders.length,
     };
   }
 

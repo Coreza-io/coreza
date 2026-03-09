@@ -273,6 +273,7 @@ export class PortfolioManager {
   private applyFillToHoldings(
     fill: LiveFill,
     adjustCash: boolean = false,
+    baseCurrency: string = "USDT",
   ): void {
     const fillTime = new Date(fill.eventTime).toISOString();
     const signedQuantity = fill.side === "BUY" ? fill.qty : -fill.qty;

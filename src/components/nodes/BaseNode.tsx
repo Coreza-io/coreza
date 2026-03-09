@@ -85,7 +85,9 @@ export interface BaseNodeRenderProps {
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
   handleStopListening: () => void;
+  handleTogglePause: () => void;
   isTestListening: boolean;
+  isStreamPaused: boolean;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants

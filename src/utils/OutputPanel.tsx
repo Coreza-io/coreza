@@ -40,6 +40,10 @@ export type OutputPanelProps = {
   isTestListening?: boolean;
   /** Callback to stop test listening */
   onStopListening?: () => void;
+  /** Whether the stream is paused (UI updates skipped) */
+  isStreamPaused?: boolean;
+  /** Callback to toggle pause/resume */
+  onTogglePause?: () => void;
 };
 
 // Status badge component for StandardNodeOutput

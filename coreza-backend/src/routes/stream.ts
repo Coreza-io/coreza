@@ -426,37 +426,75 @@ router.post("/:source/register", async (req, res) => {
         `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
       );
 
-      const subscribeResult = await SubscriptionService.subscribe({
-        source: sourceId,
-        userId,
-        workflowId: workflow_id,
-        nodeId: node_id,
-        credentialId: credential_id || "",
-        symbols: parsedSymbols,
-        streamTypes: stream_types
-          ? typeof stream_types === "string"
-            ? stream_types.split(",").map((s: string) => s.trim())
-            : stream_types
-          : undefined,
-        feed,
-        environment,
-        assetType: asset_type,
-        interval,
-        depth_levels: depth_levels,
-        scope,
-        targetWorkflowId: workflow_id,
-      });
+      // Parse stream_types into array
+      const parsedStreamTypes: string[] = stream_types
+        ? typeof stream_types === "string"
+          ? stream_types.split(",").map((s: string) => s.trim())
+          : stream_types
+        : [];
 
-      if (!subscribeResult.success) {
-        console.error(
-          `❌ [ExecuteStreamNode] Subscription failed:`,
-          subscribeResult.error,
-        );
-        return res.status(400).json({
-          success: false,
-          status: "error",
-          error: subscribeResult.error,
-        } as StreamExecutionResponse);
+      // Split order_update from market stream types (same pattern as /subscribe endpoint)
+      const hasOrderUpdate = parsedStreamTypes.includes("order_update");
+      const marketStreamTypes = parsedStreamTypes.filter((t: string) => t !== "order_update");
+
+      // Subscribe to trading source for order updates
+      if (hasOrderUpdate) {
+        const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+        const tradingResult = await SubscriptionService.subscribe({
+          source: tradingSource as any,
+          userId,
+          workflowId: workflow_id,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: ["*"],
+          streamTypes: ["order_update"],
+          scope,
+          targetWorkflowId: workflow_id,
+        });
+
+        if (!tradingResult.success) {
+          console.error(
+            `❌ [ExecuteStreamNode] Trading subscription failed:`,
+            tradingResult.error,
+          );
+          return res.status(400).json({
+            success: false,
+            status: "error",
+            error: tradingResult.error,
+          } as StreamExecutionResponse);
+        }
+      }
+
+      // Subscribe to market streams (excluding order_update)
+      if (marketStreamTypes.length > 0 || !hasOrderUpdate) {
+        const subscribeResult = await SubscriptionService.subscribe({
+          source: sourceId,
+          userId,
+          workflowId: workflow_id,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: parsedSymbols,
+          streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+          feed,
+          environment,
+          assetType: asset_type,
+          interval,
+          depth_levels: depth_levels,
+          scope,
+          targetWorkflowId: workflow_id,
+        });
+
+        if (!subscribeResult.success) {
+          console.error(
+            `❌ [ExecuteStreamNode] Subscription failed:`,
+            subscribeResult.error,
+          );
+          return res.status(400).json({
+            success: false,
+            status: "error",
+            error: subscribeResult.error,
+          } as StreamExecutionResponse);
+        }
       }
 
       console.log(

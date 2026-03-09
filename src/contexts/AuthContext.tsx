@@ -49,15 +49,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const lastActivityRef = useRef<number>(Date.now());
   const userRef = useRef<User | null>(null);
   
-  // Navigation for redirects - wrapped in try/catch for cases outside Router
-  let navigate: ReturnType<typeof useNavigate> | null = null;
-  let location: ReturnType<typeof useLocation> | null = null;
-  try {
-    navigate = useNavigate();
-    location = useLocation();
-  } catch {
-    // Component is used outside of Router context (e.g., in tests)
-  }
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const clearLocalSessionState = useCallback(() => {
     if (inactivityTimerRef.current) {

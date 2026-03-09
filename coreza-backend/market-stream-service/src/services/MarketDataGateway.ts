@@ -384,8 +384,19 @@ export class MarketDataGateway {
     }
   }
 
+  /**
+   * Clear any intervals stored on credentials (e.g., Binance listenKey refresh)
+   */
+  private clearCredentialIntervals(): void {
+    if (this.credentials?._listenKeyRefreshInterval) {
+      clearInterval(this.credentials._listenKeyRefreshInterval);
+      this.credentials._listenKeyRefreshInterval = null;
+    }
+  }
+
   disconnect(): void {
     this.stopKeepalive();
+    this.clearCredentialIntervals();
     if (this.ws) {
       this.ws.close();
       this.ws = null;

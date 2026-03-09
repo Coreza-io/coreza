@@ -148,6 +148,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               const { nodeId, data } = message.payload;
 
               if (nodeId && storeRef.current) {
+                // Skip UI update if stream is paused
+                const existingData2 = storeRef.current.getNodeData(nodeId);
+                if (existingData2?.isStreamPaused) {
+                  console.log('⏸️ [ExecutionStore] Stream paused, skipping test_data for:', nodeId);
+                  return;
+                }
+
                 const receivedOutput = {
                   status: 'streaming',
                   symbol: data.symbol,

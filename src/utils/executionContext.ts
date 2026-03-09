@@ -48,6 +48,7 @@ export interface NodeExecutionData {
   testListenWorkflowId?: string;             // workflow ID for test listener
   testListenNodeId?: string;                 // node ID for test listener
   streamDataReceived?: boolean;              // true when stream data just arrived (for flash animation)
+  isStreamPaused?: boolean;                  // client-side pause: skip UI updates while stream stays alive
 }
 
 export class ExecutionContext {

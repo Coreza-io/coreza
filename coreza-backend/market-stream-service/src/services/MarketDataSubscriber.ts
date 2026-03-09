@@ -435,11 +435,16 @@ export class MarketDataSubscriber {
     if (type === "kline" || type === "bar" || type === "daily_bar") {
       return {
         data: {
-          type: "market_data",
+          type,
           BarSeries: [
             {
               symbol,
-              interval: event.timeframe || "1m",
+              interval:
+                type === "bar"
+                  ? "1Min"
+                  : type === "daily_bar"
+                    ? "1Day"
+                    : event.timeframe,
               bars: [
                 {
                   time:

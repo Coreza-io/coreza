@@ -313,7 +313,6 @@ export function normalizeAlpacaMessage(
         c: msg.c,
         v: msg.v,
         vw: msg.vw,
-        timeframe: "1m",
       };
     case "d":
       return {
@@ -326,7 +325,6 @@ export function normalizeAlpacaMessage(
         l: msg.l,
         c: msg.c,
         v: msg.v,
-        timeframe: "1d",
       };
     default:
       return null;

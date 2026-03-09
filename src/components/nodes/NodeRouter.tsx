@@ -328,7 +328,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
               />
             );
           })()}
-          label={data.label || renderProps.displayName}
+          label={renderProps.displayName}
           minWidth={dynamicSize.width}
           minHeight={dynamicSize.height}
           handles={dynamicHandles}

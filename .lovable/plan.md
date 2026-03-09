@@ -1,62 +1,37 @@
 
 
-# End-to-End Review: Current Implementation State
+# Plan: Fill Deduplication & Order Ownership Verification for Portfolio Sync Fills
 
-## Overall Assessment: Architecture is solid, but the Pending Order Ledger is missing and there are 4 cleanup issues.
+## Status: ✅ IMPLEMENTED
 
----
+## Problem
+Portfolio Sync Fills had no deduplication or order ownership verification. Duplicate WebSocket events would double-count fills, and fills from external orders (manual trades, other systems) on the same Alpaca account would be incorrectly applied.
 
-## Critical Finding: Pending Order Ledger Not Implemented
+## Solution: Opaque `fill_id` + Redis Reverse Index
 
-The approved plan to add `registerOrder()`, `cancelOrder()`, `getPendingOrders()`, and auto-decrement in `applyFill()` was discussed but **never added to the code**. `PortfolioManager.ts` has no `pendingOrders` Map, no `PendingOrder` interface, and no related methods. `PortfolioExecutor.ts` has no `register_order` / `cancel_order` / `get_pending_orders` operation handlers. `Portfolio.json` has no entries for these operations.
+### 1. `orderIdempotency.ts` — Reverse index + `isOurOrder()`
+- `updateOrderCache()` now creates `order-reverse:{orderId}` → `idempotencyKey` in Redis
+- New `isOurOrder(orderId)` checks the reverse index to verify order ownership
 
-This is the main gap — without it, strategies have no way to know if an order is pending, leading to duplicate order submissions.
+### 2. `PortfolioManager.ts` — Dedup in `applyFill()`
+- Accepts optional `fillId` parameter
+- Checks `fillIdSet` with key `${symbol}:${fillId}` before applying
+- Returns `{ applied: boolean; reason?: string }` instead of void
 
-**Action**: Implement the full Pending Order Ledger as previously approved.
+### 3. `PortfolioExecutor.ts` — Ownership + dedup wiring
+- Reads `fill_id` from params
+- Calls `isOurOrder(fill_id)` → skips with `reason: "unknown_order"` if not ours
+- Passes `fillId` to `applyFill()` → skips with `reason: "duplicate"` if already processed
+- Output includes `skipped`, `reason`, `fill_id` fields
 
----
+### 4. `Portfolio.json` — New `fill_id` field
+- Optional text field for `update_portfolio` operation
+- Placeholder: `{{ $(AlpacaStreamData).json.data.order.orderId }}`
 
-## Issue 1: `fillIdSet` is dead weight — grows unbounded, never checked
+## Workflow Usage
+```text
+Portfolio (Sync Fills):
+  fill_id: {{ $(AlpacaStreamData).json.data.order.orderId }}
+```
 
-`fillIdSet` (line 77) is populated on every fill (line 493) but **never read for dedup**. The delta-based `orderCumQtyMap` handles fillId dedup, and manual fills always get unique IDs so the set can never catch a duplicate.
-
-**Fix**: Remove `fillIdSet` entirely. It serves no purpose and leaks memory.
-
-## Issue 2: `fillLedger` grows unbounded — never read or trimmed
-
-`fillLedger` (line 76) receives a `.push()` on every fill (line 494) but is never queried, returned, or trimmed. For a strategy running days with thousands of fills, this is a pure memory leak.
-
-**Fix**: Either expose it via a `getFills()` getter (useful for audit/debugging) and add an optional cap, or remove it. If kept, add a max size (e.g., last 10,000 fills) with FIFO eviction.
-
-## Issue 3: `getPortfolioSummary()` called on every fill response — O(N) per fill
-
-Every `update_portfolio` response (lines 279, 303, 322) calls `getPortfolioSummary()`, which calls `getPortfolioState()`, which iterates all holdings and trades to compute positions, equity, and PnL. For high-frequency strategies processing hundreds of fills per second, this adds unnecessary overhead.
-
-**Fix**: Return a lightweight response from `update_portfolio` (just the fill result + equity) and let the user call `get_portfolio` separately when they need the full snapshot. Alternatively, cache the summary and invalidate on state change.
-
-## Issue 4: `base_currency` not shown for `update_mtm` in broker mode
-
-The `base_currency` field's `displayOptions` (Portfolio.json line 126-134) doesn't include `update_mtm`, so users can't select a base currency when using MTM updates. The code defaults to "USDT" but this is invisible to the user.
-
-**Fix**: Add `"update_mtm"` to the `base_currency` field's display options.
-
----
-
-## Summary
-
-| Finding | Severity | Type |
-|---|---|---|
-| Pending Order Ledger not implemented | Critical | Missing feature |
-| `fillIdSet` dead weight, unbounded growth | Medium | Memory leak |
-| `fillLedger` unbounded, never read | Medium | Memory leak |
-| `getPortfolioSummary()` on every fill | Low | Performance |
-| `base_currency` missing from `update_mtm` | Low | UX |
-
-## Recommended Implementation Order
-
-1. Implement Pending Order Ledger (PendingOrder interface, registerOrder, cancelOrder, auto-decrement in applyFill, executor operations, Portfolio.json entries)
-2. Remove `fillIdSet` (dead code)
-3. Cap or remove `fillLedger` (memory leak)
-4. Add `update_mtm` to `base_currency` display options (one-line fix)
-5. Optionally slim down `update_portfolio` response (performance)
-
+Flow: ownership check → dedup check → apply fill

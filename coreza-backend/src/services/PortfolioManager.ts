@@ -39,6 +39,19 @@ export interface LiveFill {
   eventTime: number; // epoch ms
 }
 
+export interface PendingOrder {
+  orderId: string;
+  clientOrderId?: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  originalQty: number;
+  filledQty: number;      // cumulative filled so far
+  remainingQty: number;
+  limitPrice?: number;
+  status: "pending" | "partially_filled";
+  registeredAt: number;    // epoch ms
+}
+
 export interface PortfolioSnapshot {
   cash: Record<string, number>; // asset -> balance
   holdings: Record<string, SpotHolding>; // symbol -> holding
@@ -46,15 +59,18 @@ export interface PortfolioSnapshot {
   totalValueUsdt: number;
 }
 
+// ============== CONSTANTS ==============
+
+const MAX_FILL_LEDGER_SIZE = 10_000;
+
 // ============== PORTFOLIO MANAGER ==============
 
 /**
  * PortfolioManager - Pure in-memory portfolio engine for live broker mode.
  *
- * All state (fills, holdings, PnL) lives in RAM only, scoped to the
- * workflow run. When the workflow ends, destroy() is called and all
- * state is garbage collected. On the next run, initializePortfolio()
- * starts from explicit cash and subsequent update_portfolio fills.
+ * All state (fills, holdings, PnL, pending orders) lives in RAM only,
+ * scoped to the workflow run. When the workflow ends, destroy() is called
+ * and all state is garbage collected.
  *
  * One instance per (userId, runId) pair, managed via static cache.
  */
@@ -74,8 +90,8 @@ export class PortfolioManager {
   private cashBook = new Map<string, number>(); // asset -> total balance
   private holdings = new Map<string, SpotHolding>(); // symbol -> holding
   private fillLedger: LiveFill[] = [];
-  private fillIdSet = new Set<string>(); // O(1) dedup for manual fills
   private orderCumQtyMap = new Map<string, number>(); // orderId → cumulative qty applied (partial fill tracking)
+  private pendingOrders = new Map<string, PendingOrder>(); // orderId → pending order
   private trades: Trade[] = [];
   private currentEntryMap = new Map<
     string,
@@ -122,8 +138,8 @@ export class PortfolioManager {
     this.cashBook.clear();
     this.holdings.clear();
     this.fillLedger.length = 0;
-    this.fillIdSet.clear();
     this.orderCumQtyMap.clear();
+    this.pendingOrders.clear();
     this.trades.length = 0;
     this.currentEntryMap.clear();
     this.tradeIdCounter = 0;
@@ -145,6 +161,107 @@ export class PortfolioManager {
     }
     PortfolioManager.instances.clear();
     console.log("[PortfolioManager] All instances destroyed");
+  }
+
+  // ============== PENDING ORDER LEDGER ==============
+
+  /**
+   * Register a pending order. Idempotent — if orderId already exists, updates it.
+   */
+  registerOrder(order: {
+    orderId: string;
+    clientOrderId?: string;
+    symbol: string;
+    side: "BUY" | "SELL";
+    quantity: number;
+    limitPrice?: number;
+  }): { registered: boolean; pending_order: PendingOrder } {
+    const existing = this.pendingOrders.get(order.orderId);
+    if (existing) {
+      // Update fields that may change (e.g., status re-confirmation)
+      existing.symbol = order.symbol;
+      existing.side = order.side;
+      existing.limitPrice = order.limitPrice;
+      console.log(
+        `[PortfolioManager] Updated existing pending order: ${order.orderId}`,
+      );
+      return { registered: true, pending_order: existing };
+    }
+
+    const pending: PendingOrder = {
+      orderId: order.orderId,
+      clientOrderId: order.clientOrderId,
+      symbol: order.symbol,
+      side: order.side,
+      originalQty: order.quantity,
+      filledQty: 0,
+      remainingQty: order.quantity,
+      limitPrice: order.limitPrice,
+      status: "pending",
+      registeredAt: Date.now(),
+    };
+
+    this.pendingOrders.set(order.orderId, pending);
+    console.log(
+      `[PortfolioManager] Registered pending order: ${order.side} ${order.quantity} ${order.symbol} (${order.orderId})`,
+    );
+    return { registered: true, pending_order: pending };
+  }
+
+  /**
+   * Cancel/remove a pending order by orderId.
+   */
+  cancelOrder(orderId: string): { removed: boolean; order?: PendingOrder } {
+    const order = this.pendingOrders.get(orderId);
+    if (!order) {
+      console.log(
+        `[PortfolioManager] Cancel: no pending order found for ${orderId}`,
+      );
+      return { removed: false };
+    }
+    this.pendingOrders.delete(orderId);
+    console.log(
+      `[PortfolioManager] Cancelled pending order: ${orderId} (${order.side} ${order.originalQty} ${order.symbol})`,
+    );
+    return { removed: true, order };
+  }
+
+  /**
+   * Get all pending orders as an array.
+   */
+  getPendingOrders(): PendingOrder[] {
+    return Array.from(this.pendingOrders.values());
+  }
+
+  /**
+   * Get a single pending order by orderId.
+   */
+  getPendingOrder(orderId: string): PendingOrder | null {
+    return this.pendingOrders.get(orderId) ?? null;
+  }
+
+  /**
+   * Auto-decrement pending order when a fill is applied.
+   * Called internally by applyFill().
+   */
+  private updatePendingOrderOnFill(fillId: string, deltaQty: number): void {
+    const pending = this.pendingOrders.get(fillId);
+    if (!pending) return;
+
+    pending.filledQty += deltaQty;
+    pending.remainingQty = Math.max(0, pending.originalQty - pending.filledQty);
+
+    if (pending.remainingQty <= 0) {
+      this.pendingOrders.delete(fillId);
+      console.log(
+        `[PortfolioManager] Pending order fully filled and removed: ${fillId}`,
+      );
+    } else {
+      pending.status = "partially_filled";
+      console.log(
+        `[PortfolioManager] Pending order partially filled: ${fillId} (remaining: ${pending.remainingQty})`,
+      );
+    }
   }
 
   // ============== FILL APPLICATION (mirrors SimBroker logic) ==============
@@ -326,6 +443,7 @@ export class PortfolioManager {
     trades: Trade[];
     totalEquity: number;
     peakEquity: number;
+    pendingOrders: PendingOrder[];
   } {
     const positions = this.getPositions();
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
@@ -338,6 +456,7 @@ export class PortfolioManager {
       trades: this.trades,
       totalEquity,
       peakEquity: this.peakEquity,
+      pendingOrders: this.getPendingOrders(),
     };
   }
 
@@ -394,6 +513,10 @@ export class PortfolioManager {
     return this.trades;
   }
 
+  getFills(): LiveFill[] {
+    return this.fillLedger;
+  }
+
   isBootstrapped(): boolean {
     return this.bootstrapped;
   }
@@ -438,6 +561,7 @@ export class PortfolioManager {
    * Apply a fill from explicit symbol/quantity/price/commission fields.
    * Positive quantity = BUY, negative = SELL.
    * Updates holdings (qty, avg price, realized PnL) and cash.
+   * Auto-decrements matching pending order if fillId matches an orderId.
    */
   applyFill(
     fill: {
@@ -490,10 +614,19 @@ export class PortfolioManager {
       eventTime: Date.now(),
     };
 
-    this.fillIdSet.add(`${symbol}:${tradeId}`);
+    // Cap fill ledger to prevent unbounded memory growth
+    if (this.fillLedger.length >= MAX_FILL_LEDGER_SIZE) {
+      this.fillLedger.splice(0, this.fillLedger.length - MAX_FILL_LEDGER_SIZE + 1);
+    }
     this.fillLedger.push(liveFill);
+
     this.applyFillToHoldings(liveFill, true);
     this.updatePeakEquity(baseCurrency);
+
+    // Auto-decrement pending order if fillId matches
+    if (fillId) {
+      this.updatePendingOrderOnFill(fillId, effectiveQty);
+    }
 
     console.log(
       `[PortfolioManager] Applied fill: ${side} ${effectiveQty} ${symbol} @ ${price} (delta from cum ${absQty}, fillId: ${fillId || tradeId})`,

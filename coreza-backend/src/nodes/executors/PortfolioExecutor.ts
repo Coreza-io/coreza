@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../services/simBroker";
-import { PortfolioManager } from "../../services/PortfolioManager";
+import { PortfolioManager, PendingOrder } from "../../services/PortfolioManager";
 import {
   createSuccessOutput,
   createErrorOutput,
@@ -354,6 +354,68 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerGetEquity(pm, baseCurrency);
       case "get_trades":
         return this.brokerGetTrades(pm);
+      case "register_order": {
+        const orderId = params.fill_id?.trim() || params.order_id?.trim();
+        const clientOrderId = params.client_order_id?.trim() || undefined;
+        const orderSymbol = params.symbol?.trim().toUpperCase();
+        const orderSide = params.side?.trim().toUpperCase();
+        const orderQty = parseFloat(params.quantity);
+        const orderPrice = parseFloat(params.price || "0") || undefined;
+
+        if (!orderId) {
+          return toNodeResult(createErrorOutput("order_id (or fill_id) is required for register_order"));
+        }
+        if (!orderSymbol) {
+          return toNodeResult(createErrorOutput("symbol is required for register_order"));
+        }
+        if (!orderSide || (orderSide !== "BUY" && orderSide !== "SELL")) {
+          return toNodeResult(createErrorOutput("side must be BUY or SELL"));
+        }
+        if (isNaN(orderQty) || orderQty <= 0) {
+          return toNodeResult(createErrorOutput("quantity must be a positive number"));
+        }
+
+        const result = pm.registerOrder({
+          orderId,
+          clientOrderId,
+          symbol: orderSymbol,
+          side: orderSide as "BUY" | "SELL",
+          quantity: orderQty,
+          limitPrice: orderPrice,
+        });
+
+        return toNodeResult(createSuccessOutput({
+          registered: result.registered,
+          pending_order: result.pending_order,
+          pending_orders_count: pm.getPendingOrders().length,
+        }));
+      }
+      case "cancel_order": {
+        const cancelOrderId = params.fill_id?.trim() || params.order_id?.trim();
+        if (!cancelOrderId) {
+          return toNodeResult(createErrorOutput("order_id (or fill_id) is required for cancel_order"));
+        }
+
+        const cancelResult = pm.cancelOrder(cancelOrderId);
+        return toNodeResult(createSuccessOutput({
+          removed: cancelResult.removed,
+          cancelled_order: cancelResult.order || null,
+          pending_orders_count: pm.getPendingOrders().length,
+        }));
+      }
+      case "get_pending_orders": {
+        const pendingOrders = pm.getPendingOrders();
+        const filterSymbol = params.symbol?.trim().toUpperCase();
+        const filtered = filterSymbol
+          ? pendingOrders.filter(o => o.symbol === filterSymbol)
+          : pendingOrders;
+
+        return toNodeResult(createSuccessOutput({
+          pending_orders: filtered,
+          pending_orders_count: filtered.length,
+          total_pending_orders: pendingOrders.length,
+        }));
+      }
       default:
         return toNodeResult(
           createErrorOutput(`Unknown portfolio operation: ${operation}`),
@@ -542,6 +604,8 @@ export class PortfolioExecutor implements INodeExecutor {
       total_equity: state.totalEquity,
       peak_equity: state.peakEquity,
       trades_count: state.trades.length,
+      pending_orders: state.pendingOrders,
+      pending_orders_count: state.pendingOrders.length,
     };
   }
 

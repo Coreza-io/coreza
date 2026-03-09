@@ -1,65 +1,53 @@
 
 
-# Review: BinanceStreamData Node — End-to-End Analysis
+# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
 
-## Verdict: Node JSON is correct. One backend bug found in the register endpoint.
+## What Changed in Alpaca (the reference)
 
-### What's Working Well
+1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
+2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
+3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
+4. **Description**: Updated to mention order fills and If node routing
 
-**Node JSON (BinanceStreamData.json)** — All correct:
-- `stream_types` is multiselect with all 7 Binance types + `order_update`
-- `interval` correctly shown only when `kline` is selected (Binance supports 15 intervals)
-- `onlyClosedBars` is hidden with default `true` — unclosed kline bars are filtered server-side in `MarketDataSubscriber.ts` (line 339-354)
-- Listen-mode filters (`filter_symbols`, `filter_types`) present
-- Description mentions If node routing pattern
+## What Needs to Change in Binance
 
-**Node JSON (BinanceSubscribe.json)** — All correct:
-- `stream_types` multiselect with `order_update` option
-- Interval/depth displayOptions work with multiselect
+### 1. `BinanceStreamData.json` — Stream trigger node
 
-**Gateway (binance/helpers.ts)** — Solid implementation:
-- `preConnectBinance()` fetches listenKey via REST, sets up 30-min refresh interval
-- `shouldPublishBinanceMessage()` correctly filters `executionReport` (spot) and `ORDER_TRADE_UPDATE` (futures) for trading source
-- `normalizeBinanceMessage()` maps both spot and futures order events to unified `order_update` type with proper field extraction
-- Kline normalization includes `isClosed` flag for server-side filtering
-- All 7 market data types properly normalized
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
+| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
+| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
+| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
+| `height` | 280 | 320 (slightly taller for multiselect) |
 
-**Subscribe endpoint (`/stream/:source/subscribe`)** — Correct:
-- Splits `order_update` from `stream_types` (lines 114-131)
-- Routes `order_update` to `binance_trading` with wildcard symbols `["*"]`
-- Passes remaining market types to market source
+### 2. `BinanceSubscribe.json` — Subscription node
 
-**Unsubscribe endpoint** — Correct: same splitting logic
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
+| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
 
-**MarketDataSubscriber** — Correct:
-- `onlyClosedBars` filtering (default true) skips unclosed Binance klines
-- Only applies to `source === "binance"` and `type === "kline"`
+### 3. No Backend Changes Needed
 
-### Bug Found: Register Endpoint Missing order_update Splitting
+The backend `stream.ts` route already:
+- Parses `stream_types` as array (lines 108-112)
+- Splits out `order_update` to `binance_trading` source (lines 114-131)
+- Passes remaining types to market subscription
+- Handles both Alpaca and Binance identically
 
-**File**: `coreza-backend/src/routes/stream.ts`, lines 417-448
+## Key Difference from Alpaca
 
-The `/stream/:source/register` endpoint (used by BinanceStreamData in **subscribe mode**) passes `stream_types` directly to `SubscriptionService.subscribe()` without splitting out `order_update`. This means if a user selects `["kline", "order_update"]` in subscribe mode, the `order_update` type gets sent to `binance_market` instead of being routed to `binance_trading`.
+Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
 
-The `/subscribe` endpoint (used by BinanceSubscribe node) handles this correctly at lines 114-131.
+## Files to Edit
 
-**Fix**: Add the same `order_update` splitting logic to the register endpoint's subscribe-mode block (before line 429).
-
-## Plan
-
-| File | Change |
+| File | Changes |
 |---|---|
-| `coreza-backend/src/routes/stream.ts` | In the register endpoint (line ~417-448), add `order_update` splitting: extract `hasOrderUpdate` and `marketStreamTypes`, subscribe to trading source separately if `order_update` is present, pass only market types to the main subscription |
-
-### Specific Change
-
-In the register endpoint's subscribe-mode block, before calling `SubscriptionService.subscribe()`:
-
-1. Parse `stream_types` into array (same as subscribe endpoint)
-2. Check for `order_update`, split into `marketStreamTypes`
-3. If `hasOrderUpdate`, call `SubscriptionService.subscribe()` for the trading source (`binance_trading` or `alpaca_trading`) with `symbols: ["*"]` and `streamTypes: ["order_update"]`
-4. Pass only `marketStreamTypes` to the existing market subscription call
-5. If only `order_update` was selected (no market types), skip the market subscription and return success
-
-This is identical to the pattern already used at lines 114-154 of the same file.
+| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
+| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
 

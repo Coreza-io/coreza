@@ -20,11 +20,11 @@
       "interval": 10000
     }
   },
-  "description": "Receives real-time market data from Binance. Also automatically streams order fill events for your account. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Receives real-time market data, news, or order fill events from Binance. Use BinanceSubscribe node to explicitly subscribe to market streams and/or Order Updates (Fills). Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
-    "height": 280
+    "height": 320
   },
   "handles": [
     {
@@ -151,39 +151,43 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Type",
-      "type": "select",
+      "label": "Stream Types",
+      "type": "multiselect",
       "options": [
         {
           "id": "trade",
-          "name": "Trade - Individual trades (high frequency)"
+          "name": "Trade"
         },
         {
           "id": "aggTrade",
-          "name": "Aggregated Trade - Grouped trades (less noise)"
+          "name": "Aggregated Trade"
         },
         {
           "id": "kline",
-          "name": "Kline (Candlestick) - OHLCV data"
+          "name": "Kline (Candlestick)"
         },
         {
           "id": "miniTicker",
-          "name": "Mini Ticker - Lightweight price updates"
+          "name": "Mini Ticker"
         },
         {
           "id": "ticker",
-          "name": "Ticker (24h) - 24h statistics"
+          "name": "Ticker (24h)"
         },
         {
           "id": "bookTicker",
-          "name": "Book Ticker - Best bid/ask"
+          "name": "Book Ticker"
         },
         {
           "id": "depth",
-          "name": "Depth (Order Book) - Bid/ask levels"
+          "name": "Depth (Order Book)"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
-      "default": "kline",
+      "default": ["kline"],
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]
@@ -313,12 +317,69 @@
       "showDescription": false
     },
     {
+      "key": "filter_symbols",
+      "label": "Filter Symbols",
+      "type": "text",
+      "placeholder": "BTCUSDT, ETHUSDT",
+      "description": "Optional — only receive events for these symbols. Leave empty for all.",
+      "displayOptions": {
+        "show": {
+          "mode": ["listen"]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "filter_types",
+      "label": "Filter Stream Types",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "trade",
+          "name": "Trade"
+        },
+        {
+          "id": "aggTrade",
+          "name": "Aggregated Trade"
+        },
+        {
+          "id": "kline",
+          "name": "Kline (Candlestick)"
+        },
+        {
+          "id": "miniTicker",
+          "name": "Mini Ticker"
+        },
+        {
+          "id": "ticker",
+          "name": "Ticker (24h)"
+        },
+        {
+          "id": "bookTicker",
+          "name": "Book Ticker"
+        },
+        {
+          "id": "depth",
+          "name": "Depth (Order Book)"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
+        }
+      ],
+      "default": [],
+      "description": "Optional — only receive these event types. Leave empty for all.",
+      "displayOptions": {
+        "show": {
+          "mode": ["listen"]
+        }
+      },
+      "showDescription": false
+    },
+    {
       "key": "onlyClosedBars",
-      "label": "Only Closed Bars",
-      "type": "checkbox",
-      "default": true,
-      "description": "Only emit bar/kline data when the candle is closed. Disable to receive all streaming updates.",
-      "showDescription": true
+      "type": "hidden",
+      "default": true
     }
   ]
 }

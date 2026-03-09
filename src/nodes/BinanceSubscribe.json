@@ -119,40 +119,44 @@
     },
     {
       "key": "stream_types",
-      "label": "Stream Type",
-      "type": "select",
+      "label": "Stream Types",
+      "type": "multiselect",
       "options": [
         {
           "id": "trade",
-          "name": "Trade - Individual trades (high frequency)"
+          "name": "Trade"
         },
         {
           "id": "aggTrade",
-          "name": "Aggregated Trade - Grouped trades (less noise)"
+          "name": "Aggregated Trade"
         },
         {
           "id": "kline",
-          "name": "Kline (Candlestick) - OHLCV data"
+          "name": "Kline (Candlestick)"
         },
         {
           "id": "miniTicker",
-          "name": "Mini Ticker - Lightweight price updates"
+          "name": "Mini Ticker"
         },
         {
           "id": "ticker",
-          "name": "Ticker (24h) - 24h statistics"
+          "name": "Ticker (24h)"
         },
         {
           "id": "bookTicker",
-          "name": "Book Ticker - Best bid/ask"
+          "name": "Book Ticker"
         },
         {
           "id": "depth",
-          "name": "Depth (Order Book) - Bid/ask levels"
+          "name": "Depth (Order Book)"
+        },
+        {
+          "id": "order_update",
+          "name": "Order Updates (Fills)"
         }
       ],
-      "default": "kline",
-      "description": "Select Binance market data stream type",
+      "default": ["kline"],
+      "description": "Select Binance market data stream types",
       "required": true,
       "showDescription": false
     },

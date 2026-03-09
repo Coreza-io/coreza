@@ -217,9 +217,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // Check if node is in test listening mode - ONLY trust execution store, not stale output status
   const isTestListening = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
-    // Only use execution store flag - displayedData.status can be stale from previous sessions
     return nodeData?.isTestListening === true;
-  }, [nodeId, executionStore, storeVersion]); // Include storeVersion to re-compute when store updates
+  }, [nodeId, executionStore, storeVersion]);
+
+  const isStreamPaused = useMemo(() => {
+    const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
+    return nodeData?.isStreamPaused === true;
+  }, [nodeId, executionStore, storeVersion]);
 
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {

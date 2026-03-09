@@ -72,6 +72,18 @@
           "name": "Sync Fills"
         },
         {
+          "id": "register_order",
+          "name": "Register Pending Order"
+        },
+        {
+          "id": "cancel_order",
+          "name": "Cancel Pending Order"
+        },
+        {
+          "id": "get_pending_orders",
+          "name": "Get Pending Orders"
+        },
+        {
           "id": "get_portfolio",
           "name": "Get Portfolio"
         },
@@ -126,6 +138,7 @@
           "operation": [
             "create_portfolio",
             "update_portfolio",
+            "update_mtm",
             "get_portfolio",
             "get_cash",
             "get_equity"
@@ -155,7 +168,7 @@
       "description": "One or more symbols (comma-separated).",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "get_position", "update_mtm"]
+          "operation": ["update_portfolio", "get_position", "update_mtm", "register_order", "get_pending_orders"]
         }
       }
     },
@@ -168,7 +181,7 @@
       "description": "Trade side. Determines whether quantity adds or reduces the position.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio"]
+          "operation": ["update_portfolio", "register_order"]
         }
       }
     },
@@ -181,7 +194,7 @@
       "description": "Cumulative filled quantity when using Fill ID (delta computed automatically). Absolute value — side controls direction.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio"]
+          "operation": ["update_portfolio", "register_order"]
         }
       }
     },
@@ -194,7 +207,7 @@
       "description": "Average fill price.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "update_mtm"]
+          "operation": ["update_portfolio", "update_mtm", "register_order"]
         }
       }
     },
@@ -214,14 +227,14 @@
     },
     {
       "key": "fill_id",
-      "label": "Fill ID (Dedup Key)",
+      "label": "Order ID / Fill ID",
       "type": "text",
       "placeholder": "{{ $(AlpacaStreamData).json.data.order.orderId }}",
       "required": false,
-      "description": "Optional unique ID for deduplication and ownership verification. If provided, the system checks that this order was placed by your workflow (via Redis reverse index) and skips duplicate fills. Supports partial fills via delta tracking.",
+      "description": "Unique order identifier. Used for deduplication in Sync Fills, and as the key for Register/Cancel Pending Order operations.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio"]
+          "operation": ["update_portfolio", "register_order", "cancel_order"]
         }
       }
     },
@@ -231,10 +244,10 @@
       "type": "text",
       "placeholder": "{{ $(AlpacaStreamData).json.data.order.client_order_id }}",
       "required": false,
-      "description": "Fallback dedup key if orderId not yet indexed. Maps to the client_order_id sent with the original order. Used to handle race conditions where fills arrive before the orderId reverse index is written.",
+      "description": "Fallback dedup key if orderId not yet indexed. Maps to the client_order_id sent with the original order.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio"]
+          "operation": ["update_portfolio", "register_order"]
         }
       }
     },
@@ -257,6 +270,21 @@
     "update_mtm": {
       "show": {
         "mode": ["backtest", "broker"]
+      }
+    },
+    "register_order": {
+      "show": {
+        "mode": ["broker"]
+      }
+    },
+    "cancel_order": {
+      "show": {
+        "mode": ["broker"]
+      }
+    },
+    "get_pending_orders": {
+      "show": {
+        "mode": ["broker"]
       }
     }
   }

@@ -1,74 +1,53 @@
 
 
-# Binance order_update End-to-End Verification
+# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
 
-## How Binance User Data Stream Works (per official docs)
+## What Changed in Alpaca (the reference)
 
-1. **Create listenKey**: `POST /api/v3/userDataStream` (spot) or `POST /fapi/v1/listenKey` (futures) with `X-MBX-APIKEY` header
-2. **Connect WebSocket**: `wss://stream.binance.com:9443/ws/{listenKey}` — no subscription message needed, all account events auto-stream
-3. **Keep alive**: `PUT` to same endpoint every <60 minutes (validity = 60 min)
-4. **Event types**: `executionReport` (spot orders), `ORDER_TRADE_UPDATE` (futures orders), plus `outboundAccountPosition`, `balanceUpdate`, `ACCOUNT_UPDATE`
+1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
+2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
+3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
+4. **Description**: Updated to mention order fills and If node routing
 
-## Our Implementation vs Binance Docs
+## What Needs to Change in Binance
 
-| Aspect | Binance Docs | Our Implementation | Status |
-|---|---|---|---|
-| listenKey creation | POST with `X-MBX-APIKEY` | `preConnectBinance()` — correct endpoint, correct header | Correct |
-| Spot endpoint | `/api/v3/userDataStream` | Correct | Correct |
-| Futures endpoint | `/fapi/v1/listenKey` | Correct | Correct |
-| WS URL (spot) | `wss://stream.binance.com:9443/ws/{listenKey}` | Correct in `getBinanceWsUrl()` | Correct |
-| WS URL (futures) | `wss://fstream.binance.com/ws/{listenKey}` | Correct | Correct |
-| Testnet URLs | `testnet.binance.vision` / `testnet.binancefuture.com` | Correct | Correct |
-| keepalive | PUT every <60 min | PUT every 30 min | Correct (safe margin) |
-| No subscribe msg needed | User Data Stream auto-sends | `buildBinanceSubscribeMessage()` returns `null` for trading | Correct |
-| Spot order event | `executionReport` | Handled in `normalizeBinanceMessage()` | Correct |
-| Futures order event | `ORDER_TRADE_UPDATE` | Handled, uses `msg.o` sub-object | Correct |
-| Spot fields | `i`=orderId, `S`=side, `x`=execType, `X`=status, `z`=cumQty, `Z`=cumQuoteQty | All mapped correctly | Correct |
-| Futures fields | `o.i`, `o.S`, `o.x`, `o.X`, `o.z`, `o.ap` (avg price) | All mapped correctly | Correct |
-| Publish filter | Only order events | `shouldPublishBinanceMessage` checks `executionReport` + `ORDER_TRADE_UPDATE` | Correct |
-| Redis channel | Fixed name | `md:symbol:user_data_stream` | Correct |
+### 1. `BinanceStreamData.json` — Stream trigger node
 
-## Bug Found: listenKey Refresh Interval Never Cleared
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
+| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
+| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
+| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
+| `height` | 280 | 320 (slightly taller for multiselect) |
 
-`preConnectBinance()` creates a `setInterval` for 30-minute keepalive and stores it as `_listenKeyRefreshInterval` on the credentials object. However, when the gateway disconnects (`disconnect()` method), only the WebSocket ping keepalive is cleared — the listenKey refresh interval is **never cleared**.
+### 2. `BinanceSubscribe.json` — Subscription node
 
-This causes:
-- **Memory leak**: Orphaned intervals keep running after disconnect
-- **Unnecessary API calls**: PUT requests to refresh a listenKey that's no longer in use
-- **Errors on reconnect**: A new interval is created on reconnect (via `preConnect`), but the old one persists
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
+| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
 
-### Fix
+### 3. No Backend Changes Needed
 
-In `MarketDataGateway.ts`, the `disconnect()` method needs to clear the `_listenKeyRefreshInterval` from `this.credentials`:
+The backend `stream.ts` route already:
+- Parses `stream_types` as array (lines 108-112)
+- Splits out `order_update` to `binance_trading` source (lines 114-131)
+- Passes remaining types to market subscription
+- Handles both Alpaca and Binance identically
 
-```text
-disconnect() {
-  this.stopKeepalive();
-  // Clear Binance listenKey refresh interval if present
-  if (this.credentials?._listenKeyRefreshInterval) {
-    clearInterval(this.credentials._listenKeyRefreshInterval);
-  }
-  if (this.ws) { ... }
-}
-```
+## Key Difference from Alpaca
 
-Same cleanup should happen in the `close` event handler (line 117-131) before `handleReconnect()`, since reconnect will call `preConnect` again and create a new interval.
-
-## Summary
-
-| Component | Verdict |
-|---|---|
-| listenKey lifecycle (create, refresh, WS URL) | Correct |
-| Event filtering (executionReport, ORDER_TRADE_UPDATE) | Correct |
-| Normalization (spot + futures field mapping) | Correct |
-| Redis routing (fixed `user_data_stream` channel) | Correct |
-| Subscribe/unsubscribe (returns null for trading) | Correct |
-| Route splitting (stream.ts register + subscribe) | Correct (after recent fix) |
-| **listenKey refresh interval cleanup** | **Bug — interval never cleared on disconnect** |
+Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
 
 ## Files to Edit
 
-| File | Change |
+| File | Changes |
 |---|---|
-| `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts` | Clear `_listenKeyRefreshInterval` in `disconnect()` and in the WebSocket `close` handler before reconnect |
+| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
+| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
 

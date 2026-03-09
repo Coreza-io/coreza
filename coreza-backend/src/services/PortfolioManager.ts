@@ -372,7 +372,7 @@ export class PortfolioManager {
       });
     }
 
-    this.adjustCashBookForFill(fill, adjustCash);
+    this.adjustCashBookForFill(fill, adjustCash, baseCurrency);
   }
 
   private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean): void {

@@ -1,47 +1,53 @@
 
 
-# Review: Portfolio Implementation — Broker Genericity
+# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
 
-## Verdict: 95% generic. One critical bug prevents correct cash tracking for non-crypto brokers.
+## What Changed in Alpaca (the reference)
 
-## What's Already Generic (Working Well)
+1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
+2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
+3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
+4. **Description**: Updated to mention order fills and If node routing
 
-- **PortfolioManager** is a pure in-memory accounting engine — no broker API calls, no broker imports
-- **PortfolioExecutor** receives all data through explicit fields (symbol, side, quantity, price, commission, fill_id) — fully broker-agnostic input contract
-- **Ownership verification** uses Redis-based idempotency keys — works for any broker
-- **Partial fill delta tracking** via `orderCumQtyMap` — works for Binance cumulative qty and Alpaca cumulative qty identically
-- **Pending order ledger** — pure data structure, no broker assumptions
-- **Position accounting** (weighted avg cost basis, position flips, realized PnL) — mathematically generic
+## What Needs to Change in Binance
 
-## Bug: Cash Adjustment Hardcodes "USDT" Fallback
+### 1. `BinanceStreamData.json` — Stream trigger node
 
-In `PortfolioManager.ts` line 380:
-```typescript
-const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? "USDT";  // ← hardcoded!
-```
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
+| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
+| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
+| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
+| `height` | 280 | 320 (slightly taller for multiselect) |
 
-For stock symbols like "AAPL", `extractQuoteAsset()` returns `null` (no USDT/USDC suffix), so cash is adjusted against "USDT" instead of the actual base currency (e.g., "USD"). This means buying AAPL deducts from a "USDT" cash bucket that doesn't exist for Alpaca users.
+### 2. `BinanceSubscribe.json` — Subscription node
 
-**Root cause**: `adjustCashBookForFill()` doesn't receive `baseCurrency`. The `applyFill()` method has `baseCurrency` but only passes it for `commissionAsset` (line 613), not for the cash adjustment.
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
+| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
 
-**Additionally**, `extractBaseAsset("AAPL")` returns `null`, so no base asset balance is tracked for stock positions — this is actually correct for stocks (you don't hold "AAPL tokens" in a cash book, only shares in holdings).
+### 3. No Backend Changes Needed
 
-### Fix
+The backend `stream.ts` route already:
+- Parses `stream_types` as array (lines 108-112)
+- Splits out `order_update` to `binance_trading` source (lines 114-131)
+- Passes remaining types to market subscription
+- Handles both Alpaca and Binance identically
 
-| File | Change |
+## Key Difference from Alpaca
+
+Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
+
+## Files to Edit
+
+| File | Changes |
 |---|---|
-| `coreza-backend/src/services/PortfolioManager.ts` | Pass `baseCurrency` to `adjustCashBookForFill()`. Change the method signature to accept `baseCurrency` and use it as fallback instead of hardcoded `"USDT"`. Update `applyFillToHoldings()` to also accept and forward `baseCurrency`. |
-
-Specifically:
-1. `applyFillToHoldings(fill, adjustCash, baseCurrency)` — add `baseCurrency` param
-2. `adjustCashBookForFill(fill, adjustCash, baseCurrency)` — add `baseCurrency` param
-3. Line 380: `this.extractQuoteAsset(fill.symbol) ?? baseCurrency` instead of `?? "USDT"`
-4. Update the 4 call sites within `applyFillToHoldings` to pass `baseCurrency`
-5. Update `applyFill()` (line 623) to pass `baseCurrency`: `this.applyFillToHoldings(liveFill, true, baseCurrency)`
-
-### Minor: Update comment
-
-| File | Change |
-|---|---|
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Line 37: Change "live Binance Spot data" → "live broker data" |
+| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
+| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
 

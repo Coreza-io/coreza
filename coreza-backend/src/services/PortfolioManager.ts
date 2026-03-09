@@ -273,6 +273,7 @@ export class PortfolioManager {
   private applyFillToHoldings(
     fill: LiveFill,
     adjustCash: boolean = false,
+    baseCurrency: string = "USDT",
   ): void {
     const fillTime = new Date(fill.eventTime).toISOString();
     const signedQuantity = fill.side === "BUY" ? fill.qty : -fill.qty;
@@ -371,13 +372,13 @@ export class PortfolioManager {
       });
     }
 
-    this.adjustCashBookForFill(fill, adjustCash);
+    this.adjustCashBookForFill(fill, adjustCash, baseCurrency);
   }
 
-  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean): void {
+  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean, baseCurrency: string = "USDT"): void {
     if (!adjustCash) return;
 
-    const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? "USDT";
+    const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? baseCurrency;
     const cashImpact = fill.quoteQty ?? fill.price * fill.qty;
     const quoteCommission =
       fill.commissionAsset === quoteAsset ? fill.commission : 0;
@@ -620,7 +621,7 @@ export class PortfolioManager {
     }
     this.fillLedger.push(liveFill);
 
-    this.applyFillToHoldings(liveFill, true);
+    this.applyFillToHoldings(liveFill, true, baseCurrency);
     this.updatePeakEquity(baseCurrency);
 
     // Auto-decrement pending order if fillId matches

@@ -1,111 +1,62 @@
 
 
-# Plan: Add Pending Order Ledger to PortfolioManager
+# End-to-End Review: Current Implementation State
 
-## The Problem
+## Overall Assessment: Architecture is solid, but the Pending Order Ledger is missing and there are 4 cleanup issues.
 
-Currently, `PortfolioManager` (broker mode) has no awareness of order lifecycle. It only reacts to fills. This creates a gap:
+---
 
-1. Strategy places a BUY order via Trade node
-2. Order is accepted but not yet filled
-3. Strategy runs again — it has no way to know an order is pending
-4. Strategy might place a **duplicate** order
+## Critical Finding: Pending Order Ledger Not Implemented
 
-SimBroker (backtest mode) solves this with `pendingOrders[]`. PortfolioManager needs the same concept.
+The approved plan to add `registerOrder()`, `cancelOrder()`, `getPendingOrders()`, and auto-decrement in `applyFill()` was discussed but **never added to the code**. `PortfolioManager.ts` has no `pendingOrders` Map, no `PendingOrder` interface, and no related methods. `PortfolioExecutor.ts` has no `register_order` / `cancel_order` / `get_pending_orders` operation handlers. `Portfolio.json` has no entries for these operations.
 
-## The Solution: In-Memory Pending Order Ledger
+This is the main gap — without it, strategies have no way to know if an order is pending, leading to duplicate order submissions.
 
-Track the order lifecycle entirely from events the system already produces — no broker API polling needed.
+**Action**: Implement the full Pending Order Ledger as previously approved.
 
-```text
-Trade node places order → register_order() → pendingOrders ledger
-                                                    │
-WebSocket fill event → update_portfolio (fill)      │
-  ├─ partial fill → update pending qty remaining  ←─┘
-  ├─ full fill → remove from pending, apply to holdings
-  └─ cancelled/rejected → remove from pending
-```
+---
 
-Two new Portfolio operations:
-- **`register_order`** — called after Trade node succeeds, records the order as pending
-- **`cancel_order`** — removes an order from pending (for cancelled/expired/rejected events)
+## Issue 1: `fillIdSet` is dead weight — grows unbounded, never checked
 
-The existing `update_portfolio` operation gains logic to **auto-decrement** the pending order when a fill is applied.
+`fillIdSet` (line 77) is populated on every fill (line 493) but **never read for dedup**. The delta-based `orderCumQtyMap` handles fillId dedup, and manual fills always get unique IDs so the set can never catch a duplicate.
 
-### Data flow in a workflow
+**Fix**: Remove `fillIdSet` entirely. It serves no purpose and leaks memory.
 
-```text
-AlpacaStreamData (order_update event)
-  │
-  ├─ If event.type = "new" / "accepted"
-  │     → Portfolio (register_order): symbol, orderId, side, qty, price
-  │
-  ├─ If event.type = "fill" / "partial_fill"  
-  │     → Portfolio (update_portfolio): fill fields + fill_id
-  │       (internally: apply fill + decrement/remove pending order)
-  │
-  └─ If event.type = "canceled" / "rejected" / "expired"
-        → Portfolio (cancel_order): fill_id = orderId
-          (internally: remove from pending ledger)
-```
+## Issue 2: `fillLedger` grows unbounded — never read or trimmed
 
-## Changes
+`fillLedger` (line 76) receives a `.push()` on every fill (line 494) but is never queried, returned, or trimmed. For a strategy running days with thousands of fills, this is a pure memory leak.
 
-| File | Change |
-|---|---|
-| `coreza-backend/src/services/PortfolioManager.ts` | Add `PendingOrder` interface. Add `pendingOrders` Map. Add `registerOrder()`, `cancelOrder()`, `getPendingOrders()`, `getPendingOrder()`. Modify `applyFill()` to auto-decrement pending qty on fill. |
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Add `register_order` and `cancel_order` case handlers. Include `pending_orders` in portfolio summary output. Add `get_pending_orders` operation. |
-| `src/nodes/Portfolio.json` | Add `register_order`, `cancel_order`, `get_pending_orders` operations with their fields. |
+**Fix**: Either expose it via a `getFills()` getter (useful for audit/debugging) and add an optional cap, or remove it. If kept, add a max size (e.g., last 10,000 fills) with FIFO eviction.
 
-## Detailed Design
+## Issue 3: `getPortfolioSummary()` called on every fill response — O(N) per fill
 
-### PendingOrder interface (PortfolioManager.ts)
+Every `update_portfolio` response (lines 279, 303, 322) calls `getPortfolioSummary()`, which calls `getPortfolioState()`, which iterates all holdings and trades to compute positions, equity, and PnL. For high-frequency strategies processing hundreds of fills per second, this adds unnecessary overhead.
 
-```typescript
-interface PendingOrder {
-  orderId: string;
-  clientOrderId?: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  originalQty: number;
-  filledQty: number;      // cumulative filled so far
-  remainingQty: number;
-  limitPrice?: number;
-  status: "pending" | "partially_filled";
-  registeredAt: number;    // epoch ms
-}
-```
+**Fix**: Return a lightweight response from `update_portfolio` (just the fill result + equity) and let the user call `get_portfolio` separately when they need the full snapshot. Alternatively, cache the summary and invalidate on state change.
 
-### PortfolioManager new methods
+## Issue 4: `base_currency` not shown for `update_mtm` in broker mode
 
-- **`registerOrder(order)`** — adds to `pendingOrders` Map keyed by `orderId`. Idempotent (if orderId already exists, updates status).
-- **`cancelOrder(orderId)`** — removes from `pendingOrders`. Returns `{ removed: boolean }`.
-- **`getPendingOrders()`** — returns all pending orders as array.
-- **`getPendingOrder(orderId)`** — returns single pending order or null.
+The `base_currency` field's `displayOptions` (Portfolio.json line 126-134) doesn't include `update_mtm`, so users can't select a base currency when using MTM updates. The code defaults to "USDT" but this is invisible to the user.
 
-### Auto-link in `applyFill()`
+**Fix**: Add `"update_mtm"` to the `base_currency` field's display options.
 
-When a fill with `fillId` is applied, check `pendingOrders` for a matching orderId:
-- Update `filledQty` and `remainingQty`
-- If `remainingQty <= 0`, remove from pending (order fully filled)
-- If `remainingQty > 0`, set status to `"partially_filled"`
+---
 
-### Portfolio summary enhancement
+## Summary
 
-`getPortfolioSummary()` in the executor will include:
-```typescript
-pending_orders: pm.getPendingOrders(),
-pending_orders_count: pm.getPendingOrders().length,
-```
+| Finding | Severity | Type |
+|---|---|---|
+| Pending Order Ledger not implemented | Critical | Missing feature |
+| `fillIdSet` dead weight, unbounded growth | Medium | Memory leak |
+| `fillLedger` unbounded, never read | Medium | Memory leak |
+| `getPortfolioSummary()` on every fill | Low | Performance |
+| `base_currency` missing from `update_mtm` | Low | UX |
 
-This mirrors what SimBroker already outputs for backtest mode.
+## Recommended Implementation Order
 
-### Why this works without polling
-
-The system already receives **all order lifecycle events** via the AlpacaStreamData / BinanceStreamData trigger nodes (when "Include Order Updates" is checked). These events include:
-- `new` / `accepted` → register
-- `partial_fill` / `fill` → update portfolio (which auto-decrements pending)
-- `canceled` / `rejected` / `expired` → cancel
-
-The user simply routes these events through an If node to the appropriate Portfolio operation. No broker API call needed.
+1. Implement Pending Order Ledger (PendingOrder interface, registerOrder, cancelOrder, auto-decrement in applyFill, executor operations, Portfolio.json entries)
+2. Remove `fillIdSet` (dead code)
+3. Cap or remove `fillLedger` (memory leak)
+4. Add `update_mtm` to `base_currency` display options (one-line fix)
+5. Optionally slim down `update_portfolio` response (performance)
 

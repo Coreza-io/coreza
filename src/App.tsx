@@ -77,11 +77,11 @@ const PublicOnlyRoute = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <UserPreferencesProvider>
-        <ThemeProvider defaultTheme="dark" storageKey="coreza-theme">
-          <TooltipProvider>
-            <BrowserRouter>
+    <ThemeProvider defaultTheme="dark" storageKey="coreza-theme">
+      <TooltipProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <UserPreferencesProvider>
               <Routes>
                 <Route element={<AppLayout />}>
                   {/* Root redirect */}
@@ -114,11 +114,11 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </ThemeProvider>
-      </UserPreferencesProvider>
-    </AuthProvider>
+            </UserPreferencesProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

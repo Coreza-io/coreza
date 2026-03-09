@@ -535,18 +535,34 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-card border-t border-cyan-500/30 bg-gradient-to-t from-cyan-500/10 to-transparent">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-cyan-500">
-              <Radio className="w-3 h-3 animate-pulse" />
-              <span className="text-xs font-medium">Streaming...</span>
+              <Radio className={`w-3 h-3 ${isStreamPaused ? '' : 'animate-pulse'}`} />
+              <span className="text-xs font-medium">
+                {isStreamPaused ? 'Paused' : 'Streaming...'}
+              </span>
             </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={onStopListening}
-              className="h-6 text-xs px-3"
-            >
-              <Square className="w-2 h-2 mr-1 fill-current" />
-              Stop
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onTogglePause}
+                className="h-6 text-xs px-2.5 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10"
+              >
+                {isStreamPaused ? (
+                  <><Play className="w-2.5 h-2.5 mr-1 fill-current" />Resume</>
+                ) : (
+                  <><Pause className="w-2.5 h-2.5 mr-1" />Pause</>
+                )}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onStopListening}
+                className="h-6 text-xs px-2.5"
+              >
+                <Square className="w-2 h-2 mr-1 fill-current" />
+                Stop
+              </Button>
+            </div>
           </div>
         </div>
       )}

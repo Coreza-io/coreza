@@ -331,7 +331,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handlePanelSave: outputHook.handlePanelSave,
     handlePanelPinToggle: outputHook.handlePanelPinToggle,
     handleStopListening,
+    handleTogglePause,
     isTestListening,
+    isStreamPaused,
     fetchCredentials: credentialsHook.fetchCredentials,
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants

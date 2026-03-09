@@ -85,7 +85,9 @@ export interface BaseNodeRenderProps {
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
   handleStopListening: () => void;
+  handleTogglePause: () => void;
   isTestListening: boolean;
+  isStreamPaused: boolean;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
@@ -215,9 +217,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // Check if node is in test listening mode - ONLY trust execution store, not stale output status
   const isTestListening = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
-    // Only use execution store flag - displayedData.status can be stale from previous sessions
     return nodeData?.isTestListening === true;
-  }, [nodeId, executionStore, storeVersion]); // Include storeVersion to re-compute when store updates
+  }, [nodeId, executionStore, storeVersion]);
+
+  const isStreamPaused = useMemo(() => {
+    const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
+    return nodeData?.isStreamPaused === true;
+  }, [nodeId, executionStore, storeVersion]);
 
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {
@@ -281,7 +287,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     notifyStoreUpdate,
   ]);
 
-  // ========== Combine All Props ==========
+  // Toggle pause/resume for streaming
+  const handleTogglePause = useCallback(() => {
+    if (!nodeId) return;
+    const current = executionStore.getNodeData(nodeId);
+    executionStore.setNodeData(nodeId, { isStreamPaused: !current.isStreamPaused });
+    notifyStoreUpdate();
+  }, [nodeId, executionStore, notifyStoreUpdate]);
 
   const renderProps: BaseNodeRenderProps = {
     definition,
@@ -319,7 +331,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handlePanelSave: outputHook.handlePanelSave,
     handlePanelPinToggle: outputHook.handlePanelPinToggle,
     handleStopListening,
+    handleTogglePause,
     isTestListening,
+    isStreamPaused,
     fetchCredentials: credentialsHook.fetchCredentials,
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants

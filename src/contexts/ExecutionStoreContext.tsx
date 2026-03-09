@@ -122,6 +122,11 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
+                  // Skip UI update if stream is paused (stream stays alive on backend)
+                  if (existingData?.isStreamPaused) {
+                    console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
+                    return;
+                  }
                   storeRef.current.setNodeData(nodeId, {
                     output: {
                       status: 'streaming',
@@ -143,6 +148,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               const { nodeId, data } = message.payload;
 
               if (nodeId && storeRef.current) {
+                // Skip UI update if stream is paused
+                const existingData2 = storeRef.current.getNodeData(nodeId);
+                if (existingData2?.isStreamPaused) {
+                  console.log('⏸️ [ExecutionStore] Stream paused, skipping test_data for:', nodeId);
+                  return;
+                }
+
                 const receivedOutput = {
                   status: 'streaming',
                   symbol: data.symbol,

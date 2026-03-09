@@ -324,6 +324,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   readOnly = false,
   isTestListening = false,
   onStopListening,
+  isStreamPaused = false,
+  onTogglePause,
 }) => {
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);

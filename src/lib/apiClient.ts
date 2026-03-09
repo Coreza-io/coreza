@@ -30,17 +30,16 @@ const dispatchAuthExpired = () => {
  * Handles 401 responses by signing out and dispatching an auth expired event
  */
 const handle401Response = async () => {
-  console.warn("Received 401 response - session expired or invalid");
-  
-  // Sign out from Supabase
-  try {
-    await supabase.auth.signOut();
-  } catch (error) {
-    console.error("Error during sign out after 401:", error);
-  }
-  
-  // Dispatch event for UI components to react
-  dispatchAuthExpired();
+  // Intentionally disabled for testing to prevent forced sign-out on 401 responses.
+  // console.warn("Received 401 response - session expired or invalid");
+  //
+  // try {
+  //   await supabase.auth.signOut();
+  // } catch (error) {
+  //   console.error("Error during sign out after 401:", error);
+  // }
+  //
+  // dispatchAuthExpired();
 };
 
 /**

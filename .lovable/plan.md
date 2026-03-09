@@ -1,37 +1,111 @@
 
 
-# Plan: Fill Deduplication & Order Ownership Verification for Portfolio Sync Fills
+# Plan: Add Pending Order Ledger to PortfolioManager
 
-## Status: ✅ IMPLEMENTED
+## The Problem
 
-## Problem
-Portfolio Sync Fills had no deduplication or order ownership verification. Duplicate WebSocket events would double-count fills, and fills from external orders (manual trades, other systems) on the same Alpaca account would be incorrectly applied.
+Currently, `PortfolioManager` (broker mode) has no awareness of order lifecycle. It only reacts to fills. This creates a gap:
 
-## Solution: Opaque `fill_id` + Redis Reverse Index
+1. Strategy places a BUY order via Trade node
+2. Order is accepted but not yet filled
+3. Strategy runs again — it has no way to know an order is pending
+4. Strategy might place a **duplicate** order
 
-### 1. `orderIdempotency.ts` — Reverse index + `isOurOrder()`
-- `updateOrderCache()` now creates `order-reverse:{orderId}` → `idempotencyKey` in Redis
-- New `isOurOrder(orderId)` checks the reverse index to verify order ownership
+SimBroker (backtest mode) solves this with `pendingOrders[]`. PortfolioManager needs the same concept.
 
-### 2. `PortfolioManager.ts` — Dedup in `applyFill()`
-- Accepts optional `fillId` parameter
-- Checks `fillIdSet` with key `${symbol}:${fillId}` before applying
-- Returns `{ applied: boolean; reason?: string }` instead of void
+## The Solution: In-Memory Pending Order Ledger
 
-### 3. `PortfolioExecutor.ts` — Ownership + dedup wiring
-- Reads `fill_id` from params
-- Calls `isOurOrder(fill_id)` → skips with `reason: "unknown_order"` if not ours
-- Passes `fillId` to `applyFill()` → skips with `reason: "duplicate"` if already processed
-- Output includes `skipped`, `reason`, `fill_id` fields
+Track the order lifecycle entirely from events the system already produces — no broker API polling needed.
 
-### 4. `Portfolio.json` — New `fill_id` field
-- Optional text field for `update_portfolio` operation
-- Placeholder: `{{ $(AlpacaStreamData).json.data.order.orderId }}`
-
-## Workflow Usage
 ```text
-Portfolio (Sync Fills):
-  fill_id: {{ $(AlpacaStreamData).json.data.order.orderId }}
+Trade node places order → register_order() → pendingOrders ledger
+                                                    │
+WebSocket fill event → update_portfolio (fill)      │
+  ├─ partial fill → update pending qty remaining  ←─┘
+  ├─ full fill → remove from pending, apply to holdings
+  └─ cancelled/rejected → remove from pending
 ```
 
-Flow: ownership check → dedup check → apply fill
+Two new Portfolio operations:
+- **`register_order`** — called after Trade node succeeds, records the order as pending
+- **`cancel_order`** — removes an order from pending (for cancelled/expired/rejected events)
+
+The existing `update_portfolio` operation gains logic to **auto-decrement** the pending order when a fill is applied.
+
+### Data flow in a workflow
+
+```text
+AlpacaStreamData (order_update event)
+  │
+  ├─ If event.type = "new" / "accepted"
+  │     → Portfolio (register_order): symbol, orderId, side, qty, price
+  │
+  ├─ If event.type = "fill" / "partial_fill"  
+  │     → Portfolio (update_portfolio): fill fields + fill_id
+  │       (internally: apply fill + decrement/remove pending order)
+  │
+  └─ If event.type = "canceled" / "rejected" / "expired"
+        → Portfolio (cancel_order): fill_id = orderId
+          (internally: remove from pending ledger)
+```
+
+## Changes
+
+| File | Change |
+|---|---|
+| `coreza-backend/src/services/PortfolioManager.ts` | Add `PendingOrder` interface. Add `pendingOrders` Map. Add `registerOrder()`, `cancelOrder()`, `getPendingOrders()`, `getPendingOrder()`. Modify `applyFill()` to auto-decrement pending qty on fill. |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Add `register_order` and `cancel_order` case handlers. Include `pending_orders` in portfolio summary output. Add `get_pending_orders` operation. |
+| `src/nodes/Portfolio.json` | Add `register_order`, `cancel_order`, `get_pending_orders` operations with their fields. |
+
+## Detailed Design
+
+### PendingOrder interface (PortfolioManager.ts)
+
+```typescript
+interface PendingOrder {
+  orderId: string;
+  clientOrderId?: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  originalQty: number;
+  filledQty: number;      // cumulative filled so far
+  remainingQty: number;
+  limitPrice?: number;
+  status: "pending" | "partially_filled";
+  registeredAt: number;    // epoch ms
+}
+```
+
+### PortfolioManager new methods
+
+- **`registerOrder(order)`** — adds to `pendingOrders` Map keyed by `orderId`. Idempotent (if orderId already exists, updates status).
+- **`cancelOrder(orderId)`** — removes from `pendingOrders`. Returns `{ removed: boolean }`.
+- **`getPendingOrders()`** — returns all pending orders as array.
+- **`getPendingOrder(orderId)`** — returns single pending order or null.
+
+### Auto-link in `applyFill()`
+
+When a fill with `fillId` is applied, check `pendingOrders` for a matching orderId:
+- Update `filledQty` and `remainingQty`
+- If `remainingQty <= 0`, remove from pending (order fully filled)
+- If `remainingQty > 0`, set status to `"partially_filled"`
+
+### Portfolio summary enhancement
+
+`getPortfolioSummary()` in the executor will include:
+```typescript
+pending_orders: pm.getPendingOrders(),
+pending_orders_count: pm.getPendingOrders().length,
+```
+
+This mirrors what SimBroker already outputs for backtest mode.
+
+### Why this works without polling
+
+The system already receives **all order lifecycle events** via the AlpacaStreamData / BinanceStreamData trigger nodes (when "Include Order Updates" is checked). These events include:
+- `new` / `accepted` → register
+- `partial_fill` / `fill` → update portfolio (which auto-decrements pending)
+- `canceled` / `rejected` / `expired` → cancel
+
+The user simply routes these events through an If node to the appropriate Portfolio operation. No broker API call needed.
+

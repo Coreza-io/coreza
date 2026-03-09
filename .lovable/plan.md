@@ -1,53 +1,44 @@
 
 
-# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
+# Add Pause/Resume Toggle to Streaming Nodes
 
-## What Changed in Alpaca (the reference)
+## Current Architecture
 
-1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
-2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
-3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
-4. **Description**: Updated to mention order fills and If node routing
+The streaming footer in `OutputPanel.tsx` (line 529-548) shows a "Streaming..." indicator with a single **Stop** button. Stream data flows through `ExecutionStoreContext.tsx` which receives WebSocket messages (`market_data`, `test_data_received`) and updates node output when `isTestListening === true`. The **Stop** button calls `/stream/unregister` on the backend, fully tearing down the stream.
 
-## What Needs to Change in Binance
+## Design
 
-### 1. `BinanceStreamData.json` — Stream trigger node
+Add a **client-side only** pause mechanism. The stream stays alive on the backend (no API call needed) — we simply gate the UI updates in `ExecutionStoreContext` by checking a new `isStreamPaused` flag. This is the cleanest approach because:
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
-| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
-| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
-| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
-| `height` | 280 | 320 (slightly taller for multiselect) |
+- No backend changes needed — pause is purely a UI concern
+- No data loss — the stream continues; we just skip rendering updates
+- Resume is instant — flip the flag and the next event renders normally
 
-### 2. `BinanceSubscribe.json` — Subscription node
+### UI: Two-button footer
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
-| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
+Replace the current single Stop button with a split control:
 
-### 3. No Backend Changes Needed
+```text
+┌──────────────────────────────────────────┐
+│  (•) Streaming...     ⏸ Pause   ■ Stop  │
+│  (•) Paused           ▶ Resume  ■ Stop  │
+└──────────────────────────────────────────┘
+```
 
-The backend `stream.ts` route already:
-- Parses `stream_types` as array (lines 108-112)
-- Splits out `order_update` to `binance_trading` source (lines 114-131)
-- Passes remaining types to market subscription
-- Handles both Alpaca and Binance identically
+- **Pause/Resume** — toggle button, swaps icon (Pause ↔ Play) and label
+- **Stop** — existing destructive button, tears down the stream entirely
+- When paused, the pulsing dot stops animating and text changes to "Paused"
 
-## Key Difference from Alpaca
+## Implementation
 
-Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
-
-## Files to Edit
-
-| File | Changes |
+| File | Change |
 |---|---|
-| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
-| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
+| `src/contexts/ExecutionStoreContext.tsx` | Add `isStreamPaused` to node data type. In the `market_data` and `test_data_received` handlers (~lines 121-165), check `existingData?.isStreamPaused !== true` before updating output. If paused, silently skip the update. |
+| `src/utils/executionContext.ts` | Add `isStreamPaused?: boolean` to the node data interface (line ~46). |
+| `src/components/nodes/BaseNode.tsx` | Add `isStreamPaused` memo (reads from execution store like `isTestListening`). Add `handleTogglePause` callback that flips `isStreamPaused` in the execution store. Expose both in `renderProps`. |
+| `src/utils/OutputPanel.tsx` | Accept new props: `isStreamPaused`, `onTogglePause`. Update the streaming footer to show two buttons: Pause/Resume toggle + Stop. Change indicator text/animation based on paused state. |
+| `src/components/nodes/NodeRouter.tsx` | Pass `isStreamPaused` and `onTogglePause` through to OutputPanel props. |
+| `src/components/workflow/LoopNode.tsx` | Same passthrough for LoopNode's OutputPanel usage. |
+
+No backend changes. No new dependencies.
 

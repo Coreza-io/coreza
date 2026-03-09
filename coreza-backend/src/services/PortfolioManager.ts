@@ -621,7 +621,7 @@ export class PortfolioManager {
     }
     this.fillLedger.push(liveFill);
 
-    this.applyFillToHoldings(liveFill, true);
+    this.applyFillToHoldings(liveFill, true, baseCurrency);
     this.updatePeakEquity(baseCurrency);
 
     // Auto-decrement pending order if fillId matches

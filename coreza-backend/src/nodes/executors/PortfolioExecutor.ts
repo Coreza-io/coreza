@@ -34,7 +34,7 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
  * Backtest mode: Delegates to the SimBroker instance cached by BacktestExecutor
- * Broker mode: Delegates to PortfolioManager for live Binance Spot data
+ * Broker mode: Delegates to PortfolioManager for live broker data
  */
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";

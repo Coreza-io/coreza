@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../services/simBroker";
-import { PortfolioManager } from "../../services/PortfolioManager";
+import { PortfolioManager, PendingOrder } from "../../services/PortfolioManager";
 import {
   createSuccessOutput,
   createErrorOutput,

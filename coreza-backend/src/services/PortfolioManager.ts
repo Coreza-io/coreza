@@ -375,10 +375,10 @@ export class PortfolioManager {
     this.adjustCashBookForFill(fill, adjustCash, baseCurrency);
   }
 
-  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean): void {
+  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean, baseCurrency: string = "USDT"): void {
     if (!adjustCash) return;
 
-    const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? "USDT";
+    const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? baseCurrency;
     const cashImpact = fill.quoteQty ?? fill.price * fill.qty;
     const quoteCommission =
       fill.commissionAsset === quoteAsset ? fill.commission : 0;

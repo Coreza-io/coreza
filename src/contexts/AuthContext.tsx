@@ -16,10 +16,8 @@
 
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { AUTH_EXPIRED_EVENT, apiClient } from '@/lib/apiClient';
-import { toast } from 'sonner';
+import { apiClient } from '@/lib/apiClient';
 
 interface AuthContextType {
   user: User | null;
@@ -38,19 +36,12 @@ export const useAuth = () => {
   return context;
 };
 
-// Inactivity timeout in milliseconds (default: 4 hours)
-const INACTIVITY_TIMEOUT = parseInt(import.meta.env.VITE_INACTIVITY_TIMEOUT || '14400000'); // 4 hours
-
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastActivityRef = useRef<number>(Date.now());
   const userRef = useRef<User | null>(null);
-  
-  const navigate = useNavigate();
-  const location = useLocation();
 
   const clearLocalSessionState = useCallback(() => {
     if (inactivityTimerRef.current) {
@@ -108,99 +99,96 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return false;
   }, [signOut]);
 
-  // Listen for global 401 responses from API calls
-  useEffect(() => {
-    const handleAuthExpired = async () => {
-      console.warn('Auth expired event received - signing out');
-      await signOut();
-      
-      // Show toast notification
-      toast.error('Session expired', {
-        description: 'Please log in again to continue.',
-      });
-      
-      // Redirect to login if not already there
-      if (navigate && location?.pathname !== '/login') {
-        navigate('/login', { replace: true });
-      }
-    };
-
-    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
-    
-    return () => {
-      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
-    };
-  }, [signOut, navigate, location?.pathname]);
+  // Session expiry listener intentionally disabled for testing.
+  // Keeping previous implementation in comments for easy re-enable.
+  // useEffect(() => {
+  //   const handleAuthExpired = async () => {
+  //     console.warn('Auth expired event received - signing out');
+  //     await signOut();
+  //
+  //     toast.error('Session expired', {
+  //       description: 'Please log in again to continue.',
+  //     });
+  //
+  //     if (navigate && location?.pathname !== '/login') {
+  //       navigate('/login', { replace: true });
+  //     }
+  //   };
+  //
+  //   window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  //
+  //   return () => {
+  //     window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  //   };
+  // }, [signOut, navigate, location?.pathname]);
 
   // Keep userRef in sync with user state
   useEffect(() => {
     userRef.current = user;
   }, [user]);
 
-  // Ref to hold signOut function for use in inactivity timer
+  // Ref to hold signOut function for use in the disabled expiry paths.
   const signOutRef = useRef(signOut);
   useEffect(() => {
     signOutRef.current = signOut;
   }, [signOut]);
 
-  // Reset inactivity timer - using ref to avoid recreating on every render
-  const resetInactivityTimer = useRef(() => {
-    lastActivityRef.current = Date.now();
-    
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
+  // Inactivity auto-logout intentionally disabled for testing.
+  // Keeping previous implementation in comments for easy re-enable.
+  // const resetInactivityTimer = useRef(() => {
+  //   lastActivityRef.current = Date.now();
+  //
+  //   if (inactivityTimerRef.current) {
+  //     clearTimeout(inactivityTimerRef.current);
+  //     inactivityTimerRef.current = null;
+  //   }
+  //
+  //   if (userRef.current) {
+  //     inactivityTimerRef.current = setTimeout(async () => {
+  //       console.log('Auto logout: User inactive for too long');
+  //       await signOutRef.current();
+  //     }, INACTIVITY_TIMEOUT);
+  //   }
+  // });
 
-    // Only set timer if user is logged in
-    if (userRef.current) {
-      inactivityTimerRef.current = setTimeout(async () => {
-        console.log('Auto logout: User inactive for too long');
-        await signOutRef.current(); // Uses cleanup-enabled signOut
-      }, INACTIVITY_TIMEOUT);
-    }
-  });
-
-  // Track user activity
-  useEffect(() => {
-    if (!user) {
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = null;
-      }
-      return;
-    }
-
-    const activityEvents = [
-      'mousedown',
-      'mousemove',
-      'keypress',
-      'scroll',
-      'touchstart',
-      'click',
-    ];
-
-    const handleActivity = () => {
-      resetInactivityTimer.current();
-    };
-
-    activityEvents.forEach((event) => {
-      window.addEventListener(event, handleActivity, { passive: true });
-    });
-
-    // Start the timer when user logs in
-    resetInactivityTimer.current();
-
-    return () => {
-      activityEvents.forEach((event) => {
-        window.removeEventListener(event, handleActivity);
-      });
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = null;
-      }
-    };
-  }, [user]); // Only depend on user, not the callback
+  // useEffect(() => {
+  //   if (!user) {
+  //     if (inactivityTimerRef.current) {
+  //       clearTimeout(inactivityTimerRef.current);
+  //       inactivityTimerRef.current = null;
+  //     }
+  //     return;
+  //   }
+  //
+  //   const activityEvents = [
+  //     'mousedown',
+  //     'mousemove',
+  //     'keypress',
+  //     'scroll',
+  //     'touchstart',
+  //     'click',
+  //   ];
+  //
+  //   const handleActivity = () => {
+  //     resetInactivityTimer.current();
+  //   };
+  //
+  //   activityEvents.forEach((event) => {
+  //     window.addEventListener(event, handleActivity, { passive: true });
+  //   });
+  //
+  //   resetInactivityTimer.current();
+  //
+  //   return () => {
+  //     activityEvents.forEach((event) => {
+  //       window.removeEventListener(event, handleActivity);
+  //     });
+  //     if (inactivityTimerRef.current) {
+  //       clearTimeout(inactivityTimerRef.current);
+  //       inactivityTimerRef.current = null;
+  //     }
+  //   };
+  // }, [user]);
 
   useEffect(() => {
     // Set up auth state listener
@@ -221,10 +209,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           case 'TOKEN_REFRESHED':
             setSession(session);
             setUser(session?.user ?? null);
-            // Reset timer on token refresh
-            if (session?.user) {
-              resetInactivityTimer.current();
-            }
+            // Inactivity timer reset disabled for testing.
             break;
 
           case 'SIGNED_IN':
@@ -257,15 +242,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (session) {
-          const expiresAt = session.expires_at;
-          if (expiresAt && expiresAt * 1000 < Date.now()) {
-            console.log('Session expired, signing out');
-            await signOutRef.current(); // Uses cleanup-enabled signOut
-          } else {
-            setSession(session);
-            setUser(session.user);
-            // Timer will be started by the activity tracking useEffect
-          }
+          // Session expiry check intentionally disabled for testing.
+          // const expiresAt = session.expires_at;
+          // if (expiresAt && expiresAt * 1000 < Date.now()) {
+          //   console.log('Session expired, signing out');
+          //   await signOutRef.current();
+          // } else {
+          //   setSession(session);
+          //   setUser(session.user);
+          // }
+          setSession(session);
+          setUser(session.user);
         } else {
           setSession(null);
           setUser(null);
@@ -282,41 +269,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initializeSession();
 
-    // Periodically check session expiration (every 5 minutes)
-    const checkSessionExpiration = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (error) {
-          const handled = await handleSessionError(error);
-          if (!handled) {
-            console.error('Error during periodic session check:', error);
-          }
-          return;
-        }
-
-        if (session) {
-          const expiresAt = session.expires_at;
-          if (expiresAt && expiresAt * 1000 < Date.now()) {
-            console.log('Session expired during periodic check, signing out');
-            await signOutRef.current(); // Uses cleanup-enabled signOut
-          }
-        }
-      } catch (error) {
-        const handled = await handleSessionError(error);
-        if (!handled) {
-          console.error('Unexpected error during periodic session check:', error);
-        }
-      }
-    };
-
-    const expirationCheckInterval = setInterval(() => {
-      checkSessionExpiration();
-    }, 5 * 60 * 1000); // Check every 5 minutes
+    // Periodic session expiry checks intentionally disabled for testing.
+    // const checkSessionExpiration = async () => {
+    //   try {
+    //     const { data: { session }, error } = await supabase.auth.getSession();
+    //
+    //     if (error) {
+    //       const handled = await handleSessionError(error);
+    //       if (!handled) {
+    //         console.error('Error during periodic session check:', error);
+    //       }
+    //       return;
+    //     }
+    //
+    //     if (session) {
+    //       const expiresAt = session.expires_at;
+    //       if (expiresAt && expiresAt * 1000 < Date.now()) {
+    //         console.log('Session expired during periodic check, signing out');
+    //         await signOutRef.current();
+    //       }
+    //     }
+    //   } catch (error) {
+    //     const handled = await handleSessionError(error);
+    //     if (!handled) {
+    //       console.error('Unexpected error during periodic session check:', error);
+    //     }
+    //   }
+    // };
+    //
+    // const expirationCheckInterval = setInterval(() => {
+    //   checkSessionExpiration();
+    // }, 5 * 60 * 1000);
 
     return () => {
       subscription.unsubscribe();
-      clearInterval(expirationCheckInterval);
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current);
         inactivityTimerRef.current = null;

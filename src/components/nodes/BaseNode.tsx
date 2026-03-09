@@ -287,7 +287,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     notifyStoreUpdate,
   ]);
 
-  // ========== Combine All Props ==========
+  // Toggle pause/resume for streaming
+  const handleTogglePause = useCallback(() => {
+    if (!nodeId) return;
+    const current = executionStore.getNodeData(nodeId);
+    executionStore.setNodeData(nodeId, { isStreamPaused: !current.isStreamPaused });
+    notifyStoreUpdate();
+  }, [nodeId, executionStore, notifyStoreUpdate]);
 
   const renderProps: BaseNodeRenderProps = {
     definition,

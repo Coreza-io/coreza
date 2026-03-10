@@ -1,0 +1,148 @@
+/*
+ * Copyright (C) 2024 Coreza
+ *
+ * Unified Order Schema — QC Lean Pattern
+ *
+ * Shared by SimBroker (backtest) and PortfolioManager (live).
+ * Follows: immutable Order + append-only OrderEvent + aggregate OrderTicket.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// ============== ENUMS ==============
+
+export type OrderSide = 'buy' | 'sell';
+
+export type OrderType =
+  | 'market'
+  | 'limit'
+  | 'stop_market'
+  | 'stop_limit'
+  | 'market_on_open'
+  | 'market_on_close';
+
+export type OrderStatus =
+  | 'new'
+  | 'submitted'
+  | 'partially_filled'
+  | 'filled'
+  | 'canceled'
+  | 'rejected'
+  | 'invalid';
+
+// ============== ORDER (immutable after creation, except status) ==============
+
+export interface Order {
+  id: string;
+  brokerId?: string[];            // broker-assigned order IDs (live only)
+  clientOrderId?: string;         // client-assigned order ID sent to broker
+  symbol: string;
+  quantity: number;
+  orderType: OrderType;
+  side: OrderSide;
+  status: OrderStatus;            // latest status (derived from last event)
+  limitPrice?: number;
+  stopPrice?: number;
+  createdAt: string;              // ISO 8601
+  tag?: string;                   // user-defined label
+  properties?: {
+    timeInForce?: string;
+    extendedHours?: boolean;
+  };
+}
+
+// ============== ORDER REQUEST (subset for placing orders) ==============
+
+export interface OrderRequest {
+  symbol: string;
+  side: OrderSide;
+  orderType: OrderType;
+  quantity: number;
+  limitPrice?: number;
+  stopPrice?: number;
+  tag?: string;
+  properties?: {
+    timeInForce?: string;
+    extendedHours?: boolean;
+  };
+}
+
+// ============== ORDER RESULT ==============
+
+export interface OrderResult {
+  success: boolean;
+  orderId?: string;
+  status?: OrderStatus;
+  error?: string;
+}
+
+// ============== ORDER FEE ==============
+
+export interface OrderFee {
+  value: number;
+  currency: string;               // "USD", "USDT", "BNB", etc.
+}
+
+// ============== ORDER EVENT (append-only) ==============
+
+export interface OrderEvent {
+  orderId: string;
+  symbol: string;
+  utcTime: string;                // ISO 8601
+  status: OrderStatus;
+  side: OrderSide;
+  fillPrice: number;
+  fillQuantity: number;
+  orderFee?: OrderFee;
+  slippage?: number;              // sim only
+  message?: string;
+}
+
+// ============== ORDER TICKET (aggregate) ==============
+
+export interface OrderTicket {
+  orderId: string;
+  order: Order;
+  orderEvents: OrderEvent[];
+  quantityFilled: number;         // sum of event fillQuantity
+  averageFillPrice: number;       // weighted avg
+  totalFees: number;              // sum of event fees
+}
+
+// ============== HELPERS ==============
+
+/**
+ * Normalize legacy order type strings to the unified OrderType enum.
+ * Maps 'stop' → 'stop_market' for backward compatibility.
+ */
+export function normalizeOrderType(type: string): OrderType {
+  const mapping: Record<string, OrderType> = {
+    market: 'market',
+    limit: 'limit',
+    stop: 'stop_market',
+    stop_market: 'stop_market',
+    stop_limit: 'stop_limit',
+    market_on_open: 'market_on_open',
+    market_on_close: 'market_on_close',
+  };
+  return mapping[type] ?? 'market';
+}
+
+/**
+ * Check if an OrderTicket is still pending (not in a terminal state).
+ */
+export function isTicketPending(ticket: OrderTicket): boolean {
+  const s = ticket.order.status;
+  return s === 'new' || s === 'submitted' || s === 'partially_filled';
+}

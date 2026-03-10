@@ -26,9 +26,9 @@ import {
   SimBrokerConfig,
   Bar,
   Position,
-  OrderFill,
   EquityPoint,
 } from "../../services/simBroker";
+import { OrderEvent, normalizeOrderType } from "../../types/order";
 import { BrokerExecutor } from "./BrokerExecutor";
 import { supabase } from "../../config/supabase";
 import {
@@ -576,7 +576,7 @@ export class BacktestExecutor implements INodeExecutor {
       const orderResult = simBroker.placeOrder({
         symbol,
         side: side as "buy" | "sell",
-        type: orderType as "market" | "limit" | "stop" | "stop_limit",
+        orderType: normalizeOrderType(orderType),
         quantity,
         limitPrice: params.limit_price
           ? parseFloat(params.limit_price)
@@ -594,7 +594,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       // For immediate fill model only, attempt same-bar fill of just this order.
       // For next_bar_open, order remains pending until next bar's onBar call.
-      let fill: OrderFill | null = null;
+      let fill: OrderEvent | null = null;
       if (currentBar && orderResult.orderId) {
         fill = simBroker.tryFillImmediateOrder(orderResult.orderId, currentBar);
       }
@@ -610,10 +610,10 @@ export class BacktestExecutor implements INodeExecutor {
           createSuccessOutput({
             order_id: orderResult.orderId,
             order_status: "filled",
-            fill_price: fill.price,
-            fill_quantity: fill.quantity,
-            commission: fill.commission,
-            slippage: fill.slippage,
+            fill_price: fill.fillPrice,
+            fill_quantity: fill.fillQuantity,
+            commission: fill.orderFee?.value ?? 0,
+            slippage: fill.slippage ?? 0,
             symbol,
             side,
             quantity,
@@ -951,6 +951,7 @@ export class BacktestExecutor implements INodeExecutor {
       (sum, pos) => sum + pos.realizedPnl,
       0,
     );
+    const pendingOrders = simBroker.getPendingOrders();
 
     return toNodeResult(
       createSuccessOutput({
@@ -964,8 +965,8 @@ export class BacktestExecutor implements INodeExecutor {
         realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
         realized_pnl: realizedPnlValue,
         total_equity: state.cash + positionsValue,
-        pending_orders: state.pendingOrders,
-        pending_orders_count: state.pendingOrders.length,
+        pending_orders: pendingOrders,
+        pending_orders_count: pendingOrders.length,
         trades: state.trades,
         trades_count: state.trades.length,
       }),

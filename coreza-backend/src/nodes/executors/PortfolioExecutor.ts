@@ -16,7 +16,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../services/simBroker";
-import { PortfolioManager, PendingOrder } from "../../services/PortfolioManager";
+import { PortfolioManager } from "../../services/PortfolioManager";
 import {
   createSuccessOutput,
   createErrorOutput,
@@ -407,7 +407,7 @@ export class PortfolioExecutor implements INodeExecutor {
         const pendingOrders = pm.getPendingOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filtered = filterSymbol
-          ? pendingOrders.filter(o => o.symbol === filterSymbol)
+          ? pendingOrders.filter(o => o.order.symbol === filterSymbol)
           : pendingOrders;
 
         return toNodeResult(createSuccessOutput({
@@ -441,6 +441,7 @@ export class PortfolioExecutor implements INodeExecutor {
       (sum, p) => sum + p.realizedPnl,
       0,
     );
+    const pendingOrders = simBroker.getPendingOrders();
 
     return toNodeResult(
       createSuccessOutput({
@@ -454,8 +455,8 @@ export class PortfolioExecutor implements INodeExecutor {
         realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
         realized_pnl: realizedPnlValue,
         total_equity: state.cash + positionsValue,
-        pending_orders: state.pendingOrders,
-        pending_orders_count: state.pendingOrders.length,
+        pending_orders: pendingOrders,
+        pending_orders_count: pendingOrders.length,
         trades: state.trades,
         trades_count: state.trades.length,
       }),

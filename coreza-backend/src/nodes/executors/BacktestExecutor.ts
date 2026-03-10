@@ -576,7 +576,7 @@ export class BacktestExecutor implements INodeExecutor {
       const orderResult = simBroker.placeOrder({
         symbol,
         side: side as "buy" | "sell",
-        type: orderType as "market" | "limit" | "stop" | "stop_limit",
+        orderType: normalizeOrderType(orderType),
         quantity,
         limitPrice: params.limit_price
           ? parseFloat(params.limit_price)

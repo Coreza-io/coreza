@@ -594,7 +594,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       // For immediate fill model only, attempt same-bar fill of just this order.
       // For next_bar_open, order remains pending until next bar's onBar call.
-      let fill: OrderFill | null = null;
+      let fill: OrderEvent | null = null;
       if (currentBar && orderResult.orderId) {
         fill = simBroker.tryFillImmediateOrder(orderResult.orderId, currentBar);
       }

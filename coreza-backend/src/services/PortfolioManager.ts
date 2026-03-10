@@ -17,7 +17,9 @@
 import { Position, Trade } from "./simBroker/interfaces";
 import {
   Order,
+  OrderType,
   OrderSide,
+  OrderStatus,
   OrderEvent,
   OrderTicket,
   isTicketPending,
@@ -156,9 +158,11 @@ export class PortfolioManager {
     orderId: string;
     clientOrderId?: string;
     symbol: string;
-    side: "BUY" | "SELL";
+    side: OrderSide;
     quantity: number;
+    orderType: OrderType;
     limitPrice?: number;
+    status: OrderStatus;
   }): { registered: boolean; pending_order: OrderTicket } {
     const existing = this.tickets.get(order.orderId);
     if (existing) {
@@ -177,10 +181,10 @@ export class PortfolioManager {
       clientOrderId: order.clientOrderId,
       symbol: order.symbol,
       side: order.side.toLowerCase() as OrderSide,
-      orderType: order.limitPrice ? 'limit' : 'market',
+      orderType: order.orderType,
       quantity: order.quantity,
       limitPrice: order.limitPrice,
-      status: 'submitted',
+      status: order.status,
       createdAt: new Date().toISOString(),
     };
 
@@ -218,14 +222,14 @@ export class PortfolioManager {
       orderId,
       symbol: ticket.order.symbol,
       utcTime: new Date().toISOString(),
-      status: 'canceled',
+      status: "canceled",
       side: ticket.order.side,
       fillPrice: 0,
       fillQuantity: 0,
-      message: 'Order cancelled',
+      message: "Order cancelled",
     };
     ticket.orderEvents.push(cancelEvent);
-    ticket.order.status = 'canceled';
+    ticket.order.status = "canceled";
 
     this.tickets.delete(orderId);
     console.log(
@@ -259,13 +263,13 @@ export class PortfolioManager {
     ticket.quantityFilled += deltaQty;
 
     if (ticket.quantityFilled >= ticket.order.quantity) {
-      ticket.order.status = 'filled';
+      ticket.order.status = "filled";
       this.tickets.delete(fillId);
       console.log(
         `[PortfolioManager] Pending order fully filled and removed: ${fillId}`,
       );
     } else {
-      ticket.order.status = 'partially_filled';
+      ticket.order.status = "partially_filled";
       console.log(
         `[PortfolioManager] Pending order partially filled: ${fillId} (remaining: ${ticket.order.quantity - ticket.quantityFilled})`,
       );
@@ -284,7 +288,8 @@ export class PortfolioManager {
     baseCurrency: string = "USDT",
   ): void {
     const fillTime = fill.utcTime;
-    const signedQuantity = fill.side === "buy" ? fill.fillQuantity : -fill.fillQuantity;
+    const signedQuantity =
+      fill.side === "buy" ? fill.fillQuantity : -fill.fillQuantity;
     const existing = this.holdings.get(fill.symbol);
 
     if (!existing) {
@@ -328,7 +333,10 @@ export class PortfolioManager {
       return;
     }
 
-    const closingQty = Math.min(Math.abs(existingQty), Math.abs(signedQuantity));
+    const closingQty = Math.min(
+      Math.abs(existingQty),
+      Math.abs(signedQuantity),
+    );
     const isClosingLong = existingQty > 0;
     const commission = fill.orderFee?.value ?? 0;
     const grossPnl = isClosingLong
@@ -384,7 +392,11 @@ export class PortfolioManager {
     this.adjustCashBookForFill(fill, adjustCash, baseCurrency);
   }
 
-  private adjustCashBookForFill(fill: OrderEvent, adjustCash: boolean, baseCurrency: string = "USDT"): void {
+  private adjustCashBookForFill(
+    fill: OrderEvent,
+    adjustCash: boolean,
+    baseCurrency: string = "USDT",
+  ): void {
     if (!adjustCash) return;
 
     const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? baseCurrency;
@@ -412,7 +424,10 @@ export class PortfolioManager {
     const currentBase = this.cashBook.get(baseAsset) ?? 0;
     if (fill.side === "buy") {
       const baseCommission = commissionCurrency === baseAsset ? commission : 0;
-      this.cashBook.set(baseAsset, currentBase + fill.fillQuantity - baseCommission);
+      this.cashBook.set(
+        baseAsset,
+        currentBase + fill.fillQuantity - baseCommission,
+      );
     } else {
       this.cashBook.set(baseAsset, currentBase - fill.fillQuantity);
     }
@@ -615,7 +630,7 @@ export class PortfolioManager {
       orderId: fillId || `MANUAL-${++this.tradeIdCounter}`,
       symbol,
       utcTime: new Date().toISOString(),
-      status: 'filled',
+      status: "filled",
       side,
       fillPrice: price,
       fillQuantity: effectiveQty,
@@ -627,7 +642,10 @@ export class PortfolioManager {
 
     // Cap fill ledger to prevent unbounded memory growth
     if (this.fillLedger.length >= MAX_FILL_LEDGER_SIZE) {
-      this.fillLedger.splice(0, this.fillLedger.length - MAX_FILL_LEDGER_SIZE + 1);
+      this.fillLedger.splice(
+        0,
+        this.fillLedger.length - MAX_FILL_LEDGER_SIZE + 1,
+      );
     }
     this.fillLedger.push(orderEvent);
 
@@ -639,7 +657,8 @@ export class PortfolioManager {
       ticket.totalFees += commission;
       if (ticket.quantityFilled > 0) {
         ticket.averageFillPrice =
-          (ticket.averageFillPrice * ticket.quantityFilled + price * effectiveQty) /
+          (ticket.averageFillPrice * ticket.quantityFilled +
+            price * effectiveQty) /
           (ticket.quantityFilled + effectiveQty);
       } else {
         ticket.averageFillPrice = price;

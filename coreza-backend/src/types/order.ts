@@ -22,40 +22,41 @@
 
 // ============== ENUMS ==============
 
-export type OrderSide = 'buy' | 'sell';
+export type OrderSide = "buy" | "sell";
 
 export type OrderType =
-  | 'market'
-  | 'limit'
-  | 'stop_market'
-  | 'stop_limit'
-  | 'market_on_open'
-  | 'market_on_close';
+  | "market"
+  | "limit"
+  | "stop_market"
+  | "stop_limit"
+  | "market_on_open"
+  | "market_on_close";
 
 export type OrderStatus =
-  | 'new'
-  | 'submitted'
-  | 'partially_filled'
-  | 'filled'
-  | 'canceled'
-  | 'rejected'
-  | 'invalid';
+  | "new"
+  | "pending_new"
+  | "submitted"
+  | "partially_filled"
+  | "filled"
+  | "canceled"
+  | "rejected"
+  | "invalid";
 
 // ============== ORDER (immutable after creation, except status) ==============
 
 export interface Order {
   id: string;
-  brokerId?: string[];            // broker-assigned order IDs (live only)
-  clientOrderId?: string;         // client-assigned order ID sent to broker
+  brokerId?: string[]; // broker-assigned order IDs (live only)
+  clientOrderId?: string; // client-assigned order ID sent to broker
   symbol: string;
   quantity: number;
   orderType: OrderType;
   side: OrderSide;
-  status: OrderStatus;            // latest status (derived from last event)
+  status: OrderStatus; // latest status (derived from last event)
   limitPrice?: number;
   stopPrice?: number;
-  createdAt: string;              // ISO 8601
-  tag?: string;                   // user-defined label
+  createdAt: string; // ISO 8601
+  tag?: string; // user-defined label
   properties?: {
     timeInForce?: string;
     extendedHours?: boolean;
@@ -91,7 +92,7 @@ export interface OrderResult {
 
 export interface OrderFee {
   value: number;
-  currency: string;               // "USD", "USDT", "BNB", etc.
+  currency: string; // "USD", "USDT", "BNB", etc.
 }
 
 // ============== ORDER EVENT (append-only) ==============
@@ -99,13 +100,13 @@ export interface OrderFee {
 export interface OrderEvent {
   orderId: string;
   symbol: string;
-  utcTime: string;                // ISO 8601
+  utcTime: string; // ISO 8601
   status: OrderStatus;
   side: OrderSide;
   fillPrice: number;
   fillQuantity: number;
   orderFee?: OrderFee;
-  slippage?: number;              // sim only
+  slippage?: number; // sim only
   message?: string;
 }
 
@@ -115,9 +116,9 @@ export interface OrderTicket {
   orderId: string;
   order: Order;
   orderEvents: OrderEvent[];
-  quantityFilled: number;         // sum of event fillQuantity
-  averageFillPrice: number;       // weighted avg
-  totalFees: number;              // sum of event fees
+  quantityFilled: number; // sum of event fillQuantity
+  averageFillPrice: number; // weighted avg
+  totalFees: number; // sum of event fees
 }
 
 // ============== HELPERS ==============
@@ -128,15 +129,15 @@ export interface OrderTicket {
  */
 export function normalizeOrderType(type: string): OrderType {
   const mapping: Record<string, OrderType> = {
-    market: 'market',
-    limit: 'limit',
-    stop: 'stop_market',
-    stop_market: 'stop_market',
-    stop_limit: 'stop_limit',
-    market_on_open: 'market_on_open',
-    market_on_close: 'market_on_close',
+    market: "market",
+    limit: "limit",
+    stop: "stop_market",
+    stop_market: "stop_market",
+    stop_limit: "stop_limit",
+    market_on_open: "market_on_open",
+    market_on_close: "market_on_close",
   };
-  return mapping[type] ?? 'market';
+  return mapping[type] ?? "market";
 }
 
 /**
@@ -144,5 +145,5 @@ export function normalizeOrderType(type: string): OrderType {
  */
 export function isTicketPending(ticket: OrderTicket): boolean {
   const s = ticket.order.status;
-  return s === 'new' || s === 'submitted' || s === 'partially_filled';
+  return s === "new" || s === "submitted" || s === "partially_filled";
 }

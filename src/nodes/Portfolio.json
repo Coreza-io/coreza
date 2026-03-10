@@ -168,7 +168,13 @@
       "description": "One or more symbols (comma-separated).",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "get_position", "update_mtm", "register_order", "get_pending_orders"]
+          "operation": [
+            "update_portfolio",
+            "get_position",
+            "update_mtm",
+            "register_order",
+            "get_pending_orders"
+          ]
         }
       }
     },
@@ -195,6 +201,19 @@
       "displayOptions": {
         "show": {
           "operation": ["update_portfolio", "register_order"]
+        }
+      }
+    },
+    {
+      "key": "orderType",
+      "label": "Order type",
+      "type": "text",
+      "placeholder": "e.g. market/limit/stop",
+      "required": true,
+      "description": "Order type. Determines whether the trade is a market, limit, or stop order.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
         }
       }
     },
@@ -262,6 +281,18 @@
         "show": {
           "operation": ["update_mtm"],
           "mode": ["backtest"]
+        }
+      }
+    },
+    {
+      "key": "status",
+      "label": "Order Status",
+      "type": "text",
+      "required": false,
+      "description": "Order status",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
         }
       }
     }

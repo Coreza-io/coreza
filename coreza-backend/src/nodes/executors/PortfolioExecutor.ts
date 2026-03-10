@@ -40,7 +40,10 @@ export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
 
   // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
-  private static ownershipCache = new Map<string, { ours: boolean; expiry: number }>();
+  private static ownershipCache = new Map<
+    string,
+    { ours: boolean; expiry: number }
+  >();
   private static ownershipLookupCount = 0;
 
   private async checkOwnership(id: string): Promise<boolean> {
@@ -359,20 +362,30 @@ export class PortfolioExecutor implements INodeExecutor {
         const clientOrderId = params.client_order_id?.trim() || undefined;
         const orderSymbol = params.symbol?.trim().toUpperCase();
         const orderSide = params.side?.trim().toUpperCase();
+        const orderType = params.orderType;
         const orderQty = parseFloat(params.quantity);
         const orderPrice = parseFloat(params.price || "0") || undefined;
+        const orderStatus = params.status;
 
         if (!orderId) {
-          return toNodeResult(createErrorOutput("order_id (or fill_id) is required for register_order"));
+          return toNodeResult(
+            createErrorOutput(
+              "order_id (or fill_id) is required for register_order",
+            ),
+          );
         }
         if (!orderSymbol) {
-          return toNodeResult(createErrorOutput("symbol is required for register_order"));
+          return toNodeResult(
+            createErrorOutput("symbol is required for register_order"),
+          );
         }
         if (!orderSide || (orderSide !== "BUY" && orderSide !== "SELL")) {
           return toNodeResult(createErrorOutput("side must be BUY or SELL"));
         }
         if (isNaN(orderQty) || orderQty <= 0) {
-          return toNodeResult(createErrorOutput("quantity must be a positive number"));
+          return toNodeResult(
+            createErrorOutput("quantity must be a positive number"),
+          );
         }
 
         const result = pm.registerOrder({
@@ -381,40 +394,52 @@ export class PortfolioExecutor implements INodeExecutor {
           symbol: orderSymbol,
           side: orderSide as "BUY" | "SELL",
           quantity: orderQty,
+          orderType: orderType,
           limitPrice: orderPrice,
+          orderStatus,
         });
 
-        return toNodeResult(createSuccessOutput({
-          registered: result.registered,
-          pending_order: result.pending_order,
-          pending_orders_count: pm.getPendingOrders().length,
-        }));
+        return toNodeResult(
+          createSuccessOutput({
+            registered: result.registered,
+            pending_order: result.pending_order,
+            pending_orders_count: pm.getPendingOrders().length,
+          }),
+        );
       }
       case "cancel_order": {
         const cancelOrderId = params.fill_id?.trim() || params.order_id?.trim();
         if (!cancelOrderId) {
-          return toNodeResult(createErrorOutput("order_id (or fill_id) is required for cancel_order"));
+          return toNodeResult(
+            createErrorOutput(
+              "order_id (or fill_id) is required for cancel_order",
+            ),
+          );
         }
 
         const cancelResult = pm.cancelOrder(cancelOrderId);
-        return toNodeResult(createSuccessOutput({
-          removed: cancelResult.removed,
-          cancelled_order: cancelResult.order || null,
-          pending_orders_count: pm.getPendingOrders().length,
-        }));
+        return toNodeResult(
+          createSuccessOutput({
+            removed: cancelResult.removed,
+            cancelled_order: cancelResult.order || null,
+            pending_orders_count: pm.getPendingOrders().length,
+          }),
+        );
       }
       case "get_pending_orders": {
         const pendingOrders = pm.getPendingOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filtered = filterSymbol
-          ? pendingOrders.filter(o => o.order.symbol === filterSymbol)
+          ? pendingOrders.filter((o) => o.order.symbol === filterSymbol)
           : pendingOrders;
 
-        return toNodeResult(createSuccessOutput({
-          pending_orders: filtered,
-          pending_orders_count: filtered.length,
-          total_pending_orders: pendingOrders.length,
-        }));
+        return toNodeResult(
+          createSuccessOutput({
+            pending_orders: filtered,
+            pending_orders_count: filtered.length,
+            total_pending_orders: pendingOrders.length,
+          }),
+        );
       }
       default:
         return toNodeResult(

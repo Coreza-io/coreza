@@ -234,7 +234,7 @@ export class BrokerExecutor implements INodeExecutor {
           idempotencyKey,
           "success",
           data,
-          data?.orderId || data?.order_id,
+          data?.orderId || data?.order_id || data?.id,
         );
       }
 

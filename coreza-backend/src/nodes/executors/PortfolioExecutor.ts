@@ -407,7 +407,7 @@ export class PortfolioExecutor implements INodeExecutor {
         const pendingOrders = pm.getPendingOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filtered = filterSymbol
-          ? pendingOrders.filter(o => o.symbol === filterSymbol)
+          ? pendingOrders.filter(o => o.order.symbol === filterSymbol)
           : pendingOrders;
 
         return toNodeResult(createSuccessOutput({

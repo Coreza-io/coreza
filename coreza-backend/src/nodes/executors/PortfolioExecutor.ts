@@ -441,6 +441,7 @@ export class PortfolioExecutor implements INodeExecutor {
       (sum, p) => sum + p.realizedPnl,
       0,
     );
+    const pendingOrders = simBroker.getPendingOrders();
 
     return toNodeResult(
       createSuccessOutput({
@@ -454,8 +455,8 @@ export class PortfolioExecutor implements INodeExecutor {
         realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
         realized_pnl: realizedPnlValue,
         total_equity: state.cash + positionsValue,
-        pending_orders: state.pendingOrders,
-        pending_orders_count: state.pendingOrders.length,
+        pending_orders: pendingOrders,
+        pending_orders_count: pendingOrders.length,
         trades: state.trades,
         trades_count: state.trades.length,
       }),

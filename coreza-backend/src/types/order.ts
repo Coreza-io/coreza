@@ -55,6 +55,9 @@ export interface Order {
   status: OrderStatus; // latest status (derived from last event)
   limitPrice?: number;
   stopPrice?: number;
+  timeInForce?: string;
+  trailPercent?: number;
+  trailPrice?: number;
   createdAt: string; // ISO 8601
   tag?: string; // user-defined label
   properties?: {
@@ -72,6 +75,9 @@ export interface OrderRequest {
   quantity: number;
   limitPrice?: number;
   stopPrice?: number;
+  timeInForce?: string;
+  trailPercent?: number;
+  trailPrice?: number;
   tag?: string;
   properties?: {
     timeInForce?: string;

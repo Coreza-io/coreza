@@ -162,6 +162,10 @@ export class PortfolioManager {
     quantity: number;
     orderType: OrderType;
     limitPrice?: number;
+    stopPrice?: number;
+    timeInForce?: string;
+    trailPercent?: number;
+    trailPrice?: number;
     status: OrderStatus;
   }): { registered: boolean; pending_order: OrderTicket } {
     const existing = this.tickets.get(order.orderId);
@@ -170,6 +174,10 @@ export class PortfolioManager {
       existing.order.symbol = order.symbol;
       existing.order.side = order.side.toLowerCase() as OrderSide;
       existing.order.limitPrice = order.limitPrice;
+      existing.order.stopPrice = order.stopPrice;
+      existing.order.timeInForce = order.timeInForce;
+      existing.order.trailPercent = order.trailPercent;
+      existing.order.trailPrice = order.trailPrice;
       console.log(
         `[PortfolioManager] Updated existing pending order: ${order.orderId}`,
       );
@@ -184,6 +192,10 @@ export class PortfolioManager {
       orderType: order.orderType,
       quantity: order.quantity,
       limitPrice: order.limitPrice,
+      stopPrice: order.stopPrice,
+      timeInForce: order.timeInForce,
+      trailPercent: order.trailPercent,
+      trailPrice: order.trailPrice,
       status: order.status,
       createdAt: new Date().toISOString(),
     };

@@ -613,7 +613,7 @@ export class BacktestExecutor implements INodeExecutor {
             fill_price: fill.fillPrice,
             fill_quantity: fill.fillQuantity,
             commission: fill.orderFee?.value ?? 0,
-            slippage: fill.slippage,
+            slippage: fill.slippage ?? 0,
             symbol,
             side,
             quantity,

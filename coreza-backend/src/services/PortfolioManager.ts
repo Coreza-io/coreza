@@ -15,6 +15,13 @@
  */
 
 import { Position, Trade } from "./simBroker/interfaces";
+import {
+  Order,
+  OrderSide,
+  OrderEvent,
+  OrderTicket,
+  isTicketPending,
+} from "../types/order";
 
 // ============== INTERFACES ==============
 
@@ -24,32 +31,6 @@ export interface SpotHolding {
   avgEntryPrice: number;
   realizedPnl: number;
   currentPrice: number;
-}
-
-export interface LiveFill {
-  tradeId: string;
-  orderId?: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  qty: number;
-  price: number;
-  quoteQty?: number;
-  commission: number;
-  commissionAsset?: string;
-  eventTime: number; // epoch ms
-}
-
-export interface PendingOrder {
-  orderId: string;
-  clientOrderId?: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  originalQty: number;
-  filledQty: number;      // cumulative filled so far
-  remainingQty: number;
-  limitPrice?: number;
-  status: "pending" | "partially_filled";
-  registeredAt: number;    // epoch ms
 }
 
 export interface PortfolioSnapshot {
@@ -72,6 +53,8 @@ const MAX_FILL_LEDGER_SIZE = 10_000;
  * scoped to the workflow run. When the workflow ends, destroy() is called
  * and all state is garbage collected.
  *
+ * Uses the QC Lean pattern: Order + OrderEvent + OrderTicket.
+ *
  * One instance per (userId, runId) pair, managed via static cache.
  */
 export class PortfolioManager {
@@ -89,9 +72,9 @@ export class PortfolioManager {
   // In-memory state (scoped to workflow run)
   private cashBook = new Map<string, number>(); // asset -> total balance
   private holdings = new Map<string, SpotHolding>(); // symbol -> holding
-  private fillLedger: LiveFill[] = [];
+  private fillLedger: OrderEvent[] = [];
   private orderCumQtyMap = new Map<string, number>(); // orderId → cumulative qty applied (partial fill tracking)
-  private pendingOrders = new Map<string, PendingOrder>(); // orderId → pending order
+  private tickets = new Map<string, OrderTicket>(); // orderId → OrderTicket
   private trades: Trade[] = [];
   private currentEntryMap = new Map<
     string,
@@ -139,7 +122,7 @@ export class PortfolioManager {
     this.holdings.clear();
     this.fillLedger.length = 0;
     this.orderCumQtyMap.clear();
-    this.pendingOrders.clear();
+    this.tickets.clear();
     this.trades.length = 0;
     this.currentEntryMap.clear();
     this.tradeIdCounter = 0;
@@ -163,10 +146,11 @@ export class PortfolioManager {
     console.log("[PortfolioManager] All instances destroyed");
   }
 
-  // ============== PENDING ORDER LEDGER ==============
+  // ============== PENDING ORDER LEDGER (OrderTicket-based) ==============
 
   /**
-   * Register a pending order. Idempotent — if orderId already exists, updates it.
+   * Register a pending order. Creates an Order + OrderTicket.
+   * Idempotent — if orderId already exists, updates the ticket's order fields.
    */
   registerOrder(order: {
     orderId: string;
@@ -175,69 +159,93 @@ export class PortfolioManager {
     side: "BUY" | "SELL";
     quantity: number;
     limitPrice?: number;
-  }): { registered: boolean; pending_order: PendingOrder } {
-    const existing = this.pendingOrders.get(order.orderId);
+  }): { registered: boolean; pending_order: OrderTicket } {
+    const existing = this.tickets.get(order.orderId);
     if (existing) {
       // Update fields that may change (e.g., status re-confirmation)
-      existing.symbol = order.symbol;
-      existing.side = order.side;
-      existing.limitPrice = order.limitPrice;
+      existing.order.symbol = order.symbol;
+      existing.order.side = order.side.toLowerCase() as OrderSide;
+      existing.order.limitPrice = order.limitPrice;
       console.log(
         `[PortfolioManager] Updated existing pending order: ${order.orderId}`,
       );
       return { registered: true, pending_order: existing };
     }
 
-    const pending: PendingOrder = {
-      orderId: order.orderId,
+    const o: Order = {
+      id: order.orderId,
       clientOrderId: order.clientOrderId,
       symbol: order.symbol,
-      side: order.side,
-      originalQty: order.quantity,
-      filledQty: 0,
-      remainingQty: order.quantity,
+      side: order.side.toLowerCase() as OrderSide,
+      orderType: order.limitPrice ? 'limit' : 'market',
+      quantity: order.quantity,
       limitPrice: order.limitPrice,
-      status: "pending",
-      registeredAt: Date.now(),
+      status: 'submitted',
+      createdAt: new Date().toISOString(),
     };
 
-    this.pendingOrders.set(order.orderId, pending);
+    const ticket: OrderTicket = {
+      orderId: order.orderId,
+      order: o,
+      orderEvents: [],
+      quantityFilled: 0,
+      averageFillPrice: 0,
+      totalFees: 0,
+    };
+
+    this.tickets.set(order.orderId, ticket);
     console.log(
       `[PortfolioManager] Registered pending order: ${order.side} ${order.quantity} ${order.symbol} (${order.orderId})`,
     );
-    return { registered: true, pending_order: pending };
+    return { registered: true, pending_order: ticket };
   }
 
   /**
    * Cancel/remove a pending order by orderId.
+   * Appends a cancel OrderEvent to the ticket.
    */
-  cancelOrder(orderId: string): { removed: boolean; order?: PendingOrder } {
-    const order = this.pendingOrders.get(orderId);
-    if (!order) {
+  cancelOrder(orderId: string): { removed: boolean; order?: OrderTicket } {
+    const ticket = this.tickets.get(orderId);
+    if (!ticket) {
       console.log(
         `[PortfolioManager] Cancel: no pending order found for ${orderId}`,
       );
       return { removed: false };
     }
-    this.pendingOrders.delete(orderId);
+
+    // Append cancel event
+    const cancelEvent: OrderEvent = {
+      orderId,
+      symbol: ticket.order.symbol,
+      utcTime: new Date().toISOString(),
+      status: 'canceled',
+      side: ticket.order.side,
+      fillPrice: 0,
+      fillQuantity: 0,
+      message: 'Order cancelled',
+    };
+    ticket.orderEvents.push(cancelEvent);
+    ticket.order.status = 'canceled';
+
+    this.tickets.delete(orderId);
     console.log(
-      `[PortfolioManager] Cancelled pending order: ${orderId} (${order.side} ${order.originalQty} ${order.symbol})`,
+      `[PortfolioManager] Cancelled pending order: ${orderId} (${ticket.order.side} ${ticket.order.quantity} ${ticket.order.symbol})`,
     );
-    return { removed: true, order };
+    return { removed: true, order: ticket };
   }
 
   /**
-   * Get all pending orders as an array.
+   * Get all pending order tickets as an array.
    */
-  getPendingOrders(): PendingOrder[] {
-    return Array.from(this.pendingOrders.values());
+  getPendingOrders(): OrderTicket[] {
+    return Array.from(this.tickets.values()).filter(isTicketPending);
   }
 
   /**
-   * Get a single pending order by orderId.
+   * Get a single pending order ticket by orderId.
    */
-  getPendingOrder(orderId: string): PendingOrder | null {
-    return this.pendingOrders.get(orderId) ?? null;
+  getPendingOrder(orderId: string): OrderTicket | null {
+    return this.tickets.get(orderId) ?? null;
   }
 
   /**
@@ -245,21 +253,21 @@ export class PortfolioManager {
    * Called internally by applyFill().
    */
   private updatePendingOrderOnFill(fillId: string, deltaQty: number): void {
-    const pending = this.pendingOrders.get(fillId);
-    if (!pending) return;
+    const ticket = this.tickets.get(fillId);
+    if (!ticket) return;
 
-    pending.filledQty += deltaQty;
-    pending.remainingQty = Math.max(0, pending.originalQty - pending.filledQty);
+    ticket.quantityFilled += deltaQty;
 
-    if (pending.remainingQty <= 0) {
-      this.pendingOrders.delete(fillId);
+    if (ticket.quantityFilled >= ticket.order.quantity) {
+      ticket.order.status = 'filled';
+      this.tickets.delete(fillId);
       console.log(
         `[PortfolioManager] Pending order fully filled and removed: ${fillId}`,
       );
     } else {
-      pending.status = "partially_filled";
+      ticket.order.status = 'partially_filled';
       console.log(
-        `[PortfolioManager] Pending order partially filled: ${fillId} (remaining: ${pending.remainingQty})`,
+        `[PortfolioManager] Pending order partially filled: ${fillId} (remaining: ${ticket.order.quantity - ticket.quantityFilled})`,
       );
     }
   }
@@ -271,24 +279,24 @@ export class PortfolioManager {
    * Uses the same weighted-average cost basis logic as SimBroker.applyFill().
    */
   private applyFillToHoldings(
-    fill: LiveFill,
+    fill: OrderEvent,
     adjustCash: boolean = false,
     baseCurrency: string = "USDT",
   ): void {
-    const fillTime = new Date(fill.eventTime).toISOString();
-    const signedQuantity = fill.side === "BUY" ? fill.qty : -fill.qty;
+    const fillTime = fill.utcTime;
+    const signedQuantity = fill.side === "buy" ? fill.fillQuantity : -fill.fillQuantity;
     const existing = this.holdings.get(fill.symbol);
 
     if (!existing) {
       this.holdings.set(fill.symbol, {
         symbol: fill.symbol,
         quantity: signedQuantity,
-        avgEntryPrice: fill.price,
+        avgEntryPrice: fill.fillPrice,
         realizedPnl: 0,
-        currentPrice: fill.price,
+        currentPrice: fill.fillPrice,
       });
       this.currentEntryMap.set(fill.symbol, {
-        fillId: fill.tradeId,
+        fillId: fill.orderId,
         entryTime: fillTime,
       });
       this.adjustCashBookForFill(fill, adjustCash);
@@ -304,15 +312,15 @@ export class PortfolioManager {
       const totalQty = existingQty + signedQuantity;
       const totalCostBasis =
         existing.avgEntryPrice * Math.abs(existingQty) +
-        fill.price * Math.abs(signedQuantity);
+        fill.fillPrice * Math.abs(signedQuantity);
 
       existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
       existing.quantity = totalQty;
-      existing.currentPrice = fill.price;
+      existing.currentPrice = fill.fillPrice;
 
       if (!this.currentEntryMap.has(fill.symbol)) {
         this.currentEntryMap.set(fill.symbol, {
-          fillId: fill.tradeId,
+          fillId: fill.orderId,
           entryTime: fillTime,
         });
       }
@@ -322,11 +330,12 @@ export class PortfolioManager {
 
     const closingQty = Math.min(Math.abs(existingQty), Math.abs(signedQuantity));
     const isClosingLong = existingQty > 0;
+    const commission = fill.orderFee?.value ?? 0;
     const grossPnl = isClosingLong
-      ? (fill.price - existing.avgEntryPrice) * closingQty
-      : (existing.avgEntryPrice - fill.price) * closingQty;
+      ? (fill.fillPrice - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - fill.fillPrice) * closingQty;
     const commissionForClose =
-      fill.commission * (closingQty / Math.abs(signedQuantity));
+      commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
     const entry = this.currentEntryMap.get(fill.symbol);
 
@@ -337,9 +346,9 @@ export class PortfolioManager {
       symbol: fill.symbol,
       side: isClosingLong ? "buy" : "sell",
       entryOrderId: entry?.fillId ?? "",
-      exitOrderId: fill.tradeId,
+      exitOrderId: fill.orderId,
       entryPrice: existing.avgEntryPrice,
-      exitPrice: fill.price,
+      exitPrice: fill.fillPrice,
       quantity: closingQty,
       grossPnl,
       commission: commissionForClose,
@@ -363,11 +372,11 @@ export class PortfolioManager {
       (existingQty > 0 && newQty < 0) || (existingQty < 0 && newQty > 0);
 
     existing.quantity = newQty;
-    existing.currentPrice = fill.price;
+    existing.currentPrice = fill.fillPrice;
     if (flippedDirection) {
-      existing.avgEntryPrice = fill.price;
+      existing.avgEntryPrice = fill.fillPrice;
       this.currentEntryMap.set(fill.symbol, {
-        fillId: fill.tradeId,
+        fillId: fill.orderId,
         entryTime: fillTime,
       });
     }
@@ -375,16 +384,17 @@ export class PortfolioManager {
     this.adjustCashBookForFill(fill, adjustCash, baseCurrency);
   }
 
-  private adjustCashBookForFill(fill: LiveFill, adjustCash: boolean, baseCurrency: string = "USDT"): void {
+  private adjustCashBookForFill(fill: OrderEvent, adjustCash: boolean, baseCurrency: string = "USDT"): void {
     if (!adjustCash) return;
 
     const quoteAsset = this.extractQuoteAsset(fill.symbol) ?? baseCurrency;
-    const cashImpact = fill.quoteQty ?? fill.price * fill.qty;
-    const quoteCommission =
-      fill.commissionAsset === quoteAsset ? fill.commission : 0;
+    const cashImpact = fill.fillPrice * fill.fillQuantity;
+    const commission = fill.orderFee?.value ?? 0;
+    const commissionCurrency = fill.orderFee?.currency;
+    const quoteCommission = commissionCurrency === quoteAsset ? commission : 0;
     const currentQuote = this.cashBook.get(quoteAsset) ?? 0;
 
-    if (fill.side === "BUY") {
+    if (fill.side === "buy") {
       this.cashBook.set(
         quoteAsset,
         currentQuote - cashImpact - quoteCommission,
@@ -400,12 +410,11 @@ export class PortfolioManager {
     if (!baseAsset) return;
 
     const currentBase = this.cashBook.get(baseAsset) ?? 0;
-    if (fill.side === "BUY") {
-      const baseCommission =
-        fill.commissionAsset === baseAsset ? fill.commission : 0;
-      this.cashBook.set(baseAsset, currentBase + fill.qty - baseCommission);
+    if (fill.side === "buy") {
+      const baseCommission = commissionCurrency === baseAsset ? commission : 0;
+      this.cashBook.set(baseAsset, currentBase + fill.fillQuantity - baseCommission);
     } else {
-      this.cashBook.set(baseAsset, currentBase - fill.qty);
+      this.cashBook.set(baseAsset, currentBase - fill.fillQuantity);
     }
   }
 
@@ -444,7 +453,7 @@ export class PortfolioManager {
     trades: Trade[];
     totalEquity: number;
     peakEquity: number;
-    pendingOrders: PendingOrder[];
+    pendingOrders: OrderTicket[];
   } {
     const positions = this.getPositions();
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
@@ -514,7 +523,7 @@ export class PortfolioManager {
     return this.trades;
   }
 
-  getFills(): LiveFill[] {
+  getFills(): OrderEvent[] {
     return this.fillLedger;
   }
 
@@ -575,7 +584,7 @@ export class PortfolioManager {
     fillId?: string,
   ): { applied: boolean; reason?: string; deltaQty?: number } {
     const { symbol, quantity, price, commission = 0 } = fill;
-    const side: "BUY" | "SELL" = quantity > 0 ? "BUY" : "SELL";
+    const side: OrderSide = quantity > 0 ? "buy" : "sell";
     const absQty = Math.abs(quantity);
 
     let effectiveQty = absQty;
@@ -599,29 +608,45 @@ export class PortfolioManager {
     }
     // Manual fills (no fillId) have no natural dedup key — always apply
 
-    // Unique tradeId for ledger: append cumulative qty to distinguish partial fills
-    const tradeId = fillId ? `${fillId}-${absQty}` : `MANUAL-${++this.tradeIdCounter}`;
+    const commissionCurrency = this.extractQuoteAsset(symbol) ?? baseCurrency;
 
-    const liveFill: LiveFill = {
-      tradeId,
-      orderId: fillId,
+    // Create OrderEvent (append-only)
+    const orderEvent: OrderEvent = {
+      orderId: fillId || `MANUAL-${++this.tradeIdCounter}`,
       symbol,
+      utcTime: new Date().toISOString(),
+      status: 'filled',
       side,
-      qty: effectiveQty,
-      price,
-      // Commission from broker is per-event, not cumulative — use directly
-      commission,
-      commissionAsset: this.extractQuoteAsset(symbol) ?? baseCurrency,
-      eventTime: Date.now(),
+      fillPrice: price,
+      fillQuantity: effectiveQty,
+      orderFee: {
+        value: commission,
+        currency: commissionCurrency,
+      },
     };
 
     // Cap fill ledger to prevent unbounded memory growth
     if (this.fillLedger.length >= MAX_FILL_LEDGER_SIZE) {
       this.fillLedger.splice(0, this.fillLedger.length - MAX_FILL_LEDGER_SIZE + 1);
     }
-    this.fillLedger.push(liveFill);
+    this.fillLedger.push(orderEvent);
 
-    this.applyFillToHoldings(liveFill, true, baseCurrency);
+    // Append event to ticket if one exists
+    const ticket = this.tickets.get(fillId ?? "");
+    if (ticket) {
+      ticket.orderEvents.push(orderEvent);
+      // averageFillPrice and totalFees updated by updatePendingOrderOnFill
+      ticket.totalFees += commission;
+      if (ticket.quantityFilled > 0) {
+        ticket.averageFillPrice =
+          (ticket.averageFillPrice * ticket.quantityFilled + price * effectiveQty) /
+          (ticket.quantityFilled + effectiveQty);
+      } else {
+        ticket.averageFillPrice = price;
+      }
+    }
+
+    this.applyFillToHoldings(orderEvent, true, baseCurrency);
     this.updatePeakEquity(baseCurrency);
 
     // Auto-decrement pending order if fillId matches
@@ -630,7 +655,7 @@ export class PortfolioManager {
     }
 
     console.log(
-      `[PortfolioManager] Applied fill: ${side} ${effectiveQty} ${symbol} @ ${price} (delta from cum ${absQty}, fillId: ${fillId || tradeId})`,
+      `[PortfolioManager] Applied fill: ${side} ${effectiveQty} ${symbol} @ ${price} (delta from cum ${absQty}, fillId: ${fillId || orderEvent.orderId})`,
     );
     return { applied: true, deltaQty: effectiveQty };
   }

@@ -21,7 +21,8 @@ import {
   Order,
   OrderRequest,
   OrderResult,
-  OrderFill,
+  OrderEvent,
+  OrderTicket,
   Position,
   Trade,
   EquityPoint,
@@ -30,6 +31,8 @@ import {
   IFillModel,
   ISlippageModel,
   IFeeModel,
+  normalizeOrderType,
+  isTicketPending,
 } from "./interfaces";
 import { createFillModel } from "./FillModel";
 import { createSlippageModel } from "./SlippageModel";
@@ -42,6 +45,8 @@ import { BarBuffer } from "./BarBuffer";
  * High-performance in-memory portfolio state management.
  * All operations are SYNCHRONOUS for maximum speed during bar iteration.
  * No Redis round-trips during backtest execution.
+ *
+ * Uses the QC Lean pattern: immutable Order + append-only OrderEvent + OrderTicket aggregate.
  *
  * Performance: 100-500x faster than Redis-based approach
  * - 10 years daily bars (2,520): ~0.1-0.5 seconds
@@ -92,8 +97,7 @@ export class SimBroker {
     this.state = {
       cash: this.config.initialCapital,
       positions: {},
-      pendingOrders: [],
-      filledOrders: [],
+      tickets: {},
       trades: [],
       equityCurve: [], // kept for PortfolioState interface compat; not used in hot path
       peakEquity: this.config.initialCapital,
@@ -132,6 +136,7 @@ export class SimBroker {
 
   /**
    * Place order - SYNCHRONOUS
+   * Creates an immutable Order and wraps it in an OrderTicket.
    */
   placeOrder(request: OrderRequest): OrderResult {
     // Validate order
@@ -140,23 +145,36 @@ export class SimBroker {
       return { success: false, error: validation.error };
     }
 
-    // Create order
+    const orderId = `SIM-${++this.orderIdCounter}`;
+
+    // Create immutable Order
     const order: Order = {
-      ...request,
-      id: `SIM-${++this.orderIdCounter}`,
-      status: "pending",
-      submittedAt: Date.now().toString(),
-      filledQty: 0,
-      avgFillPrice: 0,
-      commission: 0,
-      slippage: 0,
+      id: orderId,
+      symbol: request.symbol,
+      side: request.side,
+      orderType: request.orderType,
+      quantity: request.quantity,
+      limitPrice: request.limitPrice,
+      stopPrice: request.stopPrice,
+      tag: request.tag,
+      properties: request.properties,
+      status: 'new',
+      createdAt: new Date().toISOString(),
     };
 
-    this.state.pendingOrders.push(order);
+    // Create OrderTicket aggregate
+    const ticket: OrderTicket = {
+      orderId,
+      order,
+      orderEvents: [],
+      quantityFilled: 0,
+      averageFillPrice: 0,
+      totalFees: 0,
+    };
 
-    // Removed console.log from hot path for performance
+    this.state.tickets[orderId] = ticket;
 
-    return { success: true, orderId: order.id, status: "pending" };
+    return { success: true, orderId, status: 'new' };
   }
 
   private ensureEquityCapacity(): void {
@@ -209,14 +227,14 @@ export class SimBroker {
     }
 
     // Check limit/stop prices
-    if (request.type === "limit" && !request.limitPrice) {
+    if (request.orderType === "limit" && !request.limitPrice) {
       return { valid: false, error: "Limit price required for limit orders" };
     }
-    if (request.type === "stop" && !request.stopPrice) {
+    if (request.orderType === "stop_market" && !request.stopPrice) {
       return { valid: false, error: "Stop price required for stop orders" };
     }
     if (
-      request.type === "stop_limit" &&
+      request.orderType === "stop_limit" &&
       (!request.stopPrice || !request.limitPrice)
     ) {
       return {
@@ -259,22 +277,23 @@ export class SimBroker {
 
   /**
    * Process bar - SYNCHRONOUS (no Redis)
+   * Iterates pending OrderTickets for the given symbol, attempts fills,
+   * and appends OrderEvents on success.
    */
-  onBar(symbol: string, bar: Bar): OrderFill[] {
-    const fills: OrderFill[] = [];
+  onBar(symbol: string, bar: Bar): OrderEvent[] {
+    const events: OrderEvent[] = [];
 
     // Store current bar in state
     this.state.currentBar = bar;
 
-    // Process pending orders for this symbol
-    const pendingForSymbol = this.state.pendingOrders.filter(
-      (o) => o.symbol === symbol,
-    );
-    const remainingPending: Order[] = this.state.pendingOrders.filter(
-      (o) => o.symbol !== symbol,
-    );
+    // Process pending tickets for this symbol
+    for (const ticketId of Object.keys(this.state.tickets)) {
+      const ticket = this.state.tickets[ticketId];
+      if (ticket.order.symbol !== symbol || !isTicketPending(ticket)) {
+        continue;
+      }
 
-    for (const order of pendingForSymbol) {
+      const order = ticket.order;
       const fillResult = this.fillModel.fill(
         order,
         bar,
@@ -297,7 +316,7 @@ export class SimBroker {
           fillResult.quantity,
         );
 
-        // Apply fill
+        // Apply fill to portfolio
         this.applyFill(
           order,
           adjustedPrice,
@@ -307,36 +326,31 @@ export class SimBroker {
           bar.timestamp,
         );
 
-        // Update order status
-        order.status = "filled";
-        order.filledQty = fillResult.quantity;
-        order.avgFillPrice = adjustedPrice;
-        order.commission = commission;
-        order.slippage = slippage;
-        order.filledAt = bar.timestamp;
-        order.barTimestamp = bar.timestamp;
-
-        this.state.filledOrders.push(order);
-
-        fills.push({
+        // Create append-only OrderEvent
+        const event: OrderEvent = {
           orderId: order.id,
           symbol: order.symbol,
+          utcTime: bar.timestamp,
+          status: 'filled',
           side: order.side,
-          quantity: fillResult.quantity,
-          price: adjustedPrice,
+          fillPrice: adjustedPrice,
+          fillQuantity: fillResult.quantity,
+          orderFee: { value: commission, currency: 'USD' },
           slippage,
-          commission,
-          timestamp: bar.timestamp,
-        });
+        };
 
-        // Removed console.log from hot path for performance
-      } else {
-        // Order not filled, keep it pending
-        remainingPending.push(order);
+        // Update ticket aggregate
+        ticket.orderEvents.push(event);
+        ticket.quantityFilled += fillResult.quantity;
+        ticket.averageFillPrice = adjustedPrice; // single fill per order in sim
+        ticket.totalFees += commission;
+
+        // Update order status (the only mutable field)
+        order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+
+        events.push(event);
       }
     }
-
-    this.state.pendingOrders = remainingPending;
 
     // Update position mark-to-market
     this.updatePositionMTM(symbol, bar.close);
@@ -367,7 +381,7 @@ export class SimBroker {
     // Remember this bar for next iteration
     this.previousBar = bar;
 
-    return fills;
+    return events;
   }
 
   /**
@@ -375,19 +389,17 @@ export class SimBroker {
    * Used for immediate fill model only (same-bar execution).
    * Does NOT mutate previousBar or process other pending orders.
    */
-  tryFillImmediateOrder(orderId: string, bar: Bar): OrderFill | null {
+  tryFillImmediateOrder(orderId: string, bar: Bar): OrderEvent | null {
     if (this.config.fillModel !== "immediate") {
       return null;
     }
 
-    const orderIdx = this.state.pendingOrders.findIndex(
-      (o) => o.id === orderId,
-    );
-    if (orderIdx === -1) {
+    const ticket = this.state.tickets[orderId];
+    if (!ticket || !isTicketPending(ticket)) {
       return null;
     }
 
-    const order = this.state.pendingOrders[orderIdx];
+    const order = ticket.order;
     const fillResult = this.fillModel.fill(order, bar);
 
     if (!fillResult.filled || !fillResult.price || !fillResult.quantity) {
@@ -418,29 +430,31 @@ export class SimBroker {
       bar.timestamp,
     );
 
-    order.status = "filled";
-    order.filledQty = fillResult.quantity;
-    order.avgFillPrice = adjustedPrice;
-    order.commission = commission;
-    order.slippage = slippage;
-    order.filledAt = bar.timestamp;
-    order.barTimestamp = bar.timestamp;
+    // Create append-only OrderEvent
+    const event: OrderEvent = {
+      orderId: order.id,
+      symbol: order.symbol,
+      utcTime: bar.timestamp,
+      status: 'filled',
+      side: order.side,
+      fillPrice: adjustedPrice,
+      fillQuantity: fillResult.quantity,
+      orderFee: { value: commission, currency: 'USD' },
+      slippage,
+    };
 
-    this.state.filledOrders.push(order);
-    this.state.pendingOrders.splice(orderIdx, 1);
+    // Update ticket aggregate
+    ticket.orderEvents.push(event);
+    ticket.quantityFilled += fillResult.quantity;
+    ticket.averageFillPrice = adjustedPrice;
+    ticket.totalFees += commission;
+
+    // Update order status
+    order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
 
     this.updatePositionMTM(order.symbol, bar.close);
 
-    return {
-      orderId: order.id,
-      symbol: order.symbol,
-      side: order.side,
-      quantity: fillResult.quantity,
-      price: adjustedPrice,
-      slippage,
-      commission,
-      timestamp: bar.timestamp,
-    };
+    return event;
   }
 
   private applyFill(
@@ -802,8 +816,20 @@ export class SimBroker {
     return this.state.cash + positionsValue;
   }
 
+  /**
+   * Get pending orders (derived from tickets with non-terminal status).
+   */
   getPendingOrders(): Order[] {
-    return this.state.pendingOrders;
+    return Object.values(this.state.tickets)
+      .filter(isTicketPending)
+      .map(t => t.order);
+  }
+
+  /**
+   * Get all order tickets.
+   */
+  getTickets(): Record<string, OrderTicket> {
+    return this.state.tickets;
   }
 
   getTrades(): Trade[] {

@@ -14,6 +14,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// Re-export unified order types (shared with PortfolioManager)
+export {
+  Order,
+  OrderSide,
+  OrderType,
+  OrderStatus,
+  OrderRequest,
+  OrderResult,
+  OrderEvent,
+  OrderFee,
+  OrderTicket,
+  normalizeOrderType,
+  isTicketPending,
+} from '../../types/order';
+
 // ============== CONFIGURATION ==============
 
 export interface SimBrokerConfig {
@@ -58,51 +73,6 @@ export interface NumericBar {
   volume: number;
 }
 
-// ============== ORDERS ==============
-
-export type OrderSide = 'buy' | 'sell';
-export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit';
-export type OrderStatus = 'pending' | 'filled' | 'partial' | 'cancelled' | 'rejected';
-
-export interface OrderRequest {
-  symbol: string;
-  side: OrderSide;
-  type: OrderType;
-  quantity: number;
-  limitPrice?: number;
-  stopPrice?: number;
-}
-
-export interface Order extends OrderRequest {
-  id: string;
-  status: OrderStatus;
-  submittedAt: string; // ISO 8601
-  filledQty: number;
-  avgFillPrice: number;
-  commission: number;
-  slippage: number;
-  filledAt?: string; // ISO 8601
-  barTimestamp?: string; // Which bar triggered the fill
-}
-
-export interface OrderFill {
-  orderId: string;
-  symbol: string;
-  side: OrderSide;
-  quantity: number;
-  price: number;
-  slippage: number;
-  commission: number;
-  timestamp: string;
-}
-
-export interface OrderResult {
-  success: boolean;
-  orderId?: string;
-  status?: OrderStatus;
-  error?: string;
-}
-
 // ============== POSITIONS ==============
 
 export type PositionSide = 'long' | 'short';
@@ -123,7 +93,7 @@ export interface Position {
 export interface Trade {
   id: string;
   symbol: string;
-  side: OrderSide;
+  side: import('../../types/order').OrderSide;
   entryOrderId: string;
   exitOrderId: string;
   entryPrice: number;
@@ -159,8 +129,7 @@ export interface NumericEquityPoint {
 export interface PortfolioState {
   cash: number;
   positions: Record<string, Position>; // symbol -> Position
-  pendingOrders: Order[];
-  filledOrders: Order[];
+  tickets: Record<string, import('../../types/order').OrderTicket>; // orderId -> OrderTicket
   trades: Trade[]; // Closed trades
   equityCurve: EquityPoint[];
   peakEquity: number;
@@ -177,19 +146,19 @@ export interface FillResult {
 }
 
 export interface IFillModel {
-  fill(order: Order, bar: Bar, previousBar?: Bar): FillResult;
+  fill(order: import('../../types/order').Order, bar: Bar, previousBar?: Bar): FillResult;
 }
 
 // ============== SLIPPAGE MODEL ==============
 
 export interface ISlippageModel {
-  getSlippage(order: Order, fillPrice: number, bar: Bar): number;
+  getSlippage(order: import('../../types/order').Order, fillPrice: number, bar: Bar): number;
 }
 
 // ============== FEE MODEL ==============
 
 export interface IFeeModel {
-  getCommission(order: Order, fillPrice: number, fillQty: number): number;
+  getCommission(order: import('../../types/order').Order, fillPrice: number, fillQty: number): number;
 }
 
 // ============== PERFORMANCE METRICS ==============

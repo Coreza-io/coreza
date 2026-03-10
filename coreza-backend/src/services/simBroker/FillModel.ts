@@ -23,7 +23,7 @@ import { IFillModel, FillResult, Order, Bar } from './interfaces';
  */
 export class ImmediateFillModel implements IFillModel {
   fill(order: Order, bar: Bar): FillResult {
-    switch (order.type) {
+    switch (order.orderType) {
       case 'market':
         return {
           filled: true,
@@ -50,7 +50,7 @@ export class ImmediateFillModel implements IFillModel {
         }
         return { filled: false, reason: 'Limit price not reached' };
 
-      case 'stop':
+      case 'stop_market':
         // Buy stop: fill if bar high >= stop price
         if (order.side === 'buy' && bar.high >= (order.stopPrice ?? Infinity)) {
           return {
@@ -95,7 +95,7 @@ export class ImmediateFillModel implements IFillModel {
         return { filled: false, reason: 'Stop price not reached' };
 
       default:
-        return { filled: false, reason: `Unknown order type: ${order.type}` };
+        return { filled: false, reason: `Unknown order type: ${order.orderType}` };
     }
   }
 }
@@ -113,7 +113,7 @@ export class NextBarOpenFillModel implements IFillModel {
       return { filled: false, reason: 'Waiting for next bar' };
     }
 
-    switch (order.type) {
+    switch (order.orderType) {
       case 'market':
         // Fill at current bar open (order was placed at previous bar)
         return {
@@ -143,7 +143,7 @@ export class NextBarOpenFillModel implements IFillModel {
         }
         return { filled: false, reason: 'Limit price not reached' };
 
-      case 'stop':
+      case 'stop_market':
         // Buy stop: fill at bar open if open >= stop, otherwise check if high reaches stop
         if (order.side === 'buy') {
           if (bar.open >= (order.stopPrice ?? Infinity)) {
@@ -191,7 +191,7 @@ export class NextBarOpenFillModel implements IFillModel {
         return { filled: false, reason: 'Stop price not reached' };
 
       default:
-        return { filled: false, reason: `Unknown order type: ${order.type}` };
+        return { filled: false, reason: `Unknown order type: ${order.orderType}` };
     }
   }
 }

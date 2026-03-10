@@ -364,7 +364,16 @@ export class PortfolioExecutor implements INodeExecutor {
         const orderSide = params.side?.trim().toUpperCase();
         const orderType = params.orderType;
         const orderQty = parseFloat(params.quantity);
-        const orderPrice = parseFloat(params.price || "0") || undefined;
+        const limitPrice =
+          parseFloat(params.limitPrice ?? params.limit_price ?? params.price) ||
+          undefined;
+        const stopPrice =
+          parseFloat(params.stopPrice ?? params.stop_price) || undefined;
+        const tif = params.tif?.trim() || params.timeInForce?.trim() || undefined;
+        const trailPercent =
+          parseFloat(params.trail_percent ?? params.trailPercent) || undefined;
+        const trailPrice =
+          parseFloat(params.trail_price ?? params.trailPrice) || undefined;
         const orderStatus = params.status;
 
         if (!orderId) {
@@ -392,11 +401,15 @@ export class PortfolioExecutor implements INodeExecutor {
           orderId,
           clientOrderId,
           symbol: orderSymbol,
-          side: orderSide as "BUY" | "SELL",
+          side: orderSide.toLowerCase() as "buy" | "sell",
           quantity: orderQty,
           orderType: orderType,
-          limitPrice: orderPrice,
-          orderStatus,
+          limitPrice,
+          stopPrice,
+          timeInForce: tif,
+          trailPercent,
+          trailPrice,
+          status: orderStatus,
         });
 
         return toNodeResult(

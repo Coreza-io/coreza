@@ -226,7 +226,72 @@
       "description": "Average fill price.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "update_mtm", "register_order"]
+          "operation": ["update_portfolio", "update_mtm"]
+        }
+      }
+    },
+    {
+      "key": "limitPrice",
+      "label": "Limit Price",
+      "type": "text",
+      "placeholder": "e.g. 64786.0",
+      "required": false,
+      "description": "Optional limit price for the pending order.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
+        }
+      }
+    },
+    {
+      "key": "stopPrice",
+      "label": "Stop Price",
+      "type": "text",
+      "placeholder": "e.g. 64000.0",
+      "required": false,
+      "description": "Optional stop trigger price for the pending order.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
+        }
+      }
+    },
+    {
+      "key": "tif",
+      "label": "Time In Force (TIF)",
+      "type": "text",
+      "placeholder": "e.g. day/gtc/ioc",
+      "required": false,
+      "description": "Optional time-in-force value to store with the order.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
+        }
+      }
+    },
+    {
+      "key": "trail_percent",
+      "label": "Trail Percent",
+      "type": "text",
+      "placeholder": "e.g. 1.5",
+      "required": false,
+      "description": "Optional trailing stop percentage.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
+        }
+      }
+    },
+    {
+      "key": "trail_price",
+      "label": "Trail Price",
+      "type": "text",
+      "placeholder": "e.g. 2.0",
+      "required": false,
+      "description": "Optional trailing stop absolute price.",
+      "displayOptions": {
+        "show": {
+          "operation": ["register_order"]
         }
       }
     },

@@ -610,9 +610,9 @@ export class BacktestExecutor implements INodeExecutor {
           createSuccessOutput({
             order_id: orderResult.orderId,
             order_status: "filled",
-            fill_price: fill.price,
-            fill_quantity: fill.quantity,
-            commission: fill.commission,
+            fill_price: fill.fillPrice,
+            fill_quantity: fill.fillQuantity,
+            commission: fill.orderFee?.value ?? 0,
             slippage: fill.slippage,
             symbol,
             side,

@@ -1,53 +1,84 @@
 
 
-# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
+# Plan: Unified Order Schema (QC Lean Pattern)
 
-## What Changed in Alpaca (the reference)
+## Goal
 
-1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
-2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
-3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
-4. **Description**: Updated to mention order fills and If node routing
+Create a single set of order types (`Order`, `OrderEvent`, `OrderTicket`) shared by both SimBroker (backtest) and PortfolioManager (live), following the QuantConnect Lean pattern of **immutable orders + append-only events + aggregate ticket**.
 
-## What Needs to Change in Binance
+## New File: `coreza-backend/src/types/order.ts`
 
-### 1. `BinanceStreamData.json` — Stream trigger node
+```ts
+// ============== ENUMS ==============
+export type OrderSide = 'buy' | 'sell';
+export type OrderType = 'market' | 'limit' | 'stop_market' | 'stop_limit' | 'market_on_open' | 'market_on_close';
+export type OrderStatus = 'new' | 'submitted' | 'partially_filled' | 'filled' | 'canceled' | 'rejected' | 'invalid';
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
-| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
-| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
-| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
-| `height` | 280 | 320 (slightly taller for multiselect) |
+// ============== ORDER (immutable after creation) ==============
+export interface Order {
+  id: string;
+  brokerId?: string[];
+  symbol: string;
+  quantity: number;
+  orderType: OrderType;
+  side: OrderSide;
+  status: OrderStatus;
+  limitPrice?: number;
+  stopPrice?: number;
+  createdAt: string;
+  tag?: string;
+  properties?: {
+    timeInForce?: string;
+    extendedHours?: boolean;
+  };
+}
 
-### 2. `BinanceSubscribe.json` — Subscription node
+// ============== ORDER EVENT (append-only) ==============
+export interface OrderFee {
+  value: number;
+  currency: string;
+}
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
-| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
+export interface OrderEvent {
+  orderId: string;
+  symbol: string;
+  utcTime: string;
+  status: OrderStatus;
+  side: OrderSide;
+  fillPrice: number;
+  fillQuantity: number;
+  orderFee?: OrderFee;
+  slippage?: number;
+  message?: string;
+}
 
-### 3. No Backend Changes Needed
+// ============== ORDER TICKET (aggregate) ==============
+export interface OrderTicket {
+  orderId: string;
+  order: Order;
+  orderEvents: OrderEvent[];
+  quantityFilled: number;
+  averageFillPrice: number;
+  totalFees: number;
+}
+```
 
-The backend `stream.ts` route already:
-- Parses `stream_types` as array (lines 108-112)
-- Splits out `order_update` to `binance_trading` source (lines 114-131)
-- Passes remaining types to market subscription
-- Handles both Alpaca and Binance identically
-
-## Key Difference from Alpaca
-
-Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
-
-## Files to Edit
+## Files to Change
 
 | File | Changes |
 |---|---|
-| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
-| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
+| `coreza-backend/src/types/order.ts` | **New file** — all types above |
+| `coreza-backend/src/services/simBroker/interfaces.ts` | Remove old `OrderSide`, `OrderType`, `OrderStatus`, `OrderRequest`, `Order`, `OrderFill`, `OrderResult`. Re-export from `../../types/order`. Keep `Bar`, `Position`, `Trade`, `EquityPoint`, `PortfolioState`, config, model interfaces. Update `PortfolioState` to use `OrderTicket[]` instead of separate `pendingOrders`/`filledOrders`. |
+| `coreza-backend/src/services/simBroker/index.ts` | Create immutable `Order` on submit, append `OrderEvent` on fill, maintain `OrderTicket` aggregate. |
+| `coreza-backend/src/services/simBroker/FillModel.ts` | Update param types to `Order` |
+| `coreza-backend/src/services/simBroker/SlippageModel.ts` | Same — `Order` |
+| `coreza-backend/src/services/simBroker/FeeModel.ts` | Same — `Order`, return `OrderFee` |
+| `coreza-backend/src/services/PortfolioManager.ts` | Replace `LiveFill` with `OrderEvent`, `PendingOrder` with `OrderTicket`. |
+
+## Key Decisions
+
+1. **`Order.status`** is the only mutable field — reflects latest event status
+2. **`OrderTicket`** replaces both `pendingOrders[]` and `filledOrders[]` — single `tickets: Map<string, OrderTicket>`
+3. **`OrderFee` with currency** — enables multi-currency support for crypto
+4. **`Trade` type unchanged** — it's a higher-level closed-position concept derived from tickets
 

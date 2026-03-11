@@ -1454,12 +1454,13 @@ const WorkflowEditorContent = () => {
 
           <Button
             onClick={() => handleSaveWorkflow()}
-            disabled={loading}
+            disabled={loading || persistSaving}
             variant="outline"
             className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
           >
             <Save className="h-4 w-4 mr-2" />
-            {loading ? "Saving..." : "Save"}
+            {persistSaving ? "Saving..." : "Save"}
+          </Button>
           </Button>
 
           <Button

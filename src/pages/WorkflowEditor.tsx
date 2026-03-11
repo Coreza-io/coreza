@@ -1461,7 +1461,6 @@ const WorkflowEditorContent = () => {
             <Save className="h-4 w-4 mr-2" />
             {persistSaving ? "Saving..." : "Save"}
           </Button>
-          </Button>
 
           <Button
             onClick={executeAllNodes}

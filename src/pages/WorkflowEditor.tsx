@@ -82,7 +82,7 @@ import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHis
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
-import { useWorkflowVersioning } from "@/hooks/useWorkflowVersioning";
+import { useWorkflowPersistence } from "@/hooks/useWorkflowPersistence";
 import {
   ExecutionStoreProvider,
   useExecutionStore,

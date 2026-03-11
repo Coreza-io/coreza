@@ -28,6 +28,7 @@ import {
   buildStreamingTriggerListeningConfig,
   buildWebhookListeningConfig,
 } from "@/hooks/useListeningConfigs";
+import { isFieldVisible } from "@/utils/fieldVisibility";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -40,48 +41,6 @@ const makeArraySignature = (arr: any[]): string => {
   } catch {
     return `${arr.length}`;
   }
-};
-
-const isFieldVisible = (
-  field: any,
-  currentFieldState: Record<string, any>,
-): boolean => {
-  if (field.displayOptions?.show) {
-    const showResult = Object.entries(field.displayOptions.show).every(
-      ([depKey, rawAllowed]) => {
-        const allowedValues = Array.isArray(rawAllowed)
-          ? rawAllowed
-          : [rawAllowed];
-        const current = currentFieldState[depKey];
-        if (Array.isArray(current)) {
-          return current.some((v: string) => allowedValues.includes(v));
-        }
-        return allowedValues.includes(current);
-      },
-    );
-
-    if (!showResult) return false;
-  }
-
-  if (field.displayOptions?.hide) {
-    const shouldHide = Object.entries(field.displayOptions.hide).some(
-      ([depKey, rawAllowed]) => {
-        const allowedValues = Array.isArray(rawAllowed)
-          ? rawAllowed
-          : [rawAllowed];
-        const current = currentFieldState[depKey];
-        return allowedValues.some((v: any) => {
-          const compareVal =
-            typeof v === "object" && v !== null ? (v.id || v.value) : v;
-          return String(current) === String(compareVal);
-        });
-      },
-    );
-
-    if (shouldHide) return false;
-  }
-
-  return true;
 };
 
 interface UseNodeExecutionProps {

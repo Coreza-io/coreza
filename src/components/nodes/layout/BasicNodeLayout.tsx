@@ -17,6 +17,8 @@
 import React, { useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
@@ -62,6 +64,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
+  incomingEdgeCount,
   workflowId,
   nodeId,
   readOnly,
@@ -223,6 +226,22 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           {error && (
             <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
               {error}
+            </div>
+          )}
+
+          {!readOnly && incomingEdgeCount >= 2 && (
+            <div className="flex items-center justify-between pt-1">
+              <Label htmlFor="merge-mode" className="text-xs text-muted-foreground cursor-pointer">
+                Continue on any input
+              </Label>
+              <Switch
+                id="merge-mode"
+                checked={(fieldState.mergeMode ?? "all") === "any"}
+                onCheckedChange={(checked) =>
+                  handleChange("mergeMode", checked ? "any" : "all")
+                }
+                disabled={readOnly}
+              />
             </div>
           )}
 

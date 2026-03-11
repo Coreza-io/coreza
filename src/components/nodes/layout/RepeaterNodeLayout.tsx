@@ -16,6 +16,8 @@
 
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -59,6 +61,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  incomingEdgeCount,
   readOnly,
 }) => {
   const { getNodes } = useReactFlow();
@@ -514,6 +517,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
+
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
@@ -917,6 +921,23 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 readOnly={readOnly}
               />
             )}
+          </div>
+        )}
+
+        {/* Merge Mode Toggle */}
+        {!readOnly && incomingEdgeCount >= 2 && (
+          <div className="flex items-center justify-between pt-1">
+            <Label htmlFor="merge-mode-repeater" className="text-xs text-muted-foreground cursor-pointer">
+              Continue on any input
+            </Label>
+            <Switch
+              id="merge-mode-repeater"
+              checked={(fieldState.mergeMode ?? "all") === "any"}
+              onCheckedChange={(checked) =>
+                handleChange("mergeMode", checked ? "any" : "all")
+              }
+              disabled={readOnly}
+            />
           </div>
         )}
 

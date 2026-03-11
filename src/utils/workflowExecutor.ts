@@ -55,8 +55,12 @@ export interface NodeExecutionDetail {
 export class WorkflowExecutor {
   private nodeStore: ExecutionContext;
   private isAutoExecuting = false;
+  private conditionalMap = new Map<string, Record<string, string[]>>();
+  private branchOrigins = new Map<
+    string,
+    Map<string, { ifNodeId: string; handle: string; edgeId: string }>
+  >();
   private edgePayload = new Map<string, any>();
-  private skippedNodes = new Set<string>();
 
   private getIncomingEdges = (targetId: string) =>
     this.context.edges.filter((e) => e.target === targetId);
@@ -97,7 +101,11 @@ export class WorkflowExecutor {
     );
   }
 
-  private areDependenciesSatisfied(nodeId: string): boolean {
+  private areDependenciesSatisfied(
+    nodeId: string,
+    executed: Set<string>,
+    failed: Set<string>,
+  ): boolean {
     if (this.isLoopNodeId(nodeId)) {
       const n = this.context.nodes.find((x) => x.id === nodeId);
       const loopWaits: boolean = Boolean(n?.data?.loopWaits);
@@ -110,43 +118,144 @@ export class WorkflowExecutor {
 
     if (requiredEdges.length === 0) return false;
 
-    const activeEdges = requiredEdges.filter(
-      (e) => !this.skippedNodes.has(e.source),
-    );
+    const node = this.context.nodes.find((n) => n.id === nodeId);
+    const mergeMode = (node?.data?.values as any)?.mergeMode ?? "all";
 
-    if (activeEdges.length === 0) return false;
+    const branchGroups = new Map<string, Edge[]>();
+    const independentEdges: Edge[] = [];
 
-    return activeEdges.every((e) => this.edgePayload.has(e.id));
+    for (const edge of requiredEdges) {
+      const origin = this.getBranchOrigin(edge, nodeId);
+      if (!origin) {
+        independentEdges.push(edge);
+        continue;
+      }
+
+      const key = `${origin.ifNodeId}::${nodeId}`;
+      const grouped = branchGroups.get(key) ?? [];
+      grouped.push(edge);
+      branchGroups.set(key, grouped);
+    }
+
+    const hasIndependentEdges = independentEdges.length > 0;
+    const hasBranchGroups = branchGroups.size > 0;
+
+    const independentSatisfied = hasIndependentEdges
+      ? mergeMode === "any"
+        ? independentEdges.some((e) => this.edgePayload.has(e.id))
+        : independentEdges.every((e) => this.edgePayload.has(e.id))
+      : mergeMode === "all";
+
+    // Branch groups always use ANY-of semantics since only one branch can fire.
+    const branchSatisfied = hasBranchGroups
+      ? Array.from(branchGroups.values()).every((group) =>
+          group.some((e) => this.edgePayload.has(e.id)),
+        )
+      : mergeMode === "all";
+
+    return mergeMode === "any"
+      ? (hasIndependentEdges && independentSatisfied) ||
+          (hasBranchGroups && branchSatisfied)
+      : independentSatisfied && branchSatisfied;
+  }
+
+  private getBranchOrigin(edge: Edge, targetNodeId: string) {
+    return this.branchOrigins.get(targetNodeId)?.get(edge.id);
   }
 
   constructor(private context: ExecutorContext) {
     this.context.executeNode = this.executeNode.bind(this);
     this.nodeStore = context.executionStore;
+    this.preCalculateConditionalBranches();
   }
 
-  private propagateSkips(
-    nodeId: string,
-    transientSkippedSources: Set<string> = new Set(),
-  ): void {
-    if (this.skippedNodes.has(nodeId)) return;
+  /**
+   * Pre-calculate conditional branches for optimization (only for actual branching nodes)
+   */
+  private preCalculateConditionalBranches(): void {
+    this.conditionalMap.clear();
+    this.branchOrigins.clear();
 
-    const incoming = this.getIncomingEdges(nodeId).filter(
-      (edge) => !this.isSubNode(edge.source),
+    // Build a map: nodeId → { handle1: [targetA, targetB], handle2: [targetC], … }
+    this.context.edges.forEach((edge) => {
+      const sourceNode = this.context.nodes.find((n) => n.id === edge.source);
+      const nodeType = (sourceNode?.data?.definition as any)?.name;
+      const isBranchingNode = ["If", "Switch"].includes(nodeType);
+      if (!edge.sourceHandle || !isBranchingNode) return;
+
+      // get—or initialize—the per-node entry
+      const entry: Record<string, string[]> =
+        this.conditionalMap.get(edge.source) ?? {};
+
+      // accumulate multiple targets per handle
+      (entry[edge.sourceHandle] ??= []).push(edge.target);
+
+      this.conditionalMap.set(edge.source, entry);
+    });
+
+    console.log(
+      `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`,
+      Array.from(this.conditionalMap.entries()),
     );
-    const allSourcesSkipped =
-      incoming.length > 0 &&
-      incoming.every(
-        (edge) =>
-          this.skippedNodes.has(edge.source) ||
-          transientSkippedSources.has(edge.source),
-      );
 
-    if (!allSourcesSkipped) return;
+    this.buildBranchOrigins();
+  }
 
-    this.skippedNodes.add(nodeId);
-    const outgoing = this.context.edges.filter((edge) => edge.source === nodeId);
-    for (const edge of outgoing) {
-      this.propagateSkips(edge.target);
+  private buildBranchOrigins(): void {
+    for (const [ifNodeId, branchMap] of this.conditionalMap.entries()) {
+      const handleReachable = new Map<string, Set<string>>();
+
+      for (const [handle, targets] of Object.entries(branchMap)) {
+        const visited = new Set<string>();
+        const stack = [...targets];
+        while (stack.length > 0) {
+          const current = stack.pop()!;
+          if (visited.has(current)) continue;
+          visited.add(current);
+
+          for (const out of this.context.edges) {
+            if (out.source === current) stack.push(out.target);
+          }
+        }
+        handleReachable.set(handle, visited);
+      }
+
+      const nodeToHandles = new Map<string, Set<string>>();
+      for (const [handle, nodes] of handleReachable.entries()) {
+        for (const nodeId of nodes) {
+          const handles = nodeToHandles.get(nodeId) ?? new Set<string>();
+          handles.add(handle);
+          nodeToHandles.set(nodeId, handles);
+        }
+      }
+
+      for (const [targetNodeId, handles] of nodeToHandles.entries()) {
+        if (handles.size < 2) continue;
+
+        for (const incoming of this.getIncomingEdges(targetNodeId)) {
+          const matchingHandles: string[] = [];
+
+          for (const handle of handles) {
+            const reachable = handleReachable.get(handle);
+            const directFromBranchNode =
+              incoming.source === ifNodeId && incoming.sourceHandle === handle;
+            if (directFromBranchNode || reachable?.has(incoming.source)) {
+              matchingHandles.push(handle);
+            }
+          }
+
+          if (matchingHandles.length !== 1) continue;
+
+          const targetOrigins =
+            this.branchOrigins.get(targetNodeId) ?? new Map<string, any>();
+          targetOrigins.set(incoming.id, {
+            ifNodeId,
+            handle: matchingHandles[0],
+            edgeId: incoming.id,
+          });
+          this.branchOrigins.set(targetNodeId, targetOrigins);
+        }
+      }
     }
   }
   /**
@@ -172,7 +281,7 @@ export class WorkflowExecutor {
               (n) => n.id === startNodeId,
             );
 
-            const isBranchNode = this.isBranchNodeId(startNodeId);
+            const isBranchNode = this.conditionalMap.has(startNodeId);
             if (isBranchNode) {
               await this.handleBranchNodeResult(
                 startNodeId,
@@ -222,9 +331,8 @@ export class WorkflowExecutor {
     }
 
     // Look up the branch map
-    const targets = this.context.edges
-      .filter((e) => e.source === nodeId && (e.sourceHandle ?? "") === handleKey)
-      .map((e) => e.target);
+    const branchMap = this.conditionalMap.get(nodeId) || {};
+    const targets = branchMap[handleKey] || [];
 
     if (targets.length === 0) {
       console.warn(`No branch found for node ${nodeId} handle "${handleKey}"`);
@@ -250,7 +358,7 @@ export class WorkflowExecutor {
     const downstream = this.context.edges.filter((e) => {
       if (e.source !== nodeId) return false;
       // Exclude edges from any branching node (not just If)
-      const isBranchNode = this.isBranchNodeId(e.source);
+      const isBranchNode = this.conditionalMap.has(e.source);
       return !isBranchNode;
     });
 
@@ -669,7 +777,7 @@ export class WorkflowExecutor {
     }
 
     this.isAutoExecuting = true;
-    this.skippedNodes.clear();
+    this.preCalculateConditionalBranches(); // Refresh conditional map
     this.edgePayload.clear();
 
     // Initialize execution metrics
@@ -801,9 +909,10 @@ export class WorkflowExecutor {
           let isConditionalExecution = false;
           let conditionalTargetId: string | undefined;
 
-          const isBranchNode = this.isBranchNodeId(id);
+          const isBranchNode = this.conditionalMap.has(id);
           console.log(
-            `🔍 [WORKFLOW EXECUTOR] Node ${id} is branch node: ${isBranchNode}`,
+            `🔍 [WORKFLOW EXECUTOR] Node ${id} is branch node: ${isBranchNode}, conditionalMap has:`,
+            Array.from(this.conditionalMap.keys()),
           );
 
           if (isBranchNode) {
@@ -834,9 +943,15 @@ export class WorkflowExecutor {
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );
 
-            const targets: string[] = out
-              .filter((e) => (e.sourceHandle ?? "") === handleKey)
-              .map((e) => e.target);
+            // 2) pull back an array of targets (might be undefined)
+            const branchMap = this.conditionalMap.get(id) || {};
+            console.log(
+              `🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`,
+              branchMap,
+            );
+
+            // --- CHANGED HERE: treat entry as string[] not single string ---
+            const targets: string[] = branchMap[handleKey] || [];
 
             if (targets.length > 0) {
               // 3) for each target node, find its outgoing edge and collect into next[]
@@ -845,12 +960,6 @@ export class WorkflowExecutor {
                   out.find((e) => e.target === targetNodeId),
                 )
                 .filter((e): e is Edge => !!e);
-
-              const takenIds = new Set(next.map((e) => e.id));
-              const notTaken = out.filter((e) => !takenIds.has(e.id));
-              for (const edge of notTaken) {
-                this.propagateSkips(edge.target, new Set([edge.source]));
-              }
 
               isConditionalExecution = true;
               conditionalTargetId = targets.join(","); // or pick the first if you need a single string
@@ -863,9 +972,6 @@ export class WorkflowExecutor {
               // 4) highlight them all
               targets.forEach((t) => this.highlightEdges(id, t));
             } else {
-              for (const edge of out) {
-                this.propagateSkips(edge.target, new Set([edge.source]));
-              }
               console.log(
                 `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`,
               );
@@ -892,7 +998,7 @@ export class WorkflowExecutor {
 
             if (
               !queue.includes(e.target) &&
-              this.areDependenciesSatisfied(e.target)
+              this.areDependenciesSatisfied(e.target, executed, failed)
             ) {
               queue.push(e.target);
               // if (isConditionalExecution) {

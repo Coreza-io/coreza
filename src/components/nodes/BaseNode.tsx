@@ -56,6 +56,7 @@ export interface BaseNodeRenderProps {
   previousNodes: Node[];
   selectedPrevNodeId: string;
   selectedInputData: any;
+  incomingEdgeCount: number;
   displayedData: any;
   isPinned: boolean;
   workflowId?: string;
@@ -136,6 +137,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     previousNodesRef.current = getAllUpstreamNodes(nodeId, edges, nodes);
     return previousNodesRef.current;
   }, [nodeId, getNodes, getEdges, edgeCount, storeVersion]);
+
+  const incomingEdgeCount = useMemo(() => {
+    if (!nodeId) return 0;
+    return getEdges().filter((edge) => edge.target === nodeId).length;
+  }, [nodeId, getEdges, edgeCount]);
 
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);
@@ -307,6 +313,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     previousNodes,
     selectedPrevNodeId,
     selectedInputData,
+    incomingEdgeCount,
     displayedData: outputHook.displayedData,
     isPinned: outputHook.isPinned,
     workflowId,

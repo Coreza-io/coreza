@@ -70,7 +70,10 @@ export class WorkflowEngine {
   private store: NodeStoreV2;
   private executors: Map<string, any> = new Map();
   private edgePayload = new Map<string, any>();
-  private skippedNodes = new Set<string>();
+  private branchOrigins = new Map<
+    string,
+    Map<string, { ifNodeId: string; handle: string; edgeId: string }>
+  >();
   private failed = new Set<string>();
   private failedNodeErrors = new Map<string, string>();
   private enqueuedKeys = new Set<string>();
@@ -150,6 +153,7 @@ export class WorkflowEngine {
       }
     }
 
+    this.buildBranchOrigins();
     console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
   }
 
@@ -171,7 +175,6 @@ export class WorkflowEngine {
     this.runId = newRunId;
     this.abortSignal = abortSignal;
     this.edgePayload.clear();
-    this.skippedNodes.clear();
     this.failed.clear();
     this.failedNodeErrors.clear();
     this.enqueuedKeys.clear();
@@ -197,7 +200,6 @@ export class WorkflowEngine {
     this.runId = newRunId;
     this.abortSignal = abortSignal;
     this.edgePayload.clear();
-    this.skippedNodes.clear();
     this.failed.clear();
     this.failedNodeErrors.clear();
     this.enqueuedKeys.clear();
@@ -470,19 +472,9 @@ export class WorkflowEngine {
       }
 
       const allowed = new Set(chosen);
-      const taken = outgoingEdges.filter((edge) =>
+      return outgoingEdges.filter((edge) =>
         allowed.has(edge.sourceHandle ?? ""),
       );
-
-      const notTaken = outgoingEdges.filter(
-        (edge) => !allowed.has(edge.sourceHandle ?? ""),
-      );
-
-      for (const edge of notTaken) {
-        this.propagateSkips(edge.target, new Set([edge.source]));
-      }
-
-      return taken;
     }
 
     return outgoingEdges;
@@ -513,34 +505,132 @@ export class WorkflowEngine {
 
     if (required.length === 0) return false;
 
-    const activeEdges = required.filter((e) => !this.skippedNodes.has(e.source));
-    if (activeEdges.length === 0) return false;
+    const node = this.nodeById.get(nodeId);
+    const mergeMode = ((node as any)?.values?.mergeMode ?? "all") as
+      | "all"
+      | "any";
 
-    return activeEdges.every((e) => this.edgePayload.has(e.id));
+    const branchGroups = new Map<string, WorkflowEdge[]>();
+    const independentEdges: WorkflowEdge[] = [];
+
+    for (const edge of required) {
+      const origin = this.getBranchOrigin(edge, nodeId);
+      if (!origin) {
+        independentEdges.push(edge);
+        continue;
+      }
+
+      const key = `${origin.ifNodeId}::${nodeId}`;
+      const grouped = branchGroups.get(key) ?? [];
+      grouped.push(edge);
+      branchGroups.set(key, grouped);
+    }
+
+    const hasIndependentEdges = independentEdges.length > 0;
+    const hasBranchGroups = branchGroups.size > 0;
+
+    const independentSatisfied = hasIndependentEdges
+      ? mergeMode === "any"
+        ? independentEdges.some((e) => this.edgePayload.has(e.id))
+        : independentEdges.every((e) => this.edgePayload.has(e.id))
+      : mergeMode === "all";
+
+    // Branch groups always use ANY-of semantics since only one branch can fire.
+    const branchSatisfied = hasBranchGroups
+      ? Array.from(branchGroups.values()).every((group) =>
+          group.some((e) => this.edgePayload.has(e.id)),
+        )
+      : mergeMode === "all";
+
+    return mergeMode === "any"
+      ? (hasIndependentEdges && independentSatisfied) ||
+          (hasBranchGroups && branchSatisfied)
+      : independentSatisfied && branchSatisfied;
   }
 
-  private propagateSkips(
-    nodeId: string,
-    transientSkippedSources: Set<string> = new Set(),
-  ): void {
-    if (this.skippedNodes.has(nodeId)) return;
+  private getBranchOrigin(edge: WorkflowEdge, targetNodeId: string) {
+    return this.branchOrigins.get(targetNodeId)?.get(edge.id);
+  }
 
-    const incoming = this.getIncomingEdges(nodeId).filter(
-      (edge) => !this.isSubNode(edge.source),
-    );
-    const allSourcesSkipped =
-      incoming.length > 0 &&
-      incoming.every(
-        (edge) =>
-          this.skippedNodes.has(edge.source) ||
-          transientSkippedSources.has(edge.source),
-      );
+  private buildBranchOrigins(): void {
+    const conditionalMap = new Map<string, Record<string, string[]>>();
 
-    if (!allSourcesSkipped) return;
+    for (const edge of this.edges) {
+      const sourceNode = this.nodeById.get(edge.source);
+      const isBranchingNode =
+        sourceNode?.name === "If" || sourceNode?.name === "Switch";
+      if (!isBranchingNode || !edge.sourceHandle) continue;
 
-    this.skippedNodes.add(nodeId);
-    for (const edge of this.getOutgoingEdges(nodeId)) {
-      this.propagateSkips(edge.target);
+      const entry = conditionalMap.get(edge.source) ?? {};
+      (entry[edge.sourceHandle] ??= []).push(edge.target);
+      conditionalMap.set(edge.source, entry);
+    }
+
+    this.branchOrigins.clear();
+
+    for (const [ifNodeId, branchMap] of conditionalMap.entries()) {
+      const handleReachable = new Map<string, Set<string>>();
+
+      for (const [handle, targets] of Object.entries(branchMap)) {
+        const visited = new Set<string>();
+        const stack = [...targets];
+
+        while (stack.length > 0) {
+          const current = stack.pop()!;
+          if (visited.has(current)) continue;
+          visited.add(current);
+
+          for (const out of this.getOutgoingEdges(current)) {
+            stack.push(out.target);
+          }
+        }
+
+        handleReachable.set(handle, visited);
+      }
+
+      const nodeToHandles = new Map<string, Set<string>>();
+      for (const [handle, nodes] of handleReachable.entries()) {
+        for (const nodeId of nodes) {
+          const handles = nodeToHandles.get(nodeId) ?? new Set<string>();
+          handles.add(handle);
+          nodeToHandles.set(nodeId, handles);
+        }
+      }
+
+      for (const [targetNodeId, handles] of nodeToHandles.entries()) {
+        if (handles.size < 2) continue;
+
+        for (const incoming of this.getIncomingEdges(targetNodeId)) {
+          const matchingHandles: string[] = [];
+
+          for (const handle of handles) {
+            const reachable = handleReachable.get(handle);
+            const directFromBranchNode =
+              incoming.source === ifNodeId && incoming.sourceHandle === handle;
+
+            if (directFromBranchNode || reachable?.has(incoming.source)) {
+              matchingHandles.push(handle);
+            }
+          }
+
+          if (matchingHandles.length !== 1) continue;
+
+          const targetOrigins =
+            this.branchOrigins.get(targetNodeId) ??
+            new Map<
+              string,
+              { ifNodeId: string; handle: string; edgeId: string }
+            >();
+
+          targetOrigins.set(incoming.id, {
+            ifNodeId,
+            handle: matchingHandles[0],
+            edgeId: incoming.id,
+          });
+
+          this.branchOrigins.set(targetNodeId, targetOrigins);
+        }
+      }
     }
   }
 

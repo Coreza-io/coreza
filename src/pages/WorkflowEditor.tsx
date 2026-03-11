@@ -689,9 +689,14 @@ const WorkflowEditorContent = () => {
     [workflowExecutor],
   );
 
-  // Save workflow to Supabase with versioning and data loss protection
+  // Save workflow via persistence hook
   const handleSaveWorkflow = async (skipConfirmation: boolean = false) => {
     if (!authUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to save workflows",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -705,148 +710,29 @@ const WorkflowEditorContent = () => {
       return;
     }
 
-    // For existing workflows, check for potential data loss
+    // For existing workflows, check for significant node reduction (confirmation dialog)
     if (workflowId && !skipConfirmation) {
-      // Block empty saves that would overwrite data
-      const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
-      if (shouldBlock) {
-        toast({
-          title: "Save Blocked",
-          description:
-            "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Check for significant node reduction and confirm with user
-      try {
-        const { data: current } = await supabase
-          .from("workflows")
-          .select("nodes")
-          .eq("id", workflowId)
-          .single();
-
-        if (current) {
-          const currentNodes = current.nodes as any[];
-          const currentCount = Array.isArray(currentNodes)
-            ? currentNodes.length
-            : 0;
-
-          // Warn if reducing nodes by more than 50% from a substantial workflow
-          if (currentCount > 5 && nodes.length < currentCount * 0.5) {
-            setPendingSaveData({ currentCount, newCount: nodes.length });
-            setShowSaveConfirmDialog(true);
-            return; // Wait for user confirmation
-          }
-        }
-      } catch (error) {
-        console.warn("Could not check current workflow state:", error);
-      }
-
-      // Create version snapshot before overwriting existing workflow
-      const versionCreated = await createVersionBeforeSave(workflowId);
-      if (versionCreated) {
-        console.log("✅ Created version backup before save");
+      const { shouldWarn, currentCount } = await checkNodeReduction(
+        workflowId,
+        nodes.length,
+      );
+      if (shouldWarn) {
+        setPendingSaveData({ currentCount, newCount: nodes.length });
+        setShowSaveConfirmDialog(true);
+        return; // Wait for user confirmation
       }
     }
 
-    // 1) Turn each node into a "minimal" version without its definition
-    const minimalNodes = nodes.map((n) => ({
-      id: n.id,
-      name: (n.data.definition as any)?.name,
-      node_type: (n.data.definition as any)?.node_type,
-      category: (n.data.definition as any)?.category,
-      subCategory: (n.data.definition as any)?.subCategory,
-      provider: (n.data.definition as any)?.provider,
-      position: n.position,
-      sourcePosition: n.sourcePosition,
-      targetPosition: n.targetPosition,
-      // ONLY keep the user's inputs + last output (or whatever you actually need)
-      values: n.data.values ?? n.data.fieldState ?? {},
-      executionMode: (n.data.definition as any)?.executionMode,
-      streamingConfig: (n.data.definition as any)?.streamingConfig,
-      // Save display name information for reference resolution
-      //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
-    }));
+    const result = await saveWorkflow(workflowId, workflowName, nodes, edges);
 
-    // Get existing node IDs
-    const existingNodeIds = new Set(minimalNodes.map((node) => node.id));
-
-    // Clean edges by removing execution-related properties and filter out edges to non-existent nodes
-    const cleanEdges = edges
-      .filter(
-        (edge) =>
-          existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target),
-      )
-      .map((edge) => {
-        const cleanEdge: any = {
-          id: edge.id,
-          type: edge.type,
-          source: edge.source,
-          target: edge.target,
-        };
-
-        // Only include handles if they exist
-        if (edge.sourceHandle) cleanEdge.sourceHandle = edge.sourceHandle;
-        if (edge.targetHandle) cleanEdge.targetHandle = edge.targetHandle;
-
-        // Only include basic style properties (no execution styling)
-        if (edge.style?.strokeLinecap || edge.style?.strokeLinejoin) {
-          cleanEdge.style = {
-            strokeLinecap: edge.style?.strokeLinecap || "round",
-            strokeLinejoin: edge.style?.strokeLinejoin || "round",
-          };
-        }
-
-        return cleanEdge;
-      });
-
-    const payload = {
-      user_id: authUser.id,
-      name: workflowName,
-      nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
-      edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
-      updated_at: new Date().toISOString(),
-      ...(projectId && { project_id: projectId }), // Include project_id if available
-    };
-    console.log("payload", payload);
-
-    if (workflowId) {
-      const { error } = await supabase
-        .from("workflows")
-        .update(payload)
-        .eq("id", workflowId);
-    } else {
-      const { data, error } = await supabase
-        .from("workflows")
-        .insert([payload])
-        .select()
-        .single();
-      if (data) {
-        setWorkflowId(data.id);
-
-        // CRITICAL FIX: Use React Router's navigate instead of window.history
-        // This ensures useParams() updates properly
-        // Route workflow URLs through the authenticated dashboard layout
-        const workflowPath = `/dashboard/workflow/${data.id}`;
-        const newUrl = projectId
-          ? `${workflowPath}?project=${projectId}`
-          : workflowPath;
-
-        navigate(newUrl, { replace: true });
-
-        toast({
-          title: "Success",
-          description: "Workflow saved!",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "Error saving: " + error.message,
-          variant: "destructive",
-        });
-      }
+    if (result.success && result.newId) {
+      // New workflow created — update local state & URL
+      setWorkflowId(result.newId);
+      const workflowPath = `/dashboard/workflow/${result.newId}`;
+      const newUrl = projectId
+        ? `${workflowPath}?project=${projectId}`
+        : workflowPath;
+      navigate(newUrl, { replace: true });
     }
   };
 

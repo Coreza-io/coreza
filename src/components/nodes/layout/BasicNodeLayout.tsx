@@ -16,6 +16,13 @@
 
 import React, { useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
@@ -62,6 +69,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
+  incomingEdgeCount,
   workflowId,
   nodeId,
   readOnly,
@@ -190,6 +198,25 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
+          {incomingEdgeCount >= 2 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Merge Mode</p>
+              <Select
+                value={fieldState.mergeMode ?? "all"}
+                onValueChange={(value) => handleChange("mergeMode", value)}
+                disabled={readOnly}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Wait for all inputs" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Wait for all inputs</SelectItem>
+                  <SelectItem value="any">Continue on any input</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {(definition.fields || []).map((f: any) => (
             <NodeFieldRenderer
               key={f.key}

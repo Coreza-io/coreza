@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useExecutionStore } from '@/contexts/ExecutionStoreContext';
 import { nodeManifest } from '@/nodes/manifest';
 import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
+import { getVisibleValues } from '@/utils/fieldVisibility';
 
 export interface WorkflowState {
   workflowId: string | null;
@@ -182,7 +183,10 @@ export const useWorkflowState = (
         position: node.position,
         sourcePosition: node.sourcePosition,
         targetPosition: node.targetPosition,
-        values: node.data.values || {},
+        values: getVisibleValues(
+          node.data.definition as any,
+          (node.data.values as Record<string, any>) || {}
+        ),
         displayName: node.data.displayName,
       }));
 

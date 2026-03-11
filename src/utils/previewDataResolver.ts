@@ -40,8 +40,6 @@ export function buildPreviewData(
     if (typeof displayName === "string") {
       allNodeData[displayName] = nodeData;
     }
-
-    allNodeData[prevNode.id] = nodeData;
   });
 
   const getSourceData = (sourceId: string) => {

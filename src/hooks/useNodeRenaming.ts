@@ -140,62 +140,6 @@ export function useNodeRenaming({
           });
         });
 
-        // Update references in other nodes that point to the old display name
-        setNodes((prevNodes) => {
-          const oldFunctionRef = `$('${displayName}')`;
-          const newFunctionRef = `$('${finalName}')`;
-          const oldLegacyRef = `$node["${displayName}"]`;
-          const newLegacyRef = `$node["${finalName}"]`;
-
-          return prevNodes.map((node) => {
-            if (node.id === newNodeId) {
-              return node;
-            }
-
-            const nodeData = node.data;
-            if (!nodeData || typeof nodeData !== "object") {
-              return node;
-            }
-
-            let changed = false;
-            const updatedData = { ...nodeData } as Record<string, any>;
-
-            for (const stateKey of ["fieldState", "values"]) {
-              const state = updatedData[stateKey];
-              if (!state || typeof state !== "object") {
-                continue;
-              }
-
-              const updatedState: Record<string, any> = {};
-              let stateChanged = false;
-
-              for (const [key, value] of Object.entries(state)) {
-                if (typeof value !== "string") {
-                  updatedState[key] = value;
-                  continue;
-                }
-
-                const replaced = value
-                  .replaceAll(oldFunctionRef, newFunctionRef)
-                  .replaceAll(oldLegacyRef, newLegacyRef);
-
-                if (replaced !== value) {
-                  stateChanged = true;
-                }
-
-                updatedState[key] = replaced;
-              }
-
-              if (stateChanged) {
-                updatedData[stateKey] = updatedState;
-                changed = true;
-              }
-            }
-
-            return changed ? { ...node, data: updatedData } : node;
-          });
-        });
-
         toast({
           title: "Node renamed",
           description: `Node renamed to "${finalName}"`,
@@ -259,3 +203,4 @@ export function useNodeRenaming({
     setEditingName,
   };
 }
+

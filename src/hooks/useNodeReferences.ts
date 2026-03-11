@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { resolveReferences } from "@/utils/resolveReferences";
@@ -55,6 +55,7 @@ export function useNodeReferences({
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useReactFlow();
   const executionStore = useExecutionStore();
+  const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   // Handle drag start for reference expressions
   const handleDragStart = useCallback(
@@ -117,6 +118,7 @@ export function useNodeReferences({
 
         setter(newValue);
         handleChange(fieldKey, newValue);
+        setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
       } catch (err) {
         console.error("❌ Drop error:", err);
       }
@@ -132,7 +134,7 @@ export function useNodeReferences({
       const expr = fieldState[fieldKey] || "";
       if (!expr.includes("{{")) return null;
 
-      const srcId = selectedPrevNodeId;
+      const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
       const srcNode =
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
@@ -162,6 +164,7 @@ export function useNodeReferences({
     },
     [
       fieldState,
+      sourceMap,
       selectedPrevNodeId,
       previousNodes,
       selectedPrevNode,

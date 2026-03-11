@@ -229,6 +229,22 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             </div>
           )}
 
+          {!readOnly && incomingEdgeCount >= 2 && (
+            <div className="flex items-center justify-between pt-1">
+              <Label htmlFor="merge-mode" className="text-xs text-muted-foreground cursor-pointer">
+                Continue on any input
+              </Label>
+              <Switch
+                id="merge-mode"
+                checked={(fieldState.mergeMode ?? "all") === "any"}
+                onCheckedChange={(checked) =>
+                  handleChange("mergeMode", checked ? "any" : "all")
+                }
+                disabled={readOnly}
+              />
+            </div>
+          )}
+
           {!readOnly && (
             <Button
               type="submit"

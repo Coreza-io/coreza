@@ -1816,11 +1816,7 @@ const WorkflowEditorContent = () => {
             <AlertDialogAction
               onClick={async () => {
                 setPendingSaveData(null);
-                // Create version before saving
-                if (workflowId) {
-                  await createVersionBeforeSave(workflowId);
-                }
-                // Now save with skipConfirmation flag
+                // Save with skipConfirmation — versioning handled inside saveWorkflow
                 await handleSaveWorkflow(true);
               }}
             >

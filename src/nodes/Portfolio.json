@@ -357,7 +357,7 @@
       "description": "Order status",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": ["update_portfolio", "register_order"]
         }
       }
     }

@@ -605,12 +605,13 @@ export class PortfolioManager {
       symbol: string;
       quantity: number;
       price: number;
+      orderStatus: OrderStatus;
       commission?: number;
     },
     baseCurrency: string,
     fillId?: string,
   ): { applied: boolean; reason?: string; deltaQty?: number } {
-    const { symbol, quantity, price, commission = 0 } = fill;
+    const { symbol, quantity, price, orderStatus, commission = 0 } = fill;
     const side: OrderSide = quantity > 0 ? "buy" : "sell";
     const absQty = Math.abs(quantity);
 
@@ -642,7 +643,7 @@ export class PortfolioManager {
       orderId: fillId || `MANUAL-${++this.tradeIdCounter}`,
       symbol,
       utcTime: new Date().toISOString(),
-      status: "filled",
+      status: orderStatus,
       side,
       fillPrice: price,
       fillQuantity: effectiveQty,

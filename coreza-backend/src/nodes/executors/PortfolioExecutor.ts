@@ -242,6 +242,7 @@ export class PortfolioExecutor implements INodeExecutor {
         const commission = parseFloat(params.commission || "0");
         const fillId = params.fill_id?.trim() || undefined;
         const clientOrderId = params.client_order_id?.trim() || undefined;
+        const orderStatus = params.status;
 
         if (!fillSymbol) {
           return toNodeResult(
@@ -290,7 +291,7 @@ export class PortfolioExecutor implements INodeExecutor {
           side === "SELL" ? -normalizedQuantity : normalizedQuantity;
 
         const fillResult = pm.applyFill(
-          { symbol: fillSymbol, quantity, price, commission },
+          { symbol: fillSymbol, quantity, price, orderStatus, commission },
           baseCurrency,
           fillId,
         );
@@ -369,7 +370,8 @@ export class PortfolioExecutor implements INodeExecutor {
           undefined;
         const stopPrice =
           parseFloat(params.stopPrice ?? params.stop_price) || undefined;
-        const tif = params.tif?.trim() || params.timeInForce?.trim() || undefined;
+        const tif =
+          params.tif?.trim() || params.timeInForce?.trim() || undefined;
         const trailPercent =
           parseFloat(params.trail_percent ?? params.trailPercent) || undefined;
         const trailPrice =

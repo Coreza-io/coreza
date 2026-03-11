@@ -505,6 +505,11 @@ export class WorkflowEngine {
 
     if (required.length === 0) return false;
 
+    const node = this.nodeById.get(nodeId);
+    const mergeMode = ((node as any)?.values?.mergeMode ?? "all") as
+      | "all"
+      | "any";
+
     const branchGroups = new Map<string, WorkflowEdge[]>();
     const independentEdges: WorkflowEdge[] = [];
 
@@ -521,14 +526,26 @@ export class WorkflowEngine {
       branchGroups.set(key, grouped);
     }
 
-    const independentSatisfied = independentEdges.every((e) =>
-      this.edgePayload.has(e.id),
-    );
-    const branchSatisfied = Array.from(branchGroups.values()).some((group) =>
-      group.some((e) => this.edgePayload.has(e.id)),
-    );
+    const hasIndependentEdges = independentEdges.length > 0;
+    const hasBranchGroups = branchGroups.size > 0;
 
-    return independentSatisfied && branchSatisfied;
+    const independentSatisfied = hasIndependentEdges
+      ? mergeMode === "any"
+        ? independentEdges.some((e) => this.edgePayload.has(e.id))
+        : independentEdges.every((e) => this.edgePayload.has(e.id))
+      : mergeMode === "all";
+
+    // Branch groups always use ANY-of semantics since only one branch can fire.
+    const branchSatisfied = hasBranchGroups
+      ? Array.from(branchGroups.values()).every((group) =>
+          group.some((e) => this.edgePayload.has(e.id)),
+        )
+      : mergeMode === "all";
+
+    return mergeMode === "any"
+      ? (hasIndependentEdges && independentSatisfied) ||
+          (hasBranchGroups && branchSatisfied)
+      : independentSatisfied && branchSatisfied;
   }
 
   private getBranchOrigin(edge: WorkflowEdge, targetNodeId: string) {

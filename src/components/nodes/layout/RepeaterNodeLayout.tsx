@@ -59,6 +59,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  incomingEdgeCount,
   readOnly,
 }) => {
   const { getNodes } = useReactFlow();
@@ -514,6 +515,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
+        {incomingEdgeCount >= 2 && (
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Merge Mode</p>
+            <Select
+              value={fieldState.mergeMode ?? "all"}
+              onValueChange={(value) => handleChange("mergeMode", value)}
+              disabled={readOnly}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Wait for all inputs" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Wait for all inputs</SelectItem>
+                <SelectItem value="any">Continue on any input</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;

@@ -924,6 +924,23 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           </div>
         )}
 
+        {/* Merge Mode Toggle */}
+        {!readOnly && incomingEdgeCount >= 2 && (
+          <div className="flex items-center justify-between pt-1">
+            <Label htmlFor="merge-mode-repeater" className="text-xs text-muted-foreground cursor-pointer">
+              Continue on any input
+            </Label>
+            <Switch
+              id="merge-mode-repeater"
+              checked={(fieldState.mergeMode ?? "all") === "any"}
+              onCheckedChange={(checked) =>
+                handleChange("mergeMode", checked ? "any" : "all")
+              }
+              disabled={readOnly}
+            />
+          </div>
+        )}
+
         {/* Submit Button */}
         {!readOnly && (
           <div className="pt-2">

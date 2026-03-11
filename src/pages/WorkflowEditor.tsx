@@ -222,9 +222,15 @@ const WorkflowEditorContent = () => {
     newCount: number;
   } | null>(null);
 
-  // Workflow versioning hooks
-  const { createVersionBeforeSave, shouldBlockEmptySave } =
-    useWorkflowVersioning();
+  // Workflow persistence hook (save/load/versioning/getVisibleValues)
+  const {
+    saving: persistSaving,
+    loading: persistLoading,
+    saveWorkflow,
+    loadWorkflow: persistLoadWorkflow,
+    generateNewWorkflowName,
+    checkNodeReduction,
+  } = useWorkflowPersistence({ projectId });
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);

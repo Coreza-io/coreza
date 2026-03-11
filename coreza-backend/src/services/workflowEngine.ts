@@ -30,7 +30,6 @@ import { resolveReferences } from "../utils/resolveReferences";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 
-
 const CATEGORY_MAP: Record<string, string> = {
   If: "ControlFlow",
   Switch: "ControlFlow",
@@ -153,7 +152,6 @@ export class WorkflowEngine {
         this.outgoingEdgesBySource.set(edge.source, [edge]);
       }
     }
-
 
     this.buildBranchOrigins();
     console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
@@ -287,7 +285,8 @@ export class WorkflowEngine {
       };
     } catch (error) {
       const executionTimeMs = Date.now() - workflowStartTime;
-      const formattedExecutionTime = this.formatExecutionDuration(executionTimeMs);
+      const formattedExecutionTime =
+        this.formatExecutionDuration(executionTimeMs);
       console.error(
         `❌ executeFromEntries failed after ${formattedExecutionTime}:`,
         error,
@@ -299,7 +298,6 @@ export class WorkflowEngine {
       };
     }
   }
-
 
   private getExecutionOrderForResponse(): string[] | undefined {
     return this.executionOrder.length > 0 ? this.executionOrder : undefined;
@@ -369,7 +367,8 @@ export class WorkflowEngine {
 
   private containsTemplates(value: any): boolean {
     if (typeof value === "string") return value.includes("{{");
-    if (Array.isArray(value)) return value.some((v) => this.containsTemplates(v));
+    if (Array.isArray(value))
+      return value.some((v) => this.containsTemplates(v));
     if (value && typeof value === "object") {
       return Object.values(value).some((v) => this.containsTemplates(v));
     }
@@ -525,7 +524,7 @@ export class WorkflowEngine {
     const independentSatisfied = independentEdges.every((e) =>
       this.edgePayload.has(e.id),
     );
-    const branchSatisfied = Array.from(branchGroups.values()).every((group) =>
+    const branchSatisfied = Array.from(branchGroups.values()).some((group) =>
       group.some((e) => this.edgePayload.has(e.id)),
     );
 
@@ -601,7 +600,10 @@ export class WorkflowEngine {
 
           const targetOrigins =
             this.branchOrigins.get(targetNodeId) ??
-            new Map<string, { ifNodeId: string; handle: string; edgeId: string }>();
+            new Map<
+              string,
+              { ifNodeId: string; handle: string; edgeId: string }
+            >();
 
           targetOrigins.set(incoming.id, {
             ifNodeId,
@@ -681,9 +683,8 @@ export class WorkflowEngine {
 
       if (hasFailedNodes) {
         const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime = this.formatExecutionDuration(
-          executionTimeMs,
-        );
+        const formattedExecutionTime =
+          this.formatExecutionDuration(executionTimeMs);
         console.log(
           `⚠️ Workflow completed with ${
             failedNodeIds.length
@@ -691,9 +692,8 @@ export class WorkflowEngine {
         );
       } else {
         const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime = this.formatExecutionDuration(
-          executionTimeMs,
-        );
+        const formattedExecutionTime =
+          this.formatExecutionDuration(executionTimeMs);
         console.log(
           `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
         );
@@ -736,9 +736,8 @@ export class WorkflowEngine {
       };
     } catch (error) {
       const executionTimeMs = Date.now() - workflowStartTime;
-      const formattedExecutionTime = this.formatExecutionDuration(
-        executionTimeMs,
-      );
+      const formattedExecutionTime =
+        this.formatExecutionDuration(executionTimeMs);
       console.error(
         `❌ Workflow execution failed after ${formattedExecutionTime}:`,
         error,

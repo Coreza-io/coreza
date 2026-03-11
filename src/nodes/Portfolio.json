@@ -331,7 +331,7 @@
       "description": "Fallback dedup key if orderId not yet indexed. Maps to the client_order_id sent with the original order.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "register_order"]
+          "operation": ["register_order"]
         }
       }
     },

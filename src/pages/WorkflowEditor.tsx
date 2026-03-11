@@ -82,7 +82,7 @@ import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHis
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
-import { useWorkflowVersioning } from "@/hooks/useWorkflowVersioning";
+import { useWorkflowPersistence } from "@/hooks/useWorkflowPersistence";
 import {
   ExecutionStoreProvider,
   useExecutionStore,
@@ -222,9 +222,15 @@ const WorkflowEditorContent = () => {
     newCount: number;
   } | null>(null);
 
-  // Workflow versioning hooks
-  const { createVersionBeforeSave, shouldBlockEmptySave } =
-    useWorkflowVersioning();
+  // Workflow persistence hook (save/load/versioning/getVisibleValues)
+  const {
+    saving: persistSaving,
+    loading: persistLoading,
+    saveWorkflow,
+    loadWorkflow: persistLoadWorkflow,
+    generateNewWorkflowName,
+    checkNodeReduction,
+  } = useWorkflowPersistence({ projectId });
 
   useEffect(() => {
     const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
@@ -683,9 +689,14 @@ const WorkflowEditorContent = () => {
     [workflowExecutor],
   );
 
-  // Save workflow to Supabase with versioning and data loss protection
+  // Save workflow via persistence hook
   const handleSaveWorkflow = async (skipConfirmation: boolean = false) => {
     if (!authUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to save workflows",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -699,148 +710,29 @@ const WorkflowEditorContent = () => {
       return;
     }
 
-    // For existing workflows, check for potential data loss
+    // For existing workflows, check for significant node reduction (confirmation dialog)
     if (workflowId && !skipConfirmation) {
-      // Block empty saves that would overwrite data
-      const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
-      if (shouldBlock) {
-        toast({
-          title: "Save Blocked",
-          description:
-            "Cannot save: This would overwrite your workflow with an empty state. If intentional, delete the workflow instead.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Check for significant node reduction and confirm with user
-      try {
-        const { data: current } = await supabase
-          .from("workflows")
-          .select("nodes")
-          .eq("id", workflowId)
-          .single();
-
-        if (current) {
-          const currentNodes = current.nodes as any[];
-          const currentCount = Array.isArray(currentNodes)
-            ? currentNodes.length
-            : 0;
-
-          // Warn if reducing nodes by more than 50% from a substantial workflow
-          if (currentCount > 5 && nodes.length < currentCount * 0.5) {
-            setPendingSaveData({ currentCount, newCount: nodes.length });
-            setShowSaveConfirmDialog(true);
-            return; // Wait for user confirmation
-          }
-        }
-      } catch (error) {
-        console.warn("Could not check current workflow state:", error);
-      }
-
-      // Create version snapshot before overwriting existing workflow
-      const versionCreated = await createVersionBeforeSave(workflowId);
-      if (versionCreated) {
-        console.log("✅ Created version backup before save");
+      const { shouldWarn, currentCount } = await checkNodeReduction(
+        workflowId,
+        nodes.length,
+      );
+      if (shouldWarn) {
+        setPendingSaveData({ currentCount, newCount: nodes.length });
+        setShowSaveConfirmDialog(true);
+        return; // Wait for user confirmation
       }
     }
 
-    // 1) Turn each node into a "minimal" version without its definition
-    const minimalNodes = nodes.map((n) => ({
-      id: n.id,
-      name: (n.data.definition as any)?.name,
-      node_type: (n.data.definition as any)?.node_type,
-      category: (n.data.definition as any)?.category,
-      subCategory: (n.data.definition as any)?.subCategory,
-      provider: (n.data.definition as any)?.provider,
-      position: n.position,
-      sourcePosition: n.sourcePosition,
-      targetPosition: n.targetPosition,
-      // ONLY keep the user's inputs + last output (or whatever you actually need)
-      values: n.data.values ?? n.data.fieldState ?? {},
-      executionMode: (n.data.definition as any)?.executionMode,
-      streamingConfig: (n.data.definition as any)?.streamingConfig,
-      // Save display name information for reference resolution
-      //displayName: (n.data.values as any)?.label || (n.data.definition as any)?.name || n.type
-    }));
+    const result = await saveWorkflow(workflowId, workflowName, nodes, edges);
 
-    // Get existing node IDs
-    const existingNodeIds = new Set(minimalNodes.map((node) => node.id));
-
-    // Clean edges by removing execution-related properties and filter out edges to non-existent nodes
-    const cleanEdges = edges
-      .filter(
-        (edge) =>
-          existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target),
-      )
-      .map((edge) => {
-        const cleanEdge: any = {
-          id: edge.id,
-          type: edge.type,
-          source: edge.source,
-          target: edge.target,
-        };
-
-        // Only include handles if they exist
-        if (edge.sourceHandle) cleanEdge.sourceHandle = edge.sourceHandle;
-        if (edge.targetHandle) cleanEdge.targetHandle = edge.targetHandle;
-
-        // Only include basic style properties (no execution styling)
-        if (edge.style?.strokeLinecap || edge.style?.strokeLinejoin) {
-          cleanEdge.style = {
-            strokeLinecap: edge.style?.strokeLinecap || "round",
-            strokeLinejoin: edge.style?.strokeLinejoin || "round",
-          };
-        }
-
-        return cleanEdge;
-      });
-
-    const payload = {
-      user_id: authUser.id,
-      name: workflowName,
-      nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
-      edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
-      updated_at: new Date().toISOString(),
-      ...(projectId && { project_id: projectId }), // Include project_id if available
-    };
-    console.log("payload", payload);
-
-    if (workflowId) {
-      const { error } = await supabase
-        .from("workflows")
-        .update(payload)
-        .eq("id", workflowId);
-    } else {
-      const { data, error } = await supabase
-        .from("workflows")
-        .insert([payload])
-        .select()
-        .single();
-      if (data) {
-        setWorkflowId(data.id);
-
-        // CRITICAL FIX: Use React Router's navigate instead of window.history
-        // This ensures useParams() updates properly
-        // Route workflow URLs through the authenticated dashboard layout
-        const workflowPath = `/dashboard/workflow/${data.id}`;
-        const newUrl = projectId
-          ? `${workflowPath}?project=${projectId}`
-          : workflowPath;
-
-        navigate(newUrl, { replace: true });
-
-        toast({
-          title: "Success",
-          description: "Workflow saved!",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "Error saving: " + error.message,
-          variant: "destructive",
-        });
-      }
+    if (result.success && result.newId) {
+      // New workflow created — update local state & URL
+      setWorkflowId(result.newId);
+      const workflowPath = `/dashboard/workflow/${result.newId}`;
+      const newUrl = projectId
+        ? `${workflowPath}?project=${projectId}`
+        : workflowPath;
+      navigate(newUrl, { replace: true });
     }
   };
 
@@ -1083,187 +975,39 @@ const WorkflowEditorContent = () => {
       return;
     }
 
-    const loadWorkflow = async () => {
-      // Load workflow - either start fresh for new workflow or load specific existing workflow
+    const doLoad = async () => {
       if (isNewWorkflow) {
-        // For ALL new workflows, start completely fresh
-        // Generate smart workflow name based on existing workflows
+        // New workflow — generate smart name, start fresh
         setLoading(true);
         try {
-          // Get existing workflow names to determine next number
-          const { data: existingWorkflows, error } = await supabase
-            .from("workflows")
-            .select("name")
-            .eq("user_id", authUser.id);
-
-          let workflowName = "My workflow 1";
-
-          if (!error && existingWorkflows) {
-            // Find the highest number in existing "My workflow X" names
-            const workflowNumbers = existingWorkflows
-              .map((w) => w.name)
-              .filter((name) => name.startsWith("My workflow "))
-              .map((name) => {
-                const match = name.match(/My workflow (\d+)/);
-                return match ? parseInt(match[1]) : 0;
-              })
-              .filter((num) => !isNaN(num));
-
-            const maxNumber =
-              workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
-            const nextNumber = maxNumber + 1;
-
-            workflowName = projectId
-              ? `New Project Workflow ${nextNumber}`
-              : `My workflow ${nextNumber}`;
-          }
-
-          setWorkflowName(workflowName);
-        } catch (error) {
-          console.error("Error generating workflow name:", error);
-          // Fallback to default names
+          const name = await generateNewWorkflowName(!!projectId);
+          setWorkflowName(name);
+        } catch {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
-
         setNodes(initialNodes);
         setEdges(initialEdges);
         setIsActive(false);
         setLoading(false);
         setHasLoadedWorkflowId("new");
       } else if (workflowId && workflowId !== hasLoadedWorkflowId) {
-        // Load specific existing workflow only if it's different from what we've loaded
+        // Load existing workflow via persistence hook
         setLoading(true);
-        try {
-          const { data, error } = await supabase
-            .from("workflows")
-            .select("*")
-            .eq("id", workflowId)
-            .eq("user_id", authUser.id)
-            .single();
-
-          if (data && !error) {
-            setWorkflowName(data.name || "Untitled Workflow");
-            setIsActive(!!data.is_active);
-
-            // Load nodes and edges
-            if (data.nodes && Array.isArray(data.nodes)) {
-              // Restore node definitions from manifest when loading from database
-              const restoredNodes = (data.nodes as unknown as Node[]).map(
-                (node) => {
-                  // Use node.name (new format) or node.id (old format) to look up the definition
-                  const nodeName = (node as any).name || node.id;
-                  const definition =
-                    node.data?.definition ||
-                    nodeManifest[nodeName as keyof typeof nodeManifest];
-
-                  return {
-                    ...node,
-                    // Set React Flow's type to the manifest key for proper rendering
-                    type: nodeName,
-                    data: {
-                      ...node.data,
-                      definition,
-                      // Ensure values are properly mapped to data.values for BaseNode to use
-                      values: (node as any).values || node.data?.values || {},
-                      // Restore display name for backward compatibility
-                      displayName: node.id,
-                    },
-                  };
-                },
-              );
-              setNodes(restoredNodes);
-
-              // Clean up invalid edges after nodes are set
-              if (data.edges && Array.isArray(data.edges)) {
-                const validEdges = (data.edges as unknown as Edge[]).filter(
-                  (edge) => {
-                    // Check if edge connects to a valid source handle
-                    const sourceNode = restoredNodes.find(
-                      (n) => n.id === edge.source,
-                    );
-                    if (!sourceNode || !edge.sourceHandle) return true; // Keep non-handle edges
-
-                    // For Switch nodes, validate that the sourceHandle exists in cases
-                    const nodeDefinition = sourceNode.data?.definition as any;
-                    const nodeType = nodeDefinition?.name;
-                    if (nodeType === "Switch") {
-                      const cases =
-                        sourceNode.data?.values?.cases ||
-                        (sourceNode as any).values?.cases ||
-                        [];
-                      const validHandles = cases.map(
-                        (c: any) =>
-                          c.outputName ||
-                          c.caseName ||
-                          c.caseValue ||
-                          `case${cases.indexOf(c) + 1}`,
-                      );
-                      const enableFallbackToggle =
-                        sourceNode.data?.values?.enableFallback ??
-                        (sourceNode as any).values?.enableFallback;
-                      const fallbackEnabled =
-                        typeof enableFallbackToggle === "boolean"
-                          ? enableFallbackToggle
-                          : ((sourceNode.data?.definition as any)?.fields?.find(
-                              (f: any) => f.key === "enableFallback",
-                            )?.default ?? true);
-
-                      if (fallbackEnabled) {
-                        validHandles.push(
-                          sourceNode.data?.values?.defaultCase || "fallback",
-                        ); // Add default handle
-                      }
-
-                      if (!validHandles.includes(edge.sourceHandle)) {
-                        console.log(
-                          `🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`,
-                        );
-                        return false; // Remove invalid edge
-                      }
-                    }
-
-                    return true; // Keep valid edge
-                  },
-                );
-
-                setEdges(
-                  validEdges.map((e) => ({
-                    ...e,
-                    type: e.type || "removable",
-                    data: {
-                      ...(e.data || {}),
-                      onRemoveEdge: () => removeEdge(e.id),
-                    },
-                  })),
-                );
-              }
-            } else if (data.edges && Array.isArray(data.edges)) {
-              // If no nodes but edges exist, just set edges directly
-              setEdges(
-                (data.edges as unknown as Edge[]).map((e) => ({
-                  ...e,
-                  type: e.type || "removable",
-                  data: {
-                    ...(e.data || {}),
-                    onRemoveEdge: () => removeEdge(e.id),
-                  },
-                })),
-              );
-            }
-            setHasLoadedWorkflowId(workflowId);
-          } else {
-            console.error("Workflow not found or access denied");
-            navigate("/dashboard/workflows");
-          }
-        } catch (error) {
-          console.error("Error loading workflow:", error);
+        const loaded = await persistLoadWorkflow(workflowId, removeEdge);
+        if (loaded) {
+          setWorkflowName(loaded.name);
+          setIsActive(loaded.isActive);
+          setNodes(loaded.nodes);
+          setEdges(loaded.edges);
+          setHasLoadedWorkflowId(workflowId);
+        } else {
           navigate("/dashboard/workflows");
         }
         setLoading(false);
       }
     };
 
-    loadWorkflow();
+    doLoad();
   }, [
     authUser?.id,
     authLoading,
@@ -1710,12 +1454,12 @@ const WorkflowEditorContent = () => {
 
           <Button
             onClick={() => handleSaveWorkflow()}
-            disabled={loading}
+            disabled={loading || persistSaving}
             variant="outline"
             className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
           >
             <Save className="h-4 w-4 mr-2" />
-            {loading ? "Saving..." : "Save"}
+            {persistSaving ? "Saving..." : "Save"}
           </Button>
 
           <Button
@@ -1924,11 +1668,7 @@ const WorkflowEditorContent = () => {
             <AlertDialogAction
               onClick={async () => {
                 setPendingSaveData(null);
-                // Create version before saving
-                if (workflowId) {
-                  await createVersionBeforeSave(workflowId);
-                }
-                // Now save with skipConfirmation flag
+                // Save with skipConfirmation — versioning handled inside saveWorkflow
                 await handleSaveWorkflow(true);
               }}
             >

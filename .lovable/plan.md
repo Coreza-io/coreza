@@ -1,56 +1,53 @@
 
 
-# Updated Plan: `useWorkflowPersistence` + `getVisibleValues` Fix
+# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
 
-## Key Finding
+## What Changed in Alpaca (the reference)
 
-`WorkflowEditor.tsx` line 760 saves **raw values** without filtering hidden fields:
-```ts
-values: n.data.values ?? n.data.fieldState ?? {},
-```
+1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
+2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
+3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
+4. **Description**: Updated to mention order fills and If node routing
 
-Meanwhile, `useWorkflowState.ts` (the dead code) correctly uses `getVisibleValues()` at line 186 to strip values of fields hidden by `displayOptions`. This is the **one useful thing** in the dead file — and it's not being used.
+## What Needs to Change in Binance
 
-## Impact
+### 1. `BinanceStreamData.json` — Stream trigger node
 
-Without `getVisibleValues`, saved workflows contain stale values from fields that were visible at one point but later hidden (e.g., user selects "market" order type, the "limit price" field hides, but its old value still gets saved). This can cause confusion on reload or bugs during execution if those phantom values are read.
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
+| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
+| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
+| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
+| `height` | 280 | 320 (slightly taller for multiselect) |
 
-## Plan (addition to previous plan)
+### 2. `BinanceSubscribe.json` — Subscription node
 
-Everything from the previous plan stays. Add this:
+| Field | Current | Target |
+|---|---|---|
+| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
+| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
+| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
+| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
 
-### In `useWorkflowPersistence.ts` (new hook)
+### 3. No Backend Changes Needed
 
-Import and use `getVisibleValues` from `@/utils/fieldVisibility` in the save serialization:
+The backend `stream.ts` route already:
+- Parses `stream_types` as array (lines 108-112)
+- Splits out `order_update` to `binance_trading` source (lines 114-131)
+- Passes remaining types to market subscription
+- Handles both Alpaca and Binance identically
 
-```ts
-import { getVisibleValues } from '@/utils/fieldVisibility';
+## Key Difference from Alpaca
 
-// Inside saveWorkflow:
-const minimalNodes = nodes.map(n => ({
-  id: n.id,
-  name: (n.data.definition as any)?.name,
-  node_type: (n.data.definition as any)?.node_type,
-  category: (n.data.definition as any)?.category,
-  subCategory: (n.data.definition as any)?.subCategory,
-  provider: (n.data.definition as any)?.provider,
-  position: n.position,
-  sourcePosition: n.sourcePosition,
-  targetPosition: n.targetPosition,
-  values: getVisibleValues(
-    n.data.definition as any,
-    (n.data.values as Record<string, any>) || {}
-  ),
-  executionMode: (n.data.definition as any)?.executionMode,
-  streamingConfig: (n.data.definition as any)?.streamingConfig,
-}));
-```
+Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
 
-### Summary of all changes
+## Files to Edit
 
-| File | Change |
+| File | Changes |
 |---|---|
-| `src/hooks/useWorkflowPersistence.ts` | **New** — save/load/unsaved-changes hook, uses `getVisibleValues` for clean serialization |
-| `src/hooks/useWorkflowState.ts` | **Delete** — dead code |
-| `src/pages/WorkflowEditor.tsx` | Replace inline save/load with `useWorkflowPersistence`. Line 760 raw `values` replaced by `getVisibleValues` call via the new hook. ~200 lines removed. |
+| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
+| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
 

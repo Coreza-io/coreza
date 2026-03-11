@@ -16,14 +16,9 @@
 
 import React, { useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";

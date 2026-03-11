@@ -60,19 +60,14 @@ export class BacktestSession {
   private normalizeBarPayload(event: BarEvent, isLast: boolean) {
     const bar = event.bar;
     return {
+      BarSeries: [
+        {
+          symbol: event.symbol,
+          interval: event.interval,
+          bars: [bar],
+        },
+      ],
       barIndex: event.barIndex,
-      bar,
-      symbol: event.symbol,
-      timeframe: event.interval,
-      resolution: event.interval,
-      timestamp: bar?.time,
-      open: bar?.open,
-      high: bar?.high,
-      low: bar?.low,
-      close: bar?.close,
-      volume: bar?.volume,
-      vwap: bar?.vwap,
-      tradeCount: bar?.trades,
       isLast,
       total_bars: this.totalBars,
     };

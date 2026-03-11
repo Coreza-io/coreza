@@ -16,14 +16,9 @@
 
 import React, { useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
@@ -198,25 +193,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
       {!isVisualize && (
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {incomingEdgeCount >= 2 && (
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Merge Mode</p>
-              <Select
-                value={fieldState.mergeMode ?? "all"}
-                onValueChange={(value) => handleChange("mergeMode", value)}
-                disabled={readOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Wait for all inputs" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Wait for all inputs</SelectItem>
-                  <SelectItem value="any">Continue on any input</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           {(definition.fields || []).map((f: any) => (
             <NodeFieldRenderer
               key={f.key}
@@ -250,6 +226,22 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           {error && (
             <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
               {error}
+            </div>
+          )}
+
+          {!readOnly && incomingEdgeCount >= 2 && (
+            <div className="flex items-center justify-between pt-1">
+              <Label htmlFor="merge-mode" className="text-xs text-muted-foreground cursor-pointer">
+                Continue on any input
+              </Label>
+              <Switch
+                id="merge-mode"
+                checked={(fieldState.mergeMode ?? "all") === "any"}
+                onCheckedChange={(checked) =>
+                  handleChange("mergeMode", checked ? "any" : "all")
+                }
+                disabled={readOnly}
+              />
             </div>
           )}
 

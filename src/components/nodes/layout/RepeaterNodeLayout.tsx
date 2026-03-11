@@ -16,6 +16,8 @@
 
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -515,24 +517,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
-        {incomingEdgeCount >= 2 && (
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Merge Mode</p>
-            <Select
-              value={fieldState.mergeMode ?? "all"}
-              onValueChange={(value) => handleChange("mergeMode", value)}
-              disabled={readOnly}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Wait for all inputs" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wait for all inputs</SelectItem>
-                <SelectItem value="any">Continue on any input</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
@@ -937,6 +921,23 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 readOnly={readOnly}
               />
             )}
+          </div>
+        )}
+
+        {/* Merge Mode Toggle */}
+        {!readOnly && incomingEdgeCount >= 2 && (
+          <div className="flex items-center justify-between pt-1">
+            <Label htmlFor="merge-mode-repeater" className="text-xs text-muted-foreground cursor-pointer">
+              Continue on any input
+            </Label>
+            <Switch
+              id="merge-mode-repeater"
+              checked={(fieldState.mergeMode ?? "all") === "any"}
+              onCheckedChange={(checked) =>
+                handleChange("mergeMode", checked ? "any" : "all")
+              }
+              disabled={readOnly}
+            />
           </div>
         )}
 

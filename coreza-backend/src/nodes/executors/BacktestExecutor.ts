@@ -565,7 +565,7 @@ export class BacktestExecutor implements INodeExecutor {
       const simBroker = this.getSimBroker(backtestId);
 
       // Parse current bar from input (passed from loop iteration)
-      const currentBar = this.parseBar(params.current_bar || input);
+      const currentBar = params.current_bar;
 
       // If we have a current bar, process pending orders first - SYNCHRONOUS
       if (currentBar) {

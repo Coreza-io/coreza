@@ -975,187 +975,39 @@ const WorkflowEditorContent = () => {
       return;
     }
 
-    const loadWorkflow = async () => {
-      // Load workflow - either start fresh for new workflow or load specific existing workflow
+    const doLoad = async () => {
       if (isNewWorkflow) {
-        // For ALL new workflows, start completely fresh
-        // Generate smart workflow name based on existing workflows
+        // New workflow — generate smart name, start fresh
         setLoading(true);
         try {
-          // Get existing workflow names to determine next number
-          const { data: existingWorkflows, error } = await supabase
-            .from("workflows")
-            .select("name")
-            .eq("user_id", authUser.id);
-
-          let workflowName = "My workflow 1";
-
-          if (!error && existingWorkflows) {
-            // Find the highest number in existing "My workflow X" names
-            const workflowNumbers = existingWorkflows
-              .map((w) => w.name)
-              .filter((name) => name.startsWith("My workflow "))
-              .map((name) => {
-                const match = name.match(/My workflow (\d+)/);
-                return match ? parseInt(match[1]) : 0;
-              })
-              .filter((num) => !isNaN(num));
-
-            const maxNumber =
-              workflowNumbers.length > 0 ? Math.max(...workflowNumbers) : 0;
-            const nextNumber = maxNumber + 1;
-
-            workflowName = projectId
-              ? `New Project Workflow ${nextNumber}`
-              : `My workflow ${nextNumber}`;
-          }
-
-          setWorkflowName(workflowName);
-        } catch (error) {
-          console.error("Error generating workflow name:", error);
-          // Fallback to default names
+          const name = await generateNewWorkflowName(!!projectId);
+          setWorkflowName(name);
+        } catch {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
-
         setNodes(initialNodes);
         setEdges(initialEdges);
         setIsActive(false);
         setLoading(false);
         setHasLoadedWorkflowId("new");
       } else if (workflowId && workflowId !== hasLoadedWorkflowId) {
-        // Load specific existing workflow only if it's different from what we've loaded
+        // Load existing workflow via persistence hook
         setLoading(true);
-        try {
-          const { data, error } = await supabase
-            .from("workflows")
-            .select("*")
-            .eq("id", workflowId)
-            .eq("user_id", authUser.id)
-            .single();
-
-          if (data && !error) {
-            setWorkflowName(data.name || "Untitled Workflow");
-            setIsActive(!!data.is_active);
-
-            // Load nodes and edges
-            if (data.nodes && Array.isArray(data.nodes)) {
-              // Restore node definitions from manifest when loading from database
-              const restoredNodes = (data.nodes as unknown as Node[]).map(
-                (node) => {
-                  // Use node.name (new format) or node.id (old format) to look up the definition
-                  const nodeName = (node as any).name || node.id;
-                  const definition =
-                    node.data?.definition ||
-                    nodeManifest[nodeName as keyof typeof nodeManifest];
-
-                  return {
-                    ...node,
-                    // Set React Flow's type to the manifest key for proper rendering
-                    type: nodeName,
-                    data: {
-                      ...node.data,
-                      definition,
-                      // Ensure values are properly mapped to data.values for BaseNode to use
-                      values: (node as any).values || node.data?.values || {},
-                      // Restore display name for backward compatibility
-                      displayName: node.id,
-                    },
-                  };
-                },
-              );
-              setNodes(restoredNodes);
-
-              // Clean up invalid edges after nodes are set
-              if (data.edges && Array.isArray(data.edges)) {
-                const validEdges = (data.edges as unknown as Edge[]).filter(
-                  (edge) => {
-                    // Check if edge connects to a valid source handle
-                    const sourceNode = restoredNodes.find(
-                      (n) => n.id === edge.source,
-                    );
-                    if (!sourceNode || !edge.sourceHandle) return true; // Keep non-handle edges
-
-                    // For Switch nodes, validate that the sourceHandle exists in cases
-                    const nodeDefinition = sourceNode.data?.definition as any;
-                    const nodeType = nodeDefinition?.name;
-                    if (nodeType === "Switch") {
-                      const cases =
-                        sourceNode.data?.values?.cases ||
-                        (sourceNode as any).values?.cases ||
-                        [];
-                      const validHandles = cases.map(
-                        (c: any) =>
-                          c.outputName ||
-                          c.caseName ||
-                          c.caseValue ||
-                          `case${cases.indexOf(c) + 1}`,
-                      );
-                      const enableFallbackToggle =
-                        sourceNode.data?.values?.enableFallback ??
-                        (sourceNode as any).values?.enableFallback;
-                      const fallbackEnabled =
-                        typeof enableFallbackToggle === "boolean"
-                          ? enableFallbackToggle
-                          : ((sourceNode.data?.definition as any)?.fields?.find(
-                              (f: any) => f.key === "enableFallback",
-                            )?.default ?? true);
-
-                      if (fallbackEnabled) {
-                        validHandles.push(
-                          sourceNode.data?.values?.defaultCase || "fallback",
-                        ); // Add default handle
-                      }
-
-                      if (!validHandles.includes(edge.sourceHandle)) {
-                        console.log(
-                          `🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`,
-                        );
-                        return false; // Remove invalid edge
-                      }
-                    }
-
-                    return true; // Keep valid edge
-                  },
-                );
-
-                setEdges(
-                  validEdges.map((e) => ({
-                    ...e,
-                    type: e.type || "removable",
-                    data: {
-                      ...(e.data || {}),
-                      onRemoveEdge: () => removeEdge(e.id),
-                    },
-                  })),
-                );
-              }
-            } else if (data.edges && Array.isArray(data.edges)) {
-              // If no nodes but edges exist, just set edges directly
-              setEdges(
-                (data.edges as unknown as Edge[]).map((e) => ({
-                  ...e,
-                  type: e.type || "removable",
-                  data: {
-                    ...(e.data || {}),
-                    onRemoveEdge: () => removeEdge(e.id),
-                  },
-                })),
-              );
-            }
-            setHasLoadedWorkflowId(workflowId);
-          } else {
-            console.error("Workflow not found or access denied");
-            navigate("/dashboard/workflows");
-          }
-        } catch (error) {
-          console.error("Error loading workflow:", error);
+        const loaded = await persistLoadWorkflow(workflowId, removeEdge);
+        if (loaded) {
+          setWorkflowName(loaded.name);
+          setIsActive(loaded.isActive);
+          setNodes(loaded.nodes);
+          setEdges(loaded.edges);
+          setHasLoadedWorkflowId(workflowId);
+        } else {
           navigate("/dashboard/workflows");
         }
         setLoading(false);
       }
     };
 
-    loadWorkflow();
+    doLoad();
   }, [
     authUser?.id,
     authLoading,

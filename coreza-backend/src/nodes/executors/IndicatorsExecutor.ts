@@ -34,6 +34,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
   private readonly initExecutor = new InitializeIndicatorsExecutor();
   private readonly indicatorKeyCache = new Map<string, string>();
+  private cachedRunId: string | null = null;
 
   async execute(
     node: WorkflowNode,
@@ -42,6 +43,11 @@ export class IndicatorsExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     //const startTime = Date.now();
     try {
+      const runId = context?.runId;
+      if (runId && runId !== this.cachedRunId) {
+        this.indicatorKeyCache.clear();
+        this.cachedRunId = runId;
+      }
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
 
       // Delegate to InitializeIndicatorsExecutor

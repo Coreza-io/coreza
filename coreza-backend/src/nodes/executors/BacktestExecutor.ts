@@ -564,17 +564,19 @@ export class BacktestExecutor implements INodeExecutor {
       // Get SimBroker instance from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      // Parse current bar from input (passed from loop iteration)
-      let currentBar;
+      const currentBar = parseBar(params.current_bar);
 
-      try {
-        currentBar =
-          typeof params.current_bar === "string"
-            ? JSON.parse(params.current_bar)
-            : params.current_bar;
-      } catch {
-        throw new Error("Invalid current_bar JSON");
-      }
+      // Parse current bar from input (passed from loop iteration)
+      // let currentBar;
+
+      // try {
+      //   currentBar =
+      //     typeof params.current_bar === "string"
+      //       ? JSON.parse(params.current_bar)
+      //       : params.current_bar;
+      // } catch {
+      //   throw new Error("Invalid current_bar JSON");
+      // }
 
       // If we have a current bar, process pending orders first - SYNCHRONOUS
       if (currentBar) {
@@ -891,9 +893,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const simBroker = this.getSimBroker(backtestId);
       const operation = params.operation || "get_portfolio";
-      const currentBar = this.parseBar(params.current_bar);
+      const currentBar = parseBar(params.current_bar);
       const symbol = params.symbol;
-      const prices = this.parsePrices(params.prices);
+      const prices = parsePrices(params.prices);
 
       // If pricing data is provided, mark-to-market BEFORE reading portfolio data
       if (

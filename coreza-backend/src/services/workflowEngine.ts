@@ -1051,8 +1051,8 @@ export class WorkflowEngine {
     > = {};
 
     for (const [id, timing] of this.nodeTiming) {
-      const node = this.nodeById.get(id);
-      const label = node?.name ?? id;
+      //const node = this.nodeById.get(id);
+      const label = id;
       result[label] = {
         avgMs: +(timing.totalMs / timing.count).toFixed(3),
         totalMs: +timing.totalMs.toFixed(3),

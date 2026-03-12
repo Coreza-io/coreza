@@ -34,6 +34,7 @@ import { RollingWindow } from "../../services/RollingWindow";
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
   private scopedKeyCache = new Map<string, string>();
+  private cachedRunId: string | null = null;
 
   async execute(
     node: WorkflowNode,
@@ -41,6 +42,11 @@ export class DataSourceExecutor implements INodeExecutor {
     context?: any,
   ): Promise<NodeResult> {
     try {
+      const runId = context?.runId;
+      if (runId && runId !== this.cachedRunId) {
+        this.scopedKeyCache.clear();
+        this.cachedRunId = runId;
+      }
       const nodeName = node.subCategory ?? node.name;
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters

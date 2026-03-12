@@ -1,60 +1,107 @@
+# Backtest Performance Analysis & Optimization Plan
+
+## Analysis
+
+136,296 bars across 30 nodes. Total wall time ≈ **460 seconds** (7.7 min). Per-bar cost ≈ 3.4ms.
+
+### Top offenders by total time
 
 
-# Verified: `scopedKeyCache` and `indicatorKeyCache` Staleness Bug
+| Node                     | Avg (ms)  | Total (s) | % of total |
+| ------------------------ | --------- | --------- | ---------- |
+| **RollingWindow**        | 0.51      | 69.5      | 15.1%      |
+| **RollingWindow1**       | 0.47      | 63.8      | 13.9%      |
+| **Bollinger Bands**      | 0.33      | 45.3      | 9.8%       |
+| **VolumeOscillator**     | 0.33      | 44.5      | 9.7%       |
+| **updatePortfolioValue** | 0.27      | 37.0      | 8.0%       |
+| **OnBar**                | 0.21      | 28.4      | 6.2%       |
+| **getPosition**          | 0.19      | 25.2      | 5.5%       |
+| Compute nodes (7×)       | 0.14-0.17 | ~150      | 32.6%      |
 
-## Finding
 
-**This is a confirmed bug**, but with limited blast radius in practice.
+### Root causes
 
-### Root Cause
+**1. RollingWindow (29% combined)** — The biggest problem. Each call:
 
-- Executors (`DataSourceExecutor`, `IndicatorsExecutor`) are **global singletons** — created once at process startup in `initializeNodeExecutors()` and stored in a static registry.
-- The caches (`scopedKeyCache`, `indicatorKeyCache`) are `Map<nodeId, key>` on these singletons.
-- Both `buildExecutionScopedKey` and `buildIndicatorKey` embed `runId` in the key string (e.g., `user:X:workflow:Y:runId:Z:node:N:...`).
-- Across separate backtest runs, `runId` changes but `node.id` stays the same, so the cache returns a key containing the **old `runId`**.
+- Calls `buildExecutionScopedKey()` to construct a string key
+- Calls `dataContext.getDataByKey()` to retrieve window
+- Parses `candle_data` (JSON.parse or type checks)
+- Spreads entire window into a new array: `[...window.values()]` — **O(window_size)** copy every bar
+- Constructs a full result object with `latest`, `count`, `isReady`, `remaining`
 
-### Impact Assessment
+For a window size of, say, 50 — that's 50-element array copy × 136K bars × 2 windows = **13.6M array copies**.
 
-| Scenario | Risk |
-|---|---|
-| **BacktestSession** | Creates a new `WorkflowEngine` per run, but reuses the singleton executors. `runId` is constant within a session but different across sessions. **Stale keys would point to wrong state in L1/Redis.** |
-| **LiveStrategyRunner** | Uses a stable `runId` per strategy lifetime. Safe within a single strategy, but stale across restarts if executor persists. |
-| **Warm Engine Pool** | Reuses engines with `reset()` which assigns a new `runId`. Same executor singletons would serve stale cached keys. |
+**2. Indicators (Bollinger, VolumeOsc — 19.5%)** — The `IndicatorsExecutor` on every call:
 
-In practice, the bug is mitigated because:
-1. **L1 cache is per-`IndicatorStateManager` instance** — a new one is created per backtest, so even a stale key would miss in L1 and fall through to warmup. The warmup would populate L1 under the stale key, but the indicator math would still be correct (same data, same params).
-2. **RollingWindow state lives in `DataContext`** which is recreated per run (via `reset()`) or preserved within a run (via `resetLight()`). A stale scoped key would miss in `DataContext`, creating a fresh `RollingWindow` — correct behavior, but bypassing the cache benefit.
+- Parses `candle_data` (JSON.parse or Array.isArray checks)
+- Calls `buildIndicatorKey()` (string concatenation)
+- Calls `stateManager.getState()` (Map lookup + possible async)
+- Calls `stateManager.update()` (async)
+- Wraps result through `normalizeOutput()` + `toNodeResult()`
 
-So the caches simply **don't help across runs** rather than causing incorrect results. But this is still worth fixing for correctness and to actually get the caching benefit in scenarios where the same executor handles consecutive runs.
+The actual indicator math is O(1), but the executor overhead dominates.
 
-## Recommended Fix
+**4. Portfolio operations (13.5%)** — `updatePortfolioValue` and `getPosition` call `resolveNodeParameters`, parse `current_bar` via `parseBar()`, look up SimBroker instance, and wrap results — every single bar.
 
-Clear both caches when a new run starts. Two options:
+## Optimization Plan
 
-**Option A (simple):** Add a `clearCaches()` method to each executor, called from `WorkflowEngine.reset()` / `resetLight()`. This requires the engine to hold references to executors, which it doesn't currently.
+### Phase 1: Quick wins (est. -30-40% total time)
 
-**Option B (self-clearing, no engine changes):** Track the current `runId` in each executor. At the start of `execute()`, if `context.runId` differs from the stored `runId`, clear the cache and update the stored `runId`. This is self-contained — no changes to WorkflowEngine or registry needed.
+**1a. Eliminate RollingWindow array copy** — `[...window.values()]` creates a new array every bar. Instead, return the buffer reference directly (or a lightweight proxy). The downstream nodes only need `latest and previous` and `isReady` most of the time.
 
-```text
-// In each executor:
-private cachedRunId: string | null = null;
 
-execute(node, input, context) {
-  const runId = context?.runId;
-  if (runId && runId !== this.cachedRunId) {
-    this.scopedKeyCache.clear();   // or indicatorKeyCache
-    this.cachedRunId = runId;
-  }
-  // ... rest of execute
-}
-```
+| File                               | Change                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `DataSourceExecutor.ts` (line 266) | Replace `window: [...window.values()]` with `window: window.values()` (returns readonly ref). Only spread when explicitly needed. |
 
-This adds one string comparison per `execute()` call — negligible cost.
 
-### Files to Change
+**1b. Cache `buildExecutionScopedKey` result** — The key inputs (userId, workflowId, runId, nodeId, symbol, timeframe) never change within a backtest. Cache the computed key on first call.
 
-| File | Change |
-|---|---|
-| `DataSourceExecutor.ts` | Add `cachedRunId` field, clear `scopedKeyCache` on runId change |
-| `IndicatorsExecutor.ts` | Add `cachedRunId` field, clear `indicatorKeyCache` on runId change |
 
+| File                    | Change                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| `DataSourceExecutor.ts` | Add a `Map<string, string>` cache for scoped keys, keyed by nodeId. |
+
+
+**1c. Skip JSON.parse for candle_data when already an object** — The RollingWindow executor already has type checks, but the branching and try/catch per bar adds up. Pre-check and fast-path when input is already a single object (the common backtest case).
+
+### Phase 2: Reduce indicator overhead (est. -15-20%)
+
+**2a. Make `stateManager.getState()` synchronous** — During backtest, state is always in the L1 (in-memory) cache. Remove the `async/await` from the hot path by adding a synchronous `getStateSync()` method that reads directly from the Map without promise wrapping.
+
+
+| File                       | Change                                                       |
+| -------------------------- | ------------------------------------------------------------ |
+| `indicatorStateManager.ts` | Add `getStateSync(key)` that returns from L1 cache directly. |
+| `IndicatorsExecutor.ts`    | Use sync path when `context.silent` (backtest mode).         |
+
+
+**2b. Cache `buildIndicatorKey` per node** — Same as 1b. The key is deterministic per node within a run.
+
+### Phase 3: Reduce engine per-node overhead (est. -10-15%)
+
+**3b. Lightweight result wrapping in silent mode** — `normalizeOutput` and `toNodeResult` create wrapper objects with metadata (nodeId, nodeName, timing). In backtest/silent mode, skip the metadata and return a minimal `{ success: true, data }` shape.
+
+
+| File                 | Change                                                                     |
+| -------------------- | -------------------------------------------------------------------------- |
+| `normalizeOutput.ts` | Add a fast path that skips metadata enrichment when no options are passed. |
+| Executor files       | In silent/backtest mode, use the lean path.                                |
+
+
+
+
+This is a larger refactor and can be deferred, but would save ~18s on this specific workflow.
+
+## Summary
+
+
+| Phase                  | Target           | Est. savings    |
+| ---------------------- | ---------------- | --------------- |
+| 1: RollingWindow fixes | 133s → ~70s      | ~60s            |
+| 2: Indicator sync path | 90s → ~60s       | ~30s            |
+| 3: Engine overhead     | 150s → ~110s     | ~40s            |
+| **Total**              | **460s → ~330s** | **~130s (28%)** |
+
+
+The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.

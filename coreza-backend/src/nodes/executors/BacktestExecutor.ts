@@ -35,6 +35,8 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
+  leanSuccess,
+  leanError,
 } from "../../utils/normalizeOutput";
 import { discoverIndicators } from "./InitializeIndicatorsExecutor";
 import {
@@ -520,8 +522,9 @@ export class BacktestExecutor implements INodeExecutor {
     const barIndex = data?.barIndex;
     const timeframe = data?.interval;
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         BarSeries: [
           {
             symbol,
@@ -530,8 +533,8 @@ export class BacktestExecutor implements INodeExecutor {
           },
         ],
         barIndex,
-      }),
-    );
+      },
+    });
   }
 
   // ============== BACKTEST TRADE ==============
@@ -547,7 +550,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required"));
+        return leanError("backtest_id is required");
       }
 
       const symbol = params.symbol;
@@ -556,9 +559,7 @@ export class BacktestExecutor implements INodeExecutor {
       const orderType = params.order_type || "market";
 
       if (!symbol || !side || !quantity) {
-        return toNodeResult(
-          createErrorOutput("symbol, side, and quantity are required"),
-        );
+        return leanError("symbol, side, and quantity are required");
       }
 
       // Get SimBroker instance from executor cache - SYNCHRONOUS
@@ -598,9 +599,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       if (!orderResult.success) {
-        return toNodeResult(
-          createErrorOutput(orderResult.error || "Order failed"),
-        );
+        return leanError(orderResult.error || "Order failed");
       }
 
       // For immediate fill model only, attempt same-bar fill of just this order.
@@ -617,8 +616,9 @@ export class BacktestExecutor implements INodeExecutor {
       const totalEquity = simBroker.getTotalEquity();
 
       if (fill) {
-        return toNodeResult(
-          createSuccessOutput({
+        return leanSuccess({
+          success: true,
+          data: {
             order_id: orderResult.orderId,
             order_status: "filled",
             fill_price: fill.fillPrice,
@@ -634,12 +634,13 @@ export class BacktestExecutor implements INodeExecutor {
             total_equity: totalEquity,
             pending_orders: pendingOrders.length,
             pending_orders_count: pendingOrders.length,
-          }),
-        );
+          },
+        });
       }
 
-      return toNodeResult(
-        createSuccessOutput({
+      return leanSuccess({
+        success: true,
+        data: {
           order_id: orderResult.orderId,
           order_status: orderResult.status,
           symbol,
@@ -651,11 +652,11 @@ export class BacktestExecutor implements INodeExecutor {
           total_equity: totalEquity,
           pending_orders: pendingOrders.length,
           pending_orders_count: pendingOrders.length,
-        }),
-      );
+        },
+      });
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
-      return toNodeResult(createErrorOutput(error));
+      return leanError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -888,7 +889,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required"));
+        return leanError("backtest_id is required");
       }
 
       const simBroker = this.getSimBroker(backtestId);
@@ -933,13 +934,11 @@ export class BacktestExecutor implements INodeExecutor {
           return this.portfolioGetTrades(simBroker);
 
         default:
-          return toNodeResult(
-            createErrorOutput(`Unknown portfolio operation: ${operation}`),
-          );
+          return leanError(`Unknown portfolio operation: ${operation}`);
       }
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
-      return toNodeResult(createErrorOutput(error));
+      return leanError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -964,8 +963,9 @@ export class BacktestExecutor implements INodeExecutor {
     );
     const pendingOrders = simBroker.getPendingOrders();
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         cash: state.cash,
         initial_capital: initialCapital,
         positions: formattedPositions,
@@ -980,8 +980,8 @@ export class BacktestExecutor implements INodeExecutor {
         pending_orders_count: pendingOrders.length,
         trades: state.trades,
         trades_count: state.trades.length,
-      }),
-    );
+      },
+    });
   }
 
   private portfolioGetPosition(
@@ -989,9 +989,7 @@ export class BacktestExecutor implements INodeExecutor {
     symbol?: string,
   ): NodeResult {
     if (!symbol) {
-      return toNodeResult(
-        createErrorOutput("'symbol' is required for get_position"),
-      );
+      return leanError("'symbol' is required for get_position");
     }
 
     const position = simBroker.getPosition(symbol);
@@ -1004,8 +1002,9 @@ export class BacktestExecutor implements INodeExecutor {
     const unrealizedPnlValue = position?.unrealizedPnl || 0;
     const realizedPnlValue = position?.realizedPnl || 0;
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         has_position: !!position,
         position: formattedPosition,
         symbol,
@@ -1018,8 +1017,8 @@ export class BacktestExecutor implements INodeExecutor {
         realized_pnl_pct: toPercent(realizedPnlValue, positionCostBasis),
         realized_pnl: realizedPnlValue,
         market_value: position?.marketValue || 0,
-      }),
-    );
+      },
+    });
   }
 
   private portfolioUpdateMTM(
@@ -1029,11 +1028,7 @@ export class BacktestExecutor implements INodeExecutor {
     prices?: Record<string, number> | null,
   ): NodeResult {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
-      return toNodeResult(
-        createErrorOutput(
-          "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
-        ),
-      );
+      return leanError("Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm");
     }
 
     // MTM was already applied in the main dispatch path
@@ -1043,13 +1038,14 @@ export class BacktestExecutor implements INodeExecutor {
   private portfolioGetCash(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         cash: state.cash,
         buying_power: state.cash,
         initial_capital: simBroker.getConfig().initialCapital,
-      }),
-    );
+      },
+    });
   }
 
   private portfolioGetEquity(simBroker: SimBroker): NodeResult {
@@ -1063,8 +1059,9 @@ export class BacktestExecutor implements INodeExecutor {
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
     const initialCapital = simBroker.getConfig().initialCapital;
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         total_equity: totalEquity,
         cash: state.cash,
         positions_value: positionsValue,
@@ -1072,19 +1069,20 @@ export class BacktestExecutor implements INodeExecutor {
         return_pct: ((totalEquity - initialCapital) / initialCapital) * 100,
         peak_equity: peak,
         drawdown_pct: drawdownPct,
-      }),
-    );
+      },
+    });
   }
 
   private portfolioGetPendingOrders(simBroker: SimBroker): NodeResult {
     const orders = simBroker.getPendingOrders();
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         pending_orders: orders,
         count: orders.length,
-      }),
-    );
+      },
+    });
   }
 
   private portfolioGetTrades(simBroker: SimBroker): NodeResult {
@@ -1094,15 +1092,16 @@ export class BacktestExecutor implements INodeExecutor {
       0,
     );
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         trades,
         count: trades.length,
         total_realized_pnl: totalRealizedPnl,
         winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
         losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
-      }),
-    );
+      },
+    });
   }
 
   private resampleToDaily(curve?: EquityPoint[]): EquityPoint[] {

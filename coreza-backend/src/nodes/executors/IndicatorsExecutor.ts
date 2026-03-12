@@ -22,6 +22,7 @@ import {
   normalizeOutput,
   createErrorOutput,
   toNodeResult,
+  leanSuccess,
 } from "../../utils/normalizeOutput";
 import {
   IndicatorStateManager,
@@ -184,14 +185,13 @@ export class IndicatorsExecutor implements INodeExecutor {
             }
           }
 
-          const normalized = normalizeOutput({
+          return leanSuccess({
             success: true,
             data: {
               currentValue: state.currentValue,
               previousValue: state.previousValue,
             },
           });
-          return toNodeResult(normalized);
         }
       }
 

@@ -196,7 +196,6 @@ export class DataSourceExecutor implements INodeExecutor {
     return storageService.execute(params);
   }
 
-
   private executeRollingWindowNode(
     node: WorkflowNode,
     params: Record<string, any>,
@@ -237,7 +236,11 @@ export class DataSourceExecutor implements INodeExecutor {
 
     let bars: any[];
     const rawCandle = params.candle_data;
-    if (rawCandle && typeof rawCandle === "object" && !Array.isArray(rawCandle)) {
+    if (
+      rawCandle &&
+      typeof rawCandle === "object" &&
+      !Array.isArray(rawCandle)
+    ) {
       bars = [rawCandle];
     } else if (Array.isArray(rawCandle)) {
       bars = rawCandle;
@@ -275,7 +278,6 @@ export class DataSourceExecutor implements INodeExecutor {
           isReady: window.isReady,
           remaining: window.size - window.count,
           latest: window.count > 0 ? window.at(0) : null,
-          previous: window.count > 1 ? window.at(1) : null,
         },
         {
           nodeId: node.id,

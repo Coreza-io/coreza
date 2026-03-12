@@ -493,59 +493,12 @@ export class WorkflowEngine {
   }
 
   private areDependenciesSatisfied(nodeId: string): boolean {
-    if (this.isLoopNode(nodeId)) {
-      const loopNode = this.nodeById.get(nodeId);
-      const loopWaits = Boolean((loopNode as any)?.values?.loopWaits);
-      if (!loopWaits) return true;
-    }
-
-    // Filter out edges from "sub" nodes (support nodes like tools/chat models)
     const allIncoming = this.getIncomingEdges(nodeId);
     const required = allIncoming.filter((e) => !this.isSubNode(e.source));
 
     if (required.length === 0) return false;
 
-    const node = this.nodeById.get(nodeId);
-    const mergeMode = ((node as any)?.values?.mergeMode ?? "all") as
-      | "all"
-      | "any";
-
-    const branchGroups = new Map<string, WorkflowEdge[]>();
-    const independentEdges: WorkflowEdge[] = [];
-
-    for (const edge of required) {
-      const origin = this.getBranchOrigin(edge, nodeId);
-      if (!origin) {
-        independentEdges.push(edge);
-        continue;
-      }
-
-      const key = `${origin.ifNodeId}::${nodeId}`;
-      const grouped = branchGroups.get(key) ?? [];
-      grouped.push(edge);
-      branchGroups.set(key, grouped);
-    }
-
-    const hasIndependentEdges = independentEdges.length > 0;
-    const hasBranchGroups = branchGroups.size > 0;
-
-    const independentSatisfied = hasIndependentEdges
-      ? mergeMode === "any"
-        ? independentEdges.some((e) => this.edgePayload.has(e.id))
-        : independentEdges.every((e) => this.edgePayload.has(e.id))
-      : mergeMode === "all";
-
-    // Branch groups always use ANY-of semantics since only one branch can fire.
-    const branchSatisfied = hasBranchGroups
-      ? Array.from(branchGroups.values()).every((group) =>
-          group.some((e) => this.edgePayload.has(e.id)),
-        )
-      : mergeMode === "all";
-
-    return mergeMode === "any"
-      ? (hasIndependentEdges && independentSatisfied) ||
-          (hasBranchGroups && branchSatisfied)
-      : independentSatisfied && branchSatisfied;
+    return required.every((e) => this.edgePayload.has(e.id));
   }
 
   private getBranchOrigin(edge: WorkflowEdge, targetNodeId: string) {
@@ -648,17 +601,22 @@ export class WorkflowEngine {
     payload: any,
     meta?: IterMeta,
   ): Promise<void> {
-    // Sub nodes don't produce workflow output, they just provide config
-    if (this.isSubNode(edge.source)) {
-      console.log(`⏭️ Skipping edge routing from sub node ${edge.source}`);
-      return;
-    }
+    if (this.isSubNode(edge.source)) return;
 
     this.markEdgePayload(edge.id, payload);
-    if (!this.areDependenciesSatisfied(edge.target)) return;
 
-    //const target = this.nodes.find((n) => n.id === edge.target);
-    this.enqueue({ nodeId: edge.target, input: payload, meta });
+    const targetNode = this.nodeById.get(edge.target);
+    const mergeMode = Boolean((targetNode as any)?.values?.mergeMode);
+
+    if (mergeMode) {
+      if (!this.areDependenciesSatisfied(edge.target)) return;
+    }
+
+    this.enqueue({
+      nodeId: edge.target,
+      input: payload,
+      meta,
+    });
   }
 
   private formatExecutionDuration(durationMs: number): string {

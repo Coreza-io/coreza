@@ -523,17 +523,14 @@ export class BacktestExecutor implements INodeExecutor {
     const timeframe = data?.interval;
 
     return leanSuccess({
-      success: true,
-      data: {
-        BarSeries: [
-          {
-            symbol,
-            interval: timeframe,
-            bars: [bar],
-          },
-        ],
-        barIndex,
-      },
+      BarSeries: [
+        {
+          symbol,
+          interval: timeframe,
+          bars: [bar],
+        },
+      ],
+      barIndex,
     });
   }
 
@@ -617,32 +614,12 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (fill) {
         return leanSuccess({
-          success: true,
-          data: {
-            order_id: orderResult.orderId,
-            order_status: "filled",
-            fill_price: fill.fillPrice,
-            fill_quantity: fill.fillQuantity,
-            commission: fill.orderFee?.value ?? 0,
-            slippage: fill.slippage ?? 0,
-            symbol,
-            side,
-            quantity,
-            order_type: orderType,
-            cash,
-            positions,
-            total_equity: totalEquity,
-            pending_orders: pendingOrders.length,
-            pending_orders_count: pendingOrders.length,
-          },
-        });
-      }
-
-      return leanSuccess({
-        success: true,
-        data: {
           order_id: orderResult.orderId,
-          order_status: orderResult.status,
+          order_status: "filled",
+          fill_price: fill.fillPrice,
+          fill_quantity: fill.fillQuantity,
+          commission: fill.orderFee?.value ?? 0,
+          slippage: fill.slippage ?? 0,
           symbol,
           side,
           quantity,
@@ -652,7 +629,21 @@ export class BacktestExecutor implements INodeExecutor {
           total_equity: totalEquity,
           pending_orders: pendingOrders.length,
           pending_orders_count: pendingOrders.length,
-        },
+        });
+      }
+
+      return leanSuccess({
+        order_id: orderResult.orderId,
+        order_status: orderResult.status,
+        symbol,
+        side,
+        quantity,
+        order_type: orderType,
+        cash,
+        positions,
+        total_equity: totalEquity,
+        pending_orders: pendingOrders.length,
+        pending_orders_count: pendingOrders.length,
       });
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
@@ -686,39 +677,37 @@ export class BacktestExecutor implements INodeExecutor {
 
       await this.portfolioFinalize(simBroker, backtestId);
 
-      return toNodeResult(
-        createSuccessOutput({
-          backtest_id: backtestId,
-          metrics: {
-            total_return: metrics.totalReturn,
-            total_return_pct: metrics.totalReturnPct,
-            annualized_return: metrics.annualizedReturn,
-            max_drawdown: metrics.maxDrawdown,
-            max_drawdown_pct: metrics.maxDrawdownPct,
-            sharpe_ratio: metrics.sharpeRatio,
-            sortino_ratio: metrics.sortinoRatio,
-            calmar_ratio: metrics.calmarRatio,
-            total_trades: metrics.totalTrades,
-            winning_trades: metrics.winningTrades,
-            losing_trades: metrics.losingTrades,
-            win_rate: metrics.winRate,
-            profit_factor: metrics.profitFactor,
-            avg_win: metrics.avgWin,
-            avg_loss: metrics.avgLoss,
-            largest_win: metrics.largestWin,
-            largest_loss: metrics.largestLoss,
-            avg_trade_pnl: metrics.avgTradePnl,
-            total_commission: metrics.totalCommission,
-            total_slippage: metrics.totalSlippage,
-            start_date: metrics.startDate,
-            end_date: metrics.endDate,
-            total_bars: metrics.totalBars,
-          },
-          trades_count: trades.length,
-          equity_points: equityCurve.length,
-          final_equity: finalEquity,
-        }),
-      );
+      return leanSuccess({
+        backtest_id: backtestId,
+        metrics: {
+          total_return: metrics.totalReturn,
+          total_return_pct: metrics.totalReturnPct,
+          annualized_return: metrics.annualizedReturn,
+          max_drawdown: metrics.maxDrawdown,
+          max_drawdown_pct: metrics.maxDrawdownPct,
+          sharpe_ratio: metrics.sharpeRatio,
+          sortino_ratio: metrics.sortinoRatio,
+          calmar_ratio: metrics.calmarRatio,
+          total_trades: metrics.totalTrades,
+          winning_trades: metrics.winningTrades,
+          losing_trades: metrics.losingTrades,
+          win_rate: metrics.winRate,
+          profit_factor: metrics.profitFactor,
+          avg_win: metrics.avgWin,
+          avg_loss: metrics.avgLoss,
+          largest_win: metrics.largestWin,
+          largest_loss: metrics.largestLoss,
+          avg_trade_pnl: metrics.avgTradePnl,
+          total_commission: metrics.totalCommission,
+          total_slippage: metrics.totalSlippage,
+          start_date: metrics.startDate,
+          end_date: metrics.endDate,
+          total_bars: metrics.totalBars,
+        },
+        trades_count: trades.length,
+        equity_points: equityCurve.length,
+        final_equity: finalEquity,
+      });
     } catch (error) {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
       return toNodeResult(createErrorOutput(error));
@@ -964,23 +953,20 @@ export class BacktestExecutor implements INodeExecutor {
     const pendingOrders = simBroker.getPendingOrders();
 
     return leanSuccess({
-      success: true,
-      data: {
-        cash: state.cash,
-        initial_capital: initialCapital,
-        positions: formattedPositions,
-        positions_count: positions.length,
-        positions_value: positionsValue,
-        unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
-        unrealized_pnl: unrealizedPnlValue,
-        realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
-        realized_pnl: realizedPnlValue,
-        total_equity: state.cash + positionsValue,
-        pending_orders: pendingOrders,
-        pending_orders_count: pendingOrders.length,
-        trades: state.trades,
-        trades_count: state.trades.length,
-      },
+      cash: state.cash,
+      initial_capital: initialCapital,
+      positions: formattedPositions,
+      positions_count: positions.length,
+      positions_value: positionsValue,
+      unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
+      unrealized_pnl: unrealizedPnlValue,
+      realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
+      realized_pnl: realizedPnlValue,
+      total_equity: state.cash + positionsValue,
+      pending_orders: pendingOrders,
+      pending_orders_count: pendingOrders.length,
+      trades: state.trades,
+      trades_count: state.trades.length,
     });
   }
 
@@ -1003,21 +989,18 @@ export class BacktestExecutor implements INodeExecutor {
     const realizedPnlValue = position?.realizedPnl || 0;
 
     return leanSuccess({
-      success: true,
-      data: {
-        has_position: !!position,
-        position: formattedPosition,
-        symbol,
-        quantity: position?.quantity || 0,
-        side: position?.side || null,
-        avg_entry_price: position?.avgEntryPrice || 0,
-        current_price: position?.currentPrice || 0,
-        unrealized_pnl_pct: toPercent(unrealizedPnlValue, positionCostBasis),
-        unrealized_pnl: unrealizedPnlValue,
-        realized_pnl_pct: toPercent(realizedPnlValue, positionCostBasis),
-        realized_pnl: realizedPnlValue,
-        market_value: position?.marketValue || 0,
-      },
+      has_position: !!position,
+      position: formattedPosition,
+      symbol,
+      quantity: position?.quantity || 0,
+      side: position?.side || null,
+      avg_entry_price: position?.avgEntryPrice || 0,
+      current_price: position?.currentPrice || 0,
+      unrealized_pnl_pct: toPercent(unrealizedPnlValue, positionCostBasis),
+      unrealized_pnl: unrealizedPnlValue,
+      realized_pnl_pct: toPercent(realizedPnlValue, positionCostBasis),
+      realized_pnl: realizedPnlValue,
+      market_value: position?.marketValue || 0,
     });
   }
 
@@ -1028,7 +1011,9 @@ export class BacktestExecutor implements INodeExecutor {
     prices?: Record<string, number> | null,
   ): NodeResult {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
-      return leanError("Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm");
+      return leanError(
+        "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
+      );
     }
 
     // MTM was already applied in the main dispatch path
@@ -1039,12 +1024,9 @@ export class BacktestExecutor implements INodeExecutor {
     const state = simBroker.getPortfolioState();
 
     return leanSuccess({
-      success: true,
-      data: {
-        cash: state.cash,
-        buying_power: state.cash,
-        initial_capital: simBroker.getConfig().initialCapital,
-      },
+      cash: state.cash,
+      buying_power: state.cash,
+      initial_capital: simBroker.getConfig().initialCapital,
     });
   }
 
@@ -1060,16 +1042,13 @@ export class BacktestExecutor implements INodeExecutor {
     const initialCapital = simBroker.getConfig().initialCapital;
 
     return leanSuccess({
-      success: true,
-      data: {
-        total_equity: totalEquity,
-        cash: state.cash,
-        positions_value: positionsValue,
-        initial_capital: initialCapital,
-        return_pct: ((totalEquity - initialCapital) / initialCapital) * 100,
-        peak_equity: peak,
-        drawdown_pct: drawdownPct,
-      },
+      total_equity: totalEquity,
+      cash: state.cash,
+      positions_value: positionsValue,
+      initial_capital: initialCapital,
+      return_pct: ((totalEquity - initialCapital) / initialCapital) * 100,
+      peak_equity: peak,
+      drawdown_pct: drawdownPct,
     });
   }
 
@@ -1077,11 +1056,8 @@ export class BacktestExecutor implements INodeExecutor {
     const orders = simBroker.getPendingOrders();
 
     return leanSuccess({
-      success: true,
-      data: {
-        pending_orders: orders,
-        count: orders.length,
-      },
+      pending_orders: orders,
+      count: orders.length,
     });
   }
 
@@ -1093,14 +1069,11 @@ export class BacktestExecutor implements INodeExecutor {
     );
 
     return leanSuccess({
-      success: true,
-      data: {
-        trades,
-        count: trades.length,
-        total_realized_pnl: totalRealizedPnl,
-        winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
-        losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
-      },
+      trades,
+      count: trades.length,
+      total_realized_pnl: totalRealizedPnl,
+      winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
+      losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
     });
   }
 

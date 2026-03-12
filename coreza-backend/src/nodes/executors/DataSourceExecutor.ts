@@ -271,15 +271,12 @@ export class DataSourceExecutor implements INodeExecutor {
     }
 
     return leanSuccess({
-      success: true,
-      data: {
-        window: window.values(),
-        count: window.count,
-        size: window.size,
-        isReady: window.isReady,
-        remaining: window.size - window.count,
-        latest: window.count > 0 ? window.at(0) : null,
-      },
+      window: window.values(),
+      count: window.count,
+      size: window.size,
+      isReady: window.isReady,
+      remaining: window.size - window.count,
+      latest: window.count > 0 ? window.at(0) : null,
     });
   }
 

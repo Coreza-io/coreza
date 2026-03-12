@@ -21,6 +21,7 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
+  leanSuccess,
 } from "../../utils/normalizeOutput";
 import { Bar } from "../../services/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -483,24 +484,22 @@ export class PortfolioExecutor implements INodeExecutor {
     );
     const pendingOrders = simBroker.getPendingOrders();
 
-    return toNodeResult(
-      createSuccessOutput({
-        cash: state.cash,
-        initial_capital: initialCapital,
-        positions: formattedPositions,
-        positions_count: positions.length,
-        positions_value: positionsValue,
-        unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
-        unrealized_pnl: unrealizedPnlValue,
-        realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
-        realized_pnl: realizedPnlValue,
-        total_equity: state.cash + positionsValue,
-        pending_orders: pendingOrders,
-        pending_orders_count: pendingOrders.length,
-        trades: state.trades,
-        trades_count: state.trades.length,
-      }),
-    );
+    return leanSuccess({
+      cash: state.cash,
+      initial_capital: initialCapital,
+      positions: formattedPositions,
+      positions_count: positions.length,
+      positions_value: positionsValue,
+      unrealized_pnl_pct: toPercent(unrealizedPnlValue, initialCapital),
+      unrealized_pnl: unrealizedPnlValue,
+      realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
+      realized_pnl: realizedPnlValue,
+      total_equity: state.cash + positionsValue,
+      pending_orders: pendingOrders,
+      pending_orders_count: pendingOrders.length,
+      trades: state.trades,
+      trades_count: state.trades.length,
+    });
   }
 
   private backtestGetPosition(
@@ -520,28 +519,26 @@ export class PortfolioExecutor implements INodeExecutor {
       ? Math.abs(position.avgEntryPrice * position.quantity)
       : 0;
 
-    return toNodeResult(
-      createSuccessOutput({
-        has_position: !!position,
-        position: formattedPosition,
-        symbol,
-        quantity: position?.quantity || 0,
-        side: position?.side || null,
-        avg_entry_price: position?.avgEntryPrice || 0,
-        current_price: position?.currentPrice || 0,
-        unrealized_pnl_pct: toPercent(
-          position?.unrealizedPnl || 0,
-          positionCostBasis,
-        ),
-        unrealized_pnl: position?.unrealizedPnl || 0,
-        realized_pnl_pct: toPercent(
-          position?.realizedPnl || 0,
-          positionCostBasis,
-        ),
-        realized_pnl: position?.realizedPnl || 0,
-        market_value: position?.marketValue || 0,
-      }),
-    );
+    return leanSuccess({
+      has_position: !!position,
+      position: formattedPosition,
+      symbol,
+      quantity: position?.quantity || 0,
+      side: position?.side || null,
+      avg_entry_price: position?.avgEntryPrice || 0,
+      current_price: position?.currentPrice || 0,
+      unrealized_pnl_pct: toPercent(
+        position?.unrealizedPnl || 0,
+        positionCostBasis,
+      ),
+      unrealized_pnl: position?.unrealizedPnl || 0,
+      realized_pnl_pct: toPercent(
+        position?.realizedPnl || 0,
+        positionCostBasis,
+      ),
+      realized_pnl: position?.realizedPnl || 0,
+      market_value: position?.marketValue || 0,
+    });
   }
 
   private backtestUpdateMTM(
@@ -581,50 +578,44 @@ export class PortfolioExecutor implements INodeExecutor {
     const peak = state.peakEquity;
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
 
-    return toNodeResult(
-      createSuccessOutput({
-        total_equity: totalEquity,
-        cash: state.cash,
-        positions_value: positionsValue,
-        initial_capital: simBroker.getConfig().initialCapital,
-        return_pct:
-          ((totalEquity - simBroker.getConfig().initialCapital) /
-            simBroker.getConfig().initialCapital) *
-          100,
-        peak_equity: peak,
-        drawdown_pct: drawdownPct,
-      }),
-    );
+    return leanSuccess({
+      total_equity: totalEquity,
+      cash: state.cash,
+      positions_value: positionsValue,
+      initial_capital: simBroker.getConfig().initialCapital,
+      return_pct:
+        ((totalEquity - simBroker.getConfig().initialCapital) /
+          simBroker.getConfig().initialCapital) *
+        100,
+      peak_equity: peak,
+      drawdown_pct: drawdownPct,
+    });
   }
 
   private backtestGetTrades(simBroker: SimBroker): NodeResult {
     const trades = simBroker.getTrades();
     const totalRealizedPnl = trades.reduce((sum, t) => sum + t.netPnl, 0);
-    return toNodeResult(
-      createSuccessOutput({
-        trades,
-        count: trades.length,
-        total_realized_pnl: totalRealizedPnl,
-        winning_trades: trades.filter((t) => t.netPnl > 0).length,
-        losing_trades: trades.filter((t) => t.netPnl < 0).length,
-      }),
-    );
+    return leanSuccess({
+      trades,
+      count: trades.length,
+      total_realized_pnl: totalRealizedPnl,
+      winning_trades: trades.filter((t) => t.netPnl > 0).length,
+      losing_trades: trades.filter((t) => t.netPnl < 0).length,
+    });
   }
 
   // ============== BROKER HELPERS ==============
 
   private brokerGetAll(pm: PortfolioManager, baseCurrency: string): NodeResult {
     const state = pm.getPortfolioState(baseCurrency);
-    return toNodeResult(
-      createSuccessOutput({
-        ...this.getPortfolioSummary(pm, baseCurrency),
-        drawdown_pct:
-          state.peakEquity > 0
-            ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
-            : 0,
-        trades: state.trades,
-      }),
-    );
+    return leanSuccess({
+      ...this.getPortfolioSummary(pm, baseCurrency),
+      drawdown_pct:
+        state.peakEquity > 0
+          ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
+          : 0,
+      trades: state.trades,
+    });
   }
 
   private getPortfolioSummary(
@@ -657,12 +648,10 @@ export class PortfolioExecutor implements INodeExecutor {
     if (symbols.length === 0) {
       // No symbol provided: return all tracked positions
       const positions = pm.getPositions();
-      return toNodeResult(
-        createSuccessOutput({
-          positions: positions.map((p) => formatPositionWithPnlPercent(p)),
-          positions_count: positions.length,
-        }),
-      );
+      return leanSuccess({
+        positions: positions.map((p) => formatPositionWithPnlPercent(p)),
+        positions_count: positions.length,
+      });
     }
 
     if (symbols.length === 1) {
@@ -673,25 +662,20 @@ export class PortfolioExecutor implements INodeExecutor {
         ? Math.abs(position.avgEntryPrice * position.quantity)
         : 0;
 
-      return toNodeResult(
-        createSuccessOutput({
-          has_position: !!position,
-          position: position ? formatPositionWithPnlPercent(position) : null,
-          symbol,
-          quantity: position?.quantity || 0,
-          side: position?.side || null,
-          avg_entry_price: position?.avgEntryPrice || 0,
-          current_price: position?.currentPrice || 0,
-          unrealized_pnl_pct: toPercent(
-            position?.unrealizedPnl || 0,
-            costBasis,
-          ),
-          unrealized_pnl: position?.unrealizedPnl || 0,
-          realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
-          realized_pnl: position?.realizedPnl || 0,
-          market_value: position?.marketValue || 0,
-        }),
-      );
+      return leanSuccess({
+        has_position: !!position,
+        position: position ? formatPositionWithPnlPercent(position) : null,
+        symbol,
+        quantity: position?.quantity || 0,
+        side: position?.side || null,
+        avg_entry_price: position?.avgEntryPrice || 0,
+        current_price: position?.currentPrice || 0,
+        unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
+        unrealized_pnl: position?.unrealizedPnl || 0,
+        realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
+        realized_pnl: position?.realizedPnl || 0,
+        market_value: position?.marketValue || 0,
+      });
     }
 
     // Multiple symbols: return array of positions
@@ -716,24 +700,20 @@ export class PortfolioExecutor implements INodeExecutor {
       };
     });
 
-    return toNodeResult(
-      createSuccessOutput({
-        positions: results,
-        positions_count: results.length,
-      }),
-    );
+    return leanSuccess({
+      positions: results,
+      positions_count: results.length,
+    });
   }
 
   private brokerGetCash(
     pm: PortfolioManager,
     baseCurrency: string,
   ): NodeResult {
-    return toNodeResult(
-      createSuccessOutput({
-        cash: pm.getCash(),
-        buying_power: pm.getCash()[baseCurrency] || 0,
-      }),
-    );
+    return leanSuccess({
+      cash: pm.getCash(),
+      buying_power: pm.getCash()[baseCurrency] || 0,
+    });
   }
 
   private brokerGetEquity(
@@ -745,31 +725,27 @@ export class PortfolioExecutor implements INodeExecutor {
       (s, p) => s + p.marketValue,
       0,
     );
-    return toNodeResult(
-      createSuccessOutput({
-        total_equity: state.totalEquity,
-        cash_base: pm.getCash()[baseCurrency] || 0,
-        positions_value: positionsValue,
-        peak_equity: state.peakEquity,
-        drawdown_pct:
-          state.peakEquity > 0
-            ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
-            : 0,
-      }),
-    );
+    return leanSuccess({
+      total_equity: state.totalEquity,
+      cash_base: pm.getCash()[baseCurrency] || 0,
+      positions_value: positionsValue,
+      peak_equity: state.peakEquity,
+      drawdown_pct:
+        state.peakEquity > 0
+          ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
+          : 0,
+    });
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
     const trades = pm.getTrades();
     const totalRealizedPnl = trades.reduce((s, t) => s + t.netPnl, 0);
-    return toNodeResult(
-      createSuccessOutput({
-        trades,
-        count: trades.length,
-        total_realized_pnl: totalRealizedPnl,
-        winning_trades: trades.filter((t) => t.netPnl > 0).length,
-        losing_trades: trades.filter((t) => t.netPnl < 0).length,
-      }),
-    );
+    return leanSuccess({
+      trades,
+      count: trades.length,
+      total_realized_pnl: totalRealizedPnl,
+      winning_trades: trades.filter((t) => t.netPnl > 0).length,
+      losing_trades: trades.filter((t) => t.netPnl < 0).length,
+    });
   }
 }

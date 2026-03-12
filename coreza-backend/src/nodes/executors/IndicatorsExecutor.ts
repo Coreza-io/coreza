@@ -40,7 +40,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    const startTime = Date.now();
+    //const startTime = Date.now();
     try {
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
 
@@ -186,11 +186,8 @@ export class IndicatorsExecutor implements INodeExecutor {
           }
 
           return leanSuccess({
-            success: true,
-            data: {
-              currentValue: state.currentValue,
-              previousValue: state.previousValue,
-            },
+            currentValue: state.currentValue,
+            previousValue: state.previousValue,
           });
         }
       }

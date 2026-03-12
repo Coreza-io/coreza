@@ -92,11 +92,8 @@ export class ControlFlowExecutor implements INodeExecutor {
     result = logicalOp === "OR" ? evals.some(Boolean) : evals.every(Boolean);
 
     return leanSuccess({
-      success: true,
-      data: {
-        true: result,
-        false: !result,
-      },
+      true: result,
+      false: !result,
     });
   }
 
@@ -139,7 +136,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       return leanError(result.error || "Switch evaluation failed");
     }
 
-    return leanSuccess({ success: true, data: result.result });
+    return leanSuccess(result.result);
   }
 
   private async executeFieldNode(
@@ -215,7 +212,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       }
     }
 
-    return toNodeResult(createSuccessOutput(result));
+    return leanSuccess(result);
   }
 
   private async executeComputeNode(
@@ -257,7 +254,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     });
 
     return result.success
-      ? leanSuccess({ success: true, data: result.data })
+      ? leanSuccess(result.data)
       : leanError(result.error || "Compute operation failed");
   }
 

@@ -833,24 +833,24 @@ export class WorkflowEngine {
     const node = this.nodeById.get(nodeId);
     if (!node) return;
 
-    // FE-style retry guard when dependencies are missing
-    const incoming = this.getIncomingEdges(nodeId);
-    if (incoming.length > 0 && !this.areDependenciesSatisfied(nodeId)) {
-      const tries = this.retryCount.get(nodeId) || 0;
-      if (tries >= this.MAX_RETRIES) {
-        this.failed.add(nodeId);
-        this.store.setNodeError(
-          nodeId,
-          new Error(
-            `Dependency not satisfied after ${this.MAX_RETRIES} retries`,
-          ),
-        );
-        return;
-      }
-      this.retryCount.set(nodeId, tries + 1);
-      this.enqueue(item);
-      return;
-    }
+    // // FE-style retry guard when dependencies are missing
+    // const incoming = this.getIncomingEdges(nodeId);
+    // if (incoming.length > 0 && !this.areDependenciesSatisfied(nodeId)) {
+    //   const tries = this.retryCount.get(nodeId) || 0;
+    //   if (tries >= this.MAX_RETRIES) {
+    //     this.failed.add(nodeId);
+    //     this.store.setNodeError(
+    //       nodeId,
+    //       new Error(
+    //         `Dependency not satisfied after ${this.MAX_RETRIES} retries`,
+    //       ),
+    //     );
+    //     return;
+    //   }
+    //   this.retryCount.set(nodeId, tries + 1);
+    //   this.enqueue(item);
+    //   return;
+    // }
 
     // // Track execution timing
     // const startedAt = new Date().toISOString();

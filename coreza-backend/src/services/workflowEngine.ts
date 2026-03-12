@@ -29,6 +29,7 @@ import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
+import { performance } from "perf_hooks";
 
 const CATEGORY_MAP: Record<string, string> = {
   If: "ControlFlow",
@@ -94,6 +95,7 @@ export class WorkflowEngine {
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   private _execCtx: any = null;
   private _nodeHasTemplatesCache = new Map<string, boolean>();
+  private nodeTiming = new Map<string, { totalMs: number; count: number }>();
 
   constructor(
     private runId: string,
@@ -180,6 +182,7 @@ export class WorkflowEngine {
     this.enqueuedKeys.clear();
     this.retryCount.clear();
     this.executionOrder = [];
+    this.nodeTiming.clear();
     this.queue = new NodeQueueManager();
     if (this.silent) {
       this.queue.silent = true;
@@ -864,8 +867,13 @@ export class WorkflowEngine {
       }
 
       const executionContext = this.getExecutionContext(nodeId);
-
+      const t0 = performance.now();
       const result = await this.executeNode(node, input, executionContext);
+      const elapsed = performance.now() - t0;
+      const prev = this.nodeTiming.get(nodeId) ?? { totalMs: 0, count: 0 };
+      prev.totalMs += elapsed;
+      prev.count += 1;
+      this.nodeTiming.set(nodeId, prev);
       if (!this.silent) {
         console.log(`✅ Node ${nodeId} result:`, result);
       }
@@ -1031,6 +1039,28 @@ export class WorkflowEngine {
 
     // For simple results, wrap in structure to maintain consistency
     return { data: result?.data ?? result };
+  }
+
+  getNodeTiming(): Record<
+    string,
+    { avgMs: number; totalMs: number; count: number }
+  > {
+    const result: Record<
+      string,
+      { avgMs: number; totalMs: number; count: number }
+    > = {};
+
+    for (const [id, timing] of this.nodeTiming) {
+      const node = this.nodeById.get(id);
+      const label = node?.name ?? id;
+      result[label] = {
+        avgMs: +(timing.totalMs / timing.count).toFixed(3),
+        totalMs: +timing.totalMs.toFixed(3),
+        count: timing.count,
+      };
+    }
+
+    return result;
   }
 }
 

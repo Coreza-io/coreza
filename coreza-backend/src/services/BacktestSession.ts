@@ -172,6 +172,11 @@ export class BacktestSession {
 
     if (this.status === "finished") {
       await this.finalize();
+      const timing = this.engine.getNodeTiming();
+      console.log(
+        `[BacktestSession] runAll node timing for ${this.backtestId}:`,
+        timing,
+      );
     }
   }
 
@@ -223,7 +228,15 @@ export class BacktestSession {
       );
     }
 
+    const timing = this.engine.getNodeTiming();
     const redis = getRedisCache();
+    await redis.set(
+      `backtest:timing:${this.backtestId}`,
+      JSON.stringify(timing),
+      "EX",
+      3600,
+    );
+    console.log(`[BacktestSession] Node timing for ${this.backtestId}:`, timing);
     await redis.del(`backtest:progress:${this.backtestId}`);
   }
 }

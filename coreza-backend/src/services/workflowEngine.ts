@@ -606,9 +606,11 @@ export class WorkflowEngine {
     this.markEdgePayload(edge.id, payload);
 
     const targetNode = this.nodeById.get(edge.target);
-    const mergeMode = Boolean((targetNode as any)?.values?.mergeMode);
+    const skipDependencyCheck = Boolean(
+      (targetNode as any)?.values?.checkDependency,
+    );
 
-    if (mergeMode) {
+    if (!skipDependencyCheck) {
       if (!this.areDependenciesSatisfied(edge.target)) return;
     }
 

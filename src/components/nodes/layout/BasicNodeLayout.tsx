@@ -231,14 +231,14 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
           {!readOnly && incomingEdgeCount >= 2 && (
             <div className="flex items-center justify-between pt-1">
-              <Label htmlFor="merge-mode" className="text-xs text-muted-foreground cursor-pointer">
-                Continue on any input
+              <Label htmlFor="check-dependency" className="text-xs text-muted-foreground cursor-pointer">
+                Skip dependency check
               </Label>
               <Switch
-                id="merge-mode"
-                checked={(fieldState.mergeMode ?? "all") === "any"}
+                id="check-dependency"
+                checked={Boolean(fieldState.checkDependency)}
                 onCheckedChange={(checked) =>
-                  handleChange("mergeMode", checked ? "any" : "all")
+                  handleChange("checkDependency", checked)
                 }
                 disabled={readOnly}
               />

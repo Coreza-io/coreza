@@ -28,9 +28,11 @@ import {
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
+import { RollingWindow } from "../../services/RollingWindow";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
+  private scopedKeyCache = new Map<string, string>();
 
   async execute(
     node: WorkflowNode,
@@ -200,8 +202,6 @@ export class DataSourceExecutor implements INodeExecutor {
     params: Record<string, any>,
     context?: any,
   ): NodeResult {
-    const { RollingWindow } = require("../../services/RollingWindow");
-
     const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
     const symbol = params.symbol || "_";
     const timeframe = params.timeframe || "_";
@@ -210,14 +210,18 @@ export class DataSourceExecutor implements INodeExecutor {
     const workflowId = context?.workflowId || params.workflow_id || "manual";
     const runId = context?.runId || params.run_id || "manual";
 
-    const storeKey = buildExecutionScopedKey({
-      userId,
-      workflowId,
-      runId,
-      nodeId: node.id,
-      scope: "rolling_window",
-      parts: [symbol, timeframe],
-    });
+    let storeKey = this.scopedKeyCache.get(node.id);
+    if (!storeKey) {
+      storeKey = buildExecutionScopedKey({
+        userId,
+        workflowId,
+        runId,
+        nodeId: node.id,
+        scope: "rolling_window",
+        parts: [symbol, timeframe],
+      });
+      this.scopedKeyCache.set(node.id, storeKey);
+    }
     const dataContext = context?.dataContext;
 
     let window: any;
@@ -231,9 +235,11 @@ export class DataSourceExecutor implements INodeExecutor {
       window = new RollingWindow(size);
     }
 
-    let bars: any[] = [];
+    let bars: any[];
     const rawCandle = params.candle_data;
-    if (Array.isArray(rawCandle)) {
+    if (rawCandle && typeof rawCandle === "object" && !Array.isArray(rawCandle)) {
+      bars = [rawCandle];
+    } else if (Array.isArray(rawCandle)) {
       bars = rawCandle;
     } else if (typeof rawCandle === "string") {
       try {
@@ -242,8 +248,8 @@ export class DataSourceExecutor implements INodeExecutor {
       } catch {
         bars = [];
       }
-    } else if (rawCandle && typeof rawCandle === "object") {
-      bars = [rawCandle];
+    } else {
+      bars = [];
     }
 
     if (bars.length === 0) {
@@ -263,12 +269,13 @@ export class DataSourceExecutor implements INodeExecutor {
     return toNodeResult(
       createSuccessOutput(
         {
-          window: [...window.values()],
+          window: window.values(),
           count: window.count,
           size: window.size,
           isReady: window.isReady,
           remaining: window.size - window.count,
           latest: window.count > 0 ? window.at(0) : null,
+          previous: window.count > 1 ? window.at(1) : null,
         },
         {
           nodeId: node.id,

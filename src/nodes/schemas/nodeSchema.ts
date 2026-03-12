@@ -173,7 +173,7 @@ export const NodeConfigSchema = z
     authAction: ActionSchema.optional(),
 
     executionMode: z.string().optional(),
-    mergeMode: z.enum(["all", "any"]).optional(),
+    checkDependency: z.boolean().optional(),
     output: OutputSchema.optional(),
   })
   .refine(

@@ -32,6 +32,7 @@ import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
   private readonly initExecutor = new InitializeIndicatorsExecutor();
+  private readonly indicatorKeyCache = new Map<string, string>();
 
   async execute(
     node: WorkflowNode,
@@ -57,9 +58,12 @@ export class IndicatorsExecutor implements INodeExecutor {
       // Resolve dataRef to actual data if present
       const processedParams = { ...resolvedParams };
 
-      const candleData = Array.isArray(resolvedParams.candle_data)
-        ? resolvedParams.candle_data
-        : JSON.parse(resolvedParams.candle_data || "[]");
+      const rawCandle = resolvedParams.candle_data;
+      const candleData = Array.isArray(rawCandle)
+        ? rawCandle
+        : rawCandle && typeof rawCandle === "object"
+          ? [rawCandle]
+          : JSON.parse(rawCandle || "[]");
 
       // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
       // const dataRefValue = resolvedParams.dataRef ||
@@ -128,31 +132,55 @@ export class IndicatorsExecutor implements INodeExecutor {
         ) {
           // const indicatorParams =
           //   this.extractIndicatorParams(processedParams);
-          const key = buildIndicatorKey(
-            userId,
-            workflowId,
-            runId,
-            symbol,
-            timeframe,
-            node.id,
-          );
+          let key = this.indicatorKeyCache.get(node.id);
+          if (!key) {
+            key = buildIndicatorKey(
+              userId,
+              workflowId,
+              runId,
+              symbol,
+              timeframe,
+              node.id,
+            );
+            this.indicatorKeyCache.set(node.id, key);
+          }
 
           const isBacktest = !!context?.silent;
 
-          let state = await stateManager.getState(key);
-          if (!state) {
-            state = await stateManager.warmUp(
-              key,
-              indicatorType,
-              processedParams,
-              barsData,
-              isBacktest,
-            );
+          let state;
+          if (isBacktest) {
+            state = stateManager.getStateSync(key);
+            if (!state) {
+              state = await stateManager.warmUp(
+                key,
+                indicatorType,
+                processedParams,
+                barsData,
+                true,
+              );
+            } else {
+              const latestBar = barsData[barsData.length - 1];
+              const latestBarTime = String(latestBar?.time ?? "");
+              if (latestBarTime && latestBarTime !== state.lastBarTime) {
+                state = stateManager.updateSync(key, latestBar);
+              }
+            }
           } else {
-            const latestBar = barsData[barsData.length - 1];
-            const latestBarTime = String(latestBar?.time ?? "");
-            if (latestBarTime && latestBarTime !== state.lastBarTime) {
-              state = await stateManager.update(key, latestBar, isBacktest);
+            state = await stateManager.getState(key);
+            if (!state) {
+              state = await stateManager.warmUp(
+                key,
+                indicatorType,
+                processedParams,
+                barsData,
+                false,
+              );
+            } else {
+              const latestBar = barsData[barsData.length - 1];
+              const latestBarTime = String(latestBar?.time ?? "");
+              if (latestBarTime && latestBarTime !== state.lastBarTime) {
+                state = await stateManager.update(key, latestBar, false);
+              }
             }
           }
 

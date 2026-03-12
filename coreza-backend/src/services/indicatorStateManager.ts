@@ -65,6 +65,10 @@ export class IndicatorStateManager {
     return state;
   }
 
+  getStateSync(key: string): IndicatorState | null {
+    return this.l1Cache.get(key) ?? null;
+  }
+
   async setState(key: string, state: IndicatorState): Promise<void> {
     this.l1Cache.set(key, state);
 
@@ -170,6 +174,30 @@ export class IndicatorStateManager {
     } else {
       await this.setState(key, updatedState);
     }
+    return updatedState;
+  }
+
+  updateSync(key: string, bar: any): IndicatorState {
+    const existing = this.l1Cache.get(key);
+    if (!existing) {
+      throw new Error(`Indicator state not found for key ${key}`);
+    }
+
+    const updater = IndicatorService.createIncrementalUpdater(
+      existing.indicator,
+      existing.params,
+    );
+    const { value, internalState } = updater.update(existing.internalState, bar);
+
+    const updatedState: IndicatorState = {
+      ...existing,
+      previousValue: existing.currentValue,
+      currentValue: value,
+      lastBarTime: String(bar?.time ?? ""),
+      internalState,
+    };
+
+    this.setStateSync(key, updatedState);
     return updatedState;
   }
 

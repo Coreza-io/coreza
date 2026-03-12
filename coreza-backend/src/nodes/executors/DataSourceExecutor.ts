@@ -25,6 +25,7 @@ import {
   normalizeOutput,
   createSuccessOutput,
   createErrorOutput,
+  leanSuccess,
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
@@ -269,23 +270,17 @@ export class DataSourceExecutor implements INodeExecutor {
       window.add(bar);
     }
 
-    return toNodeResult(
-      createSuccessOutput(
-        {
-          window: window.values(),
-          count: window.count,
-          size: window.size,
-          isReady: window.isReady,
-          remaining: window.size - window.count,
-          latest: window.count > 0 ? window.at(0) : null,
-        },
-        {
-          nodeId: node.id,
-          nodeName: "RollingWindow",
-          category: this.category,
-        },
-      ),
-    );
+    return leanSuccess({
+      success: true,
+      data: {
+        window: window.values(),
+        count: window.count,
+        size: window.size,
+        isReady: window.isReady,
+        remaining: window.size - window.count,
+        latest: window.count > 0 ? window.at(0) : null,
+      },
+    });
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {

@@ -22,6 +22,8 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
+  leanSuccess,
+  leanError,
 } from "../../utils/normalizeOutput";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -89,12 +91,13 @@ export class ControlFlowExecutor implements INodeExecutor {
     // Aggregate based on logicalOp
     result = logicalOp === "OR" ? evals.some(Boolean) : evals.every(Boolean);
 
-    return toNodeResult(
-      createSuccessOutput({
+    return leanSuccess({
+      success: true,
+      data: {
         true: result,
         false: !result,
-      }),
-    );
+      },
+    });
   }
 
   private async executeSwitchNode(
@@ -133,12 +136,10 @@ export class ControlFlowExecutor implements INodeExecutor {
     );
 
     if (!result.success) {
-      return toNodeResult(
-        createErrorOutput(result.error || "Switch evaluation failed"),
-      );
+      return leanError(result.error || "Switch evaluation failed");
     }
 
-    return toNodeResult(createSuccessOutput(result.result));
+    return leanSuccess({ success: true, data: result.result });
   }
 
   private async executeFieldNode(
@@ -255,8 +256,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       mapIndex,
     });
 
-    // ComputeService already returns StandardNodeOutput, just convert to NodeResult
-    return toNodeResult(result);
+    return result.success
+      ? leanSuccess({ success: true, data: result.data })
+      : leanError(result.error || "Compute operation failed");
   }
 
   private async executeLoopNode(

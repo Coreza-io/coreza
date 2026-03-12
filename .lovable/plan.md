@@ -1,53 +1,39 @@
 
 
-# Plan: Align BinanceStreamData & BinanceSubscribe Nodes with Alpaca Pattern
+# Fix: entryTime/exitTime undefined in backtest trades
 
-## What Changed in Alpaca (the reference)
+## Root Cause
 
-1. **`stream_types`**: Changed from single-select to **multiselect** with simplified options (Trades, Quotes, Bars, Daily Bars) + **Order Updates (Fills)** as an option
-2. **Interval**: Hidden with default `1m` — not user-selectable (Alpaca only supports minute and daily bars)
-3. **`onlyClosedBars`**: Removed as a visible checkbox — always emit closed bars
-4. **Description**: Updated to mention order fills and If node routing
+The `backtest_trades` table already has `entryTime` and `exitTime` columns, and SimBroker correctly populates them from `bar.timestamp`. The problem is upstream:
 
-## What Needs to Change in Binance
+**In `BacktestExecutor.ts` line 570-574**, the BacktestTrade executor parses `current_bar` with raw `JSON.parse` instead of using `parseBar()`:
 
-### 1. `BinanceStreamData.json` — Stream trigger node
+```ts
+// BROKEN — raw parse keeps { time: 1234567890, open, high, ... }
+currentBar = typeof params.current_bar === "string"
+  ? JSON.parse(params.current_bar)
+  : params.current_bar;
+```
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options (trade, aggTrade, kline, miniTicker, ticker, bookTicker, depth) | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `interval` | Full select with 15 options, shown when `stream_types: ["kline"]` | Keep as-is — Binance genuinely supports multiple kline intervals (unlike Alpaca). Show only when kline is selected |
-| `depth_levels` | Shown when `stream_types: ["depth"]` | Keep as-is, but update displayOptions for multiselect compatibility |
-| `onlyClosedBars` | Visible checkbox, default true | Remove — make it a hidden field with default `true` (always emit closed bars) |
-| `description` | "Also automatically streams order fill events" | Update to match Alpaca pattern: mention If node routing for order updates |
-| `height` | 280 | 320 (slightly taller for multiselect) |
+The broker data format has `time: number` (Unix ms), but SimBroker expects `timestamp: string` (ISO 8601). The `parseBar()` utility at `coreza-backend/src/utils/barParser.ts:34` does this conversion:
 
-### 2. `BinanceSubscribe.json` — Subscription node
+```ts
+timestamp: new Date(data.time).toISOString()
+```
 
-| Field | Current | Target |
-|---|---|---|
-| `stream_types` | `type: "select"` (single) | `type: "multiselect"` with `order_update` added |
-| `stream_types` options | 7 options | Keep all 7 + add `order_update` "Order Updates (Fills)" |
-| `depth_levels` displayOptions | `stream_types: ["depth"]` | Same — works with multiselect since backend parses array |
-| `interval` displayOptions | `stream_types: ["kline"]` | Same — show when kline is in the multiselect |
+The Portfolio executor at line 894 already uses `parseBar()` correctly. The BacktestTrade executor does not.
 
-### 3. No Backend Changes Needed
+## Fix
 
-The backend `stream.ts` route already:
-- Parses `stream_types` as array (lines 108-112)
-- Splits out `order_update` to `binance_trading` source (lines 114-131)
-- Passes remaining types to market subscription
-- Handles both Alpaca and Binance identically
+**File: `coreza-backend/src/nodes/executors/BacktestExecutor.ts` (lines 568-577)**
 
-## Key Difference from Alpaca
+Replace the raw JSON.parse block with the existing `parseBar` utility:
 
-Binance supports multiple kline intervals (1m, 5m, 1h, 1d, etc.), so the `interval` selector must **remain visible** when `kline` is selected — unlike Alpaca where it was hidden and defaulted to `1m`. This is a legitimate broker capability difference.
+```ts
+const currentBar = this.parseBar(params.current_bar);
+```
 
-## Files to Edit
+This single-line change ensures `bar.timestamp` is a valid ISO string, which flows into `applyFill → currentEntryMap.set(filledAt: timestamp)` for entry time and `exitTime: timestamp` for exit time.
 
-| File | Changes |
-|---|---|
-| `src/nodes/BinanceStreamData.json` | Change `stream_types` to multiselect, add `order_update` option, convert `onlyClosedBars` to hidden with default true, update description, adjust height |
-| `src/nodes/BinanceSubscribe.json` | Change `stream_types` to multiselect, add `order_update` option, add default `["kline"]` |
+No schema changes, no new columns, no frontend changes needed — the data pipeline and UI already handle these fields correctly.
 

@@ -344,11 +344,9 @@ export class WorkflowEngine {
         const allNodeData = this.store.getAllResults();
         const resolved = compiled.resolve(allNodeData, input);
         // If some entries had fallback, resolve them with resolveDeep
-        if ((compiled as any)._hasFallbackEntries) {
-          for (const [key, value] of Object.entries(resolved)) {
-            if (typeof value === "string" && value.includes("{{")) {
-              resolved[key] = this.resolveDeep(value, input, allNodeData);
-            }
+        if (compiled.fallbackKeys && compiled.fallbackKeys.length > 0) {
+          for (const key of compiled.fallbackKeys) {
+            resolved[key] = this.resolveDeep(resolved[key], input, allNodeData);
           }
         }
         return resolved;

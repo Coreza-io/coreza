@@ -201,7 +201,7 @@ export function resolveReferences(
     }
 
     const value = getValueByPath(targetData, cleanPath);
-    if (value === undefined) return full;
+    if (value === undefined) return null;
 
     return value instanceof Date
       ? value.toISOString()

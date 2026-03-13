@@ -89,6 +89,34 @@ function pickJsonSource(d: any): any {
 }
 
 /**
+ * Build a one-shot shape extractor that caches the data path on first call.
+ * Eliminates repeated pickJsonSource probing after the first bar.
+ */
+function buildShapeExtractor(sample: any): (d: any) => any {
+  if (sample == null) return pickJsonSource;
+  if (sample.json !== undefined) return (d: any) => d.json;
+  if (sample.output?.json !== undefined) return (d: any) => d.output.json;
+  if (sample.output !== undefined) return (d: any) => d.output;
+  if (sample.input?.json !== undefined) return (d: any) => d.input.json;
+  if (sample.input !== undefined) return (d: any) => d.input;
+  if (sample.data?.output?.json !== undefined) return (d: any) => d.data.output.json;
+  if (sample.data?.output !== undefined) return (d: any) => d.data.output;
+  if (sample.data?.input?.json !== undefined) return (d: any) => d.data.input.json;
+  if (sample.data?.input !== undefined) return (d: any) => d.data.input;
+  return (d: any) => d;
+}
+
+/**
+ * Format a value for mixed-string interpolation.
+ */
+function formatMixedValue(val: any): string {
+  if (val === undefined) return "";
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === "object" && val !== null) return JSON.stringify(val);
+  return String(val);
+}
+
+/**
  * Build a fast property accessor from a dot-path like "data.currentValue".
  * Only handles simple dot/bracket paths (no slices, no negative indices).
  * Returns null if the path contains advanced syntax that needs runtime parsing.

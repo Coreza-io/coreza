@@ -1,107 +1,123 @@
-# Backtest Performance Analysis & Optimization Plan
-
-## Analysis
-
-136,296 bars across 30 nodes. Total wall time ≈ **460 seconds** (7.7 min). Per-bar cost ≈ 3.4ms.
-
-### Top offenders by total time
 
 
-| Node                     | Avg (ms)  | Total (s) | % of total |
-| ------------------------ | --------- | --------- | ---------- |
-| **RollingWindow**        | 0.51      | 69.5      | 15.1%      |
-| **RollingWindow1**       | 0.47      | 63.8      | 13.9%      |
-| **Bollinger Bands**      | 0.33      | 45.3      | 9.8%       |
-| **VolumeOscillator**     | 0.33      | 44.5      | 9.7%       |
-| **updatePortfolioValue** | 0.27      | 37.0      | 8.0%       |
-| **OnBar**                | 0.21      | 28.4      | 6.2%       |
-| **getPosition**          | 0.19      | 25.2      | 5.5%       |
-| Compute nodes (7×)       | 0.14-0.17 | ~150      | 32.6%      |
+# Template Pre-Compilation: Detailed Implementation Plan
 
+## Problem
 
-### Root causes
+Every time a node executes, `resolveNodeParameters` calls `resolveDeep` which calls `resolveReferences()` for each template string. Inside `resolveReferences()`:
 
-**1. RollingWindow (29% combined)** — The biggest problem. Each call:
+1. A complex regex (`templateRegex`) is **compiled fresh every call** — millions of times per backtest
+2. `pickJsonSource()` probes 10 candidate paths to find data
+3. `parsePath()` runs another regex to split `"data.currentValue"` into keys
+4. `getValueByPath()` walks the parsed keys
 
-- Calls `buildExecutionScopedKey()` to construct a string key
-- Calls `dataContext.getDataByKey()` to retrieve window
-- Parses `candle_data` (JSON.parse or type checks)
-- Spreads entire window into a new array: `[...window.values()]` — **O(window_size)** copy every bar
-- Constructs a full result object with `latest`, `count`, `isReady`, `remaining`
+All of this is **identical work every bar** — the template strings in `node.values` never change. Only the data they reference changes.
 
-For a window size of, say, 50 — that's 50-element array copy × 136K bars × 2 windows = **13.6M array copies**.
+## Solution: Pre-compile templates once at workflow load time
 
-**2. Indicators (Bollinger, VolumeOsc — 19.5%)** — The `IndicatorsExecutor` on every call:
+Instead of parsing `"{{ Recent_High.data.currentValue }}"` with regex on every bar, we parse it **once** into a compiled accessor function that directly reads `allNodeData["Recent_High"].data.currentValue`.
 
-- Parses `candle_data` (JSON.parse or Array.isArray checks)
-- Calls `buildIndicatorKey()` (string concatenation)
-- Calls `stateManager.getState()` (Map lookup + possible async)
-- Calls `stateManager.update()` (async)
-- Wraps result through `normalizeOutput()` + `toNodeResult()`
+## Architecture
 
-The actual indicator math is O(1), but the executor overhead dominates.
+```text
+Workflow Load (once)                    Per-bar Execution (136K times)
+─────────────────────                   ──────────────────────────────
+node.values = {                         allNodeData = store.getAllResults()
+  value: "{{ Recent_High.data.cv }}"    
+  operator: "subtract"                  resolvedParams = {
+  arg1: "{{ Close.data.cv }}"             value: compiledAccessors[0](allNodeData, input),
+}                                         operator: "subtract",  // static, no accessor
+                                          arg1: compiledAccessors[1](allNodeData, input),
+     │                                  }
+     ▼                                  
+preCompileTemplates(node)               No regex. No parsePath. No pickJsonSource.
+     │                                  Just direct property access.
+     ▼
+CompiledParam[] = [
+  { key: "value",  accessor: (data,inp) => data["Recent_High"]?.data?.cv },
+  { key: "operator", static: "subtract" },
+  { key: "arg1",  accessor: (data,inp) => data["Close"]?.data?.cv },
+]
+```
 
-**4. Portfolio operations (13.5%)** — `updatePortfolioValue` and `getPosition` call `resolveNodeParameters`, parse `current_bar` via `parseBar()`, look up SimBroker instance, and wrap results — every single bar.
+## Files to Change
 
-## Optimization Plan
+### 1. New file: `coreza-backend/src/utils/templateCompiler.ts`
 
-### Phase 1: Quick wins (est. -30-40% total time)
+Core compilation logic:
 
-**1a. Eliminate RollingWindow array copy** — `[...window.values()]` creates a new array every bar. Instead, return the buffer reference directly (or a lightweight proxy). The downstream nodes only need `latest and previous` and `isReady` most of the time.
+- **`compileTemplate(templateStr)`** — Parses a single `"{{ $json.x.y }}"` or `"{{ $('Node').json.x.y }}"` string. Returns an accessor function `(allNodeData, input) => value`.
+  - Uses the same regex as `resolveReferences` but runs it **once** at compile time
+  - For each match, resolves the node key and builds a chain of property accesses
+  - For mixed strings (e.g., `"prefix_{{ X.data.id }}_suffix"`), returns a function that concatenates static parts with dynamic lookups
+  - For pure template strings (single `{{ }}` with no surrounding text), returns a function that preserves the original type (number, object, etc.) instead of stringifying
 
+- **`compileNodeParams(node, nodes)`** — Walks `node.values` recursively (same shape as `resolveDeep`). For each leaf string containing `{{`, calls `compileTemplate`. Returns a `CompiledNodeParams` object:
+  ```ts
+  interface CompiledNodeParams {
+    hasTemplates: boolean;
+    // For nodes with no templates: just return the static values
+    staticParams?: Record<string, any>;
+    // For nodes with templates: a function that resolves all params in one call
+    resolve?: (allNodeData: Record<string, any>, input: any) => Record<string, any>;
+  }
+  ```
 
-| File                               | Change                                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` (line 266) | Replace `window: [...window.values()]` with `window: window.values()` (returns readonly ref). Only spread when explicitly needed. |
+- **Node name resolution** — At compile time, we resolve display names to node IDs (same logic as `resolveNodeKey`) so that at runtime there's zero lookup cost.
 
+- **`pickJsonSource` flattening** — At compile time, we can't know the shape of `allNodeData[nodeId]`, but we can generate an accessor that tries the most common path first (`d.data`) with a fallback chain, or we detect the shape on first execution and cache the winning path.
 
-**1b. Cache `buildExecutionScopedKey` result** — The key inputs (userId, workflowId, runId, nodeId, symbol, timeframe) never change within a backtest. Cache the computed key on first call.
+### 2. Modify: `coreza-backend/src/services/workflowEngine.ts`
 
+- **Add a `_compiledParams` Map** — `Map<string, CompiledNodeParams>` populated once during constructor (or lazily on first access per node).
 
-| File                    | Change                                                              |
-| ----------------------- | ------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` | Add a `Map<string, string>` cache for scoped keys, keyed by nodeId. |
+- **Add `preCompileAllNodes()` private method** — Called from constructor after `this.nodes` is set. Iterates all nodes, calls `compileNodeParams()`, stores results in `_compiledParams`.
 
+- **Modify `resolveNodeParameters()`** — New fast path:
+  ```ts
+  private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    const compiled = this._compiledParams.get(node.id);
+    if (compiled) {
+      if (!compiled.hasTemplates) return compiled.staticParams;
+      return compiled.resolve!(this.store.getAllResults(), input);
+    }
+    // Fallback to existing resolveDeep logic for safety
+    // ... existing code unchanged ...
+  }
+  ```
 
-**1c. Skip JSON.parse for candle_data when already an object** — The RollingWindow executor already has type checks, but the branching and try/catch per bar adds up. Pre-check and fast-path when input is already a single object (the common backtest case).
+- **`_nodeHasTemplatesCache`** — Becomes redundant (subsumed by `compiled.hasTemplates`), but keep for backward compatibility initially.
 
-### Phase 2: Reduce indicator overhead (est. -15-20%)
+- **`reset()` / `resetLight()`** — No changes needed. The compiled accessors reference node IDs which are stable. The data they read from (`allNodeData`) is rebuilt each bar from the new store. The compilation is tied to the workflow structure, not the run.
 
-**2a. Make `stateManager.getState()` synchronous** — During backtest, state is always in the L1 (in-memory) cache. Remove the `async/await` from the hot path by adding a synchronous `getStateSync()` method that reads directly from the Map without promise wrapping.
+### 3. Modify: `coreza-backend/src/utils/resolveReferences.ts`
 
+- **Hoist `templateRegex`** to module scope — even before full pre-compilation lands, this is a standalone quick win that eliminates regex recompilation for any remaining fallback calls.
 
-| File                       | Change                                                       |
-| -------------------------- | ------------------------------------------------------------ |
-| `indicatorStateManager.ts` | Add `getStateSync(key)` that returns from L1 cache directly. |
-| `IndicatorsExecutor.ts`    | Use sync path when `context.silent` (backtest mode).         |
+## What stays the same
 
+- All executor code (`context.resolveNodeParameters(node, input)`) — unchanged, same signature, same return shape
+- `resolveReferences()` function — kept as fallback for edge cases (dynamic templates, nested loops with `$parentStore`)
+- `resolveDeep()` — kept as fallback, used by the compiled fallback path
 
-**2b. Cache `buildIndicatorKey` per node** — Same as 1b. The key is deterministic per node within a run.
+## Edge cases handled
 
-### Phase 3: Reduce engine per-node overhead (est. -10-15%)
+| Case | Handling |
+|---|---|
+| Mixed strings: `"Buy {{ qty }} shares of {{ sym }}"` | Compile to concatenation function |
+| Nested objects/arrays in `node.values` | Recursive compilation mirrors `resolveDeep` structure |
+| `$json` (input reference, not cross-node) | Accessor reads from `input` arg instead of `allNodeData` |
+| `$('Node').json` and `$node["Node"].json` | Both resolved at compile time to node ID |
+| Loop templates (`$parentStore`) | Fall back to runtime `resolveReferences` (detected at compile time) |
+| `credential_id` key | Skipped during compilation, same as current code |
 
-**3b. Lightweight result wrapping in silent mode** — `normalizeOutput` and `toNodeResult` create wrapper objects with metadata (nodeId, nodeName, timing). In backtest/silent mode, skip the metadata and return a minimal `{ success: true, data }` shape.
+## Performance impact estimate
 
+| Metric | Before | After |
+|---|---|---|
+| Regex compilations per backtest | ~2.86M | ~50 (once per node param) |
+| `parsePath` calls per backtest | ~2.86M | ~50 |
+| `pickJsonSource` probes per backtest | ~28.6M | 0 (direct access) |
+| Object allocations in `resolveDeep` | ~952K | 0 (compiled function returns direct object) |
+| **Estimated time saved** | — | **~30-40s** on 136K bar run |
 
-| File                 | Change                                                                     |
-| -------------------- | -------------------------------------------------------------------------- |
-| `normalizeOutput.ts` | Add a fast path that skips metadata enrichment when no options are passed. |
-| Executor files       | In silent/backtest mode, use the lean path.                                |
-
-
-
-
-This is a larger refactor and can be deferred, but would save ~18s on this specific workflow.
-
-## Summary
-
-
-| Phase                  | Target           | Est. savings    |
-| ---------------------- | ---------------- | --------------- |
-| 1: RollingWindow fixes | 133s → ~70s      | ~60s            |
-| 2: Indicator sync path | 90s → ~60s       | ~30s            |
-| 3: Engine overhead     | 150s → ~110s     | ~40s            |
-| **Total**              | **460s → ~330s** | **~130s (28%)** |
-
-
-The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.

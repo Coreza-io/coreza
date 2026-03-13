@@ -133,6 +133,20 @@ The single highest-impact fix is **1a** (stop copying the rolling window array e
 
 **Phase D: Allocation reduction** — Assessed, `leanSuccess` already minimal. Main allocation wins from Phase A.
 
+### Phase 6: Remaining Phase C + Phase D Completion — IMPLEMENTED
+
+**Phase C completion: Inline selectEdges + routing**
+- `WorkflowEngine.executeOnce()` — In backtest mode (`silent=true`), edge selection and routing are now inlined into a single pass over `getOutgoingEdges()`. No intermediate array allocation. Conditional (If/Switch) logic is inlined with early filtering. Eliminates ~1.9M array allocations per backtest run.
+- `WorkflowEngine.executeFromEntries()` — Removed redundant `markEdgePayloadWithCounter` calls for entry nodes in backtest mode (they're enqueued directly, counter is never checked).
+
+**Phase D: Executor allocation reduction**
+- `BacktestExecutor._onBarResult` — Pre-allocated reusable result template. `executeOnBar()` mutates fields in-place instead of creating new objects per bar. Eliminates 136K object allocations.
+- `DataSourceExecutor._rollingWindowResult` — Pre-allocated reusable result template. RollingWindow executor mutates fields in-place. Eliminates 136K × 2 = 272K object allocations.
+
+**Files changed:**
+- `coreza-backend/src/services/workflowEngine.ts` — Inlined selectEdges for backtest, removed entry node counter marking
+- `coreza-backend/src/nodes/executors/BacktestExecutor.ts` — Pre-allocated `_onBarResult` template
+- `coreza-backend/src/nodes/executors/DataSourceExecutor.ts` — Pre-allocated `_rollingWindowResult` template
 **Files changed:**
 - `coreza-backend/src/services/nodeStoreV2.ts` — `clearResults()`, `pinResults()`, `pinnedResults` Map
 - `coreza-backend/src/services/workflowEngine.ts` — `resetForNextBar()`, `pinResults()`, `_requiredEdgeCounts`, `_satisfiedCounts`, counter-based dependency checks, backtest fast paths

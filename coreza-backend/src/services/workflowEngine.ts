@@ -922,33 +922,9 @@ export class WorkflowEngine {
     const node = this.nodeById.get(nodeId);
     if (!node) return;
 
-    // // FE-style retry guard when dependencies are missing
-    // const incoming = this.getIncomingEdges(nodeId);
-    // if (incoming.length > 0 && !this.areDependenciesSatisfied(nodeId)) {
-    //   const tries = this.retryCount.get(nodeId) || 0;
-    //   if (tries >= this.MAX_RETRIES) {
-    //     this.failed.add(nodeId);
-    //     this.store.setNodeError(
-    //       nodeId,
-    //       new Error(
-    //         `Dependency not satisfied after ${this.MAX_RETRIES} retries`,
-    //       ),
-    //     );
-    //     return;
-    //   }
-    //   this.retryCount.set(nodeId, tries + 1);
-    //   this.enqueue(item);
-    //   return;
-    // }
-
-    // // Track execution timing
-    // const startedAt = new Date().toISOString();
-    // const startTime = Date.now();
-
     try {
       // Check if workflow was cancelled before executing this node
-      // AbortSignal check is synchronous - no Redis polling needed
-      if (this.checkCancellation()) {
+      if (this.abortSignal?.aborted) {
         throw new Error("Workflow cancelled by user");
       }
 
@@ -982,13 +958,11 @@ export class WorkflowEngine {
         }
 
         if (result.control?.loopCompleted) {
-          // Sequential mode - loop completed, route to done edges
           const doneEdges = this.doneEdges(nodeId);
           for (const edge of doneEdges) {
             await this.routeEdge(edge, result, meta);
           }
         } else if (result.control?.loopIteration) {
-          // Sequential mode - loop iteration, route to loop body edges
           const loopEdges = this.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
             const iterMeta: IterMeta = {
@@ -999,7 +973,7 @@ export class WorkflowEngine {
             await this.routeEdge(edge, result, iterMeta);
           }
         }
-        return; // don't clear loop node payloads
+        return;
       }
 
       const edges = this.selectEdges(node, result);
@@ -1012,7 +986,7 @@ export class WorkflowEngine {
         console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
       }
 
-      if (meta?.originLoopId) {
+      if (!this.silent && meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodeById.get(loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
@@ -1032,7 +1006,10 @@ export class WorkflowEngine {
         await this.routeEdge(edge, result, meta);
       }
 
-      this.clearIncomingEdgePayloads(nodeId);
+      // Skip clearing incoming edge payloads in backtest mode — they get bulk-cleared in resetForNextBar
+      if (!this.silent) {
+        this.clearIncomingEdgePayloads(nodeId);
+      }
     } catch (error) {
       const errorMessage = (error as Error).message || "";
       const isCancellation =

@@ -236,22 +236,24 @@ function compileTemplate(
     segments.push({ type: "static", value: templateStr.slice(lastEnd) });
   }
 
-  return (allNodeData, input) => {
+  // Fast path: single dynamic segment with static prefix/suffix (common case)
+  if (segments.length === 3 && segments[0].type === "static" && segments[2].type === "static") {
+    const prefix = (segments[0] as any).value;
+    const suffix = (segments[2] as any).value;
+    const acc = (segments[1] as any).accessor;
+    return (allNodeData: Record<string, any>, input: any) => {
+      const val = acc(allNodeData, input);
+      return prefix + formatMixedValue(val) + suffix;
+    };
+  }
+
+  return (allNodeData: Record<string, any>, input: any) => {
     let result = "";
     for (const seg of segments) {
       if (seg.type === "static") {
         result += seg.value;
       } else {
-        const val = seg.accessor(allNodeData, input);
-        if (val === undefined) {
-          result += "";
-        } else if (val instanceof Date) {
-          result += val.toISOString();
-        } else if (typeof val === "object" && val !== null) {
-          result += JSON.stringify(val);
-        } else {
-          result += String(val);
-        }
+        result += formatMixedValue((seg as any).accessor(allNodeData, input));
       }
     }
     return result;

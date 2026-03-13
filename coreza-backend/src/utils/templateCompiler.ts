@@ -193,8 +193,8 @@ function compileTemplate(
   TEMPLATE_REGEX.lastIndex = 0;
 
   while ((m = TEMPLATE_REGEX.exec(templateStr))) {
-    const [full, g1, g2, g3, rawPath] = m;
-    const nodeName = (g1 || g2 || g3 || "").trim();
+    const [full, g1, g1b, g2, g3, rawPath] = m;
+    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
     const cleanPath = (rawPath || "").trim().replace(/^[.\s]+/, "");
 
     const pathAccessor = buildPathAccessor(cleanPath);

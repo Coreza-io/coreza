@@ -38,6 +38,7 @@ export class NodeStoreV2 {
   private nodeStates = new Map<string, Map<string, any>>();
   private workflowNodes: any[];
   private _cachedResults: Record<string, any> | null = null;
+  private pinnedResults = new Map<string, any>();
 
   constructor(runId: string, nodes: any[]) {
     this.runId = runId;
@@ -180,6 +181,42 @@ export class NodeStoreV2 {
 
     this._cachedResults = results;
     return this._cachedResults;
+  }
+
+  /**
+   * Pin results that should survive clearResults().
+   * Used for BacktestInit results that never change between bars.
+   */
+  pinResults(results: Record<string, any>): void {
+    for (const [nodeId, result] of Object.entries(results)) {
+      this.pinnedResults.set(nodeId, result);
+      this.nodeResults.set(nodeId, result);
+      if (this._cachedResults) {
+        this._cachedResults[nodeId] = result;
+      }
+    }
+  }
+
+  /**
+   * Clear only per-bar results, preserving node defs, states, and pinned results.
+   * Much cheaper than constructing a new NodeStoreV2.
+   */
+  clearResults(): void {
+    this.nodeResults.clear();
+    // Restore pinned results
+    for (const [nodeId, result] of this.pinnedResults) {
+      this.nodeResults.set(nodeId, result);
+    }
+    // Rebuild cached results object from pinned
+    if (this.pinnedResults.size > 0) {
+      const results: any = {};
+      for (const [nodeId, result] of this.pinnedResults) {
+        results[nodeId] = result;
+      }
+      this._cachedResults = results;
+    } else {
+      this._cachedResults = null;
+    }
   }
 
   // Node state management (for execution context)

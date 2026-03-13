@@ -99,6 +99,10 @@ export class WorkflowEngine {
   private _compiledParams = new Map<string, CompiledNodeParams>();
   private nodeTiming = new Map<string, { totalMs: number; count: number }>();
 
+  // Phase C: Pre-computed dependency counts for fast satisfaction checks
+  private _requiredEdgeCounts = new Map<string, number>();
+  private _satisfiedCounts = new Map<string, number>();
+
   constructor(
     private runId: string,
     private workflowId: string,
@@ -160,7 +164,17 @@ export class WorkflowEngine {
     this.buildBranchOrigins();
     // Pre-compile all node templates once at workflow load time
     this._compiledParams = preCompileAllNodes(this.nodes);
-    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
+
+    // Phase C: Pre-compute required edge counts per node (excluding sub-nodes)
+    for (const node of this.nodes) {
+      const incoming = this.incomingEdgesByTarget.get(node.id) ?? [];
+      const requiredCount = incoming.filter((e) => !this.isSubNode(e.source)).length;
+      this._requiredEdgeCounts.set(node.id, requiredCount);
+    }
+
+    if (!this.silent) {
+      console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
+    }
   }
 
   /**
@@ -221,6 +235,28 @@ export class WorkflowEngine {
   }
 
   /**
+   * Ultra-lightweight reset for backtest bar-to-bar transitions.
+   * Reuses all existing objects — only clears per-bar state.
+   * Pinned results (BacktestInit) survive across bars.
+   */
+  resetForNextBar(): void {
+    this.store.clearResults();
+    this.edgePayload.clear();
+    this.enqueuedKeys.clear();
+    this.executionOrder.length = 0;
+    this.queue.clear();
+    this._satisfiedCounts.clear();
+  }
+
+  /**
+   * Pin results that persist across bars (e.g. BacktestInit output).
+   * Call once after construction.
+   */
+  pinResults(results: Record<string, any>): void {
+    this.store.pinResults(results);
+  }
+
+  /**
    * Pre-populate the store with node results so that template expressions
    * like {{ $('BacktestInit').json.backtest_id }} can resolve even when
    * the referenced node is not part of the current subgraph.
@@ -256,7 +292,11 @@ export class WorkflowEngine {
       for (const entryNodeId of entryNodeIds) {
         const incomingEdges = this.getIncomingEdges(entryNodeId);
         for (const edge of incomingEdges) {
-          this.markEdgePayload(edge.id, input);
+          if (this.silent) {
+            this.markEdgePayloadWithCounter(edge.id, input, entryNodeId);
+          } else {
+            this.markEdgePayload(edge.id, input);
+          }
         }
         this.enqueue({ nodeId: entryNodeId, input });
       }
@@ -438,6 +478,7 @@ export class WorkflowEngine {
   // -----------------------------
 
   private keyFor(item: QueueItem): string {
+    if (this.silent) return item.nodeId; // Backtest: no loops, nodeId is sufficient
     const iterPart = item.meta?.originLoopId
       ? `@loop:${item.meta.originLoopId}:${item.meta.iterIndex ?? "na"}`
       : "";
@@ -445,6 +486,11 @@ export class WorkflowEngine {
   }
 
   private enqueue(item: QueueItem) {
+    if (this.silent) {
+      // Backtest fast path: skip dedup tracking (deterministic DAG)
+      this.queue.enqueue(item);
+      return true;
+    }
     const key = this.keyFor(item);
     if (this.enqueuedKeys.has(key)) return false;
     this.queue.enqueue(item);
@@ -453,6 +499,7 @@ export class WorkflowEngine {
   }
 
   private dequeue(): QueueItem | undefined {
+    if (this.silent) return this.queue.dequeue(); // Skip dedup tracking
     const item = this.queue.dequeue();
     if (!item) return undefined;
     const key = this.keyFor(item);
@@ -518,6 +565,13 @@ export class WorkflowEngine {
   }
 
   private areDependenciesSatisfied(nodeId: string): boolean {
+    if (this.silent) {
+      // Backtest fast path: use pre-computed counts + satisfied counter
+      const required = this._requiredEdgeCounts.get(nodeId) ?? 0;
+      if (required === 0) return false;
+      const satisfied = this._satisfiedCounts.get(nodeId) ?? 0;
+      return satisfied >= required;
+    }
     const allIncoming = this.getIncomingEdges(nodeId);
     const required = allIncoming.filter((e) => !this.isSubNode(e.source));
 
@@ -616,6 +670,15 @@ export class WorkflowEngine {
     this.edgePayload.set(edgeId, payload);
   }
 
+  /**
+   * Increment the satisfied counter for a target node when an edge is marked.
+   * Used in backtest mode for O(1) dependency checks.
+   */
+  private markEdgePayloadWithCounter(edgeId: string, payload: any, targetNodeId: string) {
+    this.edgePayload.set(edgeId, payload);
+    this._satisfiedCounts.set(targetNodeId, (this._satisfiedCounts.get(targetNodeId) ?? 0) + 1);
+  }
+
   private clearIncomingEdgePayloads(nodeId: string) {
     for (const e of this.getIncomingEdges(nodeId))
       this.edgePayload.delete(e.id);
@@ -628,7 +691,12 @@ export class WorkflowEngine {
   ): Promise<void> {
     if (this.isSubNode(edge.source)) return;
 
-    this.markEdgePayload(edge.id, payload);
+    if (this.silent) {
+      // Backtest fast path: use counter-based dependency tracking
+      this.markEdgePayloadWithCounter(edge.id, payload, edge.target);
+    } else {
+      this.markEdgePayload(edge.id, payload);
+    }
 
     const targetNode = this.nodeById.get(edge.target);
     const skipDependencyCheck = Boolean(
@@ -858,33 +926,9 @@ export class WorkflowEngine {
     const node = this.nodeById.get(nodeId);
     if (!node) return;
 
-    // // FE-style retry guard when dependencies are missing
-    // const incoming = this.getIncomingEdges(nodeId);
-    // if (incoming.length > 0 && !this.areDependenciesSatisfied(nodeId)) {
-    //   const tries = this.retryCount.get(nodeId) || 0;
-    //   if (tries >= this.MAX_RETRIES) {
-    //     this.failed.add(nodeId);
-    //     this.store.setNodeError(
-    //       nodeId,
-    //       new Error(
-    //         `Dependency not satisfied after ${this.MAX_RETRIES} retries`,
-    //       ),
-    //     );
-    //     return;
-    //   }
-    //   this.retryCount.set(nodeId, tries + 1);
-    //   this.enqueue(item);
-    //   return;
-    // }
-
-    // // Track execution timing
-    // const startedAt = new Date().toISOString();
-    // const startTime = Date.now();
-
     try {
       // Check if workflow was cancelled before executing this node
-      // AbortSignal check is synchronous - no Redis polling needed
-      if (this.checkCancellation()) {
+      if (this.abortSignal?.aborted) {
         throw new Error("Workflow cancelled by user");
       }
 
@@ -918,13 +962,11 @@ export class WorkflowEngine {
         }
 
         if (result.control?.loopCompleted) {
-          // Sequential mode - loop completed, route to done edges
           const doneEdges = this.doneEdges(nodeId);
           for (const edge of doneEdges) {
             await this.routeEdge(edge, result, meta);
           }
         } else if (result.control?.loopIteration) {
-          // Sequential mode - loop iteration, route to loop body edges
           const loopEdges = this.loopBodyEdges(nodeId);
           for (const edge of loopEdges) {
             const iterMeta: IterMeta = {
@@ -935,7 +977,7 @@ export class WorkflowEngine {
             await this.routeEdge(edge, result, iterMeta);
           }
         }
-        return; // don't clear loop node payloads
+        return;
       }
 
       const edges = this.selectEdges(node, result);
@@ -948,7 +990,7 @@ export class WorkflowEngine {
         console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
       }
 
-      if (meta?.originLoopId) {
+      if (!this.silent && meta?.originLoopId) {
         const loopNodeId = meta.originLoopId;
         const loopNode = this.nodeById.get(loopNodeId);
         const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
@@ -968,7 +1010,10 @@ export class WorkflowEngine {
         await this.routeEdge(edge, result, meta);
       }
 
-      this.clearIncomingEdgePayloads(nodeId);
+      // Skip clearing incoming edge payloads in backtest mode — they get bulk-cleared in resetForNextBar
+      if (!this.silent) {
+        this.clearIncomingEdgePayloads(nodeId);
+      }
     } catch (error) {
       const errorMessage = (error as Error).message || "";
       const isCancellation =

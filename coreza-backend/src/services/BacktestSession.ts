@@ -51,6 +51,9 @@ export class BacktestSession {
     if (stateManager) {
       this.engine.setIndicatorStateManager(stateManager);
     }
+
+    // Pin init results once — they survive across bar resets
+    this.engine.pinResults(this.backtestInitResult);
   }
 
   get totalBars(): number {
@@ -88,8 +91,8 @@ export class BacktestSession {
       this.status = "running";
       const currentEvent = this.bars[this.currentIndex];
 
-      this.engine.resetLight(this.runId, this.abortController.signal);
-      this.engine.preloadResults(this.backtestInitResult);
+      // Ultra-lightweight reset — reuses store, queue, and pinned results
+      this.engine.resetForNextBar();
 
       try {
         await this.engine.executeFromEntries(

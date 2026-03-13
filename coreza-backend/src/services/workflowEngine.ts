@@ -666,6 +666,15 @@ export class WorkflowEngine {
     this.edgePayload.set(edgeId, payload);
   }
 
+  /**
+   * Increment the satisfied counter for a target node when an edge is marked.
+   * Used in backtest mode for O(1) dependency checks.
+   */
+  private markEdgePayloadWithCounter(edgeId: string, payload: any, targetNodeId: string) {
+    this.edgePayload.set(edgeId, payload);
+    this._satisfiedCounts.set(targetNodeId, (this._satisfiedCounts.get(targetNodeId) ?? 0) + 1);
+  }
+
   private clearIncomingEdgePayloads(nodeId: string) {
     for (const e of this.getIncomingEdges(nodeId))
       this.edgePayload.delete(e.id);

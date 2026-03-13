@@ -235,6 +235,28 @@ export class WorkflowEngine {
   }
 
   /**
+   * Ultra-lightweight reset for backtest bar-to-bar transitions.
+   * Reuses all existing objects — only clears per-bar state.
+   * Pinned results (BacktestInit) survive across bars.
+   */
+  resetForNextBar(): void {
+    this.store.clearResults();
+    this.edgePayload.clear();
+    this.enqueuedKeys.clear();
+    this.executionOrder.length = 0;
+    this.queue.clear();
+    this._satisfiedCounts.clear();
+  }
+
+  /**
+   * Pin results that persist across bars (e.g. BacktestInit output).
+   * Call once after construction.
+   */
+  pinResults(results: Record<string, any>): void {
+    this.store.pinResults(results);
+  }
+
+  /**
    * Pre-populate the store with node results so that template expressions
    * like {{ $('BacktestInit').json.backtest_id }} can resolve even when
    * the referenced node is not part of the current subgraph.

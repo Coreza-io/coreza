@@ -174,9 +174,9 @@ export function resolveReferences(
     return result;
   }
 
-  return expr.replace(templateRegex, (full, g1, g2, g3, rawPath) => {
+  return expr.replace(templateRegex, (full, g1, g1b, g2, g3, rawPath) => {
     let targetData = inputData;
-    const nodeName = (g1 || g2 || g3 || "").trim();
+    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
 
     if (nodeName && allNodeData) {
       const resolvedKey =

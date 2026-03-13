@@ -96,6 +96,7 @@ export class WorkflowEngine {
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   private _execCtx: any = null;
   private _nodeHasTemplatesCache = new Map<string, boolean>();
+  private _compiledParams = new Map<string, CompiledNodeParams>();
   private nodeTiming = new Map<string, { totalMs: number; count: number }>();
 
   constructor(

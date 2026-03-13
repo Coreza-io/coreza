@@ -158,7 +158,9 @@ export class WorkflowEngine {
     }
 
     this.buildBranchOrigins();
-    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
+    // Pre-compile all node templates once at workflow load time
+    this._compiledParams = preCompileAllNodes(this.nodes);
+    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
   }
 
   /**

@@ -474,6 +474,7 @@ export class WorkflowEngine {
   // -----------------------------
 
   private keyFor(item: QueueItem): string {
+    if (this.silent) return item.nodeId; // Backtest: no loops, nodeId is sufficient
     const iterPart = item.meta?.originLoopId
       ? `@loop:${item.meta.originLoopId}:${item.meta.iterIndex ?? "na"}`
       : "";
@@ -481,6 +482,11 @@ export class WorkflowEngine {
   }
 
   private enqueue(item: QueueItem) {
+    if (this.silent) {
+      // Backtest fast path: skip dedup tracking (deterministic DAG)
+      this.queue.enqueue(item);
+      return true;
+    }
     const key = this.keyFor(item);
     if (this.enqueuedKeys.has(key)) return false;
     this.queue.enqueue(item);
@@ -489,6 +495,7 @@ export class WorkflowEngine {
   }
 
   private dequeue(): QueueItem | undefined {
+    if (this.silent) return this.queue.dequeue(); // Skip dedup tracking
     const item = this.queue.dequeue();
     if (!item) return undefined;
     const key = this.keyFor(item);

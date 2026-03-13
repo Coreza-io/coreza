@@ -177,17 +177,23 @@ function compileTemplate(
     if (nodeName) {
       // Cross-node reference: {{ $('NodeName').json.path }}
       const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
+      let cachedExtractor: ((d: any) => any) | null = null;
       accessor = (allNodeData, _input) => {
         const nodeData = allNodeData[resolvedId];
         if (nodeData === undefined) return undefined;
-        const source = pickJsonSource(nodeData);
-        return pathAccessor(source);
+        if (!cachedExtractor) {
+          cachedExtractor = buildShapeExtractor(nodeData);
+        }
+        return pathAccessor(cachedExtractor(nodeData));
       };
     } else {
       // Input reference: {{ $json.path }}
+      let cachedExtractor: ((d: any) => any) | null = null;
       accessor = (_allNodeData, input) => {
-        const source = pickJsonSource(input);
-        return pathAccessor(source);
+        if (!cachedExtractor) {
+          cachedExtractor = buildShapeExtractor(input);
+        }
+        return pathAccessor(cachedExtractor(input));
       };
     }
 

@@ -1,115 +1,133 @@
-# Backtest Performance Analysis & Optimization Plan
-
-## Analysis
-
-136,296 bars across 30 nodes. Total wall time ≈ **460 seconds** (7.7 min). Per-bar cost ≈ 3.4ms.
-
-### Top offenders by total time
 
 
-| Node                     | Avg (ms)  | Total (s) | % of total |
-| ------------------------ | --------- | --------- | ---------- |
-| **RollingWindow**        | 0.51      | 69.5      | 15.1%      |
-| **RollingWindow1**       | 0.47      | 63.8      | 13.9%      |
-| **Bollinger Bands**      | 0.33      | 45.3      | 9.8%       |
-| **VolumeOscillator**     | 0.33      | 44.5      | 9.7%       |
-| **updatePortfolioValue** | 0.27      | 37.0      | 8.0%       |
-| **OnBar**                | 0.21      | 28.4      | 6.2%       |
-| **getPosition**          | 0.19      | 25.2      | 5.5%       |
-| Compute nodes (7×)       | 0.14-0.17 | ~150      | 32.6%      |
+# Review: Template Pre-Compilation Implementation
 
+## Verdict: Well-implemented with a few issues to fix
 
-### Root causes
+The implementation is solid — correct architecture, good edge case handling, and clean separation. However, there are **4 concrete issues** ranging from a bug to missed optimizations.
 
-**1. RollingWindow (29% combined)** — The biggest problem. Each call:
+---
 
-- Calls `buildExecutionScopedKey()` to construct a string key
-- Calls `dataContext.getDataByKey()` to retrieve window
-- Parses `candle_data` (JSON.parse or type checks)
-- Spreads entire window into a new array: `[...window.values()]` — **O(window_size)** copy every bar
-- Constructs a full result object with `latest`, `count`, `isReady`, `remaining`
+## Issue 1: Bug — `resolveReferences` returns `full` instead of `null` for missing values
 
-For a window size of, say, 50 — that's 50-element array copy × 136K bars × 2 windows = **13.6M array copies**.
+**File:** `coreza-backend/src/utils/resolveReferences.ts` line 204
 
-**2. Indicators (Bollinger, VolumeOsc — 19.5%)** — The `IndicatorsExecutor` on every call:
+```ts
+// Current (line 204):
+if (value === undefined) return full;   // returns the raw "{{ ... }}" string
 
-- Parses `candle_data` (JSON.parse or Array.isArray checks)
-- Calls `buildIndicatorKey()` (string concatenation)
-- Calls `stateManager.getState()` (Map lookup + possible async)
-- Calls `stateManager.update()` (async)
-- Wraps result through `normalizeOutput()` + `toNodeResult()`
+// But templateCompiler.ts (line 213):
+return value === undefined ? null : value;  // returns null
+```
 
-The actual indicator math is O(1), but the executor overhead dominates.
+This is a **parity mismatch**. The compiled path returns `null` for missing values, but the fallback runtime path returns the raw template string `{{ ... }}`. Downstream code may behave differently depending on which path runs. The test file (`resolveReferences-parity.test.ts` line 72) expects `'null'` for missing paths, which aligns with the compiler but not with the current `resolveReferences.ts`.
 
-**4. Portfolio operations (13.5%)** — `updatePortfolioValue` and `getPosition` call `resolveNodeParameters`, parse `current_bar` via `parseBar()`, look up SimBroker instance, and wrap results — every single bar.
+**Fix:** Align `resolveReferences.ts` line 204 to return `null` instead of `full` (matching the compiled path and the test expectation), OR change the compiler to match the runtime behavior. The `null` approach is correct — returning raw template strings to downstream math operations causes failures.
 
-## Optimization Plan
+---
 
-### Phase 1: Quick wins (est. -30-40% total time)
+## Issue 2: `pickJsonSource` still runs per-bar in compiled accessors
 
-**1a. Eliminate RollingWindow array copy** — `[...window.values()]` creates a new array every bar. Instead, return the buffer reference directly (or a lightweight proxy). The downstream nodes only need `latest and previous` and `isReady` most of the time.
+**File:** `coreza-backend/src/utils/templateCompiler.ts` lines 178-183
 
+```ts
+accessor = (allNodeData, _input) => {
+  const nodeData = allNodeData[resolvedId];
+  if (nodeData === undefined) return undefined;
+  const source = pickJsonSource(nodeData);  // ← runs every bar
+  return pathAccessor(source);
+};
+```
 
-| File                               | Change                                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` (line 266) | Replace `window: [...window.values()]` with `window: window.values()` (returns readonly ref). Only spread when explicitly needed. |
+The plan stated: *"detect the shape on first execution and cache the winning path."* Currently `pickJsonSource` probes up to 10 candidates on every bar. For 136K bars × 30 nodes with templates, that's still millions of probes.
 
+**Fix:** Add a one-shot shape cache per accessor. On first call, determine which candidate path works, then lock in a direct accessor for subsequent calls:
 
-**1b. Cache `buildExecutionScopedKey` result** — The key inputs (userId, workflowId, runId, nodeId, symbol, timeframe) never change within a backtest. Cache the computed key on first call.
+```ts
+let cachedExtractor: ((d: any) => any) | null = null;
+accessor = (allNodeData, _input) => {
+  const nodeData = allNodeData[resolvedId];
+  if (nodeData === undefined) return undefined;
+  if (!cachedExtractor) {
+    // Determine shape once, cache the direct path
+    if (nodeData.json !== undefined) cachedExtractor = (d) => d.json;
+    else if (nodeData.output?.json !== undefined) cachedExtractor = (d) => d.output.json;
+    // ... etc, falling back to pickJsonSource
+    else cachedExtractor = pickJsonSource;
+  }
+  return pathAccessor(cachedExtractor(nodeData));
+};
+```
 
+---
 
-| File                    | Change                                                              |
-| ----------------------- | ------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` | Add a `Map<string, string>` cache for scoped keys, keyed by nodeId. |
+## Issue 3: Mixed-string compiled accessors allocate per-bar
 
+**File:** `coreza-backend/src/utils/templateCompiler.ts` lines 231-250
 
-**1c. Skip JSON.parse for candle_data when already an object** — The RollingWindow executor already has type checks, but the branching and try/catch per bar adds up. Pre-check and fast-path when input is already a single object (the common backtest case).
+The mixed-string path (`"Buy {{ qty }} shares"`) builds a result via string concatenation in a loop over `segments`. This is fine and unavoidable for mixed strings. But a minor optimization: for the common case of exactly one dynamic segment with static prefix/suffix, a specialized fast path avoids the loop:
 
-### Phase 2: Reduce indicator overhead (est. -15-20%)
+```ts
+if (segments.length === 3 && segments[0].type === 'static' && segments[2].type === 'static') {
+  const prefix = segments[0].value;
+  const suffix = segments[2].value;
+  const acc = segments[1].accessor;
+  return (allNodeData, input) => prefix + String(acc(allNodeData, input)) + suffix;
+}
+```
 
-**2a. Make `stateManager.getState()` synchronous** — During backtest, state is always in the L1 (in-memory) cache. Remove the `async/await` from the hot path by adding a synchronous `getStateSync()` method that reads directly from the Map without promise wrapping.
+This is a minor optimization — only pursue if profiling shows mixed strings are common.
 
+---
 
-| File                       | Change                                                       |
-| -------------------------- | ------------------------------------------------------------ |
-| `indicatorStateManager.ts` | Add `getStateSync(key)` that returns from L1 cache directly. |
-| `IndicatorsExecutor.ts`    | Use sync path when `context.silent` (backtest mode).         |
+## Issue 4: `_hasFallbackEntries` re-scans resolved values
 
+**File:** `coreza-backend/src/services/workflowEngine.ts` lines 347-353
 
-**2b. Cache `buildIndicatorKey` per node** — Same as 1b. The key is deterministic per node within a run.
+```ts
+if ((compiled as any)._hasFallbackEntries) {
+  for (const [key, value] of Object.entries(resolved)) {
+    if (typeof value === "string" && value.includes("{{")) {
+      resolved[key] = this.resolveDeep(value, input, allNodeData);
+    }
+  }
+}
+```
 
-### Phase 3: Reduce engine per-node overhead (est. -10-15%)
+This iterates **all** entries to find the fallback ones. Since we know at compile time *which* keys need fallback, we should store them explicitly:
 
-**3b. Lightweight result wrapping in silent mode** — `normalizeOutput` and `toNodeResult` create wrapper objects with metadata (nodeId, nodeName, timing). In backtest/silent mode, skip the metadata and return a minimal `{ success: true, data }` shape.
+```ts
+// In templateCompiler.ts, add to CompiledNodeParams:
+fallbackKeys?: string[];
 
+// In workflowEngine.ts:
+if (compiled.fallbackKeys) {
+  for (const key of compiled.fallbackKeys) {
+    resolved[key] = this.resolveDeep(resolved[key], input, allNodeData);
+  }
+}
+```
 
-| File                 | Change                                                                     |
-| -------------------- | -------------------------------------------------------------------------- |
-| `normalizeOutput.ts` | Add a fast path that skips metadata enrichment when no options are passed. |
-| Executor files       | In silent/backtest mode, use the lean path.                                |
+This avoids the `Object.entries()` + `includes("{{")` scan on every bar.
 
+---
 
+## What's Well Done
 
+- **`buildPathAccessor` depth specialization** (lines 110-131): Generating specific 1/2/3-key accessors instead of a generic loop is a textbook V8 optimization — monomorphic property access is significantly faster.
+- **Graceful fallback**: The `compiled: false` path and try/catch in `preCompileAllNodes` ensure no regression if compilation fails for a node.
+- **Regex hoisting** in `resolveReferences.ts` with proper `lastIndex = 0` reset — correct handling of the global flag.
+- **`credential_id` filtering** at compile time — matches the runtime behavior.
+- **Pure vs mixed template distinction** — preserving original types for pure templates (`{{ $json.price }}` → returns a number, not a string) is critical for downstream math operations.
 
-This is a larger refactor and can be deferred, but would save ~18s on this specific workflow.
+---
 
-## Summary
+## Recommended Changes (Priority Order)
 
+| # | Issue | Severity | Effort |
+|---|---|---|---|
+| 1 | Fix `null` vs `full` parity mismatch in `resolveReferences.ts` | Bug | 1 line |
+| 2 | Cache `pickJsonSource` shape per accessor | Performance | ~15 lines |
+| 4 | Store `fallbackKeys` explicitly instead of re-scanning | Performance | ~10 lines |
+| 3 | Mixed-string fast path for single-dynamic-segment | Minor | ~8 lines |
 
-| Phase                         | Target           | Est. savings    |
-| ----------------------------- | ---------------- | --------------- |
-| 1: RollingWindow fixes        | 133s → ~70s      | ~60s            |
-| 2: Indicator sync path        | 90s → ~60s       | ~30s            |
-| 3: Engine overhead            | 150s → ~110s     | ~40s            |
-| 4: Template pre-compilation ✅ | ~42s → ~5s       | ~30-40s         |
-| **Total**                     | **460s → ~290s** | **~170s (37%)** |
-
-### Phase 4: Template Pre-Compilation — IMPLEMENTED
-
-**Files changed:**
-- `coreza-backend/src/utils/templateCompiler.ts` (NEW) — `compileTemplate()`, `compileNodeParams()`, `preCompileAllNodes()`
-- `coreza-backend/src/services/workflowEngine.ts` — Added `_compiledParams` map, `preCompileAllNodes()` call in constructor, fast path in `resolveNodeParameters()`
-- `coreza-backend/src/utils/resolveReferences.ts` — Hoisted `templateRegex` to module scope
-
-
-The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.

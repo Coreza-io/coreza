@@ -687,7 +687,12 @@ export class WorkflowEngine {
   ): Promise<void> {
     if (this.isSubNode(edge.source)) return;
 
-    this.markEdgePayload(edge.id, payload);
+    if (this.silent) {
+      // Backtest fast path: use counter-based dependency tracking
+      this.markEdgePayloadWithCounter(edge.id, payload, edge.target);
+    } else {
+      this.markEdgePayload(edge.id, payload);
+    }
 
     const targetNode = this.nodeById.get(edge.target);
     const skipDependencyCheck = Boolean(

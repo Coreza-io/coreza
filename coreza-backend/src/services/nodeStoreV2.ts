@@ -38,6 +38,7 @@ export class NodeStoreV2 {
   private nodeStates = new Map<string, Map<string, any>>();
   private workflowNodes: any[];
   private _cachedResults: Record<string, any> | null = null;
+  private pinnedResults = new Map<string, any>();
 
   constructor(runId: string, nodes: any[]) {
     this.runId = runId;

@@ -26,7 +26,7 @@ import { WorkflowNode } from "../nodes/types";
 
 // Matches the same patterns as resolveReferences but used once at compile time
 const TEMPLATE_REGEX =
-  /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+  /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
 // Detects unsupported dynamic patterns that must fall back to runtime resolution
 const UNSUPPORTED_PATTERNS = /\$parentStore|\$env|\$execution/;

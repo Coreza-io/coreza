@@ -164,7 +164,17 @@ export class WorkflowEngine {
     this.buildBranchOrigins();
     // Pre-compile all node templates once at workflow load time
     this._compiledParams = preCompileAllNodes(this.nodes);
-    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
+
+    // Phase C: Pre-compute required edge counts per node (excluding sub-nodes)
+    for (const node of this.nodes) {
+      const incoming = this.incomingEdgesByTarget.get(node.id) ?? [];
+      const requiredCount = incoming.filter((e) => !this.isSubNode(e.source)).length;
+      this._requiredEdgeCounts.set(node.id, requiredCount);
+    }
+
+    if (!this.silent) {
+      console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
+    }
   }
 
   /**

@@ -39,6 +39,8 @@ export interface CompiledNodeParams {
   staticParams?: Record<string, any>;
   /** For nodes with templates — resolves all params in one call */
   resolve?: (allNodeData: Record<string, any>, input: any) => Record<string, any>;
+  /** Keys that need runtime fallback resolution (unsupported patterns) */
+  fallbackKeys?: string[];
 }
 
 /**

@@ -379,10 +379,14 @@ export function compileNodeParams(
     }
   }
 
-  // If any entry needs fallback, we can't use pure compiled path
-  // but we can still compile the ones we can and only fallback for the rest
+  // Collect fallback keys explicitly
+  const fallbackKeys = hasFallback
+    ? compiledEntries.filter((e) => e.fallback).map((e) => e.key)
+    : undefined;
+
   return {
     hasTemplates: true,
+    fallbackKeys,
     resolve: (allNodeData, input) => {
       const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
@@ -397,9 +401,7 @@ export function compileNodeParams(
       }
       return resolved;
     },
-    // Expose whether any entry needs fallback so the engine knows
-    _hasFallbackEntries: hasFallback,
-  } as CompiledNodeParams & { _hasFallbackEntries?: boolean };
+  };
 }
 
 function containsTemplates(value: any): boolean {

@@ -290,11 +290,10 @@ export class WorkflowEngine {
 
       // Pre-mark incoming edges and enqueue all entry nodes
       for (const entryNodeId of entryNodeIds) {
-        const incomingEdges = this.getIncomingEdges(entryNodeId);
-        for (const edge of incomingEdges) {
-          if (this.silent) {
-            this.markEdgePayloadWithCounter(edge.id, input, entryNodeId);
-          } else {
+        if (!this.silent) {
+          // Only mark edge payloads in non-backtest mode (entry nodes are enqueued directly)
+          const incomingEdges = this.getIncomingEdges(entryNodeId);
+          for (const edge of incomingEdges) {
             this.markEdgePayload(edge.id, input);
           }
         }

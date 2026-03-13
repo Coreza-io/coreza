@@ -96,12 +96,20 @@ This is a larger refactor and can be deferred, but would save ~18s on this speci
 ## Summary
 
 
-| Phase                  | Target           | Est. savings    |
-| ---------------------- | ---------------- | --------------- |
-| 1: RollingWindow fixes | 133s → ~70s      | ~60s            |
-| 2: Indicator sync path | 90s → ~60s       | ~30s            |
-| 3: Engine overhead     | 150s → ~110s     | ~40s            |
-| **Total**              | **460s → ~330s** | **~130s (28%)** |
+| Phase                         | Target           | Est. savings    |
+| ----------------------------- | ---------------- | --------------- |
+| 1: RollingWindow fixes        | 133s → ~70s      | ~60s            |
+| 2: Indicator sync path        | 90s → ~60s       | ~30s            |
+| 3: Engine overhead            | 150s → ~110s     | ~40s            |
+| 4: Template pre-compilation ✅ | ~42s → ~5s       | ~30-40s         |
+| **Total**                     | **460s → ~290s** | **~170s (37%)** |
+
+### Phase 4: Template Pre-Compilation — IMPLEMENTED
+
+**Files changed:**
+- `coreza-backend/src/utils/templateCompiler.ts` (NEW) — `compileTemplate()`, `compileNodeParams()`, `preCompileAllNodes()`
+- `coreza-backend/src/services/workflowEngine.ts` — Added `_compiledParams` map, `preCompileAllNodes()` call in constructor, fast path in `resolveNodeParameters()`
+- `coreza-backend/src/utils/resolveReferences.ts` — Hoisted `templateRegex` to module scope
 
 
 The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.

@@ -51,6 +51,9 @@ export class BacktestSession {
     if (stateManager) {
       this.engine.setIndicatorStateManager(stateManager);
     }
+
+    // Pin init results once — they survive across bar resets
+    this.engine.pinResults(this.backtestInitResult);
   }
 
   get totalBars(): number {

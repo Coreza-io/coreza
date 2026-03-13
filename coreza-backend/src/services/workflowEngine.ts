@@ -561,6 +561,13 @@ export class WorkflowEngine {
   }
 
   private areDependenciesSatisfied(nodeId: string): boolean {
+    if (this.silent) {
+      // Backtest fast path: use pre-computed counts + satisfied counter
+      const required = this._requiredEdgeCounts.get(nodeId) ?? 0;
+      if (required === 0) return false;
+      const satisfied = this._satisfiedCounts.get(nodeId) ?? 0;
+      return satisfied >= required;
+    }
     const allIncoming = this.getIncomingEdges(nodeId);
     const required = allIncoming.filter((e) => !this.isSubNode(e.source));
 

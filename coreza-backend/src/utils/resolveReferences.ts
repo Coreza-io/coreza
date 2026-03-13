@@ -56,6 +56,10 @@ function parsePath(path: string): PathKey[] {
  * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
  * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
  */
+// Hoisted to module scope to avoid recompilation on every call (~2.86M times per backtest)
+const TEMPLATE_REGEX =
+  /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+
 export function resolveReferences(
   expr: string,
   inputData: any,
@@ -66,8 +70,8 @@ export function resolveReferences(
     return expr as any;
   }
 
-  const templateRegex =
-    /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+  // Reset lastIndex since the regex is now module-scoped and stateful (global flag)
+  TEMPLATE_REGEX.lastIndex = 0;
 
   function pickJsonSource(d: any) {
     if (d == null) return d;
@@ -174,7 +178,7 @@ export function resolveReferences(
     return result;
   }
 
-  return expr.replace(templateRegex, (full, g1, g2, g3, rawPath) => {
+  return expr.replace(TEMPLATE_REGEX, (full, g1, g2, g3, rawPath) => {
     let targetData = inputData;
     const nodeName = (g1 || g2 || g3 || "").trim();
 

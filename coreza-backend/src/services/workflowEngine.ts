@@ -27,6 +27,7 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
+import { preCompileAllNodes, CompiledNodeParams } from "../utils/templateCompiler";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { performance } from "perf_hooks";
@@ -95,6 +96,7 @@ export class WorkflowEngine {
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   private _execCtx: any = null;
   private _nodeHasTemplatesCache = new Map<string, boolean>();
+  private _compiledParams = new Map<string, CompiledNodeParams>();
   private nodeTiming = new Map<string, { totalMs: number; count: number }>();
 
   constructor(
@@ -156,7 +158,9 @@ export class WorkflowEngine {
     }
 
     this.buildBranchOrigins();
-    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}`);
+    // Pre-compile all node templates once at workflow load time
+    this._compiledParams = preCompileAllNodes(this.nodes);
+    console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
   }
 
   /**
@@ -332,6 +336,26 @@ export class WorkflowEngine {
   }
 
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    // Fast path: use pre-compiled accessors when available
+    const compiled = this._compiledParams.get(node.id);
+    if (compiled) {
+      if (!compiled.hasTemplates) return compiled.staticParams!;
+      if (compiled.resolve) {
+        const allNodeData = this.store.getAllResults();
+        const resolved = compiled.resolve(allNodeData, input);
+        // If some entries had fallback, resolve them with resolveDeep
+        if ((compiled as any)._hasFallbackEntries) {
+          for (const [key, value] of Object.entries(resolved)) {
+            if (typeof value === "string" && value.includes("{{")) {
+              resolved[key] = this.resolveDeep(value, input, allNodeData);
+            }
+          }
+        }
+        return resolved;
+      }
+    }
+
+    // Fallback: original resolution path
     const nodeParams = node.values || {};
     const resolvedParams: any = {};
 

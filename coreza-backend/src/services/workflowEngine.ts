@@ -979,34 +979,58 @@ export class WorkflowEngine {
         return;
       }
 
-      const edges = this.selectEdges(node, result);
-      if (!this.silent) {
+      if (this.silent) {
+        // Backtest fast path: inline selectEdges + routing in a single pass (no intermediate array)
+        const isConditional = node.name === "If" || node.name === "Switch";
+        if (isConditional) {
+          const resultData = result?.data;
+          let chosen: string[];
+          if (typeof resultData === "boolean") {
+            chosen = [resultData ? "true" : "false"];
+          } else if (typeof resultData === "string") {
+            chosen = [resultData];
+          } else if (resultData && typeof resultData === "object" && ("true" in resultData || "false" in resultData)) {
+            chosen = Object.entries(resultData).filter(([, v]) => !!v).map(([k]) => k);
+          } else {
+            chosen = ["default", ""];
+          }
+          const allowed = new Set(chosen);
+          const outgoing = this.getOutgoingEdges(node.id);
+          for (let i = 0; i < outgoing.length; i++) {
+            const edge = outgoing[i];
+            if (allowed.has(edge.sourceHandle ?? "")) {
+              await this.routeEdge(edge, result, meta);
+            }
+          }
+        } else {
+          const outgoing = this.getOutgoingEdges(node.id);
+          for (let i = 0; i < outgoing.length; i++) {
+            await this.routeEdge(outgoing[i], result, meta);
+          }
+        }
+      } else {
+        const edges = this.selectEdges(node, result);
         const targetSummary =
           edges.length > 0
             ? edges.map((edge) => edge.target).join(",")
             : "none";
-
         console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
-      }
 
-      if (!this.silent && meta?.originLoopId) {
-        const loopNodeId = meta.originLoopId;
-        const loopNode = this.nodeById.get(loopNodeId);
-        const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
-        if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
-          const currentResults =
-            this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
-          currentResults.push(result);
-          this.store.setNodeState(
-            loopNodeId,
-            "aggregatedResults",
-            currentResults,
-          );
+        if (meta?.originLoopId) {
+          const loopNodeId = meta.originLoopId;
+          const loopNode = this.nodeById.get(loopNodeId);
+          const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
+          if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
+            const currentResults =
+              this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
+            currentResults.push(result);
+            this.store.setNodeState(loopNodeId, "aggregatedResults", currentResults);
+          }
         }
-      }
 
-      for (const edge of edges) {
-        await this.routeEdge(edge, result, meta);
+        for (const edge of edges) {
+          await this.routeEdge(edge, result, meta);
+        }
       }
 
       // Skip clearing incoming edge payloads in backtest mode — they get bulk-cleared in resetForNextBar

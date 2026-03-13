@@ -509,6 +509,15 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   // ============== ON BAR ==============
+  // Pre-allocated reusable result template for backtest hot path
+  private _onBarResult: NodeResult = {
+    success: true,
+    data: {
+      BarSeries: [{ symbol: "", interval: "", bars: [null as any] }],
+      barIndex: 0,
+    },
+  };
+
   private async executeOnBar(
     node: WorkflowNode,
     input: NodeInput,
@@ -517,21 +526,14 @@ export class BacktestExecutor implements INodeExecutor {
     void node;
 
     const data = input?.data;
-    const bar = data?.bar;
-    const symbol = data?.symbol;
-    const barIndex = data?.barIndex;
-    const timeframe = data?.interval;
+    // Mutate pre-allocated template instead of creating new objects
+    const barSeries = this._onBarResult.data.BarSeries[0];
+    barSeries.symbol = data?.symbol;
+    barSeries.interval = data?.interval;
+    barSeries.bars[0] = data?.bar;
+    this._onBarResult.data.barIndex = data?.barIndex;
 
-    return leanSuccess({
-      BarSeries: [
-        {
-          symbol,
-          interval: timeframe,
-          bars: [bar],
-        },
-      ],
-      barIndex,
-    });
+    return this._onBarResult;
   }
 
   // ============== BACKTEST TRADE ==============

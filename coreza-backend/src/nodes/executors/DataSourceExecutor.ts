@@ -276,14 +276,15 @@ export class DataSourceExecutor implements INodeExecutor {
       window.add(bar);
     }
 
-    return leanSuccess({
-      window: window.values(),
-      count: window.count,
-      size: window.size,
-      isReady: window.isReady,
-      remaining: window.size - window.count,
-      latest: window.count > 0 ? window.at(0) : null,
-    });
+    // Reuse pre-allocated result object to avoid per-bar allocations
+    const rw = this._rollingWindowResult;
+    rw.data.window = window.values();
+    rw.data.count = window.count;
+    rw.data.size = window.size;
+    rw.data.isReady = window.isReady;
+    rw.data.remaining = window.size - window.count;
+    rw.data.latest = window.count > 0 ? window.at(0) : null;
+    return rw;
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {

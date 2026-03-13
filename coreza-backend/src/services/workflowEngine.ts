@@ -336,6 +336,26 @@ export class WorkflowEngine {
   }
 
   private resolveNodeParameters(node: WorkflowNode, input: any): any {
+    // Fast path: use pre-compiled accessors when available
+    const compiled = this._compiledParams.get(node.id);
+    if (compiled) {
+      if (!compiled.hasTemplates) return compiled.staticParams!;
+      if (compiled.resolve) {
+        const allNodeData = this.store.getAllResults();
+        const resolved = compiled.resolve(allNodeData, input);
+        // If some entries had fallback, resolve them with resolveDeep
+        if ((compiled as any)._hasFallbackEntries) {
+          for (const [key, value] of Object.entries(resolved)) {
+            if (typeof value === "string" && value.includes("{{")) {
+              resolved[key] = this.resolveDeep(value, input, allNodeData);
+            }
+          }
+        }
+        return resolved;
+      }
+    }
+
+    // Fallback: original resolution path
     const nodeParams = node.values || {};
     const resolvedParams: any = {};
 

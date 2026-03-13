@@ -113,3 +113,27 @@ This is a larger refactor and can be deferred, but would save ~18s on this speci
 
 
 The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.
+
+### Phase 5: Engine Hot-Path Optimization — IMPLEMENTED
+
+**Phase A: Eliminate per-bar reset overhead**
+- `NodeStoreV2`: Added `clearResults()` and `pinResults()` — reuses store objects, only clears per-bar results while preserving pinned BacktestInit results
+- `WorkflowEngine`: Added `resetForNextBar()` — ultra-lightweight reset that clears edgePayload, enqueuedKeys, executionOrder, queue, and satisfied counters in-place (no `new` allocations)
+- `BacktestSession`: Replaced `resetLight()` + `preloadResults()` per bar with single `resetForNextBar()` call. `pinResults()` called once in constructor.
+
+**Phase C: Reduce per-node overhead in executeOnce()**
+- Pre-computed `_requiredEdgeCounts` per node at construction time
+- `areDependenciesSatisfied()` uses O(1) counter check instead of iterating all incoming edges
+- `markEdgePayloadWithCounter()` increments satisfied count on edge marking
+- `keyFor()` returns just `nodeId` in backtest mode (no string concatenation)
+- `enqueue()`/`dequeue()` skip `enqueuedKeys` tracking in backtest mode (deterministic DAG)
+- Skip `clearIncomingEdgePayloads()` in backtest mode (bulk-cleared by `resetForNextBar()`)
+- Skip loop aggregation tracking in backtest mode
+- Suppressed constructor log in silent mode
+
+**Phase D: Allocation reduction** — Assessed, `leanSuccess` already minimal. Main allocation wins from Phase A.
+
+**Files changed:**
+- `coreza-backend/src/services/nodeStoreV2.ts` — `clearResults()`, `pinResults()`, `pinnedResults` Map
+- `coreza-backend/src/services/workflowEngine.ts` — `resetForNextBar()`, `pinResults()`, `_requiredEdgeCounts`, `_satisfiedCounts`, counter-based dependency checks, backtest fast paths
+- `coreza-backend/src/services/BacktestSession.ts` — Uses `resetForNextBar()` + `pinResults()` in constructor

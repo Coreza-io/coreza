@@ -27,6 +27,7 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
+import { preCompileAllNodes, CompiledNodeParams } from "../utils/templateCompiler";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { performance } from "perf_hooks";

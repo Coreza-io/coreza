@@ -99,6 +99,10 @@ export class WorkflowEngine {
   private _compiledParams = new Map<string, CompiledNodeParams>();
   private nodeTiming = new Map<string, { totalMs: number; count: number }>();
 
+  // Phase C: Pre-computed dependency counts for fast satisfaction checks
+  private _requiredEdgeCounts = new Map<string, number>();
+  private _satisfiedCounts = new Map<string, number>();
+
   constructor(
     private runId: string,
     private workflowId: string,

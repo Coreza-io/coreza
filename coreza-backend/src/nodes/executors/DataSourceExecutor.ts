@@ -35,11 +35,8 @@ export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
   private scopedKeyCache = new Map<string, string>();
   private cachedRunId: string | null = null;
-  // Pre-allocated reusable result template for RollingWindow hot path
-  private _rollingWindowResult: NodeResult = {
-    success: true,
-    data: { window: null, count: 0, size: 0, isReady: false, remaining: 0, latest: null },
-  };
+  // Pre-allocated reusable result template per node for RollingWindow hot path
+  private _rollingWindowResults = new Map<string, NodeResult>();
 
   async execute(
     node: WorkflowNode,
@@ -281,8 +278,22 @@ export class DataSourceExecutor implements INodeExecutor {
       window.add(bar);
     }
 
-    // Reuse pre-allocated result object to avoid per-bar allocations
-    const rw = this._rollingWindowResult;
+    if (!this._rollingWindowResults.has(node.id)) {
+      this._rollingWindowResults.set(node.id, {
+        success: true,
+        data: {
+          window: null,
+          count: 0,
+          size: 0,
+          isReady: false,
+          remaining: 0,
+          latest: null,
+        },
+      });
+    }
+
+    // Reuse per-node pre-allocated result object to avoid per-bar allocations
+    const rw = this._rollingWindowResults.get(node.id)!;
     rw.data.window = window.values();
     rw.data.count = window.count;
     rw.data.size = window.size;

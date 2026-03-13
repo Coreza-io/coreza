@@ -292,7 +292,11 @@ export class WorkflowEngine {
       for (const entryNodeId of entryNodeIds) {
         const incomingEdges = this.getIncomingEdges(entryNodeId);
         for (const edge of incomingEdges) {
-          this.markEdgePayload(edge.id, input);
+          if (this.silent) {
+            this.markEdgePayloadWithCounter(edge.id, input, entryNodeId);
+          } else {
+            this.markEdgePayload(edge.id, input);
+          }
         }
         this.enqueue({ nodeId: entryNodeId, input });
       }

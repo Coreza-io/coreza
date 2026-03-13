@@ -35,6 +35,11 @@ export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
   private scopedKeyCache = new Map<string, string>();
   private cachedRunId: string | null = null;
+  // Pre-allocated reusable result template for RollingWindow hot path
+  private _rollingWindowResult: NodeResult = {
+    success: true,
+    data: { window: null, count: 0, size: 0, isReady: false, remaining: 0, latest: null },
+  };
 
   async execute(
     node: WorkflowNode,

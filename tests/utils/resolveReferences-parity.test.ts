@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { resolveReferences as frontendResolve } from '../../src/utils/resolveReferences';
 import { resolveReferences as backendResolve } from '../../coreza-backend/src/utils/resolveReferences';
 

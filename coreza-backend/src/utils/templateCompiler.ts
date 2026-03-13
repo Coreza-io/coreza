@@ -26,7 +26,7 @@ import { WorkflowNode } from "../nodes/types";
 
 // Matches the same patterns as resolveReferences but used once at compile time
 const TEMPLATE_REGEX =
-  /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+  /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
 // Detects unsupported dynamic patterns that must fall back to runtime resolution
 const UNSUPPORTED_PATTERNS = /\$parentStore|\$env|\$execution/;
@@ -39,6 +39,8 @@ export interface CompiledNodeParams {
   staticParams?: Record<string, any>;
   /** For nodes with templates — resolves all params in one call */
   resolve?: (allNodeData: Record<string, any>, input: any) => Record<string, any>;
+  /** Keys that need runtime fallback resolution (unsupported patterns) */
+  fallbackKeys?: string[];
 }
 
 /**
@@ -84,6 +86,34 @@ function pickJsonSource(d: any): any {
   if (d.data?.input?.json !== undefined) return d.data.input.json;
   if (d.data?.input !== undefined) return d.data.input;
   return d;
+}
+
+/**
+ * Build a one-shot shape extractor that caches the data path on first call.
+ * Eliminates repeated pickJsonSource probing after the first bar.
+ */
+function buildShapeExtractor(sample: any): (d: any) => any {
+  if (sample == null) return pickJsonSource;
+  if (sample.json !== undefined) return (d: any) => d.json;
+  if (sample.output?.json !== undefined) return (d: any) => d.output.json;
+  if (sample.output !== undefined) return (d: any) => d.output;
+  if (sample.input?.json !== undefined) return (d: any) => d.input.json;
+  if (sample.input !== undefined) return (d: any) => d.input;
+  if (sample.data?.output?.json !== undefined) return (d: any) => d.data.output.json;
+  if (sample.data?.output !== undefined) return (d: any) => d.data.output;
+  if (sample.data?.input?.json !== undefined) return (d: any) => d.data.input.json;
+  if (sample.data?.input !== undefined) return (d: any) => d.data.input;
+  return (d: any) => d;
+}
+
+/**
+ * Format a value for mixed-string interpolation.
+ */
+function formatMixedValue(val: any): string {
+  if (val === undefined) return "";
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === "object" && val !== null) return JSON.stringify(val);
+  return String(val);
 }
 
 /**
@@ -163,8 +193,8 @@ function compileTemplate(
   TEMPLATE_REGEX.lastIndex = 0;
 
   while ((m = TEMPLATE_REGEX.exec(templateStr))) {
-    const [full, g1, g2, g3, rawPath] = m;
-    const nodeName = (g1 || g2 || g3 || "").trim();
+    const [full, g1, g1b, g2, g3, rawPath] = m;
+    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
     const cleanPath = (rawPath || "").trim().replace(/^[.\s]+/, "");
 
     const pathAccessor = buildPathAccessor(cleanPath);
@@ -175,17 +205,23 @@ function compileTemplate(
     if (nodeName) {
       // Cross-node reference: {{ $('NodeName').json.path }}
       const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
+      let cachedExtractor: ((d: any) => any) | null = null;
       accessor = (allNodeData, _input) => {
         const nodeData = allNodeData[resolvedId];
         if (nodeData === undefined) return undefined;
-        const source = pickJsonSource(nodeData);
-        return pathAccessor(source);
+        if (!cachedExtractor) {
+          cachedExtractor = buildShapeExtractor(nodeData);
+        }
+        return pathAccessor(cachedExtractor(nodeData));
       };
     } else {
       // Input reference: {{ $json.path }}
+      let cachedExtractor: ((d: any) => any) | null = null;
       accessor = (_allNodeData, input) => {
-        const source = pickJsonSource(input);
-        return pathAccessor(source);
+        if (!cachedExtractor) {
+          cachedExtractor = buildShapeExtractor(input);
+        }
+        return pathAccessor(cachedExtractor(input));
       };
     }
 
@@ -228,22 +264,24 @@ function compileTemplate(
     segments.push({ type: "static", value: templateStr.slice(lastEnd) });
   }
 
-  return (allNodeData, input) => {
+  // Fast path: single dynamic segment with static prefix/suffix (common case)
+  if (segments.length === 3 && segments[0].type === "static" && segments[2].type === "static") {
+    const prefix = (segments[0] as any).value;
+    const suffix = (segments[2] as any).value;
+    const acc = (segments[1] as any).accessor;
+    return (allNodeData: Record<string, any>, input: any) => {
+      const val = acc(allNodeData, input);
+      return prefix + formatMixedValue(val) + suffix;
+    };
+  }
+
+  return (allNodeData: Record<string, any>, input: any) => {
     let result = "";
     for (const seg of segments) {
       if (seg.type === "static") {
         result += seg.value;
       } else {
-        const val = seg.accessor(allNodeData, input);
-        if (val === undefined) {
-          result += "";
-        } else if (val instanceof Date) {
-          result += val.toISOString();
-        } else if (typeof val === "object" && val !== null) {
-          result += JSON.stringify(val);
-        } else {
-          result += String(val);
-        }
+        result += formatMixedValue((seg as any).accessor(allNodeData, input));
       }
     }
     return result;
@@ -369,10 +407,14 @@ export function compileNodeParams(
     }
   }
 
-  // If any entry needs fallback, we can't use pure compiled path
-  // but we can still compile the ones we can and only fallback for the rest
+  // Collect fallback keys explicitly
+  const fallbackKeys = hasFallback
+    ? compiledEntries.filter((e) => e.fallback).map((e) => e.key)
+    : undefined;
+
   return {
     hasTemplates: true,
+    fallbackKeys,
     resolve: (allNodeData, input) => {
       const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
@@ -387,9 +429,7 @@ export function compileNodeParams(
       }
       return resolved;
     },
-    // Expose whether any entry needs fallback so the engine knows
-    _hasFallbackEntries: hasFallback,
-  } as CompiledNodeParams & { _hasFallbackEntries?: boolean };
+  };
 }
 
 function containsTemplates(value: any): boolean {

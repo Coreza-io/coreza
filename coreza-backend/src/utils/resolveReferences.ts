@@ -58,7 +58,7 @@ function parsePath(path: string): PathKey[] {
  */
 // Hoisted to module scope to avoid recompilation on every call (~2.86M times per backtest)
 const TEMPLATE_REGEX =
-  /\{\{\s*(?:(?:\$\(\s*'([^']+)'\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+  /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
 export function resolveReferences(
   expr: string,
@@ -178,9 +178,9 @@ export function resolveReferences(
     return result;
   }
 
-  return expr.replace(TEMPLATE_REGEX, (full, g1, g2, g3, rawPath) => {
+  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
     let targetData = inputData;
-    const nodeName = (g1 || g2 || g3 || "").trim();
+    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
 
     if (nodeName && allNodeData) {
       const resolvedKey =
@@ -201,7 +201,7 @@ export function resolveReferences(
     }
 
     const value = getValueByPath(targetData, cleanPath);
-    if (value === undefined) return full;
+    if (value === undefined) return null;
 
     return value instanceof Date
       ? value.toISOString()

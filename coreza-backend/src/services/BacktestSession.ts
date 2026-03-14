@@ -2,6 +2,7 @@ import { getRedisCache } from "../config/redis";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { IndicatorStateManager } from "./indicatorStateManager";
+import { DataContextManager } from "./DataContext";
 import { WorkflowEngine } from "./workflowEngine";
 
 export interface BarEvent {
@@ -51,6 +52,9 @@ export class BacktestSession {
     if (stateManager) {
       this.engine.setIndicatorStateManager(stateManager);
     }
+
+    // Ensure node timings are reset for each new backtest session.
+    this.engine.clearNodeTiming();
 
     // Pin init results once — they survive across bar resets
     this.engine.pinResults(this.backtestInitResult);
@@ -247,6 +251,7 @@ export class BacktestSession {
   cleanup(): void {
     this.abortController.abort();
     BacktestExecutor.cleanupBacktestResources(this.backtestId);
+    DataContextManager.getInstance().destroyContext(this.runId);
   }
 
   private async reportProgress(): Promise<void> {

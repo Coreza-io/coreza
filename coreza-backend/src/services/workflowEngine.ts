@@ -245,6 +245,10 @@ export class WorkflowEngine {
     this._execCtx = null;
   }
 
+  clearNodeTiming(): void {
+    this.nodeTiming.clear();
+  }
+
   /**
    * Ultra-lightweight reset for backtest bar-to-bar transitions.
    * Reuses all existing objects — only clears per-bar state.

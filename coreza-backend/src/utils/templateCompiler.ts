@@ -25,20 +25,22 @@ import { WorkflowNode } from "../nodes/types";
  */
 
 // Matches the same patterns as resolveReferences but used once at compile time
-const TEMPLATE_REGEX =
-  /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+const TEMPLATE_REGEX = /\{\{\s*\$\(\s*'([^']+)'\s*\)\.json\.?([^}]*)\s*\}\}/g;
 
 // Detects unsupported dynamic patterns that must fall back to runtime resolution
 const UNSUPPORTED_PATTERNS = /\$parentStore|\$env|\$execution/;
 
-type AccessorFn = (allNodeData: Record<string, any>, input: any) => any;
+type AccessorFn = (allNodeData: Record<string, any>) => any;
 
 export interface CompiledNodeParams {
   hasTemplates: boolean;
   /** For nodes with zero templates — just return these directly */
   staticParams?: Record<string, any>;
   /** For nodes with templates — resolves all params in one call */
-  resolve?: (allNodeData: Record<string, any>, input: any) => Record<string, any>;
+  resolve?: (
+    allNodeData: Record<string, any>,
+    input: any,
+  ) => Record<string, any>;
   /** Keys that need runtime fallback resolution (unsupported patterns) */
   fallbackKeys?: string[];
 }
@@ -99,9 +101,11 @@ function buildShapeExtractor(sample: any): (d: any) => any {
   if (sample.output !== undefined) return (d: any) => d.output;
   if (sample.input?.json !== undefined) return (d: any) => d.input.json;
   if (sample.input !== undefined) return (d: any) => d.input;
-  if (sample.data?.output?.json !== undefined) return (d: any) => d.data.output.json;
+  if (sample.data?.output?.json !== undefined)
+    return (d: any) => d.data.output.json;
   if (sample.data?.output !== undefined) return (d: any) => d.data.output;
-  if (sample.data?.input?.json !== undefined) return (d: any) => d.data.input.json;
+  if (sample.data?.input?.json !== undefined)
+    return (d: any) => d.data.input.json;
   if (sample.data?.input !== undefined) return (d: any) => d.data.input;
   return (d: any) => d;
 }
@@ -193,37 +197,28 @@ function compileTemplate(
   TEMPLATE_REGEX.lastIndex = 0;
 
   while ((m = TEMPLATE_REGEX.exec(templateStr))) {
-    const [full, g1, g1b, g2, g3, rawPath] = m;
-    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
-    const cleanPath = (rawPath || "").trim().replace(/^[.\s]+/, "");
+    const [full, nodeName, rawPath] = m;
+
+    const cleanPath = (rawPath || "").trim();
 
     const pathAccessor = buildPathAccessor(cleanPath);
-    if (!pathAccessor) return null; // complex path, fall back
+    if (!pathAccessor) return null;
 
-    let accessor: AccessorFn;
+    //const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
 
-    if (nodeName) {
-      // Cross-node reference: {{ $('NodeName').json.path }}
-      const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
-      let cachedExtractor: ((d: any) => any) | null = null;
-      accessor = (allNodeData, _input) => {
-        const nodeData = allNodeData[resolvedId];
-        if (nodeData === undefined) return undefined;
-        if (!cachedExtractor) {
-          cachedExtractor = buildShapeExtractor(nodeData);
-        }
-        return pathAccessor(cachedExtractor(nodeData));
-      };
-    } else {
-      // Input reference: {{ $json.path }}
-      let cachedExtractor: ((d: any) => any) | null = null;
-      accessor = (_allNodeData, input) => {
-        if (!cachedExtractor) {
-          cachedExtractor = buildShapeExtractor(input);
-        }
-        return pathAccessor(cachedExtractor(input));
-      };
-    }
+    // let cachedExtractor: ((d: any) => any) | null = null;
+
+    const accessor: AccessorFn = (allNodeData) => {
+      const nodeData = allNodeData[nodeName];
+      if (nodeData == null) return undefined;
+
+      // if (!cachedExtractor) {
+      //   cachedExtractor = buildShapeExtractor(nodeData);
+      // }
+
+      // return pathAccessor(cachedExtractor(nodeData));
+      return pathAccessor(nodeData);
+    };
 
     matches.push({
       fullMatch: full,
@@ -243,19 +238,25 @@ function compileTemplate(
 
   if (isPure) {
     const acc = matches[0].accessor;
-    return (allNodeData, input) => {
-      const value = acc(allNodeData, input);
+    return (allNodeData) => {
+      const value = acc(allNodeData);
       return value === undefined ? null : value;
     };
   }
 
   // Mixed string: build segments for concatenation
-  const segments: Array<{ type: "static"; value: string } | { type: "dynamic"; accessor: AccessorFn }> = [];
+  const segments: Array<
+    | { type: "static"; value: string }
+    | { type: "dynamic"; accessor: AccessorFn }
+  > = [];
   let lastEnd = 0;
 
   for (const match of matches) {
     if (match.start > lastEnd) {
-      segments.push({ type: "static", value: templateStr.slice(lastEnd, match.start) });
+      segments.push({
+        type: "static",
+        value: templateStr.slice(lastEnd, match.start),
+      });
     }
     segments.push({ type: "dynamic", accessor: match.accessor });
     lastEnd = match.end;
@@ -265,23 +266,27 @@ function compileTemplate(
   }
 
   // Fast path: single dynamic segment with static prefix/suffix (common case)
-  if (segments.length === 3 && segments[0].type === "static" && segments[2].type === "static") {
+  if (
+    segments.length === 3 &&
+    segments[0].type === "static" &&
+    segments[2].type === "static"
+  ) {
     const prefix = (segments[0] as any).value;
     const suffix = (segments[2] as any).value;
     const acc = (segments[1] as any).accessor;
-    return (allNodeData: Record<string, any>, input: any) => {
-      const val = acc(allNodeData, input);
+    return (allNodeData: Record<string, any>) => {
+      const val = acc(allNodeData);
       return prefix + formatMixedValue(val) + suffix;
     };
   }
 
-  return (allNodeData: Record<string, any>, input: any) => {
+  return (allNodeData: Record<string, any>) => {
     let result = "";
     for (const seg of segments) {
       if (seg.type === "static") {
         result += seg.value;
       } else {
-        result += formatMixedValue((seg as any).accessor(allNodeData, input));
+        result += formatMixedValue((seg as any).accessor(allNodeData));
       }
     }
     return result;
@@ -296,7 +301,10 @@ function compileValue(
   value: any,
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
-): { compiled: true; accessor: AccessorFn } | { compiled: true; staticValue: any } | { compiled: false } {
+):
+  | { compiled: true; accessor: AccessorFn }
+  | { compiled: true; staticValue: any }
+  | { compiled: false } {
   if (typeof value === "string") {
     if (!value.includes("{{")) {
       return { compiled: true, staticValue: value };
@@ -307,7 +315,8 @@ function compileValue(
   }
 
   if (Array.isArray(value)) {
-    const compiledItems: Array<{ accessor?: AccessorFn; staticValue?: any }> = [];
+    const compiledItems: Array<{ accessor?: AccessorFn; staticValue?: any }> =
+      [];
     for (const item of value) {
       const result = compileValue(item, nodeIdSet, nodes);
       if (!result.compiled) return { compiled: false };
@@ -316,20 +325,29 @@ function compileValue(
     // Check if all items are static
     const allStatic = compiledItems.every((c) => "staticValue" in c);
     if (allStatic) {
-      return { compiled: true, staticValue: compiledItems.map((c) => (c as any).staticValue) };
+      return {
+        compiled: true,
+        staticValue: compiledItems.map((c) => (c as any).staticValue),
+      };
     }
     return {
       compiled: true,
-      accessor: (allNodeData, input) =>
+      accessor: (allNodeData) =>
         compiledItems.map((c) =>
-          "accessor" in c ? (c as any).accessor(allNodeData, input) : (c as any).staticValue,
+          "accessor" in c
+            ? (c as any).accessor(allNodeData)
+            : (c as any).staticValue,
         ),
     };
   }
 
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value);
-    const compiledEntries: Array<{ key: string; accessor?: AccessorFn; staticValue?: any }> = [];
+    const compiledEntries: Array<{
+      key: string;
+      accessor?: AccessorFn;
+      staticValue?: any;
+    }> = [];
     for (const [k, v] of entries) {
       const result = compileValue(v, nodeIdSet, nodes);
       if (!result.compiled) return { compiled: false };
@@ -338,17 +356,19 @@ function compileValue(
     const allStatic = compiledEntries.every((c) => "staticValue" in c);
     if (allStatic) {
       const staticObj: Record<string, any> = {};
-      for (const c of compiledEntries) staticObj[c.key] = (c as any).staticValue;
+      for (const c of compiledEntries)
+        staticObj[c.key] = (c as any).staticValue;
       return { compiled: true, staticValue: staticObj };
     }
     return {
       compiled: true,
-      accessor: (allNodeData, input) => {
+      accessor: (allNodeData) => {
         const result: Record<string, any> = {};
         for (const c of compiledEntries) {
-          result[c.key] = "accessor" in c
-            ? (c as any).accessor(allNodeData, input)
-            : (c as any).staticValue;
+          result[c.key] =
+            "accessor" in c
+              ? (c as any).accessor(allNodeData)
+              : (c as any).staticValue;
         }
         return result;
       },
@@ -368,7 +388,9 @@ export function compileNodeParams(
   nodes: WorkflowNode[],
 ): CompiledNodeParams {
   const nodeParams = (node as any).values || {};
-  const entries = Object.entries(nodeParams).filter(([k]) => k !== "credential_id");
+  const entries = Object.entries(nodeParams).filter(
+    ([k]) => k !== "credential_id",
+  );
 
   if (entries.length === 0) {
     return { hasTemplates: false, staticParams: {} };
@@ -415,14 +437,14 @@ export function compileNodeParams(
   return {
     hasTemplates: true,
     fallbackKeys,
-    resolve: (allNodeData, input) => {
+    resolve: (allNodeData) => {
       const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
         if (entry.fallback) {
           // Will be handled by the engine's resolveDeep fallback
           resolved[entry.key] = entry.staticValue;
         } else if (entry.accessor) {
-          resolved[entry.key] = entry.accessor(allNodeData, input);
+          resolved[entry.key] = entry.accessor(allNodeData);
         } else {
           resolved[entry.key] = entry.staticValue;
         }

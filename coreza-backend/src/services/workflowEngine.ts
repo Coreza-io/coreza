@@ -27,7 +27,10 @@ import { NodeRouter } from "./router";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { getNodeExecutor } from "../nodes/registry";
 import { resolveReferences } from "../utils/resolveReferences";
-import { preCompileAllNodes, CompiledNodeParams } from "../utils/templateCompiler";
+import {
+  preCompileAllNodes,
+  CompiledNodeParams,
+} from "../utils/templateCompiler";
 import { DataContext, DataContextManager } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { performance } from "perf_hooks";
@@ -168,12 +171,16 @@ export class WorkflowEngine {
     // Phase C: Pre-compute required edge counts per node (excluding sub-nodes)
     for (const node of this.nodes) {
       const incoming = this.incomingEdgesByTarget.get(node.id) ?? [];
-      const requiredCount = incoming.filter((e) => !this.isSubNode(e.source)).length;
+      const requiredCount = incoming.filter(
+        (e) => !this.isSubNode(e.source),
+      ).length;
       this._requiredEdgeCounts.set(node.id, requiredCount);
     }
 
     if (!this.silent) {
-      console.log(`📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`);
+      console.log(
+        `📦 WorkflowEngine: DataContext initialized for run ${runId}, ${this._compiledParams.size} nodes pre-compiled`,
+      );
     }
   }
 
@@ -381,7 +388,7 @@ export class WorkflowEngine {
       if (!compiled.hasTemplates) return compiled.staticParams!;
       if (compiled.resolve) {
         const allNodeData = this.store.getAllResults();
-        const resolved = compiled.resolve(allNodeData, input);
+        const resolved = compiled.resolve(allNodeData);
         // If some entries had fallback, resolve them with resolveDeep
         if (compiled.fallbackKeys && compiled.fallbackKeys.length > 0) {
           for (const key of compiled.fallbackKeys) {
@@ -673,9 +680,16 @@ export class WorkflowEngine {
    * Increment the satisfied counter for a target node when an edge is marked.
    * Used in backtest mode for O(1) dependency checks.
    */
-  private markEdgePayloadWithCounter(edgeId: string, payload: any, targetNodeId: string) {
+  private markEdgePayloadWithCounter(
+    edgeId: string,
+    payload: any,
+    targetNodeId: string,
+  ) {
     this.edgePayload.set(edgeId, payload);
-    this._satisfiedCounts.set(targetNodeId, (this._satisfiedCounts.get(targetNodeId) ?? 0) + 1);
+    this._satisfiedCounts.set(
+      targetNodeId,
+      (this._satisfiedCounts.get(targetNodeId) ?? 0) + 1,
+    );
   }
 
   private clearIncomingEdgePayloads(nodeId: string) {
@@ -989,8 +1003,14 @@ export class WorkflowEngine {
             chosen = [resultData ? "true" : "false"];
           } else if (typeof resultData === "string") {
             chosen = [resultData];
-          } else if (resultData && typeof resultData === "object" && ("true" in resultData || "false" in resultData)) {
-            chosen = Object.entries(resultData).filter(([, v]) => !!v).map(([k]) => k);
+          } else if (
+            resultData &&
+            typeof resultData === "object" &&
+            ("true" in resultData || "false" in resultData)
+          ) {
+            chosen = Object.entries(resultData)
+              .filter(([, v]) => !!v)
+              .map(([k]) => k);
           } else {
             chosen = ["default", ""];
           }
@@ -1019,12 +1039,18 @@ export class WorkflowEngine {
         if (meta?.originLoopId) {
           const loopNodeId = meta.originLoopId;
           const loopNode = this.nodeById.get(loopNodeId);
-          const hasActiveEdgeToLoop = edges.some((e) => e.target === loopNodeId);
+          const hasActiveEdgeToLoop = edges.some(
+            (e) => e.target === loopNodeId,
+          );
           if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
             const currentResults =
               this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
             currentResults.push(result);
-            this.store.setNodeState(loopNodeId, "aggregatedResults", currentResults);
+            this.store.setNodeState(
+              loopNodeId,
+              "aggregatedResults",
+              currentResults,
+            );
           }
         }
 

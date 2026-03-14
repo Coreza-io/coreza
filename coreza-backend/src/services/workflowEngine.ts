@@ -252,9 +252,7 @@ export class WorkflowEngine {
    */
   resetForNextBar(): void {
     this.store.clearResults();
-    this.edgePayload.clear();
     this.enqueuedKeys.clear();
-    this.executionOrder.length = 0;
     this.queue.clear();
     this._satisfiedCounts.clear();
   }
@@ -746,12 +744,7 @@ export class WorkflowEngine {
    * Increment the satisfied counter for a target node when an edge is marked.
    * Used in backtest mode for O(1) dependency checks.
    */
-  private markEdgePayloadWithCounter(
-    edgeId: string,
-    payload: any,
-    targetNodeId: string,
-  ) {
-    this.edgePayload.set(edgeId, payload);
+  private markEdgeCounterOnly(targetNodeId: string) {
     this._satisfiedCounts.set(
       targetNodeId,
       (this._satisfiedCounts.get(targetNodeId) ?? 0) + 1,
@@ -772,7 +765,7 @@ export class WorkflowEngine {
 
     if (this.silent) {
       // Backtest fast path: use counter-based dependency tracking
-      this.markEdgePayloadWithCounter(edge.id, payload, edge.target);
+      this.markEdgeCounterOnly(edge.target);
     } else {
       this.markEdgePayload(edge.id, payload);
     }
@@ -798,7 +791,7 @@ export class WorkflowEngine {
     if (this.isSubNode(edge.source)) return;
 
     if (this.silent) {
-      this.markEdgePayloadWithCounter(edge.id, payload, edge.target);
+      this.markEdgeCounterOnly(edge.target);
     } else {
       this.markEdgePayload(edge.id, payload);
     }
@@ -1044,7 +1037,6 @@ export class WorkflowEngine {
       prev.count += 1;
       this.nodeTiming.set(nodeId, prev);
 
-      this.executionOrder.push(nodeId);
       this.store.setNodeResult(nodeId, result);
 
       if (node.name === "Loop" && result && typeof result === "object") {

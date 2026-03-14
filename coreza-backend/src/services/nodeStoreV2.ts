@@ -203,19 +203,24 @@ export class NodeStoreV2 {
    */
   clearResults(): void {
     this.nodeResults.clear();
-    // Restore pinned results
+
     for (const [nodeId, result] of this.pinnedResults) {
       this.nodeResults.set(nodeId, result);
     }
-    // Rebuild cached results object from pinned
-    if (this.pinnedResults.size > 0) {
-      const results: any = {};
-      for (const [nodeId, result] of this.pinnedResults) {
-        results[nodeId] = result;
+
+    if (!this._cachedResults) {
+      if (this.pinnedResults.size === 0) return;
+      this._cachedResults = {};
+    }
+
+    for (const key of Object.keys(this._cachedResults)) {
+      if (!this.pinnedResults.has(key)) {
+        delete this._cachedResults[key];
       }
-      this._cachedResults = results;
-    } else {
-      this._cachedResults = null;
+    }
+
+    for (const [nodeId, result] of this.pinnedResults) {
+      this._cachedResults[nodeId] = result;
     }
   }
 

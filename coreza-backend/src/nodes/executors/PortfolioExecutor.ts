@@ -114,12 +114,41 @@ export class PortfolioExecutor implements INodeExecutor {
     }
   }
 
+
+  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    try {
+      const params = context?.resolveNodeParameters
+        ? context.resolveNodeParameters(node, input)
+        : { ...node.values, ...input };
+
+      const mode = params.mode;
+
+      if (mode === "backtest") {
+        return this.executeBacktestModeSync(params, context);
+      }
+
+      return toNodeResult(
+        createErrorOutput(`Sync execution not supported for portfolio mode: ${mode}`),
+      );
+    } catch (error) {
+      console.error("[PortfolioExecutor] Sync execution failed:", error);
+      return toNodeResult(createErrorOutput(error));
+    }
+  }
+
   // ============== BACKTEST MODE ==============
 
   private async executeBacktestMode(
     params: any,
-    _context: any,
+    context: any,
   ): Promise<NodeResult> {
+    return this.executeBacktestModeSync(params, context);
+  }
+
+  private executeBacktestModeSync(
+    params: any,
+    _context: any,
+  ): NodeResult {
     const backtestId = params.backtest_id;
     if (!backtestId) {
       return toNodeResult(createErrorOutput("backtest_id is required"));

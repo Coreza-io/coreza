@@ -158,6 +158,25 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
+
+  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    const nodeName = node.name;
+
+    switch (nodeName) {
+      case "BacktestTrade":
+        return this.executeBacktestTrade(node, input, context);
+      case "BacktestPortfolio":
+      case "Portfolio":
+        return this.executeBacktestPortfolio(node, input, context);
+      case "OnBar":
+        return this.executeOnBar(node, input, context);
+      default:
+        return toNodeResult(
+          createErrorOutput(`Sync execution not supported for backtest node type: ${nodeName}`),
+        );
+    }
+  }
+
   /**
    * Get or create SimBroker instance from executor cache.
    * We keep one broker per backtest ID so state (cash/positions/orders)
@@ -512,11 +531,11 @@ export class BacktestExecutor implements INodeExecutor {
   // Pre-allocated reusable result template per node for backtest hot path
   private _onBarResults = new Map<string, NodeResult>();
 
-  private async executeOnBar(
+  private executeOnBar(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     void node;
 
     const data = input?.data;
@@ -542,11 +561,11 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   // ============== BACKTEST TRADE ==============
-  private async executeBacktestTrade(
+  private executeBacktestTrade(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     try {
       const params = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
@@ -873,11 +892,11 @@ export class BacktestExecutor implements INodeExecutor {
     await this.portfolioFinalize(simBroker, backtestId);
   }
   // ============== BACKTEST PORTFOLIO ==============
-  private async executeBacktestPortfolio(
+  private executeBacktestPortfolio(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     try {
       const params = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)

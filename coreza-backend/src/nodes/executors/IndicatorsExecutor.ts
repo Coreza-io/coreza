@@ -36,6 +36,93 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly indicatorKeyCache = new Map<string, string>();
   private cachedRunId: string | null = null;
 
+
+  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    const runId = context?.runId;
+    if (runId && runId !== this.cachedRunId) {
+      this.indicatorKeyCache.clear();
+      this.cachedRunId = runId;
+    }
+
+    const indicatorType = (node.name || node.node_type)?.toLowerCase();
+    if (indicatorType === "initializeindicators") {
+      return toNodeResult(createErrorOutput("InitializeIndicators requires async execution"));
+    }
+
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    const processedParams = { ...resolvedParams };
+    const rawCandle = resolvedParams.candle_data;
+    const candleData = Array.isArray(rawCandle)
+      ? rawCandle
+      : rawCandle && typeof rawCandle === "object"
+        ? [rawCandle]
+        : JSON.parse(rawCandle || "[]");
+
+    const dataContext = context?.dataContext as DataContext | undefined;
+    if (dataContext && candleData) {
+      const barsData = Array.isArray(candleData) ? candleData : [candleData];
+      processedParams.candle_data = barsData;
+
+      const stateManager = context?.indicatorStateManager as
+        | IndicatorStateManager
+        | undefined;
+      const userId = context?.userId || context?.user_id;
+      const workflowId = context?.workflowId;
+      const runId = context?.runId || context?.user_id;
+      const symbol = String(processedParams.symbol || "");
+      const timeframe = String(processedParams.timeframe || "");
+
+      if (
+        stateManager &&
+        userId &&
+        workflowId &&
+        runId &&
+        symbol &&
+        timeframe &&
+        barsData.length > 0
+      ) {
+        let key = this.indicatorKeyCache.get(node.id);
+        if (!key) {
+          key = buildIndicatorKey(userId, workflowId, runId, symbol, timeframe, node.id);
+          this.indicatorKeyCache.set(node.id, key);
+        }
+
+        let state = stateManager.getStateSync(key);
+        if (!state) {
+          return toNodeResult(
+            createErrorOutput("Indicator state not warmed for sync execution", {
+              nodeId: node.id,
+              nodeName: node.name,
+              category: this.category,
+            }),
+          );
+        }
+
+        const latestBar = barsData[barsData.length - 1];
+        const latestBarTime = String(latestBar?.time ?? "");
+        if (latestBarTime && latestBarTime !== state.lastBarTime) {
+          state = stateManager.updateSync(key, latestBar);
+        }
+
+        return leanSuccess({
+          currentValue: state.currentValue,
+          previousValue: state.previousValue,
+        });
+      }
+    }
+
+    return toNodeResult(
+      createErrorOutput("Sync execution path unavailable for indicator input", {
+        nodeId: node.id,
+        nodeName: node.name,
+        category: this.category,
+      }),
+    );
+  }
+
   async execute(
     node: WorkflowNode,
     input: NodeInput,

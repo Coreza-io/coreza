@@ -352,6 +352,70 @@ export class WorkflowEngine {
     }
   }
 
+
+  executeFromEntriesSync(
+    input: any,
+    entryNodeIds: string[],
+  ): {
+    success: boolean;
+    result?: any;
+    executionOrder?: string[];
+    error?: string;
+  } {
+    const workflowStartTime = Date.now();
+    try {
+      this.MAX_RETRIES = this.nodes.length * 2;
+
+      for (const entryNodeId of entryNodeIds) {
+        if (!this.silent) {
+          const incomingEdges = this.getIncomingEdges(entryNodeId);
+          for (const edge of incomingEdges) {
+            this.markEdgePayload(edge.id, input);
+          }
+        }
+        this.enqueue({ nodeId: entryNodeId, input });
+      }
+
+      while (this.queue.length > 0) {
+        if (this.abortSignal?.aborted) {
+          throw new Error("Workflow cancelled by user");
+        }
+        const item = this.dequeue();
+        if (!item) break;
+        this.executeOnceSync(item);
+      }
+
+      const hasFailedNodes = this.failed.size > 0;
+      if (hasFailedNodes) {
+        const firstFailedNodeId = Array.from(this.failed)[0];
+        const errorMessage =
+          this.failedNodeErrors.get(firstFailedNodeId) ||
+          `Workflow completed with failures`;
+        return {
+          success: false,
+          error: errorMessage,
+          result: this.store.getAllResults(),
+          executionOrder: this.executionOrder,
+        };
+      }
+
+      return {
+        success: true,
+        result: this.store.getAllResults(),
+        executionOrder: this.executionOrder,
+      };
+    } catch (error) {
+      const executionTimeMs = Date.now() - workflowStartTime;
+      const formattedExecutionTime = this.formatExecutionDuration(executionTimeMs);
+      console.error(`❌ executeFromEntriesSync failed after ${formattedExecutionTime}:`, error);
+      return {
+        success: false,
+        error: (error as Error).message,
+        executionOrder: this.executionOrder,
+      };
+    }
+  }
+
   private getExecutionOrderForResponse(): string[] | undefined {
     return this.executionOrder.length > 0 ? this.executionOrder : undefined;
   }
@@ -727,6 +791,30 @@ export class WorkflowEngine {
     });
   }
 
+
+  private routeEdgeSync(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
+    if (this.isSubNode(edge.source)) return;
+
+    if (this.silent) {
+      this.markEdgePayloadWithCounter(edge.id, payload, edge.target);
+    } else {
+      this.markEdgePayload(edge.id, payload);
+    }
+
+    const targetNode = this.nodeById.get(edge.target);
+    const skipDependencyCheck = Boolean((targetNode as any)?.values?.checkDependency);
+
+    if (!skipDependencyCheck) {
+      if (!this.areDependenciesSatisfied(edge.target)) return;
+    }
+
+    this.enqueue({
+      nodeId: edge.target,
+      input: payload,
+      meta,
+    });
+  }
+
   private formatExecutionDuration(durationMs: number): string {
     const totalCentiseconds = Math.floor(durationMs / 10);
     const centiseconds = totalCentiseconds % 100;
@@ -932,6 +1020,106 @@ export class WorkflowEngine {
    */
   checkCancellation(): boolean {
     return this.abortSignal?.aborted ?? false;
+  }
+
+
+  private executeOnceSync(item: QueueItem): void {
+    const { nodeId, input, meta } = item;
+    const node = this.nodeById.get(nodeId);
+    if (!node) return;
+
+    try {
+      if (this.abortSignal?.aborted) {
+        throw new Error("Workflow cancelled by user");
+      }
+
+      const executionContext = this.getExecutionContext(nodeId);
+      const t0 = performance.now();
+      const result = this.executeNodeSync(node, input, executionContext);
+      const elapsed = performance.now() - t0;
+      const prev = this.nodeTiming.get(nodeId) ?? { totalMs: 0, count: 0 };
+      prev.totalMs += elapsed;
+      prev.count += 1;
+      this.nodeTiming.set(nodeId, prev);
+
+      this.executionOrder.push(nodeId);
+      this.store.setNodeResult(nodeId, result);
+
+      if (node.name === "Loop" && result && typeof result === "object") {
+        if (result.control?.loopCompleted) {
+          const doneEdges = this.doneEdges(nodeId);
+          for (const edge of doneEdges) this.routeEdgeSync(edge, result, meta);
+        } else if (result.control?.loopIteration) {
+          const loopEdges = this.loopBodyEdges(nodeId);
+          for (const edge of loopEdges) {
+            const iterMeta: IterMeta = {
+              ...(meta || {}),
+              originLoopId: nodeId,
+              iterIndex: result.control.currentIndex,
+            };
+            this.routeEdgeSync(edge, result, iterMeta);
+          }
+        }
+        return;
+      }
+
+      const isConditional = node.name === "If" || node.name === "Switch";
+      if (isConditional) {
+        const resultData = result?.data;
+        let chosen: string[];
+        if (typeof resultData === "boolean") {
+          chosen = [resultData ? "true" : "false"];
+        } else if (typeof resultData === "string") {
+          chosen = [resultData];
+        } else if (
+          resultData &&
+          typeof resultData === "object" &&
+          ("true" in resultData || "false" in resultData)
+        ) {
+          chosen = Object.entries(resultData)
+            .filter(([, v]) => !!v)
+            .map(([k]) => k);
+        } else {
+          chosen = ["default", ""];
+        }
+
+        const allowed = new Set(chosen);
+        const outgoing = this.getOutgoingEdges(node.id);
+        for (let i = 0; i < outgoing.length; i++) {
+          const edge = outgoing[i];
+          if (allowed.has(edge.sourceHandle ?? "")) {
+            this.routeEdgeSync(edge, result, meta);
+          }
+        }
+      } else {
+        const outgoing = this.getOutgoingEdges(node.id);
+        for (let i = 0; i < outgoing.length; i++) {
+          this.routeEdgeSync(outgoing[i], result, meta);
+        }
+      }
+    } catch (error) {
+      const errorMessage = (error as Error).message || "";
+      const isCancellation =
+        errorMessage.toLowerCase().includes("cancelled") ||
+        errorMessage.toLowerCase().includes("deactivated") ||
+        this.abortSignal?.aborted;
+
+      console.error(
+        `${isCancellation ? "🛑" : "❌"} Node ${nodeId} ${
+          isCancellation ? "cancelled" : "failed"
+        }:`,
+        error,
+      );
+
+      this.executionOrder.push(nodeId);
+      this.failed.add(nodeId);
+      this.failedNodeErrors.set(nodeId, errorMessage);
+      this.store.setNodeError(nodeId, error);
+
+      if (isCancellation || this.mode === "fail-fast") {
+        throw error;
+      }
+    }
   }
 
   private async executeOnce(item: QueueItem): Promise<void> {
@@ -1160,6 +1348,38 @@ export class WorkflowEngine {
 
     // For simple results, wrap in structure to maintain consistency
     return { data: result?.data ?? result };
+  }
+
+
+  executeNodeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    const nodeName = node.name ?? "";
+    const category = CATEGORY_MAP[nodeName] ?? node.category;
+
+    let executor = this.executors.get(category);
+    if (!executor) {
+      executor = getNodeExecutor(category);
+    }
+
+    if (!executor) {
+      throw new Error(
+        `Unsupported node category: ${category} for node type: ${node.name}`,
+      );
+    }
+
+    if (typeof executor.executeSync !== "function") {
+      throw new Error(`Executor ${category} does not support sync execution for node ${node.name}`);
+    }
+
+    const result = executor.executeSync(node, input, context);
+
+    if (result && typeof result === "object" && "success" in result) {
+      if (!result.success) {
+        throw new Error(result.error || `Node execution failed: ${category}`);
+      }
+      return result;
+    }
+
+    return { data: (result as any)?.data ?? result };
   }
 
   getNodeTiming(): Record<

@@ -1,72 +1,153 @@
+# Backtest Performance Analysis & Optimization Plan
+
+## Analysis
+
+136,296 bars across 30 nodes. Total wall time ≈ **460 seconds** (7.7 min). Per-bar cost ≈ 3.4ms.
+
+### Top offenders by total time
 
 
-# Phase 2 Review: Pre-resolved Parameter Slots
+| Node                     | Avg (ms)  | Total (s) | % of total |
+| ------------------------ | --------- | --------- | ---------- |
+| **RollingWindow**        | 0.51      | 69.5      | 15.1%      |
+| **RollingWindow1**       | 0.47      | 63.8      | 13.9%      |
+| **Bollinger Bands**      | 0.33      | 45.3      | 9.8%       |
+| **VolumeOscillator**     | 0.33      | 44.5      | 9.7%       |
+| **updatePortfolioValue** | 0.27      | 37.0      | 8.0%       |
+| **OnBar**                | 0.21      | 28.4      | 6.2%       |
+| **getPosition**          | 0.19      | 25.2      | 5.5%       |
+| Compute nodes (7×)       | 0.14-0.17 | ~150      | 32.6%      |
 
-## Current Implementation Analysis
 
-The existing `resolveNodeParameters` flow per node per bar:
+### Root causes
 
-```text
-resolveNodeParameters(node, input)
-  → Map.get(node.id)                           // ~20ns - get CompiledNodeParams
-  → this.store.getAllResults()                   // ~5ns  - returns _cachedResults (already cached)
-  → compiled.resolve(allNodeData)               // ~100-200ns - iterates compiledEntries, allocates new object
-    → for each entry:
-        entry.accessor(allNodeData)             // ~10ns - allNodeData[nodeName] + pathAccessor
-    → builds { key: value, ... } object         // ~50-100ns allocation
-  → return resolved
-```
+**1. RollingWindow (29% combined)** — The biggest problem. Each call:
 
-At 1.9M calls: the `resolve()` function alone costs ~190-380ms. The **object allocation** inside `resolve()` (a new `resolved` object per call) adds GC pressure but the total is modest.
+- Calls `buildExecutionScopedKey()` to construct a string key
+- Calls `dataContext.getDataByKey()` to retrieve window
+- Parses `candle_data` (JSON.parse or type checks)
+- Spreads entire window into a new array: `[...window.values()]` — **O(window_size)** copy every bar
+- Constructs a full result object with `latest`, `count`, `isReady`, `remaining`
 
-## Why Slots Won't Help Much Here
+For a window size of, say, 50 — that's 50-element array copy × 136K bars × 2 windows = **13.6M array copies**.
 
-| Operation | Current | Slot-based | Difference |
-|---|---|---|---|
-| Data lookup | `allNodeData['RollingWindow']` (property on plain obj) | `slots[3]` (array index) | ~0ns — V8 optimizes both to direct offset reads |
-| `getAllResults()` | Returns cached `_cachedResults` | Eliminated | ~5ns × 1.9M = 9.5ms saved |
-| `resolve()` iteration | Loops `compiledEntries` | Eliminated | ~50ns × 1.9M = 95ms saved |
-| `resolved` object alloc | New `{}` per call | Eliminated | ~50ns × 1.9M = 95ms saved |
-| **Total savings** | | | **~200ms** |
+**2. Indicators (Bollinger, VolumeOsc — 19.5%)** — The `IndicatorsExecutor` on every call:
 
-The slot approach saves ~200ms, not the ~30s claimed. The original estimate of "~200s → ~170s" was based on incorrect assumptions about `resolveNodeParameters` cost.
+- Parses `candle_data` (JSON.parse or Array.isArray checks)
+- Calls `buildIndicatorKey()` (string concatenation)
+- Calls `stateManager.getState()` (Map lookup + possible async)
+- Calls `stateManager.update()` (async)
+- Wraps result through `normalizeOutput()` + `toNodeResult()`
 
-## What Actually Costs Time
+The actual indicator math is O(1), but the executor overhead dominates.
 
-The real per-node overhead is spread across the entire `executeOnce()` path, not concentrated in parameter resolution. From the timing data:
+**4. Portfolio operations (13.5%)** — `updatePortfolioValue` and `getPosition` call `resolveNodeParameters`, parse `current_bar` via `parseBar()`, look up SimBroker instance, and wrap results — every single bar.
 
-- 14 nodes × 136K bars = 1.9M iterations
-- Sum of node times: 207s
-- Wall time: 278s
-- Engine overhead: **71s** (queue management, routing, edge tracking, `performance.now()`, `setNodeResult`, etc.)
+## Optimization Plan
 
-Parameter resolution is maybe 5-10% of that 71s (~4-7s), not 30s.
+### Phase 1: Quick wins (est. -30-40% total time)
 
-## A More Impactful Alternative
+**1a. Eliminate RollingWindow array copy** — `[...window.values()]` creates a new array every bar. Instead, return the buffer reference directly (or a lightweight proxy). The downstream nodes only need `latest and previous` and `isReady` most of the time.
 
-Instead of slots, the same effort could be applied to **pre-allocating the `resolved` params object per node** (same pattern as the RollingWindow result fix):
 
-```typescript
-// In resolveNodeParameters, backtest fast path:
-if (!this._resolvedParamsCache.has(node.id)) {
-  this._resolvedParamsCache.set(node.id, {});
-}
-const resolved = this._resolvedParamsCache.get(node.id)!;
-// Mutate in-place instead of allocating new object
-for (const entry of compiledEntries) {
-  resolved[entry.key] = entry.accessor ? entry.accessor(allNodeData) : entry.staticValue;
-}
-return resolved;
-```
+| File                               | Change                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `DataSourceExecutor.ts` (line 266) | Replace `window: [...window.values()]` with `window: window.values()` (returns readonly ref). Only spread when explicitly needed. |
 
-This eliminates the object allocation (saves GC pressure on 1.9M objects) with 3 lines of code change — no new architecture needed.
 
-## Verdict
+**1b. Cache `buildExecutionScopedKey` result** — The key inputs (userId, workflowId, runId, nodeId, symbol, timeframe) never change within a backtest. Cache the computed key on first call.
 
-**Phase 2 as designed (slot map) is over-engineered for its impact.** The ~200ms savings don't justify the complexity of:
-- Building a slot index mapping at construction
-- Rewriting all executor parameter access patterns
-- Maintaining slot ↔ node ID mapping
 
-**Recommendation:** Skip Phase 2. Instead, apply the trivial per-node params cache shown above (~3 lines), then focus effort on Phase 1 (sync execution — eliminates 1.9M `await` round-trips, ~10-20s) or Phase 3 (compiled strategy — eliminates the engine entirely, ~200s+).
+| File                    | Change                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| `DataSourceExecutor.ts` | Add a `Map<string, string>` cache for scoped keys, keyed by nodeId. |
 
+
+**1c. Skip JSON.parse for candle_data when already an object** — The RollingWindow executor already has type checks, but the branching and try/catch per bar adds up. Pre-check and fast-path when input is already a single object (the common backtest case).
+
+### Phase 2: Reduce indicator overhead (est. -15-20%)
+
+**2a. Make `stateManager.getState()` synchronous** — During backtest, state is always in the L1 (in-memory) cache. Remove the `async/await` from the hot path by adding a synchronous `getStateSync()` method that reads directly from the Map without promise wrapping.
+
+
+| File                       | Change                                                       |
+| -------------------------- | ------------------------------------------------------------ |
+| `indicatorStateManager.ts` | Add `getStateSync(key)` that returns from L1 cache directly. |
+| `IndicatorsExecutor.ts`    | Use sync path when `context.silent` (backtest mode).         |
+
+
+**2b. Cache `buildIndicatorKey` per node** — Same as 1b. The key is deterministic per node within a run.
+
+### Phase 3: Reduce engine per-node overhead (est. -10-15%)
+
+**3b. Lightweight result wrapping in silent mode** — `normalizeOutput` and `toNodeResult` create wrapper objects with metadata (nodeId, nodeName, timing). In backtest/silent mode, skip the metadata and return a minimal `{ success: true, data }` shape.
+
+
+| File                 | Change                                                                     |
+| -------------------- | -------------------------------------------------------------------------- |
+| `normalizeOutput.ts` | Add a fast path that skips metadata enrichment when no options are passed. |
+| Executor files       | In silent/backtest mode, use the lean path.                                |
+
+
+
+
+This is a larger refactor and can be deferred, but would save ~18s on this specific workflow.
+
+## Summary
+
+
+| Phase                         | Target           | Est. savings    |
+| ----------------------------- | ---------------- | --------------- |
+| 1: RollingWindow fixes        | 133s → ~70s      | ~60s            |
+| 2: Indicator sync path        | 90s → ~60s       | ~30s            |
+| 3: Engine overhead            | 150s → ~110s     | ~40s            |
+| 4: Template pre-compilation ✅ | ~42s → ~5s       | ~30-40s         |
+| **Total**                     | **460s → ~290s** | **~170s (37%)** |
+
+### Phase 4: Template Pre-Compilation — IMPLEMENTED
+
+**Files changed:**
+- `coreza-backend/src/utils/templateCompiler.ts` (NEW) — `compileTemplate()`, `compileNodeParams()`, `preCompileAllNodes()`
+- `coreza-backend/src/services/workflowEngine.ts` — Added `_compiledParams` map, `preCompileAllNodes()` call in constructor, fast path in `resolveNodeParameters()`
+- `coreza-backend/src/utils/resolveReferences.ts` — Hoisted `templateRegex` to module scope
+
+
+The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.
+
+### Phase 5: Engine Hot-Path Optimization — IMPLEMENTED
+
+**Phase A: Eliminate per-bar reset overhead**
+- `NodeStoreV2`: Added `clearResults()` and `pinResults()` — reuses store objects, only clears per-bar results while preserving pinned BacktestInit results
+- `WorkflowEngine`: Added `resetForNextBar()` — ultra-lightweight reset that clears edgePayload, enqueuedKeys, executionOrder, queue, and satisfied counters in-place (no `new` allocations)
+- `BacktestSession`: Replaced `resetLight()` + `preloadResults()` per bar with single `resetForNextBar()` call. `pinResults()` called once in constructor.
+
+**Phase C: Reduce per-node overhead in executeOnce()**
+- Pre-computed `_requiredEdgeCounts` per node at construction time
+- `areDependenciesSatisfied()` uses O(1) counter check instead of iterating all incoming edges
+- `markEdgePayloadWithCounter()` increments satisfied count on edge marking
+- `keyFor()` returns just `nodeId` in backtest mode (no string concatenation)
+- `enqueue()`/`dequeue()` skip `enqueuedKeys` tracking in backtest mode (deterministic DAG)
+- Skip `clearIncomingEdgePayloads()` in backtest mode (bulk-cleared by `resetForNextBar()`)
+- Skip loop aggregation tracking in backtest mode
+- Suppressed constructor log in silent mode
+
+**Phase D: Allocation reduction** — Assessed, `leanSuccess` already minimal. Main allocation wins from Phase A.
+
+### Phase 6: Remaining Phase C + Phase D Completion — IMPLEMENTED
+
+**Phase C completion: Inline selectEdges + routing**
+- `WorkflowEngine.executeOnce()` — In backtest mode (`silent=true`), edge selection and routing are now inlined into a single pass over `getOutgoingEdges()`. No intermediate array allocation. Conditional (If/Switch) logic is inlined with early filtering. Eliminates ~1.9M array allocations per backtest run.
+- `WorkflowEngine.executeFromEntries()` — Removed redundant `markEdgePayloadWithCounter` calls for entry nodes in backtest mode (they're enqueued directly, counter is never checked).
+
+**Phase D: Executor allocation reduction**
+- `BacktestExecutor._onBarResult` — Pre-allocated reusable result template. `executeOnBar()` mutates fields in-place instead of creating new objects per bar. Eliminates 136K object allocations.
+- `DataSourceExecutor._rollingWindowResult` — Pre-allocated reusable result template. RollingWindow executor mutates fields in-place. Eliminates 136K × 2 = 272K object allocations.
+
+**Files changed:**
+- `coreza-backend/src/services/workflowEngine.ts` — Inlined selectEdges for backtest, removed entry node counter marking
+- `coreza-backend/src/nodes/executors/BacktestExecutor.ts` — Pre-allocated `_onBarResult` template
+- `coreza-backend/src/nodes/executors/DataSourceExecutor.ts` — Pre-allocated `_rollingWindowResult` template
+**Files changed:**
+- `coreza-backend/src/services/nodeStoreV2.ts` — `clearResults()`, `pinResults()`, `pinnedResults` Map
+- `coreza-backend/src/services/workflowEngine.ts` — `resetForNextBar()`, `pinResults()`, `_requiredEdgeCounts`, `_satisfiedCounts`, counter-based dependency checks, backtest fast paths
+- `coreza-backend/src/services/BacktestSession.ts` — Uses `resetForNextBar()` + `pinResults()` in constructor

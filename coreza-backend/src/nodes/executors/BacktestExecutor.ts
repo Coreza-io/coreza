@@ -100,6 +100,7 @@ export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
   private static simBrokerCache = new Map<string, SimBroker>();
   private static backtestStartTimes = new Map<string, number>();
+  private cachedRunId: string | null = null;
 
   /**
    * Expose the SimBroker cache so PortfolioExecutor can access it
@@ -133,6 +134,8 @@ export class BacktestExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
+    this.clearResultCachesForRun(context?.runId);
+
     // const startTime = Date.now();
     const nodeName = node.name;
 
@@ -160,6 +163,8 @@ export class BacktestExecutor implements INodeExecutor {
 
 
   executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    this.clearResultCachesForRun(context?.runId);
+
     const nodeName = node.name;
 
     switch (nodeName) {
@@ -174,6 +179,14 @@ export class BacktestExecutor implements INodeExecutor {
         return toNodeResult(
           createErrorOutput(`Sync execution not supported for backtest node type: ${nodeName}`),
         );
+    }
+  }
+
+  private clearResultCachesForRun(runId?: string): void {
+    if (runId && runId !== this.cachedRunId) {
+      this._onBarResults.clear();
+      this._tradeResults.clear();
+      this.cachedRunId = runId;
     }
   }
 
@@ -676,7 +689,9 @@ export class BacktestExecutor implements INodeExecutor {
       tradeResult.data.quantity = quantity;
       tradeResult.data.order_type = orderType;
       tradeResult.data.cash = cash;
-      tradeResult.data.positions = positions;
+      tradeResult.data.positions = positions.map((position) => ({
+        ...position,
+      }));
       tradeResult.data.total_equity = totalEquity;
       tradeResult.data.pending_orders = pendingOrders.length;
       tradeResult.data.pending_orders_count = pendingOrders.length;

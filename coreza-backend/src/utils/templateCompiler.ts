@@ -434,24 +434,19 @@ export function compileNodeParams(
     ? compiledEntries.filter((e) => e.fallback).map((e) => e.key)
     : undefined;
 
-  // Pre-allocate a single resolved object per node — reused across all bars
-  // to eliminate ~1.9M object allocations during backtest hot paths.
-  const resolved: Record<string, any> = {};
-  // Pre-fill static/fallback values once (they never change)
-  for (const entry of compiledEntries) {
-    if (!entry.accessor) {
-      resolved[entry.key] = entry.staticValue;
-    }
-  }
-
   return {
     hasTemplates: true,
     fallbackKeys,
     resolve: (allNodeData) => {
-      // Only update dynamic entries — static values are already set
+      const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
-        if (entry.accessor) {
+        if (entry.fallback) {
+          // Will be handled by the engine's resolveDeep fallback
+          resolved[entry.key] = entry.staticValue;
+        } else if (entry.accessor) {
           resolved[entry.key] = entry.accessor(allNodeData);
+        } else {
+          resolved[entry.key] = entry.staticValue;
         }
       }
       return resolved;

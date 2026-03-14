@@ -177,8 +177,12 @@ export class DataSourceExecutor implements INodeExecutor {
     }
   }
 
-
   executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    const runId = context?.runId;
+    if (runId && runId !== this.cachedRunId) {
+      this.scopedKeyCache.clear();
+      this.cachedRunId = runId;
+    }
     const nodeName = node.subCategory ?? node.name;
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -189,11 +193,14 @@ export class DataSourceExecutor implements INodeExecutor {
     }
 
     return toNodeResult(
-      createErrorOutput(`Sync execution not supported for data source node type: ${nodeName}`, {
-        nodeId: node.id,
-        nodeName,
-        category: this.category,
-      }),
+      createErrorOutput(
+        `Sync execution not supported for data source node type: ${nodeName}`,
+        {
+          nodeId: node.id,
+          nodeName,
+          category: this.category,
+        },
+      ),
     );
   }
 

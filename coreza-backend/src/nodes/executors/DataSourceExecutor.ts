@@ -177,6 +177,26 @@ export class DataSourceExecutor implements INodeExecutor {
     }
   }
 
+
+  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    const nodeName = node.subCategory ?? node.name;
+    const resolvedParams = context?.resolveNodeParameters
+      ? context.resolveNodeParameters(node, input)
+      : { ...node.values, ...input };
+
+    if (nodeName === "RollingWindow") {
+      return this.executeRollingWindowNode(node, resolvedParams, context);
+    }
+
+    return toNodeResult(
+      createErrorOutput(`Sync execution not supported for data source node type: ${nodeName}`, {
+        nodeId: node.id,
+        nodeName,
+        category: this.category,
+      }),
+    );
+  }
+
   async executeStoreNode(
     params: StorageInput,
     context?: any,

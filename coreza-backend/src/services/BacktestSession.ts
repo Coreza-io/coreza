@@ -95,10 +95,17 @@ export class BacktestSession {
       this.engine.resetForNextBar();
 
       try {
-        await this.engine.executeFromEntries(
-          { data: currentEvent },
-          this.entryNodeIds,
-        );
+        if (this.currentIndex === 0) {
+          await this.engine.executeFromEntries(
+            { data: currentEvent },
+            this.entryNodeIds,
+          );
+        } else {
+          this.engine.executeFromEntriesSync(
+            { data: currentEvent },
+            this.entryNodeIds,
+          );
+        }
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);
       }

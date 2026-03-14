@@ -59,11 +59,30 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
   }
 
-  private async executeIfNode(
+
+  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+    try {
+      const nodeName = node.name;
+      switch (nodeName) {
+        case "If":
+          return this.executeIfNode(node, input, context);
+        case "Compute":
+          return this.executeComputeNode(node, input, context);
+        default:
+          return toNodeResult(
+            createErrorOutput(`Sync execution not supported for control flow node type: ${nodeName}`),
+          );
+      }
+    } catch (error) {
+      return toNodeResult(createErrorOutput(error));
+    }
+  }
+
+  private executeIfNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     // Resolve parameters (with deep reference resolution if provided)
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -215,11 +234,11 @@ export class ControlFlowExecutor implements INodeExecutor {
     return leanSuccess(result);
   }
 
-  private async executeComputeNode(
+  private executeComputeNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };

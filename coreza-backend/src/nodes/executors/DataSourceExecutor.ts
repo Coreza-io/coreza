@@ -44,11 +44,7 @@ export class DataSourceExecutor implements INodeExecutor {
     context?: any,
   ): Promise<NodeResult> {
     try {
-      const runId = context?.runId;
-      if (runId && runId !== this.cachedRunId) {
-        this.scopedKeyCache.clear();
-        this.cachedRunId = runId;
-      }
+      this.clearResultCachesForRun(context?.runId);
       const nodeName = node.subCategory ?? node.name;
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
@@ -178,11 +174,7 @@ export class DataSourceExecutor implements INodeExecutor {
   }
 
   executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    const runId = context?.runId;
-    if (runId && runId !== this.cachedRunId) {
-      this.scopedKeyCache.clear();
-      this.cachedRunId = runId;
-    }
+    this.clearResultCachesForRun(context?.runId);
     const nodeName = node.subCategory ?? node.name;
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
@@ -328,6 +320,14 @@ export class DataSourceExecutor implements INodeExecutor {
     rw.data.remaining = window.size - window.count;
     rw.data.latest = window.count > 0 ? window.at(0) : null;
     return rw;
+  }
+
+  private clearResultCachesForRun(runId?: string): void {
+    if (runId && runId !== this.cachedRunId) {
+      this.scopedKeyCache.clear();
+      this._rollingWindowResults.clear();
+      this.cachedRunId = runId;
+    }
   }
 
   private resolveServiceKey(dataSource: string): string | undefined {

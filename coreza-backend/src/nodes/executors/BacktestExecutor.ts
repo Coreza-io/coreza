@@ -561,6 +561,9 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   // ============== BACKTEST TRADE ==============
+  // Pre-allocated reusable result template per node for backtest trade hot path
+  private _tradeResults = new Map<string, NodeResult>();
+
   private executeBacktestTrade(
     node: WorkflowNode,
     input: NodeInput,
@@ -638,39 +641,47 @@ export class BacktestExecutor implements INodeExecutor {
       const pendingOrders = simBroker.getPendingOrders();
       const totalEquity = simBroker.getTotalEquity();
 
-      if (fill) {
-        return leanSuccess({
-          order_id: orderResult.orderId,
-          order_status: "filled",
-          fill_price: fill.fillPrice,
-          fill_quantity: fill.fillQuantity,
-          commission: fill.orderFee?.value ?? 0,
-          slippage: fill.slippage ?? 0,
-          symbol,
-          side,
-          quantity,
-          order_type: orderType,
-          cash,
-          positions,
-          total_equity: totalEquity,
-          pending_orders: pendingOrders.length,
-          pending_orders_count: pendingOrders.length,
+      if (!this._tradeResults.has(node.id)) {
+        this._tradeResults.set(node.id, {
+          success: true,
+          data: {
+            order_id: "",
+            order_status: "",
+            fill_price: undefined,
+            fill_quantity: undefined,
+            commission: 0,
+            slippage: 0,
+            symbol: "",
+            side: "",
+            quantity: 0,
+            order_type: "",
+            cash: 0,
+            positions: [] as Position[],
+            total_equity: 0,
+            pending_orders: 0,
+            pending_orders_count: 0,
+          },
         });
       }
 
-      return leanSuccess({
-        order_id: orderResult.orderId,
-        order_status: orderResult.status,
-        symbol,
-        side,
-        quantity,
-        order_type: orderType,
-        cash,
-        positions,
-        total_equity: totalEquity,
-        pending_orders: pendingOrders.length,
-        pending_orders_count: pendingOrders.length,
-      });
+      const tradeResult = this._tradeResults.get(node.id)!;
+      tradeResult.data.order_id = orderResult.orderId;
+      tradeResult.data.order_status = fill ? "filled" : orderResult.status;
+      tradeResult.data.fill_price = fill?.fillPrice;
+      tradeResult.data.fill_quantity = fill?.fillQuantity;
+      tradeResult.data.commission = fill?.orderFee?.value ?? 0;
+      tradeResult.data.slippage = fill?.slippage ?? 0;
+      tradeResult.data.symbol = symbol;
+      tradeResult.data.side = side;
+      tradeResult.data.quantity = quantity;
+      tradeResult.data.order_type = orderType;
+      tradeResult.data.cash = cash;
+      tradeResult.data.positions = positions;
+      tradeResult.data.total_equity = totalEquity;
+      tradeResult.data.pending_orders = pendingOrders.length;
+      tradeResult.data.pending_orders_count = pendingOrders.length;
+
+      return tradeResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
       return leanError(error instanceof Error ? error.message : String(error));

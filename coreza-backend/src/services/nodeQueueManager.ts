@@ -37,6 +37,7 @@ import { QueueItem } from '../nodes/types';
 export class NodeQueueManager {
   /** Main FIFO queue for workflow items */
   private q: QueueItem[] = [];
+  private head = 0;
   public silent = false;
 
   /** 
@@ -61,7 +62,18 @@ export class NodeQueueManager {
    * @returns Next queue item or undefined if empty
    */
   dequeue(): QueueItem | undefined {
-    const item = this.q.shift();
+    if (this.head >= this.q.length) {
+      return undefined;
+    }
+
+    const item = this.q[this.head++];
+
+    // Compaction to avoid unbounded growth when queue is heavily used.
+    if (this.head > 1024 && this.head * 2 >= this.q.length) {
+      this.q = this.q.slice(this.head);
+      this.head = 0;
+    }
+
     if (item && !this.silent) {
       console.log(`[NodeQueueManager] Dequeuing item: ${item.nodeId}`);
     }
@@ -72,7 +84,7 @@ export class NodeQueueManager {
    * Returns current queue length
    */
   get length(): number {
-    return this.q.length;
+    return this.q.length - this.head;
   }
 
   /**
@@ -164,6 +176,7 @@ export class NodeQueueManager {
       console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
     }
     this.q.length = 0;
+    this.head = 0;
     this.loopIters.clear();
   }
 }

@@ -168,16 +168,58 @@ export class BacktestSession {
       return;
     }
 
-    while (
-      this.status !== "finished" &&
-      !this.abortController.signal.aborted &&
-      this.currentIndex < this.bars.length
-    ) {
-      await this.step();
+    if (this.stepping) {
+      throw new Error("Step already in progress");
+    }
 
-      if (this.currentIndex % 500 === 0) {
+    this.stepping = true;
+    try {
+      const signal = this.abortController.signal;
+
+      while (
+        this.currentIndex < this.bars.length &&
+        !signal.aborted &&
+        this.status !== "finished"
+      ) {
+        this.status = "running";
+        const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+
+        while (this.currentIndex < chunkEnd && !signal.aborted) {
+          const currentEvent = this.bars[this.currentIndex];
+
+          this.engine.resetForNextBar();
+
+          try {
+            if (this.currentIndex === 0) {
+              await this.engine.executeFromEntries(
+                { data: currentEvent },
+                this.entryNodeIds,
+              );
+            } else {
+              this.engine.executeFromEntriesSync(
+                { data: currentEvent },
+                this.entryNodeIds,
+              );
+            }
+          } catch (error) {
+            console.error("[BacktestSession] Error processing bar:", error);
+          }
+
+          this.currentIndex += 1;
+        }
+
+        this.barsProcessed = this.currentIndex;
+        await this.reportProgress();
+
+        if (this.currentIndex >= this.bars.length) {
+          this.status = "finished";
+          break;
+        }
+
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
+    } finally {
+      this.stepping = false;
     }
 
     if (this.status === "finished") {

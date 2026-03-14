@@ -95,6 +95,7 @@ export class WorkflowEngine {
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
   private nodeById = new Map<string, WorkflowNode>();
+  private subNodeIds = new Set<string>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
   private outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   private _execCtx: any = null;
@@ -146,6 +147,9 @@ export class WorkflowEngine {
 
     for (const node of this.nodes) {
       this.nodeById.set(node.id, node);
+      if ((node as any)?.node_type === "sub") {
+        this.subNodeIds.add(node.id);
+      }
     }
 
     for (const edge of this.edges) {
@@ -376,8 +380,9 @@ export class WorkflowEngine {
         this.enqueue({ nodeId: entryNodeId, input });
       }
 
+      const signal = this.abortSignal;
       while (this.queue.length > 0) {
-        if (this.abortSignal?.aborted) {
+        if (signal?.aborted) {
           throw new Error("Workflow cancelled by user");
         }
         const item = this.dequeue();
@@ -588,10 +593,7 @@ export class WorkflowEngine {
     return n?.name === "Loop";
   };
 
-  private isSubNode = (nodeId: string) => {
-    const n = this.nodeById.get(nodeId);
-    return (n as any)?.node_type === "sub";
-  };
+  private isSubNode = (nodeId: string) => this.subNodeIds.has(nodeId);
 
   private selectEdges(node: WorkflowNode, result: any): WorkflowEdge[] {
     const outgoingEdges = this.getOutgoingEdges(node.id);

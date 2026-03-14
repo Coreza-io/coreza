@@ -1043,14 +1043,19 @@ export class WorkflowEngine {
             (e) => e.target === loopNodeId,
           );
           if (loopNode?.name === "Loop" && hasActiveEdgeToLoop) {
-            const currentResults =
-              this.store.getNodeState(loopNodeId, "aggregatedResults") || [];
-            currentResults.push(result);
-            this.store.setNodeState(
+            let currentResults = this.store.getNodeState(
               loopNodeId,
               "aggregatedResults",
-              currentResults,
             );
+            if (!currentResults) {
+              currentResults = [];
+              this.store.setNodeState(
+                loopNodeId,
+                "aggregatedResults",
+                currentResults,
+              );
+            }
+            currentResults.push(result);
           }
         }
 

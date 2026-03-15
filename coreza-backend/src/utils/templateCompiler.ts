@@ -121,47 +121,115 @@ function formatMixedValue(val: any): string {
 }
 
 /**
- * Build a fast property accessor from a dot-path like "data.currentValue".
- * Only handles simple dot/bracket paths (no slices, no negative indices).
- * Returns null if the path contains advanced syntax that needs runtime parsing.
+ * Build a fast property accessor from a path like:
+ * - data.window[0:5].high
+ * - data.values[-1].close
+ * - data.window[0:5][-1]
  */
 function buildPathAccessor(path: string): ((obj: any) => any) | null {
   if (!path) return (obj: any) => obj;
 
-  // Bail on slice syntax or anything we can't statically compile
-  if (path.includes(":") || path.includes("[")) {
-    // Check if it's simple bracket notation like [0] or ["key"]
-    const simpleBracket = /\[(\d+)\]/g;
-    const withoutSimple = path.replace(simpleBracket, ".$1");
-    if (withoutSimple.includes("[")) return null; // complex bracket, bail
-    path = withoutSimple;
-  }
+  type Segment =
+    | { type: "KEY"; key: string }
+    | { type: "INDEX"; index: number }
+    | { type: "SLICE"; start: number; end?: number };
 
-  const keys = path.split(".").filter(Boolean);
-  if (keys.length === 0) return (obj: any) => obj;
+  const segmentParts = path.match(/[^.[\]]+|\[[^\]]+\]/g);
+  if (!segmentParts || segmentParts.length === 0) return (obj: any) => obj;
 
-  // Generate an optimized accessor for common depths
-  if (keys.length === 1) {
-    const k = keys[0];
-    return (obj: any) => obj?.[k];
-  }
-  if (keys.length === 2) {
-    const [k1, k2] = keys;
-    return (obj: any) => obj?.[k1]?.[k2];
-  }
-  if (keys.length === 3) {
-    const [k1, k2, k3] = keys;
-    return (obj: any) => obj?.[k1]?.[k2]?.[k3];
-  }
-
-  // General case
-  return (obj: any) => {
-    let result = obj;
-    for (let i = 0; i < keys.length; i++) {
-      if (result == null) return undefined;
-      result = result[keys[i]];
+  const segments: Segment[] = [];
+  for (const part of segmentParts) {
+    if (!part.startsWith("[")) {
+      segments.push({ type: "KEY", key: part });
+      continue;
     }
-    return result;
+
+    const sliceMatch = part.match(/^\[(-?\d+):(-?\d*)\]$/);
+    if (sliceMatch) {
+      const start = Number(sliceMatch[1]);
+      const endRaw = sliceMatch[2];
+      segments.push({
+        type: "SLICE",
+        start,
+        ...(endRaw !== "" ? { end: Number(endRaw) } : {}),
+      });
+      continue;
+    }
+
+    const openSliceMatch = part.match(/^\[:(-?\d+)\]$/);
+    if (openSliceMatch) {
+      segments.push({ type: "SLICE", start: 0, end: Number(openSliceMatch[1]) });
+      continue;
+    }
+
+    const indexMatch = part.match(/^\[(-?\d+)\]$/);
+    if (indexMatch) {
+      segments.push({ type: "INDEX", index: Number(indexMatch[1]) });
+      continue;
+    }
+
+    return null;
+  }
+
+  const applySegments = (value: any, restSegments: Segment[]): any => {
+    let current = value;
+
+    for (const segment of restSegments) {
+      if (segment.type === "KEY") {
+        if (current == null) return undefined;
+        current = current[segment.key];
+        continue;
+      }
+
+      if (!Array.isArray(current)) return undefined;
+
+      if (segment.type === "INDEX") {
+        const index = segment.index >= 0 ? segment.index : current.length + segment.index;
+        current = current[index];
+        continue;
+      }
+
+      current =
+        segment.end === undefined
+          ? current.slice(segment.start)
+          : current.slice(segment.start, segment.end);
+    }
+
+    return current;
+  };
+
+  return (obj: any) => {
+    let current = obj;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+
+      if (segment.type === "KEY") {
+        if (current == null) return undefined;
+        current = current[segment.key];
+        continue;
+      }
+
+      if (!Array.isArray(current)) return undefined;
+
+      if (segment.type === "INDEX") {
+        const index = segment.index >= 0 ? segment.index : current.length + segment.index;
+        current = current[index];
+        continue;
+      }
+
+      current =
+        segment.end === undefined
+          ? current.slice(segment.start)
+          : current.slice(segment.start, segment.end);
+
+      const rest = segments.slice(i + 1);
+      if (rest.length === 0) return current;
+
+      return current.map((item: any) => applySegments(item, rest));
+    }
+
+    return current;
   };
 }
 

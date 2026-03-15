@@ -524,20 +524,21 @@ export function compileParamsToSlots(
     return null;
   }
 
-  // Build a slot-indexed version of allNodeData.
-  // The compiled.resolve function expects allNodeData[nodeName] lookups.
-  // We create a Proxy that maps property access to slots[slotMap.get(prop)].
+  // Build a static slot lookup list once at compile time.
+  // Runtime resolver just refreshes a reusable plain object from slots[],
+  // avoiding Proxy creation/inspection overhead on every bar.
+  const deps: Array<[string, number]> = [];
+  for (const [name, slotIdx] of slotMap) {
+    deps.push([name, slotIdx]);
+  }
+
+  const lookup: Record<string, any> = Object.create(null);
+
   return (slots: any[]) => {
-    const slotProxy = new Proxy(
-      {},
-      {
-        get(_target, prop: string) {
-          const slotIdx = slotMap.get(prop);
-          if (slotIdx !== undefined) return slots[slotIdx];
-          return undefined;
-        },
-      },
-    );
-    return compiled.resolve!(slotProxy);
+    for (let i = 0; i < deps.length; i++) {
+      const [name, slotIdx] = deps[i];
+      lookup[name] = slots[slotIdx];
+    }
+    return compiled.resolve!(lookup, slots);
   };
 }

@@ -200,6 +200,14 @@ export class WorkflowEngine {
     this.indicatorStateManager = manager;
   }
 
+  getIndicatorStateManager(): IndicatorStateManager {
+    return this.indicatorStateManager;
+  }
+
+  getCompiledParams(): Map<string, CompiledNodeParams> {
+    return this._compiledParams;
+  }
+
   reset(newRunId: string, abortSignal?: AbortSignal): void {
     DataContextManager.getInstance().destroyContext(this.runId);
 

@@ -66,7 +66,7 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
     const params = instr.resolveParams(slots);
 
     // Execute node
-    const result = instr.exec(instr.node, slots[inputSlot], params, ctx);
+    const result = instr.exec(instr.node, slots[instr.inputSlot], params, ctx);
 
     // Store result in slot
     slots[instr.outSlot] = result;

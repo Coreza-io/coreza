@@ -238,47 +238,84 @@ export class BacktestSession {
     try {
       const signal = this.abortController.signal;
 
-      while (
-        this.currentIndex < this.bars.length &&
-        !signal.aborted &&
-        this.status !== "finished"
-      ) {
-        this.status = "running";
-        const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+      if (this.compiledPlan) {
+        // ═══════════════════════════════════════════════════════════════
+        // COMPILED PLAN PATH — no engine, no queue, no routing
+        // ═══════════════════════════════════════════════════════════════
+        while (
+          this.currentIndex < this.bars.length &&
+          !signal.aborted &&
+          this.status !== "finished"
+        ) {
+          this.status = "running";
+          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
-        while (this.currentIndex < chunkEnd && !signal.aborted) {
-          const currentEvent = this.bars[this.currentIndex];
-
-          this.engine.resetForNextBar();
-
-          try {
-            if (this.currentIndex === 0) {
-              await this.engine.executeFromEntries(
-                { data: currentEvent },
-                this.entryNodeIds,
-              );
-            } else {
-              this.engine.executeFromEntriesSync(
-                { data: currentEvent },
-                this.entryNodeIds,
-              );
+          while (this.currentIndex < chunkEnd && !signal.aborted) {
+            const currentEvent = this.bars[this.currentIndex];
+            try {
+              runBar(this.compiledPlan, { data: currentEvent });
+            } catch (error) {
+              console.error("[BacktestSession] Compiled plan error on bar:", error);
             }
-          } catch (error) {
-            console.error("[BacktestSession] Error processing bar:", error);
+            this.currentIndex += 1;
           }
 
-          this.currentIndex += 1;
+          this.barsProcessed = this.currentIndex;
+          await this.reportProgress();
+
+          if (this.currentIndex >= this.bars.length) {
+            this.status = "finished";
+            break;
+          }
+
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
+      } else {
+        // ═══════════════════════════════════════════════════════════════
+        // DYNAMIC ENGINE PATH — existing queue/routing engine
+        // ═══════════════════════════════════════════════════════════════
+        while (
+          this.currentIndex < this.bars.length &&
+          !signal.aborted &&
+          this.status !== "finished"
+        ) {
+          this.status = "running";
+          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
-        this.barsProcessed = this.currentIndex;
-        await this.reportProgress();
+          while (this.currentIndex < chunkEnd && !signal.aborted) {
+            const currentEvent = this.bars[this.currentIndex];
 
-        if (this.currentIndex >= this.bars.length) {
-          this.status = "finished";
-          break;
+            this.engine.resetForNextBar();
+
+            try {
+              if (this.currentIndex === 0) {
+                await this.engine.executeFromEntries(
+                  { data: currentEvent },
+                  this.entryNodeIds,
+                );
+              } else {
+                this.engine.executeFromEntriesSync(
+                  { data: currentEvent },
+                  this.entryNodeIds,
+                );
+              }
+            } catch (error) {
+              console.error("[BacktestSession] Error processing bar:", error);
+            }
+
+            this.currentIndex += 1;
+          }
+
+          this.barsProcessed = this.currentIndex;
+          await this.reportProgress();
+
+          if (this.currentIndex >= this.bars.length) {
+            this.status = "finished";
+            break;
+          }
+
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
-
-        await new Promise<void>((resolve) => setImmediate(resolve));
       }
     } finally {
       this.stepping = false;
@@ -288,7 +325,7 @@ export class BacktestSession {
       await this.finalize();
       const timing = this.engine.getNodeTiming();
       console.log(
-        `[BacktestSession] runAll node timing for ${this.backtestId}:`,
+        `[BacktestSession] runAll completed for ${this.backtestId}${this.compiledPlan ? " (compiled plan)" : " (dynamic engine)"}`,
         timing,
       );
     }

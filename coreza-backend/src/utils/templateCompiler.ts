@@ -481,3 +481,63 @@ export function preCompileAllNodes(
   }
   return compiled;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slot-based param compilation for Compiled Plan VM
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SlotParamResolver = (slots: any[]) => Record<string, any>;
+
+/**
+ * Rewire a CompiledNodeParams so that template accessors read from
+ * `slots[slotIndex]` instead of `allNodeData[nodeName]`.
+ *
+ * Returns null if the node has fallback keys (unsupported patterns)
+ * or is otherwise ineligible for slot-based compilation.
+ *
+ * For static params (no templates), returns a function that always
+ * returns the static object (zero per-bar cost).
+ */
+export function compileParamsToSlots(
+  compiled: CompiledNodeParams | null,
+  slotMap: Map<string, number>,
+): SlotParamResolver | null {
+  // No compiled params available — treat as empty static params
+  if (!compiled) {
+    const empty = {};
+    return () => empty;
+  }
+
+  // Has fallback keys — can't compile to slots
+  if (compiled.fallbackKeys && compiled.fallbackKeys.length > 0) {
+    return null;
+  }
+
+  // No templates — return static params directly
+  if (!compiled.hasTemplates) {
+    const staticParams = compiled.staticParams!;
+    return () => staticParams;
+  }
+
+  // Has templates — need to rewire the resolve function
+  if (!compiled.resolve) {
+    return null;
+  }
+
+  // Build a slot-indexed version of allNodeData.
+  // The compiled.resolve function expects allNodeData[nodeName] lookups.
+  // We create a Proxy that maps property access to slots[slotMap.get(prop)].
+  return (slots: any[]) => {
+    const slotProxy = new Proxy(
+      {},
+      {
+        get(_target, prop: string) {
+          const slotIdx = slotMap.get(prop);
+          if (slotIdx !== undefined) return slots[slotIdx];
+          return undefined;
+        },
+      },
+    );
+    return compiled.resolve!(slotProxy);
+  };
+}

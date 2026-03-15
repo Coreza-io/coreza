@@ -4,6 +4,7 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { DataContextManager } from "./DataContext";
 import { WorkflowEngine } from "./workflowEngine";
+import { compilePlan, runBar, CompiledPlan } from "./compiledPlan";
 
 export interface BarEvent {
   bar: any;
@@ -23,6 +24,7 @@ export class BacktestSession {
   private readonly abortController: AbortController;
   private barsProcessed = 0;
   private stepping = false;
+  private compiledPlan: CompiledPlan | null = null;
 
   constructor(
     public readonly backtestId: string,
@@ -58,6 +60,9 @@ export class BacktestSession {
 
     // Pin init results once — they survive across bar resets
     this.engine.pinResults(this.backtestInitResult);
+
+    // ── Attempt compiled plan compilation ───────────────────────────
+    this.tryCompilePlan();
   }
 
   get totalBars(): number {

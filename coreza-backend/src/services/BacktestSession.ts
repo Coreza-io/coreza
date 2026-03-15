@@ -370,6 +370,24 @@ export class BacktestSession {
     if (this.status === "finished") {
       await this.finalize();
       const timing = this.engine.getNodeTiming();
+      if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
+        const sampled: Record<string, { totalMs: number; count: number; avgMs: number }> = {};
+        for (let i = 0; i < this.compiledPlan.instructions.length; i++) {
+          const instr = this.compiledPlan.instructions[i];
+          const count = this.compiledPlan.instructionTimingCount[i];
+          if (!count) continue;
+          const totalMs = this.compiledPlan.instructionTimingMs[i];
+          sampled[instr.node.id] = {
+            totalMs: +totalMs.toFixed(3),
+            count,
+            avgMs: +(totalMs / count).toFixed(3),
+          };
+        }
+        console.log(
+          `[BacktestSession] Compiled sampled node timing (sampleRate=${this.compiledPlan.timingSampleRate}, sampledBars=${Math.floor(this.compiledPlan.barCount / this.compiledPlan.timingSampleRate)}):`,
+          sampled,
+        );
+      }
       console.log(
         `[BacktestSession] runAll completed for ${this.backtestId}${this.compiledPlan ? " (compiled plan)" : " (dynamic engine)"}`,
         timing,

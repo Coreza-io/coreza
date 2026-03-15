@@ -36,20 +36,18 @@ import { OpCode, CompiledPlan } from "./types";
  * @param barInput The bar event data for this bar
  */
 export function runBar(plan: CompiledPlan, barInput: any): void {
-  const { instructions, slots, active, entryIndices, pinnedSlotEntries, inputSlot, ctx } = plan;
+  const { instructions, slots, active, entryIndices, inputSlot, ctx } = plan;
   const len = instructions.length;
 
   // ── Reset ─────────────────────────────────────────────────────────
   active.fill(0);
 
-  // ── Write pinned results (BacktestInit outputs) ───────────────────
-  for (let p = 0; p < pinnedSlotEntries.length; p++) {
-    const entry = pinnedSlotEntries[p];
-    slots[entry.slotIndex] = entry.value;
-  }
 
   // ── Write bar input ───────────────────────────────────────────────
   slots[inputSlot] = barInput;
+  plan.barCount += 1;
+
+  const timingEnabled = plan.timingSampleRate > 0 && (plan.barCount % plan.timingSampleRate === 0);
 
   // ── Activate entry nodes ──────────────────────────────────────────
   for (let e = 0; e < entryIndices.length; e++) {
@@ -66,7 +64,12 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
     const params = instr.resolveParams(slots);
 
     // Execute node
+    const execStart = timingEnabled ? performance.now() : 0;
     const result = instr.exec(instr.node, slots[instr.inputSlot], params, ctx);
+    if (timingEnabled) {
+      plan.instructionTimingMs[i] += performance.now() - execStart;
+      plan.instructionTimingCount[i] += 1;
+    }
 
     // Store result in slot
     slots[instr.outSlot] = result;

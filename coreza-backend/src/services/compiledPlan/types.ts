@@ -91,6 +91,14 @@ export interface PinnedSlotEntry {
  * Created once at backtest start, reused for every bar.
  */
 export interface CompiledPlan {
+  /** Total bars executed by this plan */
+  barCount: number;
+  /** Sample every N bars for per-instruction timing (0 disables) */
+  timingSampleRate: number;
+  /** Accumulated sampled instruction execution time in ms */
+  instructionTimingMs: Float64Array;
+  /** Number of sampled executions per instruction */
+  instructionTimingCount: Uint32Array;
   /** Ordered instructions in topological order */
   instructions: Instruction[];
   /** Dense result array — one slot per node + extras for input/pinned */
@@ -126,6 +134,8 @@ export interface CompiledExecContext {
   indicatorStateManager: any;
   abortSignal?: AbortSignal;
   silent: boolean;
+  /** Per-instruction pre-resolved params injected by VM */
+  resolvedParams?: Record<string, any>;
   /** Overridden to return pre-resolved params from slots */
   resolveNodeParameters: (node: WorkflowNode, input: any) => any;
   /** Returns all node results — reads from slots for compiled plan */

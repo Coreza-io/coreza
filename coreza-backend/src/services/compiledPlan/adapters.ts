@@ -77,10 +77,8 @@ export function buildExecAdapter(
     // Point context to current node
     ctx.nodeId = node.id;
 
-    // Override resolveNodeParameters to return pre-resolved params
-    // This is the key optimization: executors that call context.resolveNodeParameters
-    // will get the slot-resolved params directly instead of re-running template resolution
-    ctx.resolveNodeParameters = () => resolvedParams;
+    // Expose pre-resolved params via context field; resolveNodeParameters is stable.
+    ctx.resolvedParams = resolvedParams;
 
     const result = executor.executeSync!(node, input, ctx);
 

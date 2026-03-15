@@ -4,6 +4,7 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { DataContextManager } from "./DataContext";
 import { WorkflowEngine } from "./workflowEngine";
+import { compilePlan, runBar, CompiledPlan } from "./compiledPlan";
 
 export interface BarEvent {
   bar: any;
@@ -23,6 +24,7 @@ export class BacktestSession {
   private readonly abortController: AbortController;
   private barsProcessed = 0;
   private stepping = false;
+  private compiledPlan: CompiledPlan | null = null;
 
   constructor(
     public readonly backtestId: string,
@@ -58,6 +60,58 @@ export class BacktestSession {
 
     // Pin init results once — they survive across bar resets
     this.engine.pinResults(this.backtestInitResult);
+
+    // ── Attempt compiled plan compilation ───────────────────────────
+    this.tryCompilePlan();
+  }
+
+  /**
+   * Attempt to compile the workflow into a flat instruction plan.
+   * If successful, runAll/step will bypass the dynamic engine entirely.
+   */
+  private tryCompilePlan(): void {
+    try {
+      const dataContext = DataContextManager.getInstance().getContext({
+        runId: this.runId,
+        workflowId: this.workflowId,
+        userId: this.userId,
+      });
+
+      this.compiledPlan = compilePlan(
+        this.nodes,
+        this.edges,
+        this.entryNodeIds,
+        (this.engine as any)._compiledParams,
+        this.backtestInitResult,
+        {
+          runId: this.runId,
+          workflowId: this.workflowId,
+          userId: this.userId,
+          nodes: this.nodes,
+          edges: this.edges,
+          dataContext,
+          indicatorStateManager: this.stateManager ?? (this.engine as any).indicatorStateManager,
+          abortSignal: this.abortController.signal,
+          storeGetState: (nodeId: string, key: string) =>
+            (this.engine as any).store.getNodeState(nodeId, key),
+          storeSetState: (nodeId: string, key: string, value: any) =>
+            (this.engine as any).store.setNodeState(nodeId, key, value),
+        },
+      );
+
+      if (this.compiledPlan) {
+        console.log(
+          `[BacktestSession] ✅ Using compiled plan VM (${this.compiledPlan.instructions.length} instructions)`,
+        );
+      } else {
+        console.log(
+          `[BacktestSession] ⚠️ Compiled plan not eligible, falling back to dynamic engine`,
+        );
+      }
+    } catch (err) {
+      console.warn(`[BacktestSession] Compiled plan compilation failed, using engine fallback:`, err);
+      this.compiledPlan = null;
+    }
   }
 
   get totalBars(): number {
@@ -95,16 +149,20 @@ export class BacktestSession {
       this.status = "running";
       const currentEvent = this.bars[this.currentIndex];
 
-      // Ultra-lightweight reset — reuses store, queue, and pinned results
-      this.engine.resetForNextBar();
-
       try {
-        if (this.currentIndex === 0) {
+        if (this.compiledPlan) {
+          // ── Compiled plan path ──────────────────────────────────
+          runBar(this.compiledPlan, { data: currentEvent });
+        } else if (this.currentIndex === 0) {
+          // ── First bar: async engine (may need await for init) ───
+          this.engine.resetForNextBar();
           await this.engine.executeFromEntries(
             { data: currentEvent },
             this.entryNodeIds,
           );
         } else {
+          // ── Subsequent bars: sync engine ────────────────────────
+          this.engine.resetForNextBar();
           this.engine.executeFromEntriesSync(
             { data: currentEvent },
             this.entryNodeIds,
@@ -180,47 +238,84 @@ export class BacktestSession {
     try {
       const signal = this.abortController.signal;
 
-      while (
-        this.currentIndex < this.bars.length &&
-        !signal.aborted &&
-        this.status !== "finished"
-      ) {
-        this.status = "running";
-        const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+      if (this.compiledPlan) {
+        // ═══════════════════════════════════════════════════════════════
+        // COMPILED PLAN PATH — no engine, no queue, no routing
+        // ═══════════════════════════════════════════════════════════════
+        while (
+          this.currentIndex < this.bars.length &&
+          !signal.aborted &&
+          this.status !== "finished"
+        ) {
+          this.status = "running";
+          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
-        while (this.currentIndex < chunkEnd && !signal.aborted) {
-          const currentEvent = this.bars[this.currentIndex];
-
-          this.engine.resetForNextBar();
-
-          try {
-            if (this.currentIndex === 0) {
-              await this.engine.executeFromEntries(
-                { data: currentEvent },
-                this.entryNodeIds,
-              );
-            } else {
-              this.engine.executeFromEntriesSync(
-                { data: currentEvent },
-                this.entryNodeIds,
-              );
+          while (this.currentIndex < chunkEnd && !signal.aborted) {
+            const currentEvent = this.bars[this.currentIndex];
+            try {
+              runBar(this.compiledPlan, { data: currentEvent });
+            } catch (error) {
+              console.error("[BacktestSession] Compiled plan error on bar:", error);
             }
-          } catch (error) {
-            console.error("[BacktestSession] Error processing bar:", error);
+            this.currentIndex += 1;
           }
 
-          this.currentIndex += 1;
+          this.barsProcessed = this.currentIndex;
+          await this.reportProgress();
+
+          if (this.currentIndex >= this.bars.length) {
+            this.status = "finished";
+            break;
+          }
+
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
+      } else {
+        // ═══════════════════════════════════════════════════════════════
+        // DYNAMIC ENGINE PATH — existing queue/routing engine
+        // ═══════════════════════════════════════════════════════════════
+        while (
+          this.currentIndex < this.bars.length &&
+          !signal.aborted &&
+          this.status !== "finished"
+        ) {
+          this.status = "running";
+          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
-        this.barsProcessed = this.currentIndex;
-        await this.reportProgress();
+          while (this.currentIndex < chunkEnd && !signal.aborted) {
+            const currentEvent = this.bars[this.currentIndex];
 
-        if (this.currentIndex >= this.bars.length) {
-          this.status = "finished";
-          break;
+            this.engine.resetForNextBar();
+
+            try {
+              if (this.currentIndex === 0) {
+                await this.engine.executeFromEntries(
+                  { data: currentEvent },
+                  this.entryNodeIds,
+                );
+              } else {
+                this.engine.executeFromEntriesSync(
+                  { data: currentEvent },
+                  this.entryNodeIds,
+                );
+              }
+            } catch (error) {
+              console.error("[BacktestSession] Error processing bar:", error);
+            }
+
+            this.currentIndex += 1;
+          }
+
+          this.barsProcessed = this.currentIndex;
+          await this.reportProgress();
+
+          if (this.currentIndex >= this.bars.length) {
+            this.status = "finished";
+            break;
+          }
+
+          await new Promise<void>((resolve) => setImmediate(resolve));
         }
-
-        await new Promise<void>((resolve) => setImmediate(resolve));
       }
     } finally {
       this.stepping = false;
@@ -230,7 +325,7 @@ export class BacktestSession {
       await this.finalize();
       const timing = this.engine.getNodeTiming();
       console.log(
-        `[BacktestSession] runAll node timing for ${this.backtestId}:`,
+        `[BacktestSession] runAll completed for ${this.backtestId}${this.compiledPlan ? " (compiled plan)" : " (dynamic engine)"}`,
         timing,
       );
     }

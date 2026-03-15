@@ -41,6 +41,30 @@ export function parseBar(data: any): Bar | null {
 
 }
 
+
+/**
+ * Fast-path parser for hot backtest loops where bar objects are already validated.
+ */
+export function parseBarFast(data: any): Bar | null {
+  if (!data) return null;
+
+  if (data.bar) data = data.bar;
+
+  if (typeof data !== "object") return null;
+
+  const timestamp = data.timestamp ?? data.time;
+  if (timestamp === undefined) return null;
+
+  return {
+    timestamp,
+    open: Number(data.open),
+    high: Number(data.high),
+    low: Number(data.low),
+    close: Number(data.close),
+    volume: Number(data.volume ?? 0),
+  };
+}
+
 /**
  * Parse a prices map from various input formats.
  */

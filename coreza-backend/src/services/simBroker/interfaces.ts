@@ -56,7 +56,7 @@ export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
 // ============== MARKET DATA ==============
 
 export interface Bar {
-  timestamp: string; // ISO 8601 UTC
+  timestamp: string | number; // ISO 8601 UTC or epoch milliseconds UTC
   open: number;
   high: number;
   low: number;

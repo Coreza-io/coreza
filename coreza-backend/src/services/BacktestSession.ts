@@ -149,16 +149,20 @@ export class BacktestSession {
       this.status = "running";
       const currentEvent = this.bars[this.currentIndex];
 
-      // Ultra-lightweight reset — reuses store, queue, and pinned results
-      this.engine.resetForNextBar();
-
       try {
-        if (this.currentIndex === 0) {
+        if (this.compiledPlan) {
+          // ── Compiled plan path ──────────────────────────────────
+          runBar(this.compiledPlan, { data: currentEvent });
+        } else if (this.currentIndex === 0) {
+          // ── First bar: async engine (may need await for init) ───
+          this.engine.resetForNextBar();
           await this.engine.executeFromEntries(
             { data: currentEvent },
             this.entryNodeIds,
           );
         } else {
+          // ── Subsequent bars: sync engine ────────────────────────
+          this.engine.resetForNextBar();
           this.engine.executeFromEntriesSync(
             { data: currentEvent },
             this.entryNodeIds,

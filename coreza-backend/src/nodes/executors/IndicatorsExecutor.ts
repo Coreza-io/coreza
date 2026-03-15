@@ -22,7 +22,6 @@ import {
   normalizeOutput,
   createErrorOutput,
   toNodeResult,
-  leanSuccess,
 } from "../../utils/normalizeOutput";
 import {
   IndicatorStateManager,
@@ -34,6 +33,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
   private readonly initExecutor = new InitializeIndicatorsExecutor();
   private readonly indicatorKeyCache = new Map<string, string>();
+  private readonly indicatorResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
 
@@ -41,6 +41,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     const runId = context?.runId;
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
+      this.indicatorResults.clear();
       this.cachedRunId = runId;
     }
 
@@ -107,10 +108,7 @@ export class IndicatorsExecutor implements INodeExecutor {
           state = stateManager.updateSync(key, latestBar);
         }
 
-        return leanSuccess({
-          currentValue: state.currentValue,
-          previousValue: state.previousValue,
-        });
+        return this.getCachedIndicatorResult(node.id, state);
       }
     }
 
@@ -133,6 +131,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       const runId = context?.runId;
       if (runId && runId !== this.cachedRunId) {
         this.indicatorKeyCache.clear();
+        this.indicatorResults.clear();
         this.cachedRunId = runId;
       }
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
@@ -278,10 +277,7 @@ export class IndicatorsExecutor implements INodeExecutor {
             }
           }
 
-          return leanSuccess({
-            currentValue: state.currentValue,
-            previousValue: state.previousValue,
-          });
+          return this.getCachedIndicatorResult(node.id, state);
         }
       }
 
@@ -342,5 +338,24 @@ export class IndicatorsExecutor implements INodeExecutor {
       },
       {} as Record<string, any>,
     );
+  }
+
+  private getCachedIndicatorResult(
+    nodeId: string,
+    state: { currentValue: any; previousValue: any },
+  ): NodeResult {
+    if (!this.indicatorResults.has(nodeId)) {
+      this.indicatorResults.set(nodeId, {
+        success: true,
+        data: {
+          currentValue: null,
+          previousValue: null,
+        },
+      });
+    }
+    const result = this.indicatorResults.get(nodeId)!;
+    result.data.currentValue = state.currentValue;
+    result.data.previousValue = state.previousValue;
+    return result;
   }
 }

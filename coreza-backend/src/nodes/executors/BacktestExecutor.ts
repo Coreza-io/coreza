@@ -43,7 +43,7 @@ import {
   buildIndicatorKey,
   IndicatorStateManager,
 } from "../../services/indicatorStateManager";
-import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
+import { parseBar, parseBarFast, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 
 import { BacktestSessionManager } from "../../services/BacktestSessionManager";
@@ -604,7 +604,9 @@ export class BacktestExecutor implements INodeExecutor {
       // Get SimBroker instance from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      const currentBar = parseBar(params.current_bar);
+      const currentBar = context?.silent
+        ? parseBarFast(params.current_bar)
+        : parseBar(params.current_bar);
 
       // Parse current bar from input (passed from loop iteration)
       // let currentBar;
@@ -935,7 +937,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       const simBroker = this.getSimBroker(backtestId);
       const operation = params.operation || "get_portfolio";
-      const currentBar = parseBar(params.current_bar);
+      const currentBar = context?.silent
+        ? parseBarFast(params.current_bar)
+        : parseBar(params.current_bar);
       const symbol = params.symbol;
       const prices = parsePrices(params.prices);
 

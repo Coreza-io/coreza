@@ -58,6 +58,13 @@ import { BarBuffer } from "./BarBuffer";
  * 3. Call onBar() during each loop iteration to process pending orders (synchronous)
  * 4. Call getMetrics() with BacktestResults node to calculate performance (synchronous)
  */
+
+function asIsoTimestamp(timestamp: string | number): string {
+  return typeof timestamp === "number"
+    ? new Date(timestamp).toISOString()
+    : timestamp;
+}
+
 export class SimBroker {
   private backtestId: string;
   private config: SimBrokerConfig;
@@ -76,6 +83,7 @@ export class SimBroker {
     drawdownPct: Float64Array;
   };
   private equityCurveIndex = 0;
+  private positionsValue = 0;
 
   // IN-MEMORY STATE - no Redis!
   private state: PortfolioState;
@@ -200,7 +208,7 @@ export class SimBroker {
   }
 
   private recordEquityPoint(
-    timestamp: string,
+    timestamp: string | number,
     cash: number,
     positionsValue: number,
     totalEquity: number,
@@ -330,7 +338,7 @@ export class SimBroker {
         const event: OrderEvent = {
           orderId: order.id,
           symbol: order.symbol,
-          utcTime: bar.timestamp,
+          utcTime: asIsoTimestamp(bar.timestamp),
           status: 'filled',
           side: order.side,
           fillPrice: adjustedPrice,
@@ -356,10 +364,7 @@ export class SimBroker {
     this.updatePositionMTM(symbol, bar.close);
 
     // Auto-record equity snapshot on every bar
-    const positionsValue = Object.values(this.state.positions).reduce(
-      (sum, p) => sum + p.marketValue,
-      0,
-    );
+    const positionsValue = this.positionsValue;
     const totalEquity = this.state.cash + positionsValue;
 
     if (totalEquity > this.state.peakEquity) {
@@ -434,7 +439,7 @@ export class SimBroker {
     const event: OrderEvent = {
       orderId: order.id,
       symbol: order.symbol,
-      utcTime: bar.timestamp,
+      utcTime: asIsoTimestamp(bar.timestamp),
       status: 'filled',
       side: order.side,
       fillPrice: adjustedPrice,
@@ -463,7 +468,7 @@ export class SimBroker {
     quantity: number,
     slippage: number,
     commission: number,
-    timestamp: string,
+    timestamp: string | number,
   ): void {
     const signedQuantity = order.side === "buy" ? quantity : -quantity;
 
@@ -475,6 +480,7 @@ export class SimBroker {
 
     const existing = this.state.positions[order.symbol];
     if (!existing) {
+      const marketValue = signedQuantity * price;
       this.state.positions[order.symbol] = {
         symbol: order.symbol,
         side: signedQuantity >= 0 ? "long" : "short",
@@ -483,17 +489,19 @@ export class SimBroker {
         currentPrice: price,
         unrealizedPnl: 0,
         realizedPnl: 0,
-        marketValue: signedQuantity * price,
+        marketValue,
       };
+      this.positionsValue += marketValue;
       this.currentEntryMap.set(order.symbol, {
         orderId: order.id,
-        filledAt: timestamp,
+        filledAt: asIsoTimestamp(timestamp),
         barIndex: this.equityCurveIndex,
       });
       return;
     }
 
     const existingQty = existing.quantity;
+    const oldMarketValue = existing.marketValue;
     const sameDirection =
       (existingQty >= 0 && signedQuantity >= 0) ||
       (existingQty <= 0 && signedQuantity <= 0);
@@ -509,6 +517,7 @@ export class SimBroker {
       existing.currentPrice = price;
       existing.marketValue = totalQty * price;
       existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
+      this.positionsValue += existing.marketValue - oldMarketValue;
       return;
     }
 
@@ -523,9 +532,10 @@ export class SimBroker {
     const commissionForClose =
       commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
+    const fillTimeIso = asIsoTimestamp(timestamp);
     const entry = this.currentEntryMap.get(order.symbol);
     const entryOrderId = entry?.orderId ?? order.id;
-    const entryTime = entry?.filledAt ?? timestamp;
+    const entryTime = entry?.filledAt ?? fillTimeIso;
     const holdingPeriodBars = Math.max(
       0,
       this.equityCurveIndex - (entry?.barIndex ?? this.equityCurveIndex),
@@ -547,13 +557,14 @@ export class SimBroker {
       slippage: Math.abs(slippage),
       netPnl,
       entryTime,
-      exitTime: timestamp,
+      exitTime: fillTimeIso,
       holdingPeriodBars,
     };
     this.state.trades.push(trade);
 
     const newQty = existingQty + signedQuantity;
     if (newQty === 0) {
+      this.positionsValue -= oldMarketValue;
       delete this.state.positions[order.symbol];
       this.currentEntryMap.delete(order.symbol);
       return;
@@ -565,6 +576,7 @@ export class SimBroker {
       existing.currentPrice = price;
       existing.marketValue = newQty * price;
       existing.unrealizedPnl = (price - existing.avgEntryPrice) * newQty;
+      this.positionsValue += existing.marketValue - oldMarketValue;
       return;
     }
 
@@ -575,9 +587,10 @@ export class SimBroker {
     existing.currentPrice = price;
     existing.marketValue = newQty * price;
     existing.unrealizedPnl = 0;
+    this.positionsValue += existing.marketValue - oldMarketValue;
     this.currentEntryMap.set(order.symbol, {
       orderId: order.id,
-      filledAt: timestamp,
+      filledAt: fillTimeIso,
       barIndex: this.equityCurveIndex,
     });
   }
@@ -585,10 +598,12 @@ export class SimBroker {
   updatePositionMTM(symbol: string, currentPrice: number): void {
     const position = this.state.positions[symbol];
     if (position) {
+      const oldMarketValue = position.marketValue;
       position.currentPrice = currentPrice;
       position.marketValue = position.quantity * currentPrice;
       position.unrealizedPnl =
         (currentPrice - position.avgEntryPrice) * position.quantity;
+      this.positionsValue += position.marketValue - oldMarketValue;
     }
   }
 
@@ -809,11 +824,7 @@ export class SimBroker {
   }
 
   getTotalEquity(): number {
-    const positionsValue = Object.values(this.state.positions).reduce(
-      (sum, p) => sum + p.marketValue,
-      0,
-    );
-    return this.state.cash + positionsValue;
+    return this.state.cash + this.positionsValue;
   }
 
   /**

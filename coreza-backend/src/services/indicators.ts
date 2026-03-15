@@ -186,9 +186,10 @@ export class IndicatorService {
               : close;
             const ema =
               close * state.multiplier + prevEma * (1 - state.multiplier);
+            state.prevEma = ema;
             return {
               value: ema,
-              internalState: { ...state, prevEma: ema },
+              internalState: state,
             };
           },
         };
@@ -213,24 +214,29 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             const close = asClose(bar);
-            const window = [...(state.window || []), close];
-            let runningSum = Number.isFinite(state.runningSum)
-              ? state.runningSum
-              : (state.window || []).reduce(
-                  (sum: number, value: number) => sum + value,
-                  0,
-                );
+            state.window = state.window || [];
+            state.window.push(close);
 
-            runningSum += close;
-            if (window.length > state.period) {
-              runningSum -= window.shift() as number;
+            if (!Number.isFinite(state.runningSum)) {
+              state.runningSum = state.window.reduce(
+                (sum: number, value: number) => sum + value,
+                0,
+              );
+            } else {
+              state.runningSum += close;
+            }
+
+            if (state.window.length > state.period) {
+              state.runningSum -= state.window.shift() as number;
             }
 
             const value =
-              window.length === state.period ? runningSum / state.period : null;
+              state.window.length === state.period
+                ? state.runningSum / state.period
+                : null;
             return {
               value,
-              internalState: { ...state, window, runningSum },
+              internalState: state,
             };
           },
         };
@@ -290,15 +296,13 @@ export class IndicatorService {
             const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
             const value = 100 - 100 / (1 + rs);
 
+            state.prevClose = close;
+            state.avgGain = avgGain;
+            state.avgLoss = avgLoss;
+
             return {
               value,
-
-              internalState: {
-                ...state,
-                prevClose: close,
-                avgGain,
-                avgLoss,
-              },
+              internalState: state,
             };
           },
         };
@@ -368,15 +372,12 @@ export class IndicatorService {
               macd * state.signalMult +
               state.signalEma * (1 - state.signalMult);
 
+            state.shortEma = shortEma;
+            state.longEma = longEma;
+            state.signalEma = signalEma;
             return {
               value: { macd, signal: signalEma, histogram: macd - signalEma },
-
-              internalState: {
-                ...state,
-                shortEma,
-                longEma,
-                signalEma,
-              },
+              internalState: state,
             };
           },
         };
@@ -435,34 +436,38 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             const close = asClose(bar);
-            const window = [...(state.window || []), close];
+            state.window = state.window || [];
+            state.window.push(close);
 
-            let runningSum = Number.isFinite(state.runningSum)
-              ? state.runningSum
-              : (state.window || []).reduce(
-                  (sum: number, value: number) => sum + value,
-                  0,
-                );
-            let runningSumSquares = Number.isFinite(state.runningSumSquares)
-              ? state.runningSumSquares
-              : (state.window || []).reduce(
-                  (sum: number, value: number) => sum + value * value,
-                  0,
-                );
+            if (!Number.isFinite(state.runningSum)) {
+              state.runningSum = state.window.reduce(
+                (sum: number, value: number) => sum + value,
+                0,
+              );
+            } else {
+              state.runningSum += close;
+            }
 
-            runningSum += close;
-            runningSumSquares += close * close;
-            if (window.length > state.period) {
-              const removed = window.shift() as number;
-              runningSum -= removed;
-              runningSumSquares -= removed * removed;
+            if (!Number.isFinite(state.runningSumSquares)) {
+              state.runningSumSquares = state.window.reduce(
+                (sum: number, value: number) => sum + value * value,
+                0,
+              );
+            } else {
+              state.runningSumSquares += close * close;
+            }
+
+            if (state.window.length > state.period) {
+              const removed = state.window.shift() as number;
+              state.runningSum -= removed;
+              state.runningSumSquares -= removed * removed;
             }
 
             let value: Record<string, number> | null = null;
-            if (window.length === state.period) {
-              const middle = runningSum / state.period;
+            if (state.window.length === state.period) {
+              const middle = state.runningSum / state.period;
               const variance = Math.max(
-                runningSumSquares / state.period - middle * middle,
+                state.runningSumSquares / state.period - middle * middle,
                 0,
               );
               const stdev = Math.sqrt(variance);
@@ -475,13 +480,7 @@ export class IndicatorService {
 
             return {
               value,
-
-              internalState: {
-                ...state,
-                window,
-                runningSum,
-                runningSumSquares,
-              },
+              internalState: state,
             };
           },
         };
@@ -518,10 +517,11 @@ export class IndicatorService {
                   ? -volume
                   : 0);
 
+            state.obv = obv;
+            state.prevClose = close;
             return {
               value: obv,
-
-              internalState: { ...state, obv, prevClose: close },
+              internalState: state,
             };
           },
         };
@@ -587,15 +587,12 @@ export class IndicatorService {
             cumVol += vol;
             const value = cumVol > 0 ? cumTPV / cumVol : tp;
 
+            state.cumTPV = cumTPV;
+            state.cumVol = cumVol;
+            state.prevTime = date.toISOString();
             return {
               value,
-
-              internalState: {
-                ...state,
-                cumTPV,
-                cumVol,
-                prevTime: date.toISOString(),
-              },
+              internalState: state,
             };
           },
         };
@@ -671,7 +668,7 @@ export class IndicatorService {
             if (!Number.isFinite(volume) || volume < 0) {
               return {
                 value: null,
-                internalState: { ...state },
+                internalState: state,
               };
             }
 
@@ -681,18 +678,15 @@ export class IndicatorService {
             ) {
               const shortMult = 2 / (state.shortPeriod + 1);
               const longMult = 2 / (state.longPeriod + 1);
-              state = {
-                ...state,
-                shortMult,
-                longMult,
-                shortEma: Number.isFinite(state.shortEma)
-                  ? state.shortEma
-                  : volume,
-                longEma: Number.isFinite(state.longEma)
-                  ? state.longEma
-                  : volume,
-                count: Number.isFinite(state.count) ? state.count : 0,
-              };
+              state.shortMult = shortMult;
+              state.longMult = longMult;
+              state.shortEma = Number.isFinite(state.shortEma)
+                ? state.shortEma
+                : volume;
+              state.longEma = Number.isFinite(state.longEma)
+                ? state.longEma
+                : volume;
+              state.count = Number.isFinite(state.count) ? state.count : 0;
             }
 
             const shortEma =
@@ -709,10 +703,12 @@ export class IndicatorService {
                   : shortEma - longEma
                 : null;
 
+            state.shortEma = shortEma;
+            state.longEma = longEma;
+            state.count = count;
             return {
               value,
-
-              internalState: { ...state, shortEma, longEma, count },
+              internalState: state,
             };
           },
         };
@@ -737,8 +733,7 @@ export class IndicatorService {
             ) {
               return {
                 value: state.lastValue ?? null,
-
-                internalState: { ...state },
+                internalState: state,
               };
             }
 
@@ -747,15 +742,12 @@ export class IndicatorService {
               !Number.isFinite(state.prevLow) ||
               !Number.isFinite(state.prevClose)
             ) {
+              state.prevHigh = high;
+              state.prevLow = low;
+              state.prevClose = close;
               return {
                 value: null,
-
-                internalState: {
-                  ...state,
-                  prevHigh: high,
-                  prevLow: low,
-                  prevClose: close,
-                },
+                internalState: state,
               };
             }
 
@@ -769,12 +761,9 @@ export class IndicatorService {
               Math.abs(low - state.prevClose),
             );
 
-            const next = {
-              ...state,
-              prevHigh: high,
-              prevLow: low,
-              prevClose: close,
-            };
+            state.prevHigh = high;
+            state.prevLow = low;
+            state.prevClose = close;
 
             if (!state.smoothedReady) {
               const seedCount = Number(state.seedCount || 0) + 1;
@@ -783,16 +772,13 @@ export class IndicatorService {
               const minusDmSeed = Number(state.minusDmSeed || 0) + minusDM;
 
               if (seedCount < state.period) {
+                state.seedCount = seedCount;
+                state.trSeed = trSeed;
+                state.plusDmSeed = plusDmSeed;
+                state.minusDmSeed = minusDmSeed;
                 return {
                   value: null,
-
-                  internalState: {
-                    ...next,
-                    seedCount,
-                    trSeed,
-                    plusDmSeed,
-                    minusDmSeed,
-                  },
+                  internalState: state,
                 };
               }
 
@@ -803,22 +789,19 @@ export class IndicatorService {
                   ? 0
                   : (Math.abs(plusDI - minusDI) / (plusDI + minusDI)) * 100;
 
+              state.seedCount = seedCount;
+              state.trSeed = trSeed;
+              state.plusDmSeed = plusDmSeed;
+              state.minusDmSeed = minusDmSeed;
+              state.tr14 = trSeed;
+              state.plusDm14 = plusDmSeed;
+              state.minusDm14 = minusDmSeed;
+              state.dxSeedSum = dx;
+              state.dxSeedCount = 1;
+              state.smoothedReady = true;
               return {
                 value: null,
-
-                internalState: {
-                  ...next,
-                  seedCount,
-                  trSeed,
-                  plusDmSeed,
-                  minusDmSeed,
-                  tr14: trSeed,
-                  plusDm14: plusDmSeed,
-                  minusDm14: minusDmSeed,
-                  dxSeedSum: dx,
-                  dxSeedCount: 1,
-                  smoothedReady: true,
-                },
+                internalState: state,
               };
             }
 
@@ -842,52 +825,43 @@ export class IndicatorService {
               const nextSum = dxSeedSum + dx;
 
               if (nextCount < state.period) {
+                state.tr14 = tr14;
+                state.plusDm14 = plusDm14;
+                state.minusDm14 = minusDm14;
+                state.dxSeedCount = nextCount;
+                state.dxSeedSum = nextSum;
                 return {
                   value: null,
-
-                  internalState: {
-                    ...next,
-                    tr14,
-                    plusDm14,
-                    minusDm14,
-                    dxSeedCount: nextCount,
-                    dxSeedSum: nextSum,
-                  },
+                  internalState: state,
                 };
               }
 
               const adx = nextSum / state.period;
               const out = { adx, pdi: plusDI, mdi: minusDI };
 
+              state.tr14 = tr14;
+              state.plusDm14 = plusDm14;
+              state.minusDm14 = minusDm14;
+              state.dxSeedCount = nextCount;
+              state.dxSeedSum = nextSum;
+              state.adx = adx;
+              state.lastValue = out;
               return {
                 value: out,
-
-                internalState: {
-                  ...next,
-                  tr14,
-                  plusDm14,
-                  minusDm14,
-                  dxSeedCount: nextCount,
-                  dxSeedSum: nextSum,
-                  adx,
-                  lastValue: out,
-                },
+                internalState: state,
               };
             }
 
             const adx = (state.adx * (state.period - 1) + dx) / state.period;
             const out = { adx, pdi: plusDI, mdi: minusDI };
+            state.tr14 = tr14;
+            state.plusDm14 = plusDm14;
+            state.minusDm14 = minusDm14;
+            state.adx = adx;
+            state.lastValue = out;
             return {
               value: out,
-
-              internalState: {
-                ...next,
-                tr14,
-                plusDm14,
-                minusDm14,
-                adx,
-                lastValue: out,
-              },
+              internalState: state,
             };
           };
 
@@ -947,62 +921,54 @@ export class IndicatorService {
           const high = asHigh(bar);
           const low = asLow(bar);
           const close = asClose(bar);
-          const highs = [...(state.highWindow || []), high];
-          const lows = [...(state.lowWindow || []), low];
-          clampWindow(highs, state.period);
-          clampWindow(lows, state.period);
+          state.highWindow = state.highWindow || [];
+          state.lowWindow = state.lowWindow || [];
+          state.highWindow.push(high);
+          state.lowWindow.push(low);
+          clampWindow(state.highWindow, state.period);
+          clampWindow(state.lowWindow, state.period);
 
           if (
-            highs.length < state.period ||
-            highs.some((v: number) => !Number.isFinite(v)) ||
-            lows.some((v: number) => !Number.isFinite(v)) ||
+            state.highWindow.length < state.period ||
+            state.highWindow.some((v: number) => !Number.isFinite(v)) ||
+            state.lowWindow.some((v: number) => !Number.isFinite(v)) ||
             !Number.isFinite(close)
           ) {
             return {
               value: null,
 
-              internalState: {
-                ...state,
-                highWindow: highs,
-                lowWindow: lows,
-              },
+              internalState: state,
             };
           }
 
-          const highestHigh = Math.max(...highs);
-          const lowestLow = Math.min(...lows);
+          const highestHigh = Math.max(...state.highWindow);
+          const lowestLow = Math.min(...state.lowWindow);
           const k =
             highestHigh === lowestLow
               ? 0
               : ((close - lowestLow) / (highestHigh - lowestLow)) * 100;
 
-          const kValues = [...(state.kValues || []), k];
-          let kRunningSum = Number.isFinite(state.kRunningSum)
-            ? state.kRunningSum
-            : (state.kValues || []).reduce(
-                (sum: number, value: number) => sum + value,
-                0,
-              );
-          kRunningSum += k;
-          if (kValues.length > state.signalPeriod) {
-            kRunningSum -= kValues.shift() as number;
+          state.kValues = state.kValues || [];
+          state.kValues.push(k);
+          if (!Number.isFinite(state.kRunningSum)) {
+            state.kRunningSum = state.kValues.reduce(
+              (sum: number, value: number) => sum + value,
+              0,
+            );
+          } else {
+            state.kRunningSum += k;
+          }
+          if (state.kValues.length > state.signalPeriod) {
+            state.kRunningSum -= state.kValues.shift() as number;
           }
 
-          const d = kRunningSum / kValues.length;
+          const d = state.kRunningSum / state.kValues.length;
 
           const out = { k, d };
+          state.lastValue = out;
           return {
             value: out,
-
-            internalState: {
-              ...state,
-              highWindow: highs,
-              lowWindow: lows,
-              kValues,
-              kRunningSum,
-
-              lastValue: out,
-            },
+            internalState: state,
           };
         };
 

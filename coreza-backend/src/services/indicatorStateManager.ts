@@ -9,7 +9,7 @@
 import { getRedisCache } from "../config/redis";
 import { buildIndicatorKey } from "../utils/executionKey";
 export { buildIndicatorKey } from "../utils/executionKey";
-import { IndicatorService } from "./indicators";
+import { IndicatorService, IncrementalUpdater } from "./indicators";
 
 export interface IndicatorState {
   version: number;
@@ -47,6 +47,7 @@ const STATE_VERSION = 2;
 export class IndicatorStateManager {
   private readonly l1Cache = new Map<string, IndicatorState>();
   private readonly dirtyKeys = new Set<string>();
+  private readonly updaterCache = new Map<string, IncrementalUpdater>();
 
   constructor(private readonly ttlSeconds?: number) {}
 
@@ -111,6 +112,20 @@ export class IndicatorStateManager {
   clearL1Cache(): void {
     this.l1Cache.clear();
     this.dirtyKeys.clear();
+    this.updaterCache.clear();
+  }
+
+  private getUpdater(
+    indicator: string,
+    params: Record<string, any>,
+  ): IncrementalUpdater {
+    const cacheKey = `${indicator}:${serializeParams(params)}`;
+    let updater = this.updaterCache.get(cacheKey);
+    if (!updater) {
+      updater = IndicatorService.createIncrementalUpdater(indicator, params);
+      this.updaterCache.set(cacheKey, updater);
+    }
+    return updater;
   }
 
   async warmUp(
@@ -120,10 +135,7 @@ export class IndicatorStateManager {
     bars: any[],
     sync = false,
   ): Promise<IndicatorState> {
-    const updater = IndicatorService.createIncrementalUpdater(
-      indicator,
-      params,
-    );
+    const updater = this.getUpdater(indicator, params);
     const warmup = updater.warmUp(bars);
 
     const state: IndicatorState = {
@@ -151,30 +163,24 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const updater = IndicatorService.createIncrementalUpdater(
-      existing.indicator,
-      existing.params,
-    );
+    const updater = this.getUpdater(existing.indicator, existing.params);
 
     const { value, internalState } = updater.update(
       existing.internalState,
       bar,
     );
 
-    const updatedState: IndicatorState = {
-      ...existing,
-      previousValue: existing.currentValue,
-      currentValue: value,
-      lastBarTime: String(bar?.time ?? ""),
-      internalState,
-    };
+    existing.previousValue = existing.currentValue;
+    existing.currentValue = value;
+    existing.lastBarTime = String(bar?.time ?? "");
+    existing.internalState = internalState;
 
     if (sync) {
-      this.setStateSync(key, updatedState);
+      this.setStateSync(key, existing);
     } else {
-      await this.setState(key, updatedState);
+      await this.setState(key, existing);
     }
-    return updatedState;
+    return existing;
   }
 
   updateSync(key: string, bar: any): IndicatorState {
@@ -183,22 +189,15 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const updater = IndicatorService.createIncrementalUpdater(
-      existing.indicator,
-      existing.params,
-    );
+    const updater = this.getUpdater(existing.indicator, existing.params);
     const { value, internalState } = updater.update(existing.internalState, bar);
 
-    const updatedState: IndicatorState = {
-      ...existing,
-      previousValue: existing.currentValue,
-      currentValue: value,
-      lastBarTime: String(bar?.time ?? ""),
-      internalState,
-    };
-
-    this.setStateSync(key, updatedState);
-    return updatedState;
+    existing.previousValue = existing.currentValue;
+    existing.currentValue = value;
+    existing.lastBarTime = String(bar?.time ?? "");
+    existing.internalState = internalState;
+    this.dirtyKeys.add(key);
+    return existing;
   }
 
   async invalidate(key: string): Promise<void> {

@@ -191,7 +191,7 @@ export function compilePlan(
 
   for (const nodeId of topoOrder) {
     const cp = compiledParams.get(nodeId);
-    const resolver = compileParamsToSlots(cp ?? null, slotMap);
+    const resolver = compileParamsToSlots(cp ?? null, slotMap, cp?.templateDeps);
     if (!resolver) {
       console.log(
         `[CompiledPlan] Ineligible: failed to compile params to slots for node "${nodeId}"`,
@@ -282,8 +282,8 @@ export function compilePlan(
     indicatorStateManager: ctxBase.indicatorStateManager,
     abortSignal: ctxBase.abortSignal,
     silent: true,
-    // These will be overridden per-instruction by the adapter
-    resolveNodeParameters: () => ({}),
+    // Stable resolver reads params injected by VM/adapter
+    resolveNodeParameters: () => ctx.resolvedParams ?? {},
     getAllNodeResults: () => ({}),
     getState: (key: string) => ctxBase.storeGetState(ctx.nodeId, key),
     setState: (key: string, value: any) =>
@@ -292,9 +292,21 @@ export function compilePlan(
   };
 
   // ── Assemble plan ─────────────────────────────────────────────────
+
+  const slots = new Array(totalSlots).fill(null);
+  for (let p = 0; p < pinnedSlotEntries.length; p++) {
+    const entry = pinnedSlotEntries[p];
+    slots[entry.slotIndex] = entry.value;
+  }
+  const timingSampleRate = Number(process.env.COMPILED_PLAN_TIMING_SAMPLE_RATE ?? "0");
+
   const plan: CompiledPlan = {
     instructions,
-    slots: new Array(totalSlots).fill(null),
+    barCount: 0,
+    timingSampleRate: Number.isFinite(timingSampleRate) && timingSampleRate > 0 ? Math.floor(timingSampleRate) : 0,
+    instructionTimingMs: new Float64Array(instructions.length),
+    instructionTimingCount: new Uint32Array(instructions.length),
+    slots,
     active: new Uint8Array(instructions.length),
     entryIndices,
     pinnedSlotEntries,

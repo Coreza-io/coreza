@@ -41,6 +41,8 @@ export interface CompiledNodeParams {
     allNodeData: Record<string, any>,
     input: any,
   ) => Record<string, any>;
+  /** Node IDs referenced by template expressions for slot-based resolution */
+  templateDeps?: string[];
   /** Keys that need runtime fallback resolution (unsupported patterns) */
   fallbackKeys?: string[];
 }
@@ -249,7 +251,7 @@ function compileTemplate(
   templateStr: string,
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
-): AccessorFn | null {
+): { accessor: AccessorFn; deps: Set<string> } | null {
   // Check for unsupported dynamic patterns
   if (UNSUPPORTED_PATTERNS.test(templateStr)) return null;
 
@@ -260,6 +262,7 @@ function compileTemplate(
     end: number;
     accessor: AccessorFn;
   }> = [];
+  const deps = new Set<string>();
 
   let m: RegExpExecArray | null;
   TEMPLATE_REGEX.lastIndex = 0;
@@ -272,12 +275,13 @@ function compileTemplate(
     const pathAccessor = buildPathAccessor(cleanPath);
     if (!pathAccessor) return null;
 
-    //const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
+    const resolvedId = resolveNodeKeyStatic(nodeName, nodeIdSet, nodes);
+    deps.add(resolvedId);
 
     // let cachedExtractor: ((d: any) => any) | null = null;
 
     const accessor: AccessorFn = (allNodeData) => {
-      const nodeData = allNodeData[nodeName];
+      const nodeData = allNodeData[resolvedId];
       if (nodeData == null) return undefined;
 
       // if (!cachedExtractor) {
@@ -306,10 +310,11 @@ function compileTemplate(
 
   if (isPure) {
     const acc = matches[0].accessor;
-    return (allNodeData) => {
+    const accessor = (allNodeData: Record<string, any>) => {
       const value = acc(allNodeData);
       return value === undefined ? null : value;
     };
+    return { accessor, deps };
   }
 
   // Mixed string: build segments for concatenation
@@ -342,13 +347,14 @@ function compileTemplate(
     const prefix = (segments[0] as any).value;
     const suffix = (segments[2] as any).value;
     const acc = (segments[1] as any).accessor;
-    return (allNodeData: Record<string, any>) => {
+    const accessor = (allNodeData: Record<string, any>) => {
       const val = acc(allNodeData);
       return prefix + formatMixedValue(val) + suffix;
     };
+    return { accessor, deps };
   }
 
-  return (allNodeData: Record<string, any>) => {
+  const accessor = (allNodeData: Record<string, any>) => {
     let result = "";
     for (const seg of segments) {
       if (seg.type === "static") {
@@ -359,6 +365,7 @@ function compileTemplate(
     }
     return result;
   };
+  return { accessor, deps };
 }
 
 /**
@@ -370,25 +377,35 @@ function compileValue(
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
 ):
-  | { compiled: true; accessor: AccessorFn }
-  | { compiled: true; staticValue: any }
+  | { compiled: true; accessor: AccessorFn; deps: Set<string> }
+  | { compiled: true; staticValue: any; deps: Set<string> }
   | { compiled: false } {
   if (typeof value === "string") {
     if (!value.includes("{{")) {
-      return { compiled: true, staticValue: value };
+      return { compiled: true, staticValue: value, deps: new Set<string>() };
     }
-    const accessor = compileTemplate(value, nodeIdSet, nodes);
-    if (!accessor) return { compiled: false };
-    return { compiled: true, accessor };
+    const compiledTemplate = compileTemplate(value, nodeIdSet, nodes);
+    if (!compiledTemplate) return { compiled: false };
+    return {
+      compiled: true,
+      accessor: compiledTemplate.accessor,
+      deps: compiledTemplate.deps,
+    };
   }
 
   if (Array.isArray(value)) {
-    const compiledItems: Array<{ accessor?: AccessorFn; staticValue?: any }> =
+    const compiledItems: Array<{
+      accessor?: AccessorFn;
+      staticValue?: any;
+      deps: Set<string>;
+    }> =
       [];
+    const deps = new Set<string>();
     for (const item of value) {
       const result = compileValue(item, nodeIdSet, nodes);
       if (!result.compiled) return { compiled: false };
       compiledItems.push(result as any);
+      for (const dep of (result as any).deps) deps.add(dep);
     }
     // Check if all items are static
     const allStatic = compiledItems.every((c) => "staticValue" in c);
@@ -396,10 +413,12 @@ function compileValue(
       return {
         compiled: true,
         staticValue: compiledItems.map((c) => (c as any).staticValue),
+        deps,
       };
     }
     return {
       compiled: true,
+      deps,
       accessor: (allNodeData) =>
         compiledItems.map((c) =>
           "accessor" in c
@@ -415,21 +434,25 @@ function compileValue(
       key: string;
       accessor?: AccessorFn;
       staticValue?: any;
+      deps: Set<string>;
     }> = [];
+    const deps = new Set<string>();
     for (const [k, v] of entries) {
       const result = compileValue(v, nodeIdSet, nodes);
       if (!result.compiled) return { compiled: false };
       compiledEntries.push({ key: k, ...(result as any) });
+      for (const dep of (result as any).deps) deps.add(dep);
     }
     const allStatic = compiledEntries.every((c) => "staticValue" in c);
     if (allStatic) {
       const staticObj: Record<string, any> = {};
       for (const c of compiledEntries)
         staticObj[c.key] = (c as any).staticValue;
-      return { compiled: true, staticValue: staticObj };
+      return { compiled: true, staticValue: staticObj, deps };
     }
     return {
       compiled: true,
+      deps,
       accessor: (allNodeData) => {
         const result: Record<string, any> = {};
         for (const c of compiledEntries) {
@@ -444,7 +467,7 @@ function compileValue(
   }
 
   // number, boolean, null, undefined — static
-  return { compiled: true, staticValue: value };
+  return { compiled: true, staticValue: value, deps: new Set<string>() };
 }
 
 /**
@@ -480,7 +503,9 @@ export function compileNodeParams(
     accessor?: AccessorFn;
     staticValue?: any;
     fallback?: boolean;
+    deps?: Set<string>;
   }> = [];
+  const templateDeps = new Set<string>();
 
   let hasFallback = false;
 
@@ -491,9 +516,18 @@ export function compileNodeParams(
       compiledEntries.push({ key, fallback: true, staticValue: value });
       hasFallback = true;
     } else if ("accessor" in result) {
-      compiledEntries.push({ key, accessor: (result as any).accessor });
+      compiledEntries.push({
+        key,
+        accessor: (result as any).accessor,
+        deps: (result as any).deps,
+      });
+      for (const dep of (result as any).deps) templateDeps.add(dep);
     } else {
-      compiledEntries.push({ key, staticValue: (result as any).staticValue });
+      compiledEntries.push({
+        key,
+        staticValue: (result as any).staticValue,
+        deps: (result as any).deps,
+      });
     }
   }
 
@@ -505,6 +539,7 @@ export function compileNodeParams(
   return {
     hasTemplates: true,
     fallbackKeys,
+    templateDeps: Array.from(templateDeps),
     resolve: (allNodeData) => {
       const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
@@ -569,6 +604,7 @@ type SlotParamResolver = (slots: any[]) => Record<string, any>;
 export function compileParamsToSlots(
   compiled: CompiledNodeParams | null,
   slotMap: Map<string, number>,
+  templateDeps?: string[],
 ): SlotParamResolver | null {
   // No compiled params available — treat as empty static params
   if (!compiled) {
@@ -596,8 +632,13 @@ export function compileParamsToSlots(
   // Runtime resolver just refreshes a reusable plain object from slots[],
   // avoiding Proxy creation/inspection overhead on every bar.
   const deps: Array<[string, number]> = [];
-  for (const [name, slotIdx] of slotMap) {
-    deps.push([name, slotIdx]);
+  const depNames = templateDeps && templateDeps.length > 0
+    ? templateDeps
+    : Array.from(slotMap.keys());
+  for (let i = 0; i < depNames.length; i++) {
+    const name = depNames[i];
+    const slotIdx = slotMap.get(name);
+    if (slotIdx !== undefined) deps.push([name, slotIdx]);
   }
 
   const lookup: Record<string, any> = Object.create(null);

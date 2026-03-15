@@ -56,6 +56,8 @@ export interface Instruction {
   op: OpCode;
   /** Dense slot index where this node's result is written */
   outSlot: number;
+  /** Slot index used as this instruction's input payload */
+  inputSlot: number;
   /** The workflow node definition (frozen reference) */
   node: WorkflowNode;
   /** Pre-bound executor adapter */

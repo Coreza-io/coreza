@@ -214,6 +214,10 @@ export function compilePlan(
     const resolveParams = slotResolvers.get(nodeId)!;
     const outSlot = slotMap.get(nodeId)!;
     const isConditional = node.name === "If" || node.name === "Switch";
+    const incoming = inEdges.get(nodeId) ?? [];
+    const nodeInputSlot = incoming.length > 0
+      ? (slotMap.get(incoming[0].source) ?? inputSlot)
+      : inputSlot;
 
     if (isConditional) {
       // BRANCH instruction — build branchMap
@@ -229,6 +233,7 @@ export function compilePlan(
       instructions.push({
         op: OpCode.BRANCH,
         outSlot,
+        inputSlot: nodeInputSlot,
         node,
         exec: execFn,
         resolveParams,
@@ -248,6 +253,7 @@ export function compilePlan(
       instructions.push({
         op: OpCode.EXEC,
         outSlot,
+        inputSlot: nodeInputSlot,
         node,
         exec: execFn,
         resolveParams,

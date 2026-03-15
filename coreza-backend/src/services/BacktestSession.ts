@@ -5,6 +5,8 @@ import { IndicatorStateManager } from "./indicatorStateManager";
 import { DataContextManager } from "./DataContext";
 import { WorkflowEngine } from "./workflowEngine";
 import { compilePlan, runBar, CompiledPlan } from "./compiledPlan";
+import { resolveCategory } from "./compiledPlan/adapters";
+import { getNodeExecutor } from "../nodes/registry";
 
 export interface BarEvent {
   bar: any;
@@ -71,6 +73,9 @@ export class BacktestSession {
    */
   private tryCompilePlan(): void {
     try {
+      const compiledParams = this.engine.getCompiledParams();
+      this.logCompileEligibilitySnapshot(compiledParams);
+
       const dataContext = DataContextManager.getInstance().getContext({
         runId: this.runId,
         workflowId: this.workflowId,
@@ -81,7 +86,7 @@ export class BacktestSession {
         this.nodes,
         this.edges,
         this.entryNodeIds,
-        (this.engine as any)._compiledParams,
+        compiledParams,
         this.backtestInitResult,
         {
           runId: this.runId,
@@ -90,7 +95,7 @@ export class BacktestSession {
           nodes: this.nodes,
           edges: this.edges,
           dataContext,
-          indicatorStateManager: this.stateManager ?? (this.engine as any).indicatorStateManager,
+          indicatorStateManager: this.stateManager ?? this.engine.getIndicatorStateManager(),
           abortSignal: this.abortController.signal,
           storeGetState: (nodeId: string, key: string) =>
             (this.engine as any).store.getNodeState(nodeId, key),
@@ -112,6 +117,37 @@ export class BacktestSession {
       console.warn(`[BacktestSession] Compiled plan compilation failed, using engine fallback:`, err);
       this.compiledPlan = null;
     }
+  }
+
+  private logCompileEligibilitySnapshot(compiledParams: Map<string, any>): void {
+    const categories = new Set<string>();
+
+    for (const node of this.nodes) {
+      const category = resolveCategory(node);
+      const executor = getNodeExecutor(category);
+      const cp = compiledParams.get(node.id);
+
+      if (!executor) {
+        console.warn(
+          `[BacktestSession] [CompiledPlan] Missing executor for node ${node.id} (${node.name}) in category ${category}`,
+        );
+      } else if (typeof executor.executeSync !== "function") {
+        console.warn(
+          `[BacktestSession] [CompiledPlan] Node ${node.id} (${node.name}) in category ${category} has no executeSync()`,
+        );
+      }
+
+      if (cp?.fallbackKeys?.length) {
+        console.warn(
+          `[BacktestSession] [CompiledPlan] Node ${node.id} (${node.name}) has fallback templates: ${cp.fallbackKeys.join(", ")}`,
+        );
+      }
+      categories.add(category || "unknown");
+    }
+
+    console.log(
+      `[BacktestSession] [CompiledPlan] Eligibility snapshot: nodes=${this.nodes.length}, edges=${this.edges.length}, entries=${this.entryNodeIds.length}, categories=[${Array.from(categories).join(", ")}]`,
+    );
   }
 
   get totalBars(): number {

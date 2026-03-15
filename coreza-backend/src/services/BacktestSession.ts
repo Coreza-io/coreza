@@ -65,6 +65,55 @@ export class BacktestSession {
     this.tryCompilePlan();
   }
 
+  /**
+   * Attempt to compile the workflow into a flat instruction plan.
+   * If successful, runAll/step will bypass the dynamic engine entirely.
+   */
+  private tryCompilePlan(): void {
+    try {
+      const dataContext = DataContextManager.getInstance().getContext({
+        runId: this.runId,
+        workflowId: this.workflowId,
+        userId: this.userId,
+      });
+
+      this.compiledPlan = compilePlan(
+        this.nodes,
+        this.edges,
+        this.entryNodeIds,
+        (this.engine as any)._compiledParams,
+        this.backtestInitResult,
+        {
+          runId: this.runId,
+          workflowId: this.workflowId,
+          userId: this.userId,
+          nodes: this.nodes,
+          edges: this.edges,
+          dataContext,
+          indicatorStateManager: this.stateManager ?? (this.engine as any).indicatorStateManager,
+          abortSignal: this.abortController.signal,
+          storeGetState: (nodeId: string, key: string) =>
+            (this.engine as any).store.getNodeState(nodeId, key),
+          storeSetState: (nodeId: string, key: string, value: any) =>
+            (this.engine as any).store.setNodeState(nodeId, key, value),
+        },
+      );
+
+      if (this.compiledPlan) {
+        console.log(
+          `[BacktestSession] ✅ Using compiled plan VM (${this.compiledPlan.instructions.length} instructions)`,
+        );
+      } else {
+        console.log(
+          `[BacktestSession] ⚠️ Compiled plan not eligible, falling back to dynamic engine`,
+        );
+      }
+    } catch (err) {
+      console.warn(`[BacktestSession] Compiled plan compilation failed, using engine fallback:`, err);
+      this.compiledPlan = null;
+    }
+  }
+
   get totalBars(): number {
     return this.bars.length;
   }

@@ -72,6 +72,14 @@ export class BacktestSession {
    * If successful, runAll/step will bypass the dynamic engine entirely.
    */
   private tryCompilePlan(): void {
+    const mode = process.env.BACKTEST_EXECUTION_MODE ?? "auto";
+
+    if (mode === "engine") {
+      console.log("[BacktestSession] Forced engine mode via BACKTEST_EXECUTION_MODE");
+      this.compiledPlan = null;
+      return;
+    }
+
     try {
       const compiledParams = this.engine.getCompiledParams();
       this.logCompileEligibilitySnapshot(compiledParams);
@@ -108,10 +116,12 @@ export class BacktestSession {
         console.log(
           `[BacktestSession] ✅ Using compiled plan VM (${this.compiledPlan.instructions.length} instructions)`,
         );
-      } else {
-        console.log(
-          `[BacktestSession] ⚠️ Compiled plan not eligible, falling back to dynamic engine`,
+      } else if (mode === "compiled") {
+        console.error(
+          "[BacktestSession] ❌ BACKTEST_EXECUTION_MODE=compiled but plan compilation failed — falling back to engine",
         );
+      } else {
+        console.log("[BacktestSession] Compiled plan not eligible, using engine fallback");
       }
     } catch (err) {
       console.warn(`[BacktestSession] Compiled plan compilation failed, using engine fallback:`, err);

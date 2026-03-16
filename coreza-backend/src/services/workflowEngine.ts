@@ -891,15 +891,14 @@ export class WorkflowEngine {
         await this.indicatorStateManager.flushToRedis();
       }
 
-      // Log DataContext stats before cleanup
-      const ctxStats = this.dataContext.getStats();
-      console.log(
-        `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
-          `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
-      );
-
-      // Cleanup DataContext on successful completion
-      DataContextManager.getInstance().destroyContext(this.runId);
+      if (!this.quiet) {
+        // Log DataContext stats before cleanup
+        const ctxStats = this.dataContext.getStats();
+        console.log(
+          `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
+            `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
+        );
+      }
 
       if (hasFailedNodes) {
         const firstFailedNodeId = failedNodeIds[0];

@@ -280,7 +280,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
   }
 
 
-  async startLiveStrategy(
+  async startWorkflowRunner(
     workflowId: string,
     userId: string,
     nodes: any[],
@@ -290,7 +290,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await manager.startStrategy(workflowId, userId, nodes, edges);
   }
 
-  async stopLiveStrategy(workflowId: string): Promise<void> {
+  async stopWorkflowRunner(workflowId: string): Promise<void> {
     const manager = WorkflowRunnerManager.getInstance();
     await manager.stopStrategy(workflowId);
   }

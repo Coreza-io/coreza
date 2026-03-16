@@ -83,7 +83,7 @@ export interface IWorkflowJobQueue {
     items: any[],
     options?: ParallelLoopOptions
   ): Promise<void>;
-  startLiveStrategy(
+  startWorkflowRunner(
     workflowId: string,
     userId: string,
     nodes: any[],
@@ -97,7 +97,7 @@ export interface IWorkflowJobQueue {
     edges: any[],
     backtestInitNode: any
   ): Promise<void>;
-  stopLiveStrategy(workflowId: string): Promise<void>;
+  stopWorkflowRunner(workflowId: string): Promise<void>;
   /** Cancel all queued/running jobs for a workflow and return count of cancelled jobs */
   cancelWorkflowJobs(userId: string, workflowId: string): Promise<number>;
   getQueueStats(): Promise<any>;

@@ -276,7 +276,7 @@ router.delete("/:workflowId", async (req, res, next) => {
           userId,
           workflowId,
         });
-        await jobQueue.stopLiveStrategy(workflowId);
+        await jobQueue.stopWorkflowRunner(workflowId);
         console.log(
           `📤 [Workflow Delete] Unregistered streaming workflow ${workflowId} from MarketDataSubscriber`,
         );
@@ -560,7 +560,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // Note: Companion trading gateway auto-spawn removed.
           // Trading subscriptions (order_update) are now explicitly managed via AlpacaSubscribe/BinanceSubscribe nodes.
 
-          await jobQueue.startLiveStrategy(
+          await jobQueue.startWorkflowRunner(
             workflowId,
             userId,
             workflow.nodes as any[],
@@ -734,7 +734,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // Note: Companion trading gateway auto-unregister removed.
           // Trading subscriptions are now cleaned up via cleanupWorkflowSubscriptions below.
 
-          await jobQueue.stopLiveStrategy(workflowId);
+          await jobQueue.stopWorkflowRunner(workflowId);
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`,

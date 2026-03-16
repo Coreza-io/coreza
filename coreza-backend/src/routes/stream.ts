@@ -554,7 +554,7 @@ router.post("/:source/register", async (req, res) => {
       );
     }
 
-    await bullMqJobQueue.startLiveStrategy(
+    await bullMqJobQueue.startWorkflowRunner(
       workflow_id,
       userId,
       (workflow.nodes as any[]) || [],
@@ -639,7 +639,7 @@ router.post("/unregister", async (req, res) => {
       workflowId: workflow_id,
     });
 
-    await bullMqJobQueue.stopLiveStrategy(workflow_id);
+    await bullMqJobQueue.stopWorkflowRunner(workflow_id);
 
     console.log(`🛑 Stopped listener: ${workflow_id}:${node_id}`);
 

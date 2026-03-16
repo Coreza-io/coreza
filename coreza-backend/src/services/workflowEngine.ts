@@ -225,7 +225,7 @@ export class WorkflowEngine {
     }
     this.store = new NodeStoreV2(newRunId, this.nodes);
     // NOTE: indicatorStateManager is intentionally NOT reset.
-    // For LiveStrategyRunner: preserves indicator state across ticks (desired).
+    // For WorkflowRunner: preserves indicator state across ticks (desired).
     // For EnginePool: warm indicator cache across runs (acceptable, keyed by nodeId).
     this.dataContext = DataContextManager.getInstance().getContext({
       runId: newRunId,

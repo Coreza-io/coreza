@@ -12,7 +12,6 @@ export class LiveStrategyRunner {
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
-  private readonly stableRunId: string;
 
   constructor(
     private readonly workflowId: string,
@@ -24,9 +23,8 @@ export class LiveStrategyRunner {
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}`;
-    this.stableRunId = workflowId;
     this.engine = new WorkflowEngine(
-      this.stableRunId,
+      workflowId,
       workflowId,
       userId,
       nodes,
@@ -70,7 +68,7 @@ export class LiveStrategyRunner {
             continue;
           }
 
-          this.engine.resetLight(this.stableRunId, this.abortController.signal);
+          this.engine.resetForNextBar(true);
 
           try {
             const event = JSON.parse(rawEvent);

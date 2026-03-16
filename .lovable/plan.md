@@ -1,153 +1,139 @@
-# Backtest Performance Analysis & Optimization Plan
-
-## Analysis
-
-136,296 bars across 30 nodes. Total wall time ≈ **460 seconds** (7.7 min). Per-bar cost ≈ 3.4ms.
-
-### Top offenders by total time
 
 
-| Node                     | Avg (ms)  | Total (s) | % of total |
-| ------------------------ | --------- | --------- | ---------- |
-| **RollingWindow**        | 0.51      | 69.5      | 15.1%      |
-| **RollingWindow1**       | 0.47      | 63.8      | 13.9%      |
-| **Bollinger Bands**      | 0.33      | 45.3      | 9.8%       |
-| **VolumeOscillator**     | 0.33      | 44.5      | 9.7%       |
-| **updatePortfolioValue** | 0.27      | 37.0      | 8.0%       |
-| **OnBar**                | 0.21      | 28.4      | 6.2%       |
-| **getPosition**          | 0.19      | 25.2      | 5.5%       |
-| Compute nodes (7×)       | 0.14-0.17 | ~150      | 32.6%      |
+# Updated Plan: Live Workflow Optimizations
 
+## Changes from Previous Plan
 
-### Root causes
+Three user-requested modifications:
+1. Move `destroyContext` to workflow stop/completion (not per-bar)
+2. Rename `LiveStrategyRunner` → `WorkflowRunner` (and `LiveStrategyManager` → `WorkflowRunnerManager`)
+3. Remove `parseBar` entirely, use only `parseBarFast` everywhere
 
-**1. RollingWindow (29% combined)** — The biggest problem. Each call:
+---
 
-- Calls `buildExecutionScopedKey()` to construct a string key
-- Calls `dataContext.getDataByKey()` to retrieve window
-- Parses `candle_data` (JSON.parse or type checks)
-- Spreads entire window into a new array: `[...window.values()]` — **O(window_size)** copy every bar
-- Constructs a full result object with `latest`, `count`, `isReady`, `remaining`
+## 1. Move `destroyContext` to Workflow Stop/Completion
 
-For a window size of, say, 50 — that's 50-element array copy × 136K bars × 2 windows = **13.6M array copies**.
+Currently `destroyContext(this.runId)` is called in three places inside `workflowEngine.ts`:
+- Line 212: inside `reset()` 
+- Line 903: after successful `executeOnce()`
+- Line 937: after failed `executeOnce()`
 
-**2. Indicators (Bollinger, VolumeOsc — 19.5%)** — The `IndicatorsExecutor` on every call:
+Also in `AIAgentExecutor.ts` line 246 (separate concern — agent-specific context).
 
-- Parses `candle_data` (JSON.parse or Array.isArray checks)
-- Calls `buildIndicatorKey()` (string concatenation)
-- Calls `stateManager.getState()` (Map lookup + possible async)
-- Calls `stateManager.update()` (async)
-- Wraps result through `normalizeOutput()` + `toNodeResult()`
+**Change**: Remove `destroyContext` from `executeOnce()` (lines 903 and 937) and from `reset()` (line 212). Instead, call it only when the **entire workflow lifecycle ends**:
 
-The actual indicator math is O(1), but the executor overhead dominates.
+| File | Change |
+|---|---|
+| `workflowEngine.ts` | Remove `destroyContext` from `reset()`, and both places in `executeOnce()`. Add a new `destroy()` method that calls `destroyContext` + any other cleanup. |
+| `WorkflowRunner.ts` (renamed) | Call `this.engine.destroy()` in `stop()` method — this is when the entire streaming workflow ends. |
+| `EnginePool.ts` | Call `engine.destroy()` in `evict()` — when an engine is removed from the pool. |
+| `BacktestSession.ts` | Already calls `destroyContext` in its own cleanup — keep as-is. |
+| `AIAgentExecutor.ts` | Keep its own `destroyContext` — it creates a separate DataContext per agent run. |
 
-**4. Portfolio operations (13.5%)** — `updatePortfolioValue` and `getPosition` call `resolveNodeParameters`, parse `current_bar` via `parseBar()`, look up SimBroker instance, and wrap results — every single bar.
+New `destroy()` method on `WorkflowEngine`:
+```typescript
+destroy(): void {
+  DataContextManager.getInstance().destroyContext(this.runId);
+  this.indicatorStateManager?.destroy?.();
+}
+```
 
-## Optimization Plan
+---
 
-### Phase 1: Quick wins (est. -30-40% total time)
+## 2. Rename `LiveStrategyRunner` → `WorkflowRunner`
 
-**1a. Eliminate RollingWindow array copy** — `[...window.values()]` creates a new array every bar. Instead, return the buffer reference directly (or a lightweight proxy). The downstream nodes only need `latest and previous` and `isReady` most of the time.
+Rename the class and file, plus the manager class. Update all references.
 
+| Old | New |
+|---|---|
+| `LiveStrategyRunner.ts` | `WorkflowRunner.ts` |
+| `class LiveStrategyRunner` | `class WorkflowRunner` |
+| `liveStrategyManager.ts` | `workflowRunnerManager.ts` |
+| `class LiveStrategyManager` | `class WorkflowRunnerManager` |
 
-| File                               | Change                                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` (line 266) | Replace `window: [...window.values()]` with `window: window.values()` (returns readonly ref). Only spread when explicitly needed. |
+**Files with references to update**:
+- `workflowEngine.ts` (comment on line 229)
+- `GracefulShutdownHandler.ts` (import + usage)
+- `jobQueueManager.ts` (import + usage + method names `startLiveStrategy`/`stopLiveStrategy`)
+- `workflowWorker.ts` (log message)
 
+---
 
-**1b. Cache `buildExecutionScopedKey` result** — The key inputs (userId, workflowId, runId, nodeId, symbol, timeframe) never change within a backtest. Cache the computed key on first call.
+## 3. Remove `parseBar`, Use Only `parseBarFast`
 
+`parseBar` does two expensive things `parseBarFast` doesn't:
+- `new Date(data.time).toISOString()` — Date object allocation
+- `parseFloat()` × 5 — slower than `Number()`
 
-| File                    | Change                                                              |
-| ----------------------- | ------------------------------------------------------------------- |
-| `DataSourceExecutor.ts` | Add a `Map<string, string>` cache for scoped keys, keyed by nodeId. |
+But `parseBar` also handles JSON string input (`typeof data === "string"` → `JSON.parse`). We need to merge that capability into `parseBarFast`.
 
+**Change in `barParser.ts`**:
+- Rename `parseBarFast` → `parseBar` (replace the old one)
+- Add the JSON string handling from old `parseBar` into the new one:
 
-**1c. Skip JSON.parse for candle_data when already an object** — The RollingWindow executor already has type checks, but the branching and try/catch per bar adds up. Pre-check and fast-path when input is already a single object (the common backtest case).
+```typescript
+export function parseBar(data: any): Bar | null {
+  if (!data) return null;
 
-### Phase 2: Reduce indicator overhead (est. -15-20%)
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch { return null; }
+  }
 
-**2a. Make `stateManager.getState()` synchronous** — During backtest, state is always in the L1 (in-memory) cache. Remove the `async/await` from the hot path by adding a synchronous `getStateSync()` method that reads directly from the Map without promise wrapping.
+  if (data.bar) data = data.bar;
 
+  if (typeof data !== "object") return null;
 
-| File                       | Change                                                       |
-| -------------------------- | ------------------------------------------------------------ |
-| `indicatorStateManager.ts` | Add `getStateSync(key)` that returns from L1 cache directly. |
-| `IndicatorsExecutor.ts`    | Use sync path when `context.silent` (backtest mode).         |
+  const timestamp = data.timestamp ?? data.time;
+  if (timestamp === undefined) return null;
 
+  return {
+    timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : timestamp,
+    open: Number(data.open),
+    high: Number(data.high),
+    low: Number(data.low),
+    close: Number(data.close),
+    volume: Number(data.volume ?? 0),
+  };
+}
+```
 
-**2b. Cache `buildIndicatorKey` per node** — Same as 1b. The key is deterministic per node within a run.
+This keeps `Number()` (faster than `parseFloat`), handles both string and object input, and handles both `timestamp` (ISO string) and `time` (epoch number) fields.
 
-### Phase 3: Reduce engine per-node overhead (est. -10-15%)
+Remove `parseBarFast` export entirely.
 
-**3b. Lightweight result wrapping in silent mode** — `normalizeOutput` and `toNodeResult` create wrapper objects with metadata (nodeId, nodeName, timing). In backtest/silent mode, skip the metadata and return a minimal `{ success: true, data }` shape.
+**Files to update**:
+- `BacktestExecutor.ts`: Remove the `context?.silent` ternary — just call `parseBar()` everywhere (lines 607-609, 940-942)
+- `PortfolioExecutor.ts`: Already calls `parseBar()` — no change needed, just uses the new faster implementation
+- Any import of `parseBarFast` → remove
 
+---
 
-| File                 | Change                                                                     |
-| -------------------- | -------------------------------------------------------------------------- |
-| `normalizeOutput.ts` | Add a fast path that skips metadata enrichment when no options are passed. |
-| Executor files       | In silent/backtest mode, use the lean path.                                |
+## 4. Remaining Optimizations (from previous plan, unchanged)
 
+These carry forward as-is:
 
+| # | Change | Files |
+|---|---|---|
+| A | Batch indicator Redis writes (`sync=true` + `flushToRedis` always) | `IndicatorsExecutor.ts`, `workflowEngine.ts` |
+| B | Add `quiet` flag to suppress per-node logging | `workflowEngine.ts`, `WorkflowRunner.ts` |
+| C | Skip `executionOrder` and `clearIncomingEdgePayloads` when quiet | `workflowEngine.ts` |
+| D | Pre-populate `indicatorKeyCache` from warmup | `IndicatorsExecutor.ts`, `InitializeIndicatorsExecutor.ts` |
 
+---
 
-This is a larger refactor and can be deferred, but would save ~18s on this specific workflow.
+## Summary of All Files Changed
 
-## Summary
+| File | Changes |
+|---|---|
+| `workflowEngine.ts` | Remove `destroyContext` from `reset()`/`executeOnce()`. Add `destroy()` method. Add `quiet` flag. Batch `flushToRedis` always. Gate `executionOrder`/`clearIncomingEdgePayloads` behind `quiet`. |
+| `LiveStrategyRunner.ts` → `WorkflowRunner.ts` | Rename class. Set `quiet=true`. Call `engine.destroy()` in `stop()`. |
+| `liveStrategyManager.ts` → `workflowRunnerManager.ts` | Rename class to `WorkflowRunnerManager`. Update imports. |
+| `barParser.ts` | Merge `parseBar` and `parseBarFast` into single optimized `parseBar`. Remove `parseBarFast` export. |
+| `BacktestExecutor.ts` | Remove `parseBarFast` import and `context?.silent` ternary — use `parseBar` directly. |
+| `EnginePool.ts` | Call `engine.destroy()` in `evict()`. |
+| `jobQueueManager.ts` | Update imports and references to new names. |
+| `GracefulShutdownHandler.ts` | Update imports and references to new names. |
+| `workflowWorker.ts` | Update log message reference. |
+| `IndicatorsExecutor.ts` | Set `sync=true` in `update()`. Pass `indicatorKeyCache` to init executor. |
+| `InitializeIndicatorsExecutor.ts` | Pre-populate `indicatorKeyCache` during warmup. |
 
-
-| Phase                         | Target           | Est. savings    |
-| ----------------------------- | ---------------- | --------------- |
-| 1: RollingWindow fixes        | 133s → ~70s      | ~60s            |
-| 2: Indicator sync path        | 90s → ~60s       | ~30s            |
-| 3: Engine overhead            | 150s → ~110s     | ~40s            |
-| 4: Template pre-compilation ✅ | ~42s → ~5s       | ~30-40s         |
-| **Total**                     | **460s → ~290s** | **~170s (37%)** |
-
-### Phase 4: Template Pre-Compilation — IMPLEMENTED
-
-**Files changed:**
-- `coreza-backend/src/utils/templateCompiler.ts` (NEW) — `compileTemplate()`, `compileNodeParams()`, `preCompileAllNodes()`
-- `coreza-backend/src/services/workflowEngine.ts` — Added `_compiledParams` map, `preCompileAllNodes()` call in constructor, fast path in `resolveNodeParameters()`
-- `coreza-backend/src/utils/resolveReferences.ts` — Hoisted `templateRegex` to module scope
-
-
-The single highest-impact fix is **1a** (stop copying the rolling window array every bar) — likely saves 20-30s on its own.
-
-### Phase 5: Engine Hot-Path Optimization — IMPLEMENTED
-
-**Phase A: Eliminate per-bar reset overhead**
-- `NodeStoreV2`: Added `clearResults()` and `pinResults()` — reuses store objects, only clears per-bar results while preserving pinned BacktestInit results
-- `WorkflowEngine`: Added `resetForNextBar()` — ultra-lightweight reset that clears edgePayload, enqueuedKeys, executionOrder, queue, and satisfied counters in-place (no `new` allocations)
-- `BacktestSession`: Replaced `resetLight()` + `preloadResults()` per bar with single `resetForNextBar()` call. `pinResults()` called once in constructor.
-
-**Phase C: Reduce per-node overhead in executeOnce()**
-- Pre-computed `_requiredEdgeCounts` per node at construction time
-- `areDependenciesSatisfied()` uses O(1) counter check instead of iterating all incoming edges
-- `markEdgePayloadWithCounter()` increments satisfied count on edge marking
-- `keyFor()` returns just `nodeId` in backtest mode (no string concatenation)
-- `enqueue()`/`dequeue()` skip `enqueuedKeys` tracking in backtest mode (deterministic DAG)
-- Skip `clearIncomingEdgePayloads()` in backtest mode (bulk-cleared by `resetForNextBar()`)
-- Skip loop aggregation tracking in backtest mode
-- Suppressed constructor log in silent mode
-
-**Phase D: Allocation reduction** — Assessed, `leanSuccess` already minimal. Main allocation wins from Phase A.
-
-### Phase 6: Remaining Phase C + Phase D Completion — IMPLEMENTED
-
-**Phase C completion: Inline selectEdges + routing**
-- `WorkflowEngine.executeOnce()` — In backtest mode (`silent=true`), edge selection and routing are now inlined into a single pass over `getOutgoingEdges()`. No intermediate array allocation. Conditional (If/Switch) logic is inlined with early filtering. Eliminates ~1.9M array allocations per backtest run.
-- `WorkflowEngine.executeFromEntries()` — Removed redundant `markEdgePayloadWithCounter` calls for entry nodes in backtest mode (they're enqueued directly, counter is never checked).
-
-**Phase D: Executor allocation reduction**
-- `BacktestExecutor._onBarResult` — Pre-allocated reusable result template. `executeOnBar()` mutates fields in-place instead of creating new objects per bar. Eliminates 136K object allocations.
-- `DataSourceExecutor._rollingWindowResult` — Pre-allocated reusable result template. RollingWindow executor mutates fields in-place. Eliminates 136K × 2 = 272K object allocations.
-
-**Files changed:**
-- `coreza-backend/src/services/workflowEngine.ts` — Inlined selectEdges for backtest, removed entry node counter marking
-- `coreza-backend/src/nodes/executors/BacktestExecutor.ts` — Pre-allocated `_onBarResult` template
-- `coreza-backend/src/nodes/executors/DataSourceExecutor.ts` — Pre-allocated `_rollingWindowResult` template
-**Files changed:**
-- `coreza-backend/src/services/nodeStoreV2.ts` — `clearResults()`, `pinResults()`, `pinnedResults` Map
-- `coreza-backend/src/services/workflowEngine.ts` — `resetForNextBar()`, `pinResults()`, `_requiredEdgeCounts`, `_satisfiedCounts`, counter-based dependency checks, backtest fast paths
-- `coreza-backend/src/services/BacktestSession.ts` — Uses `resetForNextBar()` + `pinResults()` in constructor

@@ -592,7 +592,7 @@ const gracefulShutdown = new GracefulShutdownHandler(
 // Register signal handlers for graceful shutdown
 gracefulShutdown.registerSignalHandlers(async () => {
   // Additional cleanup after workers are shut down
-  await LiveStrategyManager.getInstance().stopAll();
+  await WorkflowRunnerManager.getInstance().stopAll();
   await redis.quit();
   console.log("✅ All queue resources cleaned up");
 });

@@ -935,9 +935,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const simBroker = this.getSimBroker(backtestId);
       const operation = params.operation || "get_portfolio";
-      const currentBar = context?.silent
-        ? parseBarFast(params.current_bar)
-        : parseBar(params.current_bar);
+      const currentBar = parseBar(params.current_bar);
       const symbol = params.symbol;
       const prices = parsePrices(params.prices);
 

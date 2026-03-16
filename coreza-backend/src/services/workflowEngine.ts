@@ -1402,6 +1402,16 @@ export class WorkflowEngine {
     return { data: (result as any)?.data ?? result };
   }
 
+  /**
+   * Clean up all resources when the workflow lifecycle ends.
+   * Call this when a workflow is stopped (WorkflowRunner.stop()) or
+   * evicted from the EnginePool — NOT after every bar/tick.
+   */
+  destroy(): void {
+    DataContextManager.getInstance().destroyContext(this.runId);
+    this.indicatorStateManager?.destroy?.();
+  }
+
   getNodeTiming(): Record<
     string,
     { avgMs: number; totalMs: number; count: number }

@@ -66,6 +66,7 @@ export class EnginePool {
 
     for (const [workflowId, entry] of this.cache.entries()) {
       if (now - entry.lastUsed > this.TTL_MS) {
+        entry.engine.destroy();
         this.cache.delete(workflowId);
       }
     }

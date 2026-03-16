@@ -275,7 +275,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               const latestBar = barsData[barsData.length - 1];
               const latestBarTime = String(latestBar?.time ?? "");
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = await stateManager.update(key, latestBar, false);
+                state = await stateManager.update(key, latestBar, true);
               }
             }
           }

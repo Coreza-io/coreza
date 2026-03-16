@@ -128,7 +128,7 @@ export class GracefulShutdownHandler {
       }
 
       // 5. Stop all long-lived strategy runners
-      await LiveStrategyManager.getInstance().stopAll();
+      await WorkflowRunnerManager.getInstance().stopAll();
       await BacktestSessionManager.getInstance().stopAll();
 
       // 6. Close all workers

@@ -488,7 +488,7 @@ export function createWorkflowWorker({
 
         if (trigger === "market_data") {
           console.warn(
-            `⚠️ [Worker] Legacy market_data job ${job.id} for workflow ${workflowId} — skipping (handled by LiveStrategyRunner)`,
+            `⚠️ [Worker] Legacy market_data job ${job.id} for workflow ${workflowId} — skipping (handled by WorkflowRunner)`,
           );
           return {
             success: true,

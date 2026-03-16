@@ -632,7 +632,8 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
                 .update({
                   status: "failed",
                   completed_at: new Date().toISOString(),
-                  error_message: error?.message || "Backtest initialization failed",
+                  error_message:
+                    error?.message || "Backtest initialization failed",
                 })
                 .eq("id", run.id);
 
@@ -734,7 +735,7 @@ router.put("/:workflowId/schedule", async (req, res, next) => {
           // Note: Companion trading gateway auto-unregister removed.
           // Trading subscriptions are now cleaned up via cleanupWorkflowSubscriptions below.
 
-          await jobQueue.stopWorkflowRunner(workflowId);
+          //await jobQueue.stopWorkflowRunner(workflowId);
 
           console.log(
             `📡 [Workflow Route] Streaming workflow ${workflowId} deactivated and unregistered from market-stream-service`,

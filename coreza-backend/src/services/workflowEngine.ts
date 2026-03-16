@@ -887,7 +887,7 @@ export class WorkflowEngine {
         );
       }
 
-      if (this.silent && this.indicatorStateManager) {
+      if (this.indicatorStateManager) {
         await this.indicatorStateManager.flushToRedis();
       }
 

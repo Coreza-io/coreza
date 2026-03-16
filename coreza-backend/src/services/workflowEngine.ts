@@ -931,9 +931,6 @@ export class WorkflowEngine {
       );
       const message = (error as Error).message;
 
-      // Cleanup DataContext on failure too
-      DataContextManager.getInstance().destroyContext(this.runId);
-
       return {
         success: false,
         error: message,

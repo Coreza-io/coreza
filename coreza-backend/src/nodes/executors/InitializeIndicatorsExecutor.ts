@@ -235,6 +235,10 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
           ind.nodeId,
         );
 
+        if (context?.indicatorKeyCache instanceof Map) {
+          context.indicatorKeyCache.set(ind.nodeId, key);
+        }
+
         try {
           const state = await stateManager.warmUp(
             key,

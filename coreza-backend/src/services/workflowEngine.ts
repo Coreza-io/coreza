@@ -94,6 +94,7 @@ export class WorkflowEngine {
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
+  public quiet = false;
   private nodeById = new Map<string, WorkflowNode>();
   private subNodeIds = new Set<string>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();
@@ -209,8 +210,6 @@ export class WorkflowEngine {
   }
 
   reset(newRunId: string, abortSignal?: AbortSignal): void {
-    DataContextManager.getInstance().destroyContext(this.runId);
-
     this.runId = newRunId;
     this.abortSignal = abortSignal;
     this.edgePayload.clear();
@@ -226,7 +225,7 @@ export class WorkflowEngine {
     }
     this.store = new NodeStoreV2(newRunId, this.nodes);
     // NOTE: indicatorStateManager is intentionally NOT reset.
-    // For LiveStrategyRunner: preserves indicator state across ticks (desired).
+    // For WorkflowRunner: preserves indicator state across ticks (desired).
     // For EnginePool: warm indicator cache across runs (acceptable, keyed by nodeId).
     this.dataContext = DataContextManager.getInstance().getContext({
       runId: newRunId,
@@ -858,11 +857,13 @@ export class WorkflowEngine {
   }> {
     const workflowStartTime = Date.now();
     try {
-      console.log(
-        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
-          startNodeId ? ` from node ${startNodeId}` : ""
-        }`,
-      );
+      if (!this.quiet) {
+        console.log(
+          `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
+            startNodeId ? ` from node ${startNodeId}` : ""
+          }`,
+        );
+      }
       this.MAX_RETRIES = this.nodes.length * 2;
 
       await this.run(initialInput, startNodeId);
@@ -870,37 +871,38 @@ export class WorkflowEngine {
       const hasFailedNodes = this.failed.size > 0;
       const failedNodeIds = Array.from(this.failed);
 
-      if (hasFailedNodes) {
-        const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime =
-          this.formatExecutionDuration(executionTimeMs);
-        console.log(
-          `⚠️ Workflow completed with ${
-            failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
-        );
-      } else {
-        const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime =
-          this.formatExecutionDuration(executionTimeMs);
-        console.log(
-          `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
-        );
+      if (!this.quiet) {
+        if (hasFailedNodes) {
+          const executionTimeMs = Date.now() - workflowStartTime;
+          const formattedExecutionTime =
+            this.formatExecutionDuration(executionTimeMs);
+          console.log(
+            `⚠️ Workflow completed with ${
+              failedNodeIds.length
+            } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
+          );
+        } else {
+          const executionTimeMs = Date.now() - workflowStartTime;
+          const formattedExecutionTime =
+            this.formatExecutionDuration(executionTimeMs);
+          console.log(
+            `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
+          );
+        }
       }
 
-      if (this.silent && this.indicatorStateManager) {
+      if (this.indicatorStateManager) {
         await this.indicatorStateManager.flushToRedis();
       }
 
-      // Log DataContext stats before cleanup
-      const ctxStats = this.dataContext.getStats();
-      console.log(
-        `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
-          `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
-      );
-
-      // Cleanup DataContext on successful completion
-      DataContextManager.getInstance().destroyContext(this.runId);
+      if (!this.quiet) {
+        // Log DataContext stats before cleanup
+        const ctxStats = this.dataContext.getStats();
+        console.log(
+          `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
+            `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
+        );
+      }
 
       if (hasFailedNodes) {
         const firstFailedNodeId = failedNodeIds[0];
@@ -932,9 +934,6 @@ export class WorkflowEngine {
         error,
       );
       const message = (error as Error).message;
-
-      // Cleanup DataContext on failure too
-      DataContextManager.getInstance().destroyContext(this.runId);
 
       return {
         success: false,
@@ -1158,11 +1157,13 @@ export class WorkflowEngine {
       prev.totalMs += elapsed;
       prev.count += 1;
       this.nodeTiming.set(nodeId, prev);
-      if (!this.silent) {
-        console.log(`✅ Node ${nodeId} result:`, result);
-      }
+    if (!this.silent && !this.quiet) {
+      console.log(`✅ Node ${nodeId} result:`, result);
+    }
 
-      this.executionOrder.push(nodeId);
+      if (!this.quiet) {
+        this.executionOrder.push(nodeId);
+      }
 
       this.store.setNodeResult(nodeId, result);
 
@@ -1239,7 +1240,9 @@ export class WorkflowEngine {
           edges.length > 0
             ? edges.map((edge) => edge.target).join(",")
             : "none";
-        console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+        if (!this.quiet) {
+          console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+        }
 
         if (meta?.originLoopId) {
           const loopNodeId = meta.originLoopId;
@@ -1269,8 +1272,8 @@ export class WorkflowEngine {
         }
       }
 
-      // Skip clearing incoming edge payloads in backtest mode — they get bulk-cleared in resetForNextBar
-      if (!this.silent) {
+      // Skip clearing incoming edge payloads in backtest/quiet mode — they get bulk-cleared in resetForNextBar
+      if (!this.silent && !this.quiet) {
         this.clearIncomingEdgePayloads(nodeId);
       }
     } catch (error) {
@@ -1332,7 +1335,7 @@ export class WorkflowEngine {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    if (!this.silent) {
+    if (!this.silent && !this.quiet) {
       console.log(`🔧 Executing node ${node.id} (${node.name})`);
     }
 
@@ -1397,6 +1400,16 @@ export class WorkflowEngine {
     }
 
     return { data: (result as any)?.data ?? result };
+  }
+
+  /**
+   * Clean up all resources when the workflow lifecycle ends.
+   * Call this when a workflow is stopped (WorkflowRunner.stop()) or
+   * evicted from the EnginePool — NOT after every bar/tick.
+   */
+  destroy(): void {
+    DataContextManager.getInstance().destroyContext(this.runId);
+    this.indicatorStateManager?.destroy?.();
   }
 
   getNodeTiming(): Record<

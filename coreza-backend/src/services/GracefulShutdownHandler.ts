@@ -18,7 +18,7 @@ import { Worker, Queue, FlowProducer } from "bullmq";
 import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
-import { LiveStrategyManager } from "./liveStrategyManager";
+import { WorkflowRunnerManager } from "./workflowRunnerManager";
 import { BacktestSessionManager } from "./BacktestSessionManager";
 
 export interface ShutdownStats {
@@ -128,7 +128,7 @@ export class GracefulShutdownHandler {
       }
 
       // 5. Stop all long-lived strategy runners
-      await LiveStrategyManager.getInstance().stopAll();
+      await WorkflowRunnerManager.getInstance().stopAll();
       await BacktestSessionManager.getInstance().stopAll();
 
       // 6. Close all workers

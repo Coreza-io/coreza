@@ -10,6 +10,8 @@ import { Bar } from "../services/simBroker/interfaces";
 
 /**
  * Parse a bar from various input formats (JSON string, object with .bar wrapper, OHLCV).
+ * Optimized: uses Number() instead of parseFloat(), avoids Date allocation when timestamp
+ * is already an ISO string.
  */
 export function parseBar(data: any): Bar | null {
   if (!data) return null;
@@ -20,43 +22,13 @@ export function parseBar(data: any): Bar | null {
 
   if (data.bar) data = data.bar;
 
-  if (
-    typeof data.time !== "number" ||
-    data.open === undefined ||
-    data.high === undefined ||
-    data.low === undefined ||
-    data.close === undefined
-  ) {
-    return null;
-  }
-
-  return {
-    timestamp: new Date(data.time).toISOString(),
-    open: parseFloat(data.open),
-    high: parseFloat(data.high),
-    low: parseFloat(data.low),
-    close: parseFloat(data.close),
-    volume: parseFloat(data.volume ?? 0),
-  };
-
-}
-
-
-/**
- * Fast-path parser for hot backtest loops where bar objects are already validated.
- */
-export function parseBarFast(data: any): Bar | null {
-  if (!data) return null;
-
-  if (data.bar) data = data.bar;
-
   if (typeof data !== "object") return null;
 
   const timestamp = data.timestamp ?? data.time;
   if (timestamp === undefined) return null;
 
   return {
-    timestamp,
+    timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : timestamp,
     open: Number(data.open),
     high: Number(data.high),
     low: Number(data.low),

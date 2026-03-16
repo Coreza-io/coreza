@@ -1,15 +1,15 @@
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { LiveStrategyRunner } from "./LiveStrategyRunner";
+import { WorkflowRunner } from "./WorkflowRunner";
 
-export class LiveStrategyManager {
-  private static instance: LiveStrategyManager;
-  private readonly runners = new Map<string, LiveStrategyRunner>();
+export class WorkflowRunnerManager {
+  private static instance: WorkflowRunnerManager;
+  private readonly runners = new Map<string, WorkflowRunner>();
 
-  static getInstance(): LiveStrategyManager {
-    if (!LiveStrategyManager.instance) {
-      LiveStrategyManager.instance = new LiveStrategyManager();
+  static getInstance(): WorkflowRunnerManager {
+    if (!WorkflowRunnerManager.instance) {
+      WorkflowRunnerManager.instance = new WorkflowRunnerManager();
     }
-    return LiveStrategyManager.instance;
+    return WorkflowRunnerManager.instance;
   }
 
   async startStrategy(
@@ -20,11 +20,11 @@ export class LiveStrategyManager {
   ): Promise<void> {
     if (this.runners.has(workflowId)) return;
 
-    const runner = new LiveStrategyRunner(workflowId, userId, nodes, edges);
+    const runner = new WorkflowRunner(workflowId, userId, nodes, edges);
     this.runners.set(workflowId, runner);
 
     runner.start().catch((error) => {
-      console.error(`[LiveStrategyManager] Strategy ${workflowId} crashed:`, error);
+      console.error(`[WorkflowRunnerManager] Strategy ${workflowId} crashed:`, error);
       this.runners.delete(workflowId);
     });
   }

@@ -5,7 +5,7 @@ import { WorkflowEngine } from "./workflowEngine";
 
 const STRATEGY_GROUP = "strategy-group";
 
-export class LiveStrategyRunner {
+export class WorkflowRunner {
   private readonly engine: WorkflowEngine;
   private readonly redisStream: Redis;
   private readonly streamKey: string;
@@ -32,6 +32,7 @@ export class LiveStrategyRunner {
       "best-effort",
       this.abortController.signal,
     );
+    this.engine.quiet = true;
   }
 
   async start(): Promise<void> {
@@ -74,7 +75,7 @@ export class LiveStrategyRunner {
             const event = JSON.parse(rawEvent);
             await this.engine.execute({ data: event?.data ?? event });
           } catch (error) {
-            console.error("[LiveStrategyRunner] Error processing stream event:", error);
+            console.error("[WorkflowRunner] Error processing stream event:", error);
           }
 
           await this.redisStream.xack(this.streamKey, STRATEGY_GROUP, messageId);
@@ -86,6 +87,7 @@ export class LiveStrategyRunner {
   async stop(): Promise<void> {
     this.running = false;
     this.abortController.abort();
+    this.engine.destroy();
     await this.redisStream.quit();
   }
 }

@@ -54,7 +54,11 @@ export class EnginePool {
   }
 
   evict(workflowId: string): void {
-    this.cache.delete(workflowId);
+    const cached = this.cache.get(workflowId);
+    if (cached) {
+      cached.engine.destroy();
+      this.cache.delete(workflowId);
+    }
   }
 
   private cleanupIdleEngines(): void {
@@ -62,6 +66,7 @@ export class EnginePool {
 
     for (const [workflowId, entry] of this.cache.entries()) {
       if (now - entry.lastUsed > this.TTL_MS) {
+        entry.engine.destroy();
         this.cache.delete(workflowId);
       }
     }

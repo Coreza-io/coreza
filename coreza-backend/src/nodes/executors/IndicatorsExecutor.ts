@@ -138,7 +138,10 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       // Delegate to InitializeIndicatorsExecutor
       if (indicatorType === "initializeindicators") {
-        return this.initExecutor.execute(node, input, context);
+        return this.initExecutor.execute(node, input, {
+          ...context,
+          indicatorKeyCache: this.indicatorKeyCache,
+        });
       }
 
       const resolvedParams = context?.resolveNodeParameters

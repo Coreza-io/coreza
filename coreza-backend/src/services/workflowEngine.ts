@@ -210,6 +210,7 @@ export class WorkflowEngine {
   }
 
   reset(newRunId: string, abortSignal?: AbortSignal): void {
+    DataContextManager.getInstance().destroyContext(this.runId);
     this.runId = newRunId;
     this.abortSignal = abortSignal;
     this.edgePayload.clear();
@@ -232,23 +233,6 @@ export class WorkflowEngine {
       workflowId: this.workflowId,
       userId: this.userId,
     });
-    this._execCtx = null;
-  }
-
-  resetLight(newRunId: string, abortSignal?: AbortSignal): void {
-    this.runId = newRunId;
-    this.abortSignal = abortSignal;
-    this.edgePayload.clear();
-    this.failed.clear();
-    this.failedNodeErrors.clear();
-    this.enqueuedKeys.clear();
-    this.retryCount.clear();
-    this.executionOrder = [];
-    this.queue = new NodeQueueManager();
-    if (this.silent) {
-      this.queue.silent = true;
-    }
-    this.store = new NodeStoreV2(newRunId, this.nodes);
     this._execCtx = null;
   }
 
@@ -1464,5 +1448,9 @@ export async function executeWorkflow(
     opts?.mode,
     opts?.abortSignal,
   );
-  return await workflowEngine.execute(opts?.initialInput, opts?.startNodeId);
+  try {
+    return await workflowEngine.execute(opts?.initialInput, opts?.startNodeId);
+  } finally {
+    workflowEngine.destroy();
+  }
 }

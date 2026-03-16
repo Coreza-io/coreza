@@ -18,7 +18,7 @@ import { Worker, Queue, FlowProducer } from "bullmq";
 import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
-import { LiveStrategyManager } from "./liveStrategyManager";
+import { WorkflowRunnerManager } from "./workflowRunnerManager";
 import { BacktestSessionManager } from "./BacktestSessionManager";
 
 export interface ShutdownStats {

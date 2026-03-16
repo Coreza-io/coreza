@@ -94,6 +94,7 @@ export class WorkflowEngine {
   private dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private silent = false;
+  public quiet = false;
   private nodeById = new Map<string, WorkflowNode>();
   private subNodeIds = new Set<string>();
   private incomingEdgesByTarget = new Map<string, WorkflowEdge[]>();

@@ -604,9 +604,7 @@ export class BacktestExecutor implements INodeExecutor {
       // Get SimBroker instance from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      const currentBar = context?.silent
-        ? parseBarFast(params.current_bar)
-        : parseBar(params.current_bar);
+      const currentBar = parseBar(params.current_bar);
 
       // Parse current bar from input (passed from loop iteration)
       // let currentBar;

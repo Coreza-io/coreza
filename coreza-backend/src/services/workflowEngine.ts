@@ -210,8 +210,6 @@ export class WorkflowEngine {
   }
 
   reset(newRunId: string, abortSignal?: AbortSignal): void {
-    DataContextManager.getInstance().destroyContext(this.runId);
-
     this.runId = newRunId;
     this.abortSignal = abortSignal;
     this.edgePayload.clear();

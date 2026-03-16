@@ -1240,7 +1240,9 @@ export class WorkflowEngine {
           edges.length > 0
             ? edges.map((edge) => edge.target).join(",")
             : "none";
-        console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+        if (!this.quiet) {
+          console.log(`🎯 Routing from ${nodeId} to ${targetSummary}`);
+        }
 
         if (meta?.originLoopId) {
           const loopNodeId = meta.originLoopId;

@@ -30,7 +30,7 @@ import {
   WorkflowJobResult,
   isWorkflowCancelled,
 } from "../types/workflowJobResult";
-import { LiveStrategyManager } from "./liveStrategyManager";
+import { WorkflowRunnerManager } from "./workflowRunnerManager";
 import { BacktestSessionManager } from "./BacktestSessionManager";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 

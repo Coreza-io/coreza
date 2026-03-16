@@ -43,7 +43,7 @@ import {
   buildIndicatorKey,
   IndicatorStateManager,
 } from "../../services/indicatorStateManager";
-import { parseBar, parseBarFast, parsePrices, toPercent } from "../../utils/barParser";
+import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 
 import { BacktestSessionManager } from "../../services/BacktestSessionManager";

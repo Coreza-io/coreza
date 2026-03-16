@@ -1157,11 +1157,13 @@ export class WorkflowEngine {
       prev.totalMs += elapsed;
       prev.count += 1;
       this.nodeTiming.set(nodeId, prev);
-      if (!this.silent) {
-        console.log(`✅ Node ${nodeId} result:`, result);
-      }
+    if (!this.silent && !this.quiet) {
+      console.log(`✅ Node ${nodeId} result:`, result);
+    }
 
-      this.executionOrder.push(nodeId);
+      if (!this.quiet) {
+        this.executionOrder.push(nodeId);
+      }
 
       this.store.setNodeResult(nodeId, result);
 

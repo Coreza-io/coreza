@@ -258,15 +258,26 @@ export class WorkflowEngine {
   }
 
   /**
-   * Ultra-lightweight reset for backtest bar-to-bar transitions.
-   * Reuses all existing objects — only clears per-bar state.
+   * Ultra-lightweight reset for bar-to-bar / tick-to-tick transitions.
+   * Reuses all existing objects — only clears per-event state.
    * Pinned results (BacktestInit) survive across bars.
+   *
+   * @param full - if true, also clears error tracking and edge payloads
+   *               (needed for live ticks where failures are possible)
    */
-  resetForNextBar(): void {
+  resetForNextBar(full = false): void {
     this.store.clearResults();
     this.enqueuedKeys.clear();
     this.queue.clear();
     this._satisfiedCounts.clear();
+    if (full) {
+      this.edgePayload.clear();
+      this.failed.clear();
+      this.failedNodeErrors.clear();
+      this.retryCount.clear();
+      this.executionOrder.length = 0;
+      this._execCtx = null;
+    }
   }
 
   /**

@@ -1335,7 +1335,7 @@ export class WorkflowEngine {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    if (!this.silent) {
+    if (!this.silent && !this.quiet) {
       console.log(`🔧 Executing node ${node.id} (${node.name})`);
     }
 

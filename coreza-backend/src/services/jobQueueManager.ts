@@ -457,7 +457,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       }
     }
 
-    const manager = LiveStrategyManager.getInstance();
+    const manager = WorkflowRunnerManager.getInstance();
     if (manager.isRunning(workflowId)) {
       await manager.stopStrategy(workflowId);
       cancelledCount++;

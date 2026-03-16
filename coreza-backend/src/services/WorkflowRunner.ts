@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { randomUUID } from "crypto";
 import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "./workflowEngine";
@@ -9,22 +10,24 @@ export class WorkflowRunner {
   private readonly engine: WorkflowEngine;
   private readonly redisStream: Redis;
   private readonly streamKey: string;
+  private readonly runnerId: string;
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
 
   constructor(
     private readonly workflowId: string,
-    userId: string,
+    private readonly userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
   ) {
+    this.runnerId = randomUUID();
     this.redisStream = createDedicatedStreamConnection(`Strategy-${workflowId}`);
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
-    this.consumerName = `consumer-${workflowId}`;
+    this.consumerName = `consumer-${workflowId}-${this.runnerId}`;
     this.engine = new WorkflowEngine(
-      workflowId,
+      this.runnerId,
       workflowId,
       userId,
       nodes,
@@ -88,6 +91,28 @@ export class WorkflowRunner {
     this.running = false;
     this.abortController.abort();
     this.engine.destroy();
+    await this.cleanupRunnerKeys();
     await this.redisStream.quit();
+  }
+
+  private async cleanupRunnerKeys(): Promise<void> {
+    const pattern = `user:${this.userId}:workflow:${this.workflowId}:runId:${this.runnerId}:*`;
+    let cursor = "0";
+
+    do {
+      const [nextCursor, keys] = await this.redisStream.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        "200",
+      );
+
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        await this.redisStream.del(...keys);
+      }
+    } while (cursor !== "0");
   }
 }

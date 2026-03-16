@@ -857,11 +857,13 @@ export class WorkflowEngine {
   }> {
     const workflowStartTime = Date.now();
     try {
-      console.log(
-        `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
-          startNodeId ? ` from node ${startNodeId}` : ""
-        }`,
-      );
+      if (!this.quiet) {
+        console.log(
+          `🚀 [WORKFLOW] Starting V2 workflow execution for run ${this.runId}${
+            startNodeId ? ` from node ${startNodeId}` : ""
+          }`,
+        );
+      }
       this.MAX_RETRIES = this.nodes.length * 2;
 
       await this.run(initialInput, startNodeId);

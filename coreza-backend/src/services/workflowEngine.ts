@@ -871,22 +871,24 @@ export class WorkflowEngine {
       const hasFailedNodes = this.failed.size > 0;
       const failedNodeIds = Array.from(this.failed);
 
-      if (hasFailedNodes) {
-        const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime =
-          this.formatExecutionDuration(executionTimeMs);
-        console.log(
-          `⚠️ Workflow completed with ${
-            failedNodeIds.length
-          } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
-        );
-      } else {
-        const executionTimeMs = Date.now() - workflowStartTime;
-        const formattedExecutionTime =
-          this.formatExecutionDuration(executionTimeMs);
-        console.log(
-          `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
-        );
+      if (!this.quiet) {
+        if (hasFailedNodes) {
+          const executionTimeMs = Date.now() - workflowStartTime;
+          const formattedExecutionTime =
+            this.formatExecutionDuration(executionTimeMs);
+          console.log(
+            `⚠️ Workflow completed with ${
+              failedNodeIds.length
+            } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
+          );
+        } else {
+          const executionTimeMs = Date.now() - workflowStartTime;
+          const formattedExecutionTime =
+            this.formatExecutionDuration(executionTimeMs);
+          console.log(
+            `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
+          );
+        }
       }
 
       if (this.indicatorStateManager) {

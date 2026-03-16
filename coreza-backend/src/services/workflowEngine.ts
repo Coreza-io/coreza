@@ -1272,8 +1272,8 @@ export class WorkflowEngine {
         }
       }
 
-      // Skip clearing incoming edge payloads in backtest mode — they get bulk-cleared in resetForNextBar
-      if (!this.silent) {
+      // Skip clearing incoming edge payloads in backtest/quiet mode — they get bulk-cleared in resetForNextBar
+      if (!this.silent && !this.quiet) {
         this.clearIncomingEdgePayloads(nodeId);
       }
     } catch (error) {

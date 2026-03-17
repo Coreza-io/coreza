@@ -91,8 +91,8 @@ export class BacktestSession {
       });
 
       this.compiledPlan = compilePlan(
-        this.nodes,
-        this.edges,
+        this.engine.getGraph(),
+        this.engine.getNodeExecutorMap(),
         this.entryNodeIds,
         compiledParams,
         this.backtestInitResult,
@@ -105,10 +105,9 @@ export class BacktestSession {
           dataContext,
           indicatorStateManager: this.stateManager ?? this.engine.getIndicatorStateManager(),
           abortSignal: this.abortController.signal,
-          storeGetState: (nodeId: string, key: string) =>
-            (this.engine as any).store.getNodeState(nodeId, key),
+          storeGetState: (nodeId: string, key: string) => this.engine.getNodeState(nodeId, key),
           storeSetState: (nodeId: string, key: string, value: any) =>
-            (this.engine as any).store.setNodeState(nodeId, key, value),
+            this.engine.setNodeState(nodeId, key, value),
         },
       );
 

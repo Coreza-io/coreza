@@ -7,6 +7,7 @@ import {
   QueueItem,
   WorkflowEdge,
   WorkflowNode,
+  INodeExecutor,
 } from "../nodes/types";
 import { DataContext } from "./DataContext";
 import { GraphRuntime } from "./graphRuntime";
@@ -30,7 +31,7 @@ export type RuntimeOptions = {
 
 export abstract class BaseExecutionRuntime {
   protected readonly queue = new NodeQueueManager();
-  protected readonly nodeExecutorMap = new Map<string, any>();
+  protected readonly nodeExecutorMap = new Map<string, INodeExecutor>();
   protected readonly nodeTiming = new Map<string, { totalMs: number; count: number }>();
   protected readonly failed = new Set<string>();
   protected readonly failedNodeErrors = new Map<string, string>();
@@ -64,6 +65,10 @@ export abstract class BaseExecutionRuntime {
 
   getExecutionOrder(): string[] {
     return this.executionOrder;
+  }
+
+  getNodeExecutorMap(): Map<string, INodeExecutor> {
+    return this.nodeExecutorMap;
   }
 
   hasFailures(): boolean {

@@ -6,7 +6,7 @@
  * (at your option) any later version.
  */
 
-import { WorkflowEdge, WorkflowNode } from "../nodes/types";
+import { INodeExecutor, WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { DataContext, DataContextManager } from "./DataContext";
 import {
   BacktestExecutionRuntime,
@@ -97,6 +97,22 @@ export class WorkflowEngine {
 
   getIndicatorStateManager(): IndicatorStateManager {
     return this.indicatorStateManager;
+  }
+
+  getGraph(): GraphRuntime {
+    return this.graph;
+  }
+
+  getNodeExecutorMap(): Map<string, INodeExecutor> {
+    return this.runtime.getNodeExecutorMap();
+  }
+
+  getNodeState(nodeId: string, key: string): any {
+    return this.store.getNodeState(nodeId, key);
+  }
+
+  setNodeState(nodeId: string, key: string, value: any): void {
+    this.store.setNodeState(nodeId, key, value);
   }
 
   getCompiledParams() {

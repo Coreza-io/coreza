@@ -322,7 +322,10 @@ export class WorkflowEngine {
         }
         const item = this.dequeue();
         if (!item) break;
-        await this.executeOnce(item);
+        const maybePromise = this.executeOnce(item);
+        if (maybePromise) {
+          await maybePromise;
+        }
       }
 
       const hasFailedNodes = this.failed.size > 0;
@@ -908,7 +911,10 @@ export class WorkflowEngine {
 
       const item = this.dequeue();
       if (!item) break;
-      await this.executeOnce(item);
+      const maybePromise = this.executeOnce(item);
+      if (maybePromise) {
+        await maybePromise;
+      }
     }
   }
 
@@ -921,20 +927,65 @@ export class WorkflowEngine {
     return this.abortSignal?.aborted ?? false;
   }
 
-  private async executeOnce(item: QueueItem): Promise<void> {
+  private executeOnce(item: QueueItem): void | Promise<void> {
     const { nodeId, input, meta } = item;
     const node = this.nodeById.get(nodeId);
     if (!node) return;
 
-    try {
-      // Check if workflow was cancelled before executing this node
-      if (this.abortSignal?.aborted) {
-        throw new Error("Workflow cancelled by user");
+    const handleError = (error: unknown): void => {
+      const errorMessage = (error as Error).message || "";
+      const isCancellation =
+        errorMessage.toLowerCase().includes("cancelled") ||
+        errorMessage.toLowerCase().includes("deactivated") ||
+        this.abortSignal?.aborted;
+
+      console.error(
+        `${isCancellation ? "🛑" : "❌"} Node ${nodeId} ${
+          isCancellation ? "cancelled" : "failed"
+        }:`,
+        error,
+      );
+
+      // Record failed execution
+      // const completedAt = new Date().toISOString();
+      // const durationMs = Date.now() - startTime;
+
+      this.executionOrder.push(nodeId);
+
+      this.failed.add(nodeId);
+      this.failedNodeErrors.set(nodeId, errorMessage);
+      this.store.setNodeError(nodeId, error);
+
+      // ALWAYS rethrow cancellation errors - they should never be swallowed
+      if (isCancellation) {
+        throw error;
       }
 
-      const executionContext = this.getExecutionContext(nodeId);
-      const t0 = performance.now();
-      const result = await this.executeNode(node, input, executionContext);
+      if (meta?.originLoopId) {
+        const originLoopId = meta.originLoopId;
+        const loopNode = this.nodeById.get(originLoopId);
+        const config = loopNode?.values || {};
+        if (config.continueOnError) {
+          const currentResults =
+            this.store.getNodeState(originLoopId, "aggregatedResults") || [];
+          currentResults.push({ error: (error as any).message });
+          this.store.setNodeState(
+            originLoopId,
+            "aggregatedResults",
+            currentResults,
+          );
+          this.enqueue({ nodeId: originLoopId, input: {}, meta: {} });
+          return;
+        }
+      }
+
+      if (this.mode === "fail-fast") {
+        throw error;
+      }
+      // best-effort: swallow non-cancellation errors only
+    };
+
+    const routeNodeResult = (result: any, t0: number): void => {
       const elapsed = performance.now() - t0;
       const prev = this.nodeTiming.get(nodeId) ?? { totalMs: 0, count: 0 };
       prev.totalMs += elapsed;
@@ -1059,98 +1110,80 @@ export class WorkflowEngine {
       if (!this.silent && !this.quiet) {
         this.clearIncomingEdgePayloads(nodeId);
       }
+    };
+
+    try {
+      // Check if workflow was cancelled before executing this node
+      if (this.abortSignal?.aborted) {
+        throw new Error("Workflow cancelled by user");
+      }
+
+      const executionContext = this.getExecutionContext(nodeId);
+      const t0 = performance.now();
+      if (!this.silent && !this.quiet) {
+        console.log(`🔧 Executing node ${node.id} (${node.name})`);
+      }
+
+      const nodeName = node.name ?? "";
+
+      // Map node categories for compatibility
+      const category = CATEGORY_MAP[nodeName] ?? node.category;
+
+      // Use custom executor if registered, otherwise get from registry
+      let executor = this.executors.get(category);
+      if (!executor) {
+        executor = getNodeExecutor(category);
+      }
+
+      if (!executor) {
+        throw new Error(
+          `Unsupported node category: ${category} for node type: ${node.name}`,
+        );
+      }
+
+      // Execute node with true zero-overhead sync dispatch
+      const rawExecution = executor.execute(node, input, executionContext);
+      if (rawExecution instanceof Promise) {
+        return rawExecution
+          .then((rawResult) => {
+            const result =
+              rawResult &&
+              typeof rawResult === "object" &&
+              "success" in rawResult
+                ? (() => {
+                    if (!rawResult.success) {
+                      throw new Error(
+                        rawResult.error || `Node execution failed: ${category}`,
+                      );
+                    }
+                    return rawResult;
+                  })()
+                : { data: rawResult?.data ?? rawResult };
+            routeNodeResult(result, t0);
+          })
+          .catch((error) => {
+            handleError(error);
+          });
+      }
+
+      const result =
+        rawExecution &&
+        typeof rawExecution === "object" &&
+        "success" in rawExecution
+          ? (() => {
+              if (!rawExecution.success) {
+                throw new Error(
+                  rawExecution.error || `Node execution failed: ${category}`,
+                );
+              }
+              return rawExecution;
+            })()
+          : { data: rawExecution?.data ?? rawExecution };
+      routeNodeResult(result, t0);
+      return;
     } catch (error) {
-      const errorMessage = (error as Error).message || "";
-      const isCancellation =
-        errorMessage.toLowerCase().includes("cancelled") ||
-        errorMessage.toLowerCase().includes("deactivated") ||
-        this.abortSignal?.aborted;
-
-      console.error(
-        `${isCancellation ? "🛑" : "❌"} Node ${nodeId} ${
-          isCancellation ? "cancelled" : "failed"
-        }:`,
-        error,
-      );
-
-      // Record failed execution
-      // const completedAt = new Date().toISOString();
-      // const durationMs = Date.now() - startTime;
-
-      this.executionOrder.push(nodeId);
-
-      this.failed.add(nodeId);
-      this.failedNodeErrors.set(nodeId, errorMessage);
-      this.store.setNodeError(nodeId, error);
-
-      // ALWAYS rethrow cancellation errors - they should never be swallowed
-      if (isCancellation) {
-        throw error;
-      }
-
-      if (meta?.originLoopId) {
-        const originLoopId = meta.originLoopId;
-        const loopNode = this.nodeById.get(originLoopId);
-        const config = loopNode?.values || {};
-        if (config.continueOnError) {
-          const currentResults =
-            this.store.getNodeState(originLoopId, "aggregatedResults") || [];
-          currentResults.push({ error: (error as any).message });
-          this.store.setNodeState(
-            originLoopId,
-            "aggregatedResults",
-            currentResults,
-          );
-          this.enqueue({ nodeId: originLoopId, input: {}, meta: {} });
-          return;
-        }
-      }
-
-      if (this.mode === "fail-fast") {
-        throw error;
-      }
-      // best-effort: swallow non-cancellation errors only
+      handleError(error);
     }
-  }
-
-  async executeNode(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any,
-  ): Promise<NodeResult> {
-    if (!this.silent && !this.quiet) {
-      console.log(`🔧 Executing node ${node.id} (${node.name})`);
-    }
-
-    const nodeName = node.name ?? "";
-
-    // Map node categories for compatibility
-    const category = CATEGORY_MAP[nodeName] ?? node.category;
-
-    // Use custom executor if registered, otherwise get from registry
-    let executor = this.executors.get(category);
-    if (!executor) {
-      executor = getNodeExecutor(category);
-    }
-
-    if (!executor) {
-      throw new Error(
-        `Unsupported node category: ${category} for node type: ${node.name}`,
-      );
-    }
-
-    // Execute node with enhanced context
-    const result = await executor.execute(node, input, context);
-
-    if (result && typeof result === "object" && "success" in result) {
-      if (!result.success) {
-        throw new Error(result.error || `Node execution failed: ${category}`);
-      }
-      return result;
-    }
-
-    // For simple results, wrap in structure to maintain consistency
-    return { data: result?.data ?? result };
   }
 
   /**

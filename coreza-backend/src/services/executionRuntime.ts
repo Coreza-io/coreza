@@ -43,7 +43,6 @@ export abstract class BaseExecutionRuntime {
     protected readonly resolver: ParameterResolver,
     protected readonly options: RuntimeOptions,
   ) {
-    this.queue.isBacktest = options.isBacktest;
     for (const node of options.nodes) {
       const exec = getNodeExecutor(resolveCategory(node));
       if (exec) this.nodeExecutorMap.set(node.id, exec);
@@ -102,8 +101,12 @@ export abstract class BaseExecutionRuntime {
         workflowId: this.options.workflowId,
         nodes: this.options.nodes,
         edges: this.options.edges,
-        resolveNodeParameters: (node: WorkflowNode, input: any) =>
-          this.resolver.resolve(node, input, () => this.store.getAllResults()),
+        resolvedParams: {},
+        resolveNodeParameters: (node: WorkflowNode, input: any) => {
+          const resolved = this.resolver.resolve(node, input, () => this.store.getAllResults());
+          ctx.resolvedParams = resolved;
+          return resolved;
+        },
         getAllNodeResults: () => this.store.getAllResults(),
         dataContext: this.options.dataContext,
         indicatorStateManager: this.options.indicatorStateManager,
@@ -282,6 +285,8 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   override executeOnce(item: QueueItem): void | Promise<void> {
     const out = super.executeOnce(item);
     if (out instanceof Promise) {
+      // Cleanup runs after async executor completion. Queue processing is sequential,
+      // so downstream dependency checks cannot observe stale payloads mid-execution.
       return out.finally(() => {
         for (const e of this.graph.getIncomingEdges(item.nodeId)) this.edgePayload.delete(e.id);
       });
@@ -300,6 +305,28 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
 
 export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   private readonly satisfiedCounts = new Map<string, number>();
+
+  protected override routeNodeResult(
+    node: WorkflowNode,
+    result: NodeResult,
+    _t0: number,
+    meta?: IterMeta,
+  ): void {
+    this.executionOrder.push(node.id);
+    this.store.setNodeResult(node.id, result);
+
+    if (node.name === "Loop") {
+      this.routeLoop(node.id, result, meta);
+      return;
+    }
+
+    if (node.name === "If" || node.name === "Switch") {
+      this.routeConditional(node, result, meta);
+      return;
+    }
+
+    this.routeStandard(node, result, meta);
+  }
 
   primeEntry(_nodeId: string, _input: any): void {
     // Backtest runtime does not require pre-marking edge payloads.
@@ -325,6 +352,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.store.clearResults();
     this.queue.clear();
     this.satisfiedCounts.clear();
+    this.executionOrder.length = 0;
     if (full) this.execCtx = null;
   }
 }

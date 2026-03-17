@@ -38,7 +38,6 @@ export class NodeQueueManager {
   /** Main FIFO queue for workflow items */
   private q: QueueItem[] = [];
   private head = 0;
-  public isBacktest = false;
 
   /** 
    * Loop iteration tracking: loopId -> iterIndex -> { pending, drainCallback }
@@ -51,9 +50,6 @@ export class NodeQueueManager {
    * @param item - Workflow item to enqueue
    */
   enqueue(item: QueueItem) {
-    if (!this.isBacktest) {
-      console.log(`[NodeQueueManager] Enqueuing item: ${item.nodeId}`);
-    }
     this.q.push(item);
   }
 
@@ -74,9 +70,6 @@ export class NodeQueueManager {
       this.head = 0;
     }
 
-    if (item && !this.isBacktest) {
-      console.log(`[NodeQueueManager] Dequeuing item: ${item.nodeId}`);
-    }
     return item;
   }
 
@@ -101,12 +94,7 @@ export class NodeQueueManager {
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
     st.pending += 1;
 
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeQueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
-      );
-    }
-    
+
     m.set(iterIndex, st);
     this.loopIters.set(loopId, m);
   }
@@ -129,18 +117,8 @@ export class NodeQueueManager {
     if (!st) return;
 
     st.pending -= 1;
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeQueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
-      );
-    }
 
     if (st.pending === 0) {
-      if (!this.isBacktest) {
-        console.log(
-          `[NodeQueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`
-        );
-      }
       st.onDrain();
     }
   }
@@ -154,12 +132,7 @@ export class NodeQueueManager {
    * @param cb - Callback function to invoke on drain
    */
   onIterationDrain(loopId: string, iterIndex: number, cb: () => void) {
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeQueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`
-      );
-    }
-    
+
     const m = this.loopIters.get(loopId) ?? new Map();
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
     st.onDrain = cb;
@@ -172,9 +145,6 @@ export class NodeQueueManager {
    * Used for cleanup and reset operations
    */
   clear() {
-    if (!this.isBacktest) {
-      console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
-    }
     this.q.length = 0;
     this.head = 0;
     this.loopIters.clear();

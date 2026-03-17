@@ -35,14 +35,11 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
  * - Multi-path execution
  */
 export class NodeRouter {
-  public isBacktest = false;
   /**
    * Creates a new NodeRouter instance
    * @param edges - Array of all workflow edges
    */
-  constructor(private edges: WorkflowEdge[]) {
-    console.log(`[NodeRouter] Initialized with ${edges.length} edges`);
-  }
+  constructor(private edges: WorkflowEdge[]) {}
 
   /**
    * Normalizes node execution results into a list of allowed edge handles
@@ -55,20 +52,11 @@ export class NodeRouter {
   private decideHandles(result: any): string[] {
     // Boolean result: true/false branch
     if (typeof result === "boolean") {
-      const handles = [result ? "true" : "false"];
-      if (!this.isBacktest) {
-        console.log(
-          `[NodeRouter] Boolean result: ${result} -> handles: ${handles}`
-        );
-      }
-      return handles;
+      return [result ? "true" : "false"];
     }
 
     // String result: direct handle name
     if (typeof result === "string") {
-      if (!this.isBacktest) {
-        console.log(`[NodeRouter] String result: ${result}`);
-      }
       return [result];
     }
 
@@ -84,16 +72,10 @@ export class NodeRouter {
         .filter(([, v]) => !!v)
         .map(([k]) => k);
 
-      if (!this.isBacktest) {
-        console.log(`[NodeRouter] Object result -> truthy handles: ${handles}`);
-      }
       return handles;
     }
 
     // Default path for unhandled results
-    if (!this.isBacktest) {
-      console.log("[NodeRouter] Using default handle");
-    }
     return ["default", ""];
   }
 
@@ -107,11 +89,6 @@ export class NodeRouter {
    */
   select(node: WorkflowNode, result: any) {
     const outgoingEdges = this.edges.filter((e) => e.source === node.id);
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeRouter] Selecting edges from ${node.name}, found ${outgoingEdges.length} outgoing edges`
-      );
-    }
 
     // Special handling for conditional nodes
     if (node.name === "If" || node.name === "Switch") {
@@ -123,20 +100,10 @@ export class NodeRouter {
         return allow.has(h);
       });
 
-      if (!this.isBacktest) {
-        console.log(
-          `[NodeRouter] Conditional node ${node.name} -> selected ${selectedEdges.length} edges`
-        );
-      }
       return selectedEdges;
     }
 
     // For data nodes (Alpaca, indicators, etc.), return ALL outgoing edges
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeRouter] Data node ${node.name} -> returning all ${outgoingEdges.length} edges`
-      );
-    }
     return outgoingEdges;
   }
 
@@ -148,14 +115,10 @@ export class NodeRouter {
    * @returns Array of loop body edges
    */
   loopBodyEdges(loopId: string) {
-    const bodyEdges = this.edges.filter(
+    return this.edges.filter(
       (e) =>
         e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
     );
-    if (!this.isBacktest) {
-      console.log(`[NodeRouter] Loop ${loopId} body edges: ${bodyEdges.length}`);
-    }
-    return bodyEdges;
   }
 
   /**
@@ -166,15 +129,9 @@ export class NodeRouter {
    * @returns Array of done edges
    */
   doneEdges(loopId: string) {
-    const completionEdges = this.edges.filter(
+    return this.edges.filter(
       (e) => e.source === loopId && e.sourceHandle === "done"
     );
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeRouter] Loop ${loopId} done edges: ${completionEdges.length}`
-      );
-    }
-    return completionEdges;
   }
 
   /**
@@ -184,12 +141,6 @@ export class NodeRouter {
    * @returns Array of all outgoing edges
    */
   getOutgoingEdges(nodeId: string) {
-    const edges = this.edges.filter((e) => e.source === nodeId);
-    if (!this.isBacktest) {
-      console.log(
-        `[NodeRouter] Node ${nodeId} has ${edges.length} outgoing edges`
-      );
-    }
-    return edges;
+    return this.edges.filter((e) => e.source === nodeId);
   }
 }

@@ -337,7 +337,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     const batchSize = Number(resolvedParams.batchSize) || 1;
     const parallel = !!resolvedParams.parallel;
     const continueOnError = !!resolvedParams.continueOnError;
-    const isBacktest = !!context?.silent;
+    const isBacktest = !!context?.isBacktest;
     const throttleMs = isBacktest
       ? 0
       : Number(resolvedParams.throttleMs) || 200;

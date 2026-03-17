@@ -185,7 +185,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       //     : null);
 
       if (dataContext && candleData) {
-        if (!context?.silent) {
+        if (!context?.isBacktest) {
           console.log(
             `[Indicators] Resolving dataRef: ${Array.isArray(candleData) ? `${candleData.length} bars` : typeof candleData}`,
           );
@@ -258,7 +258,7 @@ export class IndicatorsExecutor implements INodeExecutor {
             this.indicatorKeyCache.set(node.id, key);
           }
 
-          const isBacktest = !!context?.silent;
+          const isBacktest = !!context?.isBacktest;
 
           let state;
           if (isBacktest) {

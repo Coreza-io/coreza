@@ -133,7 +133,7 @@ export interface CompiledExecContext {
   dataContext: any;
   indicatorStateManager: any;
   abortSignal?: AbortSignal;
-  silent: boolean;
+  isBacktest: boolean;
   /** Per-instruction pre-resolved params injected by VM */
   resolvedParams?: Record<string, any>;
   /** Overridden to return pre-resolved params from slots */

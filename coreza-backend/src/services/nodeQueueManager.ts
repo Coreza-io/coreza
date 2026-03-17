@@ -38,7 +38,7 @@ export class NodeQueueManager {
   /** Main FIFO queue for workflow items */
   private q: QueueItem[] = [];
   private head = 0;
-  public silent = false;
+  public isBacktest = false;
 
   /** 
    * Loop iteration tracking: loopId -> iterIndex -> { pending, drainCallback }
@@ -51,7 +51,7 @@ export class NodeQueueManager {
    * @param item - Workflow item to enqueue
    */
   enqueue(item: QueueItem) {
-    if (!this.silent) {
+    if (!this.isBacktest) {
       console.log(`[NodeQueueManager] Enqueuing item: ${item.nodeId}`);
     }
     this.q.push(item);
@@ -74,7 +74,7 @@ export class NodeQueueManager {
       this.head = 0;
     }
 
-    if (item && !this.silent) {
+    if (item && !this.isBacktest) {
       console.log(`[NodeQueueManager] Dequeuing item: ${item.nodeId}`);
     }
     return item;
@@ -101,7 +101,7 @@ export class NodeQueueManager {
     const st = m.get(iterIndex) ?? { pending: 0, onDrain: () => {} };
     st.pending += 1;
 
-    if (!this.silent) {
+    if (!this.isBacktest) {
       console.log(
         `[NodeQueueManager] Increment: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
       );
@@ -129,14 +129,14 @@ export class NodeQueueManager {
     if (!st) return;
 
     st.pending -= 1;
-    if (!this.silent) {
+    if (!this.isBacktest) {
       console.log(
         `[NodeQueueManager] Decrement: loop=${loopId}, iter=${iterIndex}, pending=${st.pending}`
       );
     }
 
     if (st.pending === 0) {
-      if (!this.silent) {
+      if (!this.isBacktest) {
         console.log(
           `[NodeQueueManager] Iteration drained: loop=${loopId}, iter=${iterIndex}`
         );
@@ -154,7 +154,7 @@ export class NodeQueueManager {
    * @param cb - Callback function to invoke on drain
    */
   onIterationDrain(loopId: string, iterIndex: number, cb: () => void) {
-    if (!this.silent) {
+    if (!this.isBacktest) {
       console.log(
         `[NodeQueueManager] Registering drain callback: loop=${loopId}, iter=${iterIndex}`
       );
@@ -172,7 +172,7 @@ export class NodeQueueManager {
    * Used for cleanup and reset operations
    */
   clear() {
-    if (!this.silent) {
+    if (!this.isBacktest) {
       console.log('[NodeQueueManager] Clearing queue and loop iteration tracking');
     }
     this.q.length = 0;

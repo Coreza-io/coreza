@@ -281,7 +281,7 @@ export function compilePlan(
     dataContext: ctxBase.dataContext,
     indicatorStateManager: ctxBase.indicatorStateManager,
     abortSignal: ctxBase.abortSignal,
-    silent: true,
+    isBacktest: true,
     // Stable resolver reads params injected by VM/adapter
     resolveNodeParameters: () => ctx.resolvedParams ?? {},
     getAllNodeResults: () => ({}),

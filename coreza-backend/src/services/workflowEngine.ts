@@ -934,7 +934,42 @@ export class WorkflowEngine {
 
       const executionContext = this.getExecutionContext(nodeId);
       const t0 = performance.now();
-      const result = await this.executeNode(node, input, executionContext);
+      if (!this.silent && !this.quiet) {
+        console.log(`🔧 Executing node ${node.id} (${node.name})`);
+      }
+
+      const nodeName = node.name ?? "";
+
+      // Map node categories for compatibility
+      const category = CATEGORY_MAP[nodeName] ?? node.category;
+
+      // Use custom executor if registered, otherwise get from registry
+      let executor = this.executors.get(category);
+      if (!executor) {
+        executor = getNodeExecutor(category);
+      }
+
+      if (!executor) {
+        throw new Error(
+          `Unsupported node category: ${category} for node type: ${node.name}`,
+        );
+      }
+
+      // Execute node with true zero-overhead sync dispatch
+      const rawExecution = executor.execute(node, input, executionContext);
+      const rawResult =
+        rawExecution instanceof Promise ? await rawExecution : rawExecution;
+      const result =
+        rawResult && typeof rawResult === "object" && "success" in rawResult
+          ? (() => {
+              if (!rawResult.success) {
+                throw new Error(
+                  rawResult.error || `Node execution failed: ${category}`,
+                );
+              }
+              return rawResult;
+            })()
+          : { data: rawResult?.data ?? rawResult };
       const elapsed = performance.now() - t0;
       const prev = this.nodeTiming.get(nodeId) ?? { totalMs: 0, count: 0 };
       prev.totalMs += elapsed;
@@ -1111,46 +1146,6 @@ export class WorkflowEngine {
       }
       // best-effort: swallow non-cancellation errors only
     }
-  }
-
-  async executeNode(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any,
-  ): Promise<NodeResult> {
-    if (!this.silent && !this.quiet) {
-      console.log(`🔧 Executing node ${node.id} (${node.name})`);
-    }
-
-    const nodeName = node.name ?? "";
-
-    // Map node categories for compatibility
-    const category = CATEGORY_MAP[nodeName] ?? node.category;
-
-    // Use custom executor if registered, otherwise get from registry
-    let executor = this.executors.get(category);
-    if (!executor) {
-      executor = getNodeExecutor(category);
-    }
-
-    if (!executor) {
-      throw new Error(
-        `Unsupported node category: ${category} for node type: ${node.name}`,
-      );
-    }
-
-    // Execute node with enhanced context
-    const result = await executor.execute(node, input, context);
-
-    if (result && typeof result === "object" && "success" in result) {
-      if (!result.success) {
-        throw new Error(result.error || `Node execution failed: ${category}`);
-      }
-      return result;
-    }
-
-    // For simple results, wrap in structure to maintain consistency
-    return { data: result?.data ?? result };
   }
 
   /**

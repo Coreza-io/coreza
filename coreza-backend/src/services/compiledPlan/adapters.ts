@@ -20,7 +20,7 @@ import { ExecFn, CompiledExecContext } from "./types";
 /**
  * Compiled Plan Adapters
  * ======================
- * Wraps existing INodeExecutor.executeSync() into the ExecFn signature
+ * Wraps INodeExecutor.execute() into the ExecFn signature
  * used by the compiled plan VM. The adapter overrides ctx.resolveNodeParameters
  * to return pre-resolved params, avoiding redundant template resolution.
  */
@@ -41,7 +41,7 @@ const CATEGORY_MAP: Record<string, string> = {
   FinnHub: "DataSource",
   YahooFinance: "DataSource",
   Store: "DataSource",
-  RollingWindow: "DataSource",
+  RollingWindow: "Indicators",
   LLM: "LLM",
   AIAgent: "AIAgent",
   InitializeIndicators: "Indicators",
@@ -57,12 +57,12 @@ export function resolveCategory(node: WorkflowNode): string {
 }
 
 /**
- * Build an ExecFn adapter that wraps executor.executeSync().
+ * Build an ExecFn adapter that wraps executor.execute().
  *
  * The adapter:
  * 1. Sets ctx.nodeId to the current node
  * 2. Overrides ctx.resolveNodeParameters to return pre-resolved params
- * 3. Calls executor.executeSync(node, input, ctx)
+ * 3. Calls executor.execute(node, input, ctx)
  * 4. Normalizes the result
  */
 export function buildExecAdapter(
@@ -80,16 +80,24 @@ export function buildExecAdapter(
     // Expose pre-resolved params via context field; resolveNodeParameters is stable.
     ctx.resolvedParams = resolvedParams;
 
-    const result = executor.executeSync!(node, input, ctx);
+    const result = executor.execute(node, input, ctx);
 
-    // Normalize result (same as WorkflowEngine.executeNodeSync)
-    if (result && typeof result === "object" && "success" in result) {
-      if (!result.success) {
-        throw new Error(result.error || `Node execution failed: ${executor.category}`);
-      }
-      return result;
+    if (result && typeof (result as any).then === "function") {
+      throw new Error(
+        `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`,
+      );
     }
 
-    return { data: (result as any)?.data ?? result };
+    const syncResult = result as NodeResult;
+
+    // Normalize result (same as WorkflowEngine.executeNode)
+    if (syncResult && typeof syncResult === "object" && "success" in syncResult) {
+      if (!syncResult.success) {
+        throw new Error(syncResult.error || `Node execution failed: ${executor.category}`);
+      }
+      return syncResult;
+    }
+
+    return { data: (syncResult as any)?.data ?? syncResult };
   };
 }

@@ -20,17 +20,9 @@ import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext 
 
 export class RiskExecutor implements INodeExecutor {
   readonly category = "Risk Management";
+  readonly syncCapable = true;
 
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    const startTime = Date.now();
-    return this.executeInternal(node, input, context, startTime);
-  }
-
-  async execute(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any
-  ): Promise<NodeResult> {
+  execute(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
     const startTime = Date.now();
     return this.executeInternal(node, input, context, startTime);
   }

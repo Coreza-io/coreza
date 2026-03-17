@@ -40,7 +40,7 @@ import { buildExecAdapter, resolveCategory } from "./adapters";
  */
 
 // Node types that are NOT supported by the compiled plan
-const INELIGIBLE_NODE_NAMES = new Set(["Loop", "AIAgent", "LLM"]);
+const INELIGIBLE_NODE_NAMES = new Set(["Loop", "AIAgent", "LLM", "InitializeIndicators"]);
 
 /**
  * Attempt to compile a workflow into a CompiledPlan.
@@ -84,7 +84,7 @@ export function compilePlan(
       return null;
     }
 
-    // Resolve executor and verify sync support
+    // Resolve executor and verify sync capability
     const category = resolveCategory(node);
     let executor = executorMap.get(category);
     if (!executor) {
@@ -98,9 +98,9 @@ export function compilePlan(
       executorMap.set(category, executor);
     }
 
-    if (typeof executor.executeSync !== "function") {
+    if (!executor.syncCapable) {
       console.log(
-        `[CompiledPlan] Ineligible: executor "${category}" has no executeSync`,
+        `[CompiledPlan] Ineligible: executor "${category}" is not syncCapable`,
       );
       return null;
     }

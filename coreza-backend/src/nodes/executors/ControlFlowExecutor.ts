@@ -28,12 +28,13 @@ import {
 
 export class ControlFlowExecutor implements INodeExecutor {
   readonly category = "ControlFlow";
+  readonly syncCapable = true;
 
-  async execute(
+  execute(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
-  ): Promise<NodeResult> {
+  ): NodeResult | Promise<NodeResult> {
     try {
       const nodeName = node.name;
       switch (nodeName) {
@@ -59,24 +60,6 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
   }
 
-
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    try {
-      const nodeName = node.name;
-      switch (nodeName) {
-        case "If":
-          return this.executeIfNode(node, input, context);
-        case "Compute":
-          return this.executeComputeNode(node, input, context);
-        default:
-          return toNodeResult(
-            createErrorOutput(`Sync execution not supported for control flow node type: ${nodeName}`),
-          );
-      }
-    } catch (error) {
-      return toNodeResult(createErrorOutput(error));
-    }
-  }
 
   private executeIfNode(
     node: WorkflowNode,

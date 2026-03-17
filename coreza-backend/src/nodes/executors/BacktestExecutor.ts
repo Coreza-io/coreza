@@ -98,6 +98,7 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
 
 export class BacktestExecutor implements INodeExecutor {
   readonly category = "Backtest";
+  readonly syncCapable = true;
   private static simBrokerCache = new Map<string, SimBroker>();
   private static backtestStartTimes = new Map<string, number>();
   private cachedRunId: string | null = null;
@@ -129,11 +130,11 @@ export class BacktestExecutor implements INodeExecutor {
     BacktestExecutor.backtestStartTimes.delete(backtestId);
   }
 
-  async execute(
+  execute(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
-  ): Promise<NodeResult> {
+  ): NodeResult | Promise<NodeResult> {
     this.clearResultCachesForRun(context?.runId);
 
     // const startTime = Date.now();
@@ -161,26 +162,6 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
-
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    this.clearResultCachesForRun(context?.runId);
-
-    const nodeName = node.name;
-
-    switch (nodeName) {
-      case "BacktestTrade":
-        return this.executeBacktestTrade(node, input, context);
-      case "BacktestPortfolio":
-      case "Portfolio":
-        return this.executeBacktestPortfolio(node, input, context);
-      case "OnBar":
-        return this.executeOnBar(node, input, context);
-      default:
-        return toNodeResult(
-          createErrorOutput(`Sync execution not supported for backtest node type: ${nodeName}`),
-        );
-    }
-  }
 
   private clearResultCachesForRun(runId?: string): void {
     if (runId && runId !== this.cachedRunId) {

@@ -38,9 +38,9 @@ export interface NodeResult {
 
 export interface INodeExecutor {
   readonly category: string; // e.g. "IO", "Indicators", "Broker"
-  execute(node: any, input: NodeInput, context?: any): Promise<NodeResult>;
-  /** Optional sync fast-path for backtest hot loop. */
-  executeSync?(node: any, input: NodeInput, context?: any): NodeResult;
+  execute(node: any, input: NodeInput, context?: any): NodeResult | Promise<NodeResult>;
+  /** Indicates execute() is sync-capable for compiled VM usage. */
+  readonly syncCapable?: boolean;
 }
 
 // Type for workflow node structure

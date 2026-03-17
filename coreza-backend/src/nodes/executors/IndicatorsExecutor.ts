@@ -134,7 +134,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    //const startTime = Date.now();
+    const startTime = Date.now();
     try {
       const runId = context?.runId;
       if (runId && runId !== this.cachedRunId) {

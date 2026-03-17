@@ -360,7 +360,6 @@ export class WorkflowEngine {
     }
   }
 
-
   executeFromEntriesSync(
     input: any,
     entryNodeIds: string[],
@@ -415,8 +414,12 @@ export class WorkflowEngine {
       };
     } catch (error) {
       const executionTimeMs = Date.now() - workflowStartTime;
-      const formattedExecutionTime = this.formatExecutionDuration(executionTimeMs);
-      console.error(`❌ executeFromEntriesSync failed after ${formattedExecutionTime}:`, error);
+      const formattedExecutionTime =
+        this.formatExecutionDuration(executionTimeMs);
+      console.error(
+        `❌ executeFromEntriesSync failed after ${formattedExecutionTime}:`,
+        error,
+      );
       return {
         success: false,
         error: (error as Error).message,
@@ -792,8 +795,11 @@ export class WorkflowEngine {
     });
   }
 
-
-  private routeEdgeSync(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
+  private routeEdgeSync(
+    edge: WorkflowEdge,
+    payload: any,
+    meta?: IterMeta,
+  ): void {
     if (this.isSubNode(edge.source)) return;
 
     if (this.silent) {
@@ -803,7 +809,9 @@ export class WorkflowEngine {
     }
 
     const targetNode = this.nodeById.get(edge.target);
-    const skipDependencyCheck = Boolean((targetNode as any)?.values?.checkDependency);
+    const skipDependencyCheck = Boolean(
+      (targetNode as any)?.values?.checkDependency,
+    );
 
     if (!skipDependencyCheck) {
       if (!this.areDependenciesSatisfied(edge.target)) return;
@@ -855,38 +863,25 @@ export class WorkflowEngine {
       const hasFailedNodes = this.failed.size > 0;
       const failedNodeIds = Array.from(this.failed);
 
-      if (!this.quiet) {
-        if (hasFailedNodes) {
-          const executionTimeMs = Date.now() - workflowStartTime;
-          const formattedExecutionTime =
-            this.formatExecutionDuration(executionTimeMs);
-          console.log(
-            `⚠️ Workflow completed with ${
-              failedNodeIds.length
-            } failed node(s): ${failedNodeIds.join(", ")} (Execution time: ${formattedExecutionTime})`,
-          );
-        } else {
-          const executionTimeMs = Date.now() - workflowStartTime;
-          const formattedExecutionTime =
-            this.formatExecutionDuration(executionTimeMs);
-          console.log(
-            `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
-          );
-        }
-      }
+      const executionTimeMs = Date.now() - workflowStartTime;
+      const formattedExecutionTime =
+        this.formatExecutionDuration(executionTimeMs);
+      console.log(
+        `✅ Workflow execution completed successfully (Execution time: ${formattedExecutionTime})`,
+      );
 
       if (this.indicatorStateManager) {
         await this.indicatorStateManager.flushToRedis();
       }
 
-      if (!this.quiet) {
-        // Log DataContext stats before cleanup
-        const ctxStats = this.dataContext.getStats();
-        console.log(
-          `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
-            `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
-        );
-      }
+      // if (!this.quiet) {
+      //   // Log DataContext stats before cleanup
+      //   const ctxStats = this.dataContext.getStats();
+      //   console.log(
+      //     `📊 DataContext stats: ${ctxStats.entryCount} entries, ` +
+      //       `${(ctxStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used`,
+      //   );
+      // }
 
       if (hasFailedNodes) {
         const firstFailedNodeId = failedNodeIds[0];
@@ -1023,7 +1018,6 @@ export class WorkflowEngine {
     return this.abortSignal?.aborted ?? false;
   }
 
-
   private executeOnceSync(item: QueueItem): void {
     const { nodeId, input, meta } = item;
     const node = this.nodeById.get(nodeId);
@@ -1141,9 +1135,9 @@ export class WorkflowEngine {
       prev.totalMs += elapsed;
       prev.count += 1;
       this.nodeTiming.set(nodeId, prev);
-    if (!this.silent && !this.quiet) {
-      console.log(`✅ Node ${nodeId} result:`, result);
-    }
+      if (!this.silent && !this.quiet) {
+        console.log(`✅ Node ${nodeId} result:`, result);
+      }
 
       if (!this.quiet) {
         this.executionOrder.push(nodeId);
@@ -1354,8 +1348,11 @@ export class WorkflowEngine {
     return { data: result?.data ?? result };
   }
 
-
-  executeNodeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+  executeNodeSync(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any,
+  ): NodeResult {
     const nodeName = node.name ?? "";
     const category = CATEGORY_MAP[nodeName] ?? node.category;
 
@@ -1371,7 +1368,9 @@ export class WorkflowEngine {
     }
 
     if (typeof executor.executeSync !== "function") {
-      throw new Error(`Executor ${category} does not support sync execution for node ${node.name}`);
+      throw new Error(
+        `Executor ${category} does not support sync execution for node ${node.name}`,
+      );
     }
 
     const result = executor.executeSync(node, input, context);

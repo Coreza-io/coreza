@@ -19,25 +19,9 @@ import { createSuccessOutput, createErrorOutput, toNodeResult } from "../../util
 
 export class UtilityExecutor implements INodeExecutor {
   readonly category = "Utility";
+  readonly syncCapable = true;
 
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    const startTime = Date.now();
-    try {
-      return this.executeByNodeName(node, input, context, startTime);
-    } catch (error) {
-      const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
-      );
-      return toNodeResult(errOutput);
-    }
-  }
-
-  async execute(
-    node: WorkflowNode,
-    input: NodeInput,
-    context?: any
-  ): Promise<NodeResult> {
+  execute(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
     const startTime = Date.now();
     try {
       return this.executeByNodeName(node, input, context, startTime);

@@ -28,26 +28,40 @@ import {
   buildIndicatorKey,
 } from "../../services/indicatorStateManager";
 import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
+import { buildExecutionScopedKey } from "../../utils/executionKey";
+import { RollingWindow } from "../../services/RollingWindow";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
+  readonly syncCapable = true;
   private readonly initExecutor = new InitializeIndicatorsExecutor();
   private readonly indicatorKeyCache = new Map<string, string>();
   private readonly indicatorResults = new Map<string, NodeResult>();
+  private readonly rollingWindowKeyCache = new Map<string, string>();
+  private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
 
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
+  execute(node: WorkflowNode, input: NodeInput, context?: any): NodeResult | Promise<NodeResult> {
     const runId = context?.runId;
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
       this.indicatorResults.clear();
+      this.rollingWindowKeyCache.clear();
+      this.rollingWindowResults.clear();
       this.cachedRunId = runId;
     }
 
     const indicatorType = (node.name || node.node_type)?.toLowerCase();
     if (indicatorType === "initializeindicators") {
-      return toNodeResult(createErrorOutput("InitializeIndicators requires async execution"));
+      return this.executeAsync(node, input, context);
+    }
+
+    if (indicatorType === "rollingwindow") {
+      const resolvedParams = context?.resolveNodeParameters
+        ? context.resolveNodeParameters(node, input)
+        : { ...node.values, ...input };
+      return this.executeRollingWindowNode(node, resolvedParams, context);
     }
 
     const resolvedParams = context?.resolveNodeParameters
@@ -112,16 +126,10 @@ export class IndicatorsExecutor implements INodeExecutor {
       }
     }
 
-    return toNodeResult(
-      createErrorOutput("Sync execution path unavailable for indicator input", {
-        nodeId: node.id,
-        nodeName: node.name,
-        category: this.category,
-      }),
-    );
+    return this.executeAsync(node, input, context);
   }
 
-  async execute(
+  private async executeAsync(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
@@ -132,6 +140,8 @@ export class IndicatorsExecutor implements INodeExecutor {
       if (runId && runId !== this.cachedRunId) {
         this.indicatorKeyCache.clear();
         this.indicatorResults.clear();
+        this.rollingWindowKeyCache.clear();
+        this.rollingWindowResults.clear();
         this.cachedRunId = runId;
       }
       const indicatorType = (node.name || node.node_type)?.toLowerCase();
@@ -142,6 +152,13 @@ export class IndicatorsExecutor implements INodeExecutor {
           ...context,
           indicatorKeyCache: this.indicatorKeyCache,
         });
+      }
+
+      if (indicatorType === "rollingwindow") {
+        const resolvedParams = context?.resolveNodeParameters
+          ? context.resolveNodeParameters(node, input)
+          : { ...node.values, ...input };
+        return this.executeRollingWindowNode(node, resolvedParams, context);
       }
 
       const resolvedParams = context?.resolveNodeParameters
@@ -312,6 +329,101 @@ export class IndicatorsExecutor implements INodeExecutor {
       );
       return toNodeResult(normalized);
     }
+  }
+
+
+  private executeRollingWindowNode(
+    node: WorkflowNode,
+    params: Record<string, any>,
+    context?: any,
+  ): NodeResult {
+    const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
+    const symbol = params.symbol || "_";
+    const timeframe = params.timeframe || "_";
+
+    const userId = context?.userId || params.user_id || "system";
+    const workflowId = context?.workflowId || params.workflow_id || "manual";
+    const runId = context?.runId || params.run_id || "manual";
+
+    let storeKey = this.rollingWindowKeyCache.get(node.id);
+    if (!storeKey) {
+      storeKey = buildExecutionScopedKey({
+        userId,
+        workflowId,
+        runId,
+        nodeId: node.id,
+        scope: "rolling_window",
+        parts: [symbol, timeframe],
+      });
+      this.rollingWindowKeyCache.set(node.id, storeKey);
+    }
+
+    const dataContext = context?.dataContext as DataContext | undefined;
+
+    let window: any;
+    if (dataContext) {
+      window = dataContext.getDataByKey(storeKey);
+      if (!window || window.size !== size) {
+        window = new RollingWindow(size);
+        dataContext.setData(storeKey, window);
+      }
+    } else {
+      window = new RollingWindow(size);
+    }
+
+    let bars: any[];
+    const rawCandle = params.candle_data;
+    if (rawCandle && typeof rawCandle === "object" && !Array.isArray(rawCandle)) {
+      bars = [rawCandle];
+    } else if (Array.isArray(rawCandle)) {
+      bars = rawCandle;
+    } else if (typeof rawCandle === "string") {
+      try {
+        const parsed = JSON.parse(rawCandle);
+        bars = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        bars = [];
+      }
+    } else {
+      bars = [];
+    }
+
+    if (bars.length === 0) {
+      return toNodeResult(
+        createErrorOutput("No bars provided in candle_data", {
+          nodeId: node.id,
+          nodeName: "RollingWindow",
+          category: this.category,
+        }),
+      );
+    }
+
+    for (const bar of bars) {
+      window.add(bar);
+    }
+
+    if (!this.rollingWindowResults.has(node.id)) {
+      this.rollingWindowResults.set(node.id, {
+        success: true,
+        data: {
+          window: null,
+          count: 0,
+          size: 0,
+          isReady: false,
+          remaining: 0,
+          latest: null,
+        },
+      });
+    }
+
+    const rw = this.rollingWindowResults.get(node.id)!;
+    rw.data.window = window.values();
+    rw.data.count = window.count;
+    rw.data.size = window.size;
+    rw.data.isReady = window.isReady;
+    rw.data.remaining = window.size - window.count;
+    rw.data.latest = window.count > 0 ? window.at(0) : null;
+    return rw;
   }
 
   private extractIndicatorParams(

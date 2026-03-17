@@ -141,9 +141,9 @@ export class BacktestSession {
         console.warn(
           `[BacktestSession] [CompiledPlan] Missing executor for node ${node.id} (${node.name}) in category ${category}`,
         );
-      } else if (typeof executor.executeSync !== "function") {
+      } else if (!executor.syncCapable) {
         console.warn(
-          `[BacktestSession] [CompiledPlan] Node ${node.id} (${node.name}) in category ${category} has no executeSync()`,
+          `[BacktestSession] [CompiledPlan] Node ${node.id} (${node.name}) in category ${category} is not syncCapable`,
         );
       }
 
@@ -209,7 +209,7 @@ export class BacktestSession {
         } else {
           // ── Subsequent bars: sync engine ────────────────────────
           this.engine.resetForNextBar();
-          this.engine.executeFromEntriesSync(
+          await this.engine.executeFromEntries(
             { data: currentEvent },
             this.entryNodeIds,
           );
@@ -340,7 +340,7 @@ export class BacktestSession {
                   this.entryNodeIds,
                 );
               } else {
-                this.engine.executeFromEntriesSync(
+                await this.engine.executeFromEntries(
                   { data: currentEvent },
                   this.entryNodeIds,
                 );

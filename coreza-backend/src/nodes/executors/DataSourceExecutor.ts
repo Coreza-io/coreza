@@ -28,17 +28,22 @@ import {
   leanSuccess,
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
-import { buildExecutionScopedKey } from "../../utils/executionKey";
-import { RollingWindow } from "../../services/RollingWindow";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
-  private scopedKeyCache = new Map<string, string>();
+  readonly syncCapable = true;
   private cachedRunId: string | null = null;
-  // Pre-allocated reusable result template per node for RollingWindow hot path
-  private _rollingWindowResults = new Map<string, NodeResult>();
 
-  async execute(
+  execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any,
+  ): NodeResult | Promise<NodeResult> {
+    this.clearResultCachesForRun(context?.runId);
+    return this.executeAsync(node, input, context);
+  }
+
+  private async executeAsync(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
@@ -54,10 +59,6 @@ export class DataSourceExecutor implements INodeExecutor {
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
         return result;
-      }
-
-      if (nodeName === "RollingWindow") {
-        return this.executeRollingWindowNode(node, resolvedParams, context);
       }
 
       const operation = resolvedParams.operation ?? node.values?.operation;
@@ -173,29 +174,6 @@ export class DataSourceExecutor implements INodeExecutor {
     }
   }
 
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    this.clearResultCachesForRun(context?.runId);
-    const nodeName = node.subCategory ?? node.name;
-    const resolvedParams = context?.resolveNodeParameters
-      ? context.resolveNodeParameters(node, input)
-      : { ...node.values, ...input };
-
-    if (nodeName === "RollingWindow") {
-      return this.executeRollingWindowNode(node, resolvedParams, context);
-    }
-
-    return toNodeResult(
-      createErrorOutput(
-        `Sync execution not supported for data source node type: ${nodeName}`,
-        {
-          nodeId: node.id,
-          nodeName,
-          category: this.category,
-        },
-      ),
-    );
-  }
-
   async executeStoreNode(
     params: StorageInput,
     context?: any,
@@ -224,108 +202,8 @@ export class DataSourceExecutor implements INodeExecutor {
     return storageService.execute(params);
   }
 
-  private executeRollingWindowNode(
-    node: WorkflowNode,
-    params: Record<string, any>,
-    context?: any,
-  ): NodeResult {
-    const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
-    const symbol = params.symbol || "_";
-    const timeframe = params.timeframe || "_";
-
-    const userId = context?.userId || params.user_id || "system";
-    const workflowId = context?.workflowId || params.workflow_id || "manual";
-    const runId = context?.runId || params.run_id || "manual";
-
-    let storeKey = this.scopedKeyCache.get(node.id);
-    if (!storeKey) {
-      storeKey = buildExecutionScopedKey({
-        userId,
-        workflowId,
-        runId,
-        nodeId: node.id,
-        scope: "rolling_window",
-        parts: [symbol, timeframe],
-      });
-      this.scopedKeyCache.set(node.id, storeKey);
-    }
-    const dataContext = context?.dataContext;
-
-    let window: any;
-    if (dataContext) {
-      window = dataContext.getDataByKey(storeKey);
-      if (!window || window.size !== size) {
-        window = new RollingWindow(size);
-        dataContext.setData(storeKey, window);
-      }
-    } else {
-      window = new RollingWindow(size);
-    }
-
-    let bars: any[];
-    const rawCandle = params.candle_data;
-    if (
-      rawCandle &&
-      typeof rawCandle === "object" &&
-      !Array.isArray(rawCandle)
-    ) {
-      bars = [rawCandle];
-    } else if (Array.isArray(rawCandle)) {
-      bars = rawCandle;
-    } else if (typeof rawCandle === "string") {
-      try {
-        const parsed = JSON.parse(rawCandle);
-        bars = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        bars = [];
-      }
-    } else {
-      bars = [];
-    }
-
-    if (bars.length === 0) {
-      return toNodeResult(
-        createErrorOutput("No bars provided in candle_data", {
-          nodeId: node.id,
-          nodeName: "RollingWindow",
-          category: this.category,
-        }),
-      );
-    }
-
-    for (const bar of bars) {
-      window.add(bar);
-    }
-
-    if (!this._rollingWindowResults.has(node.id)) {
-      this._rollingWindowResults.set(node.id, {
-        success: true,
-        data: {
-          window: null,
-          count: 0,
-          size: 0,
-          isReady: false,
-          remaining: 0,
-          latest: null,
-        },
-      });
-    }
-
-    // Reuse per-node pre-allocated result object to avoid per-bar allocations
-    const rw = this._rollingWindowResults.get(node.id)!;
-    rw.data.window = window.values();
-    rw.data.count = window.count;
-    rw.data.size = window.size;
-    rw.data.isReady = window.isReady;
-    rw.data.remaining = window.size - window.count;
-    rw.data.latest = window.count > 0 ? window.at(0) : null;
-    return rw;
-  }
-
   private clearResultCachesForRun(runId?: string): void {
     if (runId && runId !== this.cachedRunId) {
-      this.scopedKeyCache.clear();
-      this._rollingWindowResults.clear();
       this.cachedRunId = runId;
     }
   }

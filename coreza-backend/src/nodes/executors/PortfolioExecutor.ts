@@ -39,6 +39,7 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
  */
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
+  readonly syncCapable = true;
 
   // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
   private static ownershipCache = new Map<
@@ -89,11 +90,11 @@ export class PortfolioExecutor implements INodeExecutor {
     PortfolioExecutor.simBrokerCache = cache;
   }
 
-  async execute(
+  execute(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
-  ): Promise<NodeResult> {
+  ): NodeResult | Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
@@ -115,33 +116,12 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
 
-  executeSync(node: WorkflowNode, input: NodeInput, context?: any): NodeResult {
-    try {
-      const params = context?.resolveNodeParameters
-        ? context.resolveNodeParameters(node, input)
-        : { ...node.values, ...input };
-
-      const mode = params.mode;
-
-      if (mode === "backtest") {
-        return this.executeBacktestModeSync(params, context);
-      }
-
-      return toNodeResult(
-        createErrorOutput(`Sync execution not supported for portfolio mode: ${mode}`),
-      );
-    } catch (error) {
-      console.error("[PortfolioExecutor] Sync execution failed:", error);
-      return toNodeResult(createErrorOutput(error));
-    }
-  }
-
   // ============== BACKTEST MODE ==============
 
-  private async executeBacktestMode(
+  private executeBacktestMode(
     params: any,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     return this.executeBacktestModeSync(params, context);
   }
 

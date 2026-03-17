@@ -40,6 +40,33 @@ export class GraphRuntime {
     return this.outgoingEdgesBySource.get(sourceId) ?? [];
   }
 
+  topoSort(): string[] {
+    const inDegree = new Map<string, number>();
+
+    for (const nodeId of this.nodeById.keys()) {
+      inDegree.set(nodeId, this.getIncomingEdges(nodeId).length);
+    }
+
+    const queue: string[] = [];
+    for (const [nodeId, degree] of inDegree.entries()) {
+      if (degree === 0) queue.push(nodeId);
+    }
+
+    const topoOrder: string[] = [];
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      topoOrder.push(nodeId);
+
+      for (const edge of this.getOutgoingEdges(nodeId)) {
+        const nextDegree = (inDegree.get(edge.target) ?? 1) - 1;
+        inDegree.set(edge.target, nextDegree);
+        if (nextDegree === 0) queue.push(edge.target);
+      }
+    }
+
+    return topoOrder;
+  }
+
   isLoopNode(nodeId: string): boolean {
     return this.nodeById.get(nodeId)?.name === "Loop";
   }

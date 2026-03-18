@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "../engine";
+import { PortfolioManager } from "../simulation/PortfolioManager";
 
 const STRATEGY_GROUP = "strategy-group";
 
@@ -91,6 +92,7 @@ export class WorkflowRunner {
     this.running = false;
     this.abortController.abort();
     this.engine.destroy();
+    PortfolioManager.removeInstance(this.userId, this.runnerId);
     await this.cleanupRunnerKeys();
     await this.redisStream.quit();
   }

@@ -20,6 +20,7 @@ import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
 import { WorkflowRunnerManager } from "../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../engine";
+import { PortfolioManager } from "../simulation/PortfolioManager";
 
 export interface ShutdownStats {
   activeJobsAtStart: number;
@@ -130,6 +131,7 @@ export class GracefulShutdownHandler {
       // 5. Stop all long-lived strategy runners
       await WorkflowRunnerManager.getInstance().stopAll();
       await BacktestSessionManager.getInstance().stopAll();
+      PortfolioManager.destroyAll();
 
       // 6. Close all workers
       logger.info("🔒 Closing workers...");
